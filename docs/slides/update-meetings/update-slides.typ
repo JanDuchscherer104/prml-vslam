@@ -29,7 +29,7 @@
 #import "meeting-05/jd.typ" as m05_jd
 
 #let deck_title = [#text(size: 37pt)[Challenge 5 \ Uncalibrated Monocular VSLAM]]
-#let extra = [PRML Project Scaffold]
+#let extra = [Pattern Recognition & Machine Learning \ Prof. Dr. Friedrich]
 
 #let meeting_items_01 = (
   [Async Kick-Off],
