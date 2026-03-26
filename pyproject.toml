@@ -1,0 +1,64 @@
+[project]
+name = "prml-vslam"
+version = "0.1.0"
+description = "Off-device monocular VSLAM benchmark scaffold for uncalibrated smartphone video."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+authors = [{ name = "Jan Duchscherer", email = "j.duchscherer@gmail.com" }]
+dependencies = [
+  "numpy>=1.26,<3",
+  "opencv-python>=4.10,<5",
+  "open3d>=0.19.0,<0.20",
+  "plotly>=6.6.0,<7",
+  "pydantic>=2.11,<3",
+  "rich>=13.7,<15",
+  "seaborn>=0.13,<1",
+  "streamlit>=1.35,<2",
+  "tomli-w>=1.2,<2",
+  "typer>=0.12,<1",
+]
+
+  [project.optional-dependencies]
+  dev = [
+    "bibtex-updater>=0.8.0",
+    "mypy>=1.11,<2",
+    "pre-commit>=4.2,<5",
+    "pytest>=8.3,<9",
+    "rebiber>=1.1.3",
+    "ruff>=0.11,<1",
+  ]
+  eval = ["evo>=1.31,<2"]
+
+  [project.scripts]
+  prml-vslam = "prml_vslam.main:main"
+
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/prml_vslam"]
+
+[tool.ruff]
+target-version = "py311"
+line-length    = 120
+
+  [tool.ruff.lint]
+  select = ["B", "E", "F", "I", "UP"]
+  ignore = ["E501"]
+
+  [tool.ruff.format]
+  quote-style  = "double"
+  indent-style = "space"
+  line-ending  = "auto"
+
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+python_files = ["test_*.py"]
+addopts      = "-q --strict-markers --capture=no -p no:dash"
+
+[tool.mypy]
+python_version      = "3.11"
+strict              = false
+warn_unused_configs = true
+packages            = ["prml_vslam"]
