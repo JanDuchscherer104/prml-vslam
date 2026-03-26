@@ -102,7 +102,7 @@ help: ## Show this help message
 	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Usage:$(NC) make <target>"
-	@echo "$(YELLOW)Docs:$(NC)  make slides-pdf"
+	@echo "$(YELLOW)Docs:$(NC)  make typst-check"
 	@awk 'BEGIN {FS = ":.*?## "; section=""} \
 		/^#  ═+$$/ {next} \
 		/^#  [🔧📚📄ℹ️]/ {if (section) print ""; section=$$0; gsub(/^#  /, "", section); print "$(YELLOW)" section "$(NC)"; next} \
