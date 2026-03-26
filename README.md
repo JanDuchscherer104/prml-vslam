@@ -2,6 +2,22 @@
 
 This repository addresses an off-device monocular VSLAM pipeline for smartphone videos-streams with unknown intrinsics. The goal is to recover a high-precision ego-trajectory and a dense 3D point cloud from raw video, and to benchmark the result against ARCore and other state-of-the-art methods.
 
+## Setup
+
+### Requirements
+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
+- [typst](https://typst.app/open-source/#download) for slides & report.
+
+### Bootstrap
+
+```bash
+uv sync --extra dev --extra eval
+uv run pre-commit install
+uv run pre-commit run --all-files
+uv run pytest
+```
+
 ## Challenge
 
 Professional SLAM systems usually require rigid factory calibration. Consumer frameworks like ARCore are stable due to real-time sensor fusion, but often fail when processing raw video retrospectively. In particular, they struggle with global metric consistency and high-fidelity dense mapping when camera intrinsics are unknown.
