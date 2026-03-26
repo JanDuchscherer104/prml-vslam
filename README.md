@@ -7,7 +7,8 @@ This repository addresses an off-device monocular VSLAM pipeline for smartphone 
 ### Requirements
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
-- [typst](https://typst.app/open-source/#download) for slides & report.
+- [typst](https://typst.app/open-source/#download) for slides & report
+- [typstyle](https://github.com/typstyle-rs/typstyle/releases) for Typst formatting checks
 
 ### Bootstrap
 
@@ -16,6 +17,7 @@ uv sync --extra dev --extra eval
 uv run pre-commit install
 uv run pre-commit run --all-files
 uv run pytest
+make typst-check
 ```
 
 ## Challenge

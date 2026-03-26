@@ -28,7 +28,9 @@
 #import "meeting-05/ck.typ" as m05_ck
 #import "meeting-05/jd.typ" as m05_jd
 
-#let deck_title = [#text(size: 37pt)[Challenge 5 \ Uncalibrated Monocular VSLAM]]
+#let deck_title = [#text(
+  size: 37pt,
+)[Challenge 5 \ Uncalibrated Monocular VSLAM]]
 #let extra = [Pattern Recognition & Machine Learning \ Prof. Dr. Friedrich]
 
 #let meeting_items_01 = (
@@ -57,7 +59,9 @@
   datetime(year: 2026, month: 6, day: 12),
 )
 
-#let display_meeting_date(date) = date.display("[day padding:none]. [month repr:short] [year]")
+#let display_meeting_date(date) = date.display(
+  "[day padding:none]. [month repr:short] [year]",
+)
 
 #let meeting_subtitle(items) = [
   #items.at(1) \
@@ -145,7 +149,11 @@
       title: section.table_title,
       rows: status_rows(members, section.row_picker),
     )
-    #for detail_body in collect_detail_bodies(items, members, section.detail_picker) [
+    #for detail_body in collect_detail_bodies(
+      items,
+      members,
+      section.detail_picker,
+    ) [
       #detail_body
     ]
   ]
@@ -168,7 +176,10 @@
     ]
   ]
 
-  #section-slide(title: meeting_items_01.at(0), subtitle: meeting_subtitle(meeting_items_01))
+  #section-slide(
+    title: meeting_items_01.at(0),
+    subtitle: meeting_subtitle(meeting_items_01),
+  )
 
   #meeting_slide(meeting_items_01, title: [Team Leader])[
     #team.leader_note
@@ -186,7 +197,10 @@
     #meeting_01.non_goals
   ]
 
-  #section-slide(title: meeting_items_02.at(0), subtitle: meeting_subtitle(meeting_items_02))
+  #section-slide(
+    title: meeting_items_02.at(0),
+    subtitle: meeting_subtitle(meeting_items_02),
+  )
 
   #meeting_slide(meeting_items_02, title: [Goals (refined)])[
     #meeting_02.goals_refined

@@ -9,6 +9,7 @@ NC := \033[0m
 
 # Tooling
 TYPST ?= typst
+TYPSTYLE ?= typstyle
 
 # Bibliography
 BIB_FILE ?= docs/references.bib
@@ -33,7 +34,7 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint test bib-check bib-check-strict report-pdf slides-pdf final-slides docs-build
+.PHONY: help fmt lint typst-lint typst-check test bib-check bib-check-strict report-pdf slides-pdf final-slides docs-build
 
 #  ═══════════════════════════════════════════════════════════════════════
 #  🔧 Quality
@@ -46,6 +47,11 @@ fmt: ## Auto-format Python files and apply Ruff fixes
 lint: ## Run non-mutating Ruff format and lint checks
 	uv run ruff format --check .
 	uv run ruff check .
+
+typst-lint: ## Run non-mutating Typst formatting checks
+	$(TYPSTYLE) --check $(REPORT_TYP) $(UPDATE_SLIDES_TYP)
+
+typst-check: typst-lint report-pdf slides-pdf ## Lint and compile the report and update slides
 
 test: ## Run the Python test suite
 	uv run pytest
@@ -96,7 +102,7 @@ help: ## Show this help message
 	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Usage:$(NC) make <target>"
-	@echo "$(YELLOW)Docs:$(NC)  make slides-pdf"
+	@echo "$(YELLOW)Docs:$(NC)  make typst-check"
 	@awk 'BEGIN {FS = ":.*?## "; section=""} \
 		/^#  ═+$$/ {next} \
 		/^#  [🔧📚📄ℹ️]/ {if (section) print ""; section=$$0; gsub(/^#  /, "", section); print "$(YELLOW)" section "$(NC)"; next} \
