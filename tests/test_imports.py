@@ -17,16 +17,22 @@ def test_package_imports() -> None:
 
     assert prml_vslam.__version__
 
-    class SmokeConfig(BaseConfig[int]):
+    class SmokeConfig(BaseConfig):
         @property
-        def target(self) -> int:
-            return 42
+        def target_type(self) -> type[SmokeTarget]:
+            return SmokeTarget
 
         some_field: int = 42
         another_field: dict[str, int] = Field(default_factory=lambda: {"a": 42, "b": 37})
 
+    class SmokeTarget:
+        def __init__(self, config: SmokeConfig) -> None:
+            self.config = config
+
     config = SmokeConfig()
     config.inspect()
+    target = config.setup_target()
 
     console = get_console()
-    console.log(config)
+    console.plog(config)
+    assert isinstance(target, SmokeTarget)
