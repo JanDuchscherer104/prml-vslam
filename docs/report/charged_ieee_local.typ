@@ -9,6 +9,7 @@
   authors: (),
   // Optional shared affiliation metadata rendered once beneath the
   // author names. Supports department, organization, location, and email.
+  // Author-local emails still render individually when provided.
   shared_affiliation: none,
   // The paper's abstract. Can be omitted if you don't have one.
   abstract: none,
@@ -177,6 +178,16 @@
     }
   })
 
+  let render-author-email(entry) = {
+    if "email" in entry {
+      if type(entry.email) == str [
+        \ #link("mailto:" + entry.email)
+      ] else [
+        \ #entry.email
+      ]
+    }
+  }
+
   // Display the paper's title and authors at the top of the page,
   // spanning all columns (hence floating at the scope of the
   // columns' parent, which is the page).
@@ -214,14 +225,8 @@
               if "location" in author [
                 \ #author.location
               ]
-              if "email" in author {
-                if type(author.email) == str [
-                  \ #link("mailto:" + author.email)
-                ] else [
-                  \ #author.email
-                ]
-              }
             }
+            render-author-email(author)
           }))
         )
 

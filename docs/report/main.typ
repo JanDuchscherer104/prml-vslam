@@ -10,7 +10,6 @@
   department: [Department of Computer Science & Mathematics],
   organization: [Munich University of Applied Sciences],
   location: [Munich, Germany],
-  email: "j.duchscherer@hm.edu",
 )
 
 #show: ieee.with(
@@ -20,7 +19,7 @@
     hm_author("Valentin Bumeder"),
     hm_author("Lukas Röß"),
     hm_author("Christopher Kirschner"),
-    hm_author("Jan Duchscherer"),
+    hm_author("Jan Duchscherer", email: "j.duchscherer@hm.edu"),
   ),
   shared_affiliation: hm_shared_affiliation,
   abstract: [
