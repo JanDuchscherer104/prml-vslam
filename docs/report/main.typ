@@ -1,19 +1,17 @@
 #import "charged_ieee_local.typ": ieee
 
-#let hm_author(name, email: none) = {
-  let author = (
-    name: name,
-    department: [Department of Computer Science & Mathematics],
-    organization: [Munich University of Applied Sciences],
-    location: [Munich, Germany],
-  )
-
-  if email == none {
-    author
-  } else {
-    author + (email: email)
-  }
+#let hm_author(name, email: none) = if email == none {
+  (name: name)
+} else {
+  (name: name, email: email)
 }
+
+#let hm_shared_affiliation = (
+  department: [Department of Computer Science & Mathematics],
+  organization: [Munich University of Applied Sciences],
+  location: [Munich, Germany],
+  email: "j.duchscherer@hm.edu",
+)
 
 #show: ieee.with(
   title: [Uncalibrated Monocular VSLAM for Smartphone Video Benchmarking],
@@ -22,8 +20,9 @@
     hm_author("Valentin Bumeder"),
     hm_author("Lukas Röß"),
     hm_author("Christopher Kirschner"),
-    hm_author("Jan Duchscherer", email: "j.duchscherer@hm.edu"),
+    hm_author("Jan Duchscherer"),
   ),
+  shared_affiliation: hm_shared_affiliation,
   abstract: [
     This report documents the project scaffold, evaluation protocol, and benchmark plan for
     uncalibrated monocular VSLAM on smartphone video. The focus is on comparing modern methods,

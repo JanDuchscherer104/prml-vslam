@@ -18,4 +18,3 @@
     #link("https://colmap.github.io/index.html")[COLMAP].
   - Geometry tooling: #link("https://www.open3d.org/")[Open3D] for inspection and metric support.
 ]
-

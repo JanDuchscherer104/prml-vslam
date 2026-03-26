@@ -7,6 +7,9 @@
   // department, organization, location, and email. Everything but
   // but the name is optional.
   authors: (),
+  // Optional shared affiliation metadata rendered once beneath the
+  // author names. Supports department, organization, location, and email.
+  shared_affiliation: none,
   // The paper's abstract. Can be omitted if you don't have one.
   abstract: none,
   // A list of index terms to display after the abstract.
@@ -155,6 +158,25 @@
   show std.bibliography: set block(spacing: 0.5em)
   set std.bibliography(title: text(10pt)[References], style: "ieee")
 
+  let render-affiliation-block(entry) = align(center, {
+    if "department" in entry [
+      #emph(entry.department)
+    ]
+    if "organization" in entry [
+      \ #emph(entry.organization)
+    ]
+    if "location" in entry [
+      \ #entry.location
+    ]
+    if "email" in entry {
+      if type(entry.email) == str [
+        \ #link("mailto:" + entry.email)
+      ] else [
+        \ #entry.email
+      ]
+    }
+  })
+
   // Display the paper's title and authors at the top of the page,
   // spanning all columns (hence floating at the scope of the
   // columns' parent, which is the page).
@@ -182,21 +204,23 @@
           gutter: 12pt,
           ..slice.map(author => align(center, {
             text(size: 11pt, author.name)
-            if "department" in author [
-              \ #emph(author.department)
-            ]
-            if "organization" in author [
-              \ #emph(author.organization)
-            ]
-            if "location" in author [
-              \ #author.location
-            ]
-            if "email" in author {
-              if type(author.email) == str [
-                \ #link("mailto:" + author.email)
-              ] else [
-                \ #author.email
+            if shared_affiliation == none {
+              if "department" in author [
+                \ #emph(author.department)
               ]
+              if "organization" in author [
+                \ #emph(author.organization)
+              ]
+              if "location" in author [
+                \ #author.location
+              ]
+              if "email" in author {
+                if type(author.email) == str [
+                  \ #link("mailto:" + author.email)
+                ] else [
+                  \ #author.email
+                ]
+              }
             }
           }))
         )
@@ -204,6 +228,11 @@
         if not is-last {
           v(16pt, weak: true)
         }
+      }
+
+      if shared_affiliation != none {
+        v(12pt, weak: true)
+        render-affiliation-block(shared_affiliation)
       }
     },
   )
