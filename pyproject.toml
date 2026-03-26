@@ -62,3 +62,19 @@ python_version      = "3.11"
 strict              = false
 warn_unused_configs = true
 packages            = ["prml_vslam"]
+mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
+
+[[tool.mypy.overrides]]
+module = [
+  "numpy",
+  "numpy.*",
+  "pydantic",
+  "pydantic.*",
+  "pytest",
+  "pytest.*",
+  "streamlit",
+  "streamlit.*",
+  "tomli_w",
+  "tomli_w.*",
+]
+ignore_missing_imports = true
