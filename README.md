@@ -7,7 +7,7 @@ This repository addresses an off-device monocular VSLAM pipeline for smartphone 
 ### Requirements
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
-- [typst](https://typst.app/open-source/#download) for slides & report.
+- [typst](https://typst.app/open-source/#download) for slides & report
 
 ### Bootstrap
 
@@ -16,7 +16,22 @@ uv sync --extra dev --extra eval
 uv run pre-commit install
 uv run pre-commit run --all-files
 uv run pytest
+make typst-check
 ```
+
+### Streamlit Workbench
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+The workbench supports:
+
+- planning and materializing repo-owned workspaces
+- filesystem-path or uploaded-video inputs
+- offline batch execution from the UI
+- replayable streaming demo execution with persisted artifacts
+- an ADVIO dataset explorer page with Plotly modality coverage and asset-footprint views
 
 ## Challenge
 
@@ -26,6 +41,7 @@ The system should build on existing monocular dense VSLAM methods such as [ViSTA
 
 ## Evaluation
 
+- Dataset: [ADVIO: An Authentic Dataset for Visual-Inertial Odometry](https://github.com/AaltoVision/ADVIO), plus a custom self-recorded dataset with raw video and odometry logs.
 - Identify suitable metrics for pose drift and reconstruction fidelity.
 - Evaluate at least two state-of-the-art VSLAM methods.
 - Measure trajectory quality, including comparison against ARCore, on the ADVIO dataset and on a custom dataset.
@@ -47,3 +63,25 @@ The system should build on existing monocular dense VSLAM methods such as [ViSTA
 - Point cloud comparison: [CloudCompare](https://www.cloudcompare.org/), with metrics for example from [Open3D](https://www.open3d.org/)
 - Trajectory comparison: [evo](https://github.com/MichaelGrupp/evo)
 - Papers: [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584), [MASt3R-SLAM](https://arxiv.org/abs/2412.12392)
+
+## Dataset And Evaluation CLI
+
+The repository now includes a thin ADVIO adapter plus an `evo`-backed trajectory evaluation command.
+
+```bash
+uv run prml-vslam advio download 15 --dataset-root data/advio --discard-archive
+uv run prml-vslam advio export-gt 15 --dataset-root data/advio
+uv run prml-vslam advio run 15 --dataset-root data/advio --output-dir artifacts/advio --method vista_slam --max-frames 20
+uv run --extra eval prml-vslam evaluate-trajectory \
+  data/advio/advio-15/ground-truth/ground_truth.tum \
+  artifacts/advio/advio-15/batch/vista_slam/slam/trajectory.tum \
+  --output-path artifacts/advio/advio-15/batch/vista_slam/evaluation/trajectory_metrics.json
+```
+
+Current ADVIO integration notes:
+
+- input video: `iphone/frames.mov`
+- exact frame timestamps: `iphone/frames.csv`
+- ground truth export: `ground-truth/pose.csv` or `ground-truth/poses.csv` to TUM
+- calibration hint: batch-specific iPhone YAML from the official ADVIO calibration bundle
+- normalized benchmark output: repo-owned workspace under `artifacts/<sequence>/batch/<method>/`
