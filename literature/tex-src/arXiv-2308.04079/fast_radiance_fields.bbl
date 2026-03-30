@@ -1,0 +1,812 @@
+%%% -*-BibTeX-*-
+%%% Do NOT edit. File created by BibTeX with style
+%%% ACM-Reference-Format-Journals [18-Jan-2012].
+
+\begin{thebibliography}{61}
+
+%%% ====================================================================
+%%% NOTE TO THE USER: you can override these defaults by providing
+%%% customized versions of any of these macros before the \bibliography
+%%% command.  Each of them MUST provide its own final punctuation,
+%%% except for \shownote{}, \showDOI{}, and \showURL{}.  The latter two
+%%% do not use final punctuation, in order to avoid confusing it with
+%%% the Web address.
+%%%
+%%% To suppress output of a particular field, define its macro to expand
+%%% to an empty string, or better, \unskip, like this:
+%%%
+%%% \newcommand{\showDOI}[1]{\unskip}   % LaTeX syntax
+%%%
+%%% \def \showDOI #1{\unskip}           % plain TeX syntax
+%%%
+%%% ====================================================================
+
+\ifx \showCODEN    \undefined \def \showCODEN     #1{\unskip}     \fi
+\ifx \showDOI      \undefined \def \showDOI       #1{#1}\fi
+\ifx \showISBNx    \undefined \def \showISBNx     #1{\unskip}     \fi
+\ifx \showISBNxiii \undefined \def \showISBNxiii  #1{\unskip}     \fi
+\ifx \showISSN     \undefined \def \showISSN      #1{\unskip}     \fi
+\ifx \showLCCN     \undefined \def \showLCCN      #1{\unskip}     \fi
+\ifx \shownote     \undefined \def \shownote      #1{#1}          \fi
+\ifx \showarticletitle \undefined \def \showarticletitle #1{#1}   \fi
+\ifx \showURL      \undefined \def \showURL       {\relax}        \fi
+% The following commands are used for tagged output and should be
+% invisible to TeX
+\providecommand\bibfield[2]{#2}
+\providecommand\bibinfo[2]{#2}
+\providecommand\natexlab[1]{#1}
+\providecommand\showeprint[2][]{arXiv:#2}
+
+\bibitem[Aliev et~al\mbox{.}(2020)]%
+        {aliev20}
+\bibfield{author}{\bibinfo{person}{Kara-Ali Aliev}, \bibinfo{person}{Artem
+  Sevastopolsky}, \bibinfo{person}{Maria Kolos}, \bibinfo{person}{Dmitry
+  Ulyanov}, {and} \bibinfo{person}{Victor Lempitsky}.}
+  \bibinfo{year}{2020}\natexlab{}.
+\newblock \showarticletitle{Neural Point-Based Graphics}. In
+  \bibinfo{booktitle}{\emph{Computer Vision – ECCV 2020: 16th European
+  Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part XXII}}.
+  \bibinfo{pages}{696--712}.
+\newblock
+\showISBNx{978-3-030-58541-9}
+
+
+\bibitem[Barron et~al\mbox{.}(2021)]%
+        {barron2021mipnerf}
+\bibfield{author}{\bibinfo{person}{Jonathan~T Barron}, \bibinfo{person}{Ben
+  Mildenhall}, \bibinfo{person}{Matthew Tancik}, \bibinfo{person}{Peter
+  Hedman}, \bibinfo{person}{Ricardo Martin-Brualla}, {and}
+  \bibinfo{person}{Pratul~P Srinivasan}.} \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{Mip-nerf: A multiscale representation for
+  anti-aliasing neural radiance fields}. In
+  \bibinfo{booktitle}{\emph{Proceedings of the IEEE/CVF International
+  Conference on Computer Vision}}. \bibinfo{pages}{5855--5864}.
+\newblock
+
+
+\bibitem[Barron et~al\mbox{.}(2022)]%
+        {barron2022mipnerf360}
+\bibfield{author}{\bibinfo{person}{Jonathan~T. Barron}, \bibinfo{person}{Ben
+  Mildenhall}, \bibinfo{person}{Dor Verbin}, \bibinfo{person}{Pratul~P.
+  Srinivasan}, {and} \bibinfo{person}{Peter Hedman}.}
+  \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Mip-NeRF 360: Unbounded Anti-Aliased Neural
+  Radiance Fields}.
+\newblock \bibinfo{journal}{\emph{CVPR}} (\bibinfo{year}{2022}).
+\newblock
+
+
+\bibitem[Bonopera et~al\mbox{.}(2020)]%
+        {sibr2020}
+\bibfield{author}{\bibinfo{person}{Sebastien Bonopera}, \bibinfo{person}{Jerome
+  Esnault}, \bibinfo{person}{Siddhant Prakash}, \bibinfo{person}{Simon
+  Rodriguez}, \bibinfo{person}{Theo Thonat}, \bibinfo{person}{Mehdi Benadel},
+  \bibinfo{person}{Gaurav Chaurasia}, \bibinfo{person}{Julien Philip}, {and}
+  \bibinfo{person}{George Drettakis}.} \bibinfo{year}{2020}\natexlab{}.
+\newblock \bibinfo{title}{sibr: A System for Image Based Rendering}.
+\newblock
+\newblock
+\urldef\tempurl%
+\url{https://gitlab.inria.fr/sibr/sibr_core}
+\showURL{%
+\tempurl}
+
+
+\bibitem[Botsch et~al\mbox{.}(2005)]%
+        {10.5555/2386366.2386369}
+\bibfield{author}{\bibinfo{person}{Mario Botsch}, \bibinfo{person}{Alexander
+  Hornung}, \bibinfo{person}{Matthias Zwicker}, {and} \bibinfo{person}{Leif
+  Kobbelt}.} \bibinfo{year}{2005}\natexlab{}.
+\newblock \showarticletitle{High-Quality Surface Splatting on Today's GPUs}. In
+  \bibinfo{booktitle}{\emph{Proceedings of the Second Eurographics / IEEE VGTC
+  Conference on Point-Based Graphics}} (New York, USA)
+  \emph{(\bibinfo{series}{SPBG'05})}. \bibinfo{publisher}{Eurographics
+  Association}, \bibinfo{address}{Goslar, DEU}, \bibinfo{pages}{17–24}.
+\newblock
+\showISBNx{3905673207}
+
+
+\bibitem[Buehler et~al\mbox{.}(2001)]%
+        {buehler2001unstructured}
+\bibfield{author}{\bibinfo{person}{Chris Buehler}, \bibinfo{person}{Michael
+  Bosse}, \bibinfo{person}{Leonard McMillan}, \bibinfo{person}{Steven Gortler},
+  {and} \bibinfo{person}{Michael Cohen}.} \bibinfo{year}{2001}\natexlab{}.
+\newblock \showarticletitle{Unstructured lumigraph rendering}. In
+  \bibinfo{booktitle}{\emph{Proc. SIGGRAPH}}.
+\newblock
+
+
+\bibitem[Chaurasia et~al\mbox{.}(2013)]%
+        {chaurasia2013depth}
+\bibfield{author}{\bibinfo{person}{Gaurav Chaurasia}, \bibinfo{person}{Sylvain
+  Duchene}, \bibinfo{person}{Olga Sorkine-Hornung}, {and}
+  \bibinfo{person}{George Drettakis}.} \bibinfo{year}{2013}\natexlab{}.
+\newblock \showarticletitle{Depth synthesis and local warps for plausible
+  image-based navigation}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (TOG)}}
+  \bibinfo{volume}{32}, \bibinfo{number}{3} (\bibinfo{year}{2013}),
+  \bibinfo{pages}{1--12}.
+\newblock
+
+
+\bibitem[Chen et~al\mbox{.}(2022b)]%
+        {tensorf-eccv2022}
+\bibfield{author}{\bibinfo{person}{Anpei Chen}, \bibinfo{person}{Zexiang Xu},
+  \bibinfo{person}{Andreas Geiger}, \bibinfo{person}{Jingyi Yu}, {and}
+  \bibinfo{person}{Hao Su}.} \bibinfo{year}{2022}\natexlab{b}.
+\newblock \showarticletitle{TensoRF: Tensorial Radiance Fields}. In
+  \bibinfo{booktitle}{\emph{European Conference on Computer Vision (ECCV)}}.
+\newblock
+
+
+\bibitem[Chen et~al\mbox{.}(2022a)]%
+        {chen2022mobilenerf}
+\bibfield{author}{\bibinfo{person}{Zhiqin Chen}, \bibinfo{person}{Thomas
+  Funkhouser}, \bibinfo{person}{Peter Hedman}, {and} \bibinfo{person}{Andrea
+  Tagliasacchi}.} \bibinfo{year}{2022}\natexlab{a}.
+\newblock \showarticletitle{MobileNeRF: Exploiting the Polygon Rasterization
+  Pipeline for Efficient Neural Field Rendering on Mobile Architectures}.
+\newblock \bibinfo{journal}{\emph{arXiv preprint arXiv:2208.00277}}
+  (\bibinfo{year}{2022}).
+\newblock
+
+
+\bibitem[De~Queiroz and Chou(2016)]%
+        {de2016compression}
+\bibfield{author}{\bibinfo{person}{Ricardo~L De~Queiroz} {and}
+  \bibinfo{person}{Philip~A Chou}.} \bibinfo{year}{2016}\natexlab{}.
+\newblock \showarticletitle{Compression of 3D point clouds using a
+  region-adaptive hierarchical transform}.
+\newblock \bibinfo{journal}{\emph{IEEE Transactions on Image Processing}}
+  \bibinfo{volume}{25}, \bibinfo{number}{8} (\bibinfo{year}{2016}),
+  \bibinfo{pages}{3947--3956}.
+\newblock
+
+
+\bibitem[Eisemann et~al\mbox{.}(2008)]%
+        {eisemann2008floating}
+\bibfield{author}{\bibinfo{person}{Martin Eisemann}, \bibinfo{person}{Bert
+  De~Decker}, \bibinfo{person}{Marcus Magnor}, \bibinfo{person}{Philippe
+  Bekaert}, \bibinfo{person}{Edilson De~Aguiar}, \bibinfo{person}{Naveed
+  Ahmed}, \bibinfo{person}{Christian Theobalt}, {and} \bibinfo{person}{Anita
+  Sellent}.} \bibinfo{year}{2008}\natexlab{}.
+\newblock \showarticletitle{Floating textures}. In
+  \bibinfo{booktitle}{\emph{Computer graphics forum}},
+  Vol.~\bibinfo{volume}{27}. Wiley Online Library, \bibinfo{pages}{409--418}.
+\newblock
+
+
+\bibitem[Flynn et~al\mbox{.}(2016)]%
+        {flynn2016deepstereo}
+\bibfield{author}{\bibinfo{person}{John Flynn}, \bibinfo{person}{Ivan
+  Neulander}, \bibinfo{person}{James Philbin}, {and} \bibinfo{person}{Noah
+  Snavely}.} \bibinfo{year}{2016}\natexlab{}.
+\newblock \showarticletitle{Deepstereo: Learning to predict new views from the
+  world's imagery}. In \bibinfo{booktitle}{\emph{CVPR}}.
+\newblock
+
+
+\bibitem[{Fridovich-Keil and Yu} et~al\mbox{.}(2022)]%
+        {plenoxels}
+\bibfield{author}{\bibinfo{person}{{Fridovich-Keil and Yu}},
+  \bibinfo{person}{Matthew Tancik}, \bibinfo{person}{Qinhong Chen},
+  \bibinfo{person}{Benjamin Recht}, {and} \bibinfo{person}{Angjoo Kanazawa}.}
+  \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Plenoxels: Radiance Fields without Neural
+  Networks}. In \bibinfo{booktitle}{\emph{CVPR}}.
+\newblock
+
+
+\bibitem[Garbin et~al\mbox{.}(2021)]%
+        {garbin2021fastnerf}
+\bibfield{author}{\bibinfo{person}{Stephan~J. Garbin}, \bibinfo{person}{Marek
+  Kowalski}, \bibinfo{person}{Matthew Johnson}, \bibinfo{person}{Jamie
+  Shotton}, {and} \bibinfo{person}{Julien Valentin}.}
+  \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{FastNeRF: High-Fidelity Neural Rendering at
+  200FPS}. In \bibinfo{booktitle}{\emph{Proceedings of the IEEE/CVF
+  International Conference on Computer Vision (ICCV)}}.
+  \bibinfo{pages}{14346--14355}.
+\newblock
+
+
+\bibitem[Goesele et~al\mbox{.}(2007)]%
+        {goesele2007multi}
+\bibfield{author}{\bibinfo{person}{Michael Goesele}, \bibinfo{person}{Noah
+  Snavely}, \bibinfo{person}{Brian Curless}, \bibinfo{person}{Hugues Hoppe},
+  {and} \bibinfo{person}{Steven~M Seitz}.} \bibinfo{year}{2007}\natexlab{}.
+\newblock \showarticletitle{Multi-view stereo for community photo collections}.
+  In \bibinfo{booktitle}{\emph{ICCV}}.
+\newblock
+
+
+\bibitem[Gortler et~al\mbox{.}(1996)]%
+        {gortler1996lumigraph}
+\bibfield{author}{\bibinfo{person}{Steven~J Gortler}, \bibinfo{person}{Radek
+  Grzeszczuk}, \bibinfo{person}{Richard Szeliski}, {and}
+  \bibinfo{person}{Michael~F Cohen}.} \bibinfo{year}{1996}\natexlab{}.
+\newblock \showarticletitle{The lumigraph}. In
+  \bibinfo{booktitle}{\emph{Proceedings of the 23rd annual conference on
+  Computer graphics and interactive techniques}}. \bibinfo{pages}{43--54}.
+\newblock
+
+
+\bibitem[Gross and Pfister(2011)]%
+        {gross2011point}
+\bibfield{author}{\bibinfo{person}{Markus Gross} {and}
+  \bibinfo{person}{Hanspeter~(Eds) Pfister}.} \bibinfo{year}{2011}\natexlab{}.
+\newblock \bibinfo{booktitle}{\emph{Point-based graphics}}.
+\newblock \bibinfo{publisher}{Elsevier}.
+\newblock
+
+
+\bibitem[Grossman and Dally(1998)]%
+        {Grossman1998PointSR}
+\bibfield{author}{\bibinfo{person}{Jeff~P. Grossman} {and}
+  \bibinfo{person}{William~J. Dally}.} \bibinfo{year}{1998}\natexlab{}.
+\newblock \showarticletitle{Point Sample Rendering}. In
+  \bibinfo{booktitle}{\emph{Rendering Techniques}}.
+\newblock
+
+
+\bibitem[Hedman et~al\mbox{.}(2018)]%
+        {hedman2018deep}
+\bibfield{author}{\bibinfo{person}{Peter Hedman}, \bibinfo{person}{Julien
+  Philip}, \bibinfo{person}{True Price}, \bibinfo{person}{Jan-Michael Frahm},
+  \bibinfo{person}{George Drettakis}, {and} \bibinfo{person}{Gabriel Brostow}.}
+  \bibinfo{year}{2018}\natexlab{}.
+\newblock \showarticletitle{Deep blending for free-viewpoint image-based
+  rendering}.
+\newblock \bibinfo{journal}{\emph{ACM Trans. on Graphics (TOG)}}
+  \bibinfo{volume}{37}, \bibinfo{number}{6} (\bibinfo{year}{2018}).
+\newblock
+
+
+\bibitem[Hedman et~al\mbox{.}(2016)]%
+        {HRDB16}
+\bibfield{author}{\bibinfo{person}{Peter Hedman}, \bibinfo{person}{Tobias
+  Ritschel}, \bibinfo{person}{George Drettakis}, {and} \bibinfo{person}{Gabriel
+  Brostow}.} \bibinfo{year}{2016}\natexlab{}.
+\newblock \showarticletitle{Scalable Inside-Out Image-Based Rendering}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (SIGGRAPH Asia
+  Conference Proceedings)}} \bibinfo{volume}{35}, \bibinfo{number}{6}
+  (\bibinfo{date}{December} \bibinfo{year}{2016}).
+\newblock
+\urldef\tempurl%
+\url{http://www-sop.inria.fr/reves/Basilic/2016/HRDB16}
+\showURL{%
+\tempurl}
+
+
+\bibitem[Hedman et~al\mbox{.}(2021)]%
+        {hedman2021snerg}
+\bibfield{author}{\bibinfo{person}{Peter Hedman}, \bibinfo{person}{Pratul~P.
+  Srinivasan}, \bibinfo{person}{Ben Mildenhall}, \bibinfo{person}{Jonathan~T.
+  Barron}, {and} \bibinfo{person}{Paul Debevec}.}
+  \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{Baking Neural Radiance Fields for Real-Time View
+  Synthesis}.
+\newblock \bibinfo{journal}{\emph{ICCV}} (\bibinfo{year}{2021}).
+\newblock
+
+
+\bibitem[Henzler et~al\mbox{.}(2019)]%
+        {henzler2019escaping}
+\bibfield{author}{\bibinfo{person}{Philipp Henzler}, \bibinfo{person}{Niloy~J
+  Mitra}, {and} \bibinfo{person}{Tobias Ritschel}.}
+  \bibinfo{year}{2019}\natexlab{}.
+\newblock \showarticletitle{Escaping plato's cave: 3d shape from adversarial
+  rendering}. In \bibinfo{booktitle}{\emph{Proceedings of the IEEE/CVF
+  International Conference on Computer Vision}}. \bibinfo{pages}{9984--9993}.
+\newblock
+
+
+\bibitem[Knapitsch et~al\mbox{.}(2017)]%
+        {knapitsch2017tanks}
+\bibfield{author}{\bibinfo{person}{Arno Knapitsch}, \bibinfo{person}{Jaesik
+  Park}, \bibinfo{person}{Qian-Yi Zhou}, {and} \bibinfo{person}{Vladlen
+  Koltun}.} \bibinfo{year}{2017}\natexlab{}.
+\newblock \showarticletitle{Tanks and temples: Benchmarking large-scale scene
+  reconstruction}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (ToG)}}
+  \bibinfo{volume}{36}, \bibinfo{number}{4} (\bibinfo{year}{2017}),
+  \bibinfo{pages}{1--13}.
+\newblock
+
+
+\bibitem[Kopanas et~al\mbox{.}(2022)]%
+        {kopanas22}
+\bibfield{author}{\bibinfo{person}{Georgios Kopanas}, \bibinfo{person}{Thomas
+  Leimk{\"u}hler}, \bibinfo{person}{Gilles Rainer}, \bibinfo{person}{Cl\'ement
+  Jambon}, {and} \bibinfo{person}{George Drettakis}.}
+  \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Neural Point Catacaustics for Novel-View Synthesis
+  of Reflections}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (SIGGRAPH Asia
+  Conference Proceedings)}} \bibinfo{volume}{41}, \bibinfo{number}{6}
+  (\bibinfo{year}{2022}), \bibinfo{pages}{201}.
+\newblock
+\urldef\tempurl%
+\url{http://www-sop.inria.fr/reves/Basilic/2022/KLRJD22}
+\showURL{%
+\tempurl}
+
+
+\bibitem[Kopanas et~al\mbox{.}(2021)]%
+        {kopanas21}
+\bibfield{author}{\bibinfo{person}{Georgios Kopanas}, \bibinfo{person}{Julien
+  Philip}, \bibinfo{person}{Thomas Leimkühler}, {and} \bibinfo{person}{George
+  Drettakis}.} \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{Point-Based Neural Rendering with Per-View
+  Optimization}.
+\newblock \bibinfo{journal}{\emph{Computer Graphics Forum}}
+  \bibinfo{volume}{40}, \bibinfo{number}{4} (\bibinfo{year}{2021}),
+  \bibinfo{pages}{29--43}.
+\newblock
+\urldef\tempurl%
+\url{https://doi.org/10.1111/cgf.14339}
+\showDOI{\tempurl}
+
+
+\bibitem[Laine and Karras(2011)]%
+        {laine2011high}
+\bibfield{author}{\bibinfo{person}{Samuli Laine} {and} \bibinfo{person}{Tero
+  Karras}.} \bibinfo{year}{2011}\natexlab{}.
+\newblock \showarticletitle{High-performance software rasterization on GPUs}.
+  In \bibinfo{booktitle}{\emph{Proceedings of the ACM SIGGRAPH Symposium on
+  High Performance Graphics}}. \bibinfo{pages}{79--88}.
+\newblock
+
+
+\bibitem[Lassner and Zollhofer(2021)]%
+        {Lassner_2021_CVPR}
+\bibfield{author}{\bibinfo{person}{Christoph Lassner} {and}
+  \bibinfo{person}{Michael Zollhofer}.} \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{Pulsar: Efficient Sphere-Based Neural Rendering}.
+  In \bibinfo{booktitle}{\emph{Proceedings of the IEEE/CVF Conference on
+  Computer Vision and Pattern Recognition (CVPR)}}.
+  \bibinfo{pages}{1440--1449}.
+\newblock
+
+
+\bibitem[Levoy and Hanrahan(1996)]%
+        {levoy1996light}
+\bibfield{author}{\bibinfo{person}{Marc Levoy} {and} \bibinfo{person}{Pat
+  Hanrahan}.} \bibinfo{year}{1996}\natexlab{}.
+\newblock \showarticletitle{Light field rendering}. In
+  \bibinfo{booktitle}{\emph{Proceedings of the 23rd annual conference on
+  Computer graphics and interactive techniques}}. \bibinfo{pages}{31--42}.
+\newblock
+
+
+\bibitem[Lombardi et~al\mbox{.}(2021)]%
+        {lombardi2021mixture}
+\bibfield{author}{\bibinfo{person}{Stephen Lombardi}, \bibinfo{person}{Tomas
+  Simon}, \bibinfo{person}{Gabriel Schwartz}, \bibinfo{person}{Michael
+  Zollhoefer}, \bibinfo{person}{Yaser Sheikh}, {and} \bibinfo{person}{Jason
+  Saragih}.} \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{Mixture of volumetric primitives for efficient
+  neural rendering}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (TOG)}}
+  \bibinfo{volume}{40}, \bibinfo{number}{4} (\bibinfo{year}{2021}),
+  \bibinfo{pages}{1--13}.
+\newblock
+
+
+\bibitem[Merrill and Grimshaw(2010)]%
+        {merrill2010revisiting}
+\bibfield{author}{\bibinfo{person}{Duane~G Merrill} {and}
+  \bibinfo{person}{Andrew~S Grimshaw}.} \bibinfo{year}{2010}\natexlab{}.
+\newblock \showarticletitle{Revisiting sorting for GPGPU stream architectures}.
+  In \bibinfo{booktitle}{\emph{Proceedings of the 19th international conference
+  on Parallel architectures and compilation techniques}}.
+  \bibinfo{pages}{545--546}.
+\newblock
+
+
+\bibitem[Mildenhall et~al\mbox{.}(2020)]%
+        {mildenhall2020nerf}
+\bibfield{author}{\bibinfo{person}{Ben Mildenhall}, \bibinfo{person}{Pratul~P.
+  Srinivasan}, \bibinfo{person}{Matthew Tancik}, \bibinfo{person}{Jonathan~T.
+  Barron}, \bibinfo{person}{Ravi Ramamoorthi}, {and} \bibinfo{person}{Ren Ng}.}
+  \bibinfo{year}{2020}\natexlab{}.
+\newblock \showarticletitle{NeRF: Representing Scenes as Neural Radiance Fields
+  for View Synthesis}. In \bibinfo{booktitle}{\emph{ECCV}}.
+\newblock
+
+
+\bibitem[M\"uller et~al\mbox{.}(2022)]%
+        {mueller2022instant}
+\bibfield{author}{\bibinfo{person}{Thomas M\"uller}, \bibinfo{person}{Alex
+  Evans}, \bibinfo{person}{Christoph Schied}, {and} \bibinfo{person}{Alexander
+  Keller}.} \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Instant Neural Graphics Primitives with a
+  Multiresolution Hash Encoding}.
+\newblock \bibinfo{journal}{\emph{ACM Trans. Graph.}} \bibinfo{volume}{41},
+  \bibinfo{number}{4}, Article \bibinfo{articleno}{102} (\bibinfo{date}{July}
+  \bibinfo{year}{2022}), \bibinfo{numpages}{15}~pages.
+\newblock
+\urldef\tempurl%
+\url{https://doi.org/10.1145/3528223.3530127}
+\showDOI{\tempurl}
+
+
+\bibitem[Penner and Zhang(2017)]%
+        {penner2017soft}
+\bibfield{author}{\bibinfo{person}{Eric Penner} {and} \bibinfo{person}{Li
+  Zhang}.} \bibinfo{year}{2017}\natexlab{}.
+\newblock \showarticletitle{Soft 3D reconstruction for view synthesis}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (TOG)}}
+  \bibinfo{volume}{36}, \bibinfo{number}{6} (\bibinfo{year}{2017}),
+  \bibinfo{pages}{1--11}.
+\newblock
+
+
+\bibitem[Pfister et~al\mbox{.}(2000)]%
+        {10.1145/344779.344936}
+\bibfield{author}{\bibinfo{person}{Hanspeter Pfister},
+  \bibinfo{person}{Matthias Zwicker}, \bibinfo{person}{Jeroen van Baar}, {and}
+  \bibinfo{person}{Markus Gross}.} \bibinfo{year}{2000}\natexlab{}.
+\newblock \showarticletitle{Surfels: Surface Elements as Rendering Primitives}.
+  In \bibinfo{booktitle}{\emph{Proceedings of the 27th Annual Conference on
+  Computer Graphics and Interactive Techniques}}
+  \emph{(\bibinfo{series}{SIGGRAPH '00})}. \bibinfo{publisher}{ACM
+  Press/Addison-Wesley Publishing Co.}, \bibinfo{address}{USA},
+  \bibinfo{pages}{335–342}.
+\newblock
+\showISBNx{1581132085}
+\urldef\tempurl%
+\url{https://doi.org/10.1145/344779.344936}
+\showDOI{\tempurl}
+
+
+\bibitem[Reiser et~al\mbox{.}(2021)]%
+        {Reiser2021ICCV}
+\bibfield{author}{\bibinfo{person}{Christian Reiser}, \bibinfo{person}{Songyou
+  Peng}, \bibinfo{person}{Yiyi Liao}, {and} \bibinfo{person}{Andreas Geiger}.}
+  \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{KiloNeRF: Speeding up Neural Radiance Fields with
+  Thousands of Tiny MLPs}. In \bibinfo{booktitle}{\emph{International
+  Conference on Computer Vision (ICCV)}}.
+\newblock
+
+
+\bibitem[Ren et~al\mbox{.}(2002)]%
+        {Ren2002ObjectSE}
+\bibfield{author}{\bibinfo{person}{Liu Ren}, \bibinfo{person}{Hanspeter
+  Pfister}, {and} \bibinfo{person}{Matthias Zwicker}.}
+  \bibinfo{year}{2002}\natexlab{}.
+\newblock \showarticletitle{Object Space EWA Surface Splatting: A Hardware
+  Accelerated Approach to High Quality Point Rendering}.
+\newblock \bibinfo{journal}{\emph{Computer Graphics Forum}}
+  \bibinfo{volume}{21} (\bibinfo{year}{2002}).
+\newblock
+
+
+\bibitem[Rhodin et~al\mbox{.}(2015)]%
+        {rhodin2015versatile}
+\bibfield{author}{\bibinfo{person}{Helge Rhodin}, \bibinfo{person}{Nadia
+  Robertini}, \bibinfo{person}{Christian Richardt}, \bibinfo{person}{Hans-Peter
+  Seidel}, {and} \bibinfo{person}{Christian Theobalt}.}
+  \bibinfo{year}{2015}\natexlab{}.
+\newblock \showarticletitle{A versatile scene model with differentiable
+  visibility applied to generative pose estimation}. In
+  \bibinfo{booktitle}{\emph{Proceedings of the IEEE International Conference on
+  Computer Vision}}. \bibinfo{pages}{765--773}.
+\newblock
+
+
+\bibitem[Riegler and Koltun(2020)]%
+        {riegler2020free}
+\bibfield{author}{\bibinfo{person}{Gernot Riegler} {and}
+  \bibinfo{person}{Vladlen Koltun}.} \bibinfo{year}{2020}\natexlab{}.
+\newblock \showarticletitle{Free view synthesis}. In
+  \bibinfo{booktitle}{\emph{European Conference on Computer Vision}}. Springer,
+  \bibinfo{pages}{623--640}.
+\newblock
+
+
+\bibitem[R\"{u}ckert et~al\mbox{.}(2022)]%
+        {ruckert22}
+\bibfield{author}{\bibinfo{person}{Darius R\"{u}ckert}, \bibinfo{person}{Linus
+  Franke}, {and} \bibinfo{person}{Marc Stamminger}.}
+  \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{ADOP: Approximate Differentiable One-Pixel Point
+  Rendering}.
+\newblock \bibinfo{journal}{\emph{ACM Trans. Graph.}} \bibinfo{volume}{41},
+  \bibinfo{number}{4}, Article \bibinfo{articleno}{99} (\bibinfo{date}{jul}
+  \bibinfo{year}{2022}), \bibinfo{numpages}{14}~pages.
+\newblock
+\showISSN{0730-0301}
+\urldef\tempurl%
+\url{https://doi.org/10.1145/3528223.3530122}
+\showDOI{\tempurl}
+
+
+\bibitem[Sainz and Pajarola(2004)]%
+        {SAINZ2004869}
+\bibfield{author}{\bibinfo{person}{Miguel Sainz} {and} \bibinfo{person}{Renato
+  Pajarola}.} \bibinfo{year}{2004}\natexlab{}.
+\newblock \showarticletitle{Point-based rendering techniques}.
+\newblock \bibinfo{journal}{\emph{Computers and Graphics}}
+  \bibinfo{volume}{28}, \bibinfo{number}{6} (\bibinfo{year}{2004}),
+  \bibinfo{pages}{869--879}.
+\newblock
+\showISSN{0097-8493}
+\urldef\tempurl%
+\url{https://doi.org/10.1016/j.cag.2004.08.014}
+\showDOI{\tempurl}
+
+
+\bibitem[Sch\"{o}nberger and Frahm(2016)]%
+        {schoenberger2016sfm}
+\bibfield{author}{\bibinfo{person}{Johannes~Lutz Sch\"{o}nberger} {and}
+  \bibinfo{person}{Jan-Michael Frahm}.} \bibinfo{year}{2016}\natexlab{}.
+\newblock \showarticletitle{Structure-from-Motion Revisited}. In
+  \bibinfo{booktitle}{\emph{Conference on Computer Vision and Pattern
+  Recognition (CVPR)}}.
+\newblock
+
+
+\bibitem[Sch\"{u}tz et~al\mbox{.}(2022)]%
+        {10.1145/3543863}
+\bibfield{author}{\bibinfo{person}{Markus Sch\"{u}tz},
+  \bibinfo{person}{Bernhard Kerbl}, {and} \bibinfo{person}{Michael Wimmer}.}
+  \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Software Rasterization of 2 Billion Points in Real
+  Time}.
+\newblock \bibinfo{journal}{\emph{Proc. ACM Comput. Graph. Interact. Tech.}}
+  \bibinfo{volume}{5}, \bibinfo{number}{3}, Article \bibinfo{articleno}{24}
+  (\bibinfo{date}{jul} \bibinfo{year}{2022}), \bibinfo{numpages}{17}~pages.
+\newblock
+\urldef\tempurl%
+\url{https://doi.org/10.1145/3543863}
+\showDOI{\tempurl}
+
+
+\bibitem[Sitzmann et~al\mbox{.}(2019)]%
+        {sitzmann2019deepvoxels}
+\bibfield{author}{\bibinfo{person}{Vincent Sitzmann}, \bibinfo{person}{Justus
+  Thies}, \bibinfo{person}{Felix Heide}, \bibinfo{person}{Matthias
+  Nie{\ss}ner}, \bibinfo{person}{Gordon Wetzstein}, {and}
+  \bibinfo{person}{Michael Zollhofer}.} \bibinfo{year}{2019}\natexlab{}.
+\newblock \showarticletitle{Deepvoxels: Learning persistent 3d feature
+  embeddings}. In \bibinfo{booktitle}{\emph{Proceedings of the IEEE/CVF
+  Conference on Computer Vision and Pattern Recognition}}.
+  \bibinfo{pages}{2437--2446}.
+\newblock
+
+
+\bibitem[Snavely et~al\mbox{.}(2006)]%
+        {snavely2006photo}
+\bibfield{author}{\bibinfo{person}{Noah Snavely}, \bibinfo{person}{Steven~M
+  Seitz}, {and} \bibinfo{person}{Richard Szeliski}.}
+  \bibinfo{year}{2006}\natexlab{}.
+\newblock \showarticletitle{Photo tourism: exploring photo collections in 3D}.
+\newblock In \bibinfo{booktitle}{\emph{Proc. SIGGRAPH}}.
+\newblock
+
+
+\bibitem[Stoll et~al\mbox{.}(2011)]%
+        {stoll2011fast}
+\bibfield{author}{\bibinfo{person}{Carsten Stoll}, \bibinfo{person}{Nils
+  Hasler}, \bibinfo{person}{Juergen Gall}, \bibinfo{person}{Hans-Peter Seidel},
+  {and} \bibinfo{person}{Christian Theobalt}.} \bibinfo{year}{2011}\natexlab{}.
+\newblock \showarticletitle{Fast articulated motion tracking using a sums of
+  gaussians body model}. In \bibinfo{booktitle}{\emph{2011 International
+  Conference on Computer Vision}}. IEEE, \bibinfo{pages}{951--958}.
+\newblock
+
+
+\bibitem[Sun et~al\mbox{.}(2022)]%
+        {dvgo-cvpr2022}
+\bibfield{author}{\bibinfo{person}{Cheng Sun}, \bibinfo{person}{Min Sun}, {and}
+  \bibinfo{person}{Hwann{-}Tzong Chen}.} \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Direct Voxel Grid Optimization: Super-fast
+  Convergence for Radiance Fields Reconstruction}. In
+  \bibinfo{booktitle}{\emph{CVPR}}.
+\newblock
+
+
+\bibitem[Takikawa et~al\mbox{.}(2022)]%
+        {takikawa2022variable}
+\bibfield{author}{\bibinfo{person}{Towaki Takikawa}, \bibinfo{person}{Alex
+  Evans}, \bibinfo{person}{Jonathan Tremblay}, \bibinfo{person}{Thomas
+  M{\"u}ller}, \bibinfo{person}{Morgan McGuire}, \bibinfo{person}{Alec
+  Jacobson}, {and} \bibinfo{person}{Sanja Fidler}.}
+  \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Variable bitrate neural fields}. In
+  \bibinfo{booktitle}{\emph{ACM SIGGRAPH 2022 Conference Proceedings}}.
+  \bibinfo{pages}{1--9}.
+\newblock
+
+
+\bibitem[Takikawa et~al\mbox{.}(2021)]%
+        {nglod-cvpr2021}
+\bibfield{author}{\bibinfo{person}{Towaki Takikawa}, \bibinfo{person}{Joey
+  Litalien}, \bibinfo{person}{Kangxue Yin}, \bibinfo{person}{Karsten Kreis},
+  \bibinfo{person}{Charles Loop}, \bibinfo{person}{Derek Nowrouzezahrai},
+  \bibinfo{person}{Alec Jacobson}, \bibinfo{person}{Morgan McGuire}, {and}
+  \bibinfo{person}{Sanja Fidler}.} \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{Neural Geometric Level of Detail: Real-time
+  Rendering with Implicit {3D} Shapes}.
+\newblock  (\bibinfo{year}{2021}).
+\newblock
+
+
+\bibitem[Tewari et~al\mbox{.}(2022)]%
+        {tewari2022advances}
+\bibfield{author}{\bibinfo{person}{Ayush Tewari}, \bibinfo{person}{Justus
+  Thies}, \bibinfo{person}{Ben Mildenhall}, \bibinfo{person}{Pratul
+  Srinivasan}, \bibinfo{person}{Edgar Tretschk}, \bibinfo{person}{W Yifan},
+  \bibinfo{person}{Christoph Lassner}, \bibinfo{person}{Vincent Sitzmann},
+  \bibinfo{person}{Ricardo Martin-Brualla}, \bibinfo{person}{Stephen Lombardi},
+  {et~al\mbox{.}}} \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Advances in neural rendering}. In
+  \bibinfo{booktitle}{\emph{Computer Graphics Forum}},
+  Vol.~\bibinfo{volume}{41}. Wiley Online Library, \bibinfo{pages}{703--735}.
+\newblock
+
+
+\bibitem[Thies et~al\mbox{.}(2019)]%
+        {thies2019deferred}
+\bibfield{author}{\bibinfo{person}{Justus Thies}, \bibinfo{person}{Michael
+  Zollh{\"o}fer}, {and} \bibinfo{person}{Matthias Nie{\ss}ner}.}
+  \bibinfo{year}{2019}\natexlab{}.
+\newblock \showarticletitle{Deferred neural rendering: Image synthesis using
+  neural textures}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (TOG)}}
+  \bibinfo{volume}{38}, \bibinfo{number}{4} (\bibinfo{year}{2019}),
+  \bibinfo{pages}{1--12}.
+\newblock
+
+
+\bibitem[Wang et~al\mbox{.}(2023)]%
+        {voge}
+\bibfield{author}{\bibinfo{person}{Angtian Wang}, \bibinfo{person}{Peng Wang},
+  \bibinfo{person}{Jian Sun}, \bibinfo{person}{Adam Kortylewski}, {and}
+  \bibinfo{person}{Alan Yuille}.} \bibinfo{year}{2023}\natexlab{}.
+\newblock \showarticletitle{Vo{GE}: A Differentiable Volume Renderer using
+  Gaussian Ellipsoids for Analysis-by-Synthesis}. In
+  \bibinfo{booktitle}{\emph{The Eleventh International Conference on Learning
+  Representations}}.
+\newblock
+\urldef\tempurl%
+\url{https://openreview.net/forum?id=AdPJb9cud_Y}
+\showURL{%
+\tempurl}
+
+
+\bibitem[Wiles et~al\mbox{.}(2020)]%
+        {wiles2020synsin}
+\bibfield{author}{\bibinfo{person}{Olivia Wiles}, \bibinfo{person}{Georgia
+  Gkioxari}, \bibinfo{person}{Richard Szeliski}, {and} \bibinfo{person}{Justin
+  Johnson}.} \bibinfo{year}{2020}\natexlab{}.
+\newblock \showarticletitle{Synsin: End-to-end view synthesis from a single
+  image}. In \bibinfo{booktitle}{\emph{Proceedings of the IEEE/CVF Conference
+  on Computer Vision and Pattern Recognition}}. \bibinfo{pages}{7467--7477}.
+\newblock
+
+
+\bibitem[Wu et~al\mbox{.}(2022)]%
+        {wu2022snisr}
+\bibfield{author}{\bibinfo{person}{Xiuchao Wu}, \bibinfo{person}{Jiamin Xu},
+  \bibinfo{person}{Zihan Zhu}, \bibinfo{person}{Hujun Bao},
+  \bibinfo{person}{Qixing Huang}, \bibinfo{person}{James Tompkin}, {and}
+  \bibinfo{person}{Weiwei Xu}.} \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Scalable Neural Indoor Scene Rendering}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (TOG)}}
+  (\bibinfo{year}{2022}).
+\newblock
+
+
+\bibitem[Xie et~al\mbox{.}(2022)]%
+        {xie2022neural}
+\bibfield{author}{\bibinfo{person}{Yiheng Xie}, \bibinfo{person}{Towaki
+  Takikawa}, \bibinfo{person}{Shunsuke Saito}, \bibinfo{person}{Or Litany},
+  \bibinfo{person}{Shiqin Yan}, \bibinfo{person}{Numair Khan},
+  \bibinfo{person}{Federico Tombari}, \bibinfo{person}{James Tompkin},
+  \bibinfo{person}{Vincent Sitzmann}, {and} \bibinfo{person}{Srinath Sridhar}.}
+  \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Neural fields in visual computing and beyond}. In
+  \bibinfo{booktitle}{\emph{Computer Graphics Forum}},
+  Vol.~\bibinfo{volume}{41}. Wiley Online Library, \bibinfo{pages}{641--676}.
+\newblock
+
+
+\bibitem[Xu et~al\mbox{.}(2022)]%
+        {xu2022point}
+\bibfield{author}{\bibinfo{person}{Qiangeng Xu}, \bibinfo{person}{Zexiang Xu},
+  \bibinfo{person}{Julien Philip}, \bibinfo{person}{Sai Bi},
+  \bibinfo{person}{Zhixin Shu}, \bibinfo{person}{Kalyan Sunkavalli}, {and}
+  \bibinfo{person}{Ulrich Neumann}.} \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Point-nerf: Point-based neural radiance fields}. In
+  \bibinfo{booktitle}{\emph{Proceedings of the IEEE/CVF Conference on Computer
+  Vision and Pattern Recognition}}. \bibinfo{pages}{5438--5448}.
+\newblock
+
+
+\bibitem[Yifan et~al\mbox{.}(2019)]%
+        {yifan19}
+\bibfield{author}{\bibinfo{person}{Wang Yifan}, \bibinfo{person}{Felice
+  Serena}, \bibinfo{person}{Shihao Wu}, \bibinfo{person}{Cengiz {\"O}ztireli},
+  {and} \bibinfo{person}{Olga Sorkine-Hornung}.}
+  \bibinfo{year}{2019}\natexlab{}.
+\newblock \showarticletitle{Differentiable surface splatting for point-based
+  geometry processing}.
+\newblock \bibinfo{journal}{\emph{ACM Transactions on Graphics (TOG)}}
+  \bibinfo{volume}{38}, \bibinfo{number}{6} (\bibinfo{year}{2019}),
+  \bibinfo{pages}{1--14}.
+\newblock
+
+
+\bibitem[Yu et~al\mbox{.}(2021)]%
+        {yu2021plenoctrees}
+\bibfield{author}{\bibinfo{person}{Alex Yu}, \bibinfo{person}{Ruilong Li},
+  \bibinfo{person}{Matthew Tancik}, \bibinfo{person}{Hao Li},
+  \bibinfo{person}{Ren Ng}, {and} \bibinfo{person}{Angjoo Kanazawa}.}
+  \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{{PlenOctrees} for Real-time Rendering of Neural
+  Radiance Fields}. In \bibinfo{booktitle}{\emph{ICCV}}.
+\newblock
+
+
+\bibitem[Zhang et~al\mbox{.}(2022)]%
+        {zhang2022}
+\bibfield{author}{\bibinfo{person}{Qiang Zhang}, \bibinfo{person}{Seung-Hwan
+  Baek}, \bibinfo{person}{Szymon Rusinkiewicz}, {and} \bibinfo{person}{Felix
+  Heide}.} \bibinfo{year}{2022}\natexlab{}.
+\newblock \showarticletitle{Differentiable Point-Based Radiance Fields for
+  Efficient View Synthesis}. In \bibinfo{booktitle}{\emph{SIGGRAPH Asia 2022
+  Conference Papers}} (Daegu, Republic of Korea) \emph{(\bibinfo{series}{SA
+  '22})}. \bibinfo{publisher}{Association for Computing Machinery},
+  \bibinfo{address}{New York, NY, USA}, Article \bibinfo{articleno}{7},
+  \bibinfo{numpages}{12}~pages.
+\newblock
+\showISBNx{9781450394703}
+\urldef\tempurl%
+\url{https://doi.org/10.1145/3550469.3555413}
+\showDOI{\tempurl}
+
+
+\bibitem[Zhou et~al\mbox{.}(2016)]%
+        {zhou2016view}
+\bibfield{author}{\bibinfo{person}{Tinghui Zhou}, \bibinfo{person}{Shubham
+  Tulsiani}, \bibinfo{person}{Weilun Sun}, \bibinfo{person}{Jitendra Malik},
+  {and} \bibinfo{person}{Alexei~A Efros}.} \bibinfo{year}{2016}\natexlab{}.
+\newblock \showarticletitle{View synthesis by appearance flow}. In
+  \bibinfo{booktitle}{\emph{European conference on computer vision}}. Springer,
+  \bibinfo{pages}{286--301}.
+\newblock
+
+
+\bibitem[Zwicker et~al\mbox{.}(2001a)]%
+        {zwicker2001ewa}
+\bibfield{author}{\bibinfo{person}{Matthias Zwicker},
+  \bibinfo{person}{Hanspeter Pfister}, \bibinfo{person}{Jeroen Van~Baar}, {and}
+  \bibinfo{person}{Markus Gross}.} \bibinfo{year}{2001}\natexlab{a}.
+\newblock \showarticletitle{EWA volume splatting}. In
+  \bibinfo{booktitle}{\emph{Proceedings Visualization, 2001. VIS'01.}} IEEE,
+  \bibinfo{pages}{29--538}.
+\newblock
+
+
+\bibitem[Zwicker et~al\mbox{.}(2001b)]%
+        {10.1145/383259.383300}
+\bibfield{author}{\bibinfo{person}{Matthias Zwicker},
+  \bibinfo{person}{Hanspeter Pfister}, \bibinfo{person}{Jeroen van Baar}, {and}
+  \bibinfo{person}{Markus Gross}.} \bibinfo{year}{2001}\natexlab{b}.
+\newblock \showarticletitle{Surface Splatting}. In
+  \bibinfo{booktitle}{\emph{Proceedings of the 28th Annual Conference on
+  Computer Graphics and Interactive Techniques}}
+  \emph{(\bibinfo{series}{SIGGRAPH '01})}. \bibinfo{publisher}{Association for
+  Computing Machinery}, \bibinfo{address}{New York, NY, USA},
+  \bibinfo{pages}{371–378}.
+\newblock
+\showISBNx{158113374X}
+\urldef\tempurl%
+\url{https://doi.org/10.1145/383259.383300}
+\showDOI{\tempurl}
+
+
+\end{thebibliography}

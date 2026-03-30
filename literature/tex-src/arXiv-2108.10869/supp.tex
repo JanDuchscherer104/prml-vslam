@@ -1,0 +1,217 @@
+% \documentclass{article}
+
+% % if you need to pass options to natbib, use, e.g.:
+% %     \PassOptionsToPackage{numbers, compress}{natbib}
+% % before loading neurips_2020
+
+% % ready for submission
+% % \usepackage{neurips_2020}
+
+% % to compile a preprint version, e.g., for submission to arXiv, add add the
+% % [preprint] option:
+% %     \usepackage[preprint]{neurips_2020}
+
+% % to compile a camera-ready version, add the [final] option, e.g.:
+% %     \usepackage[final]{neurips_2020}
+
+% % to avoid loading the natbib package, add option nonatbib:
+% \usepackage[nonatbib]{neurips_2021}
+
+% \usepackage[utf8]{inputenc} % allow utf-8 input
+% \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+% \usepackage{hyperref}       % hyperlinks
+% \usepackage{url}            % simple URL typesetting
+% \usepackage{booktabs}       % professional-quality tables
+% \usepackage{amsfonts}       % blackboard math symbols
+% \usepackage{nicefrac}       % compact symbols for 1/2, etc.
+% \usepackage{microtype}      % microtypography
+% \usepackage{xcolor}         % colors
+% \usepackage{nicematrix}
+
+
+% \usepackage{amsmath}
+% \usepackage{booktabs}
+% \usepackage{array,multirow,graphicx}
+% \usepackage{floatrow}
+% \usepackage{mathtools}
+
+
+% \DeclareMathOperator{\Sim}{Sim}
+% \DeclareMathOperator{\Log}{Log}
+% \DeclareMathOperator{\Exp}{Exp}
+% \DeclareMathOperator{\Adj}{Adj}
+% \DeclareMathOperator{\diag}{diag}
+% \newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+
+
+% \newcommand{\methodname}{DROID-SLAM}
+
+% \begin{document}
+
+% \begin{center}
+%     \Large{\textbf{\methodname{}: Supplementary Material}}
+% \end{center}
+
+
+\appendix
+
+\section{Additional Results}
+
+\begin{table} [h]
+\centering
+\resizebox{.9\linewidth}{!}{%
+\begin{tabular}{l| ccccc | ccc | ccc | c}
+& MH01 & MH02 & MH03 & MH04 & MH05 & V101 & V102 & V103 & V201 & V202 & V203 & Avg \\
+\toprule
+D3VO + DSO~\cite{d3vo} & - & - & 0.08 \ \ & - & 0.09 \ \ & - & - & 0.11 \ \ & - & 0.05 \ \ & - & - \\
+ORB-SLAM2~\cite{orbslam2} & 0.035 & 0.018 & 0.028 & 0.119 & 0.060 & \textbf{0.035} & 0.020 & 0.048 & 0.037 & 0.035 & - & - \\
+VINS-Fusion~\cite{vinsf} & 0.540 & 0.460 & 0.330 & 0.780 & 0.500 & 0.550 & 0.230 & - & 0.230 & 0.200 & - & - \\
+SVO~\cite{svo} & 0.040 & 0.070 & 0.270 & 0.170 & 0.120 & 0.040 & 0.040 & 0.070 & 0.050 & 0.090 & 0.790 & 0.159 \\
+ORB-SLAM3~\cite{orbslam3} & 0.029 & 0.019 & \textbf{0.024} & 0.085 & 0.052 & \textbf{0.035} & 0.025 & 0.061 & 0.041 & 0.028 & 0.521 & 0.084 \\
+\midrule
+Ours & \textbf{0.015} & \textbf{0.013} & 0.035 & \textbf{0.048} & \textbf{0.040} & 0.037 & \textbf{0.011} & \textbf{0.020} & \textbf{0.018} & \textbf{0.015} & \textbf{0.017} & \textbf{0.024} \\
+\midrule
+\end{tabular}
+}
+\caption{Stereo SLAM on the EuRoC datasets, ATE[m].}
+\label{table:EurocStereo}
+\end{table}
+
+
+We provide stereo results on the EuRoC dataset\cite{euroc} in Tab. \ref{table:EurocStereo} using our network trained on synthetic, monocular video. In the stereo setting, it is possible to recover the trajectory of the camera up to scale. Compared to ORB-SLAM3\cite{orbslam3} we reduce the average ATE by 71\%.
+
+
+
+\section{Ablations}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/rslamfig1.pdf}
+    \caption{Visualizations of keyframe image, depth, flow and confidence estimates.}
+    \label{fig:keyframeviz}
+\end{figure}
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=.49\textwidth]{figures/monostereo.pdf}
+    \includegraphics[width=.49\textwidth]{figures/keyframes.pdf}
+    \caption{(Left) we show the performance of the system with different inputs (monocular vs. stereo) and whether global optimization is performed in addition to local BA (local vs. full). (Right) Tracking accuracy as a function of the number of keyframes. We use 5 keyframes (bold) in our experiments.}
+    \label{fig:anatomy}
+\end{figure}
+\begin{figure}[!ht]
+    \includegraphics[width=.49\textwidth]{figures/spooling.pdf}
+    \includegraphics[width=.49\textwidth]{figures/flowbase.pdf}
+    \caption{(Left) Impact of global context in the update operator. (Right) Impact of using the bundle adjustment layer during training vs training directly on optical flow, then applying BA at test time.}
+    \label{fig:architecture}
+\end{figure}
+
+
+\noindent \textbf{Ablations} We ablate various design choices regarding our SLAM system and network architecture. Ablations are performed on our validation split of the TartanAir dataset. In Fig. \ref{fig:keyframeviz} we show visualizations on the validation set of keyframe depth estimates alongside optical flow and associated confidence weights.
+
+In Fig.\ref{fig:anatomy} (left) we show how the system benefits from both stereo video and global optimization. Although our network is only trained on monocular video, it can readily leverage stereo frames if available. In Fig. \ref{fig:anatomy} (right) we show how the number of keyframe affects odometery performance. In Fig. \ref{fig:architecture} we ablate components of the network architecture. Fig. \ref{fig:architecture} (left) shows the impact of using global context in the GRU through spatial pooling while \ref{fig:architecture} (right) demonstrates the importance of training with DBA as opposed to training on flow and applying BA at inference. We find that the SLAM system is unstable and prone to failure if the DBA is not used during training.
+
+
+\section{Camera Model and Jacobians}
+We represent 3D points using homogeneous coordinates $\mathbf{X} = (X, Y, Z, W)^T$. An image point $\mathbf{p}$ with inverse depth $d$ is re-projected from frame $i$ into frame $j$ according to the warping function
+\begin{equation}
+    \mathbf{p}' = \Pi_c(\mathbf{G}_{ij} \cdot \Pi^{-1}(\mathbf{p}, \mathbf{d})) \qquad \mathbf{G}_{ij} = \mathbf{G}_j \circ \mathbf{G}_i^{-1}
+\end{equation}
+where $\Pi_c$ is the pinhole projection function, and $\Pi_c^{-1}$ is the inverse projection
+\begin{equation}
+    \Pi_c(\mathbf{X}) = \begin{pmatrix} f_x \frac{X}{Z} + c_y \\ f_y \frac{Y}{Z} + c_y \end{pmatrix} \qquad
+    \Pi_c^{-1}(\mathbf{p}, d) =
+    \begin{pmatrix} \frac{p_x - c_x}{f_x} \\ \frac{p_y - c_y}{f_y} \\ 1 \\ d \end{pmatrix}.
+\end{equation}
+given camera intrinsic parameters $c=(f_x, f_y, c_x, c_y)$.
+
+For optimization, we need the Jacobians with respect to $\mathbf{G}_i$, $\mathbf{G}_j$, and $d$. We use the local parameterization $e^{\xi_i} \mathbf{G}_i$ and $e^{\xi_j} \mathbf{G}_j$ and treat $d$ as a vector in $\mathbb{R}^1$. The Jacobians of the projection and inverse projection functions are given as
+\begin{equation}
+    \frac{\partial \Pi_c(\mathbf{X})}{\partial \mathbf{X}} =
+    \begin{pmatrix}
+    f_x \frac{1}{Z} & 0 & -f_x \frac{X}{Z^2} & 0\\
+    0 & f_y \frac{1}{Z} & -f_y \frac{Y}{Z^2} & 0 \\
+    \end{pmatrix}
+    \qquad
+    \frac{\partial \Pi_c^{-1}(\mathbf{p}, d)}{\partial d} =
+    \begin{pmatrix} 0 \\ 0 \\ 0 \\ 1 \end{pmatrix}.
+\end{equation}
+
+
+Using the local parameterization, we compute the Jacobian of the 3D point transformation
+\begin{equation}
+    \mathbf{X}' = \Exp(\xi_j) \cdot \mathbf{G}_j \cdot (\Exp(\xi_i) \cdot \mathbf{G}_i)^{-1} \cdot \mathbf{X} = \Exp(\xi_j) \cdot \mathbf{G}_j \cdot \mathbf{G}_i^{-1} \cdot \Exp(-\xi_i) \cdot \mathbf{X}
+\end{equation}
+using the adjoint operator to move the $\xi_i$ term to the front of the expression
+\begin{equation}
+    \mathbf{X}' = \Exp(\xi_j) \cdot \Exp(-\Adj_{\mathbf{G}_j \mathbf{G}_i^{-1}} \xi_i) \cdot \mathbf{G}_j \cdot \mathbf{G}_i^{-1} \cdot \mathbf{X}
+\end{equation}
+allowing us to compute the Jacobians using the generators
+\begin{equation}
+    \frac{\partial \mathbf{X}'}{\partial \xi_j} =
+    \begin{pNiceMatrix}[c]
+    \phantom{-}W'\phantom{-} & 0 & 0 & 0 & Z' & -Y'\phantom{-} \\
+    0 & \phantom{-}W'\phantom{-} & 0 & -Z'\phantom{-} & 0 & X' \\
+    0 & 0 & \phantom{-}W'\phantom{-} & Y' & -X'\phantom{-} & 0 \\
+    0 & 0 & 0 & 0 & 0 & 0 \\
+    \end{pNiceMatrix} \phantom{\cdot\Adj_{\mathbf{G}_j \mathbf{G}_i^{-1}}}
+\end{equation}
+\begin{equation}
+    \frac{\partial \mathbf{X}'}{\partial \xi_i} =
+    -\begin{pNiceMatrix}[c]
+    \phantom{-}W'\phantom{-} & 0 & 0 & 0 & Z' & -Y'\phantom{-} \\
+    0 & \phantom{-}W'\phantom{-} & 0 & -Z'\phantom{-} & 0 & X' \\
+    0 & 0 & \phantom{-}W'\phantom{-} & Y' & -X'\phantom{-} & 0 \\
+    0 & 0 & 0 & 0 & 0 & 0 \\
+    \end{pNiceMatrix}\cdot\Adj_{\mathbf{G}_j \mathbf{G}_i^{-1}}
+\end{equation}
+Using the chain rule, we can compute the full Jacobians with respect to the variables
+\begin{equation}
+    \frac{\partial \mathbf{p}'}{\partial \xi_j} = \frac{\partial \Pi_c(\mathbf{X}')}{\partial \mathbf{X}'} \frac{\partial \mathbf{X}'}{\partial \xi_j}, \qquad  \frac{\partial \mathbf{p}'}{\partial \xi_i} = \frac{\partial \Pi_c(\mathbf{X}')}{\partial \mathbf{X}'} \frac{\partial \mathbf{X}'}{\partial \xi_i}
+\end{equation}
+\begin{equation}
+    \frac{\partial \mathbf{p}'}{\partial d} = \frac{\partial \Pi_c(\mathbf{X}')}{\partial \mathbf{X}'} \frac{\partial \mathbf{X}'}{\partial \mathbf{X}} \frac{\partial \Pi^{-1}(\mathbf{p}, d)}{\partial d} = \frac{\partial \Pi_c(\mathbf{X}')}{\partial \mathbf{X}'} = \frac{\partial \Pi_c(\mathbf{X}')}{\partial \mathbf{X}'} \begin{pmatrix}
+    t_x \\ t_y \\ t_z \\ 1
+    \end{pmatrix}
+    % {\partial \xi_j}, \qquad  \frac{\partial \mathbf{p}'}{\partial \xi_i} = \frac{\partial \Pi_c(\mathbf{X}')}{\partial \mathbf{X}'} \frac{\partial \mathbf{X}'}{\partial \xi_i}
+\end{equation}
+where $(t_x, t_y, t_z)$ is the translation vector of $\mathbf{G}_j \circ \mathbf{G}_i^{-1}$.
+
+
+\section{Network Architecture}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/ecdr.pdf}
+    \caption{Architecture of the feature and context encoders. Both extract features at 1/8 the input image resolution using a set of 6 basic residual blocks. Instance normalization is used in the feature encoder; no normalization is used in the context encoder. The feature encoder outputs features with dimension D=128 which the context encoder outputs features with dimension D=256.}
+    \label{fig:encoder}
+\end{figure}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/uparch.pdf}
+    \caption{Architecture of the update operator. During each iteration, context, correlation, and flow features get injected into the GRU. The revision (r) and confidence weights (w) are predicted from the updated hidden state.}
+    \label{fig:encoder}
+\end{figure}
+
+% \clearpage
+% \section{TartanAir Camera Trajectories}
+
+% \begin{figure}[h]
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH000.pdf}
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH001.pdf}
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH002.pdf}
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH003.pdf}
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH004.pdf}
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH005.pdf}
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH006.pdf}
+%      \includegraphics[trim={.2cm 0 1cm 0},clip,width=.32\textwidth,]{figures/MH007.pdf}
+%      \caption{Camera trajectories on the TartanAir ``Hard'' set.}
+%      \label{fig:foobar}
+% \end{figure}
+
+
+% {\small
+% \bibliographystyle{ieee}
+% \bibliography{egbib.bib}
+% }
+
+
+% \end{document}

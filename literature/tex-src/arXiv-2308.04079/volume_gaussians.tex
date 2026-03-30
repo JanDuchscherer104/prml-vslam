@@ -1,0 +1,61 @@
+\section{Differentiable 3D Gaussian Splatting}
+\label{sec:3d-splats}
+
+
+Our goal is to optimize a scene representation that allows high-quality novel view synthesis, starting from a sparse set of (SfM) points without normals. To do this, we need a primitive that inherits the properties of differentiable volumetric representations, while at the same time being unstructured and explicit to allow very fast rendering. We choose 3D Gaussians, which are differentiable
+and can be easily projected to 2D splats allowing fast $\alpha$-blending for rendering.
+
+Our representation has similarities to
+previous methods that use 2D points ~\cite{yifan19,kopanas21} and assume each point is a small planar circle with a normal.
+Given the extreme sparsity of SfM points it is very hard to estimate normals. Similarly, optimizing very noisy normals from such an estimation would be very challenging.
+Instead, we model the geometry as a set of 3D Gaussians that do not require normals. Our Gaussians are defined by a full 3D covariance matrix $\Sigma$ defined in world space~\cite{zwicker2001ewa} centered at point (mean) $\mu$:
+\begin{equation}
+	G(x)~= e^{-\frac{1}{2}(x)^{T}\Sigma^{-1}(x)}
+\end{equation}
+\CORRECTION{and $|\Sigma|$ is the determinant of $\Sigma$ that is a symmetric 3$\times$3 matrix}{}. This Gaussian is multiplied by $\alpha$ in our blending process.
+
+However, we need to project our 3D Gaussians to 2D for rendering.
+Zwicker et al. ~\shortcite{zwicker2001ewa} demonstrate how to do this projection to image space. Given a viewing transformation $W$
+the covariance matrix $\Sigma'$ in camera coordinates is given as follows:
+\begin{equation}
+	\label{eq:volume-render}
+	\Sigma' = J W ~\Sigma ~W ^{T}J^{T}
+\end{equation}
+where $J$ is the Jacobian of the affine approximation of the projective transformation. \CORRECTION{The authors}{Zwicker et al. ~\shortcite{zwicker2001ewa}} also show that if we skip the third row and column of $\Sigma'$,
+	we obtain a 2$\times$2 variance matrix with the same structure and properties as if we would start from planar points with normals, as in previous work~\cite{kopanas21}.
+
+	An obvious approach would be to directly optimize the covariance matrix $\Sigma$ to obtain 3D Gaussians that represent the radiance field. However, covariance matrices have physical meaning only when they are positive semi-definite.
+	For our optimization of all our parameters, we use gradient descent that cannot be easily constrained to produce such valid matrices, and update steps and gradients can very easily create invalid covariance matrices.
+
+	As a result, we opted for a more intuitive, yet equivalently expressive representation for optimization.
+	The covariance matrix $\Sigma$ of a 3D Gaussian is analogous to describing the configuration of an ellipsoid.
+	Given a scaling matrix $S$ and rotation matrix $R$, we can find the corresponding $\Sigma$:
+	\begin{equation}
+		\Sigma = RSS^TR^T
+	\end{equation}
+
+	To allow independent optimization of both factors, we store them separately: a 3D vector $s$ for scaling and a quaternion $q$ to represent rotation. These can be trivially converted to their respective matrices and combined, making sure to normalize $q$ to obtain a valid unit quaternion.
+
+	To avoid significant overhead due to automatic differentiation during training, we derive the gradients for all parameters explicitly. Details of the exact derivative computations are in appendix~\ref{sec:appa}.
+	\CORRECTION{We discuss the specific case of scaling and rotation (i.e., the shape) of 3D Gaussians next.}{}
+	\CORRECTION{The differentiable renderer outputs
+	the $2\times2$ screen-space covariance matrix $\Sigma'$.
+	Given the gradient of the loss $\frac{dL}{d\Sigma'}$ %
+	which we assume as output from the differentiable renderer,
+	we can apply the chain rule to compute gradients and propagate the loss.}{}
+
+
+	This representation of anisotropic covariance -- suitable for optimization -- allows us to optimize 3D Gaussians to adapt to the geometry of different shapes in captured scenes, resulting in a fairly compact representation.
+	Fig.~\ref{fig:aniso-cov} illustrates such cases.
+	\begin{figure}[!h]
+		\begin{overpic}[width=\columnwidth]{figures/anisotropic/real2}
+			\put (61,3) {\color{white}Original}
+			\put (82.2,5) {\color{white}Shrunken}
+			\put (82,1.2) {\color{white}Gaussians}
+		\end{overpic}
+
+		\caption{
+			We visualize the 3D Gaussians after optimization by shrinking them 60\% (far right). This clearly shows the anisotropic shapes of the 3D Gaussians that compactly represent complex geometry after optimization. Left the actual rendered image.
+		}
+		\label{fig:aniso-cov}
+	\end{figure}

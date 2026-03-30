@@ -1,0 +1,521 @@
+{
+  "sources": [
+    {
+      "key": "murai2025mast3rslam",
+      "title": "MASt3R-SLAM: Real-Time Dense SLAM with 3D Reconstruction Priors",
+      "source_type": "paper",
+      "authors": "Riku Murai; Eric Dexheimer; Andrew J. Davison",
+      "year": 2025,
+      "venue": "CVPR 2025",
+      "url": "https://arxiv.org/abs/2412.12392",
+      "local_path": "literature/tex-src/arXiv-2412.12392/main.tex",
+      "citation_key": "murai2025mast3rslam",
+      "summary": "Primary anchor for turning a two-view 3D prior into a real-time dense SLAM pipeline under a generic central camera assumption.",
+      "relevance_score": 10.0,
+      "status": "selected",
+      "notes": "Best single conceptual anchor for the new report fragment."
+    },
+    {
+      "key": "zhang2026vistaslam",
+      "title": "ViSTA-SLAM: Visual SLAM with Symmetric Two-view Association",
+      "source_type": "paper",
+      "authors": "Ganlin Zhang; Shenhan Qian; Xi Wang; Daniel Cremers",
+      "year": 2026,
+      "venue": "3DV 2026",
+      "url": "https://arxiv.org/abs/2509.01584",
+      "local_path": "literature/tex-src/arXiv-2509.01584/sec/2_method.tex",
+      "citation_key": "zhang2026vistaslam",
+      "summary": "Primary uncalibrated monocular reference with a symmetric two-view frontend and Sim(3) pose graph backend.",
+      "relevance_score": 9.7,
+      "status": "selected",
+      "notes": "Strongest alignment with the explicit unknown-intrinsics challenge."
+    },
+    {
+      "key": "teed2021droidslam",
+      "title": "DROID-SLAM: Deep Visual SLAM for Monocular, Stereo, and RGB-D Cameras",
+      "source_type": "paper",
+      "authors": "Zachary Teed; Jia Deng",
+      "year": 2021,
+      "venue": "NeurIPS 2021",
+      "url": "https://arxiv.org/abs/2108.10869",
+      "local_path": "literature/tex-src/arXiv-2108.10869/main.tex",
+      "citation_key": "teed2021droidslam",
+      "summary": "Optimization anchor for dense bundle adjustment in learned SLAM.",
+      "relevance_score": 9.3,
+      "status": "selected",
+      "notes": "Use as theory contrast for dense optimization."
+    },
+    {
+      "key": "kerbl2023gaussiansplatting",
+      "title": "3D Gaussian Splatting for Real-Time Radiance Field Rendering",
+      "source_type": "paper",
+      "authors": "Bernhard Kerbl; Georgios Kopanas; Thomas Leimkuehler; George Drettakis",
+      "year": 2023,
+      "venue": "ACM Transactions on Graphics",
+      "url": "https://doi.org/10.1145/3592433",
+      "local_path": "literature/tex-src/arXiv-2308.04079/volume_gaussians.tex",
+      "citation_key": "kerbl2023gaussiansplatting",
+      "summary": "Endpoint representation for the report: explicit anisotropic Gaussians, projected covariance, and visibility-aware alpha compositing.",
+      "relevance_score": 9.8,
+      "status": "selected",
+      "notes": "Use as downstream stage, not as the first-stage benchmark target."
+    },
+    {
+      "key": "triggs2000bundleadjustment",
+      "title": "Bundle Adjustment --- A Modern Synthesis",
+      "source_type": "paper",
+      "authors": "Bill Triggs; Philip F. McLauchlan; Richard I. Hartley; Andrew W. Fitzgibbon",
+      "year": 2000,
+      "venue": "Vision Algorithms: Theory and Practice",
+      "url": "https://doi.org/10.1007/3-540-44480-7_21",
+      "local_path": "",
+      "citation_key": "triggs2000bundleadjustment",
+      "summary": "Classical optimization reference for joint structure-and-motion estimation.",
+      "relevance_score": 8.7,
+      "status": "selected",
+      "notes": "Use for the canonical bundle adjustment equation."
+    },
+    {
+      "key": "hartley2003multiple",
+      "title": "Multiple View Geometry in Computer Vision",
+      "source_type": "paper",
+      "authors": "Richard Hartley; Andrew Zisserman",
+      "year": 2003,
+      "venue": "Cambridge University Press",
+      "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+      "local_path": "",
+      "citation_key": "hartley2003multiple",
+      "summary": "Classical reference for projective geometry, camera models, and multiview reasoning.",
+      "relevance_score": 8.4,
+      "status": "selected",
+      "notes": "Use for the geometric foundations paragraph."
+    },
+    {
+      "key": "schoenberger2016sfm",
+      "title": "Structure-from-Motion Revisited",
+      "source_type": "paper",
+      "authors": "Johannes L. Schoenberger; Jan-Michael Frahm",
+      "year": 2016,
+      "venue": "CVPR 2016",
+      "url": "https://openaccess.thecvf.com/content_cvpr_2016/html/Schonberger_Structure-From-Motion_Revisited_CVPR_2016_paper.html",
+      "local_path": "",
+      "citation_key": "schoenberger2016sfm",
+      "summary": "Classical SfM and camera-calibration grounding; also the initialization route assumed by the original 3DGS paper.",
+      "relevance_score": 8.8,
+      "status": "selected",
+      "notes": "Important for explaining why 3DGS is downstream of pose recovery."
+    },
+    {
+      "key": "wiki_bundle_adjustment",
+      "title": "Wikipedia: Bundle adjustment",
+      "source_type": "wikipedia",
+      "authors": "",
+      "year": 2026,
+      "venue": "Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Bundle_adjustment",
+      "local_path": "",
+      "citation_key": "",
+      "summary": "Grounding page for high-level intuition.",
+      "relevance_score": 6.5,
+      "status": "grounding",
+      "notes": "Do not use as primary evidence in the scientific narrative."
+    },
+    {
+      "key": "wiki_sfm",
+      "title": "Wikipedia: Structure from motion",
+      "source_type": "wikipedia",
+      "authors": "",
+      "year": 2026,
+      "venue": "Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Structure_from_motion",
+      "local_path": "",
+      "citation_key": "",
+      "summary": "Grounding page for SfM intuition.",
+      "relevance_score": 6.0,
+      "status": "grounding",
+      "notes": "Useful only for intuitive reading links."
+    },
+    {
+      "key": "wiki_projective_geometry",
+      "title": "Wikipedia: Projective geometry",
+      "source_type": "wikipedia",
+      "authors": "",
+      "year": 2026,
+      "venue": "Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Projective_geometry",
+      "local_path": "",
+      "citation_key": "",
+      "summary": "Grounding page for projective geometry intuition.",
+      "relevance_score": 5.9,
+      "status": "grounding",
+      "notes": "Useful only for intuitive reading links."
+    },
+    {
+      "key": "wiki_slam",
+      "title": "Wikipedia: Simultaneous localization and mapping",
+      "source_type": "wikipedia",
+      "authors": "",
+      "year": 2026,
+      "venue": "Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Simultaneous_localization_and_mapping",
+      "local_path": "",
+      "citation_key": "",
+      "summary": "Grounding page for SLAM intuition.",
+      "relevance_score": 5.8,
+      "status": "grounding",
+      "notes": "Useful only for intuitive reading links."
+    }
+  ],
+  "concepts": [
+    {
+      "slug": "bundle-adjustment",
+      "name": "Bundle adjustment",
+      "category": "optimization",
+      "definition": "Joint nonlinear least-squares optimization over camera parameters and scene structure.",
+      "why_it_matters": "Provides the canonical objective that modern dense SLAM systems generalize or approximate.",
+      "wikipedia_url": "https://en.wikipedia.org/wiki/Bundle_adjustment",
+      "notes": ""
+    },
+    {
+      "slug": "projective-geometry",
+      "name": "Projective geometry",
+      "category": "geometry",
+      "definition": "Geometric framework for image formation, projection, and multiview constraints.",
+      "why_it_matters": "Grounds camera projection models and the transition from 3D structure to image measurements.",
+      "wikipedia_url": "https://en.wikipedia.org/wiki/Projective_geometry",
+      "notes": ""
+    },
+    {
+      "slug": "structure-from-motion",
+      "name": "Structure from motion",
+      "category": "geometry",
+      "definition": "Recovery of camera poses and scene structure from multiple views.",
+      "why_it_matters": "Provides the initialization logic assumed by COLMAP and the original 3DGS paper.",
+      "wikipedia_url": "https://en.wikipedia.org/wiki/Structure_from_motion",
+      "notes": ""
+    },
+    {
+      "slug": "sim3-pose-graph",
+      "name": "Sim(3) pose graph optimization",
+      "category": "optimization",
+      "definition": "Pose-graph optimization over similarity transforms to absorb rotation, translation, and scale drift.",
+      "why_it_matters": "Crucial for monocular SLAM because scale is only weakly constrained locally.",
+      "wikipedia_url": "",
+      "notes": ""
+    },
+    {
+      "slug": "generic-central-camera",
+      "name": "Generic central camera",
+      "category": "camera-model",
+      "definition": "A camera model in which all rays pass through a single camera center without requiring a fixed low-parameter pinhole form.",
+      "why_it_matters": "Matches the weak calibration assumptions of MASt3R-SLAM and the smartphone-video challenge.",
+      "wikipedia_url": "https://en.wikipedia.org/wiki/Camera_resectioning",
+      "notes": "Wikipedia link is adjacent grounding, not a perfect one-to-one concept page."
+    },
+    {
+      "slug": "pointmap",
+      "name": "Pointmap",
+      "category": "mapping",
+      "definition": "Dense per-pixel or per-location 3D point predictions associated with an image or image pair.",
+      "why_it_matters": "Provides the bridge from two-view learned priors to dense SLAM backends.",
+      "wikipedia_url": "",
+      "notes": ""
+    },
+    {
+      "slug": "ray-space-residual",
+      "name": "Ray-space residual",
+      "category": "optimization",
+      "definition": "Residual defined over viewing directions instead of raw pixel coordinates or absolute depth.",
+      "why_it_matters": "More robust when calibration and metric scale are uncertain.",
+      "wikipedia_url": "",
+      "notes": ""
+    },
+    {
+      "slug": "three-d-gaussian-splatting",
+      "name": "3D Gaussian Splatting",
+      "category": "rendering",
+      "definition": "Scene representation using explicit anisotropic 3D Gaussians rendered through projected covariances and alpha compositing.",
+      "why_it_matters": "Natural downstream representation once poses and coarse geometry are stable.",
+      "wikipedia_url": "",
+      "notes": ""
+    },
+    {
+      "slug": "loop-closure",
+      "name": "Loop closure",
+      "category": "mapping",
+      "definition": "Detection and incorporation of revisited places to suppress drift and improve global consistency.",
+      "why_it_matters": "Necessary for long monocular trajectories and consistent dense maps.",
+      "wikipedia_url": "",
+      "notes": ""
+    }
+  ],
+  "equations": [
+    {
+      "slug": "bundle-adjustment-objective",
+      "name": "Classical bundle adjustment objective",
+      "latex": "E_{BA} = \\sum_{(i,j) \\in \\mathcal O} \\rho\\left(e_{ij}^\\top e_{ij}\\right), \\quad e_{ij} = \\pi(K_i, T_i X_j) - u_{ij}",
+      "symbol_legend": "T_i: camera pose; X_j: 3D point; u_ij: image observation; K_i: intrinsics; pi: projection; rho: robust loss.",
+      "conceptual_explanation": "States that the best reconstruction is the one whose projected 3D points explain the image measurements after robustly down-weighting outliers.",
+      "report_use": "Geometric foundations section.",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "slug": "sim3-pose-graph-objective",
+      "name": "Sim(3) pose graph objective",
+      "latex": "E_{PGO} = \\sum_{(i,j) \\in \\mathcal E} r_{ij}^\\top \\Omega_{ij} r_{ij}, \\quad r_{ij} = \\log\\left(\\hat{S}_{ij}^{-1} S_i^{-1} S_j\\right)",
+      "symbol_legend": "S_i: node pose in Sim(3); \\hat{S}_{ij}: measured relative constraint; \\Omega_{ij}: information weight.",
+      "conceptual_explanation": "Explains how monocular SLAM can absorb scale drift and enforce global consistency through loop-closure constraints over similarity transforms.",
+      "report_use": "SLAM back-end theory section.",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "slug": "ray-space-residual",
+      "name": "Ray-space residual for weak calibration",
+      "latex": "E_{ray} = \\sum_{(m,n) \\in \\mathcal M_{ij}} \\rho\\left(r_{mn}^\\top r_{mn}\\right), \\quad r_{mn} = \\operatorname{ray}(X_{i,m}) - \\operatorname{ray}(T_{ij} X_{j,n})",
+      "symbol_legend": "X_{i,m}: predicted 3D point at location m; T_ij: relative transform; ray(·): viewing-direction normalization.",
+      "conceptual_explanation": "Uses direction agreement rather than exact pixel reprojection or metric depth, which is safer when calibration is uncertain.",
+      "report_use": "Uncalibrated dense SLAM section.",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "slug": "gaussian-parameterization",
+      "name": "3D Gaussian parameterization",
+      "latex": "G(x) = \\exp\\left(-\\frac{1}{2} x^\\top \\Sigma^{-1} x\\right), \\quad \\Sigma = R S S^\\top R^\\top",
+      "symbol_legend": "x: local coordinate; \\Sigma: covariance; R: rotation; S: scaling matrix.",
+      "conceptual_explanation": "Defines each splat as an anisotropic ellipsoid with a valid positive semidefinite covariance.",
+      "report_use": "3DGS theory section.",
+      "difficulty": "easy",
+      "notes": ""
+    },
+    {
+      "slug": "projected-covariance",
+      "name": "Projected covariance of a 3D Gaussian",
+      "latex": "\\Sigma' = J W \\Sigma W^\\top J^\\top",
+      "symbol_legend": "W: viewing transform; J: Jacobian of the local projective mapping; \\Sigma': image-space covariance.",
+      "conceptual_explanation": "Shows how a world-space Gaussian footprint becomes a 2D screen-space ellipse for splatting.",
+      "report_use": "3DGS theory section.",
+      "difficulty": "medium",
+      "notes": ""
+    },
+    {
+      "slug": "alpha-compositing",
+      "name": "Front-to-back alpha compositing for 3DGS",
+      "latex": "C(p) = \\sum_{i \\in \\mathcal N(p)} c_i \\alpha_i \\prod_{j=1}^{i-1} (1 - \\alpha_j)",
+      "symbol_legend": "C(p): pixel color; c_i: Gaussian color or SH appearance; \\alpha_i: opacity contribution; \\mathcal N(p): depth-ordered Gaussians affecting p.",
+      "conceptual_explanation": "Preserves the logic of volumetric rendering while remaining compatible with fast rasterization.",
+      "report_use": "3DGS theory section.",
+      "difficulty": "easy",
+      "notes": ""
+    }
+  ],
+  "recommendations": [
+    {
+      "slug": "use-separate-settings-and-run-configs",
+      "title": "Separate settings from run configs",
+      "recommendation": "Keep machine-local paths and checkpoints in settings models, while run requests and stage configs stay in experiment configs.",
+      "rationale": "Prevents environment-specific state from contaminating benchmark artifacts.",
+      "priority": "high",
+      "applies_to": "both",
+      "notes": ""
+    },
+    {
+      "slug": "prefer-slam-then-3dgs",
+      "title": "Prefer SLAM first, 3DGS second",
+      "recommendation": "Recover poses and coarse geometry before fitting a 3DGS stage.",
+      "rationale": "Matches the assumptions of the original 3DGS paper and preserves diagnostic power in evaluation.",
+      "priority": "high",
+      "applies_to": "batch",
+      "notes": ""
+    },
+    {
+      "slug": "keep-calibrated-and-uncalibrated-explicit",
+      "title": "Keep calibrated and uncalibrated branches explicit",
+      "recommendation": "Model calibrated and uncalibrated pipelines as distinct execution branches with distinct residuals and expectations.",
+      "rationale": "Pixel-space and ray-space objectives solve related but different problems.",
+      "priority": "high",
+      "applies_to": "both",
+      "notes": ""
+    },
+    {
+      "slug": "benchmark-vista-and-mast3r",
+      "title": "Benchmark ViSTA-SLAM and MASt3R-SLAM jointly",
+      "recommendation": "Use MASt3R-SLAM as the main conceptual anchor and ViSTA-SLAM as the strongest uncalibrated comparison.",
+      "rationale": "The pair spans dense learned SLAM and explicit uncalibrated Sim(3) reasoning.",
+      "priority": "high",
+      "applies_to": "both",
+      "notes": ""
+    },
+    {
+      "slug": "store-frame-conventions",
+      "title": "Store frame conventions and units",
+      "recommendation": "Every normalized artifact should declare coordinate frame, scale convention, units, and timestamp basis.",
+      "rationale": "Downstream rendering and evaluation break quickly when geometry metadata is implicit.",
+      "priority": "high",
+      "applies_to": "both",
+      "notes": ""
+    },
+    {
+      "slug": "evaluate-trajectory-geometry-rendering-separately",
+      "title": "Evaluate trajectory, geometry, and rendering separately",
+      "recommendation": "Do not let good novel-view synthesis hide poor pose recovery or poor geometric fidelity.",
+      "rationale": "These surfaces answer different scientific questions.",
+      "priority": "high",
+      "applies_to": "report",
+      "notes": ""
+    }
+  ],
+  "report_fragments": [
+    {
+      "slug": "challenge-from-vslam-to-3dgs",
+      "target_path": "docs/report/challenge-intro/challenge-from-Vslam-to-3DGS.typ",
+      "section_title": "From VSLAM to 3D Gaussian Splatting",
+      "intent": "Provide a theory-rich, design-oriented bridge from monocular dense SLAM to downstream 3DGS for the project report.",
+      "status": "drafted",
+      "notes": "Standalone fragment, not yet included in docs/report/main.typ."
+    }
+  ],
+  "links": {
+    "source_concepts": [
+      {
+        "source_key": "triggs2000bundleadjustment",
+        "concept_slug": "bundle-adjustment",
+        "evidence": "Canonical reference for joint structure-and-motion optimization."
+      },
+      {
+        "source_key": "hartley2003multiple",
+        "concept_slug": "projective-geometry",
+        "evidence": "Classical treatment of projection and multiview geometry."
+      },
+      {
+        "source_key": "schoenberger2016sfm",
+        "concept_slug": "structure-from-motion",
+        "evidence": "Classical SfM initialization route also assumed by 3DGS."
+      },
+      {
+        "source_key": "zhang2026vistaslam",
+        "concept_slug": "sim3-pose-graph",
+        "evidence": "Uses a Sim(3) pose graph with loop closure in the uncalibrated monocular setting."
+      },
+      {
+        "source_key": "murai2025mast3rslam",
+        "concept_slug": "generic-central-camera",
+        "evidence": "Assumes only a generic central camera rather than a fixed parametric model."
+      },
+      {
+        "source_key": "murai2025mast3rslam",
+        "concept_slug": "ray-space-residual",
+        "evidence": "Uses ray-space reasoning for uncalibrated or weakly calibrated tracking and optimization."
+      },
+      {
+        "source_key": "murai2025mast3rslam",
+        "concept_slug": "pointmap",
+        "evidence": "Builds the SLAM system around a two-view 3D prior that predicts pointmaps."
+      },
+      {
+        "source_key": "kerbl2023gaussiansplatting",
+        "concept_slug": "three-d-gaussian-splatting",
+        "evidence": "Defines anisotropic 3D Gaussians, projected covariances, and alpha compositing for novel-view synthesis."
+      },
+      {
+        "source_key": "zhang2026vistaslam",
+        "concept_slug": "loop-closure",
+        "evidence": "Loop closure is a central part of the global-consistency story."
+      }
+    ],
+    "source_equations": [
+      {
+        "source_key": "triggs2000bundleadjustment",
+        "equation_slug": "bundle-adjustment-objective",
+        "location_hint": "Classical theory chapter.",
+        "evidence": "Defines the canonical optimization target for multiview reconstruction."
+      },
+      {
+        "source_key": "zhang2026vistaslam",
+        "equation_slug": "sim3-pose-graph-objective",
+        "location_hint": "sec/2_method.tex backend discussion.",
+        "evidence": "Explains why Sim(3) is the correct group for monocular drift and scale ambiguity."
+      },
+      {
+        "source_key": "murai2025mast3rslam",
+        "equation_slug": "ray-space-residual",
+        "location_hint": "main.tex tracking and backend sections.",
+        "evidence": "Ray-space residual is central to the weak-calibration story."
+      },
+      {
+        "source_key": "kerbl2023gaussiansplatting",
+        "equation_slug": "gaussian-parameterization",
+        "location_hint": "volume_gaussians.tex",
+        "evidence": "Defines each 3D Gaussian and its covariance parameterization."
+      },
+      {
+        "source_key": "kerbl2023gaussiansplatting",
+        "equation_slug": "projected-covariance",
+        "location_hint": "volume_gaussians.tex",
+        "evidence": "Shows how world-space covariance becomes a screen-space footprint."
+      },
+      {
+        "source_key": "kerbl2023gaussiansplatting",
+        "equation_slug": "alpha-compositing",
+        "location_hint": "related.tex",
+        "evidence": "Shows that 3DGS rendering preserves the volumetric alpha-compositing logic."
+      }
+    ],
+    "source_recommendations": [
+      {
+        "source_key": "kerbl2023gaussiansplatting",
+        "recommendation_slug": "prefer-slam-then-3dgs",
+        "evidence": "The original method assumes poses and sparse points are already available."
+      },
+      {
+        "source_key": "murai2025mast3rslam",
+        "recommendation_slug": "keep-calibrated-and-uncalibrated-explicit",
+        "evidence": "The paper explicitly distinguishes uncalibrated ray-space reasoning from calibrated pixel-space refinement."
+      },
+      {
+        "source_key": "zhang2026vistaslam",
+        "recommendation_slug": "benchmark-vista-and-mast3r",
+        "evidence": "Provides the strongest complementary uncalibrated monocular baseline."
+      },
+      {
+        "source_key": "teed2021droidslam",
+        "recommendation_slug": "evaluate-trajectory-geometry-rendering-separately",
+        "evidence": "Dense BA and rendering quality solve different problems and should not be conflated."
+      }
+    ],
+    "fragment_sources": [
+      {
+        "fragment_slug": "challenge-from-vslam-to-3dgs",
+        "source_key": "murai2025mast3rslam",
+        "role": "anchor"
+      },
+      {
+        "fragment_slug": "challenge-from-vslam-to-3dgs",
+        "source_key": "zhang2026vistaslam",
+        "role": "uncalibrated-reference"
+      },
+      {
+        "fragment_slug": "challenge-from-vslam-to-3dgs",
+        "source_key": "teed2021droidslam",
+        "role": "optimization-reference"
+      },
+      {
+        "fragment_slug": "challenge-from-vslam-to-3dgs",
+        "source_key": "kerbl2023gaussiansplatting",
+        "role": "rendering-endpoint"
+      },
+      {
+        "fragment_slug": "challenge-from-vslam-to-3dgs",
+        "source_key": "triggs2000bundleadjustment",
+        "role": "classical-theory"
+      },
+      {
+        "fragment_slug": "challenge-from-vslam-to-3dgs",
+        "source_key": "hartley2003multiple",
+        "role": "classical-theory"
+      }
+    ]
+  }
+}

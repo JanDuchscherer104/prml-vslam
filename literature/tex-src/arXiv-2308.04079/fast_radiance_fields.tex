@@ -1,0 +1,153 @@
+\documentclass[acmtog]{acmart}
+
+\AtBeginDocument{%
+  \providecommand\BibTeX{{%
+    Bib\TeX}}}
+
+\setcopyright{licensedothergov}
+
+
+\acmJournal{TOG}
+
+\acmSubmissionID{685}
+
+
+\citestyle{acmauthoryear}
+
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{xcolor,colortbl}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usetikzlibrary{spy,backgrounds}
+\usepackage{soul}
+
+\usepackage[percent]{overpic}
+
+\DeclareGraphicsRule{.ai}{pdf}{.ai}{}
+
+\newcommand{\GD}[1]{\textcolor{red}{#1}}
+\newcommand{\TODO}[1]{}
+\newcommand{\GK}[1]{\textcolor{blue}{GK: #1}}
+\newcommand{\BK}[1]{\textcolor{cyan}{BK: #1}}
+\newcommand{\TL}[1]{\textcolor{purple}{TL: #1}}
+
+\setcopyright{licensedothergov}
+\acmYear{2023} \acmVolume{42} \acmNumber{4} \acmArticle{1} \acmMonth{8} \acmPrice{15.00} \acmDOI{10.1145/3592433}
+
+\begin{document}
+
+\title{3D Gaussian Splatting for Real-Time Radiance Field Rendering}
+
+
+\author{Bernhard Kerbl}
+\orcid{0000-0002-5168-8648}
+\authornote{Both authors contributed equally to the paper.}
+\email{bernhard.kerbl@inria.fr}
+\affiliation{%
+	\institution{Inria, Universit\'e C\^ote d'Azur}
+	\country{France}
+}
+\author{Georgios Kopanas}
+\orcid{0009-0002-5829-2192}
+\authornotemark[1]
+\email{georgios.kopanas@inria.fr}
+\affiliation{%
+	\institution{Inria, Universit\'e C\^ote d'Azur}
+	\country{France}
+}
+\author{Thomas Leimk\"{u}hler}
+\orcid{0009-0006-7784-7957}
+\email{thomas.leimkuehler@mpi-inf.mpg.de}
+\affiliation{%
+	\institution{Max-Planck-Institut f\"{u}r Informatik}
+	\country{Germany}
+}
+\author{George Drettakis}
+\orcid{0000-0002-9254-4819}
+\email{george.drettakis@inria.fr}
+\affiliation{%
+	\institution{Inria, Universit\'e C\^ote d'Azur}
+	\country{France}
+}
+
+\def\Dg{DG}
+
+
+
+\newcommand{\ADDITION}[1]{#1}
+\newcommand{\REMOVAL}[1]{}
+\newcommand{\CORRECTION}[2]{#2}
+
+
+\begin{abstract}
+Radiance Field methods have recently revolutionized novel-view synthesis of scenes captured with multiple photos or videos. However, achieving high visual quality still requires neural networks that are costly to train and render, while recent faster methods inevitably trade off speed for quality. For unbounded and complete scenes (rather than isolated objects) and 1080p resolution rendering, no current method can achieve real-time display rates. We introduce three key elements that allow us to achieve state-of-the-art visual quality while maintaining competitive training times and importantly allow high-quality real-time ($\geq30$~fps) novel-view synthesis at 1080p resolution. First, starting from sparse points produced during camera calibration, we represent the scene with 3D Gaussians %
+that preserve desirable properties of continuous volumetric radiance fields for scene optimization while avoiding unnecessary computation in empty space; Second, we perform interleaved optimization/density control of the 3D Gaussians, notably optimizing anisotropic covariance to achieve an accurate representation of the scene; Third, we develop a fast visibility-aware rendering algorithm that supports anisotropic splatting and both accelerates training and allows real-time rendering. We demonstrate state-of-the-art visual quality and real-time rendering on several established datasets.
+\end{abstract}
+
+\begin{CCSXML}
+	<ccs2012>
+	<concept>
+	<concept_id>10010147.10010371.10010372.10010373</concept_id>
+	<concept_desc>Computing methodologies~Rasterization</concept_desc>
+	<concept_significance>500</concept_significance>
+	</concept>
+	<concept>
+	<concept_id>10010147.10010257.10010293</concept_id>
+	<concept_desc>Computing methodologies~Machine learning approaches</concept_desc>
+	<concept_significance>300</concept_significance>
+	</concept>
+	<concept>
+	<concept_id>10010147.10010371.10010396.10010400</concept_id>
+	<concept_desc>Computing methodologies~Point-based models</concept_desc>
+	<concept_significance>500</concept_significance>
+	</concept>
+	<concept>
+	<concept_id>10010147.10010371.10010372</concept_id>
+	<concept_desc>Computing methodologies~Rendering</concept_desc>
+	<concept_significance>500</concept_significance>
+	</concept>
+	</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Computing methodologies~Rendering}
+\ccsdesc[500]{Computing methodologies~Point-based models}
+\ccsdesc[500]{Computing methodologies~Rasterization}
+\ccsdesc[500]{Computing methodologies~Machine learning approaches}
+
+\keywords{novel view synthesis, radiance fields, 3D gaussians, real-time rendering}
+
+\begin{teaserfigure}
+	\includegraphics[width=\textwidth]{figures/teaser/teaser_02.pdf}
+	\caption{
+	\label{fig:teaser}
+    Our method achieves real-time rendering of radiance fields with quality that equals the previous method with the best quality ~\cite{barron2022mipnerf360}, while only requiring optimization times competitive with the fastest previous methods~\cite{plenoxels,mueller2022instant}.
+    Key to this performance is a novel 3D Gaussian scene representation coupled with a real-time differentiable renderer, which offers significant speedup to both scene optimization and novel view synthesis.
+    Note that for comparable training times to InstantNGP ~\cite{mueller2022instant}, we achieve similar quality to theirs; while this is the maximum quality they reach, by training for 51min we achieve state-of-the-art quality, even slightly better than Mip-NeRF360~\cite{barron2022mipnerf360}. %
+    }
+	\Description[TeaserFigure]{TeaserFigure}
+\end{teaserfigure}
+\maketitle
+
+
+\input{intro}
+\input{related}
+\input{overview}
+\input{volume_gaussians}
+\input{densification}
+\input{tile_rasterizer}
+\input{implementation_results_eval}
+\input{discussion_conclusion}
+
+\begin{acks}
+This research was funded by the ERC Advanced grant FUNGRAPH No 788065 \textcolor{blue}{\url{http://fungraph.inria.fr}}. The authors are grateful to Adobe for generous donations, the OPAL infrastructure from Université Côte d’Azur  and for the HPC resources from GENCI–IDRIS (Grant 2022-AD011013409). The authors thank the anonymous reviewers for their valuable feedback, P.\ Hedman and A.\ Tewari for proofreading earlier drafts also T.\ Müller, A.\ Yu and S.\ Fridovich-Keil for helping with the comparisons.
+\end{acks}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{points.bib}
+
+\input{appendices}
+
+\end{document}

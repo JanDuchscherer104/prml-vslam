@@ -1,0 +1,92 @@
+\section{Related Work}
+
+We first briefly overview traditional reconstruction, then discuss point-based rendering and radiance field work, discussing their similarity; radiance fields are a vast area, so we focus only on directly related work.
+For complete coverage of the field, please see the excellent recent surveys~\cite{tewari2022advances,xie2022neural}.
+
+
+\subsection{Traditional Scene Reconstruction and Rendering}
+
+The first novel-view synthesis approaches were based on light fields, first densely sampled~\cite{gortler1996lumigraph,levoy1996light} then allowing unstructured capture~\cite{buehler2001unstructured}. The advent of Structure-from-Motion (SfM)~\cite{snavely2006photo} enabled an entire new domain where a collection of photos could be used to synthesize novel views. SfM estimates a sparse point cloud during camera calibration, that was initially used for simple visualization of 3D space. Subsequent multi-view stereo (MVS) produced impressive full 3D reconstruction algorithms over the years ~\cite{goesele2007multi}, enabling the development of several view synthesis algorithms \cite{eisemann2008floating, chaurasia2013depth, hedman2018deep,kopanas21}.
+All these methods \emph{re-project} and \emph{blend} the input images into the novel view camera, and use the geometry to guide this re-projection. These methods produced excellent results in many cases, but typically cannot completely recover from unreconstructed regions, or from ``over-reconstruction'', when MVS generates inexistent geometry.
+Recent neural rendering algorithms ~\cite{tewari2022advances} vastly reduce such artifacts and avoid the overwhelming cost of storing all input images on the GPU, outperforming these methods on most fronts.
+
+\subsection{Neural Rendering and Radiance Fields}
+
+Deep learning techniques were adopted early for novel-view synthesis ~\cite{zhou2016view, flynn2016deepstereo}; CNNs were used to estimate blending weights~\cite{hedman2018deep}, or for texture-space solutions \cite{thies2019deferred,riegler2020free}. The use of MVS-based geometry is a major drawback of most of these methods; in addition, the use of CNNs for final rendering \ADDITION{frequently} results in \REMOVAL{frequent} temporal flickering.
+
+Volumetric representations for novel-view synthesis were initiated by Soft3D~\cite{penner2017soft}; deep-learning techniques coupled with volumetric ray-marching were subsequently proposed ~\cite{sitzmann2019deepvoxels,henzler2019escaping} building on a continuous differentiable density field to represent geometry. Rendering using volumetric ray-marching has a significant cost due to the large number of samples required to query the volume. Neural Radiance Fields (NeRFs)~\cite{mildenhall2020nerf} introduced importance sampling and positional encoding to improve quality, but used a large Multi-Layer Perceptron negatively affecting speed.
+The success of NeRF has resulted in an explosion of follow-up methods that address quality and speed, often by introducing regularization strategies; the current state-of-the-art in image quality for novel-view synthesis is Mip-NeRF360~\cite{barron2022mipnerf360}. While the rendering quality is outstanding, training and rendering times remain extremely high; we are able to equal or in some cases surpass this quality while providing fast training and real-time rendering.
+
+The most recent methods have focused on faster training and/or rendering mostly by exploiting three design choices: the use of spatial data structures to store (neural) features that are subsequently interpolated during volumetric ray-marching, different encodings, and MLP capacity. Such methods include
+different variants of space discretization~\cite{nglod-cvpr2021,plenoxels,yu2021plenoctrees,hedman2021snerg,chen2022mobilenerf,garbin2021fastnerf,Reiser2021ICCV,tensorf-eccv2022,wu2022snisr},
+codebooks~\cite{takikawa2022variable},
+and encodings such as hash tables~\cite{mueller2022instant}, allowing the use of a smaller MLP or foregoing neural networks completely \cite{plenoxels,dvgo-cvpr2022}. %
+
+
+Most notable of these methods are InstantNGP~\cite{mueller2022instant} which uses a hash grid and an occupancy grid to accelerate computation and a smaller MLP to represent density and appearance;
+and Plenoxels~\cite{plenoxels} that use a sparse voxel grid to interpolate a continuous density field, and are able to forgo neural networks altogether. \CORRECTION{They both replace the MLP used to represent directional effects with much faster Spherical Harmonics.}
+{Both rely on Spherical Harmonics: the former to represent directional effects directly, the latter to encode its inputs to the color network.}
+While both provide outstanding results, these methods can still struggle to represent empty space effectively, depending in part on the scene/capture type.  In addition, image quality is limited in large part by the choice of the structured grids used for acceleration, and rendering speed is hindered by the need to query many samples for a given ray-marching step. The unstructured, explicit GPU-friendly 3D Gaussians we use %
+achieve faster rendering speed and %
+better quality \emph{without} neural components.
+
+
+\subsection{Point-Based Rendering and Radiance Fields}
+
+
+
+
+Point-based methods efficiently render disconnected and unstructured geometry samples (i.e., point clouds)~\cite{gross2011point}.
+In its simplest form, point sample rendering \cite{Grossman1998PointSR} rasterizes an unstructured set of points with a fixed size, for which it may exploit natively supported point types of graphics APIs \cite{SAINZ2004869} or parallel software rasterization on the GPU \cite{10.1145/3543863, laine2011high}. While true to the underlying data, point sample rendering suffers from holes, causes aliasing, and is strictly discontinuous. Seminal work on high-quality point-based rendering addresses these issues by “splatting” point primitives with an extent larger than a pixel, e.g., circular or elliptic discs, ellipsoids, or surfels \cite{10.1145/383259.383300, 10.5555/2386366.2386369,  Ren2002ObjectSE, 10.1145/344779.344936}.
+
+There has been recent interest in \emph{differentiable} point-based rendering techniques~\cite{yifan19,wiles2020synsin}. Points have been augmented with neural features and rendered using a CNN~\cite{ruckert22,aliev20} resulting in fast or even real-time view synthesis; however they still depend on MVS for the initial geometry, and as such inherit its artifacts, most notably over- or under-reconstruction in hard cases such \CORRECTION{}{as} featureless/shiny areas or thin structures.
+
+Point-based $\alpha$-blending and NeRF-style volumetric rendering share essentially the same image formation model.
+Specifically, the color $C$ is given by volumetric rendering along a ray:
+\begin{equation}
+	\label{eq:nerf-rendering-quadrature}
+	C = \sum_{i=1}^N T_i(1-\exp(-\sigma_i\delta_i))\mathbf{c}_i \hspace{0.5em} \text{ with } \hspace{0.5em} T_i = \exp\left(-\sum_{j=1}^{i-1}\sigma_j\delta_j\right),
+\end{equation}
+where samples of density $\sigma$, transmittance $T$, and color $\mathbf{c}$ are taken along the ray with intervals $\delta_i$.
+This can be re-written as
+\begin{equation}
+	\label{eq:nerf-rendering-quadrature2}
+	C = \sum_{i=1}^N T_i\alpha_i\mathbf{c}_i,
+\end{equation}
+with
+\begin{equation*}
+	\alpha_i = (1-\exp(-\sigma_i\delta_i))
+	\hspace{0.5em} \text{and} \hspace{0.5em}
+	T_i = \prod_{j=1}^{i-1}(1-\alpha_i).
+\end{equation*}
+A typical neural point-based approach (e.g.,~\cite{kopanas21,kopanas22}) computes the color $C$ of a pixel by blending $\mathcal{N}$ ordered points overlapping the pixel:
+\begin{equation}
+	\label{eq:front-to-back}
+	C = \sum_{i \in \mathcal{N}}
+	c_{i}\alpha_{i}
+	\prod_{j=1}^{i-1}(1-\alpha_{j}),
+\end{equation}
+where $\mathbf{c}_i$ is the color of each point and $\alpha_i$ is given by evaluating a 2D Gaussian with covariance $\Sigma$ ~\cite{yifan19} multiplied with a learned per-point opacity.
+
+From Eq.~\ref{eq:nerf-rendering-quadrature2} and Eq.~\ref{eq:front-to-back}, we can clearly see that the image formation model is the same. However, the rendering algorithm is very different. NeRFs are a continuous representation implicitly representing empty/occupied space; expensive random sampling is required to find the samples in Eq.~\ref{eq:nerf-rendering-quadrature2} with consequent noise and computational expense. In contrast, points are an unstructured, discrete representation that is flexible enough to allow creation, destruction, and displacement of geometry similar to NeRF. This is achieved by optimizing opacity and positions, as shown by previous work~\cite{kopanas21}, while avoiding the shortcomings of a full volumetric representation.
+
+Pulsar~\cite{Lassner_2021_CVPR} achieves fast \emph{sphere} rasterization which inspired our tile-based and sorting renderer. However, given the analysis above, we want to maintain (approximate) conventional $\alpha$-blending on sorted splats to have the advantages of volumetric representations: Our rasterization respects visibility order in contrast to their order-independent method. In addition,
+\CORRECTION{}{we} backpropagate gradients on all splats in a pixel and rasterize anisotropic splats.
+These elements all contribute to the high visual quality of our results (see Sec.~\ref{sec:ablations}).
+In addition,
+previous methods mentioned above
+also use CNNs for rendering, which results in temporal instability.
+\CORRECTION{}{Nonetheless, the rendering speed of Pulsar~\cite{Lassner_2021_CVPR} and ADOP~\cite{ruckert22} served as motivation to develop our fast rendering solution.}
+
+While focusing on specular effects, the diffuse point-based rendering track of Neural Point Catacaustics~\cite{kopanas22} overcomes this temporal instability by using an MLP, but still required MVS geometry as input.
+The most recent method~\cite{zhang2022} in this category does not require MVS, and also uses SH for directions; however, it can only handle scenes of one object and needs masks for initialization. While fast for small resolutions and low point counts, it is unclear how it can scale to scenes of typical datasets~\cite{knapitsch2017tanks,hedman2018deep,barron2022mipnerf360}.
+We use 3D Gaussians for a more flexible scene representation, avoiding the need for MVS geometry and achieving real-time rendering thanks to our tile-based rendering algorithm for the projected Gaussians.
+
+
+
+
+
+A recent approach~\cite{xu2022point} uses points to represent a radiance field with a radial basis function approach. They employ point pruning and densification techniques during optimization, but use volumetric ray-marching and cannot achieve real-time display rates. %
+
+
+In the domain of human performance capture, 3D Gaussians have been used to represent captured human bodies~\cite{stoll2011fast,rhodin2015versatile}; more recently \ADDITION{they have been used with volumetric ray-marching for vision tasks~\cite{voge}.} \CORRECTION{neural}{Neural} volumetric primitives have been proposed in a similar context~\cite{lombardi2021mixture}. \CORRECTION{While we also use}{While these methods inspired the choice of} 3D Gaussians as our scene representation, \CORRECTION{these methods}{they} focus on the specific case of reconstructing and rendering a single isolated object (a human body or face), resulting in scenes with small depth complexity. In contrast, our optimization of \emph{anisotropic} covariance, our interleaved optimization/density control, and efficient depth sorting for rendering allow us to handle complete, complex scenes including background, both indoors and outdoors and with large depth complexity.

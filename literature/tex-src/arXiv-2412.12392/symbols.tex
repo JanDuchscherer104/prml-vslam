@@ -1,0 +1,699 @@
+\unitlength=1mm
+
+\newcommand{\ignore}[1]{}
+
+\newcommand{\ba}{\begin{array}}
+        \newcommand{\ea}{\end{array}}
+\newcommand{\bc}{\begin{center}}
+        \newcommand{\ec}{\end{center}}
+\newcommand{\be}{\begin{enumerate}}
+        \newcommand{\ee}{\end{enumerate}}
+\newcommand{\bea}{\begin{eqnarray}}
+        \newcommand{\eea}{\end{eqnarray}}
+\newcommand{\beas}{\begin{eqnarray*}}
+        \newcommand{\eeas}{\end{eqnarray*}}
+\newcommand{\beq}{\begin{equation}}
+        \newcommand{\eeq}{\end{equation}}
+\newcommand{\bfig}{\begin{figure}}
+        \newcommand{\efig}{\end{figure}}
+\newcommand{\bi}{\begin{itemize}}
+        \newcommand{\ei}{\end{itemize}}
+\newcommand{\bpic}{\begin{picture}}
+        \newcommand{\epic}{\end{picture}}
+\newcommand{\btabular}{\begin{tabular}}
+        \newcommand{\etabular}{\end{tabular}}
+\newcommand{\btable}{\begin{table}}
+        \newcommand{\etable}{\end{table}}
+
+% Black and white \bs and \es
+%\newcommand{\bs}[1]{\begin{slide}{}{\tiny #1} \\
+%                    \rule[6mm]{170mm}{0.7mm}}
+%\newcommand{\es}{\vfill
+%                 \rule[-6mm]{170mm}{0.7mm} \\
+%                 {\tiny
+%		  \hfill S-\theslide}
+%                 \end{slide}}
+%\newcommand{\Ltitle}[1]{\bc {\Large\textbf \vspace{-15mm} #1} \ec}
+%\newcommand{\ltitle}[1]{\bc {\large\textbf \vspace{-15mm} #1} \ec}
+
+% Colour versions of \bs and \es
+%\newcommand{\bs}[1]{\begin{slide}{}\redw{{\tiny #1}} \\
+%                    \rule[6mm]{170mm}{0.7mm}}
+
+\newcommand{\es}{\vfill
+    \rule[-6mm]{170mm}{0.7mm} \\
+    \redw{{\tiny
+                \hfill S-\theslide}}
+    \end{slide}}
+\newcommand{\Ltitle}[1]{\bc {\Large\textbf \vspace{-15mm} #1} \ec}
+\newcommand{\ltitle}[1]{\bc {\large\textbf \vspace{-15mm} #1} \ec}
+
+\newcommand{\ruleoff}{\mbox{\\\rule{\columnwidth}{0.1mm}}}
+
+% Originally \newcommand{\dsp}{\setlength{\baselineskip}{22truept}}
+%\newcommand{\dsp}{\setlength{\baselineskip}{21truept}}
+\newcommand{\matxx}[1]{{\mathbf #1}}
+\newcommand{\vecXX}[1]{{\mathbf {#1}}}
+\newcommand{\vecYY}[1]{{\boldsymbol {#1}}}
+
+\newcommand{\icap}[1]{{\caption{\em #1}}}
+
+\def \nor {\normalsize}
+
+\newcommand{\argmin}{\operatornamewithlimits{arg\ min}}
+\newcommand{\argmax}{\operatornamewithlimits{arg\ max}}
+\newcommand{\maxarg}{\operatornamewithlimits{\ max}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Original content of symbols.tex starts here
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\def \crossprod {\times}
+\def \dotprod {\bullet}
+\providecommand{\etal}{{\em et~al.}}
+\def \grad {\mbox{\boldmath $\nabla$}}
+\def \gradE {\mbox{{\boldmath $\nabla$}} E}
+\def \half {\frac{1}{2}}
+\def \matxTx {[{\texttt t}_\times]}
+\def \matxminusTx {[{\texttt -t}_\times]}
+\def \trans {{\top}}
+\def \cosec {\mbox{cosec}}
+
+\def \ahat {{\hat{a}}}
+\def \bhat {{\hat{b}}}
+\def \chat {{\hat{c}}}
+\def \dhat {{\hat{d}}}
+\def \ehat {{\hat{e}}}
+\def \fhat {{\hat{f}}}
+\def \ghat {{\hat{g}}}
+\def \hhat {{\hat{h}}}
+\def \ihat {{\hat{i}}}
+\def \jhat {{\hat{j}}}
+\def \khat {{\hat{k}}}
+\def \lhat {{\hat{l}}}
+\def \mhat {{\hat{m}}}
+\def \nhat {{\hat{n}}}
+\def \ohat {{\hat{o}}}
+\def \phat {{\hat{p}}}
+\def \qhat {{\hat{q}}}
+\def \rhat {{\hat{r}}}
+\def \shat {{\hat{s}}}
+\def \that {{\hat{t}}}
+\def \uhat {{\hat{u}}}
+\def \vhat {{\hat{v}}}
+\def \what {{\hat{w}}}
+\def \xhat {{\hat{x}}}
+\def \yhat {{\hat{y}}}
+\def \zhat {{\hat{z}}}
+
+\def \Ahat {{\hat{A}}}
+\def \Bhat {{\hat{B}}}
+\def \Chat {{\hat{C}}}
+\def \Dhat {{\hat{D}}}
+\def \Ehat {{\hat{E}}}
+\def \Fhat {{\hat{F}}}
+\def \Ghat {{\hat{G}}}
+\def \Hhat {{\hat{H}}}
+\def \Ihat {{\hat{I}}}
+\def \Jhat {{\hat{J}}}
+\def \Khat {{\hat{K}}}
+\def \Lhat {{\hat{L}}}
+\def \Mhat {{\hat{M}}}
+\def \Nhat {{\Hat{N}}}
+\def \Ohat {{\hat{O}}}
+\def \Phat {{\hat{P}}}
+\def \Qhat {{\hat{Q}}}
+\def \Rhat {{\hat{R}}}
+\def \Shat {{\hat{S}}}
+\def \That {{\hat{T}}}
+\def \Uhat {{\hat{U}}}
+\def \Vhat {{\hat{V}}}
+\def \What {{\hat{W}}}
+\def \Xhat {{\hat{X}}}
+\def \Yhat {{\hat{Y}}}
+\def \Zhat {{\hat{Z}}}
+
+\def \abar {{\bar{a}}}
+\def \bbar {{\bar{b}}}
+\def \cbar {{\bar{c}}}
+\def \dbar {{\bar{d}}}
+\def \ebar {{\bar{e}}}
+\def \fbar {{\bar{f}}}
+\def \gbar {{\bar{g}}}
+\def \hbar {{\bar{h}}}
+\def \ibar {{\bar{i}}}
+\def \jbar {{\bar{j}}}
+\def \kbar {{\bar{k}}}
+\def \lbar {{\bar{l}}}
+\def \mbar {{\bar{m}}}
+\def \nbar {{\bar{n}}}
+\def \obar {{\bar{o}}}
+\def \pbar {{\bar{p}}}
+\def \qbar {{\bar{q}}}
+\def \rbar {{\bar{r}}}
+\def \sbar {{\bar{s}}}
+\def \tbar {{\bar{t}}}
+\def \ubar {{\bar{u}}}
+\def \vbar {{\bar{v}}}
+\def \wbar {{\bar{w}}}
+\def \xbar {{\bar{x}}}
+\def \ybar {{\bar{y}}}
+\def \zbar {{\bar{z}}}
+
+\def \vecnought {{\vecXX{0}}}
+\def \veca {{\vecXX{a}}}
+\def \vecb {{\vecXX{b}}}
+\def \vecc {{\vecXX{c}}}
+\def \vecd {{\vecXX{d}}}
+\def \vece {{\vecXX{e}}}
+\def \vecf {{\vecXX{f}}}
+\def \vecg {{\vecXX{g}}}
+\def \vech {{\vecXX{h}}}
+\def \veci {{\vecXX{i}}}
+\def \vecj {{\vecXX{j}}}
+\def \veck {{\vecXX{k}}}
+\def \vecl {{\vecXX{l}}}
+\def \vecm {{\vecXX{m}}}
+\def \vecn {{\vecXX{n}}}
+\def \veco {{\vecXX{o}}}
+\def \vecp {{\vecXX{p}}}
+\def \vecq {{\vecXX{q}}}
+\def \vecr {{\vecXX{r}}}
+\def \vecs {{\vecXX{s}}}
+\def \vect {{\vecXX{t}}}
+\def \vecu {{\vecXX{u}}}
+\def \vecv {{\vecXX{v}}}
+\def \vecw {{\vecXX{w}}}
+\def \vecx {{\vecXX{x}}}
+\def \vecy {{\vecXX{y}}}
+\def \vecz {{\vecXX{z}}}
+
+\def \vecA {{\vecXX{A}}}
+\def \vecB {{\vecXX{B}}}
+\def \vecC {{\vecXX{C}}}
+\def \vecD {{\vecXX{D}}}
+\def \vecE {{\vecXX{E}}}
+\def \vecF {{\vecXX{F}}}
+\def \vecG {{\vecXX{G}}}
+\def \vecH {{\vecXX{H}}}
+\def \vecI {{\vecXX{I}}}
+\def \vecJ {{\vecXX{J}}}
+\def \vecK {{\vecXX{K}}}
+\def \vecL {{\vecXX{L}}}
+\def \vecM {{\vecXX{M}}}
+\def \vecN {{\vecXX{N}}}
+\def \vecO {{\vecXX{O}}}
+\def \vecP {{\vecXX{P}}}
+\def \vecQ {{\vecXX{Q}}}
+\def \vecR {{\vecXX{R}}}
+\def \vecS {{\vecXX{S}}}
+\def \vecT {{\vecXX{T}}}
+\def \vecU {{\vecXX{U}}}
+\def \vecV {{\vecXX{V}}}
+\def \vecW {{\vecXX{W}}}
+\def \vecX {{\vecXX{X}}}
+\def \vecY {{\vecXX{Y}}}
+\def \vecZ {{\vecXX{Z}}}
+
+\def \vecalpha {{\vecYY{\alpha}}}
+\def \vecbeta  {{\vecYY{\beta}}}
+\def \vecgamma {{\vecYY{\gamma}}}
+\def \veceta   {{\vecYY{\eta}}}
+\def \vecmu    {{\vecYY{\mu}}}
+\def \vecnu    {{\vecYY{\nu}}}
+\def \vecxi    {{\vecYY{\xi}}}
+\def \vecomega {{\vecYY{\omega}}}
+
+\def \vecAlpha {{\vecYY{\Alpha}}}
+\def \vecOmega {{\vecYY{\Omega}}}
+
+\def \Abar {{\bar{A}}}
+\def \Bbar {{\bar{B}}}
+\def \Cbar {{\bar{C}}}
+\def \Dbar {{\bar{D}}}
+\def \Ebar {{\bar{E}}}
+\def \Fbar {{\bar{F}}}
+\def \Gbar {{\bar{G}}}
+\def \Hbar {{\bar{H}}}
+\def \Ibar {{\bar{I}}}
+\def \Jbar {{\bar{J}}}
+\def \Kbar {{\bar{K}}}
+\def \Lbar {{\bar{L}}}
+\def \Mbar {{\bar{M}}}
+\def \Nbar {{\bar{N}}}
+\def \Obar {{\bar{O}}}
+\def \Pbar {{\bar{P}}}
+\def \Qbar {{\bar{Q}}}
+\def \Rbar {{\bar{R}}}
+\def \Sbar {{\bar{S}}}
+\def \Tbar {{\bar{T}}}
+\def \Ubar {{\bar{U}}}
+\def \Vbar {{\bar{V}}}
+\def \Wbar {{\bar{W}}}
+\def \Xbar {{\bar{X}}}
+\def \Ybar {{\bar{Y}}}
+\def \Zbar {{\bar{Z}}}
+
+\def \vecahat {\hat{\vecXX{a}}}
+\def \vecbhat {\hat{\vecXX{b}}}
+\def \vecchat {\hat{\vecXX{c}}}
+\def \vecdhat {\hat{\vecXX{d}}}
+\def \vecehat {\hat{\vecXX{e}}}
+\def \vecfhat {\hat{\vecXX{f}}}
+\def \vecghat {\hat{\vecXX{g}}}
+\def \vechhat {\hat{\vecXX{h}}}
+\def \vecihat {\hat{\vecXX{i}}}
+\def \vecjhat {\hat{\vecXX{j}}}
+\def \veckhat {\hat{\vecXX{k}}}
+\def \veclhat {\hat{\vecXX{l}}}
+\def \vecmhat {\hat{\vecXX{m}}}
+\def \vecnhat {\hat{\vecXX{n}}}
+\def \vecohat {\hat{\vecXX{o}}}
+\def \vecphat {\hat{\vecXX{p}}}
+\def \vecqhat {\hat{\vecXX{q}}}
+\def \vecrhat {\hat{\vecXX{r}}}
+\def \vecshat {\hat{\vecXX{s}}}
+\def \vecthat {\hat{\vecXX{t}}}
+\def \vecuhat {\hat{\vecXX{u}}}
+\def \vecvhat {\hat{\vecXX{v}}}
+\def \vecwhat {\hat{\vecXX{w}}}
+\def \vecxhat {\hat{\vecXX{x}}}
+\def \vecyhat {\hat{\vecXX{y}}}
+\def \veczhat {\hat{\vecXX{z}}}
+\def \vecalphahat {\hat{\vecXX{\alpha}}}
+\def \vecbetahat {\hat{\vecXX{\beta}}}
+
+\def \vecabar {\bar{\vecXX{a}}}
+\def \vecbbar {\bar{\vecXX{b}}}
+\def \veccbar {\bar{\vecXX{c}}}
+\def \vecdbar {\bar{\vecXX{d}}}
+\def \vecebar {\bar{\vecXX{e}}}
+\def \vecfbar {\bar{\vecXX{f}}}
+\def \vecgbar {\bar{\vecXX{g}}}
+\def \vechbar {\bar{\vecXX{h}}}
+\def \vecibar {\bar{\vecXX{i}}}
+\def \vecjbar {\bar{\vecXX{j}}}
+\def \veckbar {\bar{\vecXX{k}}}
+\def \veclbar {\bar{\vecXX{l}}}
+\def \vecmbar {\bar{\vecXX{m}}}
+\def \vecnbar {\bar{\vecXX{n}}}
+\def \vecobar {\bar{\vecXX{o}}}
+\def \vecpbar {\bar{\vecXX{p}}}
+\def \vecqbar {\bar{\vecXX{q}}}
+\def \vecrbar {\bar{\vecXX{r}}}
+\def \vecsbar {\bar{\vecXX{s}}}
+\def \vectbar {\bar{\vecXX{t}}}
+\def \vecubar {\bar{\vecXX{u}}}
+\def \vecvbar {\bar{\vecXX{v}}}
+\def \vecwbar {\bar{\vecXX{w}}}
+\def \vecxbar {\bar{\vecXX{x}}}
+\def \vecybar {\bar{\vecXX{y}}}
+\def \veczbar {\bar{\vecXX{z}}}
+
+\def \matA {{\matxx{A}}}
+\def \matB {{\matxx{B}}}
+\def \matC {{\matxx{C}}}
+\def \matD {{\matxx{D}}}
+\def \matE {{\matxx{E}}}
+\def \matF {{\matxx{F}}}
+\def \matG {{\matxx{G}}}
+\def \matH {{\matxx{H}}}
+\def \matI {{\matxx{I}}}
+\def \matJ {{\matxx{J}}}
+\def \matK {{\matxx{K}}}
+\def \matL {{\matxx{L}}}
+\def \matM {{\matxx{M}}}
+\def \matN {{\matxx{N}}}
+\def \matO {{\matxx{O}}}
+\def \matP {{\matxx{P}}}
+\def \matQ {{\matxx{Q}}}
+\def \matR {{\matxx{R}}}
+\def \matS {{\matxx{S}}}
+\def \matT {{\matxx{T}}}
+\def \matU {{\matxx{U}}}
+\def \matV {{\matxx{V}}}
+\def \matW {{\matxx{W}}}
+\def \matX {{\matxx{X}}}
+\def \matY {{\matxx{Y}}}
+\def \matZ {{\matxx{Z}}}
+
+\def \matnought {{\matxx{0}}}
+
+\def \matSigma  {{\matxx{\Sigma}}}
+\def \matLambda {{\matxx{\Lambda}}}
+
+\def \matAhat {\hat{\matxx{A}}}
+\def \matBhat {\hat{\matxx{B}}}
+\def \matChat {\hat{\matxx{C}}}
+\def \matDhat {\hat{\matxx{D}}}
+\def \matEhat {\hat{\matxx{E}}}
+\def \matFhat {\hat{\matxx{F}}}
+\def \matGhat {\hat{\matxx{G}}}
+\def \matHhat {\hat{\matxx{H}}}
+\def \matIhat {\hat{\matxx{I}}}
+\def \matJhat {\hat{\matxx{J}}}
+\def \matKhat {\hat{\matxx{K}}}
+\def \matLhat {\hat{\matxx{L}}}
+\def \matMhat {\hat{\matxx{M}}}
+\def \matNhat {\hat{\matxx{N}}}
+\def \matOhat {\hat{\matxx{O}}}
+\def \matPhat {\hat{\matxx{P}}}
+\def \matQhat {\hat{\matxx{Q}}}
+\def \matRhat {\hat{\matxx{R}}}
+\def \matShat {\hat{\matxx{S}}}
+\def \matThat {\hat{\matxx{T}}}
+\def \matUhat {\hat{\matxx{U}}}
+\def \matVhat {\hat{\matxx{V}}}
+\def \matWhat {\hat{\matxx{W}}}
+\def \matXhat {\hat{\matxx{X}}}
+\def \matYhat {\hat{\matxx{Y}}}
+\def \matZhat {\hat{\matxx{Z}}}
+
+\def \matAbar {\bar{\matxx{A}}}
+\def \matBbar {\bar{\matxx{B}}}
+\def \matCbar {\bar{\matxx{C}}}
+\def \matDbar {\bar{\matxx{D}}}
+\def \matEbar {\bar{\matxx{E}}}
+\def \matFbar {\bar{\matxx{F}}}
+\def \matGbar {\bar{\matxx{G}}}
+\def \matHbar {\bar{\matxx{H}}}
+\def \matIbar {\bar{\matxx{I}}}
+\def \matJbar {\bar{\matxx{J}}}
+\def \matKbar {\bar{\matxx{K}}}
+\def \matLbar {\bar{\matxx{L}}}
+\def \matMbar {\bar{\matxx{M}}}
+\def \matNbar {\bar{\matxx{N}}}
+\def \matObar {\bar{\matxx{O}}}
+\def \matPbar {\bar{\matxx{P}}}
+\def \matQbar {\bar{\matxx{Q}}}
+\def \matRbar {\bar{\matxx{R}}}
+\def \matSbar {\bar{\matxx{S}}}
+\def \matTbar {\bar{\matxx{T}}}
+\def \matUbar {\bar{\matxx{U}}}
+\def \matVbar {\bar{\matxx{V}}}
+\def \matWbar {\bar{\matxx{W}}}
+\def \matXbar {\bar{\matxx{X}}}
+\def \matYbar {\bar{\matxx{Y}}}
+\def \matZbar {\bar{\matxx{Z}}}
+
+\def \vecadot {\dot{\vecXX{a}}}
+\def \vecbdot {\dot{\vecXX{b}}}
+\def \veccdot {\dot{\vecXX{c}}}
+\def \vecddot {\dot{\vecXX{d}}}
+\def \vecedot {\dot{\vecXX{e}}}
+\def \vecfdot {\dot{\vecXX{f}}}
+\def \vecgdot {\dot{\vecXX{g}}}
+\def \vechdot {\dot{\vecXX{h}}}
+\def \vecidot {\dot{\vecXX{i}}}
+\def \vecjdot {\dot{\vecXX{j}}}
+\def \veckdot {\dot{\vecXX{k}}}
+\def \vecldot {\dot{\vecXX{l}}}
+\def \vecmdot {\dot{\vecXX{m}}}
+\def \vecndot {\dot{\vecXX{n}}}
+\def \vecodot {\dot{\vecXX{o}}}
+\def \vecpdot {\dot{\vecXX{p}}}
+\def \vecqdot {\dot{\vecXX{q}}}
+\def \vecrdot {\dot{\vecXX{r}}}
+\def \vecsdot {\dot{\vecXX{s}}}
+\def \vectdot {\dot{\vecXX{t}}}
+\def \vecudot {\dot{\vecXX{u}}}
+\def \vecvdot {\dot{\vecXX{v}}}
+\def \vecwdot {\dot{\vecXX{w}}}
+\def \vecxdot {\dot{\vecXX{x}}}
+\def \vecydot {\dot{\vecXX{y}}}
+\def \veczdot {\dot{\vecXX{z}}}
+
+\def \vecth    {{\textbf \Theta}}
+\def \vecthdot {\dot{\textbf \Theta}}
+
+\def \Ox {\Omega_x}
+\def \Oy {\Omega_y}
+\def \Oz {\Omega_z}
+\def \meanrdot {\langle\vecrdot_s\rangle}
+\def \meanr {\langle\vecr_s\rangle}
+
+\def \curlrdot {{\rm curl}(\vecrdot)}
+\def \divrdot  {{\rm div}(\vecrdot)}
+\def \defrdot  {{\rm def}(\vecrdot)}
+
+\def \apar {a_\parallel}
+\def \aper {a_\perp}
+\def \apars {a_\parallel^*}
+\def \apers {a_\perp^*}
+
+\def \deg {^{\circ}}
+
+%\def \dt {\delta t}
+%\def \Dt {\Delta t}
+%
+%\def \dx {\delta x}
+%\def \Dx {\Delta x}
+%
+%\def \dy {\delta y}
+%\def \Dy {\Delta y}
+
+\def \t {\theta}
+\def \tdot {\dot{\theta}}
+
+\newcommand{\thdott}{\mbox{$\dot{\theta}_{t}$}}
+\newcommand{\thdotmax}{\mbox{$\dot{\theta}_{pmax}$}}
+
+\newcommand{\thddotmax}{\mbox{$\ddot{\theta}_{pmax}$}}
+\newcommand{\mthdotmax}{\mbox{$|\dot{\theta}_{pmax}|$}}
+\newcommand{\mthddotmax}{\mbox{$|\ddot{\theta}_{pmax}|$}}
+\newcommand{\thti}{\mbox{$\theta_{ti}$}}
+\newcommand{\thtzero}{\mbox{$\theta_{to}$}}
+\newcommand{\thdottzero}{\mbox{$\dot{\theta}_{to}$}}
+\newcommand{\thpzero}{\mbox{$\theta_{po}$}}
+\newcommand{\thdotpzero}{\mbox{$\dot{\theta}_{po}$}}
+\newcommand{\Tv}{\mbox{$T_v$}}
+\newcommand{\Tu}{\mbox{$T_u$}}
+\newcommand{\Tc}{\mbox{$T_c$}}
+\newcommand{\Td}{\mbox{$T_d$}}
+
+
+% AND SPECIALS
+
+% A 3-element column vector \vecthree{arg1}{arg2}{arg3}
+\newcommand{\vecthree}[3]{\left(\begin{array}{c}#1\\#2\\#3\end{array}\right)}
+
+% A 4-element column vector \vecfour{arg1}{arg2}{arg3}{arg4}
+\newcommand{\vecfour}[4]{\left(\begin{array}{c}#1\\#2\\#3\\#4\end{array}\right)}
+
+% A 5-element column vector \vecsix{arg1}{arg2}{arg3}{arg4}{arg5}
+\newcommand{\vecfive}[5]{\left(\begin{array}{c}#1\\#2\\#3\\#4\\#5\end{array}\right)}
+
+% A 6-element column vector \vecsix{arg1}{arg2}{arg3}{arg4}{arg5}{arg6}
+\newcommand{\vecsix}[6]{\left(\begin{array}{c}#1\\#2\\#3\\#4\\#5\\#6\end{array}\right)}
+
+% A 1-element column vector \vecone{arg1}
+\newcommand{\vecone}[1]{\left(\begin{array}{c}#1\end{array}\right)}
+
+
+% A 2-element column vector \vectwo{arg1}{arg2}
+\newcommand{\vectwo}[2]{\left(\begin{array}{c}#1\\#2\end{array}\right)}
+
+% A 3-element column right-justified vector \vecthreeright{arg1}{arg2}{arg3}
+\newcommand{\vecthreeright}[3]{\left(\begin{array}{r}#1\\#2\\#3\end{array}\right)}
+
+
+% A 2-element row vector \rowtwo{arg1}{arg2}
+\newcommand{\rowtwo}[2]{\left(\begin{array}{cc}#1&#2\end{array}\right)}
+
+% A 3-element row vector \rowthree{arg1}{arg2}{arg3}
+% Trouble is this doesn't go to the right height next to 3*3 matrix
+\newcommand{\rowthree}[3]{\left(\begin{array}{ccc}#1&#2&#3\end{array}\right)}
+
+% A 4-element row vector \rowfour{arg1}{arg2}{arg3}{arg4}
+\newcommand{\rowfour}[4]{\left(\begin{array}{cccc}#1&#2&#3&#4\end{array}\right)}
+
+% A 5-element row vector
+\newcommand{\rowfive}[5]{\left(\begin{array}{cccccc}#1&#2&#3&#4&#5\end{array}\right)}
+
+% A 6-element row vector \rowsix{arg1}{arg2}{arg3}{arg4}{arg5}{arg6}
+\newcommand{\rowsix	}[6]{\left(\begin{array}{cccccc}#1&#2&#3&#4&#5&#6\end{array}\right)}
+
+% A 7-element row vector \rowseven{arg1}{arg2}{arg3}{arg4}{arg5}{arg6}{arg7}
+\newcommand{\rowseven}[7]{\left(\begin{array}{ccccccc}#1&#2&#3&#4&#5&#6&#7\end{array}\right)}
+
+% A 3*3 matrix \matthree{arg11}{arg12}...{arg33}
+\newcommand{\matthree}[9]{\left[\begin{array}{ccc}#1&#2&#3\\#4&#5&#6\\#7&#8&#9\end{array}\right]}
+
+% A 2*3 matrix \mattwothree{arg11}{arg12}...{arg23}
+\newcommand{\mattwothree}[6]{\left[\begin{array}{ccc}#1&#2&#3\\#4&#5&#6\end{array}\right]}
+
+% A 2*4 matrix \mattwothree{arg11}{arg12}...{arg24}
+\newcommand{\mattwofour}[8]{\left[\begin{array}{cccc}#1&#2&#3&#4\\#5&#6&#7&#8\end{array}\right]}
+
+% A 4*4 matrix \matfour{row1}{row2}{row3}{row4}
+% The arguments are rows because we can't have more than 9 arguments
+\newcommand{\matfour}[4]{\left[\begin{array}{cccc}#1\\#2\\#3\\#4\end{array}\right]}
+
+% A 3*2 matrix \matthreetwo{arg11}{arg12}...{arg32}
+\newcommand{\matthreetwo	}[6]{\left[\begin{array}{cc}#1&#2\\#3&#4\\#5&#6\end{array}\right]}
+
+% A 2*2 matrix \mattwo{arg11}{arg12}...{arg22}
+\newcommand{\mattwo}[4]{\left[\begin{array}{cc}#1&#2\\#3&#4\end{array}\right]}
+
+% A 1*1 matrix \matone{arg11}
+\newcommand{\matone}[1]{\left[\begin{array}{c}#1\end{array}\right]}
+
+% A 3*3 right-justified matrix \matthreeright{arg11}{arg12}...{arg33}
+\newcommand{\matthreeright}[9]{\left[\begin{array}{rrr}#1&#2&#3\\#4&#5&#6\\#7&#8&#9\end{array}\right]}
+
+% A matrix transforming between two reference frames (so M with 2 superscripts)
+% Argument is just the supersrcipt we want
+\newcommand{\mtrans}[1]{\matxx{M^{#1}}}
+
+% A rotation transforming between two reference frames
+% (so R with 2 superscripts)
+% Argument is just the supersrcipt we want
+\newcommand{\rtrans}[1]{\matxx{R^{#1}}}
+
+% A derivative
+\newcommand{\diff}[2]{ \frac{d#1}{d#2} }
+
+% A partial derivative
+\newcommand{\pdiff}[2]{ \frac{\partial#1}{\partial#2} }
+
+% A bracketed derivative
+\newcommand{\bracdiff}[2]{\left( \frac{d#1}{d#2}      \right)}
+
+
+% Steve's Commands
+\def \inv {^{-1}}
+%\def \trans {^{\text{\tiny{T}}}}
+\def \trans {^{\top}}
+\def \invtrans {^{-\top}}
+
+\newcommand{\bracks}[1]{ \left({#1}\right)}
+\newcommand{\bbracks}[1]{ \bigl({#1}\bigr)}
+\newcommand{\Bbracks}[1]{ \Bigl({#1}\Bigr)}
+\newcommand{\BBbracks}[1]{ \Biggl({#1}\Biggr)}
+
+\newcommand{\braces}[1]{ \left[{#1}\right]}
+\newcommand{\bbraces}[1]{ \bigl[{#1}\bigr]}
+\newcommand{\Bbraces}[1]{ \Bigl[{#1}\Bigr]}
+\newcommand{\BBbraces}[1]{ \Biggl[{#1}\Biggr]}
+
+% Extension to matrix formatting allowing table style specification. eg. [c|cc]
+
+% Andy's note: this command requires that you are including the two packages
+% in your document above where you include symbols.tex
+%\usepackage{amsmath}
+%\usepackage{amssymb}
+% Otherwise you'll get build errors from LaTeX!
+
+\makeatletter
+\renewcommand*\env@matrix[1][*\c@MaxMatrixCols c]{%
+    \hskip -\arraycolsep
+    \let\@ifnextchar\new@ifnextchar
+    \array{#1}}
+\makeatother
+
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\ZZ}{\mathbb{Z}}
+\newcommand{\II}{\mathbb{I}}
+\newcommand{\CC}{\mathbb{C}}
+\newcommand{\QQ}{\mathbb{Q}}
+\newcommand{\NN}{\mathbb{N}}
+\newcommand{\GL}[1]{\ensuremath{\mathbf{GL}(#1)}}
+\newcommand{\SE}[1]{\ensuremath{\mathbf{SE}(#1)}}
+\newcommand{\SU}[1]{\ensuremath{\mathbf{SE}(#1)}}
+\newcommand{\SO}[1]{\ensuremath{\mathbf{SO}(#1)}}
+\newcommand{\SL}[1]{\ensuremath{\mathbf{SL}(#1)}}
+\newcommand{\Sim}[1]{\ensuremath{\mathbf{Sim}(#1)}}
+
+\newcommand{\gl}[1]{\ensuremath{{\mathfrak{gl}(#1)}}}
+\newcommand{\su}[1]{\ensuremath{{\mathfrak{se}(#1)}}}
+\newcommand{\se}[1]{\ensuremath{{\mathfrak{se}(#1)}}}
+\newcommand{\so}[1]{\ensuremath{{\mathfrak{so}(#1)}}}
+\newcommand{\simlie}[1]{\ensuremath{{\mathfrak{sim}(#1)}}}
+
+
+\newcommand{\norm}[1]{\lVert#1\rVert}
+
+% https://tex.stackexchange.com/questions/44073/overstruck-diamond-and-plus-in-plain-tex
+\font\Bigmath=cmsy10 scaled \magstep2
+\def\dplus{\mathrel{%
+        \ooalign{$+$\cr\hss\lower.255ex\hbox{\Bigmath\char5}\hss}}}
+\def\dminus{\mathrel{%
+        \ooalign{$-$\cr\hss\lower.255ex\hbox{\Bigmath\char5}\hss}}}
+
+% mathcal mapping
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cB}{\mathcal{B}}
+\newcommand{\cC}{\mathcal{C}}
+\newcommand{\cD}{\mathcal{D}}
+\newcommand{\cE}{\mathcal{E}}
+\newcommand{\cF}{\mathcal{F}}
+\newcommand{\cG}{\mathcal{G}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cI}{\mathcal{I}}
+\newcommand{\cJ}{\mathcal{J}}
+\newcommand{\cK}{\mathcal{K}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cO}{\mathcal{O}}
+\newcommand{\cP}{\mathcal{P}}
+\newcommand{\cQ}{\mathcal{Q}}
+\newcommand{\cR}{\mathcal{R}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\cU}{\mathcal{U}}
+\newcommand{\cV}{\mathcal{V}}
+\newcommand{\cW}{\mathcal{W}}
+\newcommand{\cX}{\mathcal{X}}
+\newcommand{\cY}{\mathcal{Y}}
+\newcommand{\cZ}{\mathcal{Z}}
+
+\def \cAbar {{\mathcal{\bar{A}}}}
+\def \cBbar {{\mathcal{\bar{B}}}}
+\def \cCbar {{\mathcal{\bar{C}}}}
+\def \cDbar {{\mathcal{\bar{D}}}}
+\def \cEbar {{\mathcal{\bar{E}}}}
+\def \cFbar {{\mathcal{\bar{F}}}}
+\def \cGbar {{\mathcal{\bar{G}}}}
+\def \cHbar {{\mathcal{\bar{H}}}}
+\def \cIbar {{\mathcal{\bar{I}}}}
+\def \cJbar {{\mathcal{\bar{J}}}}
+\def \cKbar {{\mathcal{\bar{K}}}}
+\def \cLbar {{\mathcal{\bar{L}}}}
+\def \cMbar {{\mathcal{\bar{M}}}}
+\def \cNbar {{\mathcal{\bar{N}}}}
+\def \cObar {{\mathcal{\bar{O}}}}
+\def \cPbar {{\mathcal{\bar{P}}}}
+\def \cQbar {{\mathcal{\bar{Q}}}}
+\def \cRbar {{\mathcal{\bar{R}}}}
+\def \cSbar {{\mathcal{\bar{S}}}}
+\def \cTbar {{\mathcal{\bar{T}}}}
+\def \cUbar {{\mathcal{\bar{U}}}}
+\def \cVbar {{\mathcal{\bar{V}}}}
+\def \cWbar {{\mathcal{\bar{W}}}}
+\def \cXbar {{\mathcal{\bar{X}}}}
+\def \cYbar {{\mathcal{\bar{Y}}}}
+\def \cZbar {{\mathcal{\bar{Z}}}}
+
+
+% Math operations
+% \DeclareMathOperator*{\exp}{exp}
+% \DeclareMathOperator*{\log}{log}
+\DeclareMathOperator*{\Exp}{Exp}
+\DeclareMathOperator*{\Log}{Log}
+
+
+% \newcommand{\bea}{\begin{eqnarray}}
+% \newcommand{\eea}{\end{eqnarray}}
+% \newcommand{\beas}{\begin{eqnarray*}}
+% \newcommand{\eeas}{\end{eqnarray*}}
+% \newcommand{\beq}{\begin{equation}}
+% \newcommand{\eeq}{\end{equation}}
+
+% Override eqnarray with align command from amsmath
+\def\bea#1\eea{\begin{align}#1\end{align}}
+\def\beas#1\eeas{\begin{align*}#1\end{align*}}
+
+\newcommand{\indep}{\perp \!\!\! \perp}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}

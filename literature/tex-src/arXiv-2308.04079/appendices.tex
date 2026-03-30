@@ -1,0 +1,264 @@
+
+\begin{appendix}
+	\section{Details of Gradient Computation}
+	\label{sec:appa}
+	Recall that $\Sigma$/$\Sigma'$ are the world/view space covariance matrices of the Gaussian, $q$ is the rotation, and $s$ the scaling, $W$ is the viewing transformation and $J$ the Jacobian of the affine approximation of the projective transformation.
+	We can apply the chain rule to find the derivatives w.r.t.\ scaling and rotation:
+	\begin{equation}
+		\frac{d\Sigma'}{ds} = \frac{d\Sigma'}{d\Sigma}\frac{d\Sigma}{ds}
+	\end{equation}
+	and
+	\begin{equation}
+		\frac{d\Sigma'}{dq} = \frac{d\Sigma'}{d\Sigma}\frac{d\Sigma}{dq}
+	\end{equation}
+	Simplifying Eq.~\ref{eq:volume-render} using $U = JW$ and $\Sigma'$ being the (symmetric) upper left $2\times2$ matrix of $U \Sigma U^T$, denoting matrix elements with subscripts, we can find the  partial derivatives
+	$
+		\frac{\partial \Sigma'}{\partial \Sigma_{ij}} = \left(\begin{smallmatrix}
+			U_{1,i}U_{1,j} & U_{1,i} U_{2,j}\\
+			U_{1,j} U_{2,i} & U_{2,i}U_{2,j}
+		\end{smallmatrix}\right)
+	$.
+
+	Next, we seek the derivatives $\frac{d\Sigma}{ds}$ and $\frac{d\Sigma}{dq}$. Since $\Sigma = RSS^TR^T$, we can compute $M = RS$ and rewrite $\Sigma = MM^T$. Thus, we can write $\frac{d\Sigma}{ds} = \frac{d\Sigma}{dM} \frac{dM}{ds}$ and $\frac{d\Sigma}{dq} = \frac{d\Sigma}{dM} \frac{dM}{dq}$. Since the covariance matrix $\Sigma$ (and its gradient) is symmetric, the shared first part is compactly found by $\frac{d\Sigma}{dM} = 2M^T$. For scaling, we further have
+	$	\frac{\partial M_{i,j}}{\partial s_k} =  \left\{\begin{array}{lr}
+		R_{i,k} & \text{if j = k}\\
+		0 & \text{otherwise}
+	\end{array}\right\}$.
+	To derive gradients for rotation, we recall the conversion from a unit quaternion $q$ with real part $q_r$ and imaginary parts $q_i, q_j, q_k$ to a rotation matrix $R$:
+	\begin{equation}
+		R(q) = 2\begin{pmatrix}
+			\frac{1}{2} - (q_j^2 + q_k^2) & (q_i q_j - q_r q_k) & (q_i q_k + q_r q_j)\\
+			(q_i q_j + q_r q_k) & \frac{1}{2} - (q_i^2 + q_k^2) & (q_j q_k - q_r q_i)\\
+			(q_i q_k - q_r q_j) & (q_j q_k + q_r q_i) & \frac{1}{2} - (q_i^2 + q_j^2)
+		\end{pmatrix}
+		\label{eq:quat}
+	\end{equation}
+	As a result, we find the following gradients for the components of $q$:
+	\begin{equation}
+		\begin{aligned}
+			&\frac{\partial M}{\partial q_r} = 2 \left(\begin{smallmatrix}
+				0 & -s_y q_k & s_z q_j\\
+				s_x q_k & 0 & -s_z q_i\\
+				-s_x q_j & s_y q_i & 0
+			\end{smallmatrix}\right),
+			&\frac{\partial M}{\partial q_i} = 2\left(\begin{smallmatrix}
+				0 & s_y q_j & s_z q_k\\
+				s_x q_j & -2 s_y q_i & -s_z q_r\\
+				s_x q_k & s_y q_r & -2 s_z q_i
+			\end{smallmatrix}\right)
+			\\
+			&\frac{\partial M}{\partial q_j} = 2\left(\begin{smallmatrix}
+				-2 s_x q_j & s_y q_i & s_z q_r\\
+				s_x q_i & 0 & s_z q_k\\
+				-s_x q_r & s_y q_k & -2s_z q_j
+			\end{smallmatrix}\right),
+			&\frac{\partial M}{\partial q_k} = 2\left(\begin{smallmatrix}
+				-2 s_x q_k & -s_y q_r & s_z q_i\\
+				s_x q_r & -2s_y q_k & s_z q_j\\
+				s_x q_i & s_y q_j & 0
+			\end{smallmatrix}\right)
+		\end{aligned}
+	\end{equation}
+Deriving gradients for quaternion normalization is straightforward.
+
+	\section{Optimization and Densification Algorithm}
+
+	Our optimization and densification algorithms are summarized in Algorithm \ref{alg:optimization}.
+	\begin{algorithm}[!h]
+		\caption{Optimization and Densification\\
+		$w$, $h$: width and height of the training images}
+		\label{alg:optimization}
+		\begin{algorithmic}
+			\State $M \gets$ SfM Points	\Comment{Positions}
+			\State $S, C, A \gets$ InitAttributes() \Comment{Covariances, Colors, Opacities}
+			\State $i \gets 0$	\Comment{Iteration Count}
+
+			\While{not converged}
+
+			\State $V, \hat{I} \gets$ SampleTrainingView()	\Comment{Camera $V$ and Image}
+			\State $I \gets$ Rasterize($M$, $S$, $C$, $A$, $V$)	\Comment{Alg.~\ref{alg:rasterize}}
+
+			\State $L \gets Loss(I, \hat{I}) $ \Comment{Loss}
+
+			\State $M$, $S$, $C$, $A$ $\gets$ Adam($\nabla L$) \Comment{Backprop \& Step}
+
+
+			\If{IsRefinementIteration($i$)}
+			\ForAll{Gaussians $(\mu, \Sigma, c, \alpha)$ $\textbf{in}$ $(M, S, C, A)$}
+			\If{$\alpha < \epsilon$ or IsTooLarge($\mu, \Sigma)$}	\Comment{Pruning}
+			\State RemoveGaussian()
+			\EndIf
+			\If{$\nabla_p L > \tau_p$} \Comment{Densification}
+			\If{$\|S\| > \tau_S$}	\Comment{Over-reconstruction}
+			\State SplitGaussian($\mu, \Sigma, c, \alpha$)
+			\Else								\Comment{Under-reconstruction}
+			\State CloneGaussian($\mu, \Sigma, c, \alpha$)
+			\EndIf
+			\EndIf
+			\EndFor
+			\EndIf
+			\State $i \gets i+1$
+			\EndWhile
+		\end{algorithmic}
+	\end{algorithm}
+
+
+
+
+
+
+	\section{Details of the Rasterizer}
+	\label{app:raster}
+
+	\paragraph{Sorting.}
+	Our design is based on the assumption of a high load of small splats, and we optimize for this by sorting splats once for each frame using radix sort at the beginning.
+	We split the screen into 16x16 pixel tiles (or bins).  We create a list of splats per tile by instantiating each splat in each 16$\times$16 tile it overlaps. This results in a moderate increase in Gaussians to process
+	which however is amortized by simpler control flow and high parallelism of optimized GPU Radix sort~\cite{merrill2010revisiting}.
+	We assign a key for each splats instance with up to 64 bits where the lower 32 bits encode its projected depth and the higher bits encode the index of the overlapped tile. The exact size of the index depends on how many tiles fit the current resolution. Depth ordering is thus directly resolved for all splats in parallel with a single radix sort. After sorting, we can efficiently produce per-tile lists of Gaussians to process by identifying the start and end of ranges in the sorted array with the same tile ID. This is done in parallel, launching one thread per 64-bit array element to compare its higher 32 bits with its two neighbors.
+	Compared to \cite{Lassner_2021_CVPR}, our rasterization thus completely eliminates sequential primitive processing steps and produces more compact per-tile lists to traverse during the forward pass.
+	We show a high-level overview of the rasterization approach in Algorithm~\ref{alg:rasterize}.
+
+	\begin{algorithm}
+		\caption{GPU software rasterization of 3D Gaussians\\
+			$w$, $h$: width and height of the image to rasterize\\
+			$M$, $S$: Gaussian means and covariances in world space\\
+			$C$, $A$: Gaussian colors and opacities\\
+			$V$: view configuration of current camera}
+		\label{alg:rasterize}
+		\begin{algorithmic}
+
+
+			\Function{Rasterize}{$w$, $h$, $M$, $S$, $C$, $A$, $V$}
+
+			\State CullGaussian($p$, $V$) \Comment{Frustum Culling}
+			\State $M', S'$ $\gets$ ScreenspaceGaussians($M$, $S$, $V$) \Comment{Transform}
+			\State $T$ $\gets$ CreateTiles($w$, $h$)
+			\State $L$, $K$ $\gets$ DuplicateWithKeys($M'$, $T$) \Comment{Indices and Keys}
+			\State SortByKeys($K$, $L$)							\Comment{Globally Sort}
+			\State $R$ $\gets$ IdentifyTileRanges($T$, $K$)
+			\State $I \gets \mathbf{0}$ \Comment{Init Canvas}
+
+			\ForAll{Tiles $t$ $\textbf{in}$ $I$}
+			\ForAll{Pixels $i$ $\textbf{in}$ $t$}
+
+			\State $r \gets$ GetTileRange($R$, $t$)
+
+			\State $I[i] \gets$ BlendInOrder($i$, $L$, $r$, $K$, $M'$, $S'$, $C$, $A$)
+
+
+			\EndFor
+			\EndFor
+
+			\Return $I$
+			\EndFunction
+
+		\end{algorithmic}
+	\end{algorithm}
+
+	\ADDITION{\paragraph{Numerical stability.} During the backward pass, we reconstruct the intermediate opacity values needed for gradient computation by repeatedly dividing the accumulated opacity from the forward pass by each Gaussian's $\alpha$. Implemented na\"{i}vely, this process is prone to numerical instabilities (e.g., division by 0). To address this, both in the forward and backward pass, we skip any blending updates with $\alpha < \epsilon$ (we choose $\epsilon$ as $\frac{1}{255}$) and also clamp $\alpha$ with $0.99$ from above. Finally, \textbf{before} a Gaussian is included in the forward rasterization pass, we compute the accumulated opacity if we were to include it and stop front-to-back blending \textbf{before} it can exceed $0.9999$.}
+
+	\section{Per-Scene Error Metrics}
+    \label{sec:appd}
+
+	\ADDITION{Tables~\ref{tab:360_scene_ssim}--\ref{tab:ttdb_scene_lpips} list the various collected error metrics for our evaluation over all considered techniques and real-world scenes. We list both the copied Mip-NeRF360 numbers and those of our runs used to generate the images in the paper; averages for these over the full Mip-NeRF360 dataset are PSNR 27.58, SSIM 0.790, and LPIPS 0.240.}
+
+	\begin{table}[H]
+	\caption{SSIM scores for Mip-NeRF360 scenes. $\dagger$ copied from original paper.}
+	\scalebox{0.6}{
+		\centering
+	    \begin{tabular}{l|ccccc|cccc}
+		~ & bicycle & flowers & garden & stump & treehill  & room & counter & kitchen & bonsai \\ \hline
+		Plenoxels & 0.496 & 0.431 & 0.6063 & 0.523 & 0.509 & 0.8417 & 0.759 & 0.648 & 0.814 \\
+		INGP-Base & 0.491 & 0.450 & 0.649 & 0.574 & 0.518  & 0.855 & 0.798 & 0.818 & 0.890 \\
+		INGP-Big & 0.512 & 0.486 & 0.701 & 0.594 & 0.542  & 0.871 & 0.817 & 0.858 & 0.906 \\
+		Mip-NeRF360$^\dagger$ & 0.685 & 0.583 & 0.813 & 0.744 & 0.632 & 0.913 & 0.894 & 0.920 & \textbf{0.941} \\
+		Mip-NeRF360 & 0.685 & 0.584 & 0.809 & 0.745 & 0.631 & 0.910 & 0.892 & 0.917 & 0.938\\
+		Ours-7k & 0.675 & 0.525 & 0.836 & 0.728 & 0.598  & 0.884 & 0.873 & 0.900 & 0.910 \\
+		Ours-30k & \textbf{0.771} & \textbf{0.605} & \textbf{0.868} & \textbf{0.775} & \textbf{0.638} & \textbf{0.914} & \textbf{0.905} & \textbf{0.922} & 0.938 \\
+	\end{tabular}
+	}
+	\label{tab:360_scene_ssim}
+	\end{table}
+
+	\begin{table}[H]
+	\caption{PSNR scores for Mip-NeRF360 scenes. $\dagger$ copied from original paper. }
+	\scalebox{0.6}{
+		\centering
+		\centering
+		\begin{tabular}{l|ccccc|cccc}
+			~ & bicycle & flowers & garden & stump & treehill  & room & counter & kitchen & bonsai \\ \hline
+			Plenoxels & 21.912 & 20.097 & 23.4947 & 20.661 & 22.248 & 27.594 & 23.624 & 23.420 & 24.669 \\
+			INGP-Base & 22.193 & 20.348 & 24.599 & 23.626 & 22.364  & 29.269 & 26.439 & 28.548 & 30.337 \\
+			INGP-Big & 22.171 & 20.652 & 25.069 & 23.466 & 22.373  & 29.690 & 26.691 & 29.479 & 30.685 \\
+			Mip-NeRF360$^\dagger$ & 24.37 & \textbf{21.73} & 26.98 & 26.40 & 22.87 & \textbf{31.63} & \textbf{29.55} & \textbf{32.23} & \textbf{33.46} \\
+			Mip-NeRF360 & 24.305 & 21.649 & 26.875 & 26.175 & \textbf{22.929} & 31.467 & 29.447 & 31.989 & 33.397 \\
+			Ours-7k & 23.604 & 20.515 & 26.245 & 25.709 & 22.085  & 28.139 & 26.705 & 28.546 & 28.850 \\
+			Ours-30k & \textbf{25.246} & 21.520 & \textbf{27.410} & \textbf{26.550} & 22.490 & 30.632 & 28.700 & 30.317 & 31.980 \\
+		\end{tabular}
+	}
+	\label{tab:360_scene_psnr}
+\end{table}
+
+	\begin{table}[H]
+	\caption{LPIPS scores for Mip-NeRF360 scenes.  $\dagger$ copied from original paper.}
+	\scalebox{0.6}{
+		\centering
+    \begin{tabular}{l|ccccc|cccc}
+	~ & bicycle & flowers & garden & stump & treehill  & room & counter & kitchen & bonsai \\ \hline
+	Plenoxels & 0.506 & 0.521 & 0.3864 & 0.503 & 0.540 & 0.4186 & 0.441 & 0.447 & 0.398 \\
+	INGP-Base & 0.487 & 0.481 & 0.312 & 0.450 & 0.489  & 0.301 & 0.342 & 0.254 & 0.227 \\
+	INGP-Big & 0.446 & 0.441 & 0.257 & 0.421 & 0.450  & 0.261 & 0.306 & 0.195 & 0.205 \\
+	Mip-NeRF360$^\dagger$ & 0.301 & 0.344 & 0.170 & 0.261 &  0.339 & \textbf{0.211} & \textbf{0.204} & \textbf{0.127} & \textbf{0.176} \\
+	Mip-NeRF360 & 0.305 & 0.346 & 0.171 & 0.265 & 0.347 & 0.213 & 0.207 & 0.128 & 0.179\\
+	Ours-7k & 0.318 & 0.417 & 0.153 & 0.287 & 0.404  & 0.272 & 0.254 & 0.161 & 0.244 \\
+	Ours-30k & \textbf{0.205} & \textbf{0.336} & \textbf{0.103} & \textbf{0.210} & \textbf{0.317} & 0.220 & \textbf{0.204} & 0.129 & 0.205 \\
+\end{tabular}
+	}
+\end{table}
+
+
+
+	\begin{table}[H]
+	\caption{SSIM scores for Tanks\&Temples and Deep Blending scenes. }
+		\centering
+    \begin{tabular}{l|cc|cc}
+	~ & Truck & Train & Dr Johnson & Playroom \\ \hline
+	Plenoxels & 0.774 & 0.663 & 0.787 & 0.802 \\
+	INGP-Base & 0.779 & 0.666 & 0.839 & 0.754 \\
+	INGP-Big & 0.800 & 0.689 & 0.854 & 0.779 \\
+	Mip-NeRF360 & 0.857 & 0.660 & \textbf{0.901} & 0.900 \\
+	Ours-7k & 0.840 & 0.694 & 0.853 & 0.896 \\
+	Ours-30k & \textbf{0.879} & \textbf{0.802} & 0.899 & \textbf{0.906} \\
+\end{tabular}
+\end{table}
+	\begin{table}[H]
+	\caption{PSNR scores for Tanks\&Temples and Deep Blending scenes. }
+		\centering
+		\begin{tabular}{l|cc|cc}
+			~ & Truck  & Train & Dr Johnson & Playroom \\ \hline
+			Plenoxels & 23.221 & 18.927 & 23.142 & 22.980 \\
+			INGP-Base & 23.260  & 20.170 & 27.750 & 19.483 \\
+			INGP-Big & 23.383  & 20.456 & 28.257 & 21.665 \\
+			Mip-NeRF360 & 24.912  & 19.523 & \textbf{29.140} & 29.657 \\
+			Ours-7k & 23.506  & 18.892 & 26.306 & 29.245 \\
+			Ours-30k & \textbf{25.187} & \textbf{21.097} & 28.766 & \textbf{30.044} \\
+		\end{tabular}
+\end{table}
+
+
+	\begin{table}[H]
+	\caption{LPIPS scores for Tanks\&Temples and Deep Blending scenes. }
+		\centering
+    \begin{tabular}{l|cc|cc}
+	~ & Truck & Train & Dr Johnson & Playroom \\ \hline
+	Plenoxels & 0.335 & 0.422 & 0.521 & 0.499 \\
+	INGP-Base & 0.274 & 0.386 & 0.381 & 0.465 \\
+	INGP-Big & 0.249 & 0.360 & 0.352 & 0.428 \\
+	Mip-NeRF360 & 0.159 & 0.354 & \textbf{0.237} & 0.252 \\
+	Ours-7k & 0.209 & 0.350 & 0.343 & 0.291 \\
+	Ours-30k & \textbf{0.148} & \textbf{0.218} & 0.244 & \textbf{0.241} \\
+\end{tabular}
+		\label{tab:ttdb_scene_lpips}
+\end{table}
+
+\end{appendix}

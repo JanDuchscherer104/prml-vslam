@@ -1,0 +1,132 @@
+
+\documentclass[10pt,twocolumn,letterpaper,dvipsnames,table]{article}
+
+%%%%%%%%% PAPER TYPE  - PLEASE UPDATE FOR FINAL VERSION
+% \usepackage{cvpr}              % To produce the CAMERA-READY version
+% \usepackage[review]{cvpr}      % To produce the REVIEW version
+\usepackage[pagenumbers]{cvpr} % To force page numbers, e.g. for an arXiv version
+
+% Import additional packages in the preamble file, before hyperref
+\input{preamble}
+\usepackage{cuted}
+
+
+
+% It is strongly recommended to use hyperref, especially for the review version.
+% hyperref with option pagebackref eases the reviewers' job.
+% Please disable hyperref *only* if you encounter grave issues,
+% e.g. with the file validation for the camera-ready version.
+%
+% If you comment hyperref and then uncomment it, you should delete *.aux before re-running LaTeX.
+% (Or just hit 'q' on the first LaTeX run, let it finish, and you should be clear).
+\definecolor{cvprblue}{rgb}{0.21,0.49,0.74}
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=cvprblue]{hyperref}
+\usepackage[capitalize]{cleveref}
+\usepackage{bm}
+
+\usepackage{adjustbox}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{makecell}
+\usepackage{arydshln}
+
+% define abbreviations
+\def\eg{\emph{e.g.}\xspace} \def\Eg{\emph{E.g.}\xspace}
+\def\ie{\emph{i.e.}\xspace} \def\Ie{\emph{I.e.}\xspace}
+\def\etc{\emph{etc.}\xspace}
+\def\wrt{w.r.t.}
+\def\etal{\emph{et al.}\xspace}
+\def\wo{\emph{w/o}\xspace}
+
+
+% define commands
+\newcommand{\ourshort}{ViSTA\xspace}
+\newcommand{\ours}{ViSTA-SLAM\xspace}
+
+\newcommand{\boldparagraph}[1]{\vspace{2pt}\noindent{\bf #1 \;\;}}
+\newcommand{\1}[1]{\mathds{1}_{\{#1\}}}
+\newcommand{\bplus}{$\boldsymbol{+}$}    % bold plus symbol in text mode
+\newcommand{\greencheck}{{\color{OliveGreen}\checkmark}}
+\newcommand{\redx}{{\color{red}\ding{55}}}
+% highlighting for first, second and third best results
+
+% \colorlet{colorFst}{Green!25} % first
+% \colorlet{colorSnd}{SpringGreen!45} % second %
+% \colorlet{colorTrd}{Yellow!30} % third
+
+\definecolor{myPink}{rgb}{0.980, 0.502, 0.447}
+\definecolor{myOrange}{rgb}{1.000, 0.784, 0.486}
+
+\colorlet{colorFst}{myPink!40} % first
+\colorlet{colorSnd}{myOrange!45} % second %
+\colorlet{colorTrd}{Goldenrod!20} % third
+
+% \colorlet{colorFst}{Red!50}       % first / best
+% \colorlet{colorSnd}{Orange!45}    % second
+% \colorlet{colorTrd}{Goldenrod!45}    % third
+
+
+\colorlet{colorLow}{darkgray!60}    % low-light color
+\newcommand{\st}{\cellcolor{colorFst}\bf}   % first
+\newcommand{\nd}{\cellcolor{colorSnd}}      % second
+\newcommand{\rd}{\cellcolor{colorTrd}}      % third
+\newcommand{\lo}{\color{colorLow}}          % low-light
+
+% moderate setting for spacing
+\setlength{\abovecaptionskip}{2pt plus 1pt minus 1pt}
+\setlength{\belowcaptionskip}{-6pt plus 3pt}
+\setlength{\abovedisplayskip}{0pt}
+\setlength{\belowdisplayskip}{0pt}
+\setlength\abovedisplayshortskip{0pt}
+\setlength\belowdisplayshortskip{0pt}
+\setlength{\parskip}{0em plus 0em minus 0em}
+
+\definecolor{gray}{rgb}{0.65,0.65,0.65}
+\definecolor{mycol}{rgb}{0.90,0.95,1.0}
+
+
+%%%%%%%%% PAPER ID  - PLEASE UPDATE
+
+%%%%%%%%% TITLE - PLEASE UPDATE
+% \title{Feedforward SLAM}
+% \title{ViSTA-SLAM: Visual SLAM with Symmetric Two-view Associative Regression}
+\title{ViSTA-SLAM: Visual SLAM with Symmetric Two-view Association}
+% maybe add lightweight, dust3r
+% \title{SymSLAM: lightweight highly accurate slam based on symmetry}
+
+%%%%%%%%% AUTHORS - PLEASE UPDATE
+\author{Ganlin Zhang$^{~1,2}$
+% For a paper whose authors are all at the same institution,
+% omit the following lines up until the closing ``}''.
+% Additional authors and addresses can be added with ``\and'',
+% just like the second author.
+% To save space, use either the email address or home page, not both
+\quad
+Shenhan Qian$^{~1,2}$
+\quad
+Xi Wang$^{~1,2,3}$
+\quad
+Daniel Cremers$^{~1,2}$
+\vspace{0.3em}\\  $^{1~}$TU Munich \qquad $^{2~}$MCML \qquad $^{3~}$ETH Zurich
+}
+\begin{document}
+\maketitle
+\input{sec/0_abstract}
+\input{sec/1_1_intro_related_work}
+\input{sec/1_2_intro_contribution}
+% \input{sec/2_related_work}
+\input{sec/2_method}
+\input{sec/3_experiments}
+\input{sec/4_conclusion}
+{
+    \clearpage
+    \small
+    \bibliographystyle{ieeenat_fullname}
+    \bibliography{main}
+}
+\input{sec/X_suppl}
+
+\end{document}

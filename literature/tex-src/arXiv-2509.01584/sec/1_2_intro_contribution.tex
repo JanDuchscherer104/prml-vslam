@@ -1,0 +1,28 @@
+
+\subsection{Contributions of \ours}
+
+% To address these concerns, we propose \ours, a novel real-time monocular visual SLAM pipeline based on symmetric two-view association.
+% At its core is the lightweight Symmetric Two-view Association (STA) model frontend, which takes two RGB images as input and simultaneously regresses two pointmaps in their local coordinate frames along with the relative camera pose between them. During training, we enforce cycle consistency on relative poses and geometric consistency on pointmaps to enhance accuracy and stability.
+% Unlike prior 3D models~\cite{dust3r,mast3r,wang2025vggt}, STA is \textit{fully symmetric} with respect to the inputs: neither view is designated as a reference.
+
+% This symmetric design makes our frontend significantly more lightweight than existing methods, with STA being only 64\% the size of MASt3R~\cite{mast3r} and 35\% the size of VGGT~\cite{wang2025vggt}. In the backend, we perform $\mathrm{Sim}(3)$ pose graph optimization with loop closures. Unlike existing methods~\cite{maggio2025vggtslam,deng2025vggtlong} that group multiple views into a single submap node, our approach assigns each view its own nodes in the pose graph. Thanks to the local pointmaps produced by our STA frontend, each node can be represented independently, with only relative transformations connecting it to others. Compared to submap-based methods~\cite{maggio2025vggtslam}, this design enables a more flexible graph structure and improves robustness. This combination of flexibility and lightweight architecture motivates our adoption of a two-view model as the frontend. To further enhance robustness, we represent each view with multiple nodes rather than a single node, connecting them with scale-only edges to handle the inconsistent scale of the same view from different forwarding passes.
+% %and efficiently optimize the resulting graph using the Levenberg–Marquardt algorithm.
+
+
+To address these concerns, we propose \ours, a novel real-time monocular visual SLAM pipeline based on symmetric two-view association. At its core is a lightweight Symmetric Two-view Association (STA) model frontend, which takes two RGB images as input and simultaneously regresses two pointmaps in their respective local coordinate frames, along with the relative camera pose between them. During training, we enforce cycle consistency on relative poses and geometric consistency on pointmaps to improve accuracy and stability. Unlike prior 3D models~\cite{dust3r,mast3r,wang2025vggt}, STA is \textit{fully symmetric} with respect to its inputs: neither view is designated as a reference, and the same encoder–decoder architecture is applied to both. In the backend, we perform $\mathrm{Sim}(3)$ pose graph optimization with loop closures to mitigate drift and ensure global consistency. To further enhance robustness, each view is represented by multiple nodes rather than a single one, which are connected by scale-only edges to handle scale inconsistencies across different forward passes.
+
+
+
+
+This symmetric design makes our frontend substantially more lightweight than existing methods, with STA being only 64\% the size of MASt3R~\cite{mast3r} and 35\% the size of VGGT~\cite{wang2025vggt}.
+% This symmetric design makes our frontend substantially more lightweight than existing methods, as shown in \cref{fig:symmetric}, our STA saves half of the decoder parameters, compared to the asymmetric architecture.
+Unlike prior approaches~\cite{maggio2025vggtslam,deng2025vggtlong} that group multiple views into a single submap node, our method assigns each view its own nodes in the pose graph. Leveraging the local pointmaps produced by the STA frontend, each node can be represented independently, connected to others solely through relative transformations. Compared to submap-based methods~\cite{maggio2025vggtslam}, this design yields a more flexible graph structure and greater robustness. The combination of this flexibility and lightweight architecture underpins our choice of a symmetric two-view model as the frontend.
+
+
+In summary, our main \textbf{contributions} are as follows:
+\begin{itemize}[itemsep=0pt,topsep=2pt,leftmargin=10pt,label=$\bullet$]
+  \item We design and train a lightweight, symmetric two-view association network as the frontend, which takes only two RGB images as input and regresses their pointmaps in local coordinates along with the relative camera pose.
+  \item We construct a robust $\mathrm{Sim}(3)$ pose graph with loop closures, optimize it using the Levenberg–Marquardt algorithm for fast and stable convergence.
+  \item By integrating these components, we present a real-time monocular dense visual SLAM framework that operates without requiring any camera intrinsics.
+  \item Our method achieves state-of-the-art performance on the real-world 7-Scenes~\cite{shotton2013-7scenes} and TUM-RGBD~\cite{sturm12tumrgbd} datasets for both camera trajectory estimation and dense 3D reconstruction.
+\end{itemize}

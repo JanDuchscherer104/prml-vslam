@@ -1,0 +1,33 @@
+\section{Fast Differentiable Rasterizer for Gaussians}
+\label{sec:tile-raster}
+
+
+
+
+
+
+
+Our goals are to have fast overall rendering and fast sorting to allow approximate $\alpha$-blending -- including for anisotropic splats -- and to avoid hard limits on the number of splats that can receive gradients that exist in previous work~\cite{Lassner_2021_CVPR}.
+
+To achieve these goals, we design a tile-based rasterizer for Gaussian splats inspired by recent software rasterization approaches~\cite{Lassner_2021_CVPR} to pre-sort primitives for an entire image at a time, avoiding the expense of sorting per pixel that hindered previous $\alpha$-blending solutions~\cite{kopanas21,kopanas22}. Our fast rasterizer allows efficient backpropagation over an arbitrary number of blended Gaussians with low additional memory consumption, requiring only a constant overhead per pixel.
+Our rasterization pipeline is fully differentiable, and given the projection to 2D (Sec.~\ref{sec:3d-splats}) can rasterize anisotropic splats similar to previous 2D splatting methods~\cite{kopanas21}.
+
+Our method starts by splitting the screen into 16$\times$16 tiles, and then proceeds to cull 3D Gaussians against the view frustum and each tile.
+Specifically, we only keep Gaussians with a 99\% confidence interval intersecting the view frustum.
+Additionally, we use a guard band to trivially reject Gaussians at extreme positions \ADDITION{(i.e., those with means close to the near plane and far outside the view frustum)}, since computing their projected 2D covariance would be unstable.
+We then instantiate each Gaussian according to the number of tiles they overlap and assign each instance a key that combines view space depth and tile ID. We then sort Gaussians based on these keys using a single fast GPU Radix sort~\cite{merrill2010revisiting}.
+Note that there is no additional per-pixel ordering of points, and blending is performed based on this initial sorting.  As a consequence, our $\alpha$-blending can be approximate in some configurations. %
+However, these approximations become negligible as \CORRECTION{points}{splats} approach the size of individual pixels.
+We found that this choice greatly enhances training and rendering performance without producing visible artifacts in converged scenes.
+
+After sorting \CORRECTION{points}{Gaussians}, we produce a list for each tile by identifying the first and last depth-sorted entry that splats to a given tile. For rasterization, we launch one thread block for each tile. Each block first collaboratively loads packets of \CORRECTION{points}{Gaussians} into shared memory and then, for a given pixel, accumulates color and $\alpha$ values by traversing the lists front-to-back, thus maximizing the gain in parallelism both for data loading/sharing and processing.
+When we reach a target saturation of $\alpha$ in a pixel, the corresponding thread stops. At regular intervals, threads in a tile are queried and the processing of the entire tile terminates when all pixels have saturated (i.e., $\alpha$ goes to 1). %
+Details of sorting and a high-level overview of the overall rasterization approach are given in Appendix~\ref{app:raster}.
+
+During rasterization, the saturation of $\alpha$ is the only stopping criterion. In contrast to previous work, we do not limit the number of blended primitives that receive gradient updates. We enforce this property to allow our approach to handle scenes with an arbitrary, varying depth complexity and accurately learn them, without having to resort to scene-specific hyperparameter tuning.
+During the backward pass, we must therefore recover the full sequence of blended points per-pixel in the forward pass. One solution would be to store arbitrarily long lists of blended points per-pixel in global memory~\cite{kopanas21}. To avoid the implied dynamic memory management overhead, we instead choose to traverse the per-tile lists again; we can reuse the sorted array of Gaussians and tile ranges from the forward pass. To facilitate gradient computation, we now traverse them back-to-front.
+
+The traversal starts from the last point that affected any pixel in the tile, and loading of points into shared memory again happens collaboratively. Additionally, each pixel will only start (expensive) overlap testing and processing of points if their \CORRECTION{index}{depth} is lower than or equal to the \CORRECTION{index}{depth} of the last point that contributed to its color during the forward pass.
+Computation of the gradients described in Sec.~\ref{sec:3d-splats} requires the accumulated opacity values at each step during the original blending process.
+\CORRECTION{ Rather than storing a list of of progressively shrinking opacity values during the forward pass, we recover the values from those in the forward pass. }{Rather than trasversing an explicit list of progressively shrinking opacities in the backward pass, we can recover these intermediate opacities by storing only the total accumulated opacity at the end of the forward pass.}
+Specifically, each point stores the final accumulated opacity $\alpha$ in the forward process; we divide this by each point's $\alpha$ in our back-to-front traversal to obtain the required coefficients for gradient computation.

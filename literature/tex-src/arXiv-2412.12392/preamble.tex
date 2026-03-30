@@ -1,0 +1,181 @@
+\usepackage{xspace}
+
+\usepackage{multirow}
+% \usepackage{changepage,threeparttable} % for wide tables
+\usepackage{boldline}
+
+%
+% --- inline annotations
+%
+\newcommand{\red}[1]{{\color{red}#1}}
+\newcommand{\riku}[1]{{\color{red}#1}}
+\newcommand{\todo}[1]{{\color{red}#1}}
+\newcommand{\TODO}[1]{\textbf{\color{red}[TODO: #1]}}
+% --- disable by uncommenting
+% \renewcommand{\TODO}[1]{}
+% \renewcommand{\todo}[1]{#1}
+
+% Network abbreviations
+\newcommand{\duster}{DUSt3R\xspace}
+\newcommand{\master}{MASt3R\xspace}
+\newcommand{\mastersfm}{MASt3R-SfM\xspace}
+\newcommand{\spanner}{Spann3R\xspace}
+
+\newcommand{\Fduster}{\cF_{D}}
+\newcommand{\Fmaster}{\cF_{M}}
+
+% General notation
+\newcommand{\mbf}[1]{\mathbf{#1}}
+\newcommand{\mcal}[1]{\mathcal{#1}}
+
+% Math
+% \DeclareMathOperator*{\argmax}{arg\,max}
+% \DeclareMathOperator*{\argmin}{arg\,min}
+
+% Functions
+\newcommand{\normsq}[1]{\left\Vert#1\right\Vert^2}
+% \newcommand{\ray}[1]{\overrightarrow{n}\left(#1\right)}
+\newcommand{\ray}[1]{\psi\left(#1\right)}
+\newcommand{\projection}{\Pi}
+\newcommand{\proj}[1]{\projection\left(#1\right)}
+
+% Matches
+\newcommand{\match}[2]{\vecm_{#1,#2}}
+\newcommand{\matchconf}[2]{\vecq_{#1,#2}}
+
+% Optimization
+\newcommand{\J}{\mbf{J}}
+\newcommand{\eye}{\mbf{I}}
+
+% Images
+\newcommand{\I}{\mcal{I}}
+\newcommand{\Ii}{\I^i}
+\newcommand{\Ij}{\I^j}
+\newcommand{\Ik}{\I^k}
+\newcommand{\If}{\I^f}
+
+\newcommand{\pix}{\mbf{p}}
+
+% Cameras
+\newcommand{\Cam}{\mcal{C}}
+\newcommand{\Ci}{\Cam_i}
+\newcommand{\Cj}{\Cam_j}
+
+% MASt3R Outputs
+\newcommand{\X}{\matX}
+\newcommand{\Xii}{\X^i_{i}}
+\newcommand{\Xji}{\X^j_{i}}
+\newcommand{\Xjj}{\X^j_{j}}
+\newcommand{\Xij}{\X^i_{j}}
+\newcommand{\Xkk}{\X^k_k}
+\newcommand{\Xkf}{\X^k_f}
+\newcommand{\Xfk}{\X^f_k}
+\newcommand{\Xff}{\X^f_f}
+\newcommand{\Xkkm}{\X^k_{k, m}}
+\newcommand{\Xkkn}{\X^k_{k, n}}
+\newcommand{\Xkfm}{\X^k_{f, m}}
+\newcommand{\Xkfn}{\X^k_{f, n}}
+\newcommand{\Xfkm}{\X^f_{k, m}}
+\newcommand{\Xfkn}{\X^f_{k, n}}
+% \newcommand{\Xffm}{\X^f_{f, m}}
+\newcommand{\Xffm}{\X^f_{f, m}}
+\newcommand{\Xiim}{\X^i_{i, m}}
+\newcommand{\Xjjn}{\X^j_{j, n}}
+
+\newcommand{\Xcanon}{\tilde{\matX}}
+\newcommand{\Xcanonii}{\Xcanon^i_{i}}
+\newcommand{\Xcanonkk}{\Xcanon^k_{k}}
+\newcommand{\Xcanonkkn}{\Xcanon^k_{k,n}}
+\newcommand{\Xcanoniim}{\Xcanon^i_{i,m}}
+\newcommand{\Xcanonjjn}{\Xcanon^j_{j,n}}
+
+\newcommand{\Ccanon}{\tilde{\matC}}
+\newcommand{\Ccanonkk}{\Ccanon^k_{k}}
+
+\newcommand{\x}{x}
+\newcommand{\xii}{\x^i_{i}}
+
+% \newcommand{\ray}[1]{r\left(#1\right)}
+% \newcommand{\ray}{r}
+% \newcommand{\rii}{r^i_{i}}
+% \newcommand{\rji}{\ray^j_{i}}
+% \newcommand{\rjj}{\ray^j_{j}}
+% \newcommand{\rij}{\ray^i_{j}}
+% \newcommand{\rkk}{\ray^k_k}
+% \newcommand{\rkf}{\ray^k_f}
+% \newcommand{\rfk}{\ray^f_k}
+% \newcommand{\rff}{\ray^f_f}
+% \newcommand{\rkki}{\ray^k_{k, i}}
+% \newcommand{\rkkj}{\ray^k_{k, j}}
+% \newcommand{\rkfi}{\ray^k_{f, i}}
+% \newcommand{\rkfj}{\ray^k_{f, j}}
+% \newcommand{\rfki}{\ray^f_{k, i}}
+% \newcommand{\rfkj}{\ray^f_{k, j}}
+% \newcommand{\rffi}{\ray^f_{f, i}}
+% \newcommand{\rffj}{\ray^f_{f, j}}
+
+
+\newcommand{\C}{\matC}
+\newcommand{\Cii}{\C^i_{i}}
+\newcommand{\Cji}{\C^j_{i}}
+\newcommand{\Cjj}{\C^j_{j}}
+\newcommand{\Cij}{\C^i_{j}}
+\newcommand{\Ckk}{\X^k_k}
+\newcommand{\Ckf}{\C^k_f}
+\newcommand{\Cfk}{\C^f_k}
+\newcommand{\Cff}{\C^f_f}
+
+\newcommand{\Q}{\matQ}
+\newcommand{\Qii}{\Q^i_{i}}
+\newcommand{\Qji}{\Q^j_{i}}
+\newcommand{\Qjj}{\Q^j_{j}}
+\newcommand{\Qij}{\Q^i_{j}}
+\newcommand{\Qffm}{\Q^f_{f, m}}
+\newcommand{\Qkkn}{\Q^k_{k, n}}
+
+\newcommand{\D}{\matD}
+\newcommand{\Dii}{\D^i_{i}}
+\newcommand{\Dji}{\D^j_{i}}
+\newcommand{\Djj}{\D^j_{j}}
+\newcommand{\Dij}{\D^i_{j}}
+
+
+% Poses
+\newcommand{\wc}{WC}
+\newcommand{\wci}{WC_i}
+\newcommand{\wcj}{WC_j}
+
+\newcommand{\Twc}{\matT_{WC}}
+\newcommand{\Tcicj}{\matT_{C_iC_j}}
+\newcommand{\Tcjci}{\matT_{C_jC_i}}
+\newcommand{\Twci}{\matT_{WC_i}}
+\newcommand{\Twcj}{\matT_{WC_j}}
+% \newcommand{\Tkf}{\matT_{C_kC_f}}
+% \newcommand{\Tfk}{\matT_{C_fC_k}}
+% \newcommand{\Twck}{\matT_{WC_k}}
+\newcommand{\Tkf}{\matT_{kf}}
+\newcommand{\Tfk}{\matT_{fk}}
+\newcommand{\Twck}{\matT_{WC_k}}
+\newcommand{\Tij}{\matT_{ij}}
+
+\newcommand{\Rwc}{\mat_R_{WC}}
+\newcommand{\vectau}{\vecYY{\tau}}
+%Keyframes
+\newcommand{\KF}{\mathcal{K}}
+\newcommand{\KFthreshold}{\omega_k}
+\newcommand{\LCthreshold}{\omega_l}
+\newcommand{\Retrievalthreshold}{\omega_r}
+\newcommand{\edges}{\mathcal{E}}
+
+%
+\newcommand{\kdtree}{$k$-d tree\xspace}
+
+
+%
+
+\newcommand\blfootnote[1]{%
+  \begingroup
+  \renewcommand\thefootnote{}\footnote{#1}%
+  \addtocounter{footnote}{-1}%
+  \endgroup
+}

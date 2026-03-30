@@ -1,5 +1,8 @@
 #import "charged_ieee_local.typ": ieee
 
+#let report_link_blue = rgb("#2563eb")
+#show link: set text(fill: report_link_blue)
+
 #let hm_author(name, email: none) = if email == none {
   (name: name)
 } else {
@@ -42,6 +45,7 @@
 
 #include "sections/01-introduction.typ"
 #include "sections/02-related-work.typ"
+#include "challenge-intro/challenge-from-Vslam-to-3DGS.typ"
 #include "sections/03-challenge-and-scope.typ"
 #include "sections/04-candidate-methods.typ"
 #include "sections/05-datasets.typ"

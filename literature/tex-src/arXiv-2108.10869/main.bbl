@@ -1,0 +1,366 @@
+\begin{thebibliography}{10}\itemsep=-1pt
+
+\bibitem{codeslam}
+M.~Bloesch, J.~Czarnowski, R.~Clark, S.~Leutenegger, and A.~J. Davison.
+\newblock Codeslam—learning a compact, optimisable representation for dense
+  visual slam.
+\newblock In {\em Proceedings of the IEEE conference on computer vision and
+  pattern recognition}, pages 2560--2568, 2018.
+
+\bibitem{euroc}
+M.~Burri, J.~Nikolic, P.~Gohl, T.~Schneider, J.~Rehder, S.~Omari, M.~W.
+  Achtelik, and R.~Siegwart.
+\newblock The euroc micro aerial vehicle datasets.
+\newblock {\em The International Journal of Robotics Research},
+  35(10):1157--1163, 2016.
+
+\bibitem{sintel}
+D.~J. Butler, J.~Wulff, G.~B. Stanley, and M.~J. Black.
+\newblock A naturalistic open source movie for optical flow evaluation.
+\newblock In {A. Fitzgibbon et al. (Eds.)}, editor, {\em European Conf. on
+  Computer Vision (ECCV)}, Part IV, LNCS 7577, pages 611--625. Springer-Verlag,
+  Oct. 2012.
+
+\bibitem{robustperception}
+C.~Cadena, L.~Carlone, H.~Carrillo, Y.~Latif, D.~Scaramuzza, J.~Neira, I.~Reid,
+  and J.~J. Leonard.
+\newblock Past, present, and future of simultaneous localization and mapping:
+  Toward the robust-perception age.
+\newblock {\em IEEE Transactions on robotics}, 32(6):1309--1332, 2016.
+
+\bibitem{orbslam3}
+C.~Campos, R.~Elvira, J.~J.~G. Rodr{\'\i}guez, J.~M. Montiel, and J.~D.
+  Tard{\'o}s.
+\newblock Orb-slam3: An accurate open-source library for visual,
+  visual-inertial and multi-map slam.
+\newblock {\em arXiv preprint arXiv:2007.11898}, 2020.
+
+\bibitem{lsdomni}
+D.~Caruso, J.~Engel, and D.~Cremers.
+\newblock Large-scale direct slam for omnidirectional cameras.
+\newblock In {\em 2015 IEEE/RSJ International Conference on Intelligent Robots
+  and Systems (IROS)}, pages 141--148. IEEE, 2015.
+
+\bibitem{ucn}
+C.~B. Choy, J.~Gwak, S.~Savarese, and M.~Chandraker.
+\newblock Universal correspondence network.
+\newblock {\em arXiv preprint arXiv:1606.03558}, 2016.
+
+\bibitem{lsnet}
+R.~Clark, M.~Bloesch, J.~Czarnowski, S.~Leutenegger, and A.~J. Davison.
+\newblock Ls-net: Learning to solve nonlinear least squares for monocular
+  stereo.
+\newblock {\em arXiv preprint arXiv:1809.02966}, 2018.
+
+\bibitem{deepfactors}
+J.~Czarnowski, T.~Laidlow, R.~Clark, and A.~J. Davison.
+\newblock Deepfactors: Real-time probabilistic dense monocular slam.
+\newblock {\em IEEE Robotics and Automation Letters}, 5(2):721--728, 2020.
+
+\bibitem{scannet}
+A.~Dai, A.~X. Chang, M.~Savva, M.~Halber, T.~Funkhouser, and M.~Nie{\ss}ner.
+\newblock Scannet: Richly-annotated 3d reconstructions of indoor scenes.
+\newblock In {\em Proceedings of the IEEE Conference on Computer Vision and
+  Pattern Recognition}, pages 5828--5839, 2017.
+
+\bibitem{bundlefusion}
+A.~Dai, M.~Nie{\ss}ner, M.~Zollh{\"o}fer, S.~Izadi, and C.~Theobalt.
+\newblock Bundlefusion: Real-time globally consistent 3d reconstruction using
+  on-the-fly surface reintegration.
+\newblock {\em ACM Transactions on Graphics (ToG)}, 36(4):1, 2017.
+
+\bibitem{monoslam}
+A.~J. Davison, I.~D. Reid, N.~D. Molton, and O.~Stasse.
+\newblock Monoslam: Real-time single camera slam.
+\newblock {\em IEEE transactions on pattern analysis and machine intelligence},
+  29(6):1052--1067, 2007.
+
+\bibitem{superpoint}
+D.~DeTone, T.~Malisiewicz, and A.~Rabinovich.
+\newblock Superpoint: Self-supervised interest point detection and description.
+\newblock In {\em Proceedings of the IEEE conference on computer vision and
+  pattern recognition workshops}, pages 224--236, 2018.
+
+\bibitem{lfg}
+M.~Dusmanu, J.~L. Schonberger, and M.~Pollefeys.
+\newblock Multi-view optimization of local feature geometry.
+\newblock In {\em Proceedings of the 2020 European Conference on Computer
+  Vision}, 2020.
+
+\bibitem{dso}
+J.~Engel, V.~Koltun, and D.~Cremers.
+\newblock Direct sparse odometry.
+\newblock {\em IEEE transactions on pattern analysis and machine intelligence},
+  40(3):611--625, 2017.
+
+\bibitem{lsd}
+J.~Engel, T.~Sch{\"o}ps, and D.~Cremers.
+\newblock Lsd-slam: Large-scale direct monocular slam.
+\newblock In {\em European conference on computer vision}, pages 834--849.
+  Springer, 2014.
+
+\bibitem{ov2}
+M.~Ferrera, A.~Eudes, J.~Moras, M.~Sanfourche, and G.~Le~Besnerais.
+\newblock Ov2 slam: A fully online and versatile visual slam for real-time
+  applications.
+\newblock {\em IEEE Robotics and Automation Letters}, 6(2):1399--1406, 2021.
+
+\bibitem{svo}
+C.~Forster, Z.~Zhang, M.~Gassner, M.~Werlberger, and D.~Scaramuzza.
+\newblock Svo: Semidirect visual odometry for monocular and multicamera
+  systems.
+\newblock {\em IEEE Transactions on Robotics}, 33(2):249--265, 2016.
+
+\bibitem{mvs}
+Y.~Furukawa and C.~Hern{\'a}ndez.
+\newblock Multi-view stereo: A tutorial.
+\newblock {\em Foundations and Trends{\textregistered} in Computer Graphics and
+  Vision}, 9(1-2):1--148, 2015.
+
+\bibitem{dvo}
+C.~Kerl, J.~Sturm, and D.~Cremers.
+\newblock Dense visual slam for rgb-d cameras.
+\newblock In {\em 2013 IEEE/RSJ International Conference on Intelligent Robots
+  and Systems}, pages 2100--2106. IEEE, 2013.
+
+\bibitem{tanks}
+A.~Knapitsch, J.~Park, Q.-Y. Zhou, and V.~Koltun.
+\newblock Tanks and temples: Benchmarking large-scale scene reconstruction.
+\newblock {\em ACM Transactions on Graphics (ToG)}, 36(4):1--13, 2017.
+
+\bibitem{rcvd}
+J.~Kopf, X.~Rong, and J.-B. Huang.
+\newblock Robust consistent video depth estimation.
+\newblock {\em arXiv preprint arXiv:2012.05901}, 2020.
+
+\bibitem{gradslam}
+J.~{Krishna Murthy}, S.~Saryazdi, G.~Iyer, and L.~Paull.
+\newblock gradslam: Dense slam meets automatic differentiation.
+\newblock {\em arXiv}, 2020.
+
+\bibitem{neuralrgbd}
+C.~Liu, J.~Gu, K.~Kim, S.~G. Narasimhan, and J.~Kautz.
+\newblock Neural rgb (r) d sensing: Depth and uncertainty from a video camera.
+\newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and
+  Pattern Recognition}, pages 10986--10995, 2019.
+
+\bibitem{cvd}
+X.~Luo, J.-B. Huang, R.~Szeliski, K.~Matzen, and J.~Kopf.
+\newblock Consistent video depth estimation.
+\newblock {\em ACM Transactions on Graphics (TOG)}, 39(4):71--1, 2020.
+
+\bibitem{geodesc}
+Z.~Luo, T.~Shen, L.~Zhou, S.~Zhu, R.~Zhang, Y.~Yao, T.~Fang, and L.~Quan.
+\newblock Geodesc: Learning local descriptors by integrating geometry
+  constraints.
+\newblock In {\em Proceedings of the European conference on computer vision
+  (ECCV)}, pages 168--183, 2018.
+
+\bibitem{omnidso}
+H.~Matsuki, L.~von Stumberg, V.~Usenko, J.~St{\"u}ckler, and D.~Cremers.
+\newblock Omnidirectional dso: Direct sparse odometry with fisheye cameras.
+\newblock {\em IEEE Robotics and Automation Letters}, 3(4):3693--3700, 2018.
+
+\bibitem{voldor}
+Z.~Min, Y.~Yang, and E.~Dunn.
+\newblock Voldor: Visual odometry from log-logistic dense optical flow
+  residuals.
+\newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and
+  Pattern Recognition}, pages 4898--4909, 2020.
+
+\bibitem{hardnet}
+A.~Mishchuk, D.~Mishkin, F.~Radenovic, and J.~Matas.
+\newblock Working hard to know your neighbor's margins: Local descriptor
+  learning loss.
+\newblock {\em arXiv preprint arXiv:1705.10872}, 2017.
+
+\bibitem{ekfslam}
+A.~I. Mourikis and S.~I. Roumeliotis.
+\newblock A multi-state constraint kalman filter for vision-aided inertial
+  navigation.
+\newblock In {\em Proceedings 2007 IEEE International Conference on Robotics
+  and Automation}, pages 3565--3572. IEEE, 2007.
+
+\bibitem{orbslam}
+R.~Mur-Artal, J.~M.~M. Montiel, and J.~D. Tardos.
+\newblock Orb-slam: a versatile and accurate monocular slam system.
+\newblock {\em IEEE transactions on robotics}, 31(5):1147--1163, 2015.
+
+\bibitem{orbslam2}
+R.~Mur-Artal and J.~D. Tard{\'o}s.
+\newblock Orb-slam2: An open-source slam system for monocular, stereo, and
+  rgb-d cameras.
+\newblock {\em IEEE Transactions on Robotics}, 33(5):1255--1262, 2017.
+
+\bibitem{nyuv2}
+P.~K. Nathan~Silberman, Derek~Hoiem and R.~Fergus.
+\newblock Indoor segmentation and support inference from rgbd images.
+\newblock In {\em ECCV}, 2012.
+
+\bibitem{dtam}
+R.~A. Newcombe, S.~J. Lovegrove, and A.~J. Davison.
+\newblock Dtam: Dense tracking and mapping in real-time.
+\newblock In {\em 2011 international conference on computer vision}, pages
+  2320--2327. IEEE, 2011.
+
+\bibitem{lfnet}
+Y.~Ono, E.~Trulls, P.~Fua, and K.~M. Yi.
+\newblock Lf-net: Learning local features from images.
+\newblock {\em arXiv preprint arXiv:1805.09662}, 2018.
+
+\bibitem{vinsf}
+T.~Qin and S.~Shen.
+\newblock Online temporal calibration for monocular visual-inertial systems.
+\newblock In {\em 2018 IEEE/RSJ International Conference on Intelligent Robots
+  and Systems (IROS)}, pages 3662--3669. IEEE, 2018.
+
+\bibitem{ranftl2018deep}
+R.~Ranftl and V.~Koltun.
+\newblock Deep fundamental matrix estimation.
+\newblock In {\em Proceedings of the European conference on computer vision
+  (ECCV)}, pages 284--299, 2018.
+
+\bibitem{kimera}
+A.~Rosinol, M.~Abate, Y.~Chang, and L.~Carlone.
+\newblock Kimera: an open-source library for real-time metric-semantic
+  localization and mapping.
+\newblock In {\em 2020 IEEE International Conference on Robotics and Automation
+  (ICRA)}, pages 1689--1696. IEEE, 2020.
+
+\bibitem{superglue}
+P.-E. Sarlin, D.~DeTone, T.~Malisiewicz, and A.~Rabinovich.
+\newblock Superglue: Learning feature matching with graph neural networks.
+\newblock In {\em Proceedings of the IEEE/CVF conference on computer vision and
+  pattern recognition}, pages 4938--4947, 2020.
+
+\bibitem{back2thefeature}
+P.-E. Sarlin, A.~Unagar, M.~Larsson, H.~Germain, C.~Toft, V.~Larsson,
+  M.~Pollefeys, V.~Lepetit, L.~Hammarstrand, F.~Kahl, et~al.
+\newblock Back to the feature: Learning robust camera localization from pixels
+  to pose.
+\newblock {\em arXiv preprint arXiv:2103.09213}, 2021.
+
+\bibitem{colmap}
+J.~L. Schonberger and J.-M. Frahm.
+\newblock Structure-from-motion revisited.
+\newblock In {\em Proceedings of the IEEE conference on computer vision and
+  pattern recognition}, pages 4104--4113, 2016.
+
+\bibitem{badslam}
+T.~Schops, T.~Sattler, and M.~Pollefeys.
+\newblock Bad slam: Bundle adjusted direct rgb-d slam.
+\newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and
+  Pattern Recognition}, pages 134--144, 2019.
+
+\bibitem{shutterdso}
+D.~Schubert, N.~Demmel, V.~Usenko, J.~Stuckler, and D.~Cremers.
+\newblock Direct sparse odometry with rolling shutter.
+\newblock In {\em Proceedings of the European Conference on Computer Vision
+  (ECCV)}, pages 682--697, 2018.
+
+\bibitem{tumrgbd}
+J.~Sturm, N.~Engelhard, F.~Endres, W.~Burgard, and D.~Cremers.
+\newblock A benchmark for the evaluation of rgb-d slam systems.
+\newblock In {\em 2012 IEEE/RSJ International Conference on Intelligent Robots
+  and Systems}, pages 573--580. IEEE, 2012.
+
+\bibitem{imap}
+E.~Sucar, S.~Liu, J.~Ortiz, and A.~J. Davison.
+\newblock imap: Implicit mapping and positioning in real-time.
+\newblock {\em arXiv preprint arXiv:2103.12352}, 2021.
+
+\bibitem{nodeslam}
+E.~Sucar, K.~Wada, and A.~Davison.
+\newblock Nodeslam: Neural object descriptors for multi-view shape
+  reconstruction.
+\newblock In {\em 2020 International Conference on 3D Vision (3DV)}, pages
+  949--958. IEEE, 2020.
+
+\bibitem{banet}
+C.~Tang and P.~Tan.
+\newblock Ba-net: Dense bundle adjustment network.
+\newblock {\em arXiv preprint arXiv:1806.04807}, 2018.
+
+\bibitem{deepv2d}
+Z.~Teed and J.~Deng.
+\newblock Deepv2d: Video to depth with differentiable structure from motion.
+\newblock {\em arXiv preprint arXiv:1812.04605}, 2018.
+
+\bibitem{raft}
+Z.~Teed and J.~Deng.
+\newblock Raft: Recurrent all-pairs field transforms for optical flow.
+\newblock In {\em European Conference on Computer Vision}, pages 402--419.
+  Springer, 2020.
+
+\bibitem{teed2021tangent}
+Z.~Teed and J.~Deng.
+\newblock Tangent space backpropagation for 3d transformation groups.
+\newblock In {\em Conference on Computer Vision and Pattern Recognition}, 2021.
+
+\bibitem{demon}
+B.~Ummenhofer, H.~Zhou, J.~Uhrig, N.~Mayer, E.~Ilg, A.~Dosovitskiy, and
+  T.~Brox.
+\newblock Demon: Depth and motion network for learning monocular stereo.
+\newblock In {\em Proceedings of the IEEE Conference on Computer Vision and
+  Pattern Recognition}, pages 5038--5047, 2017.
+
+\bibitem{lmreloc}
+L.~von Stumberg, P.~Wenzel, N.~Yang, and D.~Cremers.
+\newblock Lm-reloc: Levenberg-marquardt based direct visual relocalization.
+\newblock {\em arXiv preprint arXiv:2010.06323}, 2020.
+
+\bibitem{deepvo}
+S.~Wang, R.~Clark, H.~Wen, and N.~Trigoni.
+\newblock Deepvo: Towards end-to-end visual odometry with deep recurrent
+  convolutional neural networks.
+\newblock In {\em 2017 IEEE International Conference on Robotics and Automation
+  (ICRA)}, pages 2043--2050. IEEE, 2017.
+
+\bibitem{tartanvo}
+W.~Wang, Y.~Hu, and S.~Scherer.
+\newblock Tartanvo: A generalizable learning-based vo.
+\newblock {\em arXiv preprint arXiv:2011.00359}, 2020.
+
+\bibitem{tartanair}
+W.~Wang, D.~Zhu, X.~Wang, Y.~Hu, Y.~Qiu, C.~Wang, Y.~Hu, A.~Kapoor, and
+  S.~Scherer.
+\newblock Tartanair: A dataset to push the limits of visual slam.
+\newblock {\em arXiv preprint arXiv:2003.14338}, 2020.
+
+\bibitem{rfusion}
+T.~Whelan, M.~Kaess, H.~Johannsson, M.~Fallon, J.~J. Leonard, and J.~McDonald.
+\newblock Real-time large-scale dense rgb-d slam with volumetric fusion.
+\newblock {\em The International Journal of Robotics Research},
+  34(4-5):598--626, 2015.
+
+\bibitem{elasticfusion}
+T.~Whelan, S.~Leutenegger, R.~Salas-Moreno, B.~Glocker, and A.~Davison.
+\newblock Elasticfusion: Dense slam without a pose graph.
+\newblock Robotics: Science and Systems, 2015.
+
+\bibitem{d3vo}
+N.~Yang, L.~v. Stumberg, R.~Wang, and D.~Cremers.
+\newblock D3vo: Deep depth, deep pose and deep uncertainty for monocular visual
+  odometry.
+\newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and
+  Pattern Recognition}, pages 1281--1292, 2020.
+
+\bibitem{dvso}
+N.~Yang, R.~Wang, J.~Stuckler, and D.~Cremers.
+\newblock Deep virtual stereo odometry: Leveraging deep depth prediction for
+  monocular direct sparse odometry.
+\newblock In {\em Proceedings of the European Conference on Computer Vision
+  (ECCV)}, pages 817--833, 2018.
+
+\bibitem{deeptam}
+H.~Zhou, B.~Ummenhofer, and T.~Brox.
+\newblock Deeptam: Deep tracking and mapping.
+\newblock In {\em Proceedings of the European conference on computer vision
+  (ECCV)}, pages 822--838, 2018.
+
+\bibitem{dsm}
+J.~Zubizarreta, I.~Aguinaga, and J.~M.~M. Montiel.
+\newblock Direct sparse mapping.
+\newblock {\em IEEE Transactions on Robotics}, 36(4):1363--1370, 2020.
+
+\end{thebibliography}

@@ -1,0 +1,26 @@
+\begin{strip}
+  \vspace{-4em}
+  \centering
+  \footnotesize
+  \captionsetup{type=figure} %suppresses caption warning
+  \resizebox{\linewidth}{!}{
+  \renewcommand{\arraystretch}{1}
+  \includegraphics{figs/teaser.pdf}
+
+  }
+\captionof{figure}{\textbf{\ours Results on a Multi-room Scene~\cite{dai2017scannet}.}
+By combining the proposed lightweight frontend Symmetric Two-view Association (STA) model with $\mathrm{Sim(3)}$ pose graph optimization and loop closuring as the backend, \ours achieves high-quality reconstruction and accurate trajectory estimation on challenging scenes while running in real time. }
+\label{fig:teaser}
+\vspace{-0.2em}
+\end{strip}
+
+
+\begin{abstract}
+\vspace{-0.7em}
+We present \ours as a real-time monocular visual SLAM system that operates without requiring camera intrinsics, making it broadly applicable across diverse camera setups. At its core, the system employs a lightweight symmetric two-view association (STA) model as the frontend, which simultaneously estimates relative camera poses and regresses local pointmaps from only two RGB images. This design reduces model complexity significantly, the size of our frontend is only 35\% that of comparable state-of-the-art methods,
+% while maintaining strong representational power.
+while enhancing the quality of two-view constraints used in the pipeline.
+In the backend, we construct a specially designed $\mathrm{Sim}(3)$ pose graph that incorporates loop closures to address accumulated drift. Extensive experiments demonstrate that our approach achieves superior performance in both camera tracking and dense 3D reconstruction quality compared to current methods. Github repository: \url{https://github.com/zhangganlin/vista-slam}
+
+\end{abstract}
+\vspace{-1em}

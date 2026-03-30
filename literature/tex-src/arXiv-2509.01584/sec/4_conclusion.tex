@@ -1,0 +1,12 @@
+\vspace{-0.2em}
+\section{Conclusion}
+\label{sec:conclusion}
+
+% In this work, we propose a novel monocular, intrinsics-free SLAM pipeline, \ours, which features a lightweight, symmetric frontend STA model that regresses two-view information efficiently, and a specially designed $\mathrm{Sim}(3)$ pose graph optimization with with loop closure as the backend. Experimental results demonstrate that, compared to existing methods, \ours achieves superior camera tracking accuracy and 3D reconstruction quality. At the same time, it is significantly more lightweight and operates at a faster or comparable speed to current state-of-the-art methods.
+
+We propose a novel monocular intrinsics-free SLAM pipeline, \ours, which features a lightweight frontend (Symmetric Two-View Association) and a $\mathrm{Sim}(3)$ pose graph optimization with loop closure as the backend. Experimental results demonstrate the superior camera tracking accuracy and 3D reconstruction quality of \ours. Meanwhile, it is significantly more lightweight and operates at a faster or comparable speed comparing current state-of-the-art methods.
+
+\boldparagraph{Limitation and Future Work}
+Our method omits optimization of point clouds in the backend for efficiency consideration. Therefore, it can suffer from misalignments caused by imperfect pointmap prediction by the frontend model. % or cases of pure rotation.
+Future work could explore incorporating implicit camera information from previous estimates or aligning latent features across views to enhance local consistency across forward passes.
+% \clearpage

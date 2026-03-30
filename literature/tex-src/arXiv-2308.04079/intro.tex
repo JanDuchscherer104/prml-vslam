@@ -1,0 +1,30 @@
+\section{Introduction}
+
+Meshes and points are the most common 3D scene representations because they are explicit and are a good fit for fast GPU/CUDA-based rasterization.
+In contrast, recent Neural Radiance Field (NeRF) methods build on continuous scene representations, typically optimizing a Multi-Layer Perceptron (MLP) using volumetric ray-marching for novel-view synthesis of captured scenes. Similarly, the most efficient radiance field solutions to date build on continuous representations by interpolating values stored in, e.g., voxel~\cite{plenoxels} or hash~\cite{mueller2022instant} grids or points~\cite{xu2022point}.
+While the continuous nature of these methods helps optimization, the stochastic sampling required for rendering is costly and can result in noise.
+We introduce a new approach that combines the best of both worlds: our 3D Gaussian representation allows optimization with state-of-the-art (SOTA) visual quality and competitive training times,
+while our tile-based splatting solution ensures real-time rendering at SOTA quality for 1080p resolution on several previously published datasets~\cite{knapitsch2017tanks,hedman2018deep,barron2022mipnerf360} (see Fig.~\ref{fig:teaser}).
+
+
+Our goal is to allow real-time rendering for scenes captured with multiple photos, and create the representations with optimization times as fast as the most efficient previous methods for typical real scenes.
+Recent methods achieve fast training~\cite{plenoxels,mueller2022instant}, but struggle to achieve the visual quality obtained by the current SOTA NeRF methods, i.e., Mip-NeRF360~\cite{barron2022mipnerf360}, which requires up to 48 hours of training time. The fast -- but lower-quality -- radiance field methods can achieve interactive rendering times depending on the scene (10-15 frames per second), but fall short of real-time rendering \CORRECTION{($\geq$ 30~fps)}{} at high resolution.
+
+Our solution builds on three main components.  We first introduce \emph{3D Gaussians} as a flexible and expressive scene representation.
+We start with the same input as previous NeRF-like methods, i.e., cameras calibrated with Structure-from-Motion (SfM) \cite{snavely2006photo} and initialize the set of 3D Gaussians with the sparse point cloud produced for free as part of the SfM process. In contrast to most point-based solutions that require Multi-View Stereo (MVS) data~\cite{aliev20,kopanas21,ruckert22}, we achieve high-quality results with only SfM points as input. Note that for the NeRF-synthetic dataset, our method achieves high quality even with random initialization.
+We show that 3D Gaussians are an excellent choice, since they are a differentiable volumetric representation, but they can also be rasterized very efficiently by projecting them to 2D, and applying standard $\alpha$-blending, using an equivalent image formation model as NeRF.
+The second component of our method is optimization of the properties of the 3D Gaussians -- 3D position, opacity $\alpha$, anisotropic covariance, and spherical harmonic (SH) coefficients -- interleaved with adaptive density control steps, where we add and occasionally remove 3D Gaussians during optimization. The optimization procedure produces a reasonably compact, unstructured, and precise representation of the scene (1-5 million Gaussians for all scenes tested).
+The third and final element of our method is our real-time rendering solution that uses fast GPU sorting algorithms and is inspired by tile-based rasterization, following recent work~\cite{Lassner_2021_CVPR}. However, thanks to our 3D Gaussian representation, we can perform anisotropic splatting that respects visibility ordering -- thanks to sorting and $\alpha$-blending -- and enable a fast and accurate backward pass by tracking the traversal of as many sorted splats as required.
+
+
+
+\noindent
+To summarize, we provide the following contributions:
+\begin{itemize}
+	\item The introduction of anisotropic 3D Gaussians as a high-quality, unstructured representation of radiance fields.
+	\item An optimization method of 3D Gaussian properties, interleaved with adaptive density control that creates high-quality representations for captured scenes.
+	\item A fast, differentiable rendering approach for the GPU, which is visibility-aware, allows anisotropic splatting and fast backpropagation to achieve high-quality novel view synthesis.
+\end{itemize}
+
+\noindent
+Our results on previously published datasets show that we can optimize our 3D Gaussians from multi-view captures and achieve equal or better quality than the best quality previous implicit radiance field approaches. We also can achieve training speeds and quality similar to the fastest methods and importantly provide the first \emph{real-time rendering} with high quality for novel-view synthesis.
