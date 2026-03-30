@@ -11,6 +11,7 @@ SE(3) poses are stored as nested lists for JSON/TOML serialisability inside
 
 from __future__ import annotations
 
+import math
 import time
 from enum import Enum
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pytransform3d import transformations as pt
 
 from prml_vslam.utils import BaseConfig
@@ -36,6 +37,20 @@ def pose_to_matrix(nested: list[list[float]]) -> npt.NDArray[np.float64]:
 def pose_from_matrix(mat: npt.NDArray[np.float64]) -> list[list[float]]:
     """Convert a numpy (4, 4) SE(3) matrix to a JSON-serialisable nested list."""
     return pt.check_transform(mat).tolist()
+
+
+def _validate_xyz_trajectory(points: list[list[float]]) -> list[list[float]]:
+    """Validate a serialisable list of 3D points."""
+    array = np.asarray(points, dtype=np.float64)
+    if array.size == 0:
+        return []
+    if array.ndim != 2 or array.shape[1] != 3:
+        msg = "trajectory_so_far must be a list of [x, y, z] points"
+        raise ValueError(msg)
+    if not np.isfinite(array).all():
+        msg = "trajectory_so_far must contain only finite coordinates"
+        raise ValueError(msg)
+    return array.tolist()
 
 
 class MessageKind(str, Enum):
@@ -60,10 +75,10 @@ class Envelope(BaseConfig):
     session_id: str
     """Session that owns this message."""
 
-    seq: int
+    seq: int = Field(ge=0)
     """Monotonically increasing sequence number within the session."""
 
-    ts_ns: int
+    ts_ns: int = Field(ge=0)
     """Timestamp in nanoseconds (video PTS for offline, wall-clock for streaming)."""
 
     kind: MessageKind
@@ -82,17 +97,30 @@ class FramePayload(BaseConfig):
     jpeg_bytes: bytes | None = None
     """Raw JPEG bytes (streaming mode)."""
 
-    width: int = 0
+    width: int = Field(default=0, ge=0)
     """Frame width in pixels."""
 
-    height: int = 0
+    height: int = Field(default=0, ge=0)
     """Frame height in pixels."""
 
     intrinsics_hint: dict[str, Any] | None = None
     """Optional intrinsics hint (fx, fy, cx, cy) when available."""
 
-    frame_index: int = 0
+    frame_index: int = Field(default=0, ge=0)
     """Original frame index in the source video."""
+
+    @model_validator(mode="after")
+    def validate_payload_source(self) -> FramePayload:
+        """Require enough information to materialise or replay the frame."""
+        if (self.width > 0) != (self.height > 0):
+            msg = "FramePayload width and height must both be positive when provided"
+            raise ValueError(msg)
+        has_raster_source = self.image_path is not None or self.jpeg_bytes is not None
+        has_dimensions = self.width > 0 and self.height > 0
+        if not has_raster_source and not has_dimensions:
+            msg = "FramePayload requires image_path, jpeg_bytes, or positive width and height"
+            raise ValueError(msg)
+        return self
 
 
 class PosePayload(BaseConfig):
@@ -108,6 +136,21 @@ class PosePayload(BaseConfig):
 
     is_keyframe: bool = False
     """Whether this pose corresponds to a selected keyframe."""
+
+    @field_validator("t_world_camera")
+    @classmethod
+    def validate_t_world_camera(cls, value: list[list[float]]) -> list[list[float]]:
+        """Enforce a proper SE(3) matrix at the contract boundary."""
+        return pose_from_matrix(pose_to_matrix(value))
+
+    @field_validator("timestamp_s")
+    @classmethod
+    def validate_timestamp_s(cls, value: float) -> float:
+        """Reject NaN and infinite timestamps."""
+        if not math.isfinite(value):
+            msg = "timestamp_s must be finite"
+            raise ValueError(msg)
+        return value
 
     @property
     def matrix(self) -> npt.NDArray[np.float64]:
@@ -132,7 +175,7 @@ class PosePayload(BaseConfig):
 class MapUpdatePayload(BaseConfig):
     """Payload carried inside a MAP_UPDATE envelope."""
 
-    num_points: int = 0
+    num_points: int = Field(default=0, ge=0)
     """Number of 3D points in this incremental update."""
 
     points_path: Path | None = None
@@ -145,17 +188,33 @@ class PreviewPayload(BaseConfig):
     trajectory_so_far: list[list[float]] = Field(default_factory=list)
     """List of [x, y, z] positions for BEV rendering."""
 
-    num_map_points: int = 0
+    num_map_points: int = Field(default=0, ge=0)
     """Total sparse map points accumulated so far."""
 
-    latest_pose: list[list[float]] = Field(
+    latest_pose: list[list[float]] | None = Field(
         default_factory=lambda: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
     )
-    """Latest 4×4 camera pose (JSON-serialisable)."""
+    """Latest 4×4 camera pose (JSON-serialisable), when available."""
+
+    @field_validator("trajectory_so_far")
+    @classmethod
+    def validate_trajectory_so_far(cls, value: list[list[float]]) -> list[list[float]]:
+        """Reject malformed preview trajectories."""
+        return _validate_xyz_trajectory(value)
+
+    @field_validator("latest_pose")
+    @classmethod
+    def validate_latest_pose(cls, value: list[list[float]] | None) -> list[list[float]] | None:
+        """Reject malformed preview poses while allowing missing poses."""
+        if value is None:
+            return None
+        return pose_from_matrix(pose_to_matrix(value))
 
     @property
-    def latest_pose_matrix(self) -> npt.NDArray[np.float64]:
+    def latest_pose_matrix(self) -> npt.NDArray[np.float64] | None:
         """Return the latest pose as a validated (4, 4) numpy array."""
+        if self.latest_pose is None:
+            return None
         return pose_to_matrix(self.latest_pose)
 
 

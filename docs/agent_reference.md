@@ -29,6 +29,9 @@ the benchmark contract out of `AGENTS.md` while remaining binding by reference.
   world <- camera transforms unless a boundary adapter documents a different convention.
 - Raw backend conventions must be normalized at the repo boundary. Do not let upstream frame
   conventions leak into cross-method evaluation.
+- Repo-owned runtime and metadata contracts should validate these assumptions at load time. In
+  particular, SE(3) matrices, preview trajectories, canonical units, and normalized artifact
+  formats should be rejected immediately when malformed.
 
 ### Units and Time
 

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from burr.core import State, action
 
 from prml_vslam.pipeline.messages import (
+    FramePayload,
     MapUpdatePayload,
     MessageKind,
     PosePayload,
@@ -37,7 +38,7 @@ def decode_frame(state: State, video_source: Iterator[dict[str, Any]]) -> tuple[
     and the transition to the *export* action fires.
     """
     try:
-        frame = next(video_source)
+        frame = FramePayload.model_validate(next(video_source)).model_dump(mode="python")
         return frame, state.update(
             current_frame=frame,
             frame_index=frame.get("frame_index", 0),
@@ -60,10 +61,11 @@ def ingest_frame(state: State, frame_payload: dict[str, Any]) -> tuple[dict, Sta
     *frame_payload* is passed as a runtime input on every ``step`` / ``run``
     call, keeping the streaming path symmetric with the offline decode action.
     """
-    return frame_payload, state.update(
-        current_frame=frame_payload,
-        frame_index=frame_payload.get("frame_index", 0),
-        ts_ns=frame_payload.get("ts_ns", 0),
+    frame = FramePayload.model_validate(frame_payload).model_dump(mode="python")
+    return frame, state.update(
+        current_frame=frame,
+        frame_index=frame.get("frame_index", 0),
+        ts_ns=frame.get("ts_ns", 0),
     )
 
 
@@ -116,7 +118,7 @@ def slam_step(state: State, slam_backend: Any) -> tuple[dict, State]:
         )
 
     if result.preview_trajectory is not None:
-        latest = pose_from_matrix(result.pose) if result.pose is not None else []
+        latest = pose_from_matrix(result.pose) if result.pose is not None else None
         envelopes.append(
             make_envelope(
                 session_id=session_id,

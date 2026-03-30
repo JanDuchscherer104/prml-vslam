@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator
 
@@ -192,7 +193,7 @@ class CaptureManifest(BaseConfig):
     output_root: Path
     """Artifact root reserved for the run."""
 
-    frame_stride: int
+    frame_stride: int = Field(ge=1)
     """Frame subsampling stride applied during planning."""
 
     capture: CaptureMetadataConfig = Field(default_factory=CaptureMetadataConfig)
@@ -208,16 +209,16 @@ class TrajectoryArtifactMetadata(BaseConfig):
     method: MethodId
     """Method that produced the trajectory."""
 
-    format: str = "tum"
+    format: Literal["tum"] = "tum"
     """Normalized trajectory format."""
 
     frame_name: str = "world"
     """Frame name used for the stored transform target."""
 
-    transform_convention: str = "T_world_camera"
+    transform_convention: Literal["T_world_camera"] = "T_world_camera"
     """Explicit transform naming convention."""
 
-    units: str = "meters"
+    units: Literal["meters"] = "meters"
     """Metric unit used for geometry."""
 
     timestamp_source: TimestampSource = TimestampSource.CAPTURE
@@ -225,6 +226,16 @@ class TrajectoryArtifactMetadata(BaseConfig):
 
     alignment_mode: AlignmentMode = AlignmentMode.NONE
     """Alignment mode applied before evaluation."""
+
+    @field_validator("frame_name")
+    @classmethod
+    def validate_frame_name(cls, value: str) -> str:
+        """Reject blank frame labels in trajectory sidecars."""
+        stripped = value.strip()
+        if not stripped:
+            msg = "frame_name must not be blank"
+            raise ValueError(msg)
+        return stripped
 
 
 class DenseArtifactMetadata(BaseConfig):
@@ -236,13 +247,13 @@ class DenseArtifactMetadata(BaseConfig):
     method: MethodId
     """Method that produced the dense geometry."""
 
-    format: str = "ply"
+    format: Literal["ply"] = "ply"
     """Normalized dense geometry format."""
 
     frame_name: str = "world"
     """Frame name used for the dense geometry."""
 
-    units: str = "meters"
+    units: Literal["meters"] = "meters"
     """Metric unit used for geometry."""
 
     color_available: bool = False
@@ -250,6 +261,16 @@ class DenseArtifactMetadata(BaseConfig):
 
     alignment_mode: AlignmentMode = AlignmentMode.NONE
     """Alignment mode applied before comparison."""
+
+    @field_validator("frame_name")
+    @classmethod
+    def validate_frame_name(cls, value: str) -> str:
+        """Reject blank frame labels in dense sidecars."""
+        stripped = value.strip()
+        if not stripped:
+            msg = "frame_name must not be blank"
+            raise ValueError(msg)
+        return stripped
 
 
 class RunPlanInsight(BaseConfig):

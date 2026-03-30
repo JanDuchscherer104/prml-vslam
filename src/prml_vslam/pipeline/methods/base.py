@@ -9,33 +9,93 @@ converted via :mod:`pytransform3d` — no hand-rolled rotation/quaternion math.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
+from pydantic import Field, field_validator
 from pytransform3d import transformations as pt
 
+from prml_vslam.utils import BaseConfig
 
-@dataclass
-class SlamOutput:
+
+def _validate_xyz_points(points: list[list[float]] | npt.NDArray[np.float64]) -> list[list[float]]:
+    """Validate a serialisable list of 3D points."""
+    array = np.asarray(points, dtype=np.float64)
+    if array.size == 0:
+        return []
+    if array.ndim != 2 or array.shape[1] != 3:
+        msg = "preview_trajectory must be a list of [x, y, z] points"
+        raise ValueError(msg)
+    if not np.isfinite(array).all():
+        msg = "preview_trajectory must contain only finite coordinates"
+        raise ValueError(msg)
+    return array.tolist()
+
+
+class SlamOutput(BaseConfig):
     """Result of a single SLAM processing step."""
 
     pose: npt.NDArray[np.float64] | None = None
     """(4, 4) T_world_camera, or *None* if tracking was lost."""
 
     timestamp_s: float = 0.0
+    """Timestamp in seconds."""
 
     is_keyframe: bool = False
+    """Whether this pose corresponds to a selected keyframe."""
 
     map_points: npt.NDArray[np.float64] | None = None
     """Optional (N, 3) incremental sparse point update."""
 
-    num_map_points: int = 0
+    num_map_points: int = Field(default=0, ge=0)
+    """Number of sparse map points tracked so far."""
 
     preview_trajectory: list[list[float]] | None = None
     """Accumulated [x, y, z] camera positions for BEV preview."""
+
+    @field_validator("pose", mode="before")
+    @classmethod
+    def validate_pose(cls, value: npt.NDArray[np.float64] | None) -> npt.NDArray[np.float64] | None:
+        """Reject malformed SE(3) matrices."""
+        if value is None:
+            return None
+        return pt.check_transform(np.asarray(value, dtype=np.float64))
+
+    @field_validator("timestamp_s")
+    @classmethod
+    def validate_timestamp_s(cls, value: float) -> float:
+        """Reject NaN and infinite timestamps."""
+        if not math.isfinite(value):
+            msg = "timestamp_s must be finite"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("map_points", mode="before")
+    @classmethod
+    def validate_map_points(cls, value: npt.NDArray[np.float64] | None) -> npt.NDArray[np.float64] | None:
+        """Reject malformed sparse map point arrays."""
+        if value is None:
+            return None
+        points = np.asarray(value, dtype=np.float64)
+        if points.ndim != 2 or points.shape[1] != 3:
+            msg = "map_points must have shape (N, 3)"
+            raise ValueError(msg)
+        if not np.isfinite(points).all():
+            msg = "map_points must contain only finite coordinates"
+            raise ValueError(msg)
+        return points
+
+    @field_validator("preview_trajectory")
+    @classmethod
+    def validate_preview_trajectory(cls, value: list[list[float]] | None) -> list[list[float]] | None:
+        """Reject malformed preview trajectories."""
+        if value is None:
+            return None
+        return _validate_xyz_points(value)
 
 
 @runtime_checkable
@@ -69,6 +129,7 @@ class ArtifactAccumulator:
     trajectory: list[list[float]] = field(default_factory=list)
 
     def record(self, pose: npt.NDArray[np.float64], timestamp_s: float = 0.0) -> None:
+        pose = pt.check_transform(np.asarray(pose, dtype=np.float64))
         self.poses.append(pose)
         self.timestamps.append(timestamp_s)
         self.trajectory.append(pose[:3, 3].tolist())

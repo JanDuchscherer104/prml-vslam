@@ -9,18 +9,22 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from prml_vslam.pipeline import (
     Envelope,
+    FramePayload,
     MessageKind,
     MethodId,
     PosePayload,
+    PreviewPayload,
     SessionManager,
+    TrajectoryArtifactMetadata,
     make_envelope,
     pose_from_matrix,
     pose_to_matrix,
 )
-from prml_vslam.pipeline.methods.base import SlamBackend
+from prml_vslam.pipeline.methods.base import SlamBackend, SlamOutput
 from prml_vslam.pipeline.methods.mast3r import MockMast3rBackend
 from prml_vslam.pipeline.methods.vista import MockVistaBackend
 
@@ -68,6 +72,37 @@ def test_pose_payload_from_matrix() -> None:
     assert pp.timestamp_s == 1.5
     assert pp.is_keyframe is True
     np.testing.assert_allclose(pp.matrix, mat, atol=1e-14)
+
+
+def test_pose_payload_rejects_invalid_se3() -> None:
+    with pytest.raises(ValidationError, match="transform"):
+        PosePayload(
+            t_world_camera=[
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 2.0],
+            ]
+        )
+
+
+def test_preview_payload_rejects_non_xyz_points() -> None:
+    with pytest.raises(ValidationError, match="trajectory_so_far"):
+        PreviewPayload(trajectory_so_far=[[0.0, 1.0]])
+
+
+def test_slam_output_rejects_invalid_pose() -> None:
+    with pytest.raises(ValidationError, match="rotation matrix"):
+        SlamOutput(pose=np.zeros((4, 4), dtype=np.float64))
+
+
+def test_trajectory_metadata_enforces_canonical_units() -> None:
+    with pytest.raises(ValidationError, match="units"):
+        TrajectoryArtifactMetadata(
+            artifact_path=Path("slam/trajectory.tum"),
+            method=MethodId.VISTA_SLAM,
+            units="feet",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +185,30 @@ def test_session_manager_streaming_demo(tmp_path: Path) -> None:
     assert sess.session_id not in mgr.active_sessions
 
 
+def test_frame_payload_requires_materialisable_source() -> None:
+    with pytest.raises(ValidationError, match="FramePayload requires"):
+        FramePayload()
+
+
+def test_session_manager_rejects_invalid_stream_frame(tmp_path: Path) -> None:
+    mgr = SessionManager()
+    sess = mgr.create_session(
+        mode="streaming",
+        method=MethodId.VISTA_SLAM,
+        artifact_root=tmp_path / "streaming",
+    )
+    env = make_envelope(
+        session_id=sess.session_id,
+        seq=0,
+        kind=MessageKind.FRAME,
+        payload={"width": 640},
+        ts_ns=1,
+    )
+
+    with pytest.raises(ValidationError, match="width and height"):
+        mgr.push(sess.session_id, [env])
+
+
 def test_streaming_session_persists_replay_inputs(tmp_path: Path) -> None:
     mgr = SessionManager()
     artifact_root = tmp_path / "streaming"
@@ -221,6 +280,7 @@ def test_deterministic_replay(tmp_path: Path) -> None:
                 session_id=sess.session_id,
                 seq=i,
                 kind=MessageKind.FRAME,
+                payload={"width": 2, "height": 2},
                 ts_ns=int(i * 33e6),
             )
             outputs.extend(mgr.push(sess.session_id, [env]))
