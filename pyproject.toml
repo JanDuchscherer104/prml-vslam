@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 authors = [{ name = "Jan Duchscherer", email = "j.duchscherer@gmail.com" }]
 dependencies = [
+  "jaxtyping>=0.3,<1",
   "numpy>=1.26,<3",
   "opencv-python>=4.10,<5",
   "open3d>=0.19.0,<0.20",
@@ -16,6 +17,8 @@ dependencies = [
   "streamlit>=1.35,<2",
   "tomli-w>=1.2,<2",
   "typer>=0.12,<1",
+  "burr>=0.40,<1",
+  "pytransform3d>=3.14,<4",
 ]
 
   [project.optional-dependencies]

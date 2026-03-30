@@ -218,3 +218,7 @@ docs/slides/**/*.svgz
 
 # Codex workspace state
 .codex/
+.agents/
+
+# Local pipeline/demo outputs
+artifacts/
