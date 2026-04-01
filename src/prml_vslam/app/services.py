@@ -33,6 +33,8 @@ class MetricsAppService:
         match dataset:
             case DatasetId.ADVIO:
                 return self.path_config.resolve_repo_path("data/advio")
+            case _:
+                raise NotImplementedError(f"Unsupported dataset: {dataset!r}")
 
     def list_sequences(self, dataset: DatasetId) -> list[str]:
         """List locally available sequence slugs for the selected dataset."""
