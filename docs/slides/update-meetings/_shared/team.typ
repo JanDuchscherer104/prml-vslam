@@ -12,8 +12,12 @@
   *Team Leader:* #team_leader
 
   - Coordinates the project scope, weekly alignment, and contribution hand-offs.
-  - Consolidates meeting input so the unified update deck stays structurally consistent.
+  - Responsible for limiting over-engineering and scope creep by keeping the team focused.
+  - Monitors and adjusts workload distribution.
   - Keeps the work-package split and reporting surfaces aligned across slides and report.
+  - Responsible for uploading the weekly update slides.
+  - Tries to keep the best overview of the different work packages and the overall project status.
+  - Provides mental support.
 ]
 
 #let placeholder_card_body() = block(
@@ -62,7 +66,7 @@
       align: center + top,
       [#member_card([Florian Beck], [FB])],
       [#member_card([Valentin Bumeder], [VB])],
-      [#member_card([Lukas Röß], [LR])],
+      [#member_card([Lukas Röß], [LR], profile_path: "../../../figures/team/profile-lr.png")],
       [#member_card([Christopher Kirschner], [CK])],
       [#member_card([Jan Duchscherer], [JD], profile_path: "../../../figures/team/profile-jd.png")],
     )
