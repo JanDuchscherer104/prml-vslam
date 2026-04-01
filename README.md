@@ -21,19 +21,25 @@ uv run pytest
 make typst-check
 ```
 
-### Streamlit Workbench
+### Streamlit Metrics App
 
 ```bash
 uv run streamlit run streamlit_app.py
 ```
 
-The workbench supports:
+The app supports:
 
-- planning and materializing repo-owned workspaces
-- filesystem-path or uploaded-video inputs
-- offline batch execution from the UI
-- replayable streaming demo execution with persisted artifacts
+- a metrics-first trajectory evaluation page for repo-owned benchmark artifacts
+- explicit `evo` evaluation for selected dataset / sequence / run slices
+- persisted evaluation review with provenance and trajectory overlays
 - an ADVIO dataset explorer page with Plotly modality coverage and asset-footprint views
+- a Record3D streaming page with a browser-side Wi-Fi/WebRTC viewer and optional USB device status
+
+For optional Record3D USB support, install the streaming extra:
+
+```bash
+uv sync --extra streaming
+```
 
 ## Challenge
 

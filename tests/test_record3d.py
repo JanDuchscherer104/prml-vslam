@@ -1,4 +1,4 @@
-"""Tests for the optional Record3D integration."""
+"""Tests for the optional Record3D integration helpers."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ from prml_vslam.io import record3d as record3d_module
 from prml_vslam.io.record3d import (
     Record3DDependencyError,
     Record3DDeviceType,
+    Record3DIntrinsicMatrix,
     Record3DPreviewConfig,
     Record3DStreamConfig,
+    probe_record3d_usb_status,
 )
 
 
@@ -87,17 +89,26 @@ def test_record3d_stream_requires_optional_dependency(monkeypatch: pytest.Monkey
         Record3DStreamConfig().setup_target()
 
 
-def test_record3d_stream_lists_connected_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_record3d_intrinsic_matrix_parses_wifi_payload_and_renders_latex() -> None:
+    intrinsics = Record3DIntrinsicMatrix.from_matrix_payload([525.0, 0.0, 0.0, 0.0, 525.0, 0.0, 320.0, 240.0, 1.0])
+
+    assert intrinsics is not None
+    assert intrinsics.fx == 525.0
+    assert intrinsics.fy == 525.0
+    assert intrinsics.tx == 320.0
+    assert intrinsics.ty == 240.0
+    assert "\\begin{bmatrix}" in intrinsics.to_markdown_latex()
+
+
+def test_probe_record3d_usb_status_reports_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
     monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
 
-    session = Record3DStreamConfig().setup_target()
+    status = probe_record3d_usb_status()
 
-    assert session is not None
-    devices = session.list_devices()
-
-    assert [device.product_id for device in devices] == [101, 202]
-    assert [device.udid for device in devices] == ["device-101", "device-202"]
+    assert status.dependency_available is True
+    assert [device.product_id for device in status.devices] == [101, 202]
+    assert status.error_message == ""
 
 
 def test_record3d_stream_wait_for_frame_returns_typed_payload(monkeypatch: pytest.MonkeyPatch) -> None:

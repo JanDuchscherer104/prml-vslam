@@ -1,4 +1,4 @@
-"""Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.
+"""Thin Streamlit entrypoint for the PRML VSLAM metrics app.
 
 The file stays intentionally tiny so that all application structure remains inside the
 installable package. Streamlit executes this script directly, and it simply forwards
