@@ -2,6 +2,8 @@
 
 This repository addresses an off-device monocular VSLAM pipeline for smartphone videos-streams with unknown intrinsics. The goal is to recover a high-precision ego-trajectory and a dense 3D point cloud from raw video, and to benchmark the result against ARCore and other state-of-the-art methods.
 
+The rendered [final report](docs/report/main.typ) and [update-meeting slides](docs/slides/update-meetings/) are available on the [GitHub Pages](https://janduchscherer104.github.io/prml-vslam/).
+
 ## Setup
 
 ### Requirements
@@ -64,24 +66,3 @@ The system should build on existing monocular dense VSLAM methods such as [ViSTA
 - Trajectory comparison: [evo](https://github.com/MichaelGrupp/evo)
 - Papers: [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584), [MASt3R-SLAM](https://arxiv.org/abs/2412.12392)
 
-## Dataset And Evaluation CLI
-
-The repository now includes a thin ADVIO adapter plus an `evo`-backed trajectory evaluation command.
-
-```bash
-uv run prml-vslam advio download 15 --dataset-root data/advio --discard-archive
-uv run prml-vslam advio export-gt 15 --dataset-root data/advio
-uv run prml-vslam advio run 15 --dataset-root data/advio --output-dir artifacts/advio --method vista_slam --max-frames 20
-uv run --extra eval prml-vslam evaluate-trajectory \
-  data/advio/advio-15/ground-truth/ground_truth.tum \
-  artifacts/advio/advio-15/batch/vista_slam/slam/trajectory.tum \
-  --output-path artifacts/advio/advio-15/batch/vista_slam/evaluation/trajectory_metrics.json
-```
-
-Current ADVIO integration notes:
-
-- input video: `iphone/frames.mov`
-- exact frame timestamps: `iphone/frames.csv`
-- ground truth export: `ground-truth/pose.csv` or `ground-truth/poses.csv` to TUM
-- calibration hint: batch-specific iPhone YAML from the official ADVIO calibration bundle
-- normalized benchmark output: repo-owned workspace under `artifacts/<sequence>/batch/<method>/`
