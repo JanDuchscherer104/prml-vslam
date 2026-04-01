@@ -1,5 +1,6 @@
 #let team_charter = [
   - Communication happens through GitHub issues and pull requests, with short sync notes in the weekly update deck.
+  - Status updates are shared in weekly team-internal meetings
   - Meetings focus on concrete progress, blockers, upcoming experiments, and design decisions.
   - Early mock and interface definitions to allow parallel work on different components.
   - Aim for hackathon-style sprints early on.
@@ -18,7 +19,7 @@
   - Evaluate methods on #link("https://github.com/AaltoVision/ADVIO")[ADVIO] and on a custom self-recorded dataset with raw video and baseline #link("https://developers.google.com/ar")[ARCore] logs.
     - Define the custom-dataset GT source up front: #link("https://record3d.app/")[Record3D] / iPhone RGB-D where available, otherwise offline #link("https://colmap.github.io/index.html")[COLMAP].
   - Deliver an installable and reproducible benchmark scaffold for off-device uncalibrated monocular VSLAM.
-  - Compare at least two state-of-the-art methods on trajectory, point cloud, and dense reconstruction quality, as well as latency and memory usage.
+  - Compare at least two state-of-the-art VSLAM methods on trajectory, point cloud, and dense reconstruction quality, as well as latency and memory usage.
     - Use #link("https://github.com/MichaelGrupp/evo")[evo] for trajectory evaluation and #link("https://www.open3d.org/")[Open3D], #link("https://pytorch3d.org")[PyTorch3D] or similar packages for 3D metrics.
     - Explicit evaluation priorities: trajectory > point cloud #text(size: 13pt, fill: red)[$limits(>=)^?$] dense reconstruction > 3DGS reconstruction.
   - Deliver a streaming real-time demo of the best-performing benchmarked method on a smartphone video stream.
