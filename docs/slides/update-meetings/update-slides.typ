@@ -189,6 +189,10 @@
     #meeting_01.team_charter
   ]
 
+  #meeting_slide(meeting_items_01, title: [Challenge Clarifications])[
+    #meeting_01.challenge_clarifications
+  ]
+
   #meeting_slide(meeting_items_01, title: [Goals])[
     #meeting_01.goals
   ]
