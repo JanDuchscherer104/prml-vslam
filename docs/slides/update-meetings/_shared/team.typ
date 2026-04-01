@@ -22,7 +22,7 @@
 
 #let placeholder_card_body() = block(
   width: 100%,
-  height: 150pt,
+  height: 175pt,
   fill: rgb("d9d9d9"),
   inset: 0pt,
 )[
@@ -40,7 +40,7 @@
 
 #let member_card(name, initials, profile_path: none) = [
   #grid(
-    rows: (44pt, 150pt, auto),
+    rows: (44pt, 175pt, auto),
     row-gutter: 0.45em,
     align: center + top,
     block(width: 100%, height: 44pt)[
@@ -67,7 +67,7 @@
       [#member_card([Florian Beck], [FB], profile_path: "../../../figures/team/profile-fb.png")],
       [#member_card([Valentin Bumeder], [VB], profile_path: "../../../figures/team/profile-vb.jpg")],
       [#member_card([Lukas Röß], [LR], profile_path: "../../../figures/team/profile-lr.png")],
-      [#member_card([Christopher Kirschner], [CK])],
+      [#member_card([Christopher Kirschner], [CK], profile_path: "../../../figures/team/profile-ck.jpg")],
       [#member_card([Jan Duchscherer], [JD], profile_path: "../../../figures/team/profile-jd.png")],
     )
   ]
