@@ -1,0 +1,7 @@
+[[skills.config]]
+path = "../.agents/skills/pydantic"
+enabled = true
+
+[[skills.config]]
+path = "../.agents/skills/understanding-streamlit-architecture"
+enabled = true
