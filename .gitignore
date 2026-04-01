@@ -208,6 +208,8 @@ __marimo__/
 
 # Typst and rendered document artifacts
 .typst/
+docs/.quarto/
+docs/_site/
 docs/report/build/
 docs/report/*.pdf
 docs/report/*.png

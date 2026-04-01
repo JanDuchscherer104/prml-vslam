@@ -1,0 +1,71 @@
+name: Publish Quarto Site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - ".github/workflows/quarto-publish.yml"
+      - "Makefile"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Set up Typst
+        uses: typst-community/setup-typst@v5
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build Typst report
+        run: make report-pdf
+
+      - name: Build update slides
+        run: make slides-pdf
+
+      - name: Render Quarto site
+        run: quarto render docs --no-execute
+
+      - name: Copy rendered PDFs into site
+        run: |
+          cp docs/report/build/report.pdf docs/_site/report.pdf
+          cp docs/slides/build/update-meetings.pdf docs/_site/update-slides.pdf
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

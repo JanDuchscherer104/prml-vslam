@@ -1,0 +1,41 @@
+---
+title: "PRML VSLAM Publications"
+---
+
+This minimal site exposes the two primary rendered Typst outputs in this repository:
+
+- the report built from [`docs/report/main.typ`](https://github.com/JanDuchscherer104/prml-vslam/blob/main/docs/report/main.typ)
+- the update deck built from [`docs/slides/update-meetings/update-slides.typ`](https://github.com/JanDuchscherer104/prml-vslam/blob/main/docs/slides/update-meetings/update-slides.typ)
+
+## Published PDFs
+
+::: {.grid}
+::: {.g-col-12 .g-col-md-6}
+### Report
+
+Rendered PDF for the main report entrypoint.
+
+[Open `report.pdf`](./report.pdf){.btn .btn-primary}
+
+[View report source](https://github.com/JanDuchscherer104/prml-vslam/blob/main/docs/report/main.typ)
+:::
+
+::: {.g-col-12 .g-col-md-6}
+### Update Slides
+
+Rendered PDF for the unified update-meeting deck.
+
+[Open `update-slides.pdf`](./update-slides.pdf){.btn .btn-primary}
+
+[View slides source](https://github.com/JanDuchscherer104/prml-vslam/blob/main/docs/slides/update-meetings/update-slides.typ)
+:::
+:::
+
+## Build Contract
+
+The GitHub Pages workflow:
+
+1. builds the Typst report
+2. builds the update slides
+3. renders this Quarto site
+4. publishes the site plus both generated PDFs
