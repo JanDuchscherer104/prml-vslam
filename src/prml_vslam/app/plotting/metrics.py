@@ -25,13 +25,11 @@ def build_trajectory_figure(series_list: list[TrajectorySeries]) -> go.Figure:
         title="Trajectory Overlay",
         xaxis_title="X (m)",
         yaxis_title="Y (m)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#ffffff",
         margin={"l": 24, "r": 16, "t": 44, "b": 24},
         legend={"orientation": "h", "y": 1.12, "x": 0},
     )
-    figure.update_xaxes(showgrid=True, gridcolor="#e3e8ef")
-    figure.update_yaxes(showgrid=True, gridcolor="#e3e8ef", scaleanchor="x", scaleratio=1)
+    figure.update_xaxes(showgrid=True)
+    figure.update_yaxes(showgrid=True, scaleanchor="x", scaleratio=1)
     return figure
 
 
@@ -52,11 +50,9 @@ def build_error_figure(error_series: ErrorSeries) -> go.Figure:
         title="Error Profile",
         xaxis_title="Timestamp (s)",
         yaxis_title="Error",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#ffffff",
         margin={"l": 24, "r": 16, "t": 44, "b": 24},
         showlegend=False,
     )
-    figure.update_xaxes(showgrid=True, gridcolor="#e3e8ef")
-    figure.update_yaxes(showgrid=True, gridcolor="#e3e8ef")
+    figure.update_xaxes(showgrid=True)
+    figure.update_yaxes(showgrid=True)
     return figure
