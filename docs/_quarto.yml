@@ -1,0 +1,26 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+
+website:
+  title: "PRML VSLAM"
+  navbar:
+    left:
+      - text: Home
+        href: index.qmd
+    right:
+      - icon: github
+        href: https://github.com/JanDuchscherer104/prml-vslam
+  page-footer:
+    left: ""
+    right: "Built with Quarto"
+
+format:
+  html:
+    theme:
+      light: cosmo
+    toc: false
+    code-copy: false
+    link-external-newwindow: true
