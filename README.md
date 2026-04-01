@@ -65,4 +65,3 @@ The system should build on existing monocular dense VSLAM methods such as [ViSTA
 - Point cloud comparison: [CloudCompare](https://www.cloudcompare.org/), with metrics for example from [Open3D](https://www.open3d.org/)
 - Trajectory comparison: [evo](https://github.com/MichaelGrupp/evo)
 - Papers: [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584), [MASt3R-SLAM](https://arxiv.org/abs/2412.12392)
-
