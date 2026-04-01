@@ -6,7 +6,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import ConfigDict, Field, ValidationInfo, field_validator
 
 from .base_config import BaseConfig
 
@@ -20,6 +20,8 @@ def _default_root() -> Path:
 
 class RunArtifactPaths(BaseConfig):
     """Typed layout for one planned benchmark run."""
+
+    model_config = ConfigDict(frozen=True)
 
     artifact_root: Path
     """Root directory for all artifacts in the run."""
@@ -49,6 +51,8 @@ class RunArtifactPaths(BaseConfig):
 class PathConfig(BaseConfig):
     """Centralize all repository-owned path semantics."""
 
+    model_config = ConfigDict(frozen=True)
+
     root: Path = Field(default_factory=_default_root)
     """Repository root used to anchor relative paths."""
 
@@ -57,6 +61,18 @@ class PathConfig(BaseConfig):
 
     captures_dir: Path = Field(default_factory=lambda: Path("captures"))
     """Default root directory for input capture videos."""
+
+    logs_dir: Path = Field(default_factory=lambda: Path(".logs"))
+    """Root directory for shared runtime state such as cloned upstream repos and checkpoints."""
+
+    method_repos_dir: Path = Field(default_factory=lambda: Path(".logs/repos"))
+    """Directory containing checked-out upstream method repositories."""
+
+    method_envs_dir: Path = Field(default_factory=lambda: Path(".logs/venvs"))
+    """Directory containing dedicated per-method virtual environments."""
+
+    checkpoints_dir: Path = Field(default_factory=lambda: Path(".logs/ckpts"))
+    """Directory containing shared method checkpoints and weights."""
 
     @field_validator("root", mode="before")
     @classmethod
@@ -67,7 +83,15 @@ class PathConfig(BaseConfig):
             raise ValueError(f"Configured project root '{root}' does not exist.")
         return root
 
-    @field_validator("artifacts_dir", "captures_dir", mode="before")
+    @field_validator(
+        "artifacts_dir",
+        "captures_dir",
+        "logs_dir",
+        "method_repos_dir",
+        "method_envs_dir",
+        "checkpoints_dir",
+        mode="before",
+    )
     @classmethod
     def _resolve_root_relative_dirs(cls, value: str | Path, info: ValidationInfo) -> Path:
         """Resolve configured directories against the repository root."""
@@ -102,6 +126,33 @@ class PathConfig(BaseConfig):
     def resolve_output_dir(self, path: str | Path | None = None, *, create: bool = False) -> Path:
         """Resolve an output directory, defaulting to the configured artifacts root."""
         resolved = self.artifacts_dir if path is None else self.resolve_repo_path(path)
+        if create:
+            resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
+
+    def resolve_logs_dir(self, *, create: bool = False) -> Path:
+        """Resolve the shared runtime logs directory."""
+        if create:
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+        return self.logs_dir
+
+    def resolve_method_repo_dir(self, method_repo_name: str, *, create: bool = False) -> Path:
+        """Resolve one upstream method checkout path under the shared logs directory."""
+        resolved = (self.method_repos_dir / method_repo_name).resolve()
+        if create:
+            resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
+
+    def resolve_method_env_dir(self, method_slug: str, *, create: bool = False) -> Path:
+        """Resolve one dedicated virtual environment path for an external backend."""
+        resolved = (self.method_envs_dir / method_slug).resolve()
+        if create:
+            resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
+
+    def resolve_checkpoint_dir(self, method_slug: str, *, create: bool = False) -> Path:
+        """Resolve one shared checkpoint directory for an external backend."""
+        resolved = (self.checkpoints_dir / method_slug).resolve()
         if create:
             resolved.mkdir(parents=True, exist_ok=True)
         return resolved
