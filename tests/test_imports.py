@@ -13,9 +13,12 @@ def test_package_imports() -> None:
     import prml_vslam.methods
     import prml_vslam.pipeline
     import prml_vslam.utils
+    from prml_vslam.io import Record3DWiFiViewerState, render_record3d_wifi_viewer
     from prml_vslam.utils import BaseConfig, get_console
 
     assert prml_vslam.__version__
+    assert Record3DWiFiViewerState().connection_state == "idle"
+    assert callable(render_record3d_wifi_viewer)
 
     class SmokeConfig(BaseConfig):
         @property
