@@ -24,6 +24,7 @@ class PipelinePlannerService:
         stages = self._build_stages(request=request, artifact_root=artifact_root)
         return RunPlan(
             experiment_name=request.experiment_name,
+            mode=request.mode,
             method=request.method,
             input_video=request.video_path,
             artifact_root=artifact_root,

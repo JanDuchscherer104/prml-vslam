@@ -49,6 +49,13 @@ class RunPlanStageId(StrEnum):
     CHUNK_PERSIST = "chunk_persist"
     STREAM_FINALIZE = "stream_finalize"
 
+    # Preserve legacy planner/test identifiers while the broader pipeline surface
+    # migrates to the expanded canonical stage names.
+    INGEST = CAPTURE_MANIFEST
+    SLAM = SLAM_RUN
+    DENSE_MAPPING = DENSE_NORMALIZATION
+    ARCORE_COMPARISON = ARCORE_ALIGNMENT
+
 
 class CaptureMetadataConfig(BaseConfig):
     """Capture-side metadata attached to a planned benchmark run."""
