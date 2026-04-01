@@ -1,44 +1,44 @@
 #import "../_shared/meeting-blocks.typ": meeting_detail_slide
 
 #let done_table_row = (
-  [WP3 / WP4 / WP5],
+  [WP2],
   [Jan Duchscherer],
-  [Consolidated benchmark surfaces for trajectories, dense clouds, and runtime metrics.],
+  [#lorem(10)],
 )
 
 #let challenges_table_row = (
-  [Benchmark Integration],
+  [WP2 / WP4],
   [Jan Duchscherer],
-  [External method repos, dense alignment assumptions, and runtime comparability still dominate risk.],
+  [#lorem(10)],
 )
 
 #let next_steps_table_row = (
-  [WP6 / WP7],
+  [WP3 / WP4],
   [Jan Duchscherer],
-  [Build the reference pipeline and turn benchmark findings into report and presentation material.],
+  [#lorem(10)],
 )
 
 #let done_detail_body = items => [
-  #meeting_detail_slide(items, title: [Jan Duchscherer: What Was Done?])[
-    - Consolidated the benchmark surfaces for trajectories, dense point clouds, and runtime metrics.
-    - Structured the reporting surfaces so final benchmarking results can flow directly into slides
-      and the final report.
-    - Locked the initial issue-ready work package split for execution.
-  ]
+  // #meeting_detail_slide(items, title: [Jan Duchscherer: What Was Done?])[
+  //   - Refined the custom dataset requirements around raw video and ARCore baseline logs.
+  //   - Aligned the evaluation surfaces with trajectory and dense reconstruction outputs.
+  //   - Kept the slide and report templates synchronized with the benchmark structure.
+
+  //   #v(0.8em)
+  //   #grid(
+  //     columns: (1fr, 1fr),
+  //     gutter: 0.6cm,
+  //     [*Input Surface* \ Raw video + ARCore baseline logs], image("../../../figures/hm-logo.svg"),
+  //   )
+  // ]
 ]
 
 #let challenges_detail_body = items => [
   #meeting_detail_slide(items, title: [Jan Duchscherer: Challenges])[
-    - The benchmark still depends on external method repos that are not installed by default.
-    - Dense evaluation requires careful reference reconstruction and alignment assumptions.
-    - Runtime comparisons remain sensitive to hardware, preprocessing, and export conventions.
   ]
 ]
 
 #let next_steps_detail_body = items => [
   #meeting_detail_slide(items, title: [Jan Duchscherer: Next Steps])[
-    - Build the first reference reconstruction pipeline for custom recordings.
-    - Run side-by-side trajectory and point-cloud comparisons for the first integrated methods.
-    - Convert benchmark findings into the final presentation and report.
   ]
 ]

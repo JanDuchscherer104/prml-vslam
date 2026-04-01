@@ -2,13 +2,13 @@
 #import "@preview/booktabs:0.0.4": *
 
 #let work_packages = (
-  ([WP1], [Repository and environment scaffolding], [Jan]),
-  ([WP2], [Data capture and ARCore logging workflow], [Christopher]),
-  ([WP3], [Method integration], [Florian]),
-  ([WP4], [Trajectory evaluation], [Lukas]),
-  ([WP5], [Dense reconstruction evaluation], [Valentin]),
-  ([WP6], [Reference reconstruction pipeline], [Jan]),
-  ([WP7], [Benchmarking and reporting], [Florian]),
+  ([WP1], [Repository and environment scaffolding], [Ja ]),
+  ([WP2], [Data capture and ARCore logging workflow], [?]),
+  ([WP3], [Method integration], [?]),
+  ([WP4], [Trajectory evaluation], [?]),
+  ([WP5], [Dense reconstruction evaluation], [?]),
+  ([WP6], [Reference reconstruction pipeline], [?]),
+  ([WP7], [Benchmarking and reporting], [?]),
 )
 
 #let work_packages_table() = [
