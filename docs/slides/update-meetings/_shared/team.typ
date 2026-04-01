@@ -64,7 +64,7 @@
       column-gutter: 14pt,
       row-gutter: 0pt,
       align: center + top,
-      [#member_card([Florian Beck], [FB])],
+      [#member_card([Florian Beck], [FB], profile_path: "../../../figures/team/profile-fb.png")],
       [#member_card([Valentin Bumeder], [VB], profile_path: "../../../figures/team/profile-vb.jpg")],
       [#member_card([Lukas Röß], [LR], profile_path: "../../../figures/team/profile-lr.png")],
       [#member_card([Christopher Kirschner], [CK])],
