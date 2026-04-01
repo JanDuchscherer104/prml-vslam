@@ -1,6 +1,6 @@
 #let team_charter = [
   - Communication happens through GitHub issues and pull requests, with short sync notes in the weekly update deck.
-  - Status updates are shared in weekly team-internal meetings
+  - Status updates are shared in weekly team-internal meetings.
   - Meetings focus on concrete progress, blockers, upcoming experiments, and design decisions.
   - Early mock and interface definitions to allow parallel work on different components.
   - Aim for hackathon-style sprints early on.
