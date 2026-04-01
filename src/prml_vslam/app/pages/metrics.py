@@ -26,63 +26,55 @@ def render(context: AppContext) -> None:
     state = context.state
     service = context.service
 
-    st.markdown('<div class="prml-kicker">PRML VSLAM</div>', unsafe_allow_html=True)
-    st.title("Trajectory Metrics")
-    st.caption(
-        "Inspect persisted `evo` results or trigger an explicit APE run for one dataset, sequence, and artifact run."
-    )
+    with st.container(border=True):
+        st.caption("Metrics-First App")
+        st.title("Trajectory Metrics")
+        st.caption(
+            "Inspect persisted `evo` results or trigger an explicit APE run for one dataset, sequence, and artifact run."
+        )
 
     selectors_col, controls_col = st.columns((1.6, 1.0), gap="large")
     with selectors_col:
-        st.markdown('<div class="prml-panel">', unsafe_allow_html=True)
-        dataset = st.selectbox(
-            "Dataset",
-            options=list(DatasetId),
-            format_func=lambda item: item.label,
-            index=list(DatasetId).index(state.metrics.dataset),
-        )
-        sequences = service.list_sequences(dataset)
-        if not sequences:
-            state.metrics = MetricsPageState(dataset=dataset)
-            context.store.save(state)
-            st.warning(f"No local {dataset.label} sequences were found under `{service.dataset_root(dataset)}`.")
-            st.markdown("</div>", unsafe_allow_html=True)
-            return
-
-        selected_sequence = _select_sequence(
-            sequences=sequences,
-            current=state.metrics.sequence_slug,
-        )
-        runs = service.discover_runs(dataset, selected_sequence)
-        if not runs:
-            state.metrics = MetricsPageState(dataset=dataset, sequence_slug=selected_sequence)
-            context.store.save(state)
-            st.info(
-                "No benchmark runs with `slam/trajectory.tum` were found for the selected sequence under "
-                f"`{context.path_config.artifacts_dir}`."
+        with st.container(border=True):
+            dataset = st.selectbox(
+                "Dataset",
+                options=list(DatasetId),
+                format_func=lambda item: item.label,
+                index=list(DatasetId).index(state.metrics.dataset),
             )
-            st.markdown("</div>", unsafe_allow_html=True)
-            return
+            sequences = service.list_sequences(dataset)
+            if not sequences:
+                state.metrics = MetricsPageState(dataset=dataset)
+                context.store.save(state)
+                st.warning(f"No local {dataset.label} sequences were found under `{service.dataset_root(dataset)}`.")
+                return
 
-        selected_run = _select_run(
-            runs=runs,
-            current=state.metrics.run_root,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+            selected_sequence = _select_sequence(
+                sequences=sequences,
+                current=state.metrics.sequence_slug,
+            )
+            runs = service.discover_runs(dataset, selected_sequence)
+            if not runs:
+                state.metrics = MetricsPageState(dataset=dataset, sequence_slug=selected_sequence)
+                context.store.save(state)
+                st.info(
+                    "No benchmark runs with `slam/trajectory.tum` were found for the selected sequence under "
+                    f"`{context.path_config.artifacts_dir}`."
+                )
+                return
+
+            selected_run = _select_run(
+                runs=runs,
+                current=state.metrics.run_root,
+            )
 
     with controls_col:
-        st.markdown('<div class="prml-panel">', unsafe_allow_html=True)
-        controls = _render_controls(state.metrics.evaluation)
-        st.markdown(
-            (
-                '<div class="prml-note">'
-                "Evaluation never runs on selector changes. Only the primary action below writes or refreshes "
-                "native `evo` results."
-                "</div>"
-            ),
-            unsafe_allow_html=True,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+        with st.container(border=True):
+            controls = _render_controls(state.metrics.evaluation)
+            st.caption(
+                "Evaluation never runs on selector changes. Only the primary action below writes or refreshes native "
+                "`evo` results."
+            )
 
     state.metrics = MetricsPageState(
         dataset=dataset,
