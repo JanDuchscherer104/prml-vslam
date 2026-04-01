@@ -12,8 +12,8 @@ this repo.
 - `docs/Questions.md`: high-quality human-maintained ground truth for challenge intent, clarified
   requirements, operator-facing scope, and product constraints. Consult it whenever a task touches
   project scope, assumptions, or evaluation intent.
-- `.agents/references/agent_reference.md`: lookup material for library IDs and primary sources
-  relevant to this project.
+- `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary
+  sources relevant to this project.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
 
 ## Repo Map
@@ -46,7 +46,7 @@ this repo.
 - Treat ARCore, reference reconstructions, and benchmark tools as explicit external baselines, not
   hidden parts of a method wrapper.
 
-## Requirements Guidance
+## Requirements And App Guidance
 
 - When drafting requirements or specification documents, first extract every explicit user
   requirement before translating it into product or engineering requirements.
@@ -55,3 +55,12 @@ this repo.
 - Resolve discoverable repo facts locally before asking questions. If uncertainty still materially
   changes the spec or architecture, ask clarifying questions before finalizing the document. In
   Plan Mode, prefer extensive clarification when ambiguity remains.
+- For Streamlit app work, prefer typed architectures with app-facing typed interfaces,
+  Pydantic-backed state models, and one dedicated session-state adapter as the only raw
+  `st.session_state` access point.
+- For Streamlit app work, keep Plotly figure construction in dedicated plotting modules rather than
+  inline page code.
+- For Streamlit app work, treat `PathConfig` as the authoritative owner of path discovery, path
+  defaults, and path handling.
+- For Streamlit app work, favor a simple modern light-first design with restrained typography,
+  compact analysis surfaces, and minimal sidebar dependence over decorative hero-first layouts.

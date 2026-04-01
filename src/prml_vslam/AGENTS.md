@@ -59,8 +59,26 @@ def compute_rri(
 - Use `field_validator` and `model_validator` when validation belongs in the config layer.
 - Do not convert config objects to raw dicts just to instantiate internal runtime classes.
 
+## VSLAM Contract Summary
+
+- Treat external SLAM systems, ARCore, and reference reconstructions as separate systems with
+  explicit boundaries. Normalize their outputs at the repo boundary before evaluation.
+- Use explicit frame names in code and metadata. Do not rely on ambiguous names like `pose` or
+  `transform` without frame direction.
+- When transforms are stored explicitly, use `T_world_camera` naming for world <- camera
+  transforms unless a subsystem documents a different convention at the boundary.
+- Canonical metric units are meters for geometry and seconds for timestamps.
+- Normalized trajectory artifacts should use TUM format plus a JSON sidecar when additional
+  metadata is required, such as frame names, timestamp provenance, or alignment transforms.
+- Normalized dense geometry artifacts should use PLY plus metadata when the file format alone
+  cannot encode required benchmark information such as frame, units, color availability, or
+  preprocessing.
+- Keep evaluation and alignment logic separate from method-execution wrappers.
+
 ## Verification
 
 - For Python changes, run `make lint`.
 - Run targeted tests with `uv run pytest <path>` when a focused surface changed; use `make test`
   when the change is broad enough to justify the full suite.
+- When changing config contracts, artifact formats, or benchmark assumptions, update
+  `docs/agent_reference.md` in the same change.
