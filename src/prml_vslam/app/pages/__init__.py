@@ -1,6 +1,5 @@
-"""Page renderers for the PRML VSLAM Streamlit app."""
+"""Page modules for the metrics app."""
 
-from .dataset import render as render_dataset_page
-from .metrics import render as render_metrics_page
+from .metrics import render
 
-__all__ = ["render_dataset_page", "render_metrics_page"]
+__all__ = ["render"]

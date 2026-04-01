@@ -24,6 +24,7 @@ make typst-check
 ### Streamlit Metrics App
 
 ```bash
+uv sync --extra eval
 uv run streamlit run streamlit_app.py
 ```
 
@@ -32,14 +33,7 @@ The app supports:
 - a metrics-first trajectory evaluation page for repo-owned benchmark artifacts
 - explicit `evo` evaluation for selected dataset / sequence / run slices
 - persisted evaluation review with provenance and trajectory overlays
-- an ADVIO dataset explorer page with Plotly modality coverage and asset-footprint views
-- a Record3D streaming page with a browser-side Wi-Fi/WebRTC viewer and optional USB device status
-
-For optional Record3D USB support, install the streaming extra:
-
-```bash
-uv sync --extra streaming
-```
+- `PathConfig`-driven dataset and artifact discovery without app-local path defaults
 
 ## Challenge
 

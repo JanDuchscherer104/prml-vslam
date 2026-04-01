@@ -1,26 +1,46 @@
-"""Typed state and discovery models for the PRML VSLAM Streamlit app."""
+"""Typed state and view models for the metrics app."""
 
 from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
 
+import numpy as np
+from jaxtyping import Float
 from pydantic import BaseModel, ConfigDict, Field
 
-from prml_vslam.eval import PoseRelationId, TrajectoryEvaluationResult
-from prml_vslam.pipeline.contracts import MethodId, PipelineMode
+from prml_vslam.pipeline.contracts import MethodId
 
 
 class DatasetId(StrEnum):
-    """Datasets exposed through the metrics-first Streamlit app."""
+    """Datasets exposed through the metrics app."""
 
     ADVIO = "advio"
 
     @property
     def label(self) -> str:
-        """Return a short user-facing dataset label."""
+        """Return the short user-facing dataset label."""
         return {
             DatasetId.ADVIO: "ADVIO",
+        }[self]
+
+
+class PoseRelationId(StrEnum):
+    """Stable `evo` pose-relation options exposed in the app."""
+
+    TRANSLATION_PART = "translation_part"
+    FULL_TRANSFORMATION = "full_transformation"
+    ROTATION_ANGLE_DEG = "rotation_angle_deg"
+    ROTATION_ANGLE_RAD = "rotation_angle_rad"
+
+    @property
+    def label(self) -> str:
+        """Return the user-facing label."""
+        return {
+            PoseRelationId.TRANSLATION_PART: "Translation Part",
+            PoseRelationId.FULL_TRANSFORMATION: "Full Transformation",
+            PoseRelationId.ROTATION_ANGLE_DEG: "Rotation Angle (deg)",
+            PoseRelationId.ROTATION_ANGLE_RAD: "Rotation Angle (rad)",
         }[self]
 
 
@@ -30,73 +50,37 @@ class EvaluationControls(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     pose_relation: PoseRelationId = PoseRelationId.TRANSLATION_PART
-    """Pose relation reported by `evo`."""
+    """Trajectory component evaluated by `evo`."""
 
     align: bool = True
-    """Whether rigid alignment should be applied before evaluation."""
+    """Whether rigid alignment should be applied before scoring."""
 
     correct_scale: bool = True
-    """Whether Sim(3)-style scale correction should be enabled."""
+    """Whether scale correction should be enabled during alignment."""
 
     max_diff_s: float = 0.02
-    """Maximum timestamp association difference in seconds."""
+    """Maximum timestamp-association gap in seconds."""
 
 
 class MetricsPageState(BaseModel):
-    """Persistent selection state for the metrics page."""
+    """Persisted selector state for the metrics page."""
 
     model_config = ConfigDict(validate_assignment=True)
 
     dataset: DatasetId = DatasetId.ADVIO
-    """Currently selected dataset."""
+    """Selected dataset."""
 
-    sequence_id: int | None = None
-    """Currently selected sequence identifier."""
+    sequence_slug: str | None = None
+    """Selected dataset sequence, for example `advio-15`."""
 
-    run_path: Path | None = None
+    run_root: Path | None = None
     """Selected artifact root for one evaluated run."""
 
     evaluation: EvaluationControls = Field(default_factory=EvaluationControls)
-    """Current `evo` control settings."""
+    """Current `evo` controls."""
 
-    last_result_path: Path | None = None
-    """Most recently computed or viewed evaluation JSON path."""
-
-
-class DatasetPageState(BaseModel):
-    """Persistent selection state for the dataset explorer page."""
-
-    model_config = ConfigDict(validate_assignment=True)
-
-    dataset: DatasetId = DatasetId.ADVIO
-    """Currently selected dataset."""
-
-    sequence_id: int | None = None
-    """Currently selected sequence identifier."""
-
-
-class StreamingPageState(BaseModel):
-    """Persistent selection state for the Record3D streaming page."""
-
-    model_config = ConfigDict(validate_assignment=True)
-
-    device_address: str = ""
-    """Most recently targeted Record3D Wi-Fi device address."""
-
-    connection_state: str = "idle"
-    """Most recent Record3D Wi-Fi connection state."""
-
-    error_message: str = ""
-    """Last surfaced Record3D Wi-Fi error message."""
-
-    metadata: dict[str, object] = Field(default_factory=dict)
-    """Latest metadata payload emitted by the browser-side Wi-Fi viewer."""
-
-    show_inv_dist_std: bool = True
-    """Whether the Wi-Fi viewer should show the optional placeholder pane."""
-
-    equalize_depth_histogram: bool = False
-    """Whether the Wi-Fi viewer should equalize the depth preview histogram."""
+    result_path: Path | None = None
+    """Most recently loaded or computed persisted result path."""
 
 
 class AppState(BaseModel):
@@ -105,23 +89,7 @@ class AppState(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     metrics: MetricsPageState = Field(default_factory=MetricsPageState)
-    """Metrics-page selection and evaluation state."""
-
-    dataset: DatasetPageState = Field(default_factory=DatasetPageState)
-    """Dataset-page selection state."""
-
-    streaming: StreamingPageState = Field(default_factory=StreamingPageState)
-    """Record3D streaming-page state."""
-
-
-class StoredTrajectoryEvaluation(BaseModel):
-    """Persisted trajectory evaluation discovered under one run root."""
-
-    path: Path
-    """JSON file path that stores the evaluation result."""
-
-    result: TrajectoryEvaluationResult
-    """Parsed repo-owned evaluation payload."""
+    """Metrics-page selector state."""
 
 
 class DiscoveredRun(BaseModel):
@@ -130,78 +98,130 @@ class DiscoveredRun(BaseModel):
     artifact_root: Path
     """Root directory for the selected run."""
 
-    sequence_id: int
-    """Associated dataset sequence identifier."""
-
-    mode: PipelineMode
-    """Execution mode inferred from the artifact layout."""
-
-    method: MethodId
-    """Method inferred from the artifact layout."""
-
     estimate_path: Path
-    """Estimated trajectory path for this run."""
+    """Estimated trajectory path for the run."""
 
-    trajectory_metadata_path: Path | None = None
-    """Optional trajectory metadata sidecar."""
+    method: MethodId | None = None
+    """Known benchmark method, when it can be inferred from the path."""
 
-    evaluations: list[StoredTrajectoryEvaluation] = Field(default_factory=list)
-    """Persisted evaluations discovered under the run's evaluation directory."""
-
-    @property
-    def display_label(self) -> str:
-        """Return a compact run label for selection widgets."""
-        method_label = self.method.value.replace("_", " ").upper()
-        return f"{method_label} · {self.mode.value} · {self.artifact_root.name}"
+    label: str
+    """Compact user-facing label for selection widgets."""
 
 
-class MetricsSelection(BaseModel):
-    """Resolved dataset-sequence-run selection for the metrics page."""
+class SelectionSnapshot(BaseModel):
+    """Resolved dataset-selection snapshot for one app render."""
 
     dataset: DatasetId
-    """Resolved dataset identifier."""
+    """Selected dataset."""
 
-    sequence_id: int
-    """Resolved sequence identifier."""
+    sequence_slug: str
+    """Selected sequence slug."""
 
-    sequence_name: str
-    """Resolved human-readable sequence name."""
-
-    run: DiscoveredRun
-    """Resolved artifact run."""
+    dataset_root: Path
+    """Root directory for the selected dataset."""
 
     reference_path: Path | None = None
-    """Existing reference trajectory path if already available."""
+    """Reference TUM trajectory path when available."""
 
-    reference_csv_path: Path | None = None
-    """Reference pose CSV used to create a TUM trajectory on explicit evaluation."""
+    run: DiscoveredRun
+    """Selected artifact run."""
 
 
-class TrajectoryPoint(BaseModel):
-    """One point parsed from a TUM trajectory for plotting."""
+class MetricStats(BaseModel):
+    """Summary metrics reported by `evo`."""
 
-    timestamp_s: float
-    """Point timestamp in seconds."""
+    rmse: float
+    """Root-mean-square error."""
 
-    x: float
-    """X translation in meters."""
+    mean: float
+    """Mean error."""
 
-    y: float
-    """Y translation in meters."""
+    median: float
+    """Median error."""
 
-    z: float
-    """Z translation in meters."""
+    std: float
+    """Standard deviation of the error."""
+
+    min: float
+    """Minimum error."""
+
+    max: float
+    """Maximum error."""
+
+    sse: float
+    """Sum of squared errors."""
+
+
+class TrajectorySeries(BaseModel):
+    """One trajectory rendered in the overlay figure."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    name: str
+    """Series name used in the legend."""
+
+    positions_xyz: Float[np.ndarray, "num_points 3"]
+    """Trajectory XYZ positions in meters."""
+
+    timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
+    """Timestamps associated with the positions."""
+
+
+class ErrorSeries(BaseModel):
+    """Scalar `evo` error profile rendered as a Plotly line chart."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
+    """Timestamps in seconds."""
+
+    values: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
+    """Per-pair error values."""
+
+
+class EvaluationArtifact(BaseModel):
+    """Loaded or freshly computed persisted `evo` result."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    path: Path
+    """Persisted native `evo` result path."""
+
+    controls: EvaluationControls
+    """Controls used to produce this result."""
+
+    title: str
+    """Short result title emitted by `evo`."""
+
+    matched_pairs: int
+    """Number of associated trajectory pairs used by `evo`."""
+
+    stats: MetricStats
+    """Scalar metrics reported by `evo`."""
+
+    reference_path: Path
+    """Reference TUM trajectory path."""
+
+    estimate_path: Path
+    """Estimated TUM trajectory path."""
+
+    trajectories: list[TrajectorySeries] = Field(default_factory=list)
+    """Trajectory overlays loaded from the persisted `evo` result."""
+
+    error_series: ErrorSeries | None = None
+    """Optional per-pair error profile."""
 
 
 __all__ = [
     "AppState",
     "DatasetId",
-    "DatasetPageState",
     "DiscoveredRun",
+    "ErrorSeries",
+    "EvaluationArtifact",
     "EvaluationControls",
+    "MetricStats",
     "MetricsPageState",
-    "MetricsSelection",
-    "StreamingPageState",
-    "StoredTrajectoryEvaluation",
-    "TrajectoryPoint",
+    "PoseRelationId",
+    "SelectionSnapshot",
+    "TrajectorySeries",
 ]

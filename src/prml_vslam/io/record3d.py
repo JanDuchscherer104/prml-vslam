@@ -1,18 +1,21 @@
-"""Typed Record3D streaming helpers for optional USB preview and metadata parsing."""
+"""Record3D streaming integration for local RGBD preview."""
+
+from __future__ import annotations
 
 import importlib
-from collections.abc import Iterator
 from enum import IntEnum
 from threading import Event
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
-from jaxtyping import Float, UInt8
+from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.utils.base_config import BaseConfig
-from prml_vslam.utils.console import Console
+from prml_vslam.utils import BaseConfig, Console
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class Record3DError(RuntimeError):
@@ -49,7 +52,7 @@ class Record3DDevice(BaseConfig):
 
 
 class Record3DIntrinsicMatrix(BaseConfig):
-    """Camera intrinsic parameters reported by Record3D."""
+    """Intrinsic matrix coefficients of the current RGB frame."""
 
     fx: float
     """Focal length in pixels along the x axis."""
@@ -63,7 +66,7 @@ class Record3DIntrinsicMatrix(BaseConfig):
     ty: float
     """Principal point y coordinate in pixels."""
 
-    def as_matrix(self) -> Float[np.ndarray, "3 3"]:  # noqa: F722
+    def as_matrix(self) -> NDArray[np.float64]:
         """Return the intrinsic coefficients as a 3x3 camera matrix."""
         return np.array(
             [
@@ -72,31 +75,6 @@ class Record3DIntrinsicMatrix(BaseConfig):
                 [0.0, 0.0, 1.0],
             ],
             dtype=np.float64,
-        )
-
-    def to_markdown_latex(self, name: str = "K") -> str:
-        """Render the intrinsic matrix as Markdown-hosted LaTeX."""
-        rows = r" \\ ".join(" & ".join(f"{value:.3f}" for value in row) for row in self.as_matrix())
-        return rf"$$ {name} = \begin{{bmatrix}} {rows} \end{{bmatrix}} $$"
-
-    @classmethod
-    def from_matrix_payload(cls, payload: Any) -> Self | None:
-        """Build intrinsics from a Record3D matrix payload when possible.
-
-        Args:
-            payload: Flat or nested matrix payload from Record3D metadata.
-
-        Returns:
-            A parsed intrinsic matrix when the payload shape is supported; otherwise ``None``.
-        """
-        rows = _coerce_matrix_rows(payload)
-        if rows is None:
-            return None
-        return cls(
-            fx=rows[0][0],
-            fy=rows[1][1],
-            tx=rows[0][2],
-            ty=rows[1][2],
         )
 
 
@@ -128,13 +106,13 @@ class Record3DCameraPose(BaseConfig):
 class Record3DFrame(BaseConfig):
     """One RGBD frame sampled from the Record3D stream."""
 
-    rgb: UInt8[np.ndarray, "height width 3"]  # noqa: F722
+    rgb: NDArray[np.uint8]
     """RGB image in HxWx3 layout."""
 
-    depth: Float[np.ndarray, "height width"]  # noqa: F722
+    depth: NDArray[np.float32]
     """Depth image in meters."""
 
-    confidence: UInt8[np.ndarray, "height width"]  # noqa: F722
+    confidence: NDArray[np.uint8]
     """Per-pixel confidence map aligned with the depth image."""
 
     intrinsic_matrix: Record3DIntrinsicMatrix
@@ -147,49 +125,16 @@ class Record3DFrame(BaseConfig):
     """Source camera type used for the stream."""
 
 
-class Record3DUSBStatus(BaseConfig):
-    """Current USB availability summary for Record3D."""
-
-    dependency_available: bool = True
-    """Whether the optional native Record3D bindings are installed."""
-
-    devices: list[Record3DDevice] = Field(default_factory=list)
-    """USB devices currently visible to the Record3D bindings."""
-
-    error_message: str = ""
-    """Optional dependency or discovery error surfaced to the app."""
-
-
-def _coerce_matrix_rows(payload: Any) -> list[list[float]] | None:
-    """Normalize a flat or nested 3x3 matrix payload into row-major rows."""
-    if isinstance(payload, list) and len(payload) == 9 and all(isinstance(value, int | float) for value in payload):
-        return [
-            [float(payload[0]), float(payload[3]), float(payload[6])],
-            [float(payload[1]), float(payload[4]), float(payload[7])],
-            [float(payload[2]), float(payload[5]), float(payload[8])],
-        ]
-
-    if (
-        isinstance(payload, list)
-        and len(payload) == 3
-        and all(isinstance(row, list) and len(row) == 3 for row in payload)
-        and all(isinstance(value, int | float) for row in payload for value in row)
-    ):
-        return [[float(value) for value in row] for row in payload]
-
-    return None
-
-
 def _import_record3d_module() -> Any:
     """Import the optional native Record3D bindings."""
     try:
         return importlib.import_module("record3d")
     except ModuleNotFoundError as exc:
-        msg = (
-            "The optional `record3d` package is required for USB streaming. Install it with "
-            "`uv sync --extra streaming` and satisfy the upstream native prerequisites."
-        )
-        raise Record3DDependencyError(msg) from exc
+        raise Record3DDependencyError(
+            "The optional `record3d` package is required for streaming. "
+            "Install it with `uv sync --extra streaming` and make sure the upstream prerequisites are installed "
+            "(CMake, iTunes on macOS/Windows, or libusbmuxd on Linux)."
+        ) from exc
 
 
 class Record3DStreamConfig(BaseConfig):
@@ -202,7 +147,7 @@ class Record3DStreamConfig(BaseConfig):
     """Maximum time to wait for the next frame before failing."""
 
     @property
-    def target_type(self) -> type["Record3DStreamSession"]:
+    def target_type(self) -> type[Record3DStreamSession]:
         """Runtime type used to manage one Record3D stream."""
         return Record3DStreamSession
 
@@ -229,7 +174,7 @@ class Record3DPreviewConfig(BaseConfig):
     """Optional hard limit for the number of frames displayed."""
 
     @property
-    def target_type(self) -> type["Record3DPreviewApp"]:
+    def target_type(self) -> type[Record3DPreviewApp]:
         """Runtime type used to preview the live stream."""
         return Record3DPreviewApp
 
@@ -239,7 +184,7 @@ class Record3DStreamSession:
 
     def __init__(self, config: Record3DStreamConfig) -> None:
         self.config = config
-        self.console = Console(f"{__name__}.{self.__class__.__name__}")
+        self.console = Console(__name__).child(self.__class__.__name__)
         self._record3d = _import_record3d_module()
         self._event = Event()
         self._stream: Any | None = None
@@ -253,32 +198,35 @@ class Record3DStreamSession:
         """Connect to the configured Record3D device and start streaming."""
         devices = self._get_connected_devices()
         if not devices:
-            msg = "No Record3D devices detected. Connect the iPhone via USB and enable USB Streaming mode."
-            raise Record3DConnectionError(msg)
+            raise Record3DConnectionError(
+                "No Record3D devices detected. Connect the iPhone via USB, open the Record3D app, "
+                "and enable USB Streaming mode."
+            )
 
         if self.config.device_index >= len(devices):
-            msg = (
-                f"Configured device index {self.config.device_index} is out of range for "
-                f"{len(devices)} connected device(s)."
+            raise Record3DConnectionError(
+                f"Configured device index {self.config.device_index} is out of range for {len(devices)} connected device(s)."
             )
-            raise Record3DConnectionError(msg)
 
         target_device = devices[self.config.device_index]
         stream = self._record3d.Record3DStream()
         stream.on_new_frame = self._on_new_frame
         stream.on_stream_stopped = self._on_stream_stopped
+
         if not stream.connect(target_device):
-            msg = f"Failed to connect to Record3D device at index {self.config.device_index}."
-            raise Record3DConnectionError(msg)
+            raise Record3DConnectionError(f"Failed to connect to Record3D device at index {self.config.device_index}.")
 
         self._stream = stream
         self._stream_stopped = False
-        return self._device_from_binding(target_device)
+        device = self._device_from_binding(target_device)
+        self.console.info("Connected to Record3D device %s (%s).", device.udid, device.product_id)
+        return device
 
     def disconnect(self) -> None:
         """Disconnect the active Record3D stream if present."""
         if self._stream is None:
             return
+
         self._stream.disconnect()
         self._stream = None
         self._stream_stopped = True
@@ -299,6 +247,7 @@ class Record3DStreamSession:
         timeout = self.config.frame_timeout_seconds if timeout_seconds is None else timeout_seconds
         if not self._event.wait(timeout=timeout):
             raise Record3DTimeoutError(f"Timed out waiting {timeout:.2f}s for a Record3D frame.")
+
         if self._stream_stopped:
             raise Record3DConnectionError("The Record3D stream stopped before a frame could be consumed.")
 
@@ -314,7 +263,7 @@ class Record3DStreamSession:
         return frame
 
     def iter_frames(self) -> Iterator[Record3DFrame]:
-        """Yield frames until the caller stops consuming them."""
+        """Yield frames indefinitely until the caller stops consuming them."""
         while True:
             yield self.wait_for_frame()
 
@@ -359,6 +308,7 @@ class Record3DPreviewApp:
 
     def __init__(self, config: Record3DPreviewConfig) -> None:
         self.config = config
+        self.console = Console(__name__).child(self.__class__.__name__)
         self.stream = config.stream.setup_target()
 
     def run(self) -> None:
@@ -368,14 +318,19 @@ class Record3DPreviewApp:
 
         self.stream.connect()
         frames_seen = 0
+
         try:
             for frame in self.stream.iter_frames():
                 self._show_frame(frame)
                 frames_seen += 1
+
                 key_code = cv2.waitKey(self.config.wait_key_millis) & 0xFF
                 if key_code == ord(self.config.exit_key):
+                    self.console.info("Stopping Record3D preview after exit key `%s`.", self.config.exit_key)
                     break
+
                 if self.config.max_frames is not None and frames_seen >= self.config.max_frames:
+                    self.console.info("Stopping Record3D preview after %s frame(s).", self.config.max_frames)
                     break
         finally:
             self.stream.disconnect()
@@ -385,53 +340,32 @@ class Record3DPreviewApp:
         rgb = frame.rgb
         depth = frame.depth
         confidence = frame.confidence
+
         if frame.device_type is Record3DDeviceType.TRUEDEPTH:
             rgb = cv2.flip(rgb, 1)
             depth = cv2.flip(depth, 1)
             confidence = cv2.flip(confidence, 1) if confidence.size else confidence
 
-        cv2.imshow(f"{self.config.window_prefix} RGB", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+        rgb_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        cv2.imshow(f"{self.config.window_prefix} RGB", rgb_bgr)
         cv2.imshow(f"{self.config.window_prefix} Depth", self._render_depth(depth))
+
         if self.config.show_confidence and confidence.size:
             cv2.imshow(f"{self.config.window_prefix} Confidence", self._render_confidence(confidence))
 
     @staticmethod
-    def _render_depth(depth: Float[np.ndarray, "height width"]) -> UInt8[np.ndarray, "height width"]:  # noqa: F722
+    def _render_depth(depth: NDArray[np.float32]) -> NDArray[np.uint8]:
         if depth.size == 0:
             return np.zeros((1, 1), dtype=np.uint8)
+
         normalized = cv2.normalize(depth, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
         return normalized.astype(np.uint8)
 
     @staticmethod
-    def _render_confidence(confidence: UInt8[np.ndarray, "height width"]) -> UInt8[np.ndarray, "height width"]:  # noqa: F722
+    def _render_confidence(confidence: NDArray[np.uint8]) -> NDArray[np.uint8]:
         if confidence.size == 0:
             return np.zeros((1, 1), dtype=np.uint8)
         return (confidence.astype(np.uint16) * 100).clip(0, 255).astype(np.uint8)
-
-
-def probe_record3d_usb_status() -> Record3DUSBStatus:
-    """Probe optional USB Record3D availability without raising into the app."""
-    try:
-        session = Record3DStreamConfig().setup_target()
-        if session is None:
-            return Record3DUSBStatus(
-                dependency_available=False,
-                error_message="Failed to initialize the optional Record3D USB session.",
-            )
-        return Record3DUSBStatus(
-            dependency_available=True,
-            devices=session.list_devices(),
-        )
-    except Record3DDependencyError as exc:
-        return Record3DUSBStatus(
-            dependency_available=False,
-            error_message=str(exc),
-        )
-    except Record3DError as exc:
-        return Record3DUSBStatus(
-            dependency_available=True,
-            error_message=str(exc),
-        )
 
 
 __all__ = [
@@ -448,6 +382,4 @@ __all__ = [
     "Record3DStreamConfig",
     "Record3DStreamSession",
     "Record3DTimeoutError",
-    "Record3DUSBStatus",
-    "probe_record3d_usb_status",
 ]

@@ -1,4 +1,4 @@
-"""Metrics-first trajectory evaluation page."""
+"""Metrics-first Streamlit page for trajectory evaluation review."""
 
 from __future__ import annotations
 
@@ -6,241 +6,208 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.eval import PoseRelationId
-
-from ..models import DatasetId, EvaluationControls, MetricsPageState
-from ..plotting import build_metric_summary_figure, build_trajectory_overlay_figure
-from ..ui import render_header, render_key_value_rows, render_path_cards
+from ..models import (
+    DatasetId,
+    DiscoveredRun,
+    EvaluationArtifact,
+    EvaluationControls,
+    MetricsPageState,
+    PoseRelationId,
+    SelectionSnapshot,
+)
+from ..plotting.metrics import build_error_figure, build_trajectory_figure
 
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
 
 
 def render(context: AppContext) -> None:
-    """Render the trajectory metrics page."""
-    render_header(
-        title="Trajectory Metrics",
-        kicker="Metrics-first app",
-        copy=(
-            "Review persisted evo outputs, inspect run provenance, and trigger explicit trajectory "
-            "evaluation for one dataset sequence and run."
-        ),
-    )
-
-    service = context.services.evaluation
+    """Render the primary metrics page."""
     state = context.state
-    paths = context.services.path_config
+    service = context.service
 
-    with st.expander("Configured paths", expanded=False):
-        render_path_cards(
-            [
-                ("ADVIO root", paths.advio_root),
-                ("Artifacts root", paths.artifacts_root),
-            ]
-        )
-
-    dataset = DatasetId.ADVIO
-    sequence_ids = service.list_sequences(dataset)
-    selected_sequence_id = _resolve_sequence_id(state.metrics.sequence_id, sequence_ids)
-    runs = service.discover_runs(dataset, selected_sequence_id) if selected_sequence_id is not None else []
-    selected_run = _resolve_run(state.metrics.run_path, runs)
-
-    with st.container(border=True):
-        selector_col, sequence_col, run_col = st.columns([0.8, 0.8, 1.4], gap="large")
-        selector_col.selectbox("Dataset", options=[dataset], format_func=lambda item: item.label, disabled=True)
-        if sequence_ids:
-            selected_sequence_id = sequence_col.selectbox(
-                "Sequence",
-                options=sequence_ids,
-                index=sequence_ids.index(selected_sequence_id) if selected_sequence_id is not None else 0,
-                format_func=lambda item: f"ADVIO {item:02d}",
-            )
-        else:
-            sequence_col.selectbox("Sequence", options=["No local ADVIO sequences"], disabled=True)
-            selected_sequence_id = None
-
-        if runs:
-            selected_run = run_col.selectbox(
-                "Method / run",
-                options=runs,
-                index=runs.index(selected_run) if selected_run is not None else 0,
-                format_func=lambda item: item.display_label,
-            )
-        else:
-            run_col.selectbox("Method / run", options=["No trajectory runs discovered"], disabled=True)
-            selected_run = None
-
-    controls_col, toggles_col, detail_col = st.columns([1.1, 1.0, 0.9], gap="large")
-    selected_pose_relation = controls_col.selectbox(
-        "Pose relation",
-        options=list(PoseRelationId),
-        index=list(PoseRelationId).index(state.metrics.evaluation.pose_relation),
-        format_func=lambda item: item.value.replace("_", " "),
+    st.markdown('<div class="prml-kicker">PRML VSLAM</div>', unsafe_allow_html=True)
+    st.title("Trajectory Metrics")
+    st.caption(
+        "Inspect persisted `evo` results or trigger an explicit APE run for one dataset, sequence, and artifact run."
     )
-    align = toggles_col.toggle("Align", value=state.metrics.evaluation.align)
-    correct_scale = toggles_col.toggle("Correct scale", value=state.metrics.evaluation.correct_scale)
-    max_diff_s = float(
-        detail_col.number_input(
-            "Max timestamp diff (s)",
-            min_value=0.001,
-            max_value=1.0,
-            value=float(state.metrics.evaluation.max_diff_s),
-            step=0.001,
-            format="%.3f",
+
+    selectors_col, controls_col = st.columns((1.6, 1.0), gap="large")
+    with selectors_col:
+        st.markdown('<div class="prml-panel">', unsafe_allow_html=True)
+        dataset = st.selectbox(
+            "Dataset",
+            options=list(DatasetId),
+            format_func=lambda item: item.label,
+            index=list(DatasetId).index(state.metrics.dataset),
         )
-    )
+        sequences = service.list_sequences(dataset)
+        if not sequences:
+            state.metrics = MetricsPageState(dataset=dataset)
+            context.store.save(state)
+            st.warning(f"No local {dataset.label} sequences were found under `{service.dataset_root(dataset)}`.")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
+
+        selected_sequence = _select_sequence(
+            sequences=sequences,
+            current=state.metrics.sequence_slug,
+        )
+        runs = service.discover_runs(dataset, selected_sequence)
+        if not runs:
+            state.metrics = MetricsPageState(dataset=dataset, sequence_slug=selected_sequence)
+            context.store.save(state)
+            st.info(
+                "No benchmark runs with `slam/trajectory.tum` were found for the selected sequence under "
+                f"`{context.path_config.artifacts_dir}`."
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
+
+        selected_run = _select_run(
+            runs=runs,
+            current=state.metrics.run_root,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with controls_col:
+        st.markdown('<div class="prml-panel">', unsafe_allow_html=True)
+        controls = _render_controls(state.metrics.evaluation)
+        st.markdown(
+            (
+                '<div class="prml-note">'
+                "Evaluation never runs on selector changes. Only the primary action below writes or refreshes "
+                "native `evo` results."
+                "</div>"
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
     state.metrics = MetricsPageState(
         dataset=dataset,
-        sequence_id=selected_sequence_id,
-        run_path=selected_run.artifact_root if selected_run is not None else None,
-        evaluation=EvaluationControls(
-            pose_relation=selected_pose_relation,
-            align=align,
-            correct_scale=correct_scale,
-            max_diff_s=max_diff_s,
-        ),
-        last_result_path=state.metrics.last_result_path,
+        sequence_slug=selected_sequence,
+        run_root=selected_run.artifact_root,
+        evaluation=controls,
+        result_path=state.metrics.result_path,
     )
     context.store.save(state)
 
-    if not sequence_ids:
-        st.warning(f"No local ADVIO sequences were found under {paths.advio_root}.")
-        return
-
-    if selected_run is None:
-        st.info(
-            "No trajectory-producing runs were discovered for the selected sequence. Materialize or run a benchmark "
-            "first, then return here to inspect or evaluate it."
-        )
-        return
-
-    selection = service.resolve_metrics_selection(
+    selection = service.resolve_selection(
         dataset=dataset,
-        sequence_id=selected_sequence_id,
-        run_path=selected_run.artifact_root,
+        sequence_slug=selected_sequence,
+        run_root=selected_run.artifact_root,
     )
     if selection is None:
-        st.warning("Could not resolve the current dataset-sequence-run selection.")
+        st.error("The current dataset selection could not be resolved.")
         return
 
-    matching_evaluation = service.find_matching_evaluation(selection=selection, controls=state.metrics.evaluation)
-    all_evaluations = service.list_persisted_evaluations(selection)
+    try:
+        evaluation = service.load_evaluation(selection=selection, controls=controls)
+    except RuntimeError as exc:
+        st.error(str(exc))
+        return
+    can_compute = selection.reference_path is not None and selection.run.estimate_path.exists()
 
-    compute_disabled = selection.reference_path is None and selection.reference_csv_path is None
-    compute_help = None
-    if compute_disabled:
-        compute_help = "No reference trajectory is available for the selected sequence."
+    action_col, status_col = st.columns((0.95, 1.05), gap="large")
+    with action_col:
+        compute = st.button("Compute evo metrics", type="primary", disabled=not can_compute, width="stretch")
+    with status_col:
+        if selection.reference_path is None:
+            st.warning(
+                "Missing `ground_truth.tum` for the selected sequence. The app only evaluates when a TUM reference "
+                "trajectory already exists."
+            )
+        elif evaluation is not None:
+            st.success(f"Loaded persisted result from `{evaluation.path}`.")
+        else:
+            st.info("No persisted result matches the current controls yet.")
 
-    compute_requested = st.button(
-        "Compute evo metrics",
-        type="primary",
-        disabled=compute_disabled,
-        help=compute_help,
+    if compute:
+        with st.spinner("Running evo APE..."):
+            try:
+                evaluation = service.compute_evaluation(selection=selection, controls=controls)
+            except RuntimeError as exc:
+                st.error(str(exc))
+                return
+        state.metrics.result_path = evaluation.path
+        context.store.save(state)
+        st.success(f"Persisted fresh `evo` result to `{evaluation.path}`.")
+
+    _render_provenance(selection=selection, evaluation=evaluation)
+    if evaluation is None:
+        return
+
+    metric_columns = st.columns(4, gap="small")
+    metric_columns[0].metric("RMSE", f"{evaluation.stats.rmse:.4f}")
+    metric_columns[1].metric("Mean", f"{evaluation.stats.mean:.4f}")
+    metric_columns[2].metric("Median", f"{evaluation.stats.median:.4f}")
+    metric_columns[3].metric("Max", f"{evaluation.stats.max:.4f}")
+
+    figure_columns = st.columns((1.3, 1.0), gap="large")
+    with figure_columns[0]:
+        if evaluation.trajectories:
+            st.plotly_chart(build_trajectory_figure(evaluation.trajectories), width="stretch")
+    with figure_columns[1]:
+        if evaluation.error_series is not None:
+            st.plotly_chart(build_error_figure(evaluation.error_series), width="stretch")
+
+
+def _select_sequence(*, sequences: list[str], current: str | None) -> str:
+    index = sequences.index(current) if current in sequences else 0
+    return st.selectbox("Sequence", options=sequences, index=index)
+
+
+def _select_run(*, runs: list[DiscoveredRun], current: object) -> DiscoveredRun:
+    run_paths = [run.artifact_root for run in runs]
+    index = run_paths.index(current) if current in run_paths else 0
+    return st.selectbox("Run", options=runs, index=index, format_func=lambda run: run.label)
+
+
+def _render_controls(current: EvaluationControls) -> EvaluationControls:
+    pose_relation = st.selectbox(
+        "Pose Relation",
+        options=list(PoseRelationId),
+        index=list(PoseRelationId).index(current.pose_relation),
+        format_func=lambda item: item.label,
+    )
+    align = st.toggle("Rigid alignment", value=current.align)
+    correct_scale = st.toggle("Scale correction", value=current.correct_scale)
+    max_diff_s = st.number_input(
+        "Max timestamp diff (s)",
+        min_value=0.0,
+        step=0.01,
+        format="%.3f",
+        value=float(current.max_diff_s),
+    )
+    return EvaluationControls(
+        pose_relation=pose_relation,
+        align=align,
+        correct_scale=correct_scale,
+        max_diff_s=float(max_diff_s),
     )
 
-    if compute_requested:
-        try:
-            with st.status("Running evo trajectory evaluation...", expanded=False):
-                matching_evaluation = service.compute_evaluation(selection=selection, controls=state.metrics.evaluation)
-        except Exception as exc:
-            st.error(str(exc))
-        else:
-            state.metrics.last_result_path = matching_evaluation.path
-            context.store.save(state)
-            st.success(f"Saved evaluation to {matching_evaluation.path}.")
 
-    if matching_evaluation is None:
-        st.info("No persisted evaluation matches the current controls yet. Use the compute action to generate one.")
-        if all_evaluations:
-            st.markdown("### Available persisted evaluations")
-            render_key_value_rows(
-                [
-                    {
-                        "path": evaluation.path.as_posix(),
-                        "pose_relation": evaluation.result.pose_relation.value,
-                        "align": evaluation.result.align,
-                        "correct_scale": evaluation.result.correct_scale,
-                        "matching_pairs": evaluation.result.matching_pairs,
-                    }
-                    for evaluation in all_evaluations
-                ]
-            )
-        return
-
-    st.caption(f"Showing persisted evaluation: `{matching_evaluation.path}`")
-    _render_result(selection=selection, evaluation=matching_evaluation, service=service)
-
-
-def _resolve_sequence_id(current_value: int | None, sequence_ids: list[int]) -> int | None:
-    if current_value in sequence_ids:
-        return current_value
-    return sequence_ids[0] if sequence_ids else None
-
-
-def _resolve_run(current_path, runs):
-    if current_path is not None:
-        for run in runs:
-            if run.artifact_root == current_path:
-                return run
-    return runs[0] if runs else None
-
-
-def _render_result(*, selection, evaluation, service) -> None:
-    result = evaluation.result
-    stat_names = ["rmse", "mean", "median"]
-    metric_values = [result.stats.get(name) for name in stat_names]
-    metric_pairs = [("RMSE", metric_values[0]), ("Mean", metric_values[1]), ("Median", metric_values[2])]
-    metric_pairs.append(("Pairs", float(result.matching_pairs)))
-
-    metric_cols = st.columns(4)
-    for column, (label, value) in zip(metric_cols, metric_pairs, strict=True):
-        if value is None:
-            column.metric(label, "n/a")
-        elif label == "Pairs":
-            column.metric(label, int(value))
-        else:
-            column.metric(label, f"{value:.6f}")
-
-    provenance_rows = [
-        {"field": "Dataset", "value": selection.dataset.label},
-        {"field": "Sequence", "value": selection.sequence_name},
-        {"field": "Mode", "value": selection.run.mode.value},
-        {"field": "Method", "value": selection.run.method.value},
-        {"field": "Pose relation", "value": result.pose_relation.value},
-        {"field": "Align", "value": result.align},
-        {"field": "Correct scale", "value": result.correct_scale},
-        {"field": "Max diff (s)", "value": result.max_diff_s},
-        {"field": "Reference path", "value": result.reference_path.as_posix()},
-        {"field": "Estimate path", "value": result.estimate_path.as_posix()},
+def _render_provenance(*, selection: SelectionSnapshot, evaluation: EvaluationArtifact | None) -> None:
+    # The page keeps provenance dense and visible because the same figure can otherwise be hard to interpret.
+    lines = [
+        f"- Dataset: `{selection.dataset.label}`",
+        f"- Sequence: `{selection.sequence_slug}`",
+        f"- Run: `{selection.run.label}`",
+        f"- Estimate path: `{selection.run.estimate_path}`",
+        f"- Reference path: `{selection.reference_path}`",
     ]
-    st.markdown("### Provenance")
-    render_key_value_rows(provenance_rows)
-
-    chart_col, stats_col = st.columns([1.1, 0.9], gap="large")
-    with chart_col:
-        st.markdown("### Metric summary")
-        st.plotly_chart(build_metric_summary_figure(result), width="stretch", config={"displayModeBar": False})
-    with stats_col:
-        st.markdown("### Raw stats")
-        render_key_value_rows(
-            [{"metric": name, "value": value} for name, value in sorted(result.stats.items(), key=lambda item: item[0])]
+    if evaluation is not None:
+        lines.extend(
+            [
+                f"- Pose relation: `{evaluation.controls.pose_relation.label}`",
+                f"- Alignment: `{evaluation.controls.align}`",
+                f"- Scale correction: `{evaluation.controls.correct_scale}`",
+                f"- Max timestamp diff (s): `{evaluation.controls.max_diff_s:.3f}`",
+                f"- Matched pairs: `{evaluation.matched_pairs}`",
+                f"- Persisted result: `{evaluation.path}`",
+            ]
         )
 
-    if result.reference_path.exists() and result.estimate_path.exists():
-        reference_points = service.load_trajectory_points(result.reference_path)
-        estimate_points = service.load_trajectory_points(result.estimate_path)
-        if reference_points and estimate_points:
-            st.markdown("### Trajectory overlay")
-            st.plotly_chart(
-                build_trajectory_overlay_figure(
-                    reference_points=reference_points,
-                    estimate_points=estimate_points,
-                    title=f"{selection.sequence_name} · {selection.run.method.value.replace('_', ' ').upper()}",
-                ),
-                width="stretch",
-                config={"displayModeBar": False},
-            )
-
-
-__all__ = ["render"]
+    st.subheader("Provenance")
+    st.markdown("\n".join(lines))

@@ -14,10 +14,11 @@ from .record3d import (
     Record3DStreamConfig,
     Record3DStreamSession,
     Record3DTimeoutError,
-    Record3DUSBStatus,
-    probe_record3d_usb_status,
 )
-from .record3d_wifi import Record3DWiFiViewerState, render_record3d_wifi_viewer
+from .record3d_wifi import (
+    Record3DWiFiViewerState,
+    render_record3d_wifi_viewer,
+)
 
 __all__ = [
     "Record3DCameraPose",
@@ -33,8 +34,6 @@ __all__ = [
     "Record3DStreamConfig",
     "Record3DStreamSession",
     "Record3DTimeoutError",
-    "Record3DUSBStatus",
     "Record3DWiFiViewerState",
-    "probe_record3d_usb_status",
     "render_record3d_wifi_viewer",
 ]

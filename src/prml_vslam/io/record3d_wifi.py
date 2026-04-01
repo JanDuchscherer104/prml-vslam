@@ -1,15 +1,14 @@
-"""Browser-side Record3D Wi-Fi streaming component for the Streamlit app."""
+"""Browser-side Record3D Wi-Fi streaming component for the Streamlit workbench."""
 
 from __future__ import annotations
 
-import json
 from textwrap import dedent
 from typing import Any, Literal, Self
 
 import streamlit as st
 from pydantic import Field
 
-from prml_vslam.utils.base_config import BaseConfig
+from prml_vslam.utils import BaseConfig
 
 Record3DWiFiConnectionState = Literal["idle", "connecting", "streaming", "disconnected", "failed"]
 
@@ -29,15 +28,16 @@ class Record3DWiFiViewerState(BaseConfig):
     metadata: dict[str, Any] = Field(default_factory=dict)
     """Latest JSON metadata returned by the Record3D `/metadata` endpoint."""
 
-    show_inv_dist_std: bool = True
-    """Whether the optional placeholder pane should stay visible."""
-
-    equalize_depth_histogram: bool = False
-    """Whether the browser should histogram-equalize the depth preview."""
-
     @classmethod
     def from_component_result(cls, result: Any) -> Self:
-        """Normalize a Streamlit component result into a stable typed state."""
+        """Normalize a Streamlit component result into a stable typed state.
+
+        Args:
+            result: Raw ``BidiComponentResult`` or a dict-like stand-in from tests.
+
+        Returns:
+            A validated state object with all expected fields populated.
+        """
         defaults = cls().model_dump(mode="python")
         raw_state = dict(result) if result is not None else {}
         normalized = {
@@ -45,14 +45,6 @@ class Record3DWiFiViewerState(BaseConfig):
             for field_name in cls.model_fields
         }
         return cls.model_validate(normalized)
-
-    def to_component_data(self) -> dict[str, Any]:
-        """Return the frontend data payload used to initialize the viewer."""
-        return {
-            "device_address": self.device_address,
-            "show_inv_dist_std": self.show_inv_dist_std,
-            "equalize_depth_histogram": self.equalize_depth_histogram,
-        }
 
 
 RECORD3D_WIFI_COMPONENT_NAME = "prml_vslam_record3d_wifi_viewer"
@@ -67,8 +59,8 @@ RECORD3D_WIFI_COMPONENT_HTML = dedent(
           <p class="record3d-kicker">Record3D Wi-Fi</p>
           <h2>Live RGBD stream preview</h2>
           <p class="record3d-lede">
-            Enter the device address shown in the iPhone app to preview the composite
-            RGBD WebRTC stream in this browser.
+            Enter the Record3D device address shown in the iPhone app to preview the
+            composite RGBD WebRTC stream in this browser.
           </p>
         </div>
       </header>
@@ -92,7 +84,9 @@ RECORD3D_WIFI_COMPONENT_HTML = dedent(
 
       <div class="record3d-status-row">
         <span id="record3d-status-pill" class="record3d-status-pill" data-state="idle">IDLE</span>
-        <span id="record3d-status-address" class="record3d-status-address">No device connected yet.</span>
+        <span id="record3d-status-address" class="record3d-status-address">
+          No device connected yet.
+        </span>
       </div>
 
       <p id="record3d-error-message" class="record3d-error-message" hidden></p>
@@ -142,9 +136,19 @@ RECORD3D_WIFI_COMPONENT_HTML = dedent(
       <section class="record3d-metadata-section">
         <div class="record3d-section-header">
           <h3>Metadata</h3>
-          <p>Latest payload from the Record3D <code>/metadata</code> endpoint.</p>
+          <p>Intrinsic matrix and device metadata from <code>/metadata</code>.</p>
         </div>
         <pre id="record3d-metadata-view" class="record3d-metadata-view">{}</pre>
+      </section>
+
+      <section class="record3d-notes">
+        <h3>Constraints</h3>
+        <ul>
+          <li>Use the device address shown in Record3D, for example <code>myiPhone.local</code>.</li>
+          <li>Chrome and Safari are the supported browsers for this Wi-Fi path.</li>
+          <li>Record3D allows only one Wi-Fi receiver at a time.</li>
+          <li>Wi-Fi streaming is lower fidelity than the USB Python integration.</li>
+        </ul>
       </section>
     </section>
     """
@@ -154,28 +158,25 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
     """
     :host {
       display: block;
-      width: 100%;
-      height: 100%;
     }
 
     .record3d-wifi-root {
       display: grid;
       gap: 1rem;
-      min-height: 100%;
-      color: #16202a;
-      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--st-text-color);
+      font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
     }
 
     .record3d-wifi-header h2,
-    .record3d-metadata-section h3,
-    .record3d-frame-header h3 {
+    .record3d-notes h3,
+    .record3d-metadata-section h3 {
       margin: 0;
     }
 
     .record3d-kicker {
-      margin: 0 0 0.3rem;
-      color: #2563eb;
-      font-size: 0.78rem;
+      margin: 0 0 0.35rem;
+      color: var(--st-primary-color);
+      font-size: 0.82rem;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -183,25 +184,20 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
 
     .record3d-lede,
     .record3d-section-header p,
-    .record3d-frame-header p {
+    .record3d-notes li {
       margin: 0;
-      color: #5a6875;
+      color: var(--st-emphasis-color, var(--st-text-color));
+      opacity: 0.85;
       line-height: 1.5;
-    }
-
-    .record3d-controls,
-    .record3d-frame-panel,
-    .record3d-metadata-section {
-      border: 1px solid #dbe4ea;
-      border-radius: 1rem;
-      background: #ffffff;
-      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
     }
 
     .record3d-controls {
       display: grid;
       gap: 0.45rem;
       padding: 1rem;
+      border: 1px solid color-mix(in srgb, var(--st-border-color, #4b5563) 75%, transparent);
+      border-radius: 0.9rem;
+      background: linear-gradient(135deg, rgba(10, 15, 26, 0.9), rgba(18, 28, 45, 0.78));
     }
 
     .record3d-label {
@@ -219,18 +215,18 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
     .record3d-input {
       min-width: 0;
       padding: 0.8rem 0.95rem;
-      border: 1px solid #cfd8df;
-      border-radius: 0.8rem;
-      background: #f8fbfd;
-      color: #16202a;
+      border: 1px solid color-mix(in srgb, var(--st-border-color, #4b5563) 75%, transparent);
+      border-radius: 0.75rem;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--st-text-color);
       font-size: 0.98rem;
     }
 
     .record3d-button {
       padding: 0.8rem 1rem;
       border: none;
-      border-radius: 0.8rem;
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border-radius: 0.75rem;
+      background: linear-gradient(135deg, #ff5f45, #ff7b54);
       color: white;
       cursor: pointer;
       font-size: 0.98rem;
@@ -257,42 +253,46 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      background: #eef2f6;
-      color: #5a6875;
+      background: rgba(100, 116, 139, 0.16);
+      color: #e5e7eb;
+    }
+
+    .record3d-status-pill[data-state="idle"] {
+      background: rgba(100, 116, 139, 0.22);
     }
 
     .record3d-status-pill[data-state="connecting"] {
-      background: #fff5db;
-      color: #b45309;
+      background: rgba(245, 158, 11, 0.22);
+      color: #fbbf24;
     }
 
     .record3d-status-pill[data-state="streaming"] {
-      background: #dcfce7;
-      color: #047857;
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
     }
 
     .record3d-status-pill[data-state="disconnected"] {
-      background: #dbeafe;
-      color: #1d4ed8;
+      background: rgba(96, 165, 250, 0.2);
+      color: #60a5fa;
     }
 
     .record3d-status-pill[data-state="failed"] {
-      background: #fee2e2;
-      color: #b91c1c;
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
     }
 
     .record3d-status-address {
       font-size: 0.95rem;
-      color: #5a6875;
+      opacity: 0.9;
     }
 
     .record3d-error-message {
       margin: 0;
       padding: 0.8rem 0.95rem;
-      border: 1px solid #fecaca;
-      border-radius: 0.8rem;
-      background: #fef2f2;
-      color: #991b1b;
+      border: 1px solid rgba(248, 113, 113, 0.32);
+      border-radius: 0.75rem;
+      background: rgba(127, 29, 29, 0.3);
+      color: #fecaca;
       line-height: 1.5;
     }
 
@@ -309,13 +309,12 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
       gap: 0.6rem;
       font-size: 0.95rem;
       font-weight: 500;
-      color: #16202a;
     }
 
     .record3d-checkbox input {
       width: 1rem;
       height: 1rem;
-      accent-color: #2563eb;
+      accent-color: #ff7b54;
     }
 
     .record3d-video-source {
@@ -337,6 +336,26 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
       gap: 0.75rem;
       min-width: 0;
       padding: 1rem;
+      border-radius: 1rem;
+      border: 1px solid color-mix(in srgb, var(--st-border-color, #4b5563) 75%, transparent);
+      background:
+        radial-gradient(circle at top, rgba(255, 123, 84, 0.12), transparent 40%),
+        linear-gradient(180deg, rgba(3, 7, 18, 0.96), rgba(17, 24, 39, 0.96));
+    }
+
+    .record3d-frame-header {
+      display: grid;
+      gap: 0.15rem;
+    }
+
+    .record3d-frame-header h3 {
+      margin: 0;
+    }
+
+    .record3d-frame-header p {
+      margin: 0;
+      opacity: 0.82;
+      line-height: 1.45;
     }
 
     .record3d-frame-canvas,
@@ -344,8 +363,8 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
       width: 100%;
       min-height: 16rem;
       border-radius: 0.85rem;
-      border: 1px solid #dbe4ea;
-      background: #f5f7fa;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(2, 6, 23, 0.92);
     }
 
     .record3d-frame-canvas {
@@ -358,15 +377,15 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
       display: grid;
       place-items: center;
       padding: 1rem;
-      color: #5a6875;
+      color: #dbeafe;
       line-height: 1.5;
       text-align: center;
     }
 
-    .record3d-metadata-section {
+    .record3d-metadata-section,
+    .record3d-notes {
       display: grid;
       gap: 0.6rem;
-      padding: 1rem;
     }
 
     .record3d-section-header {
@@ -379,10 +398,17 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
       padding: 1rem;
       border-radius: 0.85rem;
       overflow-x: auto;
-      background: #f8fbfd;
-      color: #16202a;
+      background: rgba(2, 6, 23, 0.92);
+      color: #dbeafe;
       font-size: 0.88rem;
       line-height: 1.5;
+    }
+
+    .record3d-notes ul {
+      margin: 0;
+      padding-left: 1.2rem;
+      display: grid;
+      gap: 0.35rem;
     }
 
     @media (max-width: 720px) {
@@ -405,8 +431,7 @@ RECORD3D_WIFI_COMPONENT_CSS = dedent(
 RECORD3D_WIFI_COMPONENT_JS = dedent(
     """
     export default function(component) {
-      const { parentElement, setStateValue, data } = component;
-      const initialData = typeof data === "string" ? JSON.parse(data) : (data || {});
+      const { parentElement, setStateValue } = component;
       const root = parentElement;
       const ui = {
         form: root.querySelector("#record3d-connect-form"),
@@ -430,8 +455,6 @@ RECORD3D_WIFI_COMPONENT_JS = dedent(
         viewer.setStateValue("connection_state", viewer.connectionState);
         viewer.setStateValue("error_message", viewer.errorMessage);
         viewer.setStateValue("metadata", viewer.metadata);
-        viewer.setStateValue("show_inv_dist_std", viewer.showInvDistStd);
-        viewer.setStateValue("equalize_depth_histogram", viewer.equalizeDepthHistogram);
       };
 
       const setCanvasSize = (canvas, width, height) => {
@@ -578,6 +601,7 @@ RECORD3D_WIFI_COMPONENT_JS = dedent(
         }
 
         const displayIntensities = viewer.equalizeDepthHistogram ? equalizeHistogram(intensities) : intensities;
+
         for (let pixelIndex = 0; pixelIndex < displayIntensities.length; pixelIndex += 1) {
           const intensity = displayIntensities[pixelIndex];
           const pixelOffset = pixelIndex * 4;
@@ -675,27 +699,31 @@ RECORD3D_WIFI_COMPONENT_JS = dedent(
 
         async retrieveOffer() {
           let response;
+
           try {
             response = await fetch(`${this.serverURL}/getOffer`);
           } catch (error) {
             throw new Error(
-              "Could not reach the Record3D device. Check that the iPhone and browser are on the same Wi-Fi network."
+              "Could not reach the Record3D device. Check that the iPhone and Mac are on the same Wi-Fi network."
             );
           }
 
           if (response.status === 403) {
             throw new Error(
-              "Record3D allows only one Wi-Fi receiver at a time. Close the other tab or peer and retry."
+              "Record3D allows only one Wi-Fi receiver at a time. Close the other browser tab or peer and retry."
             );
           }
+
           if (!response.ok) {
             throw new Error(`Record3D offer request failed with HTTP ${response.status}.`);
           }
+
           return response.json();
         }
 
         async sendAnswer(answer) {
           let response;
+
           try {
             response = await fetch(`${this.serverURL}/answer`, {
               method: "POST",
@@ -714,6 +742,7 @@ RECORD3D_WIFI_COMPONENT_JS = dedent(
 
       const getMetadata = async (serverURL) => {
         let response;
+
         try {
           response = await fetch(`${serverURL}/metadata`);
         } catch (error) {
@@ -723,40 +752,26 @@ RECORD3D_WIFI_COMPONENT_JS = dedent(
         if (!response.ok) {
           throw new Error(`Record3D metadata request failed with HTTP ${response.status}.`);
         }
+
         return response.json();
-      };
-
-      const applyIncomingData = (viewer, nextData) => {
-        const persistedAddress = typeof nextData?.device_address === "string" ? nextData.device_address : "";
-        const persistedInvDistStd = nextData?.show_inv_dist_std ?? true;
-        const persistedEqualization = nextData?.equalize_depth_histogram ?? false;
-
-        if (viewer.connectionState !== "connecting" && viewer.connectionState !== "streaming") {
-          viewer.deviceAddress = persistedAddress || viewer.deviceAddress;
-        }
-
-        viewer.showInvDistStd = Boolean(persistedInvDistStd);
-        viewer.equalizeDepthHistogram = Boolean(persistedEqualization);
-        render(viewer);
       };
 
       const ensureViewer = () => {
         if (root.__record3dWiFiViewer) {
           root.__record3dWiFiViewer.setStateValue = setStateValue;
-          applyIncomingData(root.__record3dWiFiViewer, initialData);
           publishState(root.__record3dWiFiViewer);
           return root.__record3dWiFiViewer;
         }
 
         const viewer = {
-          deviceAddress: typeof initialData?.device_address === "string" ? initialData.device_address : "",
+          deviceAddress: "",
           connectionState: "idle",
           errorMessage: "",
           metadata: {},
           peerConnection: null,
           signalingClient: new SignalingClient(""),
-          showInvDistStd: initialData?.show_inv_dist_std ?? true,
-          equalizeDepthHistogram: initialData?.equalize_depth_histogram ?? false,
+          showInvDistStd: true,
+          equalizeDepthHistogram: false,
           animationFrameId: null,
           rgbContext: ui.rgbCanvas.getContext("2d"),
           depthContext: ui.depthCanvas.getContext("2d", { willReadFrequently: true }),
@@ -805,6 +820,7 @@ RECORD3D_WIFI_COMPONENT_JS = dedent(
 
             const peerConnection = new RTCPeerConnection();
             let answerSent = false;
+
             viewer.peerConnection = peerConnection;
 
             peerConnection.onicecandidate = (event) => {
@@ -881,13 +897,11 @@ RECORD3D_WIFI_COMPONENT_JS = dedent(
         ui.invDistStdToggle.onchange = () => {
           viewer.showInvDistStd = ui.invDistStdToggle.checked;
           render(viewer);
-          publishState(viewer);
         };
 
         ui.depthEqualizationToggle.onchange = () => {
           viewer.equalizeDepthHistogram = ui.depthEqualizationToggle.checked;
           render(viewer);
-          publishState(viewer);
         };
 
         const handleBeforeUnload = () => {
@@ -928,16 +942,21 @@ RECORD3D_WIFI_COMPONENT = st.components.v2.component(
 
 def render_record3d_wifi_viewer(
     *,
-    initial_state: Record3DWiFiViewerState | None = None,
     key: str = RECORD3D_WIFI_COMPONENT_KEY,
     height: int = RECORD3D_WIFI_COMPONENT_HEIGHT,
 ) -> Record3DWiFiViewerState:
-    """Mount the Record3D Wi-Fi component and return its latest browser state."""
-    viewer_state = initial_state or Record3DWiFiViewerState()
+    """Mount the Record3D Wi-Fi component and return its latest browser state.
+
+    Args:
+        key: Stable Streamlit widget key for the viewer instance.
+        height: Fixed component height in pixels.
+
+    Returns:
+        The last state emitted by the browser-side Wi-Fi viewer.
+    """
     result = RECORD3D_WIFI_COMPONENT(
         key=key,
         height=height,
-        data=json.dumps(viewer_state.to_component_data()),
     )
     return Record3DWiFiViewerState.from_component_result(result)
 

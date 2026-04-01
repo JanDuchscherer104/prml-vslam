@@ -12,14 +12,11 @@ dependencies = [
   "open3d>=0.19.0,<0.20",
   "plotly>=6.6.0,<7",
   "pydantic>=2.11,<3",
-  "pyyaml>=6,<7",
   "rich>=13.7,<15",
   "seaborn>=0.13,<1",
   "streamlit>=1.35,<2",
   "tomli-w>=1.2,<2",
   "typer>=0.12,<1",
-  "burr>=0.40,<1",
-  "pytransform3d>=3.14,<4",
 ]
 
   [project.optional-dependencies]

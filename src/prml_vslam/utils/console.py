@@ -28,22 +28,22 @@ def caller_namespace(*, stack_offset: int = 0) -> str:
     The namespace is derived from the caller's module and qualified function name.
     For bound methods, this yields values like ``my.module.MyClass.method``.
     """
-    # Use stack inspection helpers instead of manual frame traversal loop.
-    stack = inspect.stack(context=0)
+    frame = inspect.currentframe()
     try:
-        record_index = stack_offset + 1
-        if record_index >= len(stack):
+        steps = stack_offset + 1
+        while steps > 0 and frame is not None:
+            frame = frame.f_back
+            steps -= 1
+        if frame is None:
             return "prml_vslam"
 
-        frame = stack[record_index].frame
         module_name = frame.f_globals.get("__name__", "prml_vslam")
         qualname = frame.f_code.co_qualname.replace(".<locals>.", ".")
         if qualname == "<module>":
             return module_name
         return f"{module_name}.{qualname}"
     finally:
-        # Break reference cycles with frame objects.
-        del stack
+        del frame
 
 
 class Console:
@@ -106,14 +106,15 @@ class Console:
             namespace = ".".join([namespace, *filter(None, parts)])
         return cls(namespace=namespace)
 
+    def child(self, *parts: str) -> Console:
+        """Return a child console with additional namespace parts."""
+        if not parts:
+            return Console(namespace=self.namespace)
+        return Console(namespace=".".join([self.namespace, *filter(None, parts)]))
+
     def print(self, *objects: Any, **kwargs: Any) -> None:
         """Render directly via Rich for structured or non-log output."""
         self._rich_console.print(*objects, **kwargs)
-
-    @property
-    def rich_console(self) -> RichConsole:
-        """Expose the shared Rich console for progress/status helpers."""
-        return self._rich_console
 
     def plog(self, obj: Any, **kwargs: Any) -> None:
         """Pretty-print a Python object with Rich."""
@@ -134,6 +135,10 @@ class Console:
         self._ensure_logging()
         self.logger.warning(message, *args, **kwargs)
 
+    def warn(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Backward-compatible warning alias."""
+        self.warning(message, *args, **kwargs)
+
     def error(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log an error message."""
         self._ensure_logging()
@@ -143,6 +148,11 @@ class Console:
         """Log an exception with traceback information."""
         self._ensure_logging()
         self.logger.exception(message, *args, **kwargs)
+
+    def set_level(self, level: int | str) -> Console:
+        """Set the level on the bound logger."""
+        self.logger.setLevel(level)
+        return self
 
     @classmethod
     def _qualify_namespace(cls, namespace: str) -> str:
@@ -159,9 +169,5 @@ class Console:
 
 
 def get_console(*parts: str, stack_offset: int = 0) -> Console:
-    """Return a callsite-aware console instance.
-
-    This keeps the existing convenience API stable while the project gradually
-    moves toward explicit ``Console.from_callsite(...)`` usage.
-    """
+    """Convenience helper for a callsite-aware console instance."""
     return Console.from_callsite(*parts, stack_offset=stack_offset + 1)
