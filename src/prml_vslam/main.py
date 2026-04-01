@@ -7,6 +7,13 @@ from typing import Annotated
 
 import typer
 
+from prml_vslam.io import (
+    Record3DConnectionError,
+    Record3DDependencyError,
+    Record3DPreviewConfig,
+    Record3DStreamConfig,
+    Record3DTimeoutError,
+)
 from prml_vslam.pipeline import MethodId, PipelinePlannerService, RunPlanRequest
 from prml_vslam.utils.console import Console
 
@@ -57,6 +64,25 @@ ReferenceCloudOption = Annotated[
         help="Whether the plan reserves a reference reconstruction stage.",
     ),
 ]
+DeviceIndexOption = Annotated[
+    int,
+    typer.Option("--device-index", min=0, help="Zero-based index into the connected Record3D devices."),
+]
+FrameTimeoutOption = Annotated[
+    float,
+    typer.Option("--frame-timeout", min=0.1, help="Seconds to wait for the next Record3D frame."),
+]
+MaxFramesOption = Annotated[
+    int | None,
+    typer.Option("--max-frames", min=1, help="Optional number of frames to preview before stopping."),
+]
+ConfidenceOption = Annotated[
+    bool,
+    typer.Option(
+        "--confidence/--no-confidence",
+        help="Whether to open a preview window for the Record3D confidence map.",
+    ),
+]
 
 
 @app.callback()
@@ -98,6 +124,54 @@ def plan_run(
     )
     plan = planner.build_plan(request)
     console.plog(plan.model_dump(mode="json"))
+
+
+@app.command("record3d-devices")
+def record3d_devices() -> None:
+    """List USB-connected Record3D devices visible to the bindings."""
+    try:
+        session = Record3DStreamConfig().setup_target()
+        if session is None:
+            raise Record3DConnectionError("Failed to initialize the Record3D session.")
+        devices = session.list_devices()
+    except (Record3DConnectionError, Record3DDependencyError, Record3DTimeoutError) as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    if not devices:
+        console.warning(
+            "No Record3D devices detected. Connect the iPhone via USB, open Record3D, and enable USB Streaming mode."
+        )
+        return
+
+    console.plog([device.model_dump(mode="json") for device in devices])
+
+
+@app.command("record3d-preview")
+def record3d_preview(
+    device_index: DeviceIndexOption = 0,
+    frame_timeout: FrameTimeoutOption = 5.0,
+    max_frames: MaxFramesOption = None,
+    show_confidence: ConfidenceOption = True,
+) -> None:
+    """Open a simple OpenCV preview for the live Record3D RGBD stream."""
+    preview = Record3DPreviewConfig(
+        stream=Record3DStreamConfig(
+            device_index=device_index,
+            frame_timeout_seconds=frame_timeout,
+        ),
+        max_frames=max_frames,
+        show_confidence=show_confidence,
+    )
+
+    try:
+        app_instance = preview.setup_target()
+        if app_instance is None:
+            raise Record3DConnectionError("Failed to initialize the Record3D preview app.")
+        app_instance.run()
+    except (Record3DConnectionError, Record3DDependencyError, Record3DTimeoutError) as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
 
 
 def main() -> None:
