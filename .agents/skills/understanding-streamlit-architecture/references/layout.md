@@ -205,7 +205,7 @@ message HeightConfig {
 
 Element node rendering is performed in `ElementNodeRenderer.tsx`.
 
-During rendering, each element is wrapped in a `StyledElementContainerLayoutWrapper`. The layout styles are primarily applied to this wrapper container. Some elements require further stylings in their react components to implement the different height/width modes. Keeping the styling in the shared layers is preferred. Styles are computed in the hook `useLayoutStyles` based on the information provided in the proto files. This hook also implements backwards compatibly logic for previous versions of the proto messages.
+During rendering, each element is wrapped in a `StyledElementContainerLayoutWrapper`. The layout styles are primarily applied to this wrapper container. Some elements require further stylings in their react components to implement the different height/width modes. Keeping the styling in the shared layers is preferred. Styles are computed in the hook `useLayoutStyles` based on the information provided in the proto files. This hook also implements backwards compatibility logic for previous versions of the proto messages.
 
 ### Element Rendering Flow
 
