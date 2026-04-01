@@ -31,7 +31,7 @@
 
 #let profile_card_body(path) = block(
   width: 100%,
-  height: 150pt,
+  height: 175pt,
   inset: 0pt,
   clip: true,
 )[
