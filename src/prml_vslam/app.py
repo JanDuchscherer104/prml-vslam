@@ -13,9 +13,9 @@ def _coerce_matrix_rows(matrix: Any) -> list[list[float]] | None:
     """Normalize supported matrix payloads into row-major numeric rows."""
     if isinstance(matrix, list) and len(matrix) == 9 and all(isinstance(value, int | float) for value in matrix):
         return [
-            [float(matrix[0]), float(matrix[1]), float(matrix[2])],
-            [float(matrix[3]), float(matrix[4]), float(matrix[5])],
-            [float(matrix[6]), float(matrix[7]), float(matrix[8])],
+            [float(matrix[0]), float(matrix[3]), float(matrix[6])],
+            [float(matrix[1]), float(matrix[4]), float(matrix[7])],
+            [float(matrix[2]), float(matrix[5]), float(matrix[8])],
         ]
 
     if (
