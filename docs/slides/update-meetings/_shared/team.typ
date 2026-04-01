@@ -67,7 +67,7 @@
       [#member_card([Florian Beck], [FB], profile_path: "../../../figures/team/profile-fb.png")],
       [#member_card([Valentin Bumeder], [VB], profile_path: "../../../figures/team/profile-vb.jpg")],
       [#member_card([Lukas Röß], [LR], profile_path: "../../../figures/team/profile-lr.png")],
-      [#member_card([Christopher Kirschner], [CK])],
+      [#member_card([Christopher Kirschner], [CK], profile_path: "../../../figures/team/profile-ck.jpg")],
       [#member_card([Jan Duchscherer], [JD], profile_path: "../../../figures/team/profile-jd.png")],
     )
   ]
