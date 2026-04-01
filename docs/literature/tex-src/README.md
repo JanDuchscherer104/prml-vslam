@@ -41,5 +41,4 @@ This directory stores extracted arXiv LaTeX source bundles for papers that direc
 
 The repo-level interpretation of these papers lives in:
 
-- `.agents/references/framework-method-research.md`
 - `.agents/references/agent_reference.md`
