@@ -1,46 +1,112 @@
 # Python Standards
 
-This file applies to work under `src/prml_vslam/`.
+- ✓ Config classes inherit from our pydantic `BaseConfig`
+- ✓ All functional classes (targets), services, and models are instantiated via `my_config.setup_target()`
+- ✓ Provide docstrings for all relevant fields in pydantic classes or dataclasses, rather than using `Field(..., description="...")`. Do not use `Field(...)` for primitive fields unless necessary, for example when `default_factory` is required. Example:
+    ```py
+    class MyConfig(BaseConfig):
+        my_bool: bool = True
+        """Whether to enable the awesome feature."""
+    ```
+- ✓ Prefer vectorized approaches over functional approaches over comprehensions over loops.
+- ✓ Use `pathlib.Path` for path handling.
+- ✓ Work test-driven; every new feature must have corresponding tests in `tests` using `pytest`.
+- ✓ Prefer `match-case` over `if-elif-else` for multi-branch logic when applicable.
+- ✓ Prefer `Enum` for categorical variables over string literals.
+- ✓ Document tensor shapes and coordinate frames in comments and use jaxtyping for tensor and array annotations.
+- ✓ Use `Console` from `prml_vslam.utils` for structured logging.
+- ✓ Identify present issues, overcomplications and redundancies and suggest elegant solutions to the user.
+- *NEVER* let anything fail silently.
+- *NEVER* write overly defensive workarounds to accommodate backwards compatibility or unlikely edge-cases.
 
+<<<<<<< HEAD
 When work is specific to the Streamlit app subtree, also follow `src/prml_vslam/app/AGENTS.md`.
 
 ## Core Rules
+=======
+- **Typing**
+  - All signatures must be typed; Use modern builtins (`list[str]`, `dict[str, Any]`)
+  - Use `TYPE_CHECKING` guards for imports of types only used in annotations
+  - Use `Literal` for constrained string values
+>>>>>>> fb26801 (refactor: shrink metrics app PR scope)
 
-- Use `pathlib.Path` for filesystem paths.
-- Use `Console` from `prml_vslam.utils` for structured logging.
-- Do not let failures go silent. Validate external-tool assumptions explicitly and raise clear
-  errors when inputs, paths, or outputs are invalid.
-- Prefer vectorized implementations when they improve clarity and performance. Use explicit loops when they are clearer or required by an external API.
-- Add or update targeted pytest coverage for new behavior in `tests/`.
-- Keep compatibility workarounds narrow and justified. Do not add broad defensive fallbacks for unsupported or undefined cases.
+## Python Design Pattern
 
-## Typing and Documentation
+- Runtime objects should be constructed from config objects, not from loose dicts or long argument lists.
+- Config classes should be composable and hierarchical if it improves clarity.
+- Use our `BaseConfig` factory pattern consistently:
+  - `class MyConfig(BaseConfig)`
+  - `@property def target_type(self) -> type[MyRuntime] | None: ...`
+  - Instantiate via `my_config.setup_target()`
+  - The target's init method: `__init__(self, config: MyConfig)`
+- If a runtime object needs external values at construction time, prefer `field_validator` over `model_validator`, and use `setup_target(...)` for late-bound runtime inputs.
 
-- Type all public signatures and prefer modern builtins such as `list[str]` and `dict[str, Any]`.
-- Use `TYPE_CHECKING` guards for imports used only in annotations.
-- Use `Literal` or `StrEnum` for constrained values instead of unchecked string literals.
-- Prefer `match-case` over long multi-branch `if` chains when it improves clarity.
-- Provide attribute docstrings for relevant fields in pydantic models or dataclasses instead of
-  `Field(..., description=...)` for ordinary primitive fields.
-- Use Google-style docstrings for public methods and functions.
-- Document tensor and array shapes plus coordinate-frame assumptions whenever they are not obvious.
-- Use jaxtyping annotations for arrays and tensors. Do not introduce bare `np.ndarray`,
-  `numpy.ndarray`, or tensor annotations when a jaxtyping shape-and-dtype annotation is applicable.
+### Factory Example
 
-### Example (Typing + Docstring)
+```python
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Any
+
+from pydantic import Field
+from torch import Tensor
+from torch.optim import AdamW, Optimizer
+
+from prml_vslam.utils import BaseConfig
+
+
+class OptimizerConfig(BaseConfig):
+    learning_rate: float = 5e-4
+    """Learning rate for AdamW."""
+
+    def setup_target(self, params: Iterable[Tensor] | list[dict[str, Any]]) -> AdamW:  # type: ignore[override]
+        """Build the optimizer from model parameters."""
+        return AdamW(params=params, lr=self.learning_rate)
+
+
+class ModuleConfig(BaseConfig):
+    """All setup, creation, and non-runtime validation lives in the config."""
+
+    @property
+    def target_type(self) -> type["MyModule"]:
+        return MyModule
+
+    optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
+    """Nested optimizer configuration."""
+
+
+class MyModule:
+    """Runtime object."""
+
+    def __init__(self, config: ModuleConfig) -> None:
+        self.config = config
+```
+
+### Usage Pattern
+
+```python
+module = module_config.setup_target()
+optimizer = module_config.optimizer.setup_target(model.parameters())
+```
+
+- **Anti-Patterns**
+  - Do not convert configs to raw dicts just to instantiate internal classes.
+  - Do not store untyped `dict[str, Any]` blobs where a dedicated `BaseConfig` subclass should exist.
+  - Do not bypass nested config objects; if `self.config.optimizer` exists, it should construct the optimizer.
+
+- **Example (Typing + Docstring)**: All public methods must have Google-style doc-strings and obey the following style:
 
 ```python
 from torch import Tensor
 
 def compute_rri(
     P_t: Float[Tensor, "N 3"],
-    T_world_cam: Float[Tensor, "4 4"],
 ) -> tuple[Float[Tensor, "B num_classes H W"], Float[Tensor, "B"]]:
     """Compute Relative Reconstruction Improvement for candidate view.
 
     Args:
-        P_t (Tensor["N 3", float32]): Current reconstruction point cloud (N points, XYZ; world frame).
-        T_world_cam (Tensor["4 4", float32]): SE(3) transform: camera -> world.
+        P_t (Tensor["N 3", float32]): Current reconstruction point cloud (N points, XYZ).
 
     Returns:
         Tuple[Tensor, Tensor] containing:
@@ -49,6 +115,7 @@ def compute_rri(
     """
     ...
 ```
+<<<<<<< HEAD
 
 ## Config Pattern
 
@@ -82,3 +149,5 @@ def compute_rri(
   when the change is broad enough to justify the full suite.
 - When changing config contracts, artifact formats, or benchmark assumptions, update
   `docs/agent_reference.md` in the same change.
+=======
+>>>>>>> fb26801 (refactor: shrink metrics app PR scope)

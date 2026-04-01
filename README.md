@@ -21,19 +21,19 @@ uv run pytest
 make typst-check
 ```
 
-### Streamlit Workbench
+### Streamlit Metrics App
 
 ```bash
+uv sync --extra eval
 uv run streamlit run streamlit_app.py
 ```
 
-The workbench supports:
+The app supports:
 
-- planning and materializing repo-owned workspaces
-- filesystem-path or uploaded-video inputs
-- offline batch execution from the UI
-- replayable streaming demo execution with persisted artifacts
-- an ADVIO dataset explorer page with Plotly modality coverage and asset-footprint views
+- a metrics-first trajectory evaluation page for repo-owned benchmark artifacts
+- explicit `evo` evaluation for selected dataset / sequence / run slices
+- persisted evaluation review with provenance and trajectory overlays
+- `PathConfig`-driven dataset and artifact discovery without app-local path defaults
 
 ## Challenge
 
