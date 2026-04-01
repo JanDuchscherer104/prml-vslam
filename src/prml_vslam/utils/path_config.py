@@ -136,7 +136,9 @@ class PathConfig(BaseConfig):
         output_dir: str | Path | None = None,
     ) -> RunArtifactPaths:
         """Build the canonical artifact layout for one benchmark run."""
-        artifact_root = self.resolve_output_dir(output_dir) / self.slugify_experiment_name(experiment_name) / method_slug
+        artifact_root = (
+            self.resolve_output_dir(output_dir) / self.slugify_experiment_name(experiment_name) / method_slug
+        )
         return RunArtifactPaths(
             artifact_root=artifact_root,
             input_frames_dir=self.resolve_repo_path("frames", base_dir=artifact_root / "input"),
