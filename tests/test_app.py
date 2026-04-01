@@ -39,6 +39,10 @@ def test_run_app_renders_record3d_wifi_section(monkeypatch) -> None:
     assert any("Chrome and Safari" in message for message in markdown_messages)
     assert any(r"\begin{bmatrix}" in message for message in markdown_messages)
     assert any("525.000" in message for message in markdown_messages)
+    assert any("320.000" in message for message in markdown_messages)
+    assert any("240.000" in message for message in markdown_messages)
+    intrinsic_messages = [message for message in markdown_messages if r"\begin{bmatrix}" in message]
+    assert any("320.000" in message and "240.000" in message and "1.000" in message for message in intrinsic_messages)
     assert all(
         "Workbench scaffold for the monocular VSLAM benchmark project." not in message for message in markdown_messages
     )
