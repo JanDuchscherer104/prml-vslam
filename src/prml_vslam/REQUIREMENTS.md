@@ -18,4 +18,3 @@ packaged Streamlit workbench in `prml_vslam.app`.
   plain JSON or plain-text arrays.
 - Browser-owned interactive widgets may still manage their own DOM when that
   avoids unnecessary Streamlit reruns.
-
