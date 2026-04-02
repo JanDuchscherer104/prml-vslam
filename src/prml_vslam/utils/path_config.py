@@ -62,6 +62,9 @@ class PathConfig(BaseConfig):
     captures_dir: Path = Field(default_factory=lambda: Path("captures"))
     """Default root directory for input capture videos."""
 
+    data_dir: Path = Field(default_factory=lambda: Path("data"))
+    """Root directory for repo-owned benchmark datasets."""
+
     logs_dir: Path = Field(default_factory=lambda: Path(".logs"))
     """Root directory for shared runtime state such as cloned upstream repos and checkpoints."""
 
@@ -86,6 +89,7 @@ class PathConfig(BaseConfig):
     @field_validator(
         "artifacts_dir",
         "captures_dir",
+        "data_dir",
         "logs_dir",
         "method_repos_dir",
         "method_envs_dir",
@@ -126,6 +130,19 @@ class PathConfig(BaseConfig):
     def resolve_output_dir(self, path: str | Path | None = None, *, create: bool = False) -> Path:
         """Resolve an output directory, defaulting to the configured artifacts root."""
         resolved = self.artifacts_dir if path is None else self.resolve_repo_path(path)
+        if create:
+            resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
+
+    def resolve_data_dir(self, *, create: bool = False) -> Path:
+        """Resolve the repo-owned dataset root directory."""
+        if create:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        return self.data_dir
+
+    def resolve_dataset_dir(self, dataset_slug: str, *, create: bool = False) -> Path:
+        """Resolve one dataset directory under the shared data root."""
+        resolved = (self.data_dir / dataset_slug).resolve()
         if create:
             resolved.mkdir(parents=True, exist_ok=True)
         return resolved

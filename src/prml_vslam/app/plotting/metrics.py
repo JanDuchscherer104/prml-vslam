@@ -2,25 +2,28 @@
 
 from __future__ import annotations
 
+import numpy as np
 import plotly.graph_objects as go
 
-from ..models import ErrorSeries, TrajectorySeries
+from prml_vslam.eval.interfaces import ErrorSeries, TrajectorySeries
 
 
 def build_trajectory_figure(series_list: list[TrajectorySeries]) -> go.Figure:
     """Build a compact XY trajectory overlay figure."""
-    figure = go.Figure()
-    palette = ("#1368ce", "#ef6c00", "#0f9d58", "#c62828")
-    for index, series in enumerate(series_list):
-        figure.add_trace(
-            go.Scatter(
+    palette = np.asarray(("#1368ce", "#ef6c00", "#0f9d58", "#c62828"), dtype=object)
+    colors = palette[np.arange(len(series_list), dtype=np.intp) % palette.size]
+    figure = go.Figure(
+        data=tuple(
+            go.Scattergl(
                 x=series.positions_xyz[:, 0],
                 y=series.positions_xyz[:, 1],
                 mode="lines",
                 name=series.name,
-                line={"width": 2.5, "color": palette[index % len(palette)]},
+                line={"width": 2.5, "color": color},
             )
+            for series, color in zip(series_list, colors, strict=True)
         )
+    )
     figure.update_layout(
         title="Trajectory Overlay",
         xaxis_title="X (m)",

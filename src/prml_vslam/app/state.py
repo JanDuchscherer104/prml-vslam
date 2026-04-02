@@ -31,6 +31,8 @@ class SessionStateStore:
             return state
         if isinstance(payload, AppState):
             return payload
+        if hasattr(payload, "model_dump") and callable(payload.model_dump):
+            return AppState.model_validate(payload.model_dump(mode="json"))
         return AppState.model_validate(payload)
 
     def save(self, state: AppState) -> None:
