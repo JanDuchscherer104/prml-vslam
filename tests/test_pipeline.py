@@ -36,8 +36,13 @@ def test_pipeline_planner_builds_expected_stage_sequence() -> None:
     )
 
     plan = planner.build_plan(request)
+    run_paths = planner.path_config.plan_run_paths(
+        experiment_name=request.experiment_name,
+        method_slug=request.tracking.method.artifact_slug,
+        output_dir=request.output_dir,
+    )
 
-    assert plan.artifact_root == planner.path_config.resolve_output_dir("artifacts") / "lobby-sweep-01" / "vista"
+    assert plan.artifact_root == run_paths.artifact_root
     assert [stage.id for stage in plan.stages] == [
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
@@ -48,6 +53,9 @@ def test_pipeline_planner_builds_expected_stage_sequence() -> None:
         RunPlanStageId.EFFICIENCY_EVALUATION,
         RunPlanStageId.SUMMARY,
     ]
+    assert plan.stages[0].outputs == [run_paths.sequence_manifest_path]
+    assert plan.stages[1].outputs == [run_paths.trajectory_path, run_paths.sparse_points_path]
+    assert plan.stages[-1].outputs == [run_paths.summary_path]
 
 
 def test_pipeline_planner_omits_optional_stages_when_disabled() -> None:
