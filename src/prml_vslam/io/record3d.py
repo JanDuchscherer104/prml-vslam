@@ -198,6 +198,14 @@ class Record3DStreamSnapshot(BaseConfig):
     latest_packet: Record3DFramePacket | None = None
     """Most recent frame packet, if any."""
 
+    trajectory_positions_xyz: NDArray[np.float64] = Field(
+        default_factory=lambda: np.empty((0, 3), dtype=np.float64)
+    )
+    """Bounded live ego-trajectory history in world coordinates."""
+
+    trajectory_timestamps_s: NDArray[np.float64] = Field(default_factory=lambda: np.empty((0,), dtype=np.float64))
+    """Arrival timestamps associated with `trajectory_positions_xyz`."""
+
     error_message: str = ""
     """Last surfaced error message."""
 
