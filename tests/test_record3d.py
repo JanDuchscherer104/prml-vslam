@@ -1,4 +1,4 @@
-"""Tests for the optional Record3D integration."""
+"""Tests for the optional Record3D USB integration."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from prml_vslam.io.record3d import (
     Record3DDeviceType,
     Record3DPreviewConfig,
     Record3DStreamConfig,
+    Record3DTransportId,
+    Record3DUSBPacketStreamConfig,
+    record3d_frame_to_packet,
 )
 
 
@@ -119,16 +122,63 @@ def test_record3d_stream_wait_for_frame_returns_typed_payload(monkeypatch: pytes
     assert frame.camera_pose.tz == 3.0
 
 
+def test_record3d_frame_to_packet_preserves_intrinsics_and_confidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
+    monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
+
+    session = Record3DStreamConfig(frame_timeout_seconds=0.1).setup_target()
+    assert session is not None
+    session.connect()
+    frame = session.wait_for_frame()
+
+    packet = record3d_frame_to_packet(frame, arrival_timestamp_s=42.0)
+
+    assert packet.transport is Record3DTransportId.USB
+    assert packet.arrival_timestamp_s == 42.0
+    assert packet.intrinsic_matrix is not None
+    assert packet.intrinsic_matrix.fx == 100.0
+    assert packet.uncertainty is not None
+    np.testing.assert_array_equal(packet.uncertainty, np.array([[0, 1], [2, 3]], dtype=np.float32))
+
+
+def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
+    monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
+
+    stream = Record3DUSBPacketStreamConfig(
+        stream=Record3DStreamConfig(device_index=1, frame_timeout_seconds=0.1)
+    ).setup_target()
+
+    assert stream is not None
+    device = stream.connect()
+    packet = stream.wait_for_packet()
+
+    assert device.udid == "device-202"
+    assert packet.transport is Record3DTransportId.USB
+    assert packet.rgb.shape == (2, 2, 3)
+    assert packet.depth.shape == (2, 2)
+    assert packet.intrinsic_matrix is not None
+    assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
+
+
 def test_record3d_preview_runs_single_frame_and_disconnects(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
     monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
 
     shown_windows: list[str] = []
     destroyed = {"called": False}
+    fake_cv2 = SimpleNamespace(
+        COLOR_RGB2BGR=1,
+        NORM_MINMAX=2,
+        imshow=lambda name, image: shown_windows.append(name),
+        waitKey=lambda _: ord("q"),
+        destroyAllWindows=lambda: destroyed.__setitem__("called", True),
+        cvtColor=lambda image, code: image,
+        flip=lambda image, axis: image,
+        normalize=lambda image, dst, alpha, beta, norm_type: image,
+    )
 
-    monkeypatch.setattr(record3d_module.cv2, "imshow", lambda name, image: shown_windows.append(name))
-    monkeypatch.setattr(record3d_module.cv2, "waitKey", lambda _: ord("q"))
-    monkeypatch.setattr(record3d_module.cv2, "destroyAllWindows", lambda: destroyed.__setitem__("called", True))
+    monkeypatch.setattr(record3d_module, "_import_cv2_module", lambda: fake_cv2)
 
     preview = Record3DPreviewConfig(max_frames=1).setup_target()
 

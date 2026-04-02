@@ -1,62 +1,49 @@
-# PRML VSLAM Metrics App Requirements
+# PRML VSLAM App Requirements
 
 ## Summary
 
-This document is the source of truth for the metrics-first Streamlit app that lives in
+This document is the source of truth for the packaged Streamlit app in
 `src/prml_vslam/app/`.
 
-The app serves repo developers and researchers who need to inspect trajectory evaluation outputs.
-Its primary user flow is:
+The app now exposes two top-level pages:
 
-`dataset -> sequence -> method/run`
+- `Record3D`
+- `Metrics`
 
-The current legacy workbench in `src/prml_vslam/app.py` is out of scope for v1. The new app focuses
-on trajectory metrics, persisted `evo` results, and explicit evaluation actions.
-
-## Sources Of Truth
-
-- `README.md`
-- `docs/Questions.md`
-- `AGENTS.md`
-- `src/prml_vslam/AGENTS.md`
-- `.github/CODEOWNERS`
-
-## Extracted Input Requirements
-
-- Create `REQUIREMENTS.md` in `prml_vslam/app`.
-- Extract every explicit prompt requirement before interpretation.
-- Use owner-authored repo guidance as the foundation for the document.
-- If uncertainty materially affects the spec, ask clarifying questions in Plan Mode.
-- Follow best practices for Streamlit apps with Pydantic state management.
-- Use a simple modern design.
-- Display `evo` metrics for the selected dataset.
-- Integrate natively with `PathConfig`.
-- Use Plotly for plotting.
-- Define plots in separate plotting modules.
-- Type all interfaces.
+`Record3D` is the default landing page. `Metrics` remains the trajectory-evaluation
+surface for persisted `evo` results.
 
 ## Functional Requirements
 
-- The app must be metrics-first and centered on trajectory evaluation review.
-- The primary flow must be `dataset -> sequence -> method/run`.
-- The app must read persisted `evo` results when they already exist.
-- The app must offer an explicit action to compute `evo` metrics when reference and estimate
-  trajectories are both present.
-- The app must never compute metrics on page load, rerun, or selector change.
-- The app must show the provenance needed to interpret a result:
-  dataset, sequence, run, pose relation, alignment flag, scale-correction flag, matched pairs, and
-  source paths.
-- Missing artifacts must be surfaced clearly and honestly.
+- The app must default to the `Record3D` page on first load.
+- The app must keep the `Metrics` page reachable without removing any existing
+  trajectory-evaluation functionality.
+- The `Record3D` page must support both `USB` and `Wi-Fi` transports through one
+  transport selector.
+- The `Record3D` page must show:
+  - transport status
+  - received frames
+  - measured frame rate
+  - camera intrinsics
+  - RGB preview
+  - depth preview
+  - uncertainty or confidence preview when available
+- The `Metrics` page must keep explicit `evo` computation semantics:
+  never compute on selector changes or reruns.
 
 ## Architecture Requirements
 
-- The implementation target is `src/prml_vslam/app/`.
+- The implementation target remains `src/prml_vslam/app/`.
 - `streamlit_app.py` must stay thin and delegate into packaged bootstrap code.
 - The app must use small typed modules rather than one monolithic file.
-- Plotly figure creation must stay outside page modules.
-- `PathConfig` must remain the authoritative source of path resolution and defaults.
-- The app must reuse existing repo and library contracts where possible instead of adding new
-  app-local subsystems.
+- The app must render only with Streamlit-native primitives.
+- The app must not embed raw HTML, CSS, or JavaScript custom components for the
+  Record3D flow.
+- `PathConfig` must remain the authoritative source of repo paths and defaults.
+- Heavy capture and decoding work must stay in `prml_vslam.io`.
+- The app may orchestrate background runtime objects, but those runtime objects
+  must still consume typed `io` contracts rather than transport-specific browser
+  state.
 
 ## State And Typing Requirements
 
@@ -64,34 +51,45 @@ on trajectory metrics, persisted `evo` results, and explicit evaluation actions.
 - App state must be modeled with Pydantic.
 - One adapter must be the only app code that touches raw `st.session_state`.
 - Persisted state must stay JSON-friendly so reruns restore cleanly.
+- The same session-state adapter must also own the opaque Record3D runtime
+  controller for the current browser session.
 
 ## UX Requirements
 
-- The UI must be simple, modern, and light-first.
-- The layout must prioritize compact analysis surfaces over decorative hero sections.
-- The main content area must lead. Sidebar dependence should be minimal.
-- Important actions such as evaluation must be explicit and clearly labeled.
+- The UI must stay simple, modern, and light-first.
+- The layout must prioritize compact analysis and monitoring surfaces over
+  decorative sections.
+- Important actions such as `Start`, `Stop`, and `Compute evo metrics` must be
+  explicit and clearly labeled.
+- Camera intrinsics should be rendered as LaTeX rather than plain JSON.
+- When the selected transport changes, or when the user leaves the Record3D
+  page, the current live stream must stop and the live snapshot must be cleared.
 
 ## Acceptance Scenarios
 
-### Persisted Review
+### Record3D Preview
 
-- A user selects a dataset, sequence, and run.
-- If a matching persisted `evo` result exists, the app renders it without recomputing anything.
+- A user opens the app and lands on `Record3D`.
+- They select `USB` or `Wi-Fi`.
+- Starting the stream shows transport status, received frames, frame rate,
+  intrinsics, RGB, depth, and uncertainty when available.
+
+### Metrics Review
+
+- A user switches to `Metrics`.
+- If a matching persisted `evo` result exists, the app renders it without
+  recomputing anything.
 
 ### Explicit Evaluation
 
-- A user selects a dataset slice with both reference and estimate TUM trajectories present.
+- A user selects a dataset slice with both reference and estimate TUM
+  trajectories present.
 - The app exposes a clear compute action.
 - Triggering that action runs `evo`, persists the result, and renders it.
 
-### Missing Data
-
-- A user selects a slice without the required trajectories.
-- The app explains what is missing and does not fabricate fallback behavior.
-
 ## Out Of Scope
 
-- Recreating the full legacy workbench.
-- Adding pipeline execution, streaming demos, or unrelated dataset tooling to the app change.
+- Browser-owned Record3D widgets or browser-side frame decoding.
+- Implicit metric computation on load or selector changes.
+- Pipeline execution or unrelated dataset tooling from the app layer.
 - Replacing `evo` with an app-local trajectory-metrics implementation.

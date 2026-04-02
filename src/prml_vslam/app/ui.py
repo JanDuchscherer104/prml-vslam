@@ -1,4 +1,4 @@
-"""UI helpers for the metrics app."""
+"""UI helpers for the packaged Streamlit workbench."""
 
 from __future__ import annotations
 

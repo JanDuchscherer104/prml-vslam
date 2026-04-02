@@ -1,4 +1,4 @@
-"""Packaged Streamlit entrypoint for the PRML VSLAM metrics app."""
+"""Packaged Streamlit entrypoint for the PRML VSLAM workbench."""
 
 from .bootstrap import run_app
 

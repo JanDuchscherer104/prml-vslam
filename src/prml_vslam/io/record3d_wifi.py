@@ -1,975 +1,643 @@
-"""Browser-side Record3D Wi-Fi streaming component for the Streamlit workbench."""
+"""Python-side Record3D Wi-Fi capture and packet decoding."""
 
 from __future__ import annotations
 
-from textwrap import dedent
-from typing import Any, Literal, Self
+import asyncio
+import json
+import time
+from contextlib import suppress
+from queue import Empty, Queue
+from threading import Event, Thread, current_thread
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-import streamlit as st
+import numpy as np
+from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.utils import BaseConfig
-
-Record3DWiFiConnectionState = Literal["idle", "connecting", "streaming", "disconnected", "failed"]
-
-
-class Record3DWiFiViewerState(BaseConfig):
-    """Latest browser-visible state emitted by the Record3D Wi-Fi viewer."""
-
-    device_address: str = ""
-    """Normalized Record3D device address currently targeted by the viewer."""
-
-    connection_state: Record3DWiFiConnectionState = "idle"
-    """Current Wi-Fi/WebRTC connection state reported by the browser component."""
-
-    error_message: str = ""
-    """Current error or warning message surfaced by the browser component."""
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    """Latest JSON metadata returned by the Record3D `/metadata` endpoint."""
-
-    @classmethod
-    def from_component_result(cls, result: Any) -> Self:
-        """Normalize a Streamlit component result into a stable typed state.
-
-        Args:
-            result: Raw ``BidiComponentResult`` or a dict-like stand-in from tests.
-
-        Returns:
-            A validated state object with all expected fields populated.
-        """
-        defaults = cls().model_dump(mode="python")
-        raw_state = dict(result) if result is not None else {}
-        normalized = {
-            field_name: defaults[field_name] if raw_state.get(field_name) is None else raw_state[field_name]
-            for field_name in cls.model_fields
-        }
-        return cls.model_validate(normalized)
-
-
-RECORD3D_WIFI_COMPONENT_NAME = "prml_vslam_record3d_wifi_viewer"
-RECORD3D_WIFI_COMPONENT_KEY = "record3d_wifi_viewer"
-RECORD3D_WIFI_COMPONENT_HEIGHT = 760
-
-RECORD3D_WIFI_COMPONENT_HTML = dedent(
-    """
-    <section class="record3d-wifi-root">
-      <header class="record3d-wifi-header">
-        <div>
-          <p class="record3d-kicker">Record3D Wi-Fi</p>
-          <h2>Live RGBD stream preview</h2>
-          <p class="record3d-lede">
-            Enter the Record3D device address shown in the iPhone app to preview the
-            composite RGBD WebRTC stream in this browser.
-          </p>
-        </div>
-      </header>
-
-      <form class="record3d-controls" id="record3d-connect-form">
-        <label class="record3d-label" for="record3d-device-address">Device address</label>
-        <div class="record3d-input-row">
-          <input
-            id="record3d-device-address"
-            class="record3d-input"
-            type="text"
-            placeholder="myiPhone.local or 192.168.1.100"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <button id="record3d-connect-button" class="record3d-button" type="submit">
-            Connect
-          </button>
-        </div>
-      </form>
-
-      <div class="record3d-status-row">
-        <span id="record3d-status-pill" class="record3d-status-pill" data-state="idle">IDLE</span>
-        <span id="record3d-status-address" class="record3d-status-address">
-          No device connected yet.
-        </span>
-      </div>
-
-      <p id="record3d-error-message" class="record3d-error-message" hidden></p>
-
-      <div class="record3d-view-options">
-        <label class="record3d-checkbox" for="record3d-toggle-inv-dist-std">
-          <input id="record3d-toggle-inv-dist-std" type="checkbox" checked />
-          <span>Show <code>inv_dist_std</code> pane</span>
-        </label>
-        <label class="record3d-checkbox" for="record3d-toggle-depth-equalization">
-          <input id="record3d-toggle-depth-equalization" type="checkbox" />
-          <span>Histogram equalize depth preview</span>
-        </label>
-      </div>
-
-      <video id="record3d-video-source" class="record3d-video-source" playsinline autoplay muted></video>
-
-      <div id="record3d-frame-grid" class="record3d-frame-grid" data-show-inv-dist-std="true">
-        <section class="record3d-frame-panel">
-          <div class="record3d-frame-header">
-            <h3>RGB</h3>
-            <p>Right half of the Record3D composite Wi-Fi stream.</p>
-          </div>
-          <canvas id="record3d-rgb-canvas" class="record3d-frame-canvas"></canvas>
-        </section>
-
-        <section class="record3d-frame-panel">
-          <div class="record3d-frame-header">
-            <h3>Depth</h3>
-            <p>Decoded from the left half of the composite Wi-Fi stream.</p>
-          </div>
-          <canvas id="record3d-depth-canvas" class="record3d-frame-canvas"></canvas>
-        </section>
-
-        <section id="record3d-inv-dist-std-panel" class="record3d-frame-panel">
-          <div class="record3d-frame-header">
-            <h3><code>inv_dist_std</code></h3>
-            <p>Not exposed by the current Record3D Wi-Fi WebRTC stream.</p>
-          </div>
-          <div id="record3d-inv-dist-std-placeholder" class="record3d-frame-placeholder">
-            The official Wi-Fi API exposes RGB and depth through a composite frame, but no separate
-            <code>inv_dist_std</code> channel.
-          </div>
-        </section>
-      </div>
-
-      <section class="record3d-metadata-section">
-        <div class="record3d-section-header">
-          <h3>Metadata</h3>
-          <p>Intrinsic matrix and device metadata from <code>/metadata</code>.</p>
-        </div>
-        <pre id="record3d-metadata-view" class="record3d-metadata-view">{}</pre>
-      </section>
-
-      <section class="record3d-notes">
-        <h3>Constraints</h3>
-        <ul>
-          <li>Use the device address shown in Record3D, for example <code>myiPhone.local</code>.</li>
-          <li>Chrome and Safari are the supported browsers for this Wi-Fi path.</li>
-          <li>Record3D allows only one Wi-Fi receiver at a time.</li>
-          <li>Wi-Fi streaming is lower fidelity than the USB Python integration.</li>
-        </ul>
-      </section>
-    </section>
-    """
-).strip()
-
-RECORD3D_WIFI_COMPONENT_CSS = dedent(
-    """
-    :host {
-      display: block;
-    }
-
-    .record3d-wifi-root {
-      display: grid;
-      gap: 1rem;
-      color: var(--st-text-color);
-      font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
-    }
-
-    .record3d-wifi-header h2,
-    .record3d-notes h3,
-    .record3d-metadata-section h3 {
-      margin: 0;
-    }
-
-    .record3d-kicker {
-      margin: 0 0 0.35rem;
-      color: var(--st-primary-color);
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .record3d-lede,
-    .record3d-section-header p,
-    .record3d-notes li {
-      margin: 0;
-      color: var(--st-emphasis-color, var(--st-text-color));
-      opacity: 0.85;
-      line-height: 1.5;
-    }
-
-    .record3d-controls {
-      display: grid;
-      gap: 0.45rem;
-      padding: 1rem;
-      border: 1px solid color-mix(in srgb, var(--st-border-color, #4b5563) 75%, transparent);
-      border-radius: 0.9rem;
-      background: linear-gradient(135deg, rgba(10, 15, 26, 0.9), rgba(18, 28, 45, 0.78));
-    }
-
-    .record3d-label {
-      font-size: 0.9rem;
-      font-weight: 600;
-    }
-
-    .record3d-input-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 0.75rem;
-      align-items: center;
-    }
-
-    .record3d-input {
-      min-width: 0;
-      padding: 0.8rem 0.95rem;
-      border: 1px solid color-mix(in srgb, var(--st-border-color, #4b5563) 75%, transparent);
-      border-radius: 0.75rem;
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--st-text-color);
-      font-size: 0.98rem;
-    }
-
-    .record3d-button {
-      padding: 0.8rem 1rem;
-      border: none;
-      border-radius: 0.75rem;
-      background: linear-gradient(135deg, #ff5f45, #ff7b54);
-      color: white;
-      cursor: pointer;
-      font-size: 0.98rem;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    .record3d-button:disabled {
-      cursor: wait;
-      opacity: 0.7;
-    }
-
-    .record3d-status-row {
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .record3d-status-pill {
-      padding: 0.35rem 0.7rem;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      background: rgba(100, 116, 139, 0.16);
-      color: #e5e7eb;
-    }
-
-    .record3d-status-pill[data-state="idle"] {
-      background: rgba(100, 116, 139, 0.22);
-    }
-
-    .record3d-status-pill[data-state="connecting"] {
-      background: rgba(245, 158, 11, 0.22);
-      color: #fbbf24;
-    }
-
-    .record3d-status-pill[data-state="streaming"] {
-      background: rgba(16, 185, 129, 0.2);
-      color: #34d399;
-    }
-
-    .record3d-status-pill[data-state="disconnected"] {
-      background: rgba(96, 165, 250, 0.2);
-      color: #60a5fa;
-    }
-
-    .record3d-status-pill[data-state="failed"] {
-      background: rgba(239, 68, 68, 0.2);
-      color: #f87171;
-    }
-
-    .record3d-status-address {
-      font-size: 0.95rem;
-      opacity: 0.9;
-    }
-
-    .record3d-error-message {
-      margin: 0;
-      padding: 0.8rem 0.95rem;
-      border: 1px solid rgba(248, 113, 113, 0.32);
-      border-radius: 0.75rem;
-      background: rgba(127, 29, 29, 0.3);
-      color: #fecaca;
-      line-height: 1.5;
-    }
-
-    .record3d-view-options {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.8rem;
-    }
-
-    .record3d-checkbox {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.6rem;
-      font-size: 0.95rem;
-      font-weight: 500;
-    }
-
-    .record3d-checkbox input {
-      width: 1rem;
-      height: 1rem;
-      accent-color: #ff7b54;
-    }
-
-    .record3d-video-source {
-      display: none;
-    }
-
-    .record3d-frame-grid {
-      display: grid;
-      gap: 1rem;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .record3d-frame-grid[data-show-inv-dist-std="false"] {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .record3d-frame-panel {
-      display: grid;
-      gap: 0.75rem;
-      min-width: 0;
-      padding: 1rem;
-      border-radius: 1rem;
-      border: 1px solid color-mix(in srgb, var(--st-border-color, #4b5563) 75%, transparent);
-      background:
-        radial-gradient(circle at top, rgba(255, 123, 84, 0.12), transparent 40%),
-        linear-gradient(180deg, rgba(3, 7, 18, 0.96), rgba(17, 24, 39, 0.96));
-    }
-
-    .record3d-frame-header {
-      display: grid;
-      gap: 0.15rem;
-    }
-
-    .record3d-frame-header h3 {
-      margin: 0;
-    }
-
-    .record3d-frame-header p {
-      margin: 0;
-      opacity: 0.82;
-      line-height: 1.45;
-    }
-
-    .record3d-frame-canvas,
-    .record3d-frame-placeholder {
-      width: 100%;
-      min-height: 16rem;
-      border-radius: 0.85rem;
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      background: rgba(2, 6, 23, 0.92);
-    }
-
-    .record3d-frame-canvas {
-      display: block;
-      aspect-ratio: 4 / 3;
-      object-fit: contain;
-    }
-
-    .record3d-frame-placeholder {
-      display: grid;
-      place-items: center;
-      padding: 1rem;
-      color: #dbeafe;
-      line-height: 1.5;
-      text-align: center;
-    }
-
-    .record3d-metadata-section,
-    .record3d-notes {
-      display: grid;
-      gap: 0.6rem;
-    }
-
-    .record3d-section-header {
-      display: grid;
-      gap: 0.2rem;
-    }
-
-    .record3d-metadata-view {
-      margin: 0;
-      padding: 1rem;
-      border-radius: 0.85rem;
-      overflow-x: auto;
-      background: rgba(2, 6, 23, 0.92);
-      color: #dbeafe;
-      font-size: 0.88rem;
-      line-height: 1.5;
-    }
-
-    .record3d-notes ul {
-      margin: 0;
-      padding-left: 1.2rem;
-      display: grid;
-      gap: 0.35rem;
-    }
-
-    @media (max-width: 720px) {
-      .record3d-input-row {
-        grid-template-columns: 1fr;
-      }
-
-      .record3d-button {
-        width: 100%;
-      }
-
-      .record3d-frame-grid,
-      .record3d-frame-grid[data-show-inv-dist-std="false"] {
-        grid-template-columns: 1fr;
-      }
-    }
-    """
-).strip()
-
-RECORD3D_WIFI_COMPONENT_JS = dedent(
-    """
-    export default function(component) {
-      const { parentElement, setStateValue } = component;
-      const root = parentElement;
-      const ui = {
-        form: root.querySelector("#record3d-connect-form"),
-        input: root.querySelector("#record3d-device-address"),
-        connectButton: root.querySelector("#record3d-connect-button"),
-        statusPill: root.querySelector("#record3d-status-pill"),
-        statusAddress: root.querySelector("#record3d-status-address"),
-        errorMessage: root.querySelector("#record3d-error-message"),
-        metadataView: root.querySelector("#record3d-metadata-view"),
-        sourceVideo: root.querySelector("#record3d-video-source"),
-        frameGrid: root.querySelector("#record3d-frame-grid"),
-        rgbCanvas: root.querySelector("#record3d-rgb-canvas"),
-        depthCanvas: root.querySelector("#record3d-depth-canvas"),
-        invDistStdPanel: root.querySelector("#record3d-inv-dist-std-panel"),
-        invDistStdToggle: root.querySelector("#record3d-toggle-inv-dist-std"),
-        depthEqualizationToggle: root.querySelector("#record3d-toggle-depth-equalization"),
-      };
-
-      const publishState = (viewer) => {
-        viewer.setStateValue("device_address", viewer.deviceAddress);
-        viewer.setStateValue("connection_state", viewer.connectionState);
-        viewer.setStateValue("error_message", viewer.errorMessage);
-        viewer.setStateValue("metadata", viewer.metadata);
-      };
-
-      const setCanvasSize = (canvas, width, height) => {
-        if (canvas.width !== width || canvas.height !== height) {
-          canvas.width = width;
-          canvas.height = height;
-        }
-      };
-
-      const clearCanvas = (context, canvas) => {
-        if (context === null) {
-          return;
-        }
-        context.clearRect(0, 0, canvas.width, canvas.height);
-      };
-
-      const rgbToHue = (red, green, blue) => {
-        const normalizedRed = red / 255.0;
-        const normalizedGreen = green / 255.0;
-        const normalizedBlue = blue / 255.0;
-        const maximum = Math.max(normalizedRed, normalizedGreen, normalizedBlue);
-        const minimum = Math.min(normalizedRed, normalizedGreen, normalizedBlue);
-        const delta = maximum - minimum;
-
-        if (delta === 0) {
-          return 0.0;
-        }
-
-        switch (maximum) {
-          case normalizedRed:
-            return (((normalizedGreen - normalizedBlue) / delta) % 6 + 6) % 6 / 6;
-          case normalizedGreen:
-            return (((normalizedBlue - normalizedRed) / delta) + 2) / 6;
-          default:
-            return (((normalizedRed - normalizedGreen) / delta) + 4) / 6;
-        }
-      };
-
-      const updateFrameLayout = (viewer) => {
-        ui.invDistStdToggle.checked = viewer.showInvDistStd;
-        ui.depthEqualizationToggle.checked = viewer.equalizeDepthHistogram;
-        ui.frameGrid.dataset.showInvDistStd = viewer.showInvDistStd ? "true" : "false";
-        ui.invDistStdPanel.hidden = !viewer.showInvDistStd;
-      };
-
-      const equalizeHistogram = (intensities) => {
-        const histogram = new Uint32Array(256);
-        const equalized = new Uint8ClampedArray(intensities.length);
-
-        for (let index = 0; index < intensities.length; index += 1) {
-          histogram[intensities[index]] += 1;
-        }
-
-        let firstNonZeroBin = -1;
-        for (let bin = 0; bin < histogram.length; bin += 1) {
-          if (histogram[bin] > 0) {
-            firstNonZeroBin = bin;
-            break;
-          }
-        }
-
-        if (firstNonZeroBin === -1) {
-          return equalized;
-        }
-
-        const cumulative = new Uint32Array(256);
-        let runningTotal = 0;
-        for (let bin = 0; bin < histogram.length; bin += 1) {
-          runningTotal += histogram[bin];
-          cumulative[bin] = runningTotal;
-        }
-
-        const denominator = intensities.length - cumulative[firstNonZeroBin];
-        if (denominator <= 0) {
-          return intensities;
-        }
-
-        for (let index = 0; index < intensities.length; index += 1) {
-          const source = intensities[index];
-          equalized[index] = Math.max(
-            0,
-            Math.min(255, Math.round(((cumulative[source] - cumulative[firstNonZeroBin]) / denominator) * 255.0)),
-          );
-        }
-
-        return equalized;
-      };
-
-      const render = (viewer) => {
-        if (viewer.deviceAddress !== "" && ui.input.value !== viewer.deviceAddress) {
-          ui.input.value = viewer.deviceAddress;
-        }
-
-        ui.statusPill.dataset.state = viewer.connectionState;
-        ui.statusPill.textContent = viewer.connectionState.toUpperCase();
-        ui.statusAddress.textContent = viewer.deviceAddress || "No device connected yet.";
-        ui.connectButton.disabled = viewer.connectionState === "connecting";
-        ui.connectButton.textContent = viewer.connectionState === "connecting" ? "Connecting..." : "Connect";
-        ui.metadataView.textContent = JSON.stringify(viewer.metadata, null, 2);
-
-        if (viewer.errorMessage !== "") {
-          ui.errorMessage.hidden = false;
-          ui.errorMessage.textContent = viewer.errorMessage;
-        } else {
-          ui.errorMessage.hidden = true;
-          ui.errorMessage.textContent = "";
-        }
-
-        updateFrameLayout(viewer);
-      };
-
-      const stopVideoStream = () => {
-        const stream = ui.sourceVideo.srcObject;
-        if (stream !== null) {
-          stream.getTracks().forEach((track) => track.stop());
-          ui.sourceVideo.srcObject = null;
-        }
-      };
-
-      const stopFrameRendering = (viewer) => {
-        if (viewer.animationFrameId !== null) {
-          window.cancelAnimationFrame(viewer.animationFrameId);
-          viewer.animationFrameId = null;
-        }
-
-        clearCanvas(viewer.rgbContext, ui.rgbCanvas);
-        clearCanvas(viewer.depthContext, ui.depthCanvas);
-      };
-
-      const renderDepthFrame = (viewer, frameWidth, frameHeight) => {
-        const sourceImage = viewer.scratchContext.getImageData(0, 0, frameWidth, frameHeight);
-        const depthImage = viewer.depthContext.createImageData(frameWidth, frameHeight);
-        const sourcePixels = sourceImage.data;
-        const targetPixels = depthImage.data;
-        const intensities = new Uint8ClampedArray(frameWidth * frameHeight);
-
-        for (let pixelOffset = 0; pixelOffset < sourcePixels.length; pixelOffset += 4) {
-          const hue = rgbToHue(
-            sourcePixels[pixelOffset],
-            sourcePixels[pixelOffset + 1],
-            sourcePixels[pixelOffset + 2],
-          );
-          intensities[pixelOffset / 4] = Math.max(0, Math.min(255, Math.round((1.0 - hue) * 255.0)));
-        }
-
-        const displayIntensities = viewer.equalizeDepthHistogram ? equalizeHistogram(intensities) : intensities;
-
-        for (let pixelIndex = 0; pixelIndex < displayIntensities.length; pixelIndex += 1) {
-          const intensity = displayIntensities[pixelIndex];
-          const pixelOffset = pixelIndex * 4;
-          targetPixels[pixelOffset] = intensity;
-          targetPixels[pixelOffset + 1] = intensity;
-          targetPixels[pixelOffset + 2] = intensity;
-          targetPixels[pixelOffset + 3] = 255;
-        }
-
-        viewer.depthContext.putImageData(depthImage, 0, 0);
-      };
-
-      const startFrameRendering = (viewer) => {
-        stopFrameRendering(viewer);
-
-        const drawFrame = () => {
-          if (!root.isConnected) {
-            viewer.animationFrameId = null;
-            return;
-          }
-
-          const video = ui.sourceVideo;
-          if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth >= 2 && video.videoHeight > 0) {
-            const compositeWidth = video.videoWidth;
-            const compositeHeight = video.videoHeight;
-            const frameWidth = Math.floor(compositeWidth / 2);
-
-            if (frameWidth > 0) {
-              setCanvasSize(ui.rgbCanvas, frameWidth, compositeHeight);
-              setCanvasSize(ui.depthCanvas, frameWidth, compositeHeight);
-              setCanvasSize(viewer.scratchCanvas, compositeWidth, compositeHeight);
-
-              viewer.scratchContext.drawImage(video, 0, 0, compositeWidth, compositeHeight);
-              viewer.rgbContext.drawImage(
-                viewer.scratchCanvas,
-                frameWidth,
-                0,
-                frameWidth,
-                compositeHeight,
-                0,
-                0,
-                frameWidth,
-                compositeHeight,
-              );
-              renderDepthFrame(viewer, frameWidth, compositeHeight);
-            }
-          }
-
-          viewer.animationFrameId = window.requestAnimationFrame(drawFrame);
-        };
-
-        viewer.animationFrameId = window.requestAnimationFrame(drawFrame);
-      };
-
-      const cleanupPeerConnection = (viewer, nextState = "disconnected") => {
-        if (viewer.peerConnection !== null) {
-          viewer.peerConnection.onicecandidate = null;
-          viewer.peerConnection.ontrack = null;
-          viewer.peerConnection.onconnectionstatechange = null;
-          viewer.peerConnection.close();
-          viewer.peerConnection = null;
-        }
-
-        stopFrameRendering(viewer);
-        stopVideoStream();
-
-        if (viewer.connectionState === "connecting" || viewer.connectionState === "streaming") {
-          viewer.connectionState = nextState;
-        }
-      };
-
-      const failConnection = (viewer, message) => {
-        cleanupPeerConnection(viewer, "failed");
-        viewer.connectionState = "failed";
-        viewer.errorMessage = message;
-        render(viewer);
-        publishState(viewer);
-      };
-
-      const normalizeAddress = (value) => {
-        const trimmed = value.trim();
-        if (trimmed === "") {
-          return "";
-        }
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-          return trimmed;
-        }
-        return `http://${trimmed}`;
-      };
-
-      class SignalingClient {
-        constructor(serverURL) {
-          this.serverURL = serverURL;
-        }
-
-        async retrieveOffer() {
-          let response;
-
-          try {
-            response = await fetch(`${this.serverURL}/getOffer`);
-          } catch (error) {
-            throw new Error(
-              "Could not reach the Record3D device. Check that the iPhone and Mac are on the same Wi-Fi network."
-            );
-          }
-
-          if (response.status === 403) {
-            throw new Error(
-              "Record3D allows only one Wi-Fi receiver at a time. Close the other browser tab or peer and retry."
-            );
-          }
-
-          if (!response.ok) {
-            throw new Error(`Record3D offer request failed with HTTP ${response.status}.`);
-          }
-
-          return response.json();
-        }
-
-        async sendAnswer(answer) {
-          let response;
-
-          try {
-            response = await fetch(`${this.serverURL}/answer`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(answer),
-            });
-          } catch (error) {
-            throw new Error("Could not send the WebRTC answer back to the Record3D device.");
-          }
-
-          if (!response.ok) {
-            throw new Error(`Record3D answer request failed with HTTP ${response.status}.`);
-          }
-        }
-      }
-
-      const getMetadata = async (serverURL) => {
-        let response;
-
-        try {
-          response = await fetch(`${serverURL}/metadata`);
-        } catch (error) {
-          throw new Error("Could not retrieve metadata from the Record3D device.");
-        }
-
-        if (!response.ok) {
-          throw new Error(`Record3D metadata request failed with HTTP ${response.status}.`);
-        }
-
-        return response.json();
-      };
-
-      const ensureViewer = () => {
-        if (root.__record3dWiFiViewer) {
-          root.__record3dWiFiViewer.setStateValue = setStateValue;
-          publishState(root.__record3dWiFiViewer);
-          return root.__record3dWiFiViewer;
-        }
-
-        const viewer = {
-          deviceAddress: "",
-          connectionState: "idle",
-          errorMessage: "",
-          metadata: {},
-          peerConnection: null,
-          signalingClient: new SignalingClient(""),
-          showInvDistStd: true,
-          equalizeDepthHistogram: false,
-          animationFrameId: null,
-          rgbContext: ui.rgbCanvas.getContext("2d"),
-          depthContext: ui.depthCanvas.getContext("2d", { willReadFrequently: true }),
-          scratchCanvas: document.createElement("canvas"),
-          scratchContext: null,
-          setStateValue,
-          cleanup: () => undefined,
-        };
-
-        viewer.scratchCanvas = document.createElement("canvas");
-        viewer.scratchContext = viewer.scratchCanvas.getContext("2d", { willReadFrequently: true });
-
-        const startReceivingStream = async (submittedAddress) => {
-          const normalizedAddress = normalizeAddress(submittedAddress);
-          if (normalizedAddress === "") {
-            failConnection(viewer, "Enter the Record3D device address shown in the iPhone app.");
-            return;
-          }
-
-          if (viewer.rgbContext === null || viewer.depthContext === null || viewer.scratchContext === null) {
-            failConnection(viewer, "This browser does not support canvas rendering for the Record3D Wi-Fi preview.");
-            return;
-          }
-
-          cleanupPeerConnection(viewer, "idle");
-          viewer.deviceAddress = normalizedAddress;
-          viewer.connectionState = "connecting";
-          viewer.errorMessage = "";
-          viewer.metadata = {};
-          viewer.signalingClient.serverURL = normalizedAddress;
-          render(viewer);
-          publishState(viewer);
-
-          let metadataWarning = "";
-
-          try {
-            try {
-              viewer.metadata = await getMetadata(normalizedAddress);
-            } catch (error) {
-              metadataWarning = error.message;
-            }
-
-            if (!window.RTCPeerConnection) {
-              throw new Error("This browser does not support WebRTC. Use Chrome or Safari for Record3D Wi-Fi.");
-            }
-
-            const peerConnection = new RTCPeerConnection();
-            let answerSent = false;
-
-            viewer.peerConnection = peerConnection;
-
-            peerConnection.onicecandidate = (event) => {
-              if (event.candidate === null && !answerSent && peerConnection.localDescription !== null) {
-                answerSent = true;
-                viewer.signalingClient
-                  .sendAnswer({
-                    type: "answer",
-                    data: peerConnection.localDescription.sdp,
-                  })
-                  .catch((error) => failConnection(viewer, error.message));
-              }
-            };
-
-            peerConnection.ontrack = (event) => {
-              ui.sourceVideo.srcObject = event.streams[0];
-              void ui.sourceVideo.play().catch(() => undefined);
-              startFrameRendering(viewer);
-            };
-
-            peerConnection.onconnectionstatechange = () => {
-              switch (peerConnection.connectionState) {
-                case "connected":
-                  viewer.connectionState = "streaming";
-                  break;
-                case "disconnected":
-                  viewer.connectionState = "disconnected";
-                  stopFrameRendering(viewer);
-                  break;
-                case "failed":
-                  viewer.connectionState = "failed";
-                  viewer.errorMessage = "The Record3D Wi-Fi stream failed. Check the phone app and retry.";
-                  stopFrameRendering(viewer);
-                  break;
-                case "closed":
-                  if (viewer.connectionState !== "failed") {
-                    viewer.connectionState = "disconnected";
-                  }
-                  stopFrameRendering(viewer);
-                  break;
-                default:
-                  return;
-              }
-
-              if (metadataWarning !== "" && viewer.errorMessage === "") {
-                viewer.errorMessage = metadataWarning;
-              }
-
-              render(viewer);
-              publishState(viewer);
-            };
-
-            const remoteOffer = await viewer.signalingClient.retrieveOffer();
-            await peerConnection.setRemoteDescription(remoteOffer);
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-
-            if (metadataWarning !== "") {
-              viewer.errorMessage = metadataWarning;
-            }
-
-            render(viewer);
-            publishState(viewer);
-          } catch (error) {
-            failConnection(viewer, error.message || "Failed to connect to the Record3D Wi-Fi stream.");
-          }
-        };
-
-        ui.form.onsubmit = (event) => {
-          event.preventDefault();
-          void startReceivingStream(ui.input.value);
-        };
-
-        ui.invDistStdToggle.onchange = () => {
-          viewer.showInvDistStd = ui.invDistStdToggle.checked;
-          render(viewer);
-        };
-
-        ui.depthEqualizationToggle.onchange = () => {
-          viewer.equalizeDepthHistogram = ui.depthEqualizationToggle.checked;
-          render(viewer);
-        };
-
-        const handleBeforeUnload = () => {
-          cleanupPeerConnection(viewer, "disconnected");
-        };
-        window.addEventListener("beforeunload", handleBeforeUnload);
-
-        viewer.cleanup = () => {
-          window.removeEventListener("beforeunload", handleBeforeUnload);
-          cleanupPeerConnection(viewer, "disconnected");
-        };
-
-        render(viewer);
-        publishState(viewer);
-        root.__record3dWiFiViewer = viewer;
-        return viewer;
-      };
-
-      ensureViewer();
-
-      return () => {
-        if (!root.isConnected && root.__record3dWiFiViewer) {
-          root.__record3dWiFiViewer.cleanup();
-          delete root.__record3dWiFiViewer;
-        }
-      };
-    }
-    """
-).strip()
-
-RECORD3D_WIFI_COMPONENT = st.components.v2.component(
-    RECORD3D_WIFI_COMPONENT_NAME,
-    html=RECORD3D_WIFI_COMPONENT_HTML,
-    css=RECORD3D_WIFI_COMPONENT_CSS,
-    js=RECORD3D_WIFI_COMPONENT_JS,
+from prml_vslam.utils import BaseConfig, Console
+
+from .record3d import (
+    Record3DConnectionError,
+    Record3DDependencyError,
+    Record3DError,
+    Record3DFramePacket,
+    Record3DIntrinsicMatrix,
+    Record3DTimeoutError,
+    Record3DTransportId,
 )
 
 
-def render_record3d_wifi_viewer(
-    *,
-    key: str = RECORD3D_WIFI_COMPONENT_KEY,
-    height: int = RECORD3D_WIFI_COMPONENT_HEIGHT,
-) -> Record3DWiFiViewerState:
-    """Mount the Record3D Wi-Fi component and return its latest browser state.
+def _import_aiortc_modules() -> tuple[type[Any], type[Any]]:
+    """Import the optional Python WebRTC dependencies used by Wi-Fi capture."""
+    try:
+        from aiortc import RTCPeerConnection, RTCSessionDescription
+    except ModuleNotFoundError as exc:
+        raise Record3DDependencyError(
+            "The optional `aiortc` dependency is required for Record3D Wi-Fi streaming. "
+            "Install it with `uv sync --extra streaming`."
+        ) from exc
+
+    return RTCPeerConnection, RTCSessionDescription
+
+
+def normalize_record3d_device_address(value: str) -> str:
+    """Normalize a Record3D device address into an explicit HTTP URL.
 
     Args:
-        key: Stable Streamlit widget key for the viewer instance.
-        height: Fixed component height in pixels.
+        value: User-provided mDNS name, IP address, or absolute URL.
 
     Returns:
-        The last state emitted by the browser-side Wi-Fi viewer.
+        Normalized absolute URL without a trailing slash.
     """
-    result = RECORD3D_WIFI_COMPONENT(
-        key=key,
-        height=height,
-    )
-    return Record3DWiFiViewerState.from_component_result(result)
+    trimmed = value.strip()
+    if trimmed == "":
+        return ""
+    if trimmed.startswith(("http://", "https://")):
+        return trimmed.rstrip("/")
+    return f"http://{trimmed.rstrip('/')}"
+
+
+class Record3DWiFiMetadata(BaseConfig):
+    """Typed metadata returned by the Record3D Wi-Fi HTTP API."""
+
+    device_address: str
+    """Normalized device base URL used for signaling."""
+
+    intrinsic_matrix: Record3DIntrinsicMatrix | None = None
+    """Camera intrinsic matrix reported by the device when available."""
+
+    original_width: int | None = None
+    """Original composite-frame width reported by the device."""
+
+    original_height: int | None = None
+    """Original composite-frame height reported by the device."""
+
+    depth_max_meters: float = 3.0
+    """Depth range upper bound used by the HSV transport encoding."""
+
+    raw_metadata: dict[str, Any] = Field(default_factory=dict)
+    """Raw metadata payload returned by the Record3D endpoint."""
+
+    @classmethod
+    def from_api_payload(cls, *, device_address: str, payload: dict[str, Any]) -> Record3DWiFiMetadata:
+        """Parse the raw Record3D metadata payload.
+
+        Args:
+            device_address: Normalized Record3D base URL.
+            payload: Raw JSON object returned by `/metadata`.
+
+        Returns:
+            Typed Wi-Fi metadata.
+        """
+        intrinsic_matrix = cls._parse_intrinsic_matrix(payload)
+        original_width, original_height = cls._parse_original_size(payload)
+        depth_max_meters = cls._parse_depth_range(payload)
+        return cls(
+            device_address=device_address,
+            intrinsic_matrix=intrinsic_matrix,
+            original_width=original_width,
+            original_height=original_height,
+            depth_max_meters=depth_max_meters,
+            raw_metadata=dict(payload),
+        )
+
+    @staticmethod
+    def _parse_intrinsic_matrix(payload: dict[str, Any]) -> Record3DIntrinsicMatrix | None:
+        raw_matrix = payload.get("K")
+        if raw_matrix is None:
+            return None
+
+        matrix = np.asarray(raw_matrix, dtype=np.float64)
+        if matrix.shape == (9,):
+            matrix = matrix.reshape(3, 3)
+        if matrix.shape != (3, 3):
+            raise Record3DError(
+                "Record3D Wi-Fi metadata field `K` must be a flat 9-vector or a 3x3 matrix, "
+                f"but received shape {tuple(matrix.shape)}."
+            )
+
+        return Record3DIntrinsicMatrix(
+            fx=float(matrix[0, 0]),
+            fy=float(matrix[1, 1]),
+            tx=float(matrix[0, 2]),
+            ty=float(matrix[1, 2]),
+        )
+
+    @staticmethod
+    def _parse_original_size(payload: dict[str, Any]) -> tuple[int | None, int | None]:
+        raw_size = payload.get("originalSize")
+        if isinstance(raw_size, dict):
+            width = raw_size.get("width")
+            height = raw_size.get("height")
+        elif isinstance(raw_size, list | tuple) and len(raw_size) >= 2:
+            width, height = raw_size[:2]
+        else:
+            width = payload.get("width") or payload.get("rgbWidth")
+            height = payload.get("height") or payload.get("rgbHeight")
+
+        normalized_width = int(width) if width is not None else None
+        normalized_height = int(height) if height is not None else None
+        return normalized_width, normalized_height
+
+    @staticmethod
+    def _parse_depth_range(payload: dict[str, Any]) -> float:
+        for key in ("depthMaxMeters", "depth_max_meters", "maxDepthMeters", "maxDepth"):
+            value = payload.get(key)
+            if value is not None:
+                return float(value)
+        return 3.0
+
+
+class Record3DWiFiSignalingClient:
+    """Small synchronous client for the Record3D Wi-Fi signaling endpoints."""
+
+    def __init__(self, device_address: str, *, timeout_seconds: float) -> None:
+        normalized = normalize_record3d_device_address(device_address)
+        if normalized == "":
+            raise Record3DConnectionError("Record3D Wi-Fi streaming requires a device address.")
+        self.device_address = normalized
+        self.timeout_seconds = timeout_seconds
+
+    def get_offer(self) -> dict[str, Any]:
+        """Fetch the device's WebRTC offer from `/getOffer`."""
+        try:
+            return self._request_json("GET", "/getOffer")
+        except HTTPError as exc:
+            if exc.code == 403:
+                raise Record3DConnectionError(
+                    "Record3D allows only one Wi-Fi receiver at a time. Disconnect the existing peer and retry."
+                ) from exc
+            raise Record3DConnectionError(f"Record3D offer request failed with HTTP {exc.code}.") from exc
+        except TimeoutError as exc:
+            raise Record3DConnectionError("Timed out waiting for the Record3D Wi-Fi offer from the device.") from exc
+        except URLError as exc:
+            raise Record3DConnectionError(
+                "Could not reach the Record3D device. Check that the iPhone and this machine are on the same network."
+            ) from exc
+
+    def get_metadata(self) -> dict[str, Any]:
+        """Fetch the device metadata from `/metadata`."""
+        try:
+            return self._request_json("GET", "/metadata")
+        except HTTPError as exc:
+            raise Record3DConnectionError(f"Record3D metadata request failed with HTTP {exc.code}.") from exc
+        except TimeoutError as exc:
+            raise Record3DConnectionError("Timed out waiting for Record3D Wi-Fi metadata from the device.") from exc
+        except URLError as exc:
+            raise Record3DConnectionError("Could not retrieve Record3D metadata from the configured device.") from exc
+
+    def send_answer(self, answer: dict[str, Any]) -> None:
+        """Post the local WebRTC answer to the Record3D device.
+
+        The official Record3D browser demo and the local `feat/record3d` prototype both
+        post to `/answer`. The README mentions `/sendAnswer`, so the client uses the
+        browser-demo path first and only falls back when the alternate endpoint is the
+        only one available.
+
+        Args:
+            answer: Local WebRTC answer payload.
+        """
+        for endpoint in ("/answer", "/sendAnswer"):
+            try:
+                self._request_json("POST", endpoint, payload=answer, expect_json=False)
+                return
+            except HTTPError as exc:
+                if exc.code in {404, 405}:
+                    continue
+                raise Record3DConnectionError(
+                    f"Record3D answer request to `{endpoint}` failed with HTTP {exc.code}."
+                ) from exc
+            except TimeoutError as exc:
+                if endpoint == "/answer":
+                    continue
+                raise Record3DConnectionError(
+                    f"Timed out sending the WebRTC answer to `{endpoint}` on the Record3D device."
+                ) from exc
+            except URLError as exc:
+                raise Record3DConnectionError("Could not send the WebRTC answer back to the Record3D device.") from exc
+
+        raise Record3DConnectionError("Record3D did not accept the WebRTC answer on `/answer` or `/sendAnswer`.")
+
+    def _request_json(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        expect_json: bool = True,
+    ) -> dict[str, Any]:
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        request = Request(
+            url=f"{self.device_address}{endpoint}",
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"} if payload is not None else {},
+        )
+        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
+            body = response.read()
+        if not expect_json:
+            return {}
+        loaded = json.loads(body.decode("utf-8"))
+        if not isinstance(loaded, dict):
+            raise Record3DError(f"Expected JSON object from `{endpoint}`, but received {type(loaded).__name__}.")
+        return loaded
+
+
+class Record3DWiFiStreamConfig(BaseConfig):
+    """Configuration for a Python-side Record3D Wi-Fi receiver."""
+
+    device_address: str = ""
+    """mDNS host, IP address, or absolute URL advertised by the Record3D app."""
+
+    frame_timeout_seconds: float = 5.0
+    """Maximum time to wait for the next frame before failing."""
+
+    signaling_timeout_seconds: float = 5.0
+    """Maximum time to wait for signaling and peer setup."""
+
+    setup_timeout_seconds: float = 10.0
+    """Maximum time to wait for ICE gathering and the initial video track."""
+
+    @property
+    def target_type(self) -> type[Record3DWiFiStreamSession]:
+        """Runtime type used to manage one Record3D Wi-Fi session."""
+        return Record3DWiFiStreamSession
+
+
+class Record3DWiFiStreamSession:
+    """Manage one Python-side Record3D Wi-Fi session."""
+
+    def __init__(self, config: Record3DWiFiStreamConfig) -> None:
+        self.config = config
+        self.console = Console(__name__).child(self.__class__.__name__)
+        self.signaling_client = Record3DWiFiSignalingClient(
+            config.device_address,
+            timeout_seconds=config.signaling_timeout_seconds,
+        )
+        self._packet_queue: Queue[Record3DFramePacket] = Queue()
+        self._connected_event = Event()
+        self._failure_event = Event()
+        self._stop_event = Event()
+        self._worker: Thread | None = None
+        self._failure_message = ""
+        self._metadata: Record3DWiFiMetadata | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._async_stop: asyncio.Event | None = None
+        self._peer_connection: Any | None = None
+
+    def connect(self) -> Record3DWiFiMetadata:
+        """Connect to the configured Wi-Fi sender and start queueing packets.
+
+        Returns:
+            Typed metadata reported by the Record3D device.
+        """
+        if self._worker is not None and self._worker.is_alive():
+            raise Record3DConnectionError("The Record3D Wi-Fi session is already active.")
+
+        self._metadata = Record3DWiFiMetadata(
+            device_address=self.signaling_client.device_address,
+        )
+        self._packet_queue = Queue()
+        self._connected_event.clear()
+        self._failure_event.clear()
+        self._stop_event.clear()
+        self._failure_message = ""
+
+        self._worker = Thread(target=self._run_worker, name="Record3DWiFiStreamSession", daemon=True)
+        self._worker.start()
+
+        deadline = time.monotonic() + self.config.setup_timeout_seconds
+        while time.monotonic() < deadline:
+            if self._connected_event.wait(timeout=0.05):
+                self.console.info("Connected to Record3D Wi-Fi stream at %s.", self.signaling_client.device_address)
+                return self._metadata
+            if self._failure_event.is_set():
+                raise Record3DConnectionError(self._failure_message)
+            if self._worker is not None and not self._worker.is_alive():
+                break
+
+        self.disconnect()
+        raise Record3DConnectionError(
+            f"Timed out establishing the Record3D Wi-Fi stream at {self.signaling_client.device_address}."
+        )
+
+    def disconnect(self) -> None:
+        """Disconnect the current Wi-Fi session and stop the worker thread."""
+        self._stop_event.set()
+        if self._async_stop is not None and self._loop is not None:
+            try:
+                self._loop.call_soon_threadsafe(self._async_stop.set)
+            except RuntimeError:
+                pass
+
+        worker = self._worker
+        if worker is None:
+            return
+
+        if current_thread() is worker:
+            return
+
+        join_timeout_seconds = max(5.0, self.config.setup_timeout_seconds + 1.0)
+        worker.join(timeout=join_timeout_seconds)
+        if worker.is_alive():
+            self.console.warning("Timed out stopping the Record3D Wi-Fi worker thread during cleanup.")
+            return
+        self._worker = None
+
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> Record3DFramePacket:
+        """Wait for the next decoded Wi-Fi packet.
+
+        Args:
+            timeout_seconds: Optional timeout override. Defaults to the config value.
+
+        Returns:
+            Next decoded packet from the Wi-Fi receiver.
+        """
+        timeout = self.config.frame_timeout_seconds if timeout_seconds is None else timeout_seconds
+        try:
+            return self._packet_queue.get(timeout=timeout)
+        except Empty as exc:
+            if self._failure_event.is_set():
+                raise Record3DConnectionError(self._failure_message) from exc
+            if self._stop_event.is_set():
+                raise Record3DConnectionError("The Record3D Wi-Fi stream is not active.") from exc
+            raise Record3DTimeoutError(f"Timed out waiting {timeout:.2f}s for a Record3D Wi-Fi frame.") from exc
+
+    def _run_worker(self) -> None:
+        try:
+            asyncio.run(self._run_receiver())
+        except Exception as exc:
+            if not self._stop_event.is_set():
+                self._register_failure(str(exc))
+        finally:
+            self._worker = None
+
+    @staticmethod
+    def _answer_request_payload(*, sdp: str) -> dict[str, str]:
+        """Build the JSON answer payload expected by Record3D's signaling API."""
+        return {"type": "answer", "data": sdp}
+
+    def _request_async_stop(self) -> None:
+        """Request shutdown of the async receiver loop."""
+        if self._async_stop is not None:
+            self._async_stop.set()
+
+    @staticmethod
+    def _should_suppress_async_exception(*, exception: BaseException | None, message: str, stop_requested: bool) -> bool:
+        """Return whether an async exception is expected during aiortc teardown."""
+        if not stop_requested:
+            return False
+
+        combined = message
+        if exception is not None:
+            combined = f"{combined} {type(exception).__name__}: {exception}"
+        suppressed_fragments = (
+            "RTCIceTransport is closed",
+            "'NoneType' object has no attribute 'sendto'",
+            "'NoneType' object has no attribute 'call_exception_handler'",
+        )
+        return any(fragment in combined for fragment in suppressed_fragments)
+
+    def _handle_loop_exception(self, loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+        """Handle event-loop exceptions for the dedicated Wi-Fi receiver loop."""
+        exception = context.get("exception")
+        message = str(context.get("message", ""))
+        if self._should_suppress_async_exception(
+            exception=exception if isinstance(exception, BaseException) else None,
+            message=message,
+            stop_requested=self._stop_event.is_set(),
+        ):
+            return
+        loop.default_exception_handler(context)
+
+    def _set_pre_track_failure(self, *, connection_state: str, video_track_ready: Any | None) -> None:
+        """Fail the initial track wait without masking the underlying setup error."""
+        if video_track_ready is None or video_track_ready.done():
+            return
+        video_track_ready.set_exception(
+            Record3DConnectionError(
+                "The Record3D Wi-Fi peer connection "
+                f"entered `{connection_state}` before the video track became available."
+            )
+        )
+
+    def _handle_connection_state_change(self, *, connection_state: str, video_track_ready: Any | None) -> None:
+        """Handle aiortc connection-state transitions.
+
+        During setup, `closed`/`failed` can occur while an earlier signaling error is still
+        unwinding. In that case, fail the pending track wait instead of overwriting the
+        more useful root-cause error with a generic peer-closed message.
+        """
+        if self._stop_event.is_set():
+            return
+
+        match connection_state:
+            case "failed":
+                if self._connected_event.is_set():
+                    self._register_failure("The Record3D Wi-Fi peer connection failed.")
+                else:
+                    self._set_pre_track_failure(
+                        connection_state=connection_state,
+                        video_track_ready=video_track_ready,
+                    )
+                self._request_async_stop()
+            case "closed" | "disconnected":
+                if self._failure_event.is_set():
+                    return
+                if self._connected_event.is_set():
+                    self._register_failure(f"The Record3D Wi-Fi peer connection entered `{connection_state}`.")
+                else:
+                    self._set_pre_track_failure(
+                        connection_state=connection_state,
+                        video_track_ready=video_track_ready,
+                    )
+                self._request_async_stop()
+            case _:
+                return
+
+    async def _wait_for_ice_gathering_complete(self, *, peer_connection: Any) -> None:
+        """Wait until aiortc finishes ICE gathering before sending the answer SDP."""
+        if str(getattr(peer_connection, "iceGatheringState", "new")) == "complete":
+            return
+
+        ice_complete = asyncio.Event()
+
+        @peer_connection.on("icegatheringstatechange")
+        async def _on_ice_gathering_state_change() -> None:
+            if str(getattr(peer_connection, "iceGatheringState", "new")) == "complete":
+                ice_complete.set()
+
+        await asyncio.wait_for(ice_complete.wait(), timeout=self.config.setup_timeout_seconds)
+
+    async def _load_metadata_best_effort(self) -> None:
+        """Load Record3D Wi-Fi metadata without blocking stream startup."""
+        try:
+            payload = await asyncio.to_thread(self.signaling_client.get_metadata)
+            self._metadata = Record3DWiFiMetadata.from_api_payload(
+                device_address=self.signaling_client.device_address,
+                payload=payload,
+            )
+        except Exception as exc:
+            if not self._stop_event.is_set():
+                self.console.warning("Could not retrieve Record3D Wi-Fi metadata: %s", exc)
+
+    async def _run_receiver(self) -> None:
+        RTCPeerConnection, RTCSessionDescription = _import_aiortc_modules()
+        self._loop = asyncio.get_running_loop()
+        self._loop.set_exception_handler(self._handle_loop_exception)
+        self._async_stop = asyncio.Event()
+        peer_connection = RTCPeerConnection()
+        self._peer_connection = peer_connection
+        video_track_ready: asyncio.Future[Any] = self._loop.create_future()
+        metadata_task = asyncio.create_task(self._load_metadata_best_effort())
+
+        @peer_connection.on("track")
+        def _on_track(track: Any) -> None:
+            if getattr(track, "kind", None) != "video":
+                return
+            if not video_track_ready.done():
+                video_track_ready.set_result(track)
+
+        @peer_connection.on("connectionstatechange")
+        async def _on_connection_state_change() -> None:
+            connection_state = str(getattr(peer_connection, "connectionState", "unknown"))
+            self._handle_connection_state_change(
+                connection_state=connection_state,
+                video_track_ready=video_track_ready,
+            )
+
+        try:
+            offer_payload = await asyncio.to_thread(self.signaling_client.get_offer)
+            await peer_connection.setRemoteDescription(
+                RTCSessionDescription(sdp=str(offer_payload["sdp"]), type=str(offer_payload["type"]))
+            )
+            answer = await peer_connection.createAnswer()
+            await peer_connection.setLocalDescription(answer)
+            await self._wait_for_ice_gathering_complete(peer_connection=peer_connection)
+            local_description = peer_connection.localDescription
+            if local_description is None:
+                raise Record3DConnectionError("Failed to produce a local WebRTC answer for the Record3D Wi-Fi stream.")
+
+            await asyncio.to_thread(
+                self.signaling_client.send_answer,
+                self._answer_request_payload(sdp=local_description.sdp),
+            )
+            track = await asyncio.wait_for(video_track_ready, timeout=self.config.setup_timeout_seconds)
+            self._connected_event.set()
+            await self._consume_video_track(track)
+        finally:
+            if not metadata_task.done():
+                metadata_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await metadata_task
+            await peer_connection.close()
+            self._peer_connection = None
+            self._loop = None
+            self._async_stop = None
+
+    async def _consume_video_track(self, track: Any) -> None:
+        if self._metadata is None:
+            raise Record3DError("Wi-Fi metadata must be loaded before consuming Record3D video frames.")
+
+        while not self._stop_event.is_set():
+            if self._async_stop is not None and self._async_stop.is_set():
+                break
+            try:
+                video_frame = await asyncio.wait_for(track.recv(), timeout=self.config.frame_timeout_seconds)
+            except TimeoutError:
+                continue
+            except Exception as exc:
+                if self._stop_event.is_set():
+                    break
+                raise Record3DConnectionError("The Record3D Wi-Fi video track stopped unexpectedly.") from exc
+
+            packet = self._packet_from_video_frame(video_frame, metadata=self._metadata)
+            self._packet_queue.put(packet)
+
+    def _register_failure(self, message: str) -> None:
+        if self._failure_event.is_set():
+            return
+        self._failure_message = message
+        self._failure_event.set()
+        self.console.error(message)
+
+    @staticmethod
+    def _packet_from_video_frame(video_frame: Any, *, metadata: Record3DWiFiMetadata) -> Record3DFramePacket:
+        composite_frame = np.asarray(video_frame.to_ndarray(format="rgb24"), dtype=np.uint8)
+        if composite_frame.ndim != 3 or composite_frame.shape[2] != 3:
+            raise Record3DError(
+                "Record3D Wi-Fi video frames must be RGB images with shape `(height, width, 3)`."
+            )
+        if composite_frame.shape[1] < 2:
+            raise Record3DError("Record3D Wi-Fi composite frames must contain both depth and RGB halves.")
+
+        half_width = composite_frame.shape[1] // 2
+        depth_rgb = composite_frame[:, :half_width, :]
+        rgb = composite_frame[:, -half_width:, :]
+        depth = decode_record3d_wifi_depth(depth_rgb, depth_max_meters=metadata.depth_max_meters)
+
+        packet_metadata = dict(metadata.raw_metadata)
+        packet_metadata["device_address"] = metadata.device_address
+        if metadata.original_width is not None and metadata.original_height is not None:
+            packet_metadata["original_size"] = [metadata.original_width, metadata.original_height]
+
+        return Record3DFramePacket(
+            transport=Record3DTransportId.WIFI,
+            rgb=rgb,
+            depth=depth,
+            intrinsic_matrix=metadata.intrinsic_matrix,
+            uncertainty=None,
+            metadata=packet_metadata,
+            arrival_timestamp_s=time.time(),
+        )
+
+
+def decode_record3d_wifi_depth(
+    depth_rgb: NDArray[np.uint8],
+    *,
+    depth_max_meters: float,
+) -> NDArray[np.float32]:
+    """Decode the HSV-encoded Record3D Wi-Fi depth half into a depth map.
+
+    Args:
+        depth_rgb: Left half of the Record3D composite RGBD frame.
+        depth_max_meters: Maximum depth represented by the hue channel.
+
+    Returns:
+        Depth image in meters.
+    """
+    normalized = depth_rgb.astype(np.float32) / 255.0
+    red = normalized[..., 0]
+    green = normalized[..., 1]
+    blue = normalized[..., 2]
+
+    maximum = np.max(normalized, axis=2)
+    minimum = np.min(normalized, axis=2)
+    delta = maximum - minimum
+
+    hue = np.zeros_like(maximum, dtype=np.float32)
+    has_delta = delta > 0.0
+
+    red_max = has_delta & (maximum == red)
+    green_max = has_delta & (maximum == green)
+    blue_max = has_delta & (maximum == blue)
+
+    hue[red_max] = np.mod((green[red_max] - blue[red_max]) / delta[red_max], 6.0) / 6.0
+    hue[green_max] = (((blue[green_max] - red[green_max]) / delta[green_max]) + 2.0) / 6.0
+    hue[blue_max] = (((red[blue_max] - green[blue_max]) / delta[blue_max]) + 4.0) / 6.0
+
+    # Record3D maps invalid depth samples to red, which wraps hue back to zero.
+    depth = np.where(hue <= 1e-6, depth_max_meters, depth_max_meters * hue)
+    return depth.astype(np.float32)
 
 
 __all__ = [
-    "RECORD3D_WIFI_COMPONENT",
-    "RECORD3D_WIFI_COMPONENT_CSS",
-    "RECORD3D_WIFI_COMPONENT_HEIGHT",
-    "RECORD3D_WIFI_COMPONENT_HTML",
-    "RECORD3D_WIFI_COMPONENT_JS",
-    "RECORD3D_WIFI_COMPONENT_KEY",
-    "RECORD3D_WIFI_COMPONENT_NAME",
-    "Record3DWiFiConnectionState",
-    "Record3DWiFiViewerState",
-    "render_record3d_wifi_viewer",
+    "Record3DWiFiMetadata",
+    "Record3DWiFiSignalingClient",
+    "Record3DWiFiStreamConfig",
+    "Record3DWiFiStreamSession",
+    "decode_record3d_wifi_depth",
+    "normalize_record3d_device_address",
 ]
