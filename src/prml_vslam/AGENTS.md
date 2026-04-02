@@ -19,16 +19,14 @@
 - *NEVER* let anything fail silently.
 - *NEVER* write overly defensive workarounds to accommodate backwards compatibility or unlikely edge-cases.
 
-<<<<<<< HEAD
 When work is specific to the Streamlit app subtree, also follow `src/prml_vslam/app/AGENTS.md`.
 
 ## Core Rules
-=======
+
 - **Typing**
-  - All signatures must be typed; Use modern builtins (`list[str]`, `dict[str, Any]`)
+  - All signatures must be typed; use modern builtins (`list[str]`, `dict[str, Any]`)
   - Use `TYPE_CHECKING` guards for imports of types only used in annotations
   - Use `Literal` for constrained string values
->>>>>>> fb26801 (refactor: shrink metrics app PR scope)
 
 ## Python Design Pattern
 
@@ -115,7 +113,6 @@ def compute_rri(
     """
     ...
 ```
-<<<<<<< HEAD
 
 ## Config Pattern
 
@@ -148,6 +145,11 @@ def compute_rri(
 - Run targeted tests with `uv run pytest <path>` when a focused surface changed; use `make test`
   when the change is broad enough to justify the full suite.
 - When changing config contracts, artifact formats, or benchmark assumptions, update
-  `docs/agent_reference.md` in the same change.
-=======
->>>>>>> fb26801 (refactor: shrink metrics app PR scope)
+  `.agents/references/agent_reference.md` in the same change.
+
+## Local Responsibilities
+
+- eval owns metrics logic
+- methods owns only method concepts
+- datasets normalizes inputs
+- pipeline owns the artifact-first run boundary and execution contracts
