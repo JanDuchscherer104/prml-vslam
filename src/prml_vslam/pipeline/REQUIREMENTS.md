@@ -82,9 +82,9 @@ not own pipeline semantics or architecture decisions.
 - `app/` owns Streamlit UI, page state, and rendering only.
 - `utils/` owns shared infrastructure such as config patterns, logging, and
   common helpers.
-- `datasets/` is a target addition for ADVIO and custom dataset adapters, but
-  it does not exist yet in the current tree and must not be described as an
-  existing package.
+- `datasets/` already exists and owns ADVIO plus future custom-dataset
+  adapters. Those adapters must normalize inputs into the shared pipeline
+  boundary instead of letting dataset-specific types leak into orchestration.
 
 ## Target Public Contracts
 

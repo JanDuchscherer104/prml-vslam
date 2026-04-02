@@ -7,6 +7,8 @@ from typing import Annotated
 
 import typer
 
+from prml_vslam.datasets import AdvioDatasetService
+from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioDownloadRequest, AdvioModality
 from prml_vslam.io import (
     Record3DConnectionError,
     Record3DDependencyError,
@@ -14,13 +16,29 @@ from prml_vslam.io import (
     Record3DStreamConfig,
     Record3DTimeoutError,
 )
-from prml_vslam.pipeline import MethodId, PipelinePlannerService, RunPlanRequest
+from prml_vslam.methods import MethodId
+from prml_vslam.pipeline import (
+    BenchmarkEvaluationConfig,
+    DenseConfig,
+    PipelineMode,
+    PipelinePlannerService,
+    ReferenceConfig,
+    RunRequest,
+    TrackingConfig,
+    VideoSourceSpec,
+)
 from prml_vslam.utils.console import Console
+from prml_vslam.utils.path_config import get_path_config
 
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     help="Utilities and entry points for the PRML monocular VSLAM project scaffold.",
+)
+advio_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="ADVIO dataset inspection and download helpers.",
 )
 console = Console(__name__)
 planner = PipelinePlannerService()
@@ -83,6 +101,38 @@ ConfidenceOption = Annotated[
         help="Whether to open a preview window for the Record3D confidence map.",
     ),
 ]
+AdvioSequenceOption = Annotated[
+    list[int] | None,
+    typer.Option(
+        "--sequence",
+        help="Repeat to select one or more ADVIO sequence ids. Omit to target all scenes.",
+    ),
+]
+AdvioPresetOption = Annotated[
+    AdvioDownloadPreset,
+    typer.Option(
+        "--preset",
+        help="Curated modality bundle used when no explicit modality override is provided.",
+        case_sensitive=False,
+    ),
+]
+AdvioModalityOption = Annotated[
+    list[AdvioModality] | None,
+    typer.Option(
+        "--modality",
+        help="Repeat to override the preset with explicit modality groups.",
+        case_sensitive=False,
+    ),
+]
+OverwriteExistingOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite/--reuse",
+        help="Whether to re-download cached ZIPs and replace extracted files.",
+    ),
+]
+
+app.add_typer(advio_app, name="advio")
 
 
 @app.callback()
@@ -105,22 +155,26 @@ def plan_run(
     experiment_name: ExperimentNameArg,
     video_path: VideoPathArg,
     output_dir: OutputDirOption = Path("artifacts"),
-    method: MethodOption = MethodId.VISTA_SLAM,
+    method: MethodOption = MethodId.VISTA,
     frame_stride: FrameStrideOption = 1,
     dense_mapping: DenseOption = True,
     compare_to_arcore: ArcoreOption = True,
     ground_truth_cloud: ReferenceCloudOption = True,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
-    request = RunPlanRequest(
+    request = RunRequest(
         experiment_name=experiment_name,
-        video_path=video_path,
+        mode=PipelineMode.OFFLINE,
         output_dir=output_dir,
-        method=method,
-        frame_stride=frame_stride,
-        enable_dense_mapping=dense_mapping,
-        compare_to_arcore=compare_to_arcore,
-        build_ground_truth_cloud=ground_truth_cloud,
+        source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
+        tracking=TrackingConfig(method=method),
+        dense=DenseConfig(enabled=dense_mapping),
+        reference=ReferenceConfig(enabled=ground_truth_cloud),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=compare_to_arcore,
+            evaluate_cloud=dense_mapping and ground_truth_cloud,
+            evaluate_efficiency=True,
+        ),
     )
     plan = planner.build_plan(request)
     console.plog(plan.model_dump(mode="json"))
@@ -172,6 +226,51 @@ def record3d_preview(
     except (Record3DConnectionError, Record3DDependencyError, Record3DTimeoutError) as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
+
+
+@advio_app.command("summary")
+def advio_summary() -> None:
+    """Print committed and local ADVIO dataset coverage."""
+    service = AdvioDatasetService(get_path_config())
+    summary = service.summarize()
+    payload = {
+        "dataset_root": str(service.dataset_root),
+        "upstream": service.catalog.upstream.model_dump(mode="json"),
+        "summary": summary.model_dump(mode="json"),
+        "local_sequence_ids": [
+            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
+        ],
+    }
+    console.plog(payload)
+
+
+@advio_app.command("download")
+def advio_download(
+    sequence_ids: AdvioSequenceOption = None,
+    preset: AdvioPresetOption = AdvioDownloadPreset.OFFLINE,
+    modalities: AdvioModalityOption = None,
+    overwrite: OverwriteExistingOption = False,
+) -> None:
+    """Download selected ADVIO scene archives and extract only requested modality bundles."""
+    service = AdvioDatasetService(get_path_config())
+    try:
+        result = service.download(
+            AdvioDownloadRequest(
+                sequence_ids=[] if sequence_ids is None else sequence_ids,
+                preset=preset,
+                modalities=[] if modalities is None else modalities,
+                overwrite=overwrite,
+            )
+        )
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload = {
+        "result": result.model_dump(mode="json"),
+        "summary": service.summarize().model_dump(mode="json"),
+    }
+    console.plog(payload)
 
 
 def main() -> None:

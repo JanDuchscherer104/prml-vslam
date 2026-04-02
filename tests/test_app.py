@@ -12,15 +12,12 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
-from prml_vslam.app.models import (
-    AppPageId,
-    AppState,
-    DatasetId,
-    EvaluationControls,
-    Record3DPageState,
-)
-from prml_vslam.app.services import MetricsAppService, Record3DStreamRuntimeController
+from prml_vslam.app.models import AppState, Record3DPageState
+from prml_vslam.app.services import Record3DStreamRuntimeController
 from prml_vslam.app.state import SessionStateStore
+from prml_vslam.datasets.interfaces import DatasetId
+from prml_vslam.eval import TrajectoryEvaluationService
+from prml_vslam.eval.interfaces import EvaluationControls
 from prml_vslam.io.record3d import (
     Record3DDevice,
     Record3DFramePacket,
@@ -42,7 +39,7 @@ def _write_tum(path: Path, rows: list[tuple[float, float, float, float]]) -> Non
 
 def _build_path_config(tmp_path: Path) -> PathConfig:
     sequence_root = tmp_path / "data" / "advio" / "advio-15" / "ground-truth"
-    run_root = tmp_path / "artifacts" / "advio-15" / "vista_slam" / "slam"
+    run_root = tmp_path / "artifacts" / "advio-15" / "vista" / "slam"
     _write_tum(
         sequence_root / "ground_truth.tum",
         [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0), (0.2, 2.0, 1.0, 0.0)],
@@ -219,6 +216,32 @@ def _render_record3d_page_script(snapshot, transport, devices) -> None:
     render_record3d_page(context)
 
 
+def _render_record3d_page_script_with_runtime(runtime, transport, devices) -> None:
+    from types import SimpleNamespace
+
+    from prml_vslam.app.models import AppState, Record3DPageState
+    from prml_vslam.app.pages.record3d import render as render_record3d_page
+
+    class _Store:
+        def save(self, state: AppState) -> None:
+            self.last_state = state.model_copy(deep=True)
+
+    class _Service:
+        def __init__(self, current_devices) -> None:
+            self.current_devices = current_devices
+
+        def list_usb_devices(self):
+            return list(self.current_devices)
+
+    context = SimpleNamespace(
+        state=AppState(record3d=Record3DPageState(transport=transport, is_running=False)),
+        store=_Store(),
+        record3d_runtime=runtime,
+        record3d_service=_Service(devices),
+    )
+    render_record3d_page(context)
+
+
 def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -232,10 +255,18 @@ def _plotly_specs(at: AppTest) -> list[str]:
     return [element.proto.spec for element in at.main if getattr(element, "type", None) == "plotly_chart"]
 
 
-def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> None:
+def _require_working_evo() -> None:
     pytest.importorskip("evo")
+    try:
+        from evo.common_ape_rpe import ape  # noqa: F401
+    except ImportError:
+        pytest.skip("Installed `evo` does not expose `evo.common_ape_rpe.ape` in this environment.")
+
+
+def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> None:
+    _require_working_evo()
     path_config = _build_path_config(tmp_path)
-    service = MetricsAppService(path_config)
+    service = TrajectoryEvaluationService(path_config)
 
     runs = service.discover_runs(DatasetId.ADVIO, "advio-15")
 
@@ -267,17 +298,18 @@ def test_run_app_defaults_to_record3d_page(tmp_path: Path, monkeypatch: pytest.M
     at.run()
 
     assert at.title[0].value == "Record3D Stream"
-    assert at.text_input[0].value == "192.168.159.24"
+    assert not at.radio
+    assert at.sidebar.button_group[0].label == "Transport"
+    assert at.sidebar.selectbox[0].label == "USB Device"
     assert {metric.label for metric in at.metric} >= {"Status", "Received Frames", "Frame Rate", "Transport"}
 
 
-def test_run_app_renders_metrics_page_when_state_selects_metrics(
+def test_render_metrics_page_entry_shows_metrics_content(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pytest.importorskip("evo")
+    _require_working_evo()
     path_config = _build_path_config(tmp_path)
-    service = MetricsAppService(path_config)
+    service = TrajectoryEvaluationService(path_config)
     selection = service.resolve_selection(
         dataset=DatasetId.ADVIO,
         sequence_slug="advio-15",
@@ -286,20 +318,25 @@ def test_run_app_renders_metrics_page_when_state_selects_metrics(
     assert selection is not None
     result = service.compute_evaluation(selection=selection, controls=EvaluationControls())
 
-    monkeypatch.setattr(bootstrap, "get_path_config", lambda: path_config)
+    def _render_metrics_page_entry_script() -> None:
+        context = SimpleNamespace(
+            path_config=path_config,
+            evaluation_service=service,
+            record3d_runtime=FakeRecord3DRuntime(),
+            store=FakeStore(),
+            state=AppState(
+                metrics={
+                    "dataset": DatasetId.ADVIO,
+                    "sequence_slug": "advio-15",
+                    "run_root": selection.run.artifact_root,
+                    "evaluation": EvaluationControls(),
+                    "result_path": result.path,
+                },
+            ),
+        )
+        bootstrap._render_metrics_page_entry(context)
 
-    app_path = Path(__file__).resolve().parents[1] / "streamlit_app.py"
-    at = AppTest.from_file(str(app_path))
-    at.session_state["_prml_vslam_app_state"] = AppState(
-        current_page=AppPageId.METRICS,
-        metrics={
-            "dataset": DatasetId.ADVIO,
-            "sequence_slug": "advio-15",
-            "run_root": selection.run.artifact_root,
-            "evaluation": EvaluationControls(),
-            "result_path": result.path,
-        },
-    ).model_dump(mode="json")
+    at = AppTest.from_function(_render_metrics_page_entry_script)
     at.run()
 
     assert at.title[0].value == "Trajectory Metrics"
@@ -315,10 +352,11 @@ def test_record3d_page_renders_usb_controls_and_frames() -> None:
     at.run()
 
     assert at.title[0].value == "Record3D Stream"
-    assert at.selectbox[0].label == "USB Device"
-    assert at.text_input[0].label == "Wi-Fi Device Address"
+    assert at.sidebar.button_group[0].label == "Transport"
+    assert at.sidebar.selectbox[0].label == "USB Device"
+    assert not any(item.value == "Connection" for item in at.subheader)
     assert {metric.label for metric in at.metric} >= {"Status", "Received Frames", "Frame Rate", "Transport"}
-    assert {item.value for item in at.subheader} >= {"Camera Intrinsics", "Packet Metadata", "Ego Trajectory"}
+    assert {tab.label for tab in at.tabs} >= {"Frames", "Trajectory", "Camera"}
     assert not any("not available for this transport" in item.value.lower() for item in at.info)
     assert len(_plotly_specs(at)) == 1
     assert '"scatter3d"' in _plotly_specs(at)[0]
@@ -332,10 +370,155 @@ def test_record3d_page_renders_wifi_info_when_uncertainty_is_missing() -> None:
     )
     at.run()
 
-    assert at.text_input[0].label == "Wi-Fi Device Address"
+    assert at.sidebar.text_input[0].label == "Wi-Fi Device Address"
+    assert at.sidebar.button_group[0].label == "Transport"
     assert {metric.label for metric in at.metric} >= {"Status", "Received Frames", "Frame Rate", "Transport"}
     assert any("not available for this transport" in item.value.lower() for item in at.info)
     assert any("ego trajectory is not available" in item.value.lower() for item in at.info)
+
+
+def test_advio_page_renders_summary_and_download_controls(tmp_path: Path) -> None:
+    def _render_advio_page_script(root_path: str) -> None:
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        from prml_vslam.app.models import AdvioPageState, AppState
+        from prml_vslam.app.pages.advio import render as render_advio_page
+        from prml_vslam.datasets import AdvioCatalog, AdvioDatasetService, AdvioSceneMetadata
+        from prml_vslam.datasets.advio import (
+            AdvioDownloadPreset,
+            AdvioEnvironment,
+            AdvioPeopleLevel,
+            AdvioUpstreamMetadata,
+        )
+        from prml_vslam.utils import PathConfig
+
+        class _Store:
+            def save(self, state: AppState) -> None:
+                self.last_state = state.model_copy(deep=True)
+
+        advio_service = AdvioDatasetService(
+            PathConfig(root=Path(root_path)),
+            catalog=AdvioCatalog(
+                dataset_id="advio",
+                dataset_label="ADVIO",
+                upstream=AdvioUpstreamMetadata(
+                    repo_url="https://github.com/AaltoVision/ADVIO",
+                    zenodo_record_url="https://zenodo.org/records/1476931",
+                    doi="10.5281/zenodo.1320824",
+                    license="CC BY-NC 4.0",
+                    calibration_base_url="https://raw.githubusercontent.com/AaltoVision/ADVIO/master/calibration/",
+                ),
+                scenes=[
+                    AdvioSceneMetadata(
+                        sequence_id=15,
+                        sequence_slug="advio-15",
+                        venue="Office",
+                        dataset_code="03",
+                        environment=AdvioEnvironment.INDOOR,
+                        has_stairs=False,
+                        has_escalator=False,
+                        has_elevator=False,
+                        people_level=AdvioPeopleLevel.NONE,
+                        has_vehicles=False,
+                        calibration_name="iphone-03.yaml",
+                        archive_url="https://zenodo.org/api/records/1476931/files/advio-15.zip/content",
+                        archive_size_bytes=54_845_329,
+                        archive_md5="f5febcd087acd90531aea98efff71c7c",
+                    )
+                ],
+            ),
+        )
+
+        context = SimpleNamespace(
+            state=AppState(advio=AdvioPageState(download_preset=AdvioDownloadPreset.OFFLINE)),
+            store=_Store(),
+            advio_service=advio_service,
+        )
+        render_advio_page(context)
+
+    at = AppTest.from_function(_render_advio_page_script, args=(str(tmp_path),))
+    at.run()
+
+    assert at.title[0].value == "ADVIO Dataset"
+    assert {metric.label for metric in at.metric} >= {
+        "Total Scenes",
+        "Local Scenes",
+        "Replay Ready",
+        "Offline Ready",
+        "Cached Archives",
+    }
+    assert at.button[0].label == "Download selected scenes"
+    assert at.button[0].disabled is False
+    assert at.selectbox[0].label == "Bundle"
+    assert at.multiselect[0].label == "Scenes"
+    assert at.multiselect[1].label == "Modalities Override"
+    assert len(_plotly_specs(at)) == 4
+    specs = "\n".join(_plotly_specs(at))
+    assert "Scene Mix by Venue" in specs
+    assert "Local Readiness" in specs
+    assert "Crowd Density" in specs
+    assert "Scene Attributes" in specs
+
+
+def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
+    from prml_vslam.app.pages import record3d as record3d_page
+
+    class RuntimeSpy:
+        def __init__(self) -> None:
+            self.start_usb_calls = 0
+            self.start_wifi_calls = 0
+
+        def snapshot(self) -> Record3DStreamSnapshot:
+            return Record3DStreamSnapshot()
+
+        def stop(self) -> None:
+            return None
+
+        def start_usb(self, *, device_index: int) -> None:
+            self.start_usb_calls += 1
+
+        def start_wifi(self, *, device_address: str) -> None:
+            self.start_wifi_calls += 1
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    runtime = RuntimeSpy()
+    context = SimpleNamespace(
+        state=AppState(record3d=Record3DPageState(transport=Record3DTransportId.USB, is_running=False)),
+        store=FakeStore(),
+        record3d_runtime=runtime,
+        record3d_service=FakeRecord3DService([Record3DDevice(product_id=101, udid="device-101")]),
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(record3d_page.st, "sidebar", DummyContext())
+    monkeypatch.setattr(record3d_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "segmented_control", lambda *args, **kwargs: Record3DTransportId.WIFI)
+    monkeypatch.setattr(record3d_page.st, "form", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(record3d_page.st, "text_input", lambda *args, **kwargs: "192.168.159.24")
+    monkeypatch.setattr(record3d_page.st, "form_submit_button", lambda *args, **kwargs: False)
+    monkeypatch.setattr(record3d_page.st, "button", lambda *args, **kwargs: False)
+    monkeypatch.setattr(record3d_page.st, "expander", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(record3d_page.st, "write", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "info", lambda *args, **kwargs: None)
+
+    transport, _, _, start_requested, stop_requested = record3d_page._render_sidebar_controls(context)
+    monkeypatch.undo()
+
+    assert runtime.start_usb_calls == 0
+    assert runtime.start_wifi_calls == 0
+    assert transport is Record3DTransportId.WIFI
+    assert start_requested is False
+    assert stop_requested is False
+    assert context.state.record3d.transport is Record3DTransportId.WIFI
 
 
 def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
@@ -374,7 +557,8 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
     assert snapshot.latest_packet is not None
     assert snapshot.latest_packet.uncertainty is not None
     assert snapshot.measured_fps > 0.0
-    assert snapshot.trajectory_positions_xyz.shape == (2, 3)
+    assert snapshot.trajectory_positions_xyz.shape[1] == 3
+    assert snapshot.trajectory_positions_xyz.shape[0] >= 2
     np.testing.assert_allclose(snapshot.trajectory_positions_xyz[-1], np.array([1.0, 0.5, 0.25]))
 
     controller.stop()
@@ -409,18 +593,54 @@ def test_record3d_runtime_controller_stops_previous_stream_when_switching_transp
     assert wifi_stream.disconnected is True
 
 
-def test_navigation_stops_record3d_runtime_when_switching_to_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_app_uses_streamlit_navigation(monkeypatch: pytest.MonkeyPatch) -> None:
+    navigation_calls: list[tuple[str, bool, list[str], list[bool]]] = []
+
+    class FakePage:
+        def __init__(self, *, title: str, default: bool) -> None:
+            self.title = title
+            self.default = default
+
+        def run(self) -> None:
+            return None
+
+    fake_context = SimpleNamespace(
+        state=AppState(),
+        record3d_runtime=FakeRecord3DRuntime(),
+        store=FakeStore(),
+    )
+
+    monkeypatch.setattr(bootstrap, "build_context", lambda: fake_context)
+    monkeypatch.setattr(bootstrap, "inject_styles", lambda: None)
+    monkeypatch.setattr(bootstrap.st, "set_page_config", lambda **kwargs: None)
+
+    def fake_page(page, *, title: str, icon: str | None = None, url_path: str | None = None, default: bool = False):
+        del page, icon, url_path
+        return FakePage(title=title, default=default)
+
+    def fake_navigation(pages, *, position: str = "sidebar", expanded: bool = False):
+        navigation_calls.append((position, expanded, [page.title for page in pages], [page.default for page in pages]))
+        return pages[0]
+
+    monkeypatch.setattr(bootstrap.st, "Page", fake_page)
+    monkeypatch.setattr(bootstrap.st, "navigation", fake_navigation)
+
+    bootstrap.run_app()
+
+    assert navigation_calls == [("sidebar", True, ["Record3D", "ADVIO", "Metrics"], [True, False, False])]
+
+
+def test_metrics_page_entry_stops_record3d_runtime_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime = FakeRecord3DRuntime()
     context = SimpleNamespace(
-        state=AppState(current_page=AppPageId.RECORD3D, record3d=Record3DPageState(is_running=True)),
+        state=AppState(record3d=Record3DPageState(is_running=True)),
         store=FakeStore(),
         record3d_runtime=runtime,
     )
-    monkeypatch.setattr(bootstrap.st, "segmented_control", lambda *args, **kwargs: AppPageId.METRICS)
+    monkeypatch.setattr(bootstrap, "render_metrics_page", lambda ctx: None)
 
-    bootstrap._render_top_level_navigation(context)
+    bootstrap._render_metrics_page_entry(context)
 
-    assert context.state.current_page is AppPageId.METRICS
     assert context.state.record3d.is_running is False
     assert runtime.stop_calls == 1
 

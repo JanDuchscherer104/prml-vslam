@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 
 import streamlit as st
 
+from prml_vslam.datasets import AdvioDatasetService
+from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState
+from .pages.advio import render as render_advio_page
 from .pages.metrics import render as render_metrics_page
 from .pages.record3d import render as render_record3d_page
-from .services import MetricsAppService, Record3DAppService, Record3DStreamRuntimeController
+from .services import Record3DAppService, Record3DStreamRuntimeController
 from .state import SessionStateStore
 from .ui import inject_styles
 
@@ -21,7 +25,8 @@ class AppContext:
     """Typed per-rerun context passed to page renderers."""
 
     path_config: PathConfig
-    metrics_service: MetricsAppService
+    advio_service: AdvioDatasetService
+    evaluation_service: TrajectoryEvaluationService
     record3d_service: Record3DAppService
     record3d_runtime: Record3DStreamRuntimeController
     store: SessionStateStore
@@ -34,7 +39,8 @@ def build_context() -> AppContext:
     store = SessionStateStore()
     return AppContext(
         path_config=path_config,
-        metrics_service=MetricsAppService(path_config),
+        advio_service=AdvioDatasetService(path_config),
+        evaluation_service=TrajectoryEvaluationService(path_config),
         record3d_service=Record3DAppService(),
         record3d_runtime=store.load_record3d_runtime(),
         store=store,
@@ -48,37 +54,68 @@ def run_app() -> None:
         page_title="PRML VSLAM Workbench",
         page_icon=":material/videocam:",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="expanded",
     )
     inject_styles()
     context = build_context()
-    _render_top_level_navigation(context)
-
-    match context.state.current_page:
-        case AppPageId.RECORD3D:
-            render_record3d_page(context)
-        case AppPageId.METRICS:
-            render_metrics_page(context)
+    _render_sidebar_brand()
+    page = st.navigation(_build_pages(context), position="sidebar", expanded=True)
+    page.run()
 
 
-def _render_top_level_navigation(context: AppContext) -> None:
-    selected_page = st.segmented_control(
-        "Page",
-        options=list(AppPageId),
-        default=context.state.current_page,
-        format_func=lambda item: item.label,
-        width="stretch",
-    )
-    if selected_page is None:
-        selected_page = context.state.current_page
+def _render_sidebar_brand() -> None:
+    with st.sidebar:
+        st.caption("PRML VSLAM")
+        st.markdown("###### Workbench")
+        st.divider()
 
-    previous_page = context.state.current_page
-    if previous_page is AppPageId.RECORD3D and selected_page is not AppPageId.RECORD3D:
+
+def _build_pages(context: AppContext) -> list[st.Page]:
+    return [
+        st.Page(
+            partial(_render_record3d_page_entry, context),
+            title=AppPageId.RECORD3D.label,
+            icon=":material/videocam:",
+            url_path=AppPageId.RECORD3D.value,
+            default=True,
+        ),
+        st.Page(
+            partial(_render_advio_page_entry, context),
+            title=AppPageId.ADVIO.label,
+            icon=":material/download:",
+            url_path=AppPageId.ADVIO.value,
+            default=False,
+        ),
+        st.Page(
+            partial(_render_metrics_page_entry, context),
+            title=AppPageId.METRICS.label,
+            icon=":material/show_chart:",
+            url_path=AppPageId.METRICS.value,
+            default=False,
+        ),
+    ]
+
+
+def _render_record3d_page_entry(context: AppContext) -> None:
+    _enter_page(context, AppPageId.RECORD3D)
+    render_record3d_page(context)
+
+
+def _render_metrics_page_entry(context: AppContext) -> None:
+    _enter_page(context, AppPageId.METRICS)
+    render_metrics_page(context)
+
+
+def _render_advio_page_entry(context: AppContext) -> None:
+    _enter_page(context, AppPageId.ADVIO)
+    render_advio_page(context)
+
+
+def _enter_page(context: AppContext, page_id: AppPageId) -> None:
+    if page_id is not AppPageId.RECORD3D and context.state.record3d.is_running:
         context.record3d_runtime.stop()
         context.state.record3d.is_running = False
-
-    context.state.current_page = selected_page
-    context.store.save(context.state)
+        context.store.save(context.state)
 
 
 __all__ = ["AppContext", "build_context", "run_app"]

@@ -1,21 +1,77 @@
-"""Pipeline orchestration.
+"""Pipeline orchestration."""
 
-**Stages**
-- DataProvider: can be streaming or offline dataset; must provide RGB; can provide additional camera poses,
-    and depth depth maps
-- SLAMMethod: Performs SLAM in streaming or batched mode
-- SceneRepr: (Optional) create 3DGS representation from SLAM output, here we can use any method from NerfStudio.
-- EVAL: (Optional) Performs benchmarking (trajectory, PC, 3DGS, performance, ...)
-"""
-
-from .contracts import MethodId, RunPlan, RunPlanRequest, RunPlanStage, RunPlanStageId
+from .contracts import (
+    ArtifactRef,
+    BenchmarkEvaluationConfig,
+    CloudMetrics,
+    DatasetSourceSpec,
+    DenseArtifacts,
+    DenseConfig,
+    EfficiencyMetrics,
+    FramePacket,
+    LiveSourceSpec,
+    PipelineMode,
+    ReferenceArtifacts,
+    ReferenceConfig,
+    RunPlan,
+    RunPlanStage,
+    RunPlanStageId,
+    RunRequest,
+    RunSummary,
+    SequenceManifest,
+    StageExecutionStatus,
+    StageManifest,
+    TrackingArtifacts,
+    TrackingConfig,
+    TrajectoryMetrics,
+    VideoSourceSpec,
+)
+from .interfaces import (
+    CloudEvaluator,
+    DenseBackend,
+    OfflineTrackerBackend,
+    ReferenceBuilder,
+    StreamingTrackerBackend,
+    TrackingUpdate,
+    TrajectoryEvaluator,
+)
 from .services import PipelinePlannerService
+from .workspace import CaptureManifest, FrameSample, PreparedInput
 
 __all__ = [
-    "MethodId",
+    "ArtifactRef",
+    "BenchmarkEvaluationConfig",
+    "CaptureManifest",
+    "CloudEvaluator",
+    "CloudMetrics",
+    "DatasetSourceSpec",
+    "DenseArtifacts",
+    "DenseBackend",
+    "DenseConfig",
+    "EfficiencyMetrics",
+    "FramePacket",
+    "FrameSample",
+    "LiveSourceSpec",
+    "OfflineTrackerBackend",
+    "PipelineMode",
     "PipelinePlannerService",
+    "PreparedInput",
+    "ReferenceArtifacts",
+    "ReferenceBuilder",
+    "ReferenceConfig",
     "RunPlan",
-    "RunPlanRequest",
     "RunPlanStage",
     "RunPlanStageId",
+    "RunRequest",
+    "RunSummary",
+    "SequenceManifest",
+    "StageExecutionStatus",
+    "StageManifest",
+    "StreamingTrackerBackend",
+    "TrackingArtifacts",
+    "TrackingConfig",
+    "TrackingUpdate",
+    "TrajectoryEvaluator",
+    "TrajectoryMetrics",
+    "VideoSourceSpec",
 ]

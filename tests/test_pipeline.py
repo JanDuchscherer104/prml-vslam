@@ -4,44 +4,67 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.pipeline import MethodId, PipelinePlannerService, RunPlanRequest, RunPlanStageId
+from prml_vslam.methods import MethodId
+from prml_vslam.pipeline import (
+    BenchmarkEvaluationConfig,
+    DenseConfig,
+    PipelineMode,
+    PipelinePlannerService,
+    ReferenceConfig,
+    RunPlanStageId,
+    RunRequest,
+    TrackingConfig,
+    VideoSourceSpec,
+)
 
 
 def test_pipeline_planner_builds_expected_stage_sequence() -> None:
     planner = PipelinePlannerService()
-    request = RunPlanRequest(
+    request = RunRequest(
         experiment_name="Lobby Sweep 01",
-        video_path=Path("captures/lobby.mp4"),
+        mode=PipelineMode.OFFLINE,
         output_dir=Path("artifacts"),
-        method=MethodId.VISTA_SLAM,
-        frame_stride=2,
-        enable_dense_mapping=True,
-        compare_to_arcore=True,
-        build_ground_truth_cloud=True,
+        source=VideoSourceSpec(video_path=Path("captures/lobby.mp4"), frame_stride=2),
+        tracking=TrackingConfig(method=MethodId.VISTA),
+        dense=DenseConfig(enabled=True),
+        reference=ReferenceConfig(enabled=True),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=True,
+            evaluate_cloud=True,
+            evaluate_efficiency=True,
+        ),
     )
 
     plan = planner.build_plan(request)
 
-    assert plan.artifact_root == Path("artifacts/lobby-sweep-01/vista_slam")
+    assert plan.artifact_root == planner.path_config.resolve_output_dir("artifacts") / "lobby-sweep-01" / "vista"
     assert [stage.id for stage in plan.stages] == [
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
         RunPlanStageId.DENSE_MAPPING,
-        RunPlanStageId.ARCORE_COMPARISON,
         RunPlanStageId.REFERENCE_RECONSTRUCTION,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
+        RunPlanStageId.CLOUD_EVALUATION,
+        RunPlanStageId.EFFICIENCY_EVALUATION,
+        RunPlanStageId.SUMMARY,
     ]
 
 
 def test_pipeline_planner_omits_optional_stages_when_disabled() -> None:
     planner = PipelinePlannerService()
-    request = RunPlanRequest(
+    request = RunRequest(
         experiment_name="Quick Check",
-        video_path=Path("captures/quick-check.mp4"),
+        mode=PipelineMode.OFFLINE,
         output_dir=Path("artifacts"),
-        method=MethodId.MAST3R_SLAM,
-        enable_dense_mapping=False,
-        compare_to_arcore=False,
-        build_ground_truth_cloud=False,
+        source=VideoSourceSpec(video_path=Path("captures/quick-check.mp4")),
+        tracking=TrackingConfig(method=MethodId.MSTR),
+        dense=DenseConfig(enabled=False),
+        reference=ReferenceConfig(enabled=False),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=False,
+            evaluate_cloud=False,
+            evaluate_efficiency=False,
+        ),
     )
 
     plan = planner.build_plan(request)
@@ -49,4 +72,5 @@ def test_pipeline_planner_omits_optional_stages_when_disabled() -> None:
     assert [stage.id for stage in plan.stages] == [
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
+        RunPlanStageId.SUMMARY,
     ]

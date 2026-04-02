@@ -1,5 +1,12 @@
 """Input and output helpers for videos, logs, and benchmark artifacts."""
 
+from .cv2_producer import (
+    Cv2FrameProducer,
+    Cv2ProducerConfig,
+    Cv2ReplayMode,
+    open_cv2_replay_stream,
+)
+from .interfaces import CameraPose, PinholeCameraIntrinsics, VideoFramePacket, VideoPacketStream
 from .record3d import (
     Record3DCameraPose,
     Record3DConnectionError,
@@ -33,6 +40,11 @@ from .record3d_wifi import (
 )
 
 __all__ = [
+    "Cv2FrameProducer",
+    "Cv2ProducerConfig",
+    "Cv2ReplayMode",
+    "CameraPose",
+    "PinholeCameraIntrinsics",
     "Record3DCameraPose",
     "Record3DConnectionError",
     "Record3DDependencyError",
@@ -57,7 +69,10 @@ __all__ = [
     "Record3DWiFiSignalingClient",
     "Record3DWiFiStreamConfig",
     "Record3DWiFiStreamSession",
+    "VideoFramePacket",
+    "VideoPacketStream",
     "decode_record3d_wifi_depth",
     "normalize_record3d_device_address",
+    "open_cv2_replay_stream",
     "record3d_frame_to_packet",
 ]

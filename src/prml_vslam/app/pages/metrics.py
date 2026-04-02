@@ -6,16 +6,18 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from ..models import (
-    DatasetId,
+from prml_vslam.app.models import MetricsPageState
+from prml_vslam.datasets.interfaces import DatasetId
+from prml_vslam.eval.interfaces import (
     DiscoveredRun,
     EvaluationArtifact,
     EvaluationControls,
-    MetricsPageState,
     PoseRelationId,
     SelectionSnapshot,
 )
+
 from ..plotting.metrics import build_error_figure, build_trajectory_figure
+from ..ui import render_page_intro
 
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
@@ -24,18 +26,21 @@ if TYPE_CHECKING:
 def render(context: AppContext) -> None:
     """Render the primary metrics page."""
     state = context.state
-    service = context.metrics_service
+    service = context.evaluation_service
 
-    with st.container(border=True):
-        st.caption("Metrics-First App")
-        st.title("Trajectory Metrics")
-        st.caption(
-            "Inspect persisted `evo` results or trigger an explicit APE run for one dataset, sequence, and artifact run."
-        )
+    render_page_intro(
+        eyebrow="Benchmark Review",
+        title="Trajectory Metrics",
+        body=(
+            "Inspect persisted `evo` results or trigger a fresh APE run for one dataset, sequence, and artifact "
+            "slice. Controls stay explicit so evaluation never runs as a side effect."
+        ),
+    )
 
     selectors_col, controls_col = st.columns((1.6, 1.0), gap="large")
     with selectors_col:
         with st.container(border=True):
+            st.subheader("Benchmark Slice")
             dataset = st.selectbox(
                 "Dataset",
                 options=list(DatasetId),
@@ -70,6 +75,7 @@ def render(context: AppContext) -> None:
 
     with controls_col:
         with st.container(border=True):
+            st.subheader("Evaluation Controls")
             controls = _render_controls(state.metrics.evaluation)
             st.caption(
                 "Evaluation never runs on selector changes. Only the primary action below writes or refreshes native "
@@ -101,19 +107,20 @@ def render(context: AppContext) -> None:
         return
     can_compute = selection.reference_path is not None and selection.run.estimate_path.exists()
 
-    action_col, status_col = st.columns((0.95, 1.05), gap="large")
-    with action_col:
-        compute = st.button("Compute evo metrics", type="primary", disabled=not can_compute, width="stretch")
-    with status_col:
-        if selection.reference_path is None:
-            st.warning(
-                "Missing `ground_truth.tum` for the selected sequence. The app only evaluates when a TUM reference "
-                "trajectory already exists."
-            )
-        elif evaluation is not None:
-            st.success(f"Loaded persisted result from `{evaluation.path}`.")
-        else:
-            st.info("No persisted result matches the current controls yet.")
+    with st.container(border=True):
+        action_col, status_col = st.columns((0.9, 1.1), gap="large")
+        with action_col:
+            compute = st.button("Compute evo metrics", type="primary", disabled=not can_compute, width="stretch")
+        with status_col:
+            if selection.reference_path is None:
+                st.warning(
+                    "Missing `ground_truth.tum` for the selected sequence. The app only evaluates when a TUM "
+                    "reference trajectory already exists."
+                )
+            elif evaluation is not None:
+                st.success(f"Loaded persisted result from `{evaluation.path}`.")
+            else:
+                st.info("No persisted result matches the current controls yet.")
 
     if compute:
         with st.spinner("Running evo APE..."):
@@ -126,23 +133,28 @@ def render(context: AppContext) -> None:
         context.store.save(state)
         st.success(f"Persisted fresh `evo` result to `{evaluation.path}`.")
 
-    _render_provenance(selection=selection, evaluation=evaluation)
     if evaluation is None:
+        _render_provenance(selection=selection, evaluation=evaluation)
         return
 
-    metric_columns = st.columns(4, gap="small")
-    metric_columns[0].metric("RMSE", f"{evaluation.stats.rmse:.4f}")
-    metric_columns[1].metric("Mean", f"{evaluation.stats.mean:.4f}")
-    metric_columns[2].metric("Median", f"{evaluation.stats.median:.4f}")
-    metric_columns[3].metric("Max", f"{evaluation.stats.max:.4f}")
+    with st.container(border=True):
+        metric_columns = st.columns(4, gap="small")
+        metric_columns[0].metric("RMSE", f"{evaluation.stats.rmse:.4f}")
+        metric_columns[1].metric("Mean", f"{evaluation.stats.mean:.4f}")
+        metric_columns[2].metric("Median", f"{evaluation.stats.median:.4f}")
+        metric_columns[3].metric("Max", f"{evaluation.stats.max:.4f}")
 
-    figure_columns = st.columns((1.3, 1.0), gap="large")
-    with figure_columns[0]:
-        if evaluation.trajectories:
-            st.plotly_chart(build_trajectory_figure(evaluation.trajectories), width="stretch")
-    with figure_columns[1]:
-        if evaluation.error_series is not None:
-            st.plotly_chart(build_error_figure(evaluation.error_series), width="stretch")
+    overview_tab, provenance_tab = st.tabs(["Figures", "Provenance"])
+    with overview_tab:
+        figure_columns = st.columns((1.3, 1.0), gap="large")
+        with figure_columns[0]:
+            if evaluation.trajectories:
+                st.plotly_chart(build_trajectory_figure(evaluation.trajectories), width="stretch")
+        with figure_columns[1]:
+            if evaluation.error_series is not None:
+                st.plotly_chart(build_error_figure(evaluation.error_series), width="stretch")
+    with provenance_tab:
+        _render_provenance(selection=selection, evaluation=evaluation)
 
 
 def _select_sequence(*, sequences: list[str], current: str | None) -> str:
@@ -201,5 +213,6 @@ def _render_provenance(*, selection: SelectionSnapshot, evaluation: EvaluationAr
             ]
         )
 
-    st.subheader("Provenance")
-    st.markdown("\n".join(lines))
+    with st.container(border=True):
+        st.subheader("Provenance")
+        st.markdown("\n".join(lines))
