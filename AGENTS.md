@@ -5,20 +5,15 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
 
 ## Sources Of Truth
 
-<<<<<<< HEAD
 - `README.md`: repository workflow, setup, developer commands, and high-level deliverables.
 - `docs/Questions.md`: high-quality human-maintained ground truth for challenge intent, clarified
   requirements, operator-facing scope, and product constraints. Consult it whenever a task touches
   project scope, assumptions, or evaluation intent.
+- `.github/CODEOWNERS`: ownership hints for code paths, review surfaces, and intent resolution when
+  repo responsibilities are ambiguous.
 - `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary
   sources relevant to this project.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
-=======
-- `README.md`
-- `docs/Questions.md`
-- `.github/CODEOWNERS`
-- The nearest nested `AGENTS.md`
->>>>>>> fb26801 (refactor: shrink metrics app PR scope)
 
 ## Repo Map
 
@@ -30,7 +25,6 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
 ## Repo-Wide Rules
 
 - Read the nearest nested `AGENTS.md` before editing.
-<<<<<<< HEAD
   - Python/package rules: `src/prml_vslam/AGENTS.md`
   - App-specific Streamlit rules: `src/prml_vslam/app/AGENTS.md`
   - Documentation and Typst rules: `docs/AGENTS.md`
@@ -38,23 +32,18 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   unless the user explicitly asks for it.
 - Use conventional commits with concise, focused messages. Split larger changes into multiple
   logical commits when appropriate.
-- Do not use `git restore`, `git reset --hard`, or other destructive commands unless explicitly
-  requested.
-- Prefer existing external tools over reimplementation when the repo already depends on them.
-- Keep external-method wrappers thin:
+- Do not use destructive git commands unless explicitly requested. This includes `git restore`,
+  `git reset --hard`, and similar commands.
+- Prefer existing external tools and libraries over local reimplementation when the repo already
+  depends on them.
+- Keep external wrappers thin and fail clearly when a dependency is missing or misconfigured.
+  For external-method wrappers:
   - use official upstream entry points where practical
   - fail early when an external dependency is unavailable or misconfigured
   - document unsupported cases explicitly
   - do not hide fallback behavior inside wrappers
 - Treat ARCore, reference reconstructions, and benchmark tools as explicit external baselines, not
   hidden parts of a method wrapper.
-=======
-- Stay within the requested task scope.
-- Use conventional commits with concise, focused messages.
-- Do not use destructive git commands unless explicitly requested.
-- Prefer existing external tools and libraries over local reimplementation.
-- Keep external wrappers thin and fail clearly when a dependency is missing or misconfigured.
->>>>>>> fb26801 (refactor: shrink metrics app PR scope)
 
 ## Requirements And App Guidance
 
