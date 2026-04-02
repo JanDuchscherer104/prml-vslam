@@ -41,7 +41,11 @@ def test_path_config_builds_canonical_run_layout(tmp_path: Path) -> None:
     expected_root = (tmp_path / "artifacts" / "lobby-sweep-01" / "vista").resolve()
     assert run_paths.artifact_root == expected_root
     assert run_paths.capture_manifest_path == expected_root / "input" / "capture_manifest.json"
+    assert run_paths.sequence_manifest_path == expected_root / "input" / "sequence_manifest.json"
     assert run_paths.trajectory_path == expected_root / "slam" / "trajectory.tum"
+    assert run_paths.trajectory_metrics_path == expected_root / "evaluation" / "trajectory_metrics.json"
+    assert run_paths.summary_path == expected_root / "summary" / "run_summary.json"
+    assert run_paths.plotly_scene_path("vista") == expected_root / "visualization" / "vista_scene.html"
 
 
 def test_path_config_uses_configured_default_output_dir_when_none(tmp_path: Path) -> None:

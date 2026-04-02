@@ -32,6 +32,9 @@ class RunArtifactPaths(BaseConfig):
     capture_manifest_path: Path
     """Path to the normalized capture manifest."""
 
+    sequence_manifest_path: Path
+    """Path to the normalized sequence manifest."""
+
     trajectory_path: Path
     """Path to the exported trajectory."""
 
@@ -44,8 +47,44 @@ class RunArtifactPaths(BaseConfig):
     arcore_alignment_path: Path
     """Path to the ARCore alignment artifact."""
 
+    trajectory_metrics_path: Path
+    """Path to persisted trajectory evaluation metrics."""
+
+    cloud_metrics_path: Path
+    """Path to persisted dense-cloud evaluation metrics."""
+
+    efficiency_metrics_path: Path
+    """Path to persisted runtime-efficiency metrics."""
+
     reference_cloud_path: Path
     """Path to the reference reconstruction artifact."""
+
+    summary_path: Path
+    """Path to the run-level summary artifact."""
+
+    @classmethod
+    def build(cls, artifact_root: Path) -> RunArtifactPaths:
+        """Build the canonical artifact layout from an explicit root."""
+        resolved_root = artifact_root.expanduser().resolve()
+        return cls(
+            artifact_root=resolved_root,
+            input_frames_dir=(resolved_root / "input" / "frames").resolve(),
+            capture_manifest_path=(resolved_root / "input" / "capture_manifest.json").resolve(),
+            sequence_manifest_path=(resolved_root / "input" / "sequence_manifest.json").resolve(),
+            trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
+            sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
+            dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
+            arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
+            trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
+            cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
+            efficiency_metrics_path=(resolved_root / "evaluation" / "efficiency_metrics.json").resolve(),
+            reference_cloud_path=(resolved_root / "reference" / "reference_cloud.ply").resolve(),
+            summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),
+        )
+
+    def plotly_scene_path(self, method_slug: str) -> Path:
+        """Return the canonical Plotly scene path for one method run."""
+        return (self.artifact_root / "visualization" / f"{method_slug}_scene.html").resolve()
 
 
 class PathConfig(BaseConfig):
@@ -207,19 +246,7 @@ class PathConfig(BaseConfig):
         artifact_root = (
             self.resolve_output_dir(output_dir) / self.slugify_experiment_name(experiment_name) / method_slug
         )
-        return RunArtifactPaths(
-            artifact_root=artifact_root,
-            input_frames_dir=self.resolve_repo_path("frames", base_dir=artifact_root / "input"),
-            capture_manifest_path=self.resolve_repo_path("capture_manifest.json", base_dir=artifact_root / "input"),
-            trajectory_path=self.resolve_repo_path("trajectory.tum", base_dir=artifact_root / "slam"),
-            sparse_points_path=self.resolve_repo_path("sparse_points.ply", base_dir=artifact_root / "slam"),
-            dense_points_path=self.resolve_repo_path("dense_points.ply", base_dir=artifact_root / "dense"),
-            arcore_alignment_path=self.resolve_repo_path(
-                "arcore_alignment.json",
-                base_dir=artifact_root / "evaluation",
-            ),
-            reference_cloud_path=self.resolve_repo_path("reference_cloud.ply", base_dir=artifact_root / "reference"),
-        )
+        return RunArtifactPaths.build(artifact_root)
 
 
 @lru_cache(maxsize=1)
