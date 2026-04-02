@@ -1,4 +1,4 @@
-"""Typed state and view models for the metrics app."""
+"""Typed state and view models for the packaged Streamlit app."""
 
 from __future__ import annotations
 
@@ -9,7 +9,23 @@ import numpy as np
 from jaxtyping import Float
 from pydantic import BaseModel, ConfigDict, Field
 
+from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.pipeline.contracts import MethodId
+
+
+class AppPageId(StrEnum):
+    """Top-level pages exposed by the packaged Streamlit app."""
+
+    RECORD3D = "record3d"
+    METRICS = "metrics"
+
+    @property
+    def label(self) -> str:
+        """Return the user-facing page label."""
+        return {
+            AppPageId.RECORD3D: "Record3D",
+            AppPageId.METRICS: "Metrics",
+        }[self]
 
 
 class DatasetId(StrEnum):
@@ -83,10 +99,34 @@ class MetricsPageState(BaseModel):
     """Most recently loaded or computed persisted result path."""
 
 
+class Record3DPageState(BaseModel):
+    """Persisted selector state for the Record3D live-stream page."""
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    transport: Record3DTransportId = Record3DTransportId.USB
+    """Selected Record3D transport."""
+
+    usb_device_index: int = 0
+    """Zero-based USB device index selected in the app."""
+
+    wifi_device_address: str = "192.168.159.24"
+    """User-supplied Wi-Fi device address."""
+
+    is_running: bool = False
+    """Whether the current browser session expects a live stream to be active."""
+
+
 class AppState(BaseModel):
     """Fully typed app state persisted in Streamlit session storage."""
 
     model_config = ConfigDict(validate_assignment=True)
+
+    current_page: AppPageId = AppPageId.RECORD3D
+    """Currently selected top-level page."""
+
+    record3d: Record3DPageState = Field(default_factory=Record3DPageState)
+    """Record3D page selector state."""
 
     metrics: MetricsPageState = Field(default_factory=MetricsPageState)
     """Metrics-page selector state."""
@@ -213,6 +253,7 @@ class EvaluationArtifact(BaseModel):
 
 
 __all__ = [
+    "AppPageId",
     "AppState",
     "DatasetId",
     "DiscoveredRun",
@@ -222,6 +263,7 @@ __all__ = [
     "MetricStats",
     "MetricsPageState",
     "PoseRelationId",
+    "Record3DPageState",
     "SelectionSnapshot",
     "TrajectorySeries",
 ]
