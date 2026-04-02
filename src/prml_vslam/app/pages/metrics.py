@@ -1,4 +1,4 @@
-"""Metrics-first Streamlit page for trajectory evaluation review."""
+"""Metrics Streamlit page for trajectory evaluation review."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 def render(context: AppContext) -> None:
     """Render the primary metrics page."""
     state = context.state
-    service = context.service
+    service = context.metrics_service
 
     with st.container(border=True):
         st.caption("Metrics-First App")
