@@ -15,6 +15,8 @@ from prml_vslam.io.record3d import (
     Record3DTransportId,
 )
 
+from ..plotting import build_live_trajectory_figure
+
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
 
@@ -215,6 +217,18 @@ def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
             st.info("Uncertainty / confidence is not available for this transport.")
         else:
             st.image(_normalize_grayscale(packet.uncertainty), clamp=True)
+
+    st.subheader("Ego Trajectory")
+    if len(snapshot.trajectory_positions_xyz) == 0:
+        st.info("Live ego trajectory is not available for the current transport yet.")
+    else:
+        st.plotly_chart(
+            build_live_trajectory_figure(
+                snapshot.trajectory_positions_xyz,
+                snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
+            ),
+            width="stretch",
+        )
 
 
 def _format_intrinsic_matrix(matrix: Record3DIntrinsicMatrix) -> str:

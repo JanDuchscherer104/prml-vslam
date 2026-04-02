@@ -297,11 +297,13 @@ class Record3DStreamRuntimeController:
         *,
         frame_timeout_seconds: float = 0.5,
         fps_window_size: int = 30,
+        trajectory_window_size: int = 512,
         usb_stream_factory: Callable[[int, float], Record3DPacketStream] | None = None,
         wifi_stream_factory: Callable[[str, float], Record3DPacketStream] | None = None,
     ) -> None:
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
+        self.trajectory_window_size = trajectory_window_size
         self.usb_stream_factory = usb_stream_factory or self._default_usb_stream_factory
         self.wifi_stream_factory = wifi_stream_factory or self._default_wifi_stream_factory
         self.console = Console(__name__).child(self.__class__.__name__)
@@ -394,6 +396,8 @@ class Record3DStreamRuntimeController:
     ) -> None:
         frames_received = 0
         arrival_times: deque[float] = deque(maxlen=self.fps_window_size)
+        trajectory_positions: deque[np.ndarray] = deque(maxlen=self.trajectory_window_size)
+        trajectory_timestamps: deque[float] = deque(maxlen=self.trajectory_window_size)
         stream: Record3DPacketStream | None = None
 
         try:
@@ -420,6 +424,10 @@ class Record3DStreamRuntimeController:
                     continue
                 frames_received += 1
                 arrival_times.append(packet.arrival_timestamp_s)
+                camera_position = self._extract_camera_position(packet)
+                if camera_position is not None:
+                    trajectory_positions.append(camera_position)
+                    trajectory_timestamps.append(packet.arrival_timestamp_s)
                 self._update_snapshot(
                     transport=transport,
                     state=Record3DStreamState.STREAMING,
@@ -427,6 +435,8 @@ class Record3DStreamRuntimeController:
                     latest_packet=packet,
                     received_frames=frames_received,
                     measured_fps=self._measure_fps(arrival_times),
+                    trajectory_positions_xyz=self._to_positions_array(trajectory_positions),
+                    trajectory_timestamps_s=np.asarray(tuple(trajectory_timestamps), dtype=np.float64),
                     error_message="",
                 )
         except Exception as exc:
@@ -466,6 +476,8 @@ class Record3DStreamRuntimeController:
         latest_packet: Any | None = None,
         received_frames: int = 0,
         measured_fps: float = 0.0,
+        trajectory_positions_xyz: np.ndarray | None = None,
+        trajectory_timestamps_s: np.ndarray | None = None,
         error_message: str = "",
     ) -> None:
         with self._lock:
@@ -476,6 +488,14 @@ class Record3DStreamRuntimeController:
                 latest_packet=latest_packet,
                 received_frames=received_frames,
                 measured_fps=measured_fps,
+                trajectory_positions_xyz=(
+                    np.empty((0, 3), dtype=np.float64)
+                    if trajectory_positions_xyz is None
+                    else trajectory_positions_xyz
+                ),
+                trajectory_timestamps_s=(
+                    np.empty((0,), dtype=np.float64) if trajectory_timestamps_s is None else trajectory_timestamps_s
+                ),
                 error_message=error_message,
             )
 
@@ -524,6 +544,32 @@ class Record3DStreamRuntimeController:
         if elapsed <= 0.0:
             return 0.0
         return float((len(arrival_times) - 1) / elapsed)
+
+    @staticmethod
+    def _extract_camera_position(packet: Any) -> np.ndarray | None:
+        camera_pose = getattr(packet, "metadata", {}).get("camera_pose")
+        if not isinstance(camera_pose, dict):
+            return None
+        try:
+            position = np.array(
+                [
+                    float(camera_pose["tx"]),
+                    float(camera_pose["ty"]),
+                    float(camera_pose["tz"]),
+                ],
+                dtype=np.float64,
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not np.all(np.isfinite(position)):
+            return None
+        return position
+
+    @staticmethod
+    def _to_positions_array(positions: deque[np.ndarray]) -> np.ndarray:
+        if not positions:
+            return np.empty((0, 3), dtype=np.float64)
+        return np.vstack(tuple(positions)).astype(np.float64, copy=False)
 
 
 def _load_evo_modules() -> tuple[Any, Any, Any, Any]:

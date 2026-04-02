@@ -137,6 +137,15 @@ def _usb_snapshot(*, uncertainty: bool) -> Record3DStreamSnapshot:
         source_label="device-101",
         received_frames=12,
         measured_fps=29.7,
+        trajectory_positions_xyz=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.5, 0.2, 0.1],
+                [1.0, 0.4, 0.2],
+            ],
+            dtype=np.float64,
+        ),
+        trajectory_timestamps_s=np.array([1.0, 1.1, 1.2], dtype=np.float64),
         latest_packet=Record3DFramePacket(
             transport=Record3DTransportId.USB,
             rgb=np.ones((2, 2, 3), dtype=np.uint8),
@@ -217,6 +226,10 @@ def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
             return
         time.sleep(0.02)
     raise AssertionError("Timed out waiting for the expected runtime state.")
+
+
+def _plotly_specs(at: AppTest) -> list[str]:
+    return [element.proto.spec for element in at.main if getattr(element, "type", None) == "plotly_chart"]
 
 
 def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> None:
@@ -305,8 +318,11 @@ def test_record3d_page_renders_usb_controls_and_frames() -> None:
     assert at.selectbox[0].label == "USB Device"
     assert at.text_input[0].label == "Wi-Fi Device Address"
     assert {metric.label for metric in at.metric} >= {"Status", "Received Frames", "Frame Rate", "Transport"}
-    assert {item.value for item in at.subheader} >= {"Camera Intrinsics", "Packet Metadata"}
+    assert {item.value for item in at.subheader} >= {"Camera Intrinsics", "Packet Metadata", "Ego Trajectory"}
     assert not any("not available for this transport" in item.value.lower() for item in at.info)
+    assert len(_plotly_specs(at)) == 1
+    assert '"scatter3d"' in _plotly_specs(at)[0]
+    assert "Ego Trajectory" in _plotly_specs(at)[0]
 
 
 def test_record3d_page_renders_wifi_info_when_uncertainty_is_missing() -> None:
@@ -319,6 +335,7 @@ def test_record3d_page_renders_wifi_info_when_uncertainty_is_missing() -> None:
     assert at.text_input[0].label == "Wi-Fi Device Address"
     assert {metric.label for metric in at.metric} >= {"Status", "Received Frames", "Frame Rate", "Transport"}
     assert any("not available for this transport" in item.value.lower() for item in at.info)
+    assert any("ego trajectory is not available" in item.value.lower() for item in at.info)
 
 
 def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
@@ -330,7 +347,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsic_matrix=Record3DIntrinsicMatrix(fx=100.0, fy=200.0, tx=10.0, ty=20.0),
                 uncertainty=np.ones((2, 2), dtype=np.float32),
-                metadata={},
+                metadata={"camera_pose": {"tx": 0.0, "ty": 0.0, "tz": 0.0}},
                 arrival_timestamp_s=1.0,
             ),
             Record3DFramePacket(
@@ -339,7 +356,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsic_matrix=Record3DIntrinsicMatrix(fx=100.0, fy=200.0, tx=10.0, ty=20.0),
                 uncertainty=np.ones((2, 2), dtype=np.float32),
-                metadata={},
+                metadata={"camera_pose": {"tx": 1.0, "ty": 0.5, "tz": 0.25}},
                 arrival_timestamp_s=1.1,
             ),
         ],
@@ -357,12 +374,15 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
     assert snapshot.latest_packet is not None
     assert snapshot.latest_packet.uncertainty is not None
     assert snapshot.measured_fps > 0.0
+    assert snapshot.trajectory_positions_xyz.shape == (2, 3)
+    np.testing.assert_allclose(snapshot.trajectory_positions_xyz[-1], np.array([1.0, 0.5, 0.25]))
 
     controller.stop()
 
     assert usb_stream.disconnected is True
     assert controller.snapshot().state is Record3DStreamState.IDLE
     assert controller.snapshot().latest_packet is None
+    assert controller.snapshot().trajectory_positions_xyz.shape == (0, 3)
 
 
 def test_record3d_runtime_controller_stops_previous_stream_when_switching_transport() -> None:

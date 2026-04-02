@@ -138,6 +138,8 @@ def test_record3d_frame_to_packet_preserves_intrinsics_and_confidence(monkeypatc
     assert packet.intrinsic_matrix is not None
     assert packet.intrinsic_matrix.fx == 100.0
     assert packet.uncertainty is not None
+    assert packet.metadata["camera_pose"]["tx"] == 1.0
+    assert packet.metadata["camera_pose"]["tz"] == 3.0
     np.testing.assert_array_equal(packet.uncertainty, np.array([[0, 1], [2, 3]], dtype=np.float32))
 
 
