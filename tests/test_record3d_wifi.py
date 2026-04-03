@@ -19,7 +19,7 @@ from prml_vslam.io.record3d_wifi import (
 from prml_vslam.io.wifi_packets import record3d_wifi_packet_from_video_frame
 from prml_vslam.io.wifi_receiver import (
     _Record3DWiFiReceiverRuntime,
-    should_suppress_record3d_async_exception,
+    _should_suppress_record3d_async_exception,
 )
 from prml_vslam.io.wifi_signaling import build_record3d_answer_request_payload
 
@@ -219,22 +219,22 @@ def test_record3d_wifi_closed_after_connect_logs_runtime_failure() -> None:
 
 
 def test_record3d_wifi_shutdown_exception_filter_only_suppresses_expected_stop_noise() -> None:
-    assert should_suppress_record3d_async_exception(
+    assert _should_suppress_record3d_async_exception(
         exception=AttributeError("'NoneType' object has no attribute 'sendto'"),
         message="Exception in callback Transaction.__retry()",
         stop_requested=True,
     )
-    assert should_suppress_record3d_async_exception(
+    assert _should_suppress_record3d_async_exception(
         exception=RuntimeError("RTCIceTransport is closed"),
         message="Task exception was never retrieved",
         stop_requested=True,
     )
-    assert not should_suppress_record3d_async_exception(
+    assert not _should_suppress_record3d_async_exception(
         exception=RuntimeError("unexpected"),
         message="Task exception was never retrieved",
         stop_requested=True,
     )
-    assert not should_suppress_record3d_async_exception(
+    assert not _should_suppress_record3d_async_exception(
         exception=AttributeError("'NoneType' object has no attribute 'sendto'"),
         message="Exception in callback Transaction.__retry()",
         stop_requested=False,
