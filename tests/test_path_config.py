@@ -74,6 +74,22 @@ def test_path_config_builds_dataset_paths(tmp_path: Path) -> None:
     assert dataset_dir == (tmp_path / "data" / "advio").resolve()
 
 
+def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path)
+
+    created_dirs = [
+        path_config.resolve_output_dir("artifacts/custom", create=True),
+        path_config.resolve_data_dir(create=True),
+        path_config.resolve_dataset_dir("advio", create=True),
+        path_config.resolve_logs_dir(create=True),
+        path_config.resolve_method_repo_dir("vista-slam", create=True),
+        path_config.resolve_method_env_dir("vista", create=True),
+        path_config.resolve_checkpoint_dir("vista", create=True),
+    ]
+
+    assert all(path.exists() and path.is_dir() for path in created_dirs)
+
+
 def test_path_config_rejects_non_toml_config_paths(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
 
