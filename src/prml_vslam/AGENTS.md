@@ -149,7 +149,26 @@ def compute_rri(
 
 ## Local Responsibilities
 
-- eval owns metrics logic
-- methods owns only method concepts
-- datasets normalizes inputs
-- pipeline owns the artifact-first run boundary and execution contracts
+- Only submodules with cross-module contracts, external integrations, or user-facing behavior
+  should define a minimal and self-contained `REQUIREMENTS.md`.
+- `app`
+  - owns Streamlit pages, page state, UI composition, and app-facing services
+  - does not own transport decoding, dataset parsing, method execution, or evaluation policy
+- `io`
+  - owns device and transport adapters, packet contracts, and transport-level normalization
+  - does not own app state, benchmark policy, or dataset semantics
+- `datasets`
+  - owns dataset catalogs, download and extract flows, and normalization into repository contracts
+  - does not own evaluation logic or method-specific behavior
+- `pipeline`
+  - owns run planning, artifact layout, manifests, and repository-level execution contracts
+  - does not own backend-specific method logic or benchmark metric definitions
+- `methods`
+  - owns only typed method interfaces and repository-local mock setups needed by the app and tests
+  - does not own real upstream orchestration, installation, or heavy visualization logic
+- `eval`
+  - owns only typed evaluation interfaces and repository-local mock metric flows needed by the app and tests
+  - does not own benchmark policy, alignment research, or a full `evo` integration
+- `utils`
+  - owns shared generic primitives such as config helpers, geometry primitives, path handling, and logging
+  - does not own domain policy for app, datasets, methods, eval, or pipeline
