@@ -17,8 +17,15 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 uv sync --extra dev --extra eval
 uv run pre-commit install
 uv run pre-commit run --all-files
-uv run pytest
+uv run --extra dev pytest
 make typst-check
+```
+
+Optional parallel test runs are available with `pytest-xdist`:
+
+```bash
+uv run --extra dev pytest -n auto
+make test PYTEST_ARGS="-n auto"
 ```
 
 ### Streamlit Metrics App
