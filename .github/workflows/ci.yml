@@ -17,7 +17,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install project
-        run: uv sync --all-extras
+        run: uv sync --extra dev --extra eval
 
       - name: Run pre-commit
         run: uv run pre-commit run --all-files --show-diff-on-failure
