@@ -39,6 +39,21 @@ def empty_timestamps_s() -> np.ndarray:
     return np.empty((0,), dtype=np.float64)
 
 
+def _extract_camera_position_from_pose(packet: FramePacket) -> np.ndarray | None:
+    if packet.pose is None:
+        return None
+    position = np.array([packet.pose.tx, packet.pose.ty, packet.pose.tz], dtype=np.float64)
+    return position if np.all(np.isfinite(position)) else None
+
+
+def _to_disconnected_snapshot(snapshot: SnapshotT, *, streaming_state: Any, disconnected_state: Any) -> SnapshotT:
+    if snapshot.state is not streaming_state:
+        return snapshot
+    return snapshot.model_copy(
+        update={"state": disconnected_state, "latest_packet": None, "received_frames": 0, "measured_fps": 0.0}
+    )
+
+
 class RollingRuntimeMetrics:
     def __init__(self, *, fps_window_size: int, trajectory_window_size: int) -> None:
         self._arrival_times: deque[float] = deque(maxlen=fps_window_size)
@@ -76,9 +91,7 @@ class RollingRuntimeMetrics:
 
     @staticmethod
     def _positions_to_array(positions: deque[np.ndarray]) -> np.ndarray:
-        if not positions:
-            return empty_positions_xyz()
-        return np.vstack(tuple(positions)).astype(np.float64, copy=False)
+        return np.vstack(tuple(positions)).astype(np.float64, copy=False) if positions else empty_positions_xyz()
 
 
 class WorkerRuntime(Generic[SnapshotT, StreamT]):
@@ -127,14 +140,12 @@ class WorkerRuntime(Generic[SnapshotT, StreamT]):
         with self._lock:
             self._snapshot = self._snapshot.model_copy(update=fields)
 
-    def disconnect(self, stream: StreamT) -> None:
-        self._disconnect_stream(stream)
-
     def stop(self) -> None:
         with self._lock:
             worker = self._worker_thread
-            stream = self._active_stream
             stop_event = self._active_stop_event
+            stream = self._active_stream
+            self._active_stream = None
         if stop_event is not None:
             stop_event.set()
         if stream is not None:
@@ -155,12 +166,16 @@ class WorkerRuntime(Generic[SnapshotT, StreamT]):
         stop_event: Event,
         disconnected_snapshot: Callable[[SnapshotT], SnapshotT],
     ) -> None:
+        stream: StreamT | None = None
         with self._lock:
             if self._active_stop_event is stop_event:
+                stream = self._active_stream
                 self._active_stream = None
                 self._active_stop_event = None
                 self._worker_thread = None
             self._snapshot = self._empty_snapshot() if stop_event.is_set() else disconnected_snapshot(self._snapshot)
+        if stream is not None:
+            self._disconnect_stream(stream)
 
 
 class Record3DAppService:
@@ -180,37 +195,16 @@ class AdvioPreviewStreamState(StrEnum):
 
 
 class AdvioPreviewSnapshot(BaseData):
-    """Latest preview state exposed to the ADVIO Streamlit page."""
-
     state: AdvioPreviewStreamState = AdvioPreviewStreamState.IDLE
-    """Current runtime state."""
-
     sequence_id: int | None = None
-    """Active ADVIO sequence id when a preview has been started."""
-
     sequence_label: str = ""
-    """User-facing label for the active sequence."""
-
     pose_source: AdvioPoseSource | None = None
-    """Trajectory source currently attached to emitted packets."""
-
     latest_packet: FramePacket | None = None
-    """Most recent decoded RGB packet."""
-
     received_frames: int = 0
-    """Total packets consumed by the current worker."""
-
     measured_fps: float = 0.0
-    """Measured receive rate over the recent window."""
-
     trajectory_positions_xyz: np.ndarray = Field(default_factory=empty_positions_xyz)
-    """Recent camera positions in meters."""
-
     trajectory_timestamps_s: np.ndarray = Field(default_factory=empty_timestamps_s)
-    """Elapsed preview timestamps aligned to `trajectory_positions_xyz`."""
-
     error_message: str = ""
-    """Human-readable terminal error for failed preview sessions."""
 
 
 class AdvioPreviewRuntimeController:
@@ -290,11 +284,15 @@ class AdvioPreviewRuntimeController:
                 packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
                 if first_packet_timestamp_ns is None:
                     first_packet_timestamp_ns = packet.timestamp_ns
-                camera_position = self._extract_camera_position(packet)
+                camera_position = _extract_camera_position_from_pose(packet)
                 metrics.record(
                     arrival_time_s=time.monotonic(),
                     position_xyz=camera_position,
-                    trajectory_time_s=self._trajectory_time_s(packet, first_packet_timestamp_ns),
+                    trajectory_time_s=(
+                        None
+                        if first_packet_timestamp_ns is None
+                        else max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9
+                    ),
                 )
                 self._runtime.update_fields(
                     state=AdvioPreviewStreamState.STREAMING,
@@ -315,39 +313,14 @@ class AdvioPreviewRuntimeController:
                     error_message=str(exc),
                 )
         finally:
-            self._runtime.disconnect(stream)
-            self._runtime.finalize_run(stop_event=stop_event, disconnected_snapshot=self._disconnected_snapshot)
-
-    @staticmethod
-    def _extract_camera_position(packet: FramePacket) -> np.ndarray | None:
-        if packet.pose is None:
-            return None
-        position = np.array(
-            [packet.pose.tx, packet.pose.ty, packet.pose.tz],
-            dtype=np.float64,
-        )
-        if not np.all(np.isfinite(position)):
-            return None
-        return position
-
-    @staticmethod
-    def _trajectory_time_s(packet: FramePacket, first_packet_timestamp_ns: int | None) -> float | None:
-        if first_packet_timestamp_ns is None:
-            return None
-        return max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9
-
-    @staticmethod
-    def _disconnected_snapshot(snapshot: AdvioPreviewSnapshot) -> AdvioPreviewSnapshot:
-        if snapshot.state is not AdvioPreviewStreamState.STREAMING:
-            return snapshot
-        return snapshot.model_copy(
-            update={
-                "state": AdvioPreviewStreamState.DISCONNECTED,
-                "latest_packet": None,
-                "received_frames": 0,
-                "measured_fps": 0.0,
-            }
-        )
+            self._runtime.finalize_run(
+                stop_event=stop_event,
+                disconnected_snapshot=lambda snapshot: _to_disconnected_snapshot(
+                    snapshot,
+                    streaming_state=AdvioPreviewStreamState.STREAMING,
+                    disconnected_state=AdvioPreviewStreamState.DISCONNECTED,
+                ),
+            )
 
 
 class Record3DStreamRuntimeController:
@@ -375,43 +348,39 @@ class Record3DStreamRuntimeController:
         return self._runtime.snapshot()
 
     def start_usb(self, *, device_index: int) -> None:
-        self._start_worker(
-            transport=Record3DTransportId.USB,
-            source_descriptor=f"USB device #{device_index}",
-            stream_factory=lambda: self.usb_stream_factory(device_index, self.frame_timeout_seconds),
+        self._runtime.launch(
+            connecting_snapshot=Record3DStreamSnapshot(
+                transport=Record3DTransportId.USB,
+                state=Record3DStreamState.CONNECTING,
+                source_label=f"USB device #{device_index}",
+            ),
+            thread_name=f"Record3D-{Record3DTransportId.USB.value}-worker",
+            worker_target=lambda stop_event: self._run_stream_worker(
+                transport=Record3DTransportId.USB,
+                source_descriptor=f"USB device #{device_index}",
+                stop_event=stop_event,
+                stream_factory=lambda: self.usb_stream_factory(device_index, self.frame_timeout_seconds),
+            ),
         )
 
     def start_wifi(self, *, device_address: str) -> None:
-        self._start_worker(
-            transport=Record3DTransportId.WIFI,
-            source_descriptor=device_address,
-            stream_factory=lambda: self.wifi_stream_factory(device_address, self.frame_timeout_seconds),
+        self._runtime.launch(
+            connecting_snapshot=Record3DStreamSnapshot(
+                transport=Record3DTransportId.WIFI,
+                state=Record3DStreamState.CONNECTING,
+                source_label=device_address,
+            ),
+            thread_name=f"Record3D-{Record3DTransportId.WIFI.value}-worker",
+            worker_target=lambda stop_event: self._run_stream_worker(
+                transport=Record3DTransportId.WIFI,
+                source_descriptor=device_address,
+                stop_event=stop_event,
+                stream_factory=lambda: self.wifi_stream_factory(device_address, self.frame_timeout_seconds),
+            ),
         )
 
     def stop(self) -> None:
         self._runtime.stop()
-
-    def _start_worker(
-        self,
-        *,
-        transport: Record3DTransportId,
-        source_descriptor: str,
-        stream_factory: Callable[[], FramePacketStream],
-    ) -> None:
-        self._runtime.launch(
-            connecting_snapshot=Record3DStreamSnapshot(
-                transport=transport,
-                state=Record3DStreamState.CONNECTING,
-                source_label=source_descriptor,
-            ),
-            thread_name=f"Record3D-{transport.value}-worker",
-            worker_target=lambda stop_event: self._run_stream_worker(
-                transport=transport,
-                source_descriptor=source_descriptor,
-                stop_event=stop_event,
-                stream_factory=stream_factory,
-            ),
-        )
 
     def _run_stream_worker(
         self,
@@ -449,7 +418,7 @@ class Record3DStreamRuntimeController:
                 except Record3DTimeoutError:
                     continue
                 arrival_time_s = packet.arrival_timestamp_s if packet.arrival_timestamp_s is not None else time.time()
-                camera_position = self._extract_camera_position(packet)
+                camera_position = _extract_camera_position_from_pose(packet)
                 metrics.record(
                     arrival_time_s=arrival_time_s,
                     position_xyz=camera_position,
@@ -472,9 +441,14 @@ class Record3DStreamRuntimeController:
                     error_message=str(exc),
                 )
         finally:
-            if stream is not None:
-                self._runtime.disconnect(stream)
-            self._runtime.finalize_run(stop_event=stop_event, disconnected_snapshot=self._disconnected_snapshot)
+            self._runtime.finalize_run(
+                stop_event=stop_event,
+                disconnected_snapshot=lambda snapshot: _to_disconnected_snapshot(
+                    snapshot,
+                    streaming_state=Record3DStreamState.STREAMING,
+                    disconnected_state=Record3DStreamState.DISCONNECTED,
+                ),
+            )
 
     @staticmethod
     def _default_usb_stream_factory(device_index: int, frame_timeout_seconds: float) -> FramePacketStream:
@@ -512,28 +486,6 @@ class Record3DStreamRuntimeController:
         if hasattr(connected_target, "device_address"):
             return str(connected_target.device_address)
         return source_descriptor
-
-    @staticmethod
-    def _extract_camera_position(packet: FramePacket) -> np.ndarray | None:
-        if packet.pose is None:
-            return None
-        position = np.array([packet.pose.tx, packet.pose.ty, packet.pose.tz], dtype=np.float64)
-        if not np.all(np.isfinite(position)):
-            return None
-        return position
-
-    @staticmethod
-    def _disconnected_snapshot(snapshot: Record3DStreamSnapshot) -> Record3DStreamSnapshot:
-        if snapshot.state is not Record3DStreamState.STREAMING:
-            return snapshot
-        return snapshot.model_copy(
-            update={
-                "state": Record3DStreamState.DISCONNECTED,
-                "latest_packet": None,
-                "received_frames": 0,
-                "measured_fps": 0.0,
-            }
-        )
 
 
 __all__ = [

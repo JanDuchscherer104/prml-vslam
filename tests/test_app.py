@@ -1241,6 +1241,7 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
 
 
 def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
+    from prml_vslam.app.record3d_controller import handle_record3d_page_action
     from prml_vslam.app.pages import record3d as record3d_page
 
     class RuntimeSpy:
@@ -1297,7 +1298,43 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
     assert action.transport is Record3DTransportId.WIFI
     assert action.start_requested is False
     assert action.stop_requested is False
+    assert context.state.record3d.transport is Record3DTransportId.USB
+
+    handle_record3d_page_action(context, action)
+
+    assert runtime.start_usb_calls == 0
+    assert runtime.start_wifi_calls == 0
     assert context.state.record3d.transport is Record3DTransportId.WIFI
+
+
+def test_record3d_page_dispatches_exactly_one_controller_action(monkeypatch: pytest.MonkeyPatch) -> None:
+    from prml_vslam.app.pages import record3d as record3d_page
+
+    dispatched_actions = []
+
+    def _fake_render_sidebar_controls(context):
+        del context
+        return SimpleNamespace()
+
+    def _fake_handle_action(context, action):
+        del context
+        dispatched_actions.append(action)
+        return Record3DStreamSnapshot()
+
+    monkeypatch.setattr(record3d_page, "render_page_intro", lambda **kwargs: None)
+    monkeypatch.setattr(record3d_page, "_render_sidebar_controls", _fake_render_sidebar_controls)
+    monkeypatch.setattr(record3d_page, "handle_record3d_page_action", _fake_handle_action)
+    monkeypatch.setattr(record3d_page, "_render_live_snapshot", lambda context: None)
+
+    context = SimpleNamespace(
+        state=AppState(record3d=Record3DPageState()),
+        store=FakeStore(),
+        record3d_runtime=FakeRecord3DRuntime(),
+        record3d_service=FakeRecord3DService([]),
+    )
+    record3d_page.render(context)
+
+    assert len(dispatched_actions) == 1
 
 
 def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector() -> None:
