@@ -230,3 +230,9 @@ docs/slides/**/*.svgz
 # Local pipeline/demo outputs
 artifacts/
 data/
+.logs/
+
+# Generated local documentation exports
+README_files/
+src/prml_vslam/app/README.html
+docs/literature/ViSTA-SLAM.qmd
