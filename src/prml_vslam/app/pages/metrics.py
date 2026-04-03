@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
-from prml_vslam.datasets.advio_sequence import list_advio_sequence_ids
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval.interfaces import EvaluationArtifact, EvaluationControls, PoseRelationId, SelectionSnapshot
 
@@ -36,7 +34,7 @@ def render(context: AppContext) -> None:
             datasets = list(DatasetId)
             dataset = st.selectbox("Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label)
             dataset_root = context.path_config.resolve_dataset_dir(dataset.value)
-            sequences = [f"advio-{sequence_id:02d}" for sequence_id in list_advio_sequence_ids(dataset_root)]
+            sequences = dataset.list_sequence_slugs(dataset_root)
             if not sequences:
                 _save_state(context, dataset=dataset)
                 st.warning(f"No local {dataset.label} sequences were found under `{dataset_root}`.")
@@ -59,7 +57,7 @@ def render(context: AppContext) -> None:
     _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=run.artifact_root, controls=controls, result_path=metrics.result_path)
     selection = SelectionSnapshot(
         sequence_slug=sequence_slug,
-        reference_path=resolve_existing_reference_tum(dataset_root, sequence_slug),
+        reference_path=dataset.resolve_reference_path(dataset_root, sequence_slug),
         run=run,
     )
     try:
@@ -85,8 +83,7 @@ def render(context: AppContext) -> None:
             except EVALUATION_ERRORS as exc:
                 st.error(str(exc))
                 return
-        context.state.metrics.result_path = evaluation.path
-        context.store.save(context.state)
+        _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=run.artifact_root, controls=controls, result_path=evaluation.path)
         st.success(f"Persisted fresh metric result to `{evaluation.path}`.")
     if evaluation is None:
         _render_provenance(dataset=dataset, selection=selection, evaluation=None)
@@ -111,20 +108,15 @@ def render(context: AppContext) -> None:
         _render_provenance(dataset=dataset, selection=selection, evaluation=evaluation)
 
 
-def _save_state(
-    context: AppContext,
-    *,
-    dataset: DatasetId,
-    sequence_slug: str | None = None,
-    run_root: Path | None = None,
-    controls: EvaluationControls | None = None,
-    result_path: Path | None = None,
-) -> None:
+def _save_state(context: AppContext, *, dataset: DatasetId, sequence_slug: str | None = None, run_root: Path | None = None, controls: EvaluationControls | None = None, result_path: Path | None = None) -> None:
     metrics = context.state.metrics
+    next_controls = controls or EvaluationControls()
+    if metrics.dataset == dataset and metrics.sequence_slug == sequence_slug and metrics.run_root == run_root and metrics.evaluation == next_controls and metrics.result_path == result_path:
+        return
     metrics.dataset = dataset
     metrics.sequence_slug = sequence_slug
     metrics.run_root = run_root
-    metrics.evaluation = controls or EvaluationControls()
+    metrics.evaluation = next_controls
     metrics.result_path = result_path
     context.store.save(context.state)
 
