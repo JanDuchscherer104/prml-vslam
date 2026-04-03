@@ -23,14 +23,12 @@ from prml_vslam.datasets import (
     AdvioSequence,
     AdvioSequenceConfig,
     AdvioUpstreamMetadata,
-    DatasetId,
     list_advio_sequence_ids,
     load_advio_catalog,
     load_advio_sequence,
     write_advio_pose_tum,
 )
-from prml_vslam.eval.interfaces import DiscoveredRun
-from prml_vslam.eval.selection import build_selection, list_sequences, resolve_dataset_root, resolve_reference_path
+from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.utils import PathConfig
 
@@ -375,59 +373,26 @@ def test_metrics_service_lists_advio_sequences_from_nested_layout(tmp_path: Path
     dataset_root = tmp_path / "data" / "advio"
     _write_advio_sequence(dataset_root, sequence_id=7, nested_layout=True)
     _write_advio_sequence(dataset_root, sequence_id=15)
-    path_config = PathConfig(
-        root=tmp_path,
-        artifacts_dir=tmp_path / "artifacts",
-        captures_dir=tmp_path / "captures",
-    )
-
-    assert list_sequences(dataset=DatasetId.ADVIO, dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO)) == [
+    assert [f"advio-{sequence_id:02d}" for sequence_id in list_advio_sequence_ids(dataset_root)] == [
         "advio-07",
         "advio-15",
     ]
 
 
-def test_metrics_service_only_uses_existing_advio_reference_tum(tmp_path: Path) -> None:
+def test_resolve_existing_advio_reference_tum_only_uses_existing_tum(tmp_path: Path) -> None:
     dataset_root = tmp_path / "data" / "advio"
     _write_advio_sequence(dataset_root, sequence_id=15)
-    path_config = PathConfig(
-        root=tmp_path,
-        artifacts_dir=tmp_path / "artifacts",
-        captures_dir=tmp_path / "captures",
-    )
-
-    reference_path = resolve_reference_path(
-        dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
-        sequence_slug="advio-15",
-    )
+    reference_path = resolve_existing_reference_tum(dataset_root, "advio-15")
 
     assert reference_path is None
 
 
-def test_build_selection_resolves_existing_reference_tum(tmp_path: Path) -> None:
+def test_resolve_existing_advio_reference_tum_finds_ground_truth(tmp_path: Path) -> None:
     dataset_root = tmp_path / "data" / "advio"
     sequence_dir = _write_advio_sequence(dataset_root, sequence_id=15)
     reference_path = sequence_dir / "ground-truth" / "ground_truth.tum"
     reference_path.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
-
-    estimate_path = tmp_path / "artifacts" / "advio-15" / "vista" / "slam" / "trajectory.tum"
-    estimate_path.parent.mkdir(parents=True, exist_ok=True)
-    estimate_path.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
-    run = DiscoveredRun(
-        artifact_root=estimate_path.parent.parent,
-        estimate_path=estimate_path,
-        label="ViSTA-SLAM",
-    )
-
-    selection = build_selection(
-        dataset=DatasetId.ADVIO,
-        dataset_root=dataset_root,
-        sequence_slug="advio-15",
-        run=run,
-    )
-
-    assert selection.reference_path == reference_path
-    assert selection.run == run
+    assert resolve_existing_reference_tum(dataset_root, "advio-15") == reference_path
 
 
 def test_load_advio_catalog_commits_all_scene_metadata() -> None:

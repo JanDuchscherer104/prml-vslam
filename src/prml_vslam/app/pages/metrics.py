@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
+from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
+from prml_vslam.datasets.advio_sequence import list_advio_sequence_ids
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval.interfaces import EvaluationArtifact, EvaluationControls, PoseRelationId, SelectionSnapshot
-from prml_vslam.eval.services import build_selection, list_sequences, resolve_dataset_root
 
 from ..plotting.metrics import build_error_figure, build_trajectory_figure
 from ..ui import render_page_intro
@@ -34,8 +35,8 @@ def render(context: AppContext) -> None:
             st.subheader("Benchmark Slice")
             datasets = list(DatasetId)
             dataset = st.selectbox("Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label)
-            dataset_root = resolve_dataset_root(context.path_config, dataset)
-            sequences = list_sequences(dataset=dataset, dataset_root=dataset_root)
+            dataset_root = context.path_config.resolve_dataset_dir(dataset.value)
+            sequences = [f"advio-{sequence_id:02d}" for sequence_id in list_advio_sequence_ids(dataset_root)]
             if not sequences:
                 _save_state(context, dataset=dataset)
                 st.warning(f"No local {dataset.label} sequences were found under `{dataset_root}`.")
@@ -56,7 +57,11 @@ def render(context: AppContext) -> None:
             controls = _render_controls(metrics.evaluation)
             st.caption("Evaluation never runs on selector changes. Only the primary action below writes or refreshes persisted metric results.")
     _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=run.artifact_root, controls=controls, result_path=metrics.result_path)
-    selection = build_selection(dataset=dataset, dataset_root=dataset_root, sequence_slug=sequence_slug, run=run)
+    selection = SelectionSnapshot(
+        sequence_slug=sequence_slug,
+        reference_path=resolve_existing_reference_tum(dataset_root, sequence_slug),
+        run=run,
+    )
     try:
         evaluation = service.load_evaluation(selection=selection, controls=controls)
     except EVALUATION_ERRORS as exc:
@@ -84,7 +89,7 @@ def render(context: AppContext) -> None:
         context.store.save(context.state)
         st.success(f"Persisted fresh metric result to `{evaluation.path}`.")
     if evaluation is None:
-        _render_provenance(selection=selection, evaluation=None)
+        _render_provenance(dataset=dataset, selection=selection, evaluation=None)
         return
 
     with st.container(border=True):
@@ -103,7 +108,7 @@ def render(context: AppContext) -> None:
         if evaluation.error_series is not None:
             figure_columns[1].plotly_chart(build_error_figure(evaluation.error_series), width="stretch")
     with provenance_tab:
-        _render_provenance(selection=selection, evaluation=evaluation)
+        _render_provenance(dataset=dataset, selection=selection, evaluation=evaluation)
 
 
 def _save_state(
@@ -136,8 +141,13 @@ def _render_controls(current: EvaluationControls) -> EvaluationControls:
     )
 
 
-def _render_provenance(*, selection: SelectionSnapshot, evaluation: EvaluationArtifact | None) -> None:
-    lines = [f"- Dataset: `{selection.dataset.label}`", f"- Sequence: `{selection.sequence_slug}`", f"- Run: `{selection.run.label}`", f"- Estimate path: `{selection.run.estimate_path}`", f"- Reference path: `{selection.reference_path}`"]
+def _render_provenance(
+    *,
+    dataset: DatasetId,
+    selection: SelectionSnapshot,
+    evaluation: EvaluationArtifact | None,
+) -> None:
+    lines = [f"- Dataset: `{dataset.label}`", f"- Sequence: `{selection.sequence_slug}`", f"- Run: `{selection.run.label}`", f"- Estimate path: `{selection.run.estimate_path}`", f"- Reference path: `{selection.reference_path}`"]
     if evaluation is not None:
         lines += [f"- Pose relation: `{evaluation.controls.pose_relation.label}`", f"- Alignment: `{evaluation.controls.align}`", f"- Scale correction: `{evaluation.controls.correct_scale}`", f"- Max timestamp diff (s): `{evaluation.controls.max_diff_s:.3f}`", f"- Matched pairs: `{evaluation.matched_pairs}`", f"- Persisted result: `{evaluation.path}`"]
     with st.container(border=True):
