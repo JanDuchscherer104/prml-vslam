@@ -7,17 +7,19 @@ import plotly.graph_objects as go
 
 from prml_vslam.datasets import AdvioEnvironment, AdvioLocalSceneStatus, AdvioPeopleLevel
 
-_INDOOR_COLOR = "#1368ce"
-_OUTDOOR_COLOR = "#ef6c00"
-_LOCAL_COLOR = "#0f9d58"
-_OFFLINE_COLOR = "#7b1fa2"
-_FEATURE_COLOR = "#c62828"
-_NEUTRAL_COLOR = "#6b7280"
+from .theme import BLUE, GRAY, GREEN, ORANGE, PURPLE, RED, apply_standard_xy_layout
+
+_INDOOR_COLOR = BLUE
+_OUTDOOR_COLOR = ORANGE
+_LOCAL_COLOR = GREEN
+_OFFLINE_COLOR = PURPLE
+_FEATURE_COLOR = RED
+_NEUTRAL_COLOR = GRAY
 _CROWD_COLORS = {
     AdvioPeopleLevel.NONE: "#94a3b8",
-    AdvioPeopleLevel.LOW: "#0f9d58",
-    AdvioPeopleLevel.MODERATE: "#ef6c00",
-    AdvioPeopleLevel.HIGH: "#c62828",
+    AdvioPeopleLevel.LOW: GREEN,
+    AdvioPeopleLevel.MODERATE: ORANGE,
+    AdvioPeopleLevel.HIGH: RED,
 }
 
 
@@ -48,14 +50,8 @@ def build_scene_mix_figure(statuses: list[AdvioLocalSceneStatus]) -> go.Figure:
             marker_color=color,
         )
 
-    figure.update_layout(
-        title="Scene Mix by Venue",
-        barmode="stack",
-        margin={"l": 24, "r": 16, "t": 44, "b": 24},
-        legend={"orientation": "h", "y": 1.12, "x": 0},
-        xaxis_title="Venue",
-        yaxis_title="Scenes",
-    )
+    apply_standard_xy_layout(figure, title="Scene Mix by Venue", xaxis_title="Venue", yaxis_title="Scenes")
+    figure.update_layout(barmode="stack")
     figure.update_xaxes(tickangle=-30)
     figure.update_yaxes(showgrid=True, rangemode="tozero")
     return figure
@@ -90,9 +86,10 @@ def build_local_readiness_figure(statuses: list[AdvioLocalSceneStatus]) -> go.Fi
             textposition="outside",
         )
     )
-    figure.update_layout(
+    apply_standard_xy_layout(
+        figure,
         title="Local Readiness",
-        margin={"l": 24, "r": 16, "t": 44, "b": 24},
+        xaxis_title="Category",
         yaxis_title="Scenes",
         showlegend=False,
     )
@@ -116,11 +113,7 @@ def build_crowd_density_figure(statuses: list[AdvioLocalSceneStatus]) -> go.Figu
             marker={"colors": [_CROWD_COLORS[level] for level in levels]},
         )
     )
-    figure.update_layout(
-        title="Crowd Density",
-        margin={"l": 24, "r": 16, "t": 44, "b": 24},
-        legend={"orientation": "h", "y": 1.12, "x": 0},
-    )
+    apply_standard_xy_layout(figure, title="Crowd Density", xaxis_title="Category", yaxis_title="Scenes")
     return figure
 
 
@@ -146,9 +139,9 @@ def build_scene_attribute_figure(statuses: list[AdvioLocalSceneStatus]) -> go.Fi
             textposition="outside",
         )
     )
-    figure.update_layout(
+    apply_standard_xy_layout(
+        figure,
         title="Scene Attributes",
-        margin={"l": 24, "r": 16, "t": 44, "b": 24},
         xaxis_title="Scenes",
         yaxis_title="Attribute",
         showlegend=False,

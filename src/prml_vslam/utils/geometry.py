@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Self
 
+import numpy as np
 from pydantic import ConfigDict
 
 from prml_vslam.interfaces import SE3Pose
@@ -60,14 +61,30 @@ def write_tum_trajectory(
         raise ValueError(f"Expected one timestamp per pose, got {len(timestamps)} timestamps for {len(poses)} poses.")
 
     trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-    format_spec = f".{decimal_places}f"
-    lines = ["# timestamp tx ty tz qx qy qz qw"] if include_header else []
-
-    for timestamp, pose in zip(timestamps, poses, strict=True):
-        tx, ty, tz, qx, qy, qz, qw = pose.to_tum_fields()
-        lines.append(" ".join(format(value, format_spec) for value in (timestamp, tx, ty, tz, qx, qy, qz, qw)))
-
-    trajectory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    pose_array = np.asarray(
+        [(pose.tx, pose.ty, pose.tz, pose.qx, pose.qy, pose.qz, pose.qw) for pose in poses],
+        dtype=np.float64,
+    )
+    if len(pose_array):
+        quaternion_norms = np.linalg.norm(pose_array[:, 3:], axis=1, keepdims=True)
+        if np.any(quaternion_norms == 0.0):
+            raise ValueError("SE3 quaternions must be non-zero.")
+        tum_rows = np.column_stack(
+            (
+                np.asarray(timestamps, dtype=np.float64),
+                pose_array[:, :3],
+                pose_array[:, 3:] / quaternion_norms,
+            )
+        )
+    else:
+        tum_rows = np.empty((0, 8), dtype=np.float64)
+    np.savetxt(
+        trajectory_path,
+        tum_rows,
+        fmt=f"%.{decimal_places}f",
+        header="timestamp tx ty tz qx qy qz qw" if include_header else "",
+        comments="# ",
+    )
     return trajectory_path.resolve()
 
 

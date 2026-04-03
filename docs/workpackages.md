@@ -5,6 +5,7 @@
 - [ ] Survey ARCore functionalities
 - [ ] Read VSLAM papers
 - [ ] Define initial benchmark scope and success criteria
+
 ## WP1: Repository and Environment Scaffolding
 
 - Purpose: keep the repo installable, testable, and easy to onboard into.
@@ -71,3 +72,14 @@
   - select the reconstruction toolchain
   - document calibration and export assumptions
   - generate reference artifacts for benchmark sequences
+
+## WP7: Benchmarking and Reporting
+
+- Purpose: consolidate benchmark runs, summarize findings, and keep reporting assets current.
+- Inputs: trajectory metrics, dense-reconstruction comparisons, efficiency measurements, and reference artifacts.
+- Outputs: benchmark tables and figures, update-meeting materials, and the final evaluation narrative.
+- Dependencies: WP4, WP5, WP6.
+- Suggested issue split:
+  - define the final reporting slice and benchmark comparison matrix
+  - keep work package status and update-meeting artifacts in sync
+  - assemble the final report figures, tables, and recommendation

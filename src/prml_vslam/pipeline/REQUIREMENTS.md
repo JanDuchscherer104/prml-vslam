@@ -20,12 +20,12 @@ into that shared manifest before the main benchmark stages run.
 
 ## Sources of Truth
 
-- [README.md](/Users/jd/repos/prml-vslam/README.md)
-- [Questions.md](/Users/jd/repos/prml-vslam/docs/Questions.md)
-- [contracts.py](/Users/jd/repos/prml-vslam/src/prml_vslam/pipeline/contracts.py)
-- [services.py](/Users/jd/repos/prml-vslam/src/prml_vslam/pipeline/services.py)
-- [app/REQUIREMENTS.md](/Users/jd/repos/prml-vslam/src/prml_vslam/app/REQUIREMENTS.md)
-- [REQUIREMENTS.md](/Users/jd/repos/prml-vslam/src/prml_vslam/REQUIREMENTS.md)
+- [README.md](../../../README.md)
+- [Questions.md](../../../docs/Questions.md)
+- [contracts.py](contracts.py)
+- [services.py](services.py)
+- [app/REQUIREMENTS.md](../app/REQUIREMENTS.md)
+- [REQUIREMENTS.md](../REQUIREMENTS.md)
 
 The app requirements documents are downstream consumer guidance only. They do
 not own pipeline semantics or architecture decisions.

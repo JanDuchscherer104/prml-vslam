@@ -1,4 +1,4 @@
-"""Evaluation-owned controls, statistics, discovery, and plotting contracts."""
+"""Typed evaluation contracts for persisted artifacts and plotting, not a middleware layer."""
 
 from __future__ import annotations
 
