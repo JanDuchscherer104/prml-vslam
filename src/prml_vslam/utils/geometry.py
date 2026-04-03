@@ -9,12 +9,10 @@ from typing import Self
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import ConfigDict
-
-# TODO: import as
 from pytransform3d.rotations import matrix_from_quaternion, quaternion_from_matrix
 from pytransform3d.transformations import transform_from
 
-from .base_config import BaseData
+from .base_data import BaseData
 
 
 class ImageSize(BaseData):
