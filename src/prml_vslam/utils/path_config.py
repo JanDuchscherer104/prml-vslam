@@ -8,7 +8,8 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field, ValidationInfo, field_validator
 
-from .base_config import BaseConfig, BaseData
+from .base_config import BaseConfig
+from .base_data import BaseData
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
