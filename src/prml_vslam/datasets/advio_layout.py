@@ -129,6 +129,20 @@ def resolve_sequence_dir(dataset_root: Path, scene: AdvioSceneMetadata) -> Path:
     return sequence_dir
 
 
+def resolve_existing_reference_tum(dataset_root: Path, sequence_slug: str) -> Path | None:
+    sequence_dir = resolve_existing_sequence_dir(dataset_root, sequence_slug)
+    if sequence_dir is None:
+        return None
+    for candidate in (
+        sequence_dir / "ground-truth" / "ground_truth.tum",
+        sequence_dir / "ground_truth.tum",
+        sequence_dir / "evaluation" / "ground_truth.tum",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def list_local_sequence_ids(dataset_root: Path) -> list[int]:
     sequence_ids: set[int] = set()
     for root in (dataset_root, dataset_root / "data"):
