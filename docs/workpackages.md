@@ -1,6 +1,11 @@
 # Work Packages
 
-This breakdown is intended to be copied into issues with minimal restructuring.
+## Issues and TODOs
+
+- [ ] Survey ARCore functionalities
+- [ ] Read VSLAM papers
+
+-
 
 ## WP1: Repository and Environment Scaffolding
 
@@ -9,13 +14,14 @@ This breakdown is intended to be copied into issues with minimal restructuring.
 - Outputs: `uv` environment, package skeleton, tests, CI, contributor guidance.
 - Dependencies: none.
 - Suggested issue split:
-  - maintain `pyproject.toml` and editable install
+  - maintain `pyproject.toml`
+  - maintain system dependencies via conda or docker.
   - keep lint/test CI green
   - maintain README, AGENTS, and repo hygiene rules
 
 ## WP2: Data Capture and Logging App
 
-- Purpose: record raw monocular video together with ARCore baseline logs for custom evaluation data.
+- Purpose: record raw monocular video together with ARCore baseline logs for custom evaoluation data.
 - Inputs: smartphone capture requirements, ARCore logging needs, target export schema.
 - Outputs: recording workflow or app, sample sessions, capture documentation.
 - Dependencies: WP1.
@@ -67,14 +73,3 @@ This breakdown is intended to be copied into issues with minimal restructuring.
   - select the reconstruction toolchain
   - document calibration and export assumptions
   - generate reference artifacts for benchmark sequences
-
-## WP7: Benchmarking, Analysis, and Reporting
-
-- Purpose: consolidate results into update meetings, the final presentation, and the final report.
-- Inputs: outputs from WP3 to WP6.
-- Outputs: weekly deck updates, final report, final recommendation.
-- Dependencies: WP1, WP3, WP4, WP5, WP6.
-- Suggested issue split:
-  - maintain weekly meeting summaries
-  - keep the report structure aligned with experiments
-  - write the final recommendation with method tradeoffs

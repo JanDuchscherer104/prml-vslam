@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field, ValidationInfo, field_validator
 
-from .base_config import BaseConfig
+from .base_config import BaseConfig, BaseData
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -18,7 +18,7 @@ def _default_root() -> Path:
     return PROJECT_ROOT
 
 
-class RunArtifactPaths(BaseConfig):
+class RunArtifactPaths(BaseData):
     """Typed layout for one planned benchmark run."""
 
     model_config = ConfigDict(frozen=True)

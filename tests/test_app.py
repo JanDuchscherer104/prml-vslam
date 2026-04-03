@@ -55,6 +55,52 @@ def _build_path_config(tmp_path: Path) -> PathConfig:
     )
 
 
+def _write_advio_local_sequence(dataset_root: Path, *, sequence_id: int = 15) -> Path:
+    sequence_dir = dataset_root / f"advio-{sequence_id:02d}"
+    (sequence_dir / "iphone").mkdir(parents=True, exist_ok=True)
+    (sequence_dir / "pixel").mkdir(parents=True, exist_ok=True)
+    (sequence_dir / "ground-truth").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "calibration").mkdir(parents=True, exist_ok=True)
+
+    (sequence_dir / "iphone" / "frames.mov").write_bytes(b"")
+    (sequence_dir / "iphone" / "frames.csv").write_text("0.0,0\n0.1,1\n0.2,2\n", encoding="utf-8")
+    (sequence_dir / "iphone" / "arkit.csv").write_text(
+        "0.0,1.0,2.0,3.0,1.0,0.0,0.0,0.0\n0.1,1.5,2.5,3.5,1.0,0.0,0.0,0.0\n",
+        encoding="utf-8",
+    )
+    (sequence_dir / "pixel" / "arcore.csv").write_text(
+        "0.0,1.0,2.0,3.0,1.0,0.0,0.0,0.0\n0.1,1.4,2.3,3.3,1.0,0.0,0.0,0.0\n",
+        encoding="utf-8",
+    )
+    (sequence_dir / "ground-truth" / "poses.csv").write_text(
+        "0.0,1.0,2.0,3.0,1.0,0.0,0.0,0.0\n0.1,1.5,2.5,3.5,1.0,0.0,0.0,0.0\n0.2,2.0,3.0,4.0,1.0,0.0,0.0,0.0\n",
+        encoding="utf-8",
+    )
+    (dataset_root / "calibration" / "iphone-03.yaml").write_text(
+        """
+cameras:
+- camera:
+    image_height: 48
+    image_width: 64
+    type: pinhole
+    intrinsics:
+      data: [100.0, 101.0, 32.0, 24.0]
+    distortion:
+      type: radial-tangential
+      parameters:
+        data: [0.1, 0.01, 0.0, 0.0]
+    T_cam_imu:
+      data:
+      - [1.0, 0.0, 0.0, 0.01]
+      - [0.0, 1.0, 0.0, 0.02]
+      - [0.0, 0.0, 1.0, 0.03]
+      - [0.0, 0.0, 0.0, 1.0]
+""".strip(),
+        encoding="utf-8",
+    )
+    return sequence_dir
+
+
 class FakeStore:
     """Minimal store stand-in for direct page-render tests."""
 
@@ -255,16 +301,7 @@ def _plotly_specs(at: AppTest) -> list[str]:
     return [element.proto.spec for element in at.main if getattr(element, "type", None) == "plotly_chart"]
 
 
-def _require_working_evo() -> None:
-    pytest.importorskip("evo")
-    try:
-        from evo.common_ape_rpe import ape  # noqa: F401
-    except ImportError:
-        pytest.skip("Installed `evo` does not expose `evo.common_ape_rpe.ape` in this environment.")
-
-
-def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> None:
-    _require_working_evo()
+def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> None:
     path_config = _build_path_config(tmp_path)
     service = TrajectoryEvaluationService(path_config)
 
@@ -307,23 +344,60 @@ def test_run_app_defaults_to_record3d_page(tmp_path: Path, monkeypatch: pytest.M
 def test_render_metrics_page_entry_shows_metrics_content(
     tmp_path: Path,
 ) -> None:
-    _require_working_evo()
-    path_config = _build_path_config(tmp_path)
-    service = TrajectoryEvaluationService(path_config)
-    selection = service.resolve_selection(
-        dataset=DatasetId.ADVIO,
-        sequence_slug="advio-15",
-        run_root=service.discover_runs(DatasetId.ADVIO, "advio-15")[0].artifact_root,
-    )
-    assert selection is not None
-    result = service.compute_evaluation(selection=selection, controls=EvaluationControls())
+    def _render_metrics_page_entry_script(root_path: str) -> None:
+        from pathlib import Path
+        from types import SimpleNamespace
 
-    def _render_metrics_page_entry_script() -> None:
+        from prml_vslam.app import bootstrap
+        from prml_vslam.app.models import AppState
+        from prml_vslam.datasets.interfaces import DatasetId
+        from prml_vslam.eval import TrajectoryEvaluationService
+        from prml_vslam.eval.interfaces import EvaluationControls
+        from prml_vslam.utils.path_config import PathConfig
+
+        def _write_tum(path: Path, rows: list[tuple[float, float, float, float]]) -> None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "\n".join(f"{t:.1f} {x:.3f} {y:.3f} {z:.3f} 0 0 0 1" for t, x, y, z in rows) + "\n",
+                encoding="utf-8",
+            )
+
+        class _Store:
+            def save(self, state: AppState) -> None:
+                self.last_state = state.model_copy(deep=True)
+
+        class _Runtime:
+            def stop(self) -> None:
+                return None
+
+        root = Path(root_path)
+        _write_tum(
+            root / "data" / "advio" / "advio-15" / "ground-truth" / "ground_truth.tum",
+            [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0), (0.2, 2.0, 1.0, 0.0)],
+        )
+        _write_tum(
+            root / "artifacts" / "advio-15" / "vista" / "slam" / "trajectory.tum",
+            [(0.0, 0.0, 0.0, 0.0), (0.1, 1.1, 0.0, 0.0), (0.2, 2.2, 0.9, 0.0)],
+        )
+
+        path_config = PathConfig(
+            root=root,
+            artifacts_dir=root / "artifacts",
+            captures_dir=root / "captures",
+        )
+        service = TrajectoryEvaluationService(path_config)
+        selection = service.resolve_selection(
+            dataset=DatasetId.ADVIO,
+            sequence_slug="advio-15",
+            run_root=service.discover_runs(DatasetId.ADVIO, "advio-15")[0].artifact_root,
+        )
+        assert selection is not None
+        result = service.compute_evaluation(selection=selection, controls=EvaluationControls())
         context = SimpleNamespace(
             path_config=path_config,
             evaluation_service=service,
-            record3d_runtime=FakeRecord3DRuntime(),
-            store=FakeStore(),
+            record3d_runtime=_Runtime(),
+            store=_Store(),
             state=AppState(
                 metrics={
                     "dataset": DatasetId.ADVIO,
@@ -336,7 +410,7 @@ def test_render_metrics_page_entry_shows_metrics_content(
         )
         bootstrap._render_metrics_page_entry(context)
 
-    at = AppTest.from_function(_render_metrics_page_entry_script)
+    at = AppTest.from_function(_render_metrics_page_entry_script, args=(str(tmp_path),))
     at.run()
 
     assert at.title[0].value == "Trajectory Metrics"
@@ -459,6 +533,78 @@ def test_advio_page_renders_summary_and_download_controls(tmp_path: Path) -> Non
     assert "Local Readiness" in specs
     assert "Crowd Density" in specs
     assert "Scene Attributes" in specs
+
+
+def test_advio_page_renders_local_sequence_explorer(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "data" / "advio"
+    _write_advio_local_sequence(dataset_root)
+
+    def _render_advio_page_script(root_path: str) -> None:
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        from prml_vslam.app.models import AppState
+        from prml_vslam.app.pages.advio import render as render_advio_page
+        from prml_vslam.datasets import AdvioDatasetService
+        from prml_vslam.utils import PathConfig
+
+        class _Store:
+            def save(self, state: AppState) -> None:
+                self.last_state = state.model_copy(deep=True)
+
+        context = SimpleNamespace(
+            state=AppState(),
+            store=_Store(),
+            advio_service=AdvioDatasetService(PathConfig(root=Path(root_path))),
+        )
+        render_advio_page(context)
+
+    at = AppTest.from_function(_render_advio_page_script, args=(str(tmp_path),))
+    at.run()
+
+    assert any(item.value == "Sequence Explorer" for item in at.subheader)
+    assert any(selectbox.label == "Local Scene" for selectbox in at.selectbox)
+    specs = "\n".join(_plotly_specs(at))
+    assert "BEV Trajectory Overlay" in specs
+    assert "3D Trajectory Overlay" in specs
+    assert "Translational Speed" in specs
+    assert "Height Profile" in specs
+    assert "Sampling Intervals" in specs
+    assert "Trajectory Cadence" in specs
+
+
+def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "data" / "advio"
+    sequence_dir = dataset_root / "advio-15" / "iphone"
+    sequence_dir.mkdir(parents=True, exist_ok=True)
+    (sequence_dir / "frames.mov").write_bytes(b"")
+    (sequence_dir / "frames.csv").write_text("0.0,0\n0.1,1\n", encoding="utf-8")
+
+    def _render_advio_page_script(root_path: str) -> None:
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        from prml_vslam.app.models import AppState
+        from prml_vslam.app.pages.advio import render as render_advio_page
+        from prml_vslam.datasets import AdvioDatasetService
+        from prml_vslam.utils import PathConfig
+
+        class _Store:
+            def save(self, state: AppState) -> None:
+                self.last_state = state.model_copy(deep=True)
+
+        context = SimpleNamespace(
+            state=AppState(),
+            store=_Store(),
+            advio_service=AdvioDatasetService(PathConfig(root=Path(root_path))),
+        )
+        render_advio_page(context)
+
+    at = AppTest.from_function(_render_advio_page_script, args=(str(tmp_path),))
+    at.run()
+
+    assert any(item.value == "Sequence Explorer" for item in at.subheader)
+    assert any("none are offline-ready yet" in item.value.lower() for item in at.warning)
 
 
 def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:

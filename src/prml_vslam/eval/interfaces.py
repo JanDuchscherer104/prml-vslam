@@ -10,8 +10,8 @@ from jaxtyping import Float
 from pydantic import Field
 
 from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.methods.contracts import MethodId
-from prml_vslam.utils import BaseConfig
+from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.utils import BaseConfig, BaseData
 
 
 class PoseRelationId(StrEnum):
@@ -42,7 +42,7 @@ class EvaluationControls(BaseConfig):
     max_diff_s: float = 0.02
 
 
-class MetricStats(BaseConfig):
+class MetricStats(BaseData):
     """Summary metrics reported by `evo`."""
 
     rmse: float
@@ -54,7 +54,7 @@ class MetricStats(BaseConfig):
     sse: float
 
 
-class TrajectorySeries(BaseConfig):
+class TrajectorySeries(BaseData):
     """One trajectory rendered in the overlay figure."""
 
     name: str
@@ -62,14 +62,14 @@ class TrajectorySeries(BaseConfig):
     timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
 
 
-class ErrorSeries(BaseConfig):
+class ErrorSeries(BaseData):
     """Scalar `evo` error profile rendered as a Plotly line chart."""
 
     timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
     values: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
 
 
-class EvaluationArtifact(BaseConfig):
+class EvaluationArtifact(BaseData):
     """Loaded or freshly computed persisted `evo` result."""
 
     path: Path
@@ -83,7 +83,7 @@ class EvaluationArtifact(BaseConfig):
     error_series: ErrorSeries | None = None
 
 
-class DiscoveredRun(BaseConfig):
+class DiscoveredRun(BaseData):
     """One benchmark run discovered under the configured artifacts root."""
 
     artifact_root: Path
@@ -99,7 +99,7 @@ class DiscoveredRun(BaseConfig):
     """Compact user-facing label for selection widgets."""
 
 
-class SelectionSnapshot(BaseConfig):
+class SelectionSnapshot(BaseData):
     """Resolved dataset-selection snapshot for one metrics render."""
 
     dataset: DatasetId

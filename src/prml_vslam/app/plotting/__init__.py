@@ -8,13 +8,27 @@ from .advio import (
 )
 from .metrics import build_error_figure, build_trajectory_figure
 from .record3d import build_live_trajectory_figure
+from .trajectories import (
+    build_3d_trajectory_figure,
+    build_bev_trajectory_figure,
+    build_height_profile_figure,
+    build_sample_interval_figure,
+    build_speed_profile_figure,
+    trajectory_length_m,
+)
 
 __all__ = [
     "build_crowd_density_figure",
     "build_error_figure",
+    "build_3d_trajectory_figure",
+    "build_bev_trajectory_figure",
+    "build_height_profile_figure",
     "build_live_trajectory_figure",
     "build_local_readiness_figure",
+    "build_sample_interval_figure",
     "build_scene_attribute_figure",
     "build_scene_mix_figure",
+    "build_speed_profile_figure",
     "build_trajectory_figure",
+    "trajectory_length_m",
 ]

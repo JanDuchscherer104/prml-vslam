@@ -8,10 +8,10 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import ConfigDict, Field
 
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseData
 
 
-class PinholeCameraIntrinsics(BaseConfig):
+class PinholeCameraIntrinsics(BaseData):
     """Pinhole camera intrinsics and optional distortion metadata."""
 
     width_px: int = Field(gt=0)
@@ -35,7 +35,7 @@ class PinholeCameraIntrinsics(BaseConfig):
         )
 
 
-class CameraPose(BaseConfig):
+class CameraPose(BaseData):
     """One camera pose in world coordinates."""
 
     qx: float
@@ -47,7 +47,7 @@ class CameraPose(BaseConfig):
     tz: float
 
 
-class VideoFramePacket(BaseConfig):
+class VideoFramePacket(BaseData):
     """One decoded RGB frame emitted by a video-backed source."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

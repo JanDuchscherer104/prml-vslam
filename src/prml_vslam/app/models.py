@@ -11,7 +11,7 @@ from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval.interfaces import EvaluationControls
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseData
 
 
 class AppPageId(StrEnum):
@@ -31,7 +31,7 @@ class AppPageId(StrEnum):
         }[self]
 
 
-class AdvioPageState(BaseConfig):
+class AdvioPageState(BaseData):
     """Persisted selector state for the ADVIO dataset-management page."""
 
     selected_sequence_ids: list[int] = Field(default_factory=list)
@@ -46,8 +46,11 @@ class AdvioPageState(BaseConfig):
     overwrite_existing: bool = False
     """Whether download actions should overwrite local archives and extracted files."""
 
+    explorer_sequence_id: int | None = None
+    """Selected local sequence shown in the explorer section."""
 
-class MetricsPageState(BaseConfig):
+
+class MetricsPageState(BaseData):
     """Persisted selector state for the metrics page."""
 
     dataset: DatasetId = DatasetId.ADVIO
@@ -66,7 +69,7 @@ class MetricsPageState(BaseConfig):
     """Most recently loaded or computed persisted result path."""
 
 
-class Record3DPageState(BaseConfig):
+class Record3DPageState(BaseData):
     """Persisted selector state for the Record3D live-stream page."""
 
     transport: Record3DTransportId = Record3DTransportId.USB
@@ -82,7 +85,7 @@ class Record3DPageState(BaseConfig):
     """Whether the current browser session expects a live stream to be active."""
 
 
-class AppState(BaseConfig):
+class AppState(BaseData):
     """Fully typed app state persisted in Streamlit session storage."""
 
     record3d: Record3DPageState = Field(default_factory=Record3DPageState)

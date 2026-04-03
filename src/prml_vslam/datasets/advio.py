@@ -30,7 +30,7 @@ from prml_vslam.datasets.interfaces import TimedPoseTrajectory
 from prml_vslam.io.cv2_producer import Cv2FrameProducer, Cv2ProducerConfig, Cv2ReplayMode
 from prml_vslam.io.interfaces import CameraPose, PinholeCameraIntrinsics, VideoPacketStream
 from prml_vslam.pipeline.contracts import SequenceManifest
-from prml_vslam.utils import BaseConfig, Console, PathConfig
+from prml_vslam.utils import BaseConfig, BaseData, Console, PathConfig
 from prml_vslam.utils.geometry import SE3Pose, write_tum_trajectory
 
 ADVIO_SEQUENCE_COUNT = 23
@@ -49,23 +49,17 @@ _CALIBRATION_BY_SEQUENCE = {
     range(20, 24): "iphone-04.yaml",
 }
 _IPHONE_VIDEO_FILES = ("frames.mov", "frames.csv")
-_IPHONE_SENSOR_FILES = (
-    "platform-location.csv",
-    "accelerometer.csv",
-    "gyroscope.csv",
-    "magnetometer.csv",
-    "barometer.csv",
+_IPHONE_SENSOR_FILE_GROUPS = (
+    ("platform-location.csv", "platform-locations.csv"),
+    ("accelerometer.csv",),
+    ("gyroscope.csv", "gyro.csv"),
+    ("magnetometer.csv",),
+    ("barometer.csv",),
 )
 _IPHONE_ARKIT_FILES = ("arkit.csv",)
-_GROUND_TRUTH_FILES = ("poses.csv",)
+_GROUND_TRUTH_FILES = _POSE_FILE_NAMES
 _PIXEL_ARCORE_FILES = ("arcore.csv",)
-_TANGO_REQUIRED_FILES = (
-    "frames.mov",
-    "frames.csv",
-    "raw.csv",
-    "area-learning.csv",
-    "point-cloud.csv",
-)
+_TANGO_REQUIRED_FILES = ("frames.mov", "frames.csv", "raw.csv", "area-learning.csv")
 
 
 class AdvioPoseSource(StrEnum):
@@ -165,7 +159,7 @@ class AdvioDownloadPreset(StrEnum):
         }[self]
 
 
-class AdvioUpstreamMetadata(BaseConfig):
+class AdvioUpstreamMetadata(BaseData):
     """Pinned upstream metadata for repo-owned ADVIO downloads."""
 
     repo_url: str
@@ -184,7 +178,7 @@ class AdvioUpstreamMetadata(BaseConfig):
     """Base URL for raw calibration YAML files in the upstream repository."""
 
 
-class AdvioSceneMetadata(BaseConfig):
+class AdvioSceneMetadata(BaseData):
     """Committed metadata for one downloadable ADVIO scene archive."""
 
     sequence_id: int
@@ -235,7 +229,7 @@ class AdvioSceneMetadata(BaseConfig):
         return f"{self.sequence_slug} · {self.venue} {self.dataset_code}"
 
 
-class AdvioCatalog(BaseConfig):
+class AdvioCatalog(BaseData):
     """Repo-owned catalog metadata for the official ADVIO release."""
 
     dataset_id: str
@@ -290,7 +284,7 @@ class AdvioDownloadRequest(BaseConfig):
         return self.preset.modalities
 
 
-class AdvioDownloadResult(BaseConfig):
+class AdvioDownloadResult(BaseData):
     """Summary of one explicit ADVIO download action."""
 
     sequence_ids: list[int]
@@ -309,7 +303,7 @@ class AdvioDownloadResult(BaseConfig):
     """Extracted or downloaded filesystem paths written during the action."""
 
 
-class AdvioLocalSceneStatus(BaseConfig):
+class AdvioLocalSceneStatus(BaseData):
     """Local availability summary for one ADVIO scene."""
 
     scene: AdvioSceneMetadata
@@ -334,7 +328,7 @@ class AdvioLocalSceneStatus(BaseConfig):
     """Whether the full modality bundle is available locally."""
 
 
-class AdvioDatasetSummary(BaseConfig):
+class AdvioDatasetSummary(BaseData):
     """High-level summary of committed and local ADVIO coverage."""
 
     total_scene_count: int
@@ -392,7 +386,7 @@ class AdvioSequenceConfig(BaseConfig):
         return value
 
 
-class AdvioSequencePaths(BaseConfig):
+class AdvioSequencePaths(BaseData):
     """Resolved filesystem paths for one local ADVIO sequence."""
 
     config: AdvioSequenceConfig
@@ -454,7 +448,7 @@ class AdvioSequencePaths(BaseConfig):
         return paths
 
 
-class AdvioCalibration(BaseConfig):
+class AdvioCalibration(BaseData):
     """Parsed ADVIO camera calibration."""
 
     calibration_path: Path
@@ -467,7 +461,7 @@ class AdvioCalibration(BaseConfig):
     """Rigid transform from camera to IMU coordinates as a 4x4 matrix."""
 
 
-class AdvioOfflineSample(BaseConfig):
+class AdvioOfflineSample(BaseData):
     """Minimal offline representation of one ADVIO sequence."""
 
     model_config = {"arbitrary_types_allowed": True}
@@ -504,7 +498,7 @@ class AdvioOfflineSample(BaseConfig):
         return float((self.frame_timestamps_ns[-1] - self.frame_timestamps_ns[0]) / 1e9)
 
 
-class AdvioSequence(BaseConfig):
+class AdvioSequence(BaseData):
     """High-level adapter around one local ADVIO sequence."""
 
     config: AdvioSequenceConfig
@@ -669,6 +663,19 @@ class AdvioDatasetService:
             )
         return statuses
 
+    def list_local_sequence_ids(self) -> list[int]:
+        """Return local ADVIO sequence ids that are ready for offline exploration."""
+        return [status.scene.sequence_id for status in self.local_scene_statuses() if status.offline_ready]
+
+    def load_local_sample(self, sequence_id: int) -> AdvioOfflineSample:
+        """Load one local ADVIO sample by sequence id."""
+        return AdvioSequence(
+            config=AdvioSequenceConfig(
+                dataset_root=self.dataset_root,
+                sequence_id=sequence_id,
+            )
+        ).load_offline_sample()
+
     def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
         """Download selected ADVIO scenes and extract the requested modalities."""
         dataset_root = self.path_config.resolve_dataset_dir(self.catalog.dataset_id, create=True)
@@ -744,17 +751,17 @@ class AdvioDatasetService:
         if sequence_dir is None:
             return local_modalities
 
-        if _files_exist(sequence_dir / "ground-truth", _GROUND_TRUTH_FILES):
+        if _resolve_optional_named_path(sequence_dir / "ground-truth", _GROUND_TRUTH_FILES) is not None:
             local_modalities.append(AdvioModality.GROUND_TRUTH)
         if _files_exist(sequence_dir / "iphone", _IPHONE_VIDEO_FILES):
             local_modalities.append(AdvioModality.IPHONE_VIDEO)
-        if _files_exist(sequence_dir / "iphone", _IPHONE_SENSOR_FILES):
+        if _files_exist_with_alternatives(sequence_dir / "iphone", _IPHONE_SENSOR_FILE_GROUPS):
             local_modalities.append(AdvioModality.IPHONE_SENSORS)
         if _files_exist(sequence_dir / "iphone", _IPHONE_ARKIT_FILES):
             local_modalities.append(AdvioModality.IPHONE_ARKIT)
         if _files_exist(sequence_dir / "pixel", _PIXEL_ARCORE_FILES):
             local_modalities.append(AdvioModality.PIXEL_ARCORE)
-        if _files_exist(sequence_dir / "tango", _TANGO_REQUIRED_FILES):
+        if _tango_bundle_exists(sequence_dir / "tango"):
             local_modalities.append(AdvioModality.TANGO)
         return local_modalities
 
@@ -808,6 +815,8 @@ class AdvioDatasetService:
         matched_members = 0
         with zipfile.ZipFile(archive_path) as archive:
             for member in archive.infolist():
+                if member.is_dir():
+                    continue
                 normalized = _normalize_archive_member(member.filename)
                 if normalized is None:
                     continue
@@ -821,7 +830,7 @@ class AdvioDatasetService:
                 if target_path.exists() and not overwrite:
                     written_paths.append(target_path)
                     continue
-                target_path.parent.mkdir(parents=True, exist_ok=True)
+                _ensure_directory_parent(target_path)
                 with archive.open(member, "r") as source, target_path.open("wb") as sink:
                     sink.write(source.read())
                 written_paths.append(target_path)
@@ -1022,12 +1031,42 @@ def _files_exist(root: Path, names: tuple[str, ...]) -> bool:
     return all((root / name).exists() for name in names)
 
 
+def _files_exist_with_alternatives(root: Path, groups: tuple[tuple[str, ...], ...]) -> bool:
+    return all(any((root / name).exists() for name in group) for group in groups)
+
+
+def _tango_bundle_exists(root: Path) -> bool:
+    if not _files_exist(root, _TANGO_REQUIRED_FILES):
+        return False
+    return any(root.glob("point-cloud*.csv"))
+
+
 def _modalities_present(
     local_modalities: list[AdvioModality],
     required_modalities: tuple[AdvioModality, ...],
 ) -> bool:
     available = set(local_modalities)
     return all(modality in available for modality in required_modalities)
+
+
+def _ensure_directory_parent(target_path: Path) -> None:
+    for ancestor in reversed(target_path.parent.parents):
+        if ancestor.exists() and ancestor.is_file():
+            if ancestor.stat().st_size == 0:
+                ancestor.unlink()
+            else:
+                msg = f"Expected directory path but found file at {ancestor}. Remove it and retry the ADVIO download."
+                raise ValueError(msg)
+    if target_path.parent.exists() and target_path.parent.is_file():
+        if target_path.parent.stat().st_size == 0:
+            target_path.parent.unlink()
+        else:
+            msg = (
+                f"Expected directory path but found file at {target_path.parent}. "
+                "Remove it and retry the ADVIO download."
+            )
+            raise ValueError(msg)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _normalize_archive_member(member_name: str) -> tuple[str, ...] | None:
@@ -1052,16 +1091,17 @@ def _member_matches_modalities(relative_path: PurePosixPath, modalities: tuple[A
     parts = relative_path.parts
     if not parts:
         return False
+    iphone_sensor_names = {name for group in _IPHONE_SENSOR_FILE_GROUPS for name in group}
     for modality in modalities:
         match modality:
             case AdvioModality.GROUND_TRUTH:
-                if parts[0] == "ground-truth":
+                if parts[:1] == ("ground-truth",) and parts[1:] in {(name,) for name in _GROUND_TRUTH_FILES}:
                     return True
             case AdvioModality.IPHONE_VIDEO:
                 if parts[:1] == ("iphone",) and parts[1:] in {(name,) for name in _IPHONE_VIDEO_FILES}:
                     return True
             case AdvioModality.IPHONE_SENSORS:
-                if parts[:1] == ("iphone",) and parts[1:] in {(name,) for name in _IPHONE_SENSOR_FILES}:
+                if parts[:1] == ("iphone",) and parts[1:] in {(name,) for name in iphone_sensor_names}:
                     return True
             case AdvioModality.IPHONE_ARKIT:
                 if parts == ("iphone", "arkit.csv"):
