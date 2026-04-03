@@ -9,8 +9,8 @@ from typing import Literal
 from pydantic import Field
 
 from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.methods.contracts import MethodId
-from prml_vslam.utils import BaseConfig
+from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.utils import BaseConfig, BaseData
 
 
 class PipelineMode(StrEnum):
@@ -140,7 +140,7 @@ class RunPlanStageId(str, Enum):
     SUMMARY = "summary"
 
 
-class RunPlanStage(BaseConfig):
+class RunPlanStage(BaseData):
     """One typed stage in a benchmark run plan."""
 
     id: RunPlanStageId
@@ -156,7 +156,7 @@ class RunPlanStage(BaseConfig):
     """Expected artifact paths for the stage."""
 
 
-class RunPlan(BaseConfig):
+class RunPlan(BaseData):
     """Planner output returned to the CLI or UI layer."""
 
     run_id: str
@@ -178,7 +178,7 @@ class RunPlan(BaseConfig):
     """Ordered execution stages for the benchmark run."""
 
 
-class ArtifactRef(BaseConfig):
+class ArtifactRef(BaseData):
     """Reference to one materialized artifact owned by the repository."""
 
     path: Path
@@ -191,7 +191,7 @@ class ArtifactRef(BaseConfig):
     """Content or provenance fingerprint for cache decisions."""
 
 
-class SequenceManifest(BaseConfig):
+class SequenceManifest(BaseData):
     """Normalized artifact boundary between input ingestion and benchmark execution."""
 
     sequence_id: str
@@ -216,7 +216,7 @@ class SequenceManifest(BaseConfig):
     """Normalized ARCore baseline trajectory in TUM format when available."""
 
 
-class TrackingArtifacts(BaseConfig):
+class TrackingArtifacts(BaseData):
     """Materialized outputs produced by the tracking stage."""
 
     trajectory_tum: ArtifactRef
@@ -229,35 +229,35 @@ class TrackingArtifacts(BaseConfig):
     """Optional preview/event log produced during live tracking."""
 
 
-class DenseArtifacts(BaseConfig):
+class DenseArtifacts(BaseData):
     """Materialized outputs produced by the dense-mapping stage."""
 
     dense_points_ply: ArtifactRef
     """Normalized dense point cloud artifact."""
 
 
-class ReferenceArtifacts(BaseConfig):
+class ReferenceArtifacts(BaseData):
     """Materialized outputs produced by the reference-reconstruction stage."""
 
     reference_cloud_ply: ArtifactRef
     """Normalized reference cloud artifact."""
 
 
-class TrajectoryMetrics(BaseConfig):
+class TrajectoryMetrics(BaseData):
     """Persisted trajectory-metric artifact bundle."""
 
     metrics_json: ArtifactRef
     """Serialized trajectory metric results."""
 
 
-class CloudMetrics(BaseConfig):
+class CloudMetrics(BaseData):
     """Persisted cloud-metric artifact bundle."""
 
     metrics_json: ArtifactRef
     """Serialized cloud comparison results."""
 
 
-class EfficiencyMetrics(BaseConfig):
+class EfficiencyMetrics(BaseData):
     """Persisted efficiency-metric artifact bundle."""
 
     metrics_json: ArtifactRef
@@ -272,7 +272,7 @@ class StageExecutionStatus(StrEnum):
     FAILED = "failed"
 
 
-class StageManifest(BaseConfig):
+class StageManifest(BaseData):
     """Cache and provenance record for one executed stage."""
 
     stage_id: RunPlanStageId
@@ -291,7 +291,7 @@ class StageManifest(BaseConfig):
     """Whether the stage was reused, executed, or failed."""
 
 
-class RunSummary(BaseConfig):
+class RunSummary(BaseData):
     """Final persisted outcome for one benchmark run."""
 
     run_id: str
@@ -304,7 +304,7 @@ class RunSummary(BaseConfig):
     """Final status per stage."""
 
 
-class FramePacket(BaseConfig):
+class FramePacket(BaseData):
     """Lightweight runtime frame unit shared by replay and live ingress."""
 
     seq: int

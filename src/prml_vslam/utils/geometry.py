@@ -9,13 +9,15 @@ from typing import Self
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import ConfigDict
+
+# TODO: import as
 from pytransform3d.rotations import matrix_from_quaternion, quaternion_from_matrix
 from pytransform3d.transformations import transform_from
 
-from .base_config import BaseConfig
+from .base_config import BaseData
 
 
-class ImageSize(BaseConfig):
+class ImageSize(BaseData):
     """Integer image resolution in pixels."""
 
     model_config = ConfigDict(frozen=True)
@@ -49,7 +51,7 @@ class ImageSize(BaseConfig):
         raise TypeError("Image size must be encoded as {'width': int, 'height': int} or [width, height].")
 
 
-class CameraIntrinsics(BaseConfig):
+class CameraIntrinsics(BaseData):
     """Pinhole camera intrinsics without distortion parameters."""
 
     model_config = ConfigDict(frozen=True)
@@ -132,7 +134,7 @@ class CameraIntrinsics(BaseConfig):
         return cls.from_matrix(matrix)
 
 
-class SE3Pose(BaseConfig):
+class SE3Pose(BaseData):
     """Rigid camera pose with camera-to-world semantics.
 
     The stored transform represents ``camera_in_world``. Translation is the

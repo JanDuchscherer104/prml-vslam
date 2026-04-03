@@ -1,4 +1,4 @@
-"""Evaluation utilities for trajectories, reconstructions, and efficiency."""
+"""Mock trajectory-evaluation surfaces used by the app and tests."""
 
 from .interfaces import (
     DiscoveredRun,

@@ -1,13 +1,12 @@
-"""Evaluation discovery and persisted `evo` result services."""
+"""Mock trajectory evaluation services for the app and tests."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
-from prml_vslam.datasets.advio import AdvioSequence, AdvioSequenceConfig, list_advio_sequence_ids
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval.interfaces import (
     DiscoveredRun,
@@ -15,17 +14,15 @@ from prml_vslam.eval.interfaces import (
     EvaluationArtifact,
     EvaluationControls,
     MetricStats,
-    PoseRelationId,
     SelectionSnapshot,
     TrajectorySeries,
 )
-from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.utils.path_config import PathConfig
 
 
-# TODO: all services must be derived from a common base class
 class TrajectoryEvaluationService:
-    """Discover benchmark artifacts and evaluate trajectory pairs with `evo`."""
+    """Discover runs and persist a lightweight local trajectory-delta mock."""
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
@@ -36,24 +33,26 @@ class TrajectoryEvaluationService:
             case DatasetId.ADVIO:
                 return self.path_config.resolve_dataset_dir(dataset.value)
             case _:
-                msg = f"Unsupported dataset: {dataset!r}"
-                raise NotImplementedError(msg)
+                raise NotImplementedError(f"Unsupported dataset: {dataset!r}")
 
     def list_sequences(self, dataset: DatasetId) -> list[str]:
         """List locally available sequence slugs for the selected dataset."""
-        match dataset:
-            case DatasetId.ADVIO:
-                return [
-                    f"advio-{sequence_id:02d}" for sequence_id in list_advio_sequence_ids(self.dataset_root(dataset))
-                ]
-            case _:
-                msg = f"Unsupported dataset: {dataset!r}"
-                raise NotImplementedError(msg)
+        root = self.dataset_root(dataset)
+        sequence_names = {
+            path.name
+            for candidate_root in (root, root / "data")
+            if candidate_root.exists()
+            for path in candidate_root.iterdir()
+            if path.is_dir() and path.name.startswith(f"{dataset.value}-")
+        }
+        return sorted(sequence_names)
 
     def discover_runs(self, dataset: DatasetId, sequence_slug: str | None) -> list[DiscoveredRun]:
         """Return all runs under the artifacts root that match `sequence_slug`."""
+        del dataset
         if sequence_slug is None:
             return []
+
         runs: list[DiscoveredRun] = []
         for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum")):
             run_root = trajectory_path.parent.parent
@@ -66,11 +65,7 @@ class TrajectoryEvaluationService:
                     artifact_root=run_root,
                     estimate_path=trajectory_path,
                     method=method,
-                    label=self._format_run_label(
-                        sequence_slug=sequence_slug,
-                        relative_parts=relative_parts,
-                        method=method,
-                    ),
+                    label=self._format_run_label(sequence_slug, relative_parts, method),
                 )
             )
         return runs
@@ -98,13 +93,16 @@ class TrajectoryEvaluationService:
         )
 
     def reference_path(self, *, dataset: DatasetId, sequence_slug: str) -> Path | None:
-        """Return the repo-owned TUM reference trajectory for the selection when present."""
-        match dataset:
-            case DatasetId.ADVIO:
-                return self._reference_path_for_advio(sequence_slug)
-            case _:
-                msg = f"Unsupported dataset: {dataset!r}"
-                raise NotImplementedError(msg)
+        """Return the local TUM reference trajectory when it already exists."""
+        sequence_root = self.dataset_root(dataset) / sequence_slug
+        for candidate in (
+            sequence_root / "ground-truth" / "ground_truth.tum",
+            sequence_root / "ground_truth.tum",
+            sequence_root / "evaluation" / "ground_truth.tum",
+        ):
+            if candidate.exists():
+                return candidate
+        return None
 
     def load_evaluation(
         self,
@@ -112,20 +110,16 @@ class TrajectoryEvaluationService:
         selection: SelectionSnapshot,
         controls: EvaluationControls,
     ) -> EvaluationArtifact | None:
-        """Load the persisted native `evo` result for the selected controls when present."""
-        _, _, file_interface, _ = _load_evo_modules()
+        """Load a persisted local mock evaluation when it exists."""
         result_path = self.result_path(selection.run.artifact_root, controls)
         if not result_path.exists() or selection.reference_path is None:
             return None
-        result = file_interface.load_res_file(result_path, load_trajectories=True)
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
         return self._build_evaluation_artifact(
             result_path=result_path,
             selection=selection,
             controls=controls,
-            info=result.info,
-            stats=result.stats,
-            np_arrays=result.np_arrays,
-            trajectories=result.trajectories,
+            payload=payload,
         )
 
     def compute_evaluation(
@@ -134,65 +128,56 @@ class TrajectoryEvaluationService:
         selection: SelectionSnapshot,
         controls: EvaluationControls,
     ) -> EvaluationArtifact:
-        """Compute APE explicitly with `evo`, persist it, and return the loaded result."""
-        ape, sync, file_interface, _ = _load_evo_modules()
+        """Compute and persist a simple local trajectory-delta mock."""
         if selection.reference_path is None:
-            msg = "The selected dataset slice is missing a TUM reference trajectory."
-            raise FileNotFoundError(msg)
-        reference = file_interface.read_tum_trajectory_file(selection.reference_path)
-        estimate = file_interface.read_tum_trajectory_file(selection.run.estimate_path)
-        associated_ref, associated_est = sync.associate_trajectories(
-            reference,
-            estimate,
-            max_diff=controls.max_diff_s,
-        )
-        result = ape(
-            associated_ref,
-            associated_est,
-            self._to_evo_pose_relation(controls.pose_relation),
-            align=controls.align,
-            correct_scale=controls.correct_scale,
+            raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
+
+        reference_timestamps_s, reference_positions_xyz = _load_tum_trajectory(selection.reference_path)
+        estimate_timestamps_s, estimate_positions_xyz = _load_tum_trajectory(selection.run.estimate_path)
+        matched_pairs = min(len(reference_timestamps_s), len(estimate_timestamps_s))
+        if matched_pairs == 0:
+            raise ValueError("Mock evaluation requires at least one trajectory row in both files.")
+
+        error_values = np.linalg.norm(
+            estimate_positions_xyz[:matched_pairs] - reference_positions_xyz[:matched_pairs],
+            axis=1,
         )
         result_path = self.result_path(selection.run.artifact_root, controls)
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        file_interface.save_res_file(result_path, result, confirm_overwrite=False)
-        loaded = self.load_evaluation(selection=selection, controls=controls)
-        if loaded is None:
-            msg = f"Expected persisted evo result at '{result_path}', but it could not be loaded."
-            raise FileNotFoundError(msg)
-        return loaded
+        payload = {
+            "title": "Mock Trajectory Error",
+            "matched_pairs": matched_pairs,
+            "stats": _stats_payload(error_values),
+            "error_timestamps_s": reference_timestamps_s[:matched_pairs].tolist(),
+            "error_values": error_values.tolist(),
+        }
+        result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return self._build_evaluation_artifact(
+            result_path=result_path,
+            selection=selection,
+            controls=controls,
+            payload=payload,
+        )
 
     @staticmethod
     def result_path(run_root: Path, controls: EvaluationControls) -> Path:
-        """Return the deterministic persisted `evo` result path for the controls."""
+        """Return the deterministic persisted mock-result path for the controls."""
         align_flag = "align" if controls.align else "no-align"
         scale_flag = "scale" if controls.correct_scale else "no-scale"
         diff_token = str(controls.max_diff_s).replace(".", "p")
-        filename = f"evo_ape__{controls.pose_relation.value}__{align_flag}__{scale_flag}__diff-{diff_token}.zip"
+        filename = f"mock_metrics__{controls.pose_relation.value}__{align_flag}__{scale_flag}__diff-{diff_token}.json"
         return run_root / "evaluation" / filename
 
     @staticmethod
-    def _to_evo_pose_relation(pose_relation: PoseRelationId) -> object:
-        _, _, _, pose_relation_enum = _load_evo_modules()
-        return {
-            PoseRelationId.TRANSLATION_PART: pose_relation_enum.translation_part,
-            PoseRelationId.FULL_TRANSFORMATION: pose_relation_enum.full_transformation,
-            PoseRelationId.ROTATION_ANGLE_DEG: pose_relation_enum.rotation_angle_deg,
-            PoseRelationId.ROTATION_ANGLE_RAD: pose_relation_enum.rotation_angle_rad,
-        }[pose_relation]
-
-    @staticmethod
     def _infer_method(relative_parts: tuple[str, ...]) -> MethodId | None:
-        method_lookup = {method.artifact_slug: method for method in MethodId}
         for part in reversed(relative_parts):
-            method = method_lookup.get(part)
-            if method is not None:
-                return method
+            for method in MethodId:
+                if part == method.artifact_slug:
+                    return method
         return None
 
     @staticmethod
     def _format_run_label(
-        *,
         sequence_slug: str,
         relative_parts: tuple[str, ...],
         method: MethodId | None,
@@ -202,35 +187,7 @@ class TrajectoryEvaluationService:
             hidden_tokens.add(method.artifact_slug)
         visible_parts = [part for part in relative_parts if part not in hidden_tokens]
         method_label = method.display_name if method is not None else relative_parts[-1]
-        if visible_parts:
-            return f"{method_label} · {' / '.join(visible_parts)}"
-        return method_label
-
-    def _reference_path_for_advio(self, sequence_slug: str) -> Path | None:
-        dataset_root = self.dataset_root(DatasetId.ADVIO)
-        sequence_root = dataset_root / sequence_slug
-        candidates = (
-            sequence_root / "ground-truth" / "ground_truth.tum",
-            sequence_root / "ground_truth.tum",
-            sequence_root / "evaluation" / "ground_truth.tum",
-        )
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-
-        try:
-            sequence_id = self._parse_advio_sequence_id(sequence_slug)
-            sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=dataset_root, sequence_id=sequence_id))
-            return sequence.write_ground_truth_tum(sequence.paths.sequence_dir / "evaluation" / "ground_truth.tum")
-        except (FileNotFoundError, ValueError):
-            return None
-
-    @staticmethod
-    def _parse_advio_sequence_id(sequence_slug: str) -> int:
-        prefix = "advio-"
-        if not sequence_slug.startswith(prefix):
-            raise ValueError(f"Unsupported ADVIO sequence slug: {sequence_slug}")
-        return int(sequence_slug.removeprefix(prefix))
+        return method_label if not visible_parts else f"{method_label} · {' / '.join(visible_parts)}"
 
     @staticmethod
     def _build_evaluation_artifact(
@@ -238,72 +195,62 @@ class TrajectoryEvaluationService:
         result_path: Path,
         selection: SelectionSnapshot,
         controls: EvaluationControls,
-        info: dict[str, object],
-        stats: dict[str, object],
-        np_arrays: dict[str, np.ndarray],
-        trajectories: dict[str, object],
+        payload: dict[str, object],
     ) -> EvaluationArtifact:
-        reference_trajectory = trajectories.get("reference")
-        estimate_trajectory = trajectories.get("estimate")
-        trajectory_series: list[TrajectorySeries] = []
-        matched_pairs = 0
-
-        for name, trajectory in (("Reference", reference_trajectory), ("Estimate", estimate_trajectory)):
-            if trajectory is None:
-                continue
-            positions_xyz = np.asarray(trajectory.positions_xyz, dtype=np.float64)
-            timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
-            matched_pairs = max(matched_pairs, int(len(timestamps_s)))
-            trajectory_series.append(
-                TrajectorySeries(
-                    name=name,
-                    positions_xyz=positions_xyz,
-                    timestamps_s=timestamps_s,
-                )
-            )
-
-        error_array = np.asarray(np_arrays.get("error_array", np.array([], dtype=np.float64)), dtype=np.float64)
-        timestamp_array = np.asarray(np_arrays.get("timestamps", np.array([], dtype=np.float64)), dtype=np.float64)
-        error_series = None
-        if error_array.size and timestamp_array.size and error_array.size == timestamp_array.size:
-            error_series = ErrorSeries(
-                timestamps_s=timestamp_array,
-                values=error_array,
-            )
-
+        reference_timestamps_s, reference_positions_xyz = _load_tum_trajectory(selection.reference_path or Path())
+        estimate_timestamps_s, estimate_positions_xyz = _load_tum_trajectory(selection.run.estimate_path)
         return EvaluationArtifact(
             path=result_path,
             controls=controls,
-            title=str(info.get("title", "Absolute Pose Error")),
-            matched_pairs=matched_pairs,
-            stats=MetricStats(
-                rmse=float(stats["rmse"]),
-                mean=float(stats["mean"]),
-                median=float(stats["median"]),
-                std=float(stats["std"]),
-                min=float(stats["min"]),
-                max=float(stats["max"]),
-                sse=float(stats["sse"]),
-            ),
+            title=str(payload["title"]),
+            matched_pairs=int(payload["matched_pairs"]),
+            stats=MetricStats.model_validate(payload["stats"]),
             reference_path=selection.reference_path or Path(),
             estimate_path=selection.run.estimate_path,
-            trajectories=trajectory_series,
-            error_series=error_series,
+            trajectories=[
+                TrajectorySeries(
+                    name="Reference",
+                    positions_xyz=reference_positions_xyz,
+                    timestamps_s=reference_timestamps_s,
+                ),
+                TrajectorySeries(
+                    name="Estimate",
+                    positions_xyz=estimate_positions_xyz,
+                    timestamps_s=estimate_timestamps_s,
+                ),
+            ],
+            error_series=ErrorSeries(
+                timestamps_s=np.asarray(payload["error_timestamps_s"], dtype=np.float64),
+                values=np.asarray(payload["error_values"], dtype=np.float64),
+            ),
         )
 
 
-def _load_evo_modules() -> tuple[Any, Any, Any, Any]:
-    try:
-        from evo.common_ape_rpe import ape
-        from evo.core import sync
-        from evo.core.metrics import PoseRelation
-        from evo.tools import file_interface
-    except (ImportError, ModuleNotFoundError) as exc:
-        raise RuntimeError(
-            "The optional `evo` dependency is required for trajectory evaluation. Install it with "
-            "`uv sync --extra eval`."
-        ) from exc
-    return ape, sync, file_interface, PoseRelation
+def _load_tum_trajectory(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Load timestamps and XYZ positions from a TUM trajectory file."""
+    rows = [
+        [float(value) for value in line.split()]
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not rows:
+        return np.empty(0, dtype=np.float64), np.empty((0, 3), dtype=np.float64)
+    data = np.asarray(rows, dtype=np.float64)
+    return data[:, 0], data[:, 1:4]
+
+
+def _stats_payload(error_values: np.ndarray) -> dict[str, float]:
+    """Return the persisted scalar summary for one mock trajectory comparison."""
+    squared = np.square(error_values)
+    return {
+        "rmse": float(np.sqrt(np.mean(squared))),
+        "mean": float(np.mean(error_values)),
+        "median": float(np.median(error_values)),
+        "std": float(np.std(error_values)),
+        "min": float(np.min(error_values)),
+        "max": float(np.max(error_values)),
+        "sse": float(np.sum(squared)),
+    }
 
 
 __all__ = ["TrajectoryEvaluationService"]

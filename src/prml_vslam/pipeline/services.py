@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.pipeline.contracts import (
     DatasetSourceSpec,
     LiveSourceSpec,
