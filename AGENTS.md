@@ -34,6 +34,8 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   logical commits when appropriate.
 - Do not use destructive git commands unless explicitly requested. This includes `git restore`,
   `git reset --hard`, and similar commands.
+- Never disable the formatter with inline pragmas; refactor code to satisfy structure and
+  formatting constraints without turning formatting off for a file or block.
 - Prefer existing external tools and libraries over local reimplementation when the repo already
   depends on them.
 - Keep external wrappers thin and fail clearly when a dependency is missing or misconfigured.
