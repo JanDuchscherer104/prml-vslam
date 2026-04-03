@@ -53,8 +53,6 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
             width="stretch",
         )
         transport = selected_transport or page_state.transport
-        handle_record3d_page_action(context, Record3DPageAction(transport=transport))
-        page_state = context.state.record3d
         usb_devices: list[Record3DDevice] = []
         usb_error_message = ""
         if transport is Record3DTransportId.USB:
