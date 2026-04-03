@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import pytest
 
-import prml_vslam.datasets.advio_replay as advio_replay_module
+import prml_vslam.datasets.advio_replay_adapter as advio_replay_module
 from prml_vslam.datasets import (
     AdvioCatalog,
     AdvioDatasetService,
