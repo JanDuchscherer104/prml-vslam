@@ -41,7 +41,7 @@ For each frame, the upstream Python bindings expose:
 
 ### Repo mapping
 
-In this repo, USB frames are normalized into `Record3DFrame` in [record3d.py](/Users/jd/repos/prml-vslam/src/prml_vslam/io/record3d.py):
+In this repo, USB frames are normalized into `Record3DFrame` in [record3d.py](record3d.py):
 
 - `rgb`
 - `depth`
@@ -117,7 +117,7 @@ If pose is required for evaluation or ingestion, the current practical path is U
 ### USB path
 
 - transport: native Python bindings
-- consumer: [record3d.py](/Users/jd/repos/prml-vslam/src/prml_vslam/io/record3d.py)
+- consumer: [record3d.py](record3d.py)
 - output:
   - RGB
   - depth
@@ -129,7 +129,7 @@ If pose is required for evaluation or ingestion, the current practical path is U
 ### Wi-Fi path
 
 - transport: browser WebRTC + HTTP metadata
-- consumer: [record3d_wifi.py](/Users/jd/repos/prml-vslam/src/prml_vslam/io/record3d_wifi.py)
+- consumer: [record3d_wifi.py](record3d_wifi.py)
 - output:
   - composite RGBD video preview
   - decoded RGB preview

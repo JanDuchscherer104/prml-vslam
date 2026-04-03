@@ -9,8 +9,8 @@ surface over repo-owned services in `prml_vslam.io`, `prml_vslam.eval`,
 
 Use this document together with:
 
-- [REQUIREMENTS.md](/Users/jd/repos/prml-vslam/src/prml_vslam/app/REQUIREMENTS.md)
-- [AGENTS.md](/Users/jd/repos/prml-vslam/src/prml_vslam/app/AGENTS.md)
+- [REQUIREMENTS.md](REQUIREMENTS.md)
+- [AGENTS.md](AGENTS.md)
 
 ## Design Goals
 
@@ -121,67 +121,70 @@ sequenceDiagram
 
 ### File-by-file
 
-- [__init__.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/__init__.py)
+- [__init__.py](__init__.py)
   - Public package entrypoint.
   - Re-exports `run_app()` so `streamlit_app.py` stays thin.
 
-- [bootstrap.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/bootstrap.py)
+- [bootstrap.py](bootstrap.py)
   - Builds one typed `AppContext` per rerun.
   - Wires shared services and persisted state together.
   - Registers Streamlit-native top-level navigation and enters the active page.
   - Stops the live Record3D runtime when the user leaves the `Record3D` page.
 
-- [models.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/models.py)
+- [models.py](models.py)
   - Defines app-owned page and session-state models only.
   - Keeps persisted page state JSON-friendly so session persistence survives reruns.
 
-- [state.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/state.py)
+- [state.py](state.py)
   - The only app module allowed to access raw `st.session_state`.
   - Persists and restores `AppState`.
   - Owns the opaque session-local `Record3DStreamRuntimeController`.
   - Handles hot-reload compatibility for stored runtime objects.
 
-- [services.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/services.py)
+- [services.py](services.py)
   - Record3D-only app glue.
   - `Record3DAppService` handles transport discovery for the UI.
   - `Record3DStreamRuntimeController` owns the live stream worker thread and
     maintains the latest `Record3DStreamSnapshot`.
 
-- [ui.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/ui.py)
+- [ui.py](ui.py)
   - Shared app UI helpers only.
   - Currently provides lightweight page-header rendering and the style hook.
 
-- [pages/metrics.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/pages/metrics.py)
+- [pages/metrics.py](pages/metrics.py)
   - Metrics page renderer.
   - Reads current selectors and controls from app state.
   - Uses explicit actions for `evo` execution.
   - Delegates data access to `TrajectoryEvaluationService` and figure creation to
     `plotting.metrics`.
 
-- [pages/advio.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/pages/advio.py)
+- [pages/advio.py](pages/advio.py)
   - ADVIO dataset-management page renderer.
   - Renders committed upstream metadata, local dataset coverage, and explicit
     download controls.
   - Delegates dataset discovery and downloads to `AdvioDatasetService`.
 
-- [pages/record3d.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/pages/record3d.py)
+- [pages/record3d.py](pages/record3d.py)
   - Record3D page renderer.
   - Owns Streamlit layout only: sidebar controls, tabs, status panels, image
     rendering, LaTeX intrinsics, and Plotly trajectory display.
   - Does not decode frames or speak WebRTC directly.
   - Uses a fragment-scoped renderer for live snapshot refresh.
 
-- [plotting/metrics.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/plotting/metrics.py)
+- [plotting/metrics.py](plotting/metrics.py)
   - Plotly builders for persisted benchmark review.
   - Keeps chart configuration out of page modules.
 
-- [plotting/record3d.py](/Users/jd/repos/prml-vslam/src/prml_vslam/app/plotting/record3d.py)
+- [plotting/record3d.py](plotting/record3d.py)
   - Plotly builders for live Record3D visuals such as the 3D ego trajectory.
 
-- [REQUIREMENTS.md](/Users/jd/repos/prml-vslam/src/prml_vslam/app/REQUIREMENTS.md)
+- [plotting/theme.py](plotting/theme.py)
+  - Shared Plotly colors, margins, and legend layout for workbench figures.
+
+- [REQUIREMENTS.md](REQUIREMENTS.md)
   - Normative app scope and acceptance criteria.
 
-- [AGENTS.md](/Users/jd/repos/prml-vslam/src/prml_vslam/app/AGENTS.md)
+- [AGENTS.md](AGENTS.md)
   - Local engineering and architecture constraints for contributors and agents.
 
 ### Directory roles

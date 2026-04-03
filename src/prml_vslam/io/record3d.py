@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
-# TODO: do not refine custom errors, this is overkill.
 class Record3DError(RuntimeError):
     """Base exception for Record3D integration failures."""
 
@@ -51,7 +50,6 @@ class Record3DTransportId(StrEnum):
         }[self]
 
 
-# TODO: use IntEnum
 class Record3DStreamState(StrEnum):
     """Lifecycle states for one live Record3D transport."""
 

@@ -28,18 +28,20 @@ uv run --extra dev pytest -n auto
 make test PYTEST_ARGS="-n auto"
 ```
 
-### Streamlit Metrics App
+### Streamlit Workbench
 
 ```bash
 uv sync --extra eval
+# add `--extra streaming` to enable Record3D USB / Wi-Fi preview support
 uv run streamlit run streamlit_app.py
 ```
 
 The app supports:
 
-- a metrics-first trajectory evaluation page for repo-owned benchmark artifacts
-- explicit `evo` evaluation for selected dataset / sequence / run slices
-- persisted evaluation review with provenance and trajectory overlays
+- a `Record3D` live-capture page for USB and Wi-Fi preview inside the workbench
+- an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
+- a `Pipeline` page for run planning and artifact-path inspection
+- a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
 - `PathConfig`-driven dataset and artifact discovery without app-local path defaults
 
 ## Challenge
