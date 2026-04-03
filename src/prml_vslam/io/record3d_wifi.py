@@ -16,7 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.utils import BaseConfig, Console
+from prml_vslam.utils import BaseConfig, BaseData, Console
 
 from .record3d import (
     Record3DConnectionError,
@@ -59,7 +59,7 @@ def normalize_record3d_device_address(value: str) -> str:
     return f"http://{trimmed.rstrip('/')}"
 
 
-class Record3DWiFiMetadata(BaseConfig):
+class Record3DWiFiMetadata(BaseData):
     """Typed metadata returned by the Record3D Wi-Fi HTTP API."""
 
     device_address: str
@@ -385,7 +385,9 @@ class Record3DWiFiStreamSession:
             self._async_stop.set()
 
     @staticmethod
-    def _should_suppress_async_exception(*, exception: BaseException | None, message: str, stop_requested: bool) -> bool:
+    def _should_suppress_async_exception(
+        *, exception: BaseException | None, message: str, stop_requested: bool
+    ) -> bool:
         """Return whether an async exception is expected during aiortc teardown."""
         if not stop_requested:
             return False
@@ -567,9 +569,7 @@ class Record3DWiFiStreamSession:
     def _packet_from_video_frame(video_frame: Any, *, metadata: Record3DWiFiMetadata) -> Record3DFramePacket:
         composite_frame = np.asarray(video_frame.to_ndarray(format="rgb24"), dtype=np.uint8)
         if composite_frame.ndim != 3 or composite_frame.shape[2] != 3:
-            raise Record3DError(
-                "Record3D Wi-Fi video frames must be RGB images with shape `(height, width, 3)`."
-            )
+            raise Record3DError("Record3D Wi-Fi video frames must be RGB images with shape `(height, width, 3)`.")
         if composite_frame.shape[1] < 2:
             raise Record3DError("Record3D Wi-Fi composite frames must contain both depth and RGB halves.")
 

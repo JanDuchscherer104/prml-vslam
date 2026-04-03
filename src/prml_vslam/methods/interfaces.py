@@ -1,0 +1,136 @@
+"""Typed interfaces for external VSLAM method adapters."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+from pathlib import Path
+
+from pydantic import Field
+
+from prml_vslam.pipeline.workspace import PreparedInput
+from prml_vslam.utils import BaseData
+
+
+class MethodId(StrEnum):
+    """Supported external VSLAM backends."""
+
+    VISTA = "vista"
+    MSTR = "mstr"
+
+    @property
+    def artifact_slug(self) -> str:
+        """Return the filesystem token used for method-owned artifact roots."""
+        return self.value
+
+    @property
+    def display_name(self) -> str:
+        """Return the upstream method name shown to users."""
+        match self:
+            case MethodId.VISTA:
+                return "ViSTA-SLAM"
+            case MethodId.MSTR:
+                return "MASt3R-SLAM"
+
+
+class ViewerId(StrEnum):
+    """Supported visualization surfaces for normalized SLAM results."""
+
+    NONE = "none"
+    PLOTLY = "plotly"
+    OPEN3D = "open3d"
+    NATIVE = "native"
+
+
+class MethodCommand(BaseData):
+    """One explicit external command invocation."""
+
+    cwd: Path
+    """Working directory from which the command must be executed."""
+
+    argv: list[str]
+    """Exact argv vector used to invoke the upstream backend."""
+
+
+class MethodArtifacts(BaseData):
+    """Normalized and native artifact paths for one method run."""
+
+    artifact_root: Path
+    """Repository-owned artifact root for this run."""
+
+    native_output_dir: Path
+    """Method-native output directory inside or alongside the upstream repo."""
+
+    normalized_trajectory_path: Path
+    """Normalized TUM trajectory path owned by this repository."""
+
+    normalized_point_cloud_path: Path
+    """Normalized dense point cloud path owned by this repository."""
+
+    raw_trajectory_path: Path | None = None
+    """Method-native trajectory artifact path before normalization."""
+
+    raw_point_cloud_path: Path | None = None
+    """Method-native point-cloud artifact path before normalization."""
+
+    view_graph_path: Path | None = None
+    """Optional graph artifact path used by some native viewers."""
+
+    plotly_html_path: Path | None = None
+    """Repository-owned Plotly HTML visualization path."""
+
+
+class MethodRunRequest(BaseData):
+    """Shared inference request accepted by every method adapter."""
+
+    input_path: Path
+    """Video file or image-directory input that should be processed."""
+
+    artifact_root: Path
+    """Repository-owned output root where normalized artifacts belong."""
+
+    frame_stride: int = 1
+    """Stride used when materializing frames for methods that need images."""
+
+    viewer: ViewerId = ViewerId.PLOTLY
+    """Visualization surface to prepare or launch after inference."""
+
+    launch_viewer: bool = False
+    """Whether the selected viewer should be launched immediately."""
+
+    max_plotly_points: int = 50_000
+    """Maximum number of points shown in the repository-owned Plotly scene."""
+
+
+class MethodRunResult(BaseData):
+    """Planned or executed method invocation with normalized artifact paths."""
+
+    method: MethodId
+    """Backend that produced or will produce the artifacts."""
+
+    prepared_input: PreparedInput
+    """Materialized input that the upstream backend consumed."""
+
+    command: MethodCommand
+    """Primary upstream inference command."""
+
+    artifacts: MethodArtifacts
+    """Normalized and native artifact locations for the run."""
+
+    native_viewer_command: MethodCommand | None = None
+    """Optional native post-hoc viewer command for the backend."""
+
+    executed: bool = False
+    """Whether the upstream inference command already ran successfully."""
+
+    notes: list[str] = Field(default_factory=list)
+    """Human-readable caveats and backend-specific setup notes."""
+
+
+__all__ = [
+    "MethodArtifacts",
+    "MethodCommand",
+    "MethodId",
+    "MethodRunRequest",
+    "MethodRunResult",
+    "ViewerId",
+]

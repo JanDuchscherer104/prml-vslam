@@ -8,7 +8,7 @@ import numpy as np
 from jaxtyping import Float
 
 from prml_vslam.io.interfaces import CameraPose
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseData
 
 
 class DatasetId(StrEnum):
@@ -24,7 +24,7 @@ class DatasetId(StrEnum):
         }[self]
 
 
-class TimedPoseTrajectory(BaseConfig):
+class TimedPoseTrajectory(BaseData):
     """Timestamped trajectory represented as dense NumPy arrays."""
 
     timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037

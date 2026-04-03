@@ -75,7 +75,13 @@ def _write_pose_csv(path: Path) -> None:
     )
 
 
-def _write_advio_sequence(dataset_root: Path, *, sequence_id: int = 15, nested_layout: bool = False) -> Path:
+def _write_advio_sequence(
+    dataset_root: Path,
+    *,
+    sequence_id: int = 15,
+    nested_layout: bool = False,
+    official_archive_names: bool = False,
+) -> Path:
     sequence_name = f"advio-{sequence_id:02d}"
     sequence_dir = (dataset_root / "data" / sequence_name) if nested_layout else (dataset_root / sequence_name)
     (sequence_dir / "iphone").mkdir(parents=True, exist_ok=True)
@@ -87,24 +93,40 @@ def _write_advio_sequence(dataset_root: Path, *, sequence_id: int = 15, nested_l
         "0.0,0\n0.1,1\n0.2,2\n",
         encoding="utf-8",
     )
-    for name in (
-        "platform-location.csv",
-        "accelerometer.csv",
-        "gyroscope.csv",
-        "magnetometer.csv",
-        "barometer.csv",
-    ):
+    sensor_names = (
+        (
+            "platform-locations.csv",
+            "accelerometer.csv",
+            "gyro.csv",
+            "magnetometer.csv",
+            "barometer.csv",
+        )
+        if official_archive_names
+        else (
+            "platform-location.csv",
+            "accelerometer.csv",
+            "gyroscope.csv",
+            "magnetometer.csv",
+            "barometer.csv",
+        )
+    )
+    for name in sensor_names:
         (sequence_dir / "iphone" / name).write_text("0.0,0.0,0.0,0.0\n", encoding="utf-8")
-    _write_pose_csv(sequence_dir / "ground-truth" / "poses.csv")
+    ground_truth_name = "pose.csv" if official_archive_names else "poses.csv"
+    _write_pose_csv(sequence_dir / "ground-truth" / ground_truth_name)
     _write_pose_csv(sequence_dir / "pixel" / "arcore.csv")
     _write_pose_csv(sequence_dir / "iphone" / "arkit.csv")
     _write_calibration(dataset_root / "calibration" / "iphone-03.yaml")
     return sequence_dir
 
 
-def _write_advio_archive(source_dir: Path, archive_path: Path) -> None:
+def _write_advio_archive(source_dir: Path, archive_path: Path, *, include_directory_entries: bool = False) -> None:
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(archive_path, "w") as archive:
+        if include_directory_entries:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_dir():
+                    archive.writestr(path.relative_to(source_dir).as_posix() + "/", "")
         for path in sorted(source_dir.rglob("*")):
             if path.is_dir():
                 continue
@@ -252,9 +274,9 @@ def test_metrics_service_lists_advio_sequences_from_nested_layout(tmp_path: Path
     assert service.list_sequences(DatasetId.ADVIO) == ["advio-07", "advio-15"]
 
 
-def test_metrics_service_materializes_missing_advio_reference_tum(tmp_path: Path) -> None:
+def test_metrics_service_only_uses_existing_advio_reference_tum(tmp_path: Path) -> None:
     dataset_root = tmp_path / "data" / "advio"
-    sequence_dir = _write_advio_sequence(dataset_root, sequence_id=15)
+    _write_advio_sequence(dataset_root, sequence_id=15)
     path_config = PathConfig(
         root=tmp_path,
         artifacts_dir=tmp_path / "artifacts",
@@ -264,9 +286,7 @@ def test_metrics_service_materializes_missing_advio_reference_tum(tmp_path: Path
     service = TrajectoryEvaluationService(path_config)
     reference_path = service.reference_path(dataset=DatasetId.ADVIO, sequence_slug="advio-15")
 
-    assert reference_path == sequence_dir / "evaluation" / "ground_truth.tum"
-    assert reference_path is not None
-    assert reference_path.exists()
+    assert reference_path is None
 
 
 def test_load_advio_catalog_commits_all_scene_metadata() -> None:
@@ -325,3 +345,70 @@ def test_advio_dataset_service_offline_preset_downloads_evaluation_ready_bundle(
     assert summary.offline_ready_scene_count == 1
     assert status.replay_ready is True
     assert status.offline_ready is True
+
+
+def test_advio_dataset_service_handles_official_archive_layout(tmp_path: Path) -> None:
+    scene_slug = "advio-15"
+    archive_path = tmp_path / "upstream" / f"{scene_slug}.zip"
+    source_root = tmp_path / "upstream" / "scene-root"
+    _write_advio_sequence(source_root / "data", sequence_id=15, official_archive_names=True)
+    _write_advio_archive(source_root, archive_path, include_directory_entries=True)
+
+    calibration_source_dir = tmp_path / "upstream" / "calibration"
+    _write_calibration(calibration_source_dir / "iphone-03.yaml")
+
+    import hashlib
+
+    digest = hashlib.md5(archive_path.read_bytes()).hexdigest()
+    catalog = AdvioCatalog(
+        dataset_id="advio",
+        dataset_label="ADVIO",
+        upstream=AdvioUpstreamMetadata(
+            repo_url="https://github.com/AaltoVision/ADVIO",
+            zenodo_record_url="https://zenodo.org/records/1476931",
+            doi="10.5281/zenodo.1320824",
+            license="CC BY-NC 4.0",
+            calibration_base_url=calibration_source_dir.as_uri() + "/",
+        ),
+        scenes=[
+            AdvioSceneMetadata(
+                sequence_id=15,
+                sequence_slug=scene_slug,
+                venue="Office",
+                dataset_code="03",
+                environment=AdvioEnvironment.INDOOR,
+                has_stairs=False,
+                has_escalator=False,
+                has_elevator=False,
+                people_level=AdvioPeopleLevel.NONE,
+                has_vehicles=False,
+                calibration_name="iphone-03.yaml",
+                archive_url=archive_path.as_uri(),
+                archive_size_bytes=archive_path.stat().st_size,
+                archive_md5=digest,
+            )
+        ],
+    )
+    service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
+
+    service.download(AdvioDownloadRequest(sequence_ids=[15], preset=AdvioDownloadPreset.OFFLINE))
+
+    status = service.local_scene_statuses()[0]
+
+    assert status.offline_ready is True
+    assert service.list_local_sequence_ids() == [15]
+    assert service.load_local_sample(15).sequence_name == "advio-15"
+
+
+def test_advio_dataset_service_lists_and_loads_local_sequences(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "data" / "advio"
+    _write_advio_sequence(dataset_root, sequence_id=15)
+    service = AdvioDatasetService(PathConfig(root=tmp_path))
+
+    assert service.list_local_sequence_ids() == [15]
+
+    sample = service.load_local_sample(15)
+
+    assert sample.sequence_id == 15
+    assert sample.sequence_name == "advio-15"
+    assert sample.frame_timestamps_ns.tolist() == [0, 100_000_000, 200_000_000]

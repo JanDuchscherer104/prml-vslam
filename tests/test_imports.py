@@ -14,7 +14,7 @@ def test_package_imports() -> None:
     import prml_vslam.pipeline
     import prml_vslam.utils
     from prml_vslam.io import Record3DTransportId, Record3DWiFiStreamConfig
-    from prml_vslam.utils import BaseConfig, get_console
+    from prml_vslam.utils import BaseConfig, BaseData, get_console
 
     assert prml_vslam.__version__
     assert Record3DTransportId.USB.value == "usb"
@@ -39,4 +39,5 @@ def test_package_imports() -> None:
 
     console = get_console()
     console.plog(config)
+    assert BaseData.__name__ == "BaseData"
     assert isinstance(target, SmokeTarget)

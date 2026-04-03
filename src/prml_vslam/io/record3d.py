@@ -12,7 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.utils import BaseConfig, Console
+from prml_vslam.utils import BaseConfig, BaseData, Console
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -68,7 +68,7 @@ class Record3DDeviceType(IntEnum):
     LIDAR = 1
 
 
-class Record3DDevice(BaseConfig):
+class Record3DDevice(BaseData):
     """One USB-connected Record3D device."""
 
     product_id: int
@@ -78,7 +78,7 @@ class Record3DDevice(BaseConfig):
     """Unique device identifier reported by the bindings."""
 
 
-class Record3DIntrinsicMatrix(BaseConfig):
+class Record3DIntrinsicMatrix(BaseData):
     """Intrinsic matrix coefficients of the current RGB frame."""
 
     fx: float
@@ -105,7 +105,7 @@ class Record3DIntrinsicMatrix(BaseConfig):
         )
 
 
-class Record3DCameraPose(BaseConfig):
+class Record3DCameraPose(BaseData):
     """Camera pose reported by Record3D for the current frame."""
 
     qx: float
@@ -130,7 +130,7 @@ class Record3DCameraPose(BaseConfig):
     """Translation z component in world coordinates."""
 
 
-class Record3DFrame(BaseConfig):
+class Record3DFrame(BaseData):
     """One RGBD frame sampled from the USB Record3D stream."""
 
     rgb: NDArray[np.uint8]
@@ -152,7 +152,7 @@ class Record3DFrame(BaseConfig):
     """Source camera type used for the stream."""
 
 
-class Record3DFramePacket(BaseConfig):
+class Record3DFramePacket(BaseData):
     """Transport-agnostic frame packet exposed to the Streamlit app."""
 
     transport: Record3DTransportId
@@ -177,7 +177,7 @@ class Record3DFramePacket(BaseConfig):
     """Local wall-clock timestamp when the packet reached Python."""
 
 
-class Record3DStreamSnapshot(BaseConfig):
+class Record3DStreamSnapshot(BaseData):
     """Latest live-stream snapshot shared between IO and app layers."""
 
     transport: Record3DTransportId | None = None
@@ -198,9 +198,7 @@ class Record3DStreamSnapshot(BaseConfig):
     latest_packet: Record3DFramePacket | None = None
     """Most recent frame packet, if any."""
 
-    trajectory_positions_xyz: NDArray[np.float64] = Field(
-        default_factory=lambda: np.empty((0, 3), dtype=np.float64)
-    )
+    trajectory_positions_xyz: NDArray[np.float64] = Field(default_factory=lambda: np.empty((0, 3), dtype=np.float64))
     """Bounded live ego-trajectory history in world coordinates."""
 
     trajectory_timestamps_s: NDArray[np.float64] = Field(default_factory=lambda: np.empty((0,), dtype=np.float64))

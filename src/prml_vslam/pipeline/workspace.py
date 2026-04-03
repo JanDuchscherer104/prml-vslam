@@ -7,10 +7,10 @@ from typing import Literal
 
 from pydantic import Field
 
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseData
 
 
-class FrameSample(BaseConfig):
+class FrameSample(BaseData):
     """One decoded or materialized RGB frame in a capture manifest."""
 
     index: int
@@ -26,7 +26,7 @@ class FrameSample(BaseConfig):
     """Absolute path to the materialized RGB image file."""
 
 
-class CaptureManifest(BaseConfig):
+class CaptureManifest(BaseData):
     """Persistent metadata for a materialized SLAM-ready image sequence."""
 
     source_path: Path
@@ -45,7 +45,7 @@ class CaptureManifest(BaseConfig):
     """Sampled frames written for downstream backends."""
 
 
-class PreparedInput(BaseConfig):
+class PreparedInput(BaseData):
     """Method-ready input description derived from a shared capture source."""
 
     source_path: Path

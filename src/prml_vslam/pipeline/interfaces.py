@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.pipeline.contracts import (
     CloudMetrics,
     DenseArtifacts,
@@ -18,10 +18,10 @@ from prml_vslam.pipeline.contracts import (
     TrackingConfig,
     TrajectoryMetrics,
 )
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseData
 
 
-class TrackingUpdate(BaseConfig):
+class TrackingUpdate(BaseData):
     """Incremental tracking update emitted by streaming-capable backends."""
 
     seq: int

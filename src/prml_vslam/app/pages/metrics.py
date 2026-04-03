@@ -32,8 +32,8 @@ def render(context: AppContext) -> None:
         eyebrow="Benchmark Review",
         title="Trajectory Metrics",
         body=(
-            "Inspect persisted `evo` results or trigger a fresh APE run for one dataset, sequence, and artifact "
-            "slice. Controls stay explicit so evaluation never runs as a side effect."
+            "Inspect persisted trajectory metrics or trigger a fresh local comparison for one dataset, sequence, "
+            "and artifact slice. Controls stay explicit so evaluation never runs as a side effect."
         ),
     )
 
@@ -78,8 +78,8 @@ def render(context: AppContext) -> None:
             st.subheader("Evaluation Controls")
             controls = _render_controls(state.metrics.evaluation)
             st.caption(
-                "Evaluation never runs on selector changes. Only the primary action below writes or refreshes native "
-                "`evo` results."
+                "Evaluation never runs on selector changes. Only the primary action below writes or refreshes "
+                "persisted metric results."
             )
 
     state.metrics = MetricsPageState(
@@ -110,7 +110,7 @@ def render(context: AppContext) -> None:
     with st.container(border=True):
         action_col, status_col = st.columns((0.9, 1.1), gap="large")
         with action_col:
-            compute = st.button("Compute evo metrics", type="primary", disabled=not can_compute, width="stretch")
+            compute = st.button("Compute metrics", type="primary", disabled=not can_compute, width="stretch")
         with status_col:
             if selection.reference_path is None:
                 st.warning(
@@ -123,7 +123,7 @@ def render(context: AppContext) -> None:
                 st.info("No persisted result matches the current controls yet.")
 
     if compute:
-        with st.spinner("Running evo APE..."):
+        with st.spinner("Computing trajectory metrics..."):
             try:
                 evaluation = service.compute_evaluation(selection=selection, controls=controls)
             except RuntimeError as exc:
@@ -131,7 +131,7 @@ def render(context: AppContext) -> None:
                 return
         state.metrics.result_path = evaluation.path
         context.store.save(state)
-        st.success(f"Persisted fresh `evo` result to `{evaluation.path}`.")
+        st.success(f"Persisted fresh metric result to `{evaluation.path}`.")
 
     if evaluation is None:
         _render_provenance(selection=selection, evaluation=evaluation)
