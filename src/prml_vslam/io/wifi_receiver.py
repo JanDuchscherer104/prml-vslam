@@ -7,45 +7,14 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
+from aiortc import RTCPeerConnection, RTCSessionDescription
+
 from .record3d import (
     Record3DConnectionError,
-    Record3DDependencyError,
     Record3DFramePacket,
 )
 from .wifi_packets import Record3DWiFiMetadata, record3d_wifi_packet_from_video_frame
 from .wifi_signaling import build_record3d_answer_request_payload
-
-
-def _import_aiortc_modules() -> tuple[type[Any], type[Any]]:
-    """Import the optional Python WebRTC dependencies used by Wi-Fi capture."""
-    try:
-        from aiortc import RTCPeerConnection, RTCSessionDescription
-    except ModuleNotFoundError as exc:
-        raise Record3DDependencyError(
-            "The optional `aiortc` dependency is required for Record3D Wi-Fi streaming. "
-            "Install it with `uv sync --extra streaming`."
-        ) from exc
-    return RTCPeerConnection, RTCSessionDescription
-
-
-def should_suppress_record3d_async_exception(
-    *,
-    exception: BaseException | None,
-    message: str,
-    stop_requested: bool,
-) -> bool:
-    """Return whether an async exception is expected during aiortc teardown."""
-    if not stop_requested:
-        return False
-    combined = message if exception is None else f"{message} {type(exception).__name__}: {exception}"
-    return any(
-        fragment in combined
-        for fragment in (
-            "RTCIceTransport is closed",
-            "'NoneType' object has no attribute 'sendto'",
-            "'NoneType' object has no attribute 'call_exception_handler'",
-        )
-    )
 
 
 class _Record3DWiFiReceiverRuntime:
@@ -103,7 +72,7 @@ class _Record3DWiFiReceiverRuntime:
     def _handle_loop_exception(self, loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
         exception = context.get("exception")
         message = str(context.get("message", ""))
-        if should_suppress_record3d_async_exception(
+        if _should_suppress_record3d_async_exception(
             exception=exception if isinstance(exception, BaseException) else None,
             message=message,
             stop_requested=self.stop_requested(),
@@ -162,7 +131,6 @@ class _Record3DWiFiReceiverRuntime:
                 self.console.warning("Could not retrieve Record3D Wi-Fi metadata: %s", exc)
 
     async def _run(self) -> None:
-        RTCPeerConnection, RTCSessionDescription = _import_aiortc_modules()
         self._loop = asyncio.get_running_loop()
         self._loop.set_exception_handler(self._handle_loop_exception)
         self._async_stop = asyncio.Event()
@@ -224,3 +192,26 @@ class _Record3DWiFiReceiverRuntime:
                     break
                 raise Record3DConnectionError("The Record3D Wi-Fi video track stopped unexpectedly.") from exc
             self.on_packet(record3d_wifi_packet_from_video_frame(video_frame, metadata=self.metadata))
+
+
+def _should_suppress_record3d_async_exception(
+    *,
+    exception: BaseException | None,
+    message: str,
+    stop_requested: bool,
+) -> bool:
+    """Return whether an async exception is expected during aiortc teardown."""
+    if not stop_requested:
+        return False
+    combined = message if exception is None else f"{message} {type(exception).__name__}: {exception}"
+    return any(
+        fragment in combined
+        for fragment in (
+            "RTCIceTransport is closed",
+            "'NoneType' object has no attribute 'sendto'",
+            "'NoneType' object has no attribute 'call_exception_handler'",
+        )
+    )
+
+
+__all__ = ["_Record3DWiFiReceiverRuntime"]
