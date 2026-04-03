@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality
+from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval.interfaces import EvaluationControls
 from prml_vslam.io.record3d import Record3DTransportId
@@ -50,6 +50,18 @@ class AdvioPageState(BaseData):
 
     explorer_sequence_id: int | None = None
     """Selected local sequence shown in the explorer section."""
+
+    preview_sequence_id: int | None = None
+    """Selected local sequence shown in the loop-preview section."""
+
+    preview_pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
+    """Selected camera-pose source for the loop-preview stream."""
+
+    preview_respect_video_rotation: bool = False
+    """Whether the preview should honor video rotation metadata when available."""
+
+    preview_is_running: bool = False
+    """Whether the current browser session expects an ADVIO preview stream to be active."""
 
 
 class MetricsPageState(BaseData):

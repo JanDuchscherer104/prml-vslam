@@ -59,10 +59,11 @@ def build_advio_page_data(context: AppContext, form: AdvioDownloadFormData) -> A
 def _load_snapshot(
     context: AppContext,
 ) -> tuple[AdvioDatasetSummary, list[AdvioLocalSceneStatus], list[dict[str, object]]]:
+    statuses = context.advio_service.local_scene_statuses()
     return (
         context.advio_service.summarize(),
-        context.advio_service.local_scene_statuses(),
-        context.advio_service.scene_rows(),
+        statuses,
+        _scene_rows(statuses),
     )
 
 
@@ -81,3 +82,20 @@ def _handle_download(
         f"Prepared {len(result.sequence_ids)} scene(s), fetched {len(result.downloaded_archives)} archive(s), "
         f"and wrote {len(result.written_paths)} path(s).",
     )
+
+
+def _scene_rows(statuses: list[AdvioLocalSceneStatus]) -> list[dict[str, object]]:
+    return [
+        {
+            "Scene": status.scene.sequence_slug,
+            "Venue": status.scene.venue,
+            "Dataset": status.scene.dataset_code,
+            "Environment": status.scene.environment.label,
+            "Packed Size (MB)": round(status.scene.archive_size_bytes / 1e6, 1),
+            "Local": status.sequence_dir is not None,
+            "Replay Ready": status.replay_ready,
+            "Offline Ready": status.offline_ready,
+            "Local Modalities": ", ".join(modality.label for modality in status.local_modalities),
+        }
+        for status in statuses
+    ]
