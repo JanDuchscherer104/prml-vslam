@@ -7,7 +7,9 @@ from zipfile import ZipFile
 
 import cv2
 import numpy as np
+import pytest
 
+import prml_vslam.datasets.advio_replay as advio_replay_module
 from prml_vslam.datasets import (
     AdvioCatalog,
     AdvioDatasetService,
@@ -191,6 +193,18 @@ def test_load_advio_sequence_returns_offline_sample(tmp_path: Path) -> None:
     assert sample.duration_s == 0.2
 
 
+def test_advio_sequence_uses_catalog_calibration_metadata(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "data" / "advio"
+    _write_advio_sequence(dataset_root)
+    _write_calibration(dataset_root / "calibration" / "iphone-custom.yaml")
+    catalog = _build_fake_catalog(tmp_path)
+    catalog.scenes[0].calibration_name = "iphone-custom.yaml"
+
+    sample = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog).load_local_sample(15)
+
+    assert sample.paths.calibration_path == tmp_path / "data" / "advio" / "calibration" / "iphone-custom.yaml"
+
+
 def test_write_advio_pose_tum_exports_xyzw_order(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
 
@@ -234,6 +248,103 @@ def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path
     assert packet_3.metadata["loop_index"] == 1
     assert packet_0.metadata["dataset"] == "ADVIO"
     assert packet_0.metadata["pose_source"] == AdvioPoseSource.GROUND_TRUTH.value
+
+
+def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    (sequence_dir / "pixel" / "arcore.csv").unlink()
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    stream = sequence.open_stream(
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        loop=True,
+        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+    )
+
+    stream.connect()
+    packet = stream.wait_for_packet()
+    stream.disconnect()
+
+    assert packet.frame_index == 0
+    assert packet.camera_pose is not None
+    assert packet.camera_pose.tx == 1.0
+
+
+def test_advio_open_stream_rotation_opt_in_keeps_default_behavior_without_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_advio_sequence(tmp_path)
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    class _Container:
+        streams = type("_Streams", (), {"video": [type("_Stream", (), {"metadata": {}})()]})()
+
+        def __enter__(self) -> _Container:
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def decode(self, *, video: int) -> list[object]:
+            del video
+            return []
+
+    class _Av:
+        @staticmethod
+        def open(path: str) -> _Container:
+            del path
+            return _Container()
+
+    monkeypatch.setattr(advio_replay_module, "_load_pyav", lambda: _Av())
+
+    stream = sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+
+    assert isinstance(stream, Cv2FrameProducer)
+
+
+def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_advio_sequence(tmp_path)
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+    monkeypatch.setattr(advio_replay_module, "read_advio_video_rotation_degrees", lambda path: 90)
+
+    stream = sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+    stream.connect()
+    packet = stream.wait_for_packet()
+    stream.disconnect()
+
+    assert packet.rgb.shape == (64, 48, 3)
+    assert packet.metadata["video_rotation_degrees"] == 90
+    assert packet.intrinsics is not None
+    assert packet.intrinsics.width_px == 48
+    assert packet.intrinsics.height_px == 64
+    assert packet.intrinsics.fx == 101.0
+    assert packet.intrinsics.fy == 100.0
+    assert packet.intrinsics.cx == 24.0
+    assert packet.intrinsics.cy == 32.0
+
+
+def test_advio_open_stream_rotation_opt_in_requires_pyav(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_advio_sequence(tmp_path)
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+    monkeypatch.setattr(
+        advio_replay_module,
+        "_load_pyav",
+        lambda: (_ for _ in ()).throw(
+            RuntimeError(
+                "Rotation-aware ADVIO replay requires the optional `av` dependency. Install it with `uv sync --extra replay`."
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="uv sync --extra replay"):
+        sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
 
 
 def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> None:
