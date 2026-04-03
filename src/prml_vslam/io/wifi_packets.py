@@ -9,14 +9,10 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket
 from prml_vslam.utils import BaseData
 
-from .record3d import (
-    Record3DError,
-    Record3DFramePacket,
-    Record3DIntrinsicMatrix,
-    Record3DTransportId,
-)
+from .record3d import Record3DError, Record3DTransportId
 
 
 class Record3DWiFiMetadata(BaseData):
@@ -25,7 +21,7 @@ class Record3DWiFiMetadata(BaseData):
     device_address: str
     """Normalized device base URL used for signaling."""
 
-    intrinsic_matrix: Record3DIntrinsicMatrix | None = None
+    intrinsics: CameraIntrinsics | None = None
     """Camera intrinsic matrix reported by the device when available."""
 
     original_width: int | None = None
@@ -46,7 +42,11 @@ class Record3DWiFiMetadata(BaseData):
         original_width, original_height = _parse_original_size(payload)
         return cls(
             device_address=device_address,
-            intrinsic_matrix=_parse_intrinsic_matrix(payload),
+            intrinsics=_parse_intrinsic_matrix(
+                payload,
+                width_px=original_width,
+                height_px=original_height,
+            ),
             original_width=original_width,
             original_height=original_height,
             depth_max_meters=_parse_depth_range(payload),
@@ -54,7 +54,12 @@ class Record3DWiFiMetadata(BaseData):
         )
 
 
-def _parse_intrinsic_matrix(payload: dict[str, Any]) -> Record3DIntrinsicMatrix | None:
+def _parse_intrinsic_matrix(
+    payload: dict[str, Any],
+    *,
+    width_px: int | None,
+    height_px: int | None,
+) -> CameraIntrinsics | None:
     raw_matrix = payload.get("K")
     if raw_matrix is None:
         return None
@@ -68,11 +73,13 @@ def _parse_intrinsic_matrix(payload: dict[str, Any]) -> Record3DIntrinsicMatrix 
             f"but received shape {tuple(matrix.shape)}."
         )
 
-    return Record3DIntrinsicMatrix(
+    return CameraIntrinsics(
         fx=float(matrix[0, 0]),
         fy=float(matrix[1, 1]),
-        tx=float(matrix[0, 2]),
-        ty=float(matrix[1, 2]),
+        cx=float(matrix[0, 2]),
+        cy=float(matrix[1, 2]),
+        width_px=width_px,
+        height_px=height_px,
     )
 
 
@@ -129,7 +136,9 @@ def record3d_wifi_packet_from_video_frame(
     video_frame: Any,
     *,
     metadata: Record3DWiFiMetadata,
-) -> Record3DFramePacket:
+    seq: int,
+    timestamp_ns: int | None = None,
+) -> FramePacket:
     """Convert one Record3D composite WebRTC frame into the shared packet contract."""
     composite_frame = np.asarray(video_frame.to_ndarray(format="rgb24"), dtype=np.uint8)
     if composite_frame.ndim != 3 or composite_frame.shape[2] != 3:
@@ -143,15 +152,19 @@ def record3d_wifi_packet_from_video_frame(
     if metadata.original_width is not None and metadata.original_height is not None:
         packet_metadata["original_size"] = [metadata.original_width, metadata.original_height]
 
-    return Record3DFramePacket(
-        transport=Record3DTransportId.WIFI,
+    if timestamp_ns is None:
+        timestamp_ns = time.time_ns()
+
+    return FramePacket(
+        seq=seq,
+        timestamp_ns=timestamp_ns,
+        arrival_timestamp_s=timestamp_ns / 1e9,
         rgb=composite_frame[:, -half_width:, :],
         depth=decode_record3d_wifi_depth(
             composite_frame[:, :half_width, :],
             depth_max_meters=metadata.depth_max_meters,
         ),
-        intrinsic_matrix=metadata.intrinsic_matrix,
+        intrinsics=metadata.intrinsics,
         uncertainty=None,
-        metadata=packet_metadata,
-        arrival_timestamp_s=time.time(),
+        metadata={**packet_metadata, "transport": Record3DTransportId.WIFI.value},
     )

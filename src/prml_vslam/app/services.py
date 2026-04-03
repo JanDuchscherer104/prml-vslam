@@ -13,11 +13,10 @@ import numpy as np
 from pydantic import Field
 
 from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.io.interfaces import VideoFramePacket, VideoPacketStream
+from prml_vslam.interfaces import FramePacket, FramePacketStream
 from prml_vslam.io.record3d import (
     Record3DConnectionError,
     Record3DDevice,
-    Record3DPacketStream,
     Record3DStreamConfig,
     Record3DStreamSnapshot,
     Record3DStreamState,
@@ -195,7 +194,7 @@ class AdvioPreviewSnapshot(BaseData):
     pose_source: AdvioPoseSource | None = None
     """Trajectory source currently attached to emitted packets."""
 
-    latest_packet: VideoFramePacket | None = None
+    latest_packet: FramePacket | None = None
     """Most recent decoded RGB packet."""
 
     received_frames: int = 0
@@ -240,7 +239,7 @@ class AdvioPreviewRuntimeController:
         sequence_id: int,
         sequence_label: str,
         pose_source: AdvioPoseSource,
-        stream: VideoPacketStream,
+        stream: FramePacketStream,
     ) -> None:
         self._runtime.launch(
             connecting_snapshot=AdvioPreviewSnapshot(
@@ -268,7 +267,7 @@ class AdvioPreviewRuntimeController:
         sequence_id: int,
         sequence_label: str,
         pose_source: AdvioPoseSource,
-        stream: VideoPacketStream,
+        stream: FramePacketStream,
         stop_event: Event,
     ) -> None:
         metrics = RollingRuntimeMetrics(
@@ -320,11 +319,11 @@ class AdvioPreviewRuntimeController:
             self._runtime.finalize_run(stop_event=stop_event, disconnected_snapshot=self._disconnected_snapshot)
 
     @staticmethod
-    def _extract_camera_position(packet: VideoFramePacket) -> np.ndarray | None:
-        if packet.camera_pose is None:
+    def _extract_camera_position(packet: FramePacket) -> np.ndarray | None:
+        if packet.pose is None:
             return None
         position = np.array(
-            [packet.camera_pose.tx, packet.camera_pose.ty, packet.camera_pose.tz],
+            [packet.pose.tx, packet.pose.ty, packet.pose.tz],
             dtype=np.float64,
         )
         if not np.all(np.isfinite(position)):
@@ -332,7 +331,7 @@ class AdvioPreviewRuntimeController:
         return position
 
     @staticmethod
-    def _trajectory_time_s(packet: VideoFramePacket, first_packet_timestamp_ns: int | None) -> float | None:
+    def _trajectory_time_s(packet: FramePacket, first_packet_timestamp_ns: int | None) -> float | None:
         if first_packet_timestamp_ns is None:
             return None
         return max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9
@@ -358,8 +357,8 @@ class Record3DStreamRuntimeController:
         frame_timeout_seconds: float = 0.5,
         fps_window_size: int = 30,
         trajectory_window_size: int = 512,
-        usb_stream_factory: Callable[[int, float], Record3DPacketStream] | None = None,
-        wifi_stream_factory: Callable[[str, float], Record3DPacketStream] | None = None,
+        usb_stream_factory: Callable[[int, float], FramePacketStream] | None = None,
+        wifi_stream_factory: Callable[[str, float], FramePacketStream] | None = None,
     ) -> None:
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
@@ -397,7 +396,7 @@ class Record3DStreamRuntimeController:
         *,
         transport: Record3DTransportId,
         source_descriptor: str,
-        stream_factory: Callable[[], Record3DPacketStream],
+        stream_factory: Callable[[], FramePacketStream],
     ) -> None:
         self._runtime.launch(
             connecting_snapshot=Record3DStreamSnapshot(
@@ -420,13 +419,13 @@ class Record3DStreamRuntimeController:
         transport: Record3DTransportId,
         source_descriptor: str,
         stop_event: Event,
-        stream_factory: Callable[[], Record3DPacketStream],
+        stream_factory: Callable[[], FramePacketStream],
     ) -> None:
         metrics = RollingRuntimeMetrics(
             fps_window_size=self.fps_window_size,
             trajectory_window_size=self.trajectory_window_size,
         )
-        stream: Record3DPacketStream | None = None
+        stream: FramePacketStream | None = None
 
         try:
             stream = stream_factory()
@@ -449,11 +448,12 @@ class Record3DStreamRuntimeController:
                     packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
                 except Record3DTimeoutError:
                     continue
+                arrival_time_s = packet.arrival_timestamp_s if packet.arrival_timestamp_s is not None else time.time()
                 camera_position = self._extract_camera_position(packet)
                 metrics.record(
-                    arrival_time_s=packet.arrival_timestamp_s,
+                    arrival_time_s=arrival_time_s,
                     position_xyz=camera_position,
-                    trajectory_time_s=packet.arrival_timestamp_s if camera_position is not None else None,
+                    trajectory_time_s=arrival_time_s if camera_position is not None else None,
                 )
                 self._runtime.update_fields(
                     transport=transport,
@@ -477,7 +477,7 @@ class Record3DStreamRuntimeController:
             self._runtime.finalize_run(stop_event=stop_event, disconnected_snapshot=self._disconnected_snapshot)
 
     @staticmethod
-    def _default_usb_stream_factory(device_index: int, frame_timeout_seconds: float) -> Record3DPacketStream:
+    def _default_usb_stream_factory(device_index: int, frame_timeout_seconds: float) -> FramePacketStream:
         stream = Record3DUSBPacketStreamConfig(
             stream=Record3DStreamConfig(
                 device_index=device_index,
@@ -489,7 +489,7 @@ class Record3DStreamRuntimeController:
         return stream
 
     @staticmethod
-    def _default_wifi_stream_factory(device_address: str, frame_timeout_seconds: float) -> Record3DPacketStream:
+    def _default_wifi_stream_factory(device_address: str, frame_timeout_seconds: float) -> FramePacketStream:
         stream = Record3DWiFiStreamConfig(
             device_address=device_address,
             frame_timeout_seconds=max(1.0, frame_timeout_seconds),
@@ -514,21 +514,10 @@ class Record3DStreamRuntimeController:
         return source_descriptor
 
     @staticmethod
-    def _extract_camera_position(packet: Any) -> np.ndarray | None:
-        camera_pose = getattr(packet, "metadata", {}).get("camera_pose")
-        if not isinstance(camera_pose, dict):
+    def _extract_camera_position(packet: FramePacket) -> np.ndarray | None:
+        if packet.pose is None:
             return None
-        try:
-            position = np.array(
-                [
-                    float(camera_pose["tx"]),
-                    float(camera_pose["ty"]),
-                    float(camera_pose["tz"]),
-                ],
-                dtype=np.float64,
-            )
-        except (KeyError, TypeError, ValueError):
-            return None
+        position = np.array([packet.pose.tx, packet.pose.ty, packet.pose.tz], dtype=np.float64)
         if not np.all(np.isfinite(position)):
             return None
         return position

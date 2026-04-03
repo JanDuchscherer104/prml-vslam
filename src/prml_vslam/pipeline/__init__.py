@@ -6,7 +6,7 @@ from importlib import import_module
 
 _CONTRACT_EXPORTS = """
 ArtifactRef BenchmarkEvaluationConfig CloudEvaluationConfig CloudMetrics DatasetSourceSpec DenseArtifacts
-DenseConfig EfficiencyEvaluationConfig EfficiencyMetrics FramePacket LiveSourceSpec PipelineMode
+DenseConfig EfficiencyEvaluationConfig EfficiencyMetrics LiveSourceSpec PipelineMode
 ReferenceArtifacts ReferenceConfig RunPlan RunPlanStage RunPlanStageId RunRequest RunSummary
 SequenceManifest StageExecutionStatus StageManifest TrackingArtifacts TrackingConfig TrajectoryEvaluationConfig
 TrajectoryMetrics VideoSourceSpec

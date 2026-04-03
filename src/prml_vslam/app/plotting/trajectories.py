@@ -8,8 +8,7 @@ from typing import Literal
 import numpy as np
 import plotly.graph_objects as go
 
-from prml_vslam.datasets.interfaces import TimedPoseTrajectory
-from prml_vslam.utils.geometry import SE3Pose
+from prml_vslam.interfaces import SE3Pose, TimedPoseTrajectory
 
 _DEFAULT_COLORS = np.asarray(("#1368ce", "#ef6c00", "#0f9d58", "#c62828"), dtype=object)
 _AXIS_COLORS = {
