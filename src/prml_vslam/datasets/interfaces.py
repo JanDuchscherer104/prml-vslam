@@ -33,17 +33,7 @@ class TimedPoseTrajectory(BaseData):
 
     def pose_at(self, index: int) -> CameraPose:
         """Return one pose sample as a structured pose object."""
-        position = self.positions_xyz[index]
-        quaternion = self.quaternions_xyzw[index]
-        return CameraPose(
-            qx=float(quaternion[0]),
-            qy=float(quaternion[1]),
-            qz=float(quaternion[2]),
-            qw=float(quaternion[3]),
-            tx=float(position[0]),
-            ty=float(position[1]),
-            tz=float(position[2]),
-        )
+        return CameraPose.from_quaternion_translation(self.quaternions_xyzw[index], self.positions_xyz[index])
 
 
 __all__ = [

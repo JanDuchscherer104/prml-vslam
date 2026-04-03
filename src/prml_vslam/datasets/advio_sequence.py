@@ -7,12 +7,14 @@ from numpy.typing import NDArray
 from pydantic import Field
 
 from prml_vslam.datasets.interfaces import TimedPoseTrajectory
+from prml_vslam.io import Cv2ReplayMode
+from prml_vslam.io.interfaces import VideoPacketStream
 from prml_vslam.utils import BaseData
 
 from . import advio_layout, advio_loading
 from .advio_manifest_adapter import SequenceManifestType, build_advio_sequence_manifest
 from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioPoseSource, AdvioSceneMetadata, AdvioSequenceConfig
-from .advio_replay_adapter import DEFAULT_REPLAY_MODE, ReplayMode, ReplayStream, open_advio_stream
+from .advio_replay_adapter import open_advio_stream
 
 
 class AdvioSequencePaths(BaseData):
@@ -119,9 +121,9 @@ class AdvioSequence(BaseData):
         pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
         stride: int = 1,
         loop: bool = True,
-        replay_mode: ReplayMode = DEFAULT_REPLAY_MODE,
+        replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
         respect_video_rotation: bool = False,
-    ) -> ReplayStream:
+    ) -> VideoPacketStream:
         return open_advio_stream(
             self,
             pose_source=pose_source,

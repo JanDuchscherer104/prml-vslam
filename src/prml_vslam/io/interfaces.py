@@ -46,6 +46,23 @@ class CameraPose(BaseData):
     ty: float
     tz: float
 
+    @classmethod
+    def from_quaternion_translation(
+        cls,
+        quaternion_xyzw: NDArray[np.float64],
+        translation_xyz: NDArray[np.float64],
+    ) -> CameraPose:
+        """Build a pose from XYZW quaternion and XYZ translation arrays."""
+        return cls(
+            qx=float(quaternion_xyzw[0]),
+            qy=float(quaternion_xyzw[1]),
+            qz=float(quaternion_xyzw[2]),
+            qw=float(quaternion_xyzw[3]),
+            tx=float(translation_xyz[0]),
+            ty=float(translation_xyz[1]),
+            tz=float(translation_xyz[2]),
+        )
+
 
 class VideoFramePacket(BaseData):
     """One decoded RGB frame emitted by a video-backed source."""
