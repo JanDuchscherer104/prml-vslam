@@ -26,11 +26,9 @@ from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.interfaces import EvaluationControls, SelectionSnapshot
-from prml_vslam.io import CameraPose, PinholeCameraIntrinsics, VideoFramePacket
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.record3d import (
     Record3DDevice,
-    Record3DFramePacket,
-    Record3DIntrinsicMatrix,
     Record3DStreamSnapshot,
     Record3DStreamState,
     Record3DTransportId,
@@ -201,7 +199,7 @@ class FakeAdvioRuntime:
 class FakePacketStream:
     """Tiny packet-stream stand-in for runtime-controller tests."""
 
-    def __init__(self, *, packets: list[Record3DFramePacket], connected_target: object) -> None:
+    def __init__(self, *, packets: list[FramePacket], connected_target: object) -> None:
         self.packets = packets
         self.connected_target = connected_target
         self.disconnected = False
@@ -213,17 +211,17 @@ class FakePacketStream:
     def disconnect(self) -> None:
         self.disconnected = True
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> Record3DFramePacket:
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
         index = min(self.wait_calls, len(self.packets) - 1)
         self.wait_calls += 1
         time.sleep(0.01)
         return self.packets[index]
 
 
-class FakeVideoPacketStream:
-    """Tiny video packet-stream stand-in for ADVIO preview runtime tests."""
+class FakeFramePacketStream:
+    """Tiny frame-packet stream stand-in for ADVIO preview runtime tests."""
 
-    def __init__(self, *, packets: list[VideoFramePacket]) -> None:
+    def __init__(self, *, packets: list[FramePacket]) -> None:
         self.packets = packets
         self.disconnected = False
         self.wait_calls = 0
@@ -234,7 +232,7 @@ class FakeVideoPacketStream:
     def disconnect(self) -> None:
         self.disconnected = True
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> VideoFramePacket:
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
         del timeout_seconds
         index = min(self.wait_calls, len(self.packets) - 1)
         self.wait_calls += 1
@@ -259,14 +257,15 @@ def _usb_snapshot(*, uncertainty: bool) -> Record3DStreamSnapshot:
             dtype=np.float64,
         ),
         trajectory_timestamps_s=np.array([1.0, 1.1, 1.2], dtype=np.float64),
-        latest_packet=Record3DFramePacket(
-            transport=Record3DTransportId.USB,
+        latest_packet=FramePacket(
+            seq=0,
+            timestamp_ns=42_000_000_000,
+            arrival_timestamp_s=42.0,
             rgb=np.ones((2, 2, 3), dtype=np.uint8),
             depth=np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
-            intrinsic_matrix=Record3DIntrinsicMatrix(fx=100.0, fy=200.0, tx=10.0, ty=20.0),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
             uncertainty=uncertainty_frame,
-            metadata={"original_size": [960, 720]},
-            arrival_timestamp_s=42.0,
+            metadata={"original_size": [960, 720], "transport": Record3DTransportId.USB.value},
         ),
     )
 
@@ -278,14 +277,15 @@ def _wifi_snapshot() -> Record3DStreamSnapshot:
         source_label="http://myiPhone.local",
         received_frames=8,
         measured_fps=15.5,
-        latest_packet=Record3DFramePacket(
-            transport=Record3DTransportId.WIFI,
+        latest_packet=FramePacket(
+            seq=0,
+            timestamp_ns=24_000_000_000,
+            arrival_timestamp_s=24.0,
             rgb=np.ones((2, 2, 3), dtype=np.uint8) * 3,
             depth=np.ones((2, 2), dtype=np.float32),
-            intrinsic_matrix=Record3DIntrinsicMatrix(fx=50.0, fy=60.0, tx=5.0, ty=6.0),
+            intrinsics=CameraIntrinsics(fx=50.0, fy=60.0, cx=5.0, cy=6.0),
             uncertainty=None,
-            metadata={"device_address": "http://myiPhone.local"},
-            arrival_timestamp_s=24.0,
+            metadata={"device_address": "http://myiPhone.local", "transport": Record3DTransportId.WIFI.value},
         ),
     )
 
@@ -307,11 +307,11 @@ def _advio_preview_snapshot() -> AdvioPreviewSnapshot:
             dtype=np.float64,
         ),
         trajectory_timestamps_s=np.array([0.0, 0.1, 0.2], dtype=np.float64),
-        latest_packet=VideoFramePacket(
-            frame_index=2,
+        latest_packet=FramePacket(
+            seq=2,
             timestamp_ns=200_000_000,
             rgb=np.ones((4, 6, 3), dtype=np.uint8) * 7,
-            intrinsics=PinholeCameraIntrinsics(
+            intrinsics=CameraIntrinsics(
                 width_px=64,
                 height_px=48,
                 fx=100.0,
@@ -319,7 +319,7 @@ def _advio_preview_snapshot() -> AdvioPreviewSnapshot:
                 cx=32.0,
                 cy=24.0,
             ),
-            camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=2.0, ty=3.0, tz=4.0),
+            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=2.0, ty=3.0, tz=4.0),
             metadata={
                 "loop_index": 1,
                 "source_frame_index": 2,
@@ -835,7 +835,7 @@ def test_advio_page_renders_loop_preview_snapshot(tmp_path: Path) -> None:
         from prml_vslam.app.services import AdvioPreviewSnapshot, AdvioPreviewStreamState
         from prml_vslam.datasets import AdvioDatasetService
         from prml_vslam.datasets.advio import AdvioPoseSource
-        from prml_vslam.io import CameraPose, PinholeCameraIntrinsics, VideoFramePacket
+        from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
         from prml_vslam.utils import PathConfig
 
         class _Store:
@@ -856,11 +856,11 @@ def test_advio_page_renders_loop_preview_snapshot(tmp_path: Path) -> None:
                         dtype=np.float64,
                     ),
                     trajectory_timestamps_s=np.array([0.0, 0.1, 0.2], dtype=np.float64),
-                    latest_packet=VideoFramePacket(
-                        frame_index=2,
+                    latest_packet=FramePacket(
+                        seq=2,
                         timestamp_ns=200_000_000,
                         rgb=np.ones((4, 6, 3), dtype=np.uint8) * 7,
-                        intrinsics=PinholeCameraIntrinsics(
+                        intrinsics=CameraIntrinsics(
                             width_px=64,
                             height_px=48,
                             fx=100.0,
@@ -868,7 +868,7 @@ def test_advio_page_renders_loop_preview_snapshot(tmp_path: Path) -> None:
                             cx=32.0,
                             cy=24.0,
                         ),
-                        camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=2.0, ty=3.0, tz=4.0),
+                        pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=2.0, ty=3.0, tz=4.0),
                         metadata={"loop_index": 1, "source_frame_index": 2, "video_rotation_degrees": 90},
                     ),
                 )
@@ -1357,23 +1357,27 @@ def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector(
 def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
     usb_stream = FakePacketStream(
         packets=[
-            Record3DFramePacket(
-                transport=Record3DTransportId.USB,
-                rgb=np.ones((2, 2, 3), dtype=np.uint8),
-                depth=np.ones((2, 2), dtype=np.float32),
-                intrinsic_matrix=Record3DIntrinsicMatrix(fx=100.0, fy=200.0, tx=10.0, ty=20.0),
-                uncertainty=np.ones((2, 2), dtype=np.float32),
-                metadata={"camera_pose": {"tx": 0.0, "ty": 0.0, "tz": 0.0}},
+            FramePacket(
+                seq=0,
+                timestamp_ns=1_000_000_000,
                 arrival_timestamp_s=1.0,
-            ),
-            Record3DFramePacket(
-                transport=Record3DTransportId.USB,
                 rgb=np.ones((2, 2, 3), dtype=np.uint8),
                 depth=np.ones((2, 2), dtype=np.float32),
-                intrinsic_matrix=Record3DIntrinsicMatrix(fx=100.0, fy=200.0, tx=10.0, ty=20.0),
+                intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
+                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
                 uncertainty=np.ones((2, 2), dtype=np.float32),
-                metadata={"camera_pose": {"tx": 1.0, "ty": 0.5, "tz": 0.25}},
+                metadata={"transport": Record3DTransportId.USB.value},
+            ),
+            FramePacket(
+                seq=1,
+                timestamp_ns=1_100_000_000,
                 arrival_timestamp_s=1.1,
+                rgb=np.ones((2, 2, 3), dtype=np.uint8),
+                depth=np.ones((2, 2), dtype=np.float32),
+                intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
+                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
+                uncertainty=np.ones((2, 2), dtype=np.float32),
+                metadata={"transport": Record3DTransportId.USB.value},
             ),
         ],
         connected_target=Record3DDevice(product_id=101, udid="device-101"),
@@ -1427,13 +1431,13 @@ def test_record3d_runtime_controller_stops_previous_stream_when_switching_transp
 
 
 def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> None:
-    stream = FakeVideoPacketStream(
+    stream = FakeFramePacketStream(
         packets=[
-            VideoFramePacket(
-                frame_index=0,
+            FramePacket(
+                seq=0,
                 timestamp_ns=0,
                 rgb=np.ones((2, 2, 3), dtype=np.uint8),
-                intrinsics=PinholeCameraIntrinsics(
+                intrinsics=CameraIntrinsics(
                     width_px=64,
                     height_px=48,
                     fx=100.0,
@@ -1441,14 +1445,14 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
                     cx=32.0,
                     cy=24.0,
                 ),
-                camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
                 metadata={"loop_index": 0, "source_frame_index": 0},
             ),
-            VideoFramePacket(
-                frame_index=1,
+            FramePacket(
+                seq=1,
                 timestamp_ns=100_000_000,
                 rgb=np.ones((2, 2, 3), dtype=np.uint8) * 2,
-                intrinsics=PinholeCameraIntrinsics(
+                intrinsics=CameraIntrinsics(
                     width_px=64,
                     height_px=48,
                     fx=100.0,
@@ -1456,7 +1460,7 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
                     cx=32.0,
                     cy=24.0,
                 ),
-                camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
+                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
                 metadata={"loop_index": 0, "source_frame_index": 1},
             ),
         ]

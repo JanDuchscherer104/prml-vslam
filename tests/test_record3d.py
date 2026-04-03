@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.io import record3d as record3d_module
 from prml_vslam.io.record3d import (
     Record3DDependencyError,
@@ -118,8 +119,8 @@ def test_record3d_stream_wait_for_frame_returns_typed_payload(monkeypatch: pytes
     assert frame.rgb.shape == (2, 2, 3)
     assert frame.depth.shape == (2, 2)
     assert frame.confidence.shape == (2, 2)
-    assert frame.intrinsic_matrix.as_matrix()[0, 0] == 100.0
-    assert frame.camera_pose.tz == 3.0
+    assert frame.intrinsics.as_matrix()[0, 0] == 100.0
+    assert frame.pose.tz == 3.0
 
 
 def test_record3d_frame_to_packet_preserves_intrinsics_and_confidence(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -131,15 +132,17 @@ def test_record3d_frame_to_packet_preserves_intrinsics_and_confidence(monkeypatc
     session.connect()
     frame = session.wait_for_frame()
 
-    packet = record3d_frame_to_packet(frame, arrival_timestamp_s=42.0)
+    packet = record3d_frame_to_packet(frame, seq=0, arrival_timestamp_s=42.0, timestamp_ns=42_000_000_000)
 
-    assert packet.transport is Record3DTransportId.USB
+    assert isinstance(packet, FramePacket)
+    assert packet.metadata["transport"] == Record3DTransportId.USB.value
     assert packet.arrival_timestamp_s == 42.0
-    assert packet.intrinsic_matrix is not None
-    assert packet.intrinsic_matrix.fx == 100.0
+    assert packet.intrinsics is not None
+    assert packet.intrinsics.fx == 100.0
+    assert packet.pose is not None
+    assert packet.pose.tx == 1.0
+    assert packet.pose.tz == 3.0
     assert packet.uncertainty is not None
-    assert packet.metadata["camera_pose"]["tx"] == 1.0
-    assert packet.metadata["camera_pose"]["tz"] == 3.0
     np.testing.assert_array_equal(packet.uncertainty, np.array([[0, 1], [2, 3]], dtype=np.float32))
 
 
@@ -156,10 +159,10 @@ def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: 
     packet = stream.wait_for_packet()
 
     assert device.udid == "device-202"
-    assert packet.transport is Record3DTransportId.USB
+    assert packet.metadata["transport"] == Record3DTransportId.USB.value
     assert packet.rgb.shape == (2, 2, 3)
     assert packet.depth.shape == (2, 2)
-    assert packet.intrinsic_matrix is not None
+    assert packet.intrinsics is not None
     assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
 
 

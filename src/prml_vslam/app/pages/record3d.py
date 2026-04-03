@@ -163,15 +163,15 @@ def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
         intrinsics_col, details_col = st.columns((1.0, 1.1), gap="large")
         with intrinsics_col:
             st.markdown("**Camera Intrinsics**")
-            if packet.intrinsic_matrix is None:
+            if packet.intrinsics is None:
                 st.info("Camera intrinsics are not available for the current packet.")
             else:
                 st.latex(
                     format_camera_intrinsics_latex(
-                        fx=packet.intrinsic_matrix.fx,
-                        fy=packet.intrinsic_matrix.fy,
-                        cx=packet.intrinsic_matrix.tx,
-                        cy=packet.intrinsic_matrix.ty,
+                        fx=packet.intrinsics.fx,
+                        fy=packet.intrinsics.fy,
+                        cx=packet.intrinsics.cx,
+                        cy=packet.intrinsics.cy,
                     )
                 )
         with details_col:

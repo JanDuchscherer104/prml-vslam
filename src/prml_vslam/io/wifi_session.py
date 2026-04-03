@@ -6,9 +6,10 @@ import time
 from queue import Empty, Queue
 from threading import Event, Thread, current_thread
 
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.utils import BaseConfig, Console
 
-from .record3d import Record3DConnectionError, Record3DFramePacket, Record3DTimeoutError
+from .record3d import Record3DConnectionError, Record3DTimeoutError
 from .wifi_packets import Record3DWiFiMetadata
 from .wifi_receiver import _Record3DWiFiReceiverRuntime
 from .wifi_signaling import Record3DWiFiSignalingClient
@@ -44,7 +45,7 @@ class Record3DWiFiStreamSession:
             config.device_address,
             timeout_seconds=config.signaling_timeout_seconds,
         )
-        self._packet_queue: Queue[Record3DFramePacket] = Queue()
+        self._packet_queue: Queue[FramePacket] = Queue()
         self._connected_event = Event()
         self._failure_event = Event()
         self._stop_event = Event()
@@ -110,7 +111,7 @@ class Record3DWiFiStreamSession:
         self._worker = None
         self._runtime = None
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> Record3DFramePacket:
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
         timeout = self.config.frame_timeout_seconds if timeout_seconds is None else timeout_seconds
         try:
             return self._packet_queue.get(timeout=timeout)

@@ -440,26 +440,9 @@ class RunSummary(BaseData):
     """Final status per stage."""
 
 
-class FramePacket(BaseData):
-    """Lightweight runtime frame unit shared by replay and live ingress."""
-
-    seq: int
-    """Zero-based frame sequence number."""
-    ts_ns: int
-    """Frame timestamp in nanoseconds."""
-    image_path: Path | None = None
-    """Path-backed RGB image when the frame has already been materialized."""
-    jpeg_bytes: bytes | None = None
-    """Encoded image bytes when the frame is in-memory only."""
-    width: int = 0
-    """Frame width in pixels."""
-    height: int = 0
-    """Frame height in pixels."""
-
-
 __all__ = """
 ArtifactRef BenchmarkEvaluationConfig CloudEvaluationConfig CloudMetrics DatasetSourceSpec DenseArtifacts
-DenseConfig EfficiencyEvaluationConfig EfficiencyMetrics FramePacket LiveSourceSpec PipelineMode
+DenseConfig EfficiencyEvaluationConfig EfficiencyMetrics LiveSourceSpec PipelineMode
 ReferenceArtifacts ReferenceConfig RunPlan RunPlanStage RunPlanStageId RunRequest RunSummary
 SequenceManifest StageExecutionStatus StageManifest TrackingArtifacts TrackingConfig TrajectoryEvaluationConfig
 TrajectoryMetrics VideoSourceSpec

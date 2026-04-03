@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from prml_vslam.interfaces import FramePacketStream
 from prml_vslam.io import Cv2ReplayMode
-from prml_vslam.io.interfaces import VideoPacketStream
 from prml_vslam.utils import Console, PathConfig
 
 from .advio_download import AdvioDownloadManager
@@ -66,7 +66,7 @@ class AdvioDatasetService:
 
     def open_preview_stream(
         self, *, sequence_id: int, pose_source: AdvioPoseSource, respect_video_rotation: bool
-    ) -> VideoPacketStream:
+    ) -> FramePacketStream:
         return self._sequence(sequence_id).open_stream(
             pose_source=pose_source,
             loop=True,

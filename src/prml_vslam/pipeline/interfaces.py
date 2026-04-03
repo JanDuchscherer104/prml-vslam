@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from prml_vslam.interfaces import FramePacket, SE3Pose
 from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.pipeline.contracts import (
     CloudMetrics,
     DenseArtifacts,
     DenseConfig,
-    FramePacket,
     ReferenceArtifacts,
     ReferenceConfig,
     SequenceManifest,
@@ -27,11 +27,11 @@ class TrackingUpdate(BaseData):
     seq: int
     """Frame sequence number associated with the update."""
 
-    ts_ns: int
+    timestamp_ns: int
     """Timestamp in nanoseconds."""
 
-    pose_matrix: list[list[float]] | None = None
-    """Optional pose estimate in homogeneous matrix form."""
+    pose: SE3Pose | None = None
+    """Optional canonical pose estimate."""
 
     num_map_points: int = 0
     """Current sparse map size when the backend exposes it."""

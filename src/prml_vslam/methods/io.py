@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from prml_vslam.utils.geometry import SE3Pose
+from prml_vslam.interfaces import SE3Pose
 from prml_vslam.utils.geometry import write_tum_trajectory as write_shared_tum_trajectory
 
 

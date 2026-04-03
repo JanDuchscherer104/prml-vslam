@@ -8,6 +8,7 @@ from urllib.error import HTTPError
 
 import numpy as np
 
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.io.record3d import Record3DConnectionError, Record3DTransportId
 from prml_vslam.io.record3d_wifi import (
     Record3DWiFiMetadata,
@@ -61,11 +62,11 @@ def test_record3d_wifi_metadata_parses_row_major_intrinsics_and_original_size() 
         },
     )
 
-    assert metadata.intrinsic_matrix is not None
-    assert metadata.intrinsic_matrix.fx == 100.0
-    assert metadata.intrinsic_matrix.fy == 200.0
-    assert metadata.intrinsic_matrix.tx == 10.0
-    assert metadata.intrinsic_matrix.ty == 20.0
+    assert metadata.intrinsics is not None
+    assert metadata.intrinsics.fx == 100.0
+    assert metadata.intrinsics.fy == 200.0
+    assert metadata.intrinsics.cx == 10.0
+    assert metadata.intrinsics.cy == 20.0
     assert metadata.original_width == 960
     assert metadata.original_height == 720
     assert metadata.depth_max_meters == 3.0
@@ -142,14 +143,15 @@ def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
         device_address="http://myiPhone.local",
         payload={"K": [[100.0, 0.0, 10.0], [0.0, 200.0, 20.0], [0.0, 0.0, 1.0]], "maxDepth": 3.0},
     )
-    packet = record3d_wifi_packet_from_video_frame(FakeVideoFrame(), metadata=metadata)
+    packet = record3d_wifi_packet_from_video_frame(FakeVideoFrame(), metadata=metadata, seq=0)
 
-    assert packet.transport is Record3DTransportId.WIFI
+    assert isinstance(packet, FramePacket)
+    assert packet.metadata["transport"] == Record3DTransportId.WIFI.value
     assert packet.rgb.shape == (2, 2, 3)
     assert packet.depth.shape == (2, 2)
     assert packet.uncertainty is None
-    assert packet.intrinsic_matrix is not None
-    assert packet.intrinsic_matrix.fx == 100.0
+    assert packet.intrinsics is not None
+    assert packet.intrinsics.fx == 100.0
     assert packet.metadata["device_address"] == "http://myiPhone.local"
 
 

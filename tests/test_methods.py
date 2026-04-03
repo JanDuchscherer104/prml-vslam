@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from prml_vslam.interfaces import SE3Pose
 from prml_vslam.methods import MethodId, MethodRunRequest, MSTRMethodConfig, ViewerId, VISTAMethodConfig
 from prml_vslam.methods.io import write_tum_trajectory
 from prml_vslam.methods.visualization import write_plotly_scene_html
-from prml_vslam.utils.geometry import SE3Pose
 
 
 def test_method_id_is_str_enum() -> None:
