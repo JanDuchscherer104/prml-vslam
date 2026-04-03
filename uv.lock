@@ -1,10 +1,6 @@
 version = 1
 revision = 3
 requires-python = "==3.11.*"
-conflicts = [[
-    { package = "prml-vslam", extra = "replay" },
-    { package = "prml-vslam", extra = "streaming" },
-]]
 
 [[package]]
 name = "addict"
@@ -13,18 +9,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/85/ef/fd7649da8af11d93979831e8f1f8097e85e82d5bfeabc8c68b39175d8e75/addict-2.4.0.tar.gz", hash = "sha256:b3b2210e0e067a281f5646c8c5db92e99b7231ea8b0eb5f74dbdf9e259d4e494", size = 9186, upload-time = "2020-11-21T16:21:31.416Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/00/b08f23b7d7e1e14ce01419a467b583edbb93c6cdb8654e54a9cc579cd61f/addict-2.4.0-py3-none-any.whl", hash = "sha256:249bb56bbfd3cdc2a004ea0ff4c2b6ddc84d53bc2194761636eb314d5cfa5dfc", size = 3832, upload-time = "2020-11-21T16:21:29.588Z" },
-]
-
-[[package]]
-name = "aioice"
-version = "0.6.18"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "netifaces", marker = "extra == 'extra-10-prml-vslam-replay'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/eb/2ab50754ef565e5e68884a4cb041e6f9467f76643d131d02b753cd4f94cb/aioice-0.6.18.tar.gz", hash = "sha256:962192aa29c2bec1f1fdd86b58a431efe355394c86fad09beddc7094cd3d09ef", size = 33892, upload-time = "2020-03-06T13:29:27.192Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/86/e3cdf660b67da7a9a7013253db5db7cf786a52296cb40078db1206177698/aioice-0.6.18-py3-none-any.whl", hash = "sha256:c6ab906e4c71b91d89daf0bb161ed1b3cf0e8e9803f47cb7fe2ff2c942a0e428", size = 19961, upload-time = "2020-03-06T13:29:25.7Z" },
 ]
 
 [[package]]
@@ -42,28 +26,11 @@ wheels = [
 
 [[package]]
 name = "aiortc"
-version = "0.9.8"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aioice", version = "0.6.18", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "attrs", marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "av", version = "17.0.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "cffi", marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "crcmod", marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "cryptography", marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "pyee", marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "pylibsrtp", marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "pyopenssl", marker = "extra == 'extra-10-prml-vslam-replay'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/16/c2/bf8a6948438e5435b58820ec0bb62a5b38c42a51cad5c7608b7554032ff9/aiortc-0.9.8.tar.gz", hash = "sha256:9eb9b4540552ab8b25e82eb5f1d396ec8f20011b42c4b4c431e49f14c29b64e2", size = 1113325, upload-time = "2018-09-26T13:15:25.098Z" }
-
-[[package]]
-name = "aiortc"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aioice", version = "0.10.2", source = { registry = "https://pypi.org/simple" } },
-    { name = "av", version = "16.1.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "aioice" },
+    { name = "av" },
     { name = "cryptography" },
     { name = "google-crc32c" },
     { name = "pyee" },
@@ -165,22 +132,6 @@ wheels = [
 ]
 
 [[package]]
-name = "av"
-version = "17.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b2/eb/abca886df3a091bc406feb5ff71b4c4f426beaae6b71b9697264ce8c7211/av-17.0.0.tar.gz", hash = "sha256:c53685df73775a8763c375c7b2d62a6cb149d992a26a4b098204da42ade8c3df", size = 4410769, upload-time = "2026-03-14T14:38:45.868Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/fb/55e3b5b5d1fc61466292f26fbcbabafa2642f378dc48875f8f554591e1a4/av-17.0.0-cp311-abi3-macosx_11_0_x86_64.whl", hash = "sha256:ed4013fac77c309a4a68141dcf6148f1821bb1073a36d4289379762a6372f711", size = 23238424, upload-time = "2026-03-14T14:38:05.856Z" },
-    { url = "https://files.pythonhosted.org/packages/52/03/9ace1acc08bc9ae38c14bf3a4b1360e995e4d999d1d33c2cbd7c9e77582a/av-17.0.0-cp311-abi3-macosx_14_0_arm64.whl", hash = "sha256:e44b6c83e9f3be9f79ee87d0b77a27cea9a9cd67bd630362c86b7e56a748dfbb", size = 18709043, upload-time = "2026-03-14T14:38:08.288Z" },
-    { url = "https://files.pythonhosted.org/packages/00/c0/637721f3cd5bb8bd16105a1a08efd781fc12f449931bdb3a4d0cfd63fa55/av-17.0.0-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:b440da6ac47da0629d509316f24bcd858f33158dbdd0f1b7293d71e99beb26de", size = 34018780, upload-time = "2026-03-14T14:38:10.45Z" },
-    { url = "https://files.pythonhosted.org/packages/d2/59/d19bc3257dd985d55337d7f0414c019414b97e16cd3690ebf9941a847543/av-17.0.0-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:1060cba85f97f4a337311169d92c0b5e143452cfa5ca0e65fa499d7955e8592e", size = 36358757, upload-time = "2026-03-14T14:38:13.092Z" },
-    { url = "https://files.pythonhosted.org/packages/52/6c/a1f4f2677bae6f2ade7a8a18e90ebdcf70690c9b1c4e40e118aa30fa313f/av-17.0.0-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:deda202e6021cfc7ba3e816897760ec5431309d59a4da1f75df3c0e9413d71e7", size = 35195281, upload-time = "2026-03-14T14:38:15.789Z" },
-    { url = "https://files.pythonhosted.org/packages/90/ea/52b0fc6f69432c7bf3f5fbe6f707113650aa40a1a05b9096ffc2bba4f77d/av-17.0.0-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ffaf266a1a9c2148072de0a4b5ae98061465178d2cfaa69ee089761149342974", size = 37444817, upload-time = "2026-03-14T14:38:18.563Z" },
-    { url = "https://files.pythonhosted.org/packages/34/ad/d2172966282cb8f146c13b6be7416efefde74186460c5e1708ddfc13dba6/av-17.0.0-cp311-abi3-win_amd64.whl", hash = "sha256:45a35a40b2875bf2f98de7c952d74d960f92f319734e6d28e03b4c62a49e6f49", size = 28888553, upload-time = "2026-03-14T14:38:21.223Z" },
-    { url = "https://files.pythonhosted.org/packages/b0/bb/c5a4c4172c514d631fb506e6366b503576b8c7f29809cf42aca73e28ff01/av-17.0.0-cp311-abi3-win_arm64.whl", hash = "sha256:3d32e9b5c5bbcb872a0b6917b352a1db8a42142237826c9b49a36d5dbd9e9c26", size = 21916910, upload-time = "2026-03-14T14:38:23.706Z" },
-]
-
-[[package]]
 name = "bibtex-updater"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -237,7 +188,7 @@ name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-10-prml-vslam-replay' and extra == 'extra-10-prml-vslam-streaming')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
 wheels = [
@@ -295,7 +246,7 @@ name = "click"
 version = "8.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-replay' and extra == 'extra-10-prml-vslam-streaming')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3d/fa/656b739db8587d7b5dfa22e22ed02566950fbfbcdc20311993483657a5c0/click-8.3.1.tar.gz", hash = "sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a", size = 295065, upload-time = "2025-11-15T20:45:42.706Z" }
 wheels = [
@@ -348,12 +299,6 @@ wheels = [
 ]
 
 [[package]]
-name = "crcmod"
-version = "1.7"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6b/b0/e595ce2a2527e169c3bcd6c33d2473c1918e0b7f6826a043ca1245dd4e5b/crcmod-1.7.tar.gz", hash = "sha256:dc7051a0db5f2bd48665a990d3ec1cc305a466a77358ca4492826f41f283601e", size = 89670, upload-time = "2010-06-27T14:35:29.538Z" }
-
-[[package]]
 name = "crossref-commons"
 version = "0.0.7"
 source = { registry = "https://pypi.org/simple" }
@@ -371,7 +316,7 @@ name = "cryptography"
 version = "46.0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-10-prml-vslam-replay' and extra == 'extra-10-prml-vslam-streaming')" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a4/ba/04b1bd4218cbc58dc90ce967106d51582371b898690f3ae0402876cc4f34/cryptography-46.0.6.tar.gz", hash = "sha256:27550628a518c5c6c903d84f637fbecf287f6cb9ced3804838a1295dc1fd0759", size = 750542, upload-time = "2026-03-25T23:34:53.396Z" }
 wheels = [
@@ -919,7 +864,7 @@ name = "mypy"
 version = "1.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "librt", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-10-prml-vslam-replay' and extra == 'extra-10-prml-vslam-streaming')" },
+    { name = "librt", marker = "platform_python_implementation != 'PyPy'" },
     { name = "mypy-extensions" },
     { name = "pathspec" },
     { name = "typing-extensions" },
@@ -985,12 +930,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/83/f8/51569ac65d696c8ec
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/c4/c2971a3ba4c6103a3d10c4b0f24f461ddc027f0f09763220cf35ca1401b3/nest_asyncio-1.6.0-py3-none-any.whl", hash = "sha256:87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c", size = 5195, upload-time = "2024-01-21T14:25:17.223Z" },
 ]
-
-[[package]]
-name = "netifaces"
-version = "0.11.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a6/91/86a6eac449ddfae239e93ffc1918cf33fd9bab35c04d1e963b311e347a73/netifaces-0.11.0.tar.gz", hash = "sha256:043a79146eb2907edf439899f262b3dfe41717d34124298ed281139a8b93ca32", size = 30106, upload-time = "2021-05-31T08:33:02.506Z" }
 
 [[package]]
 name = "nodeenv"
@@ -1207,8 +1146,6 @@ name = "prml-vslam"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "aiortc", version = "0.9.8", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-prml-vslam-replay'" },
-    { name = "aiortc", version = "1.14.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-prml-vslam-streaming' or extra != 'extra-10-prml-vslam-replay'" },
     { name = "jaxtyping" },
     { name = "numpy" },
     { name = "open3d" },
@@ -1237,18 +1174,17 @@ eval = [
     { name = "evo" },
 ]
 replay = [
-    { name = "av", version = "17.0.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "av" },
 ]
 streaming = [
-    { name = "aiortc", version = "1.14.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "aiortc" },
     { name = "record3d" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "aiortc", specifier = ">=0.9.8" },
     { name = "aiortc", marker = "extra == 'streaming'", specifier = ">=1.9,<2" },
-    { name = "av", marker = "extra == 'replay'", specifier = ">=17,<18" },
+    { name = "av", marker = "extra == 'replay'", specifier = ">=16,<17" },
     { name = "bibtex-updater", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "evo", marker = "extra == 'eval'", specifier = ">=1.31,<2" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
@@ -1459,7 +1395,7 @@ name = "pytest"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-replay' and extra == 'extra-10-prml-vslam-streaming')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -1855,7 +1791,7 @@ dependencies = [
     { name = "toml" },
     { name = "tornado" },
     { name = "typing-extensions" },
-    { name = "watchdog", marker = "sys_platform != 'darwin' or (extra == 'extra-10-prml-vslam-replay' and extra == 'extra-10-prml-vslam-streaming')" },
+    { name = "watchdog", marker = "sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/92/8e/f2b8b4fa8ba65aae251170c54f8ce198fb588fc348301c2b624f8c63efac/streamlit-1.55.0.tar.gz", hash = "sha256:015e512bbd02d000f4047e51118dc086b70e7d9c46b4a11a33c2509731379626", size = 8612008, upload-time = "2026-03-03T22:26:02.149Z" }
 wheels = [
@@ -1920,7 +1856,7 @@ name = "tqdm"
 version = "4.67.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-replay' and extra == 'extra-10-prml-vslam-streaming')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
 wheels = [
@@ -2020,9 +1956,6 @@ version = "6.0.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/db/7d/7f3d619e951c88ed75c6037b246ddcf2d322812ee8ea189be89511721d54/watchdog-6.0.0.tar.gz", hash = "sha256:9ddf7c82fda3ae8e24decda1338ede66e1c99883db93711d8fb941eaa2d8c282", size = 131220, upload-time = "2024-11-01T14:07:13.037Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e0/24/d9be5cd6642a6aa68352ded4b4b10fb0d7889cb7f45814fb92cecd35f101/watchdog-6.0.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:6eb11feb5a0d452ee41f824e271ca311a09e250441c262ca2fd7ebcf2461a06c", size = 96393, upload-time = "2024-11-01T14:06:31.756Z" },
-    { url = "https://files.pythonhosted.org/packages/63/7a/6013b0d8dbc56adca7fdd4f0beed381c59f6752341b12fa0886fa7afc78b/watchdog-6.0.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:ef810fbf7b781a5a593894e4f439773830bdecb885e6880d957d5b9382a960d2", size = 88392, upload-time = "2024-11-01T14:06:32.99Z" },
-    { url = "https://files.pythonhosted.org/packages/d1/40/b75381494851556de56281e053700e46bff5b37bf4c7267e858640af5a7f/watchdog-6.0.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:afd0fe1b2270917c5e23c2a65ce50c2a4abb63daafb0d419fde368e272a76b7c", size = 89019, upload-time = "2024-11-01T14:06:34.963Z" },
     { url = "https://files.pythonhosted.org/packages/a9/c7/ca4bf3e518cb57a686b2feb4f55a1892fd9a3dd13f470fca14e00f80ea36/watchdog-6.0.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:7607498efa04a3542ae3e05e64da8202e58159aa1fa4acddf7678d34a35d4f13", size = 79079, upload-time = "2024-11-01T14:06:59.472Z" },
     { url = "https://files.pythonhosted.org/packages/5c/51/d46dc9332f9a647593c947b4b88e2381c8dfc0942d15b8edc0310fa4abb1/watchdog-6.0.0-py3-none-manylinux2014_armv7l.whl", hash = "sha256:9041567ee8953024c83343288ccc458fd0a2d811d6a0fd68c4c22609e3490379", size = 79078, upload-time = "2024-11-01T14:07:01.431Z" },
     { url = "https://files.pythonhosted.org/packages/d4/57/04edbf5e169cd318d5f07b4766fee38e825d64b6913ca157ca32d1a42267/watchdog-6.0.0-py3-none-manylinux2014_i686.whl", hash = "sha256:82dc3e3143c7e38ec49d61af98d6558288c415eac98486a5c581726e0737c00e", size = 79076, upload-time = "2024-11-01T14:07:02.568Z" },
