@@ -16,6 +16,8 @@ dependencies = [
   "streamlit>=1.35,<2",
   "tomli-w>=1.2,<2",
   "typer>=0.12,<1",
+  "jaxtyping>=0.3.9",
+  "pytransform3d>=3.14.4",
 ]
 
   [project.optional-dependencies]
@@ -28,10 +30,7 @@ dependencies = [
     "ruff>=0.11,<1",
   ]
   eval = ["evo>=1.31,<2"]
-  streaming = [
-    "aiortc>=1.9,<2",
-    "record3d>=1.4.1,<2",
-  ]
+  streaming = ["aiortc>=1.9,<2", "record3d>=1.4.1,<2"]
 
   [project.scripts]
   prml-vslam = "prml_vslam.main:main"
@@ -68,17 +67,17 @@ warn_unused_configs = true
 packages            = ["prml_vslam"]
 mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
 
-[[tool.mypy.overrides]]
-module = [
-  "numpy",
-  "numpy.*",
-  "pydantic",
-  "pydantic.*",
-  "pytest",
-  "pytest.*",
-  "streamlit",
-  "streamlit.*",
-  "tomli_w",
-  "tomli_w.*",
-]
-ignore_missing_imports = true
+  [[tool.mypy.overrides]]
+  module = [
+    "numpy",
+    "numpy.*",
+    "pydantic",
+    "pydantic.*",
+    "pytest",
+    "pytest.*",
+    "streamlit",
+    "streamlit.*",
+    "tomli_w",
+    "tomli_w.*",
+  ]
+  ignore_missing_imports = true
