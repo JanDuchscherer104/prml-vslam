@@ -7,7 +7,7 @@ from collections import deque
 from collections.abc import Callable
 from enum import StrEnum
 from threading import Event, Lock, Thread
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import numpy as np
 from pydantic import Field
@@ -26,14 +26,146 @@ from prml_vslam.io.record3d import (
     Record3DUSBPacketStreamConfig,
 )
 from prml_vslam.io.record3d_wifi import Record3DWiFiStreamConfig
-from prml_vslam.utils import BaseData, Console
+from prml_vslam.utils import BaseData
+
+SnapshotT = TypeVar("SnapshotT", bound=BaseData)
+StreamT = TypeVar("StreamT")
+
+
+def empty_positions_xyz() -> np.ndarray:
+    return np.empty((0, 3), dtype=np.float64)
+
+
+def empty_timestamps_s() -> np.ndarray:
+    return np.empty((0,), dtype=np.float64)
+
+
+class RollingRuntimeMetrics:
+    def __init__(self, *, fps_window_size: int, trajectory_window_size: int) -> None:
+        self._arrival_times: deque[float] = deque(maxlen=fps_window_size)
+        self._trajectory_positions: deque[np.ndarray] = deque(maxlen=trajectory_window_size)
+        self._trajectory_timestamps: deque[float] = deque(maxlen=trajectory_window_size)
+        self._received_frames = 0
+
+    def record(
+        self,
+        *,
+        arrival_time_s: float,
+        position_xyz: np.ndarray | None,
+        trajectory_time_s: float | None,
+    ) -> None:
+        self._received_frames += 1
+        self._arrival_times.append(arrival_time_s)
+        if position_xyz is not None and trajectory_time_s is not None:
+            self._trajectory_positions.append(position_xyz)
+            self._trajectory_timestamps.append(trajectory_time_s)
+
+    def snapshot_fields(self) -> dict[str, int | float | np.ndarray]:
+        return {
+            "received_frames": self._received_frames,
+            "measured_fps": self._measure_fps(self._arrival_times),
+            "trajectory_positions_xyz": self._positions_to_array(self._trajectory_positions),
+            "trajectory_timestamps_s": np.asarray(tuple(self._trajectory_timestamps), dtype=np.float64),
+        }
+
+    @staticmethod
+    def _measure_fps(arrival_times: deque[float]) -> float:
+        if len(arrival_times) < 2:
+            return 0.0
+        elapsed = arrival_times[-1] - arrival_times[0]
+        return 0.0 if elapsed <= 0.0 else float((len(arrival_times) - 1) / elapsed)
+
+    @staticmethod
+    def _positions_to_array(positions: deque[np.ndarray]) -> np.ndarray:
+        if not positions:
+            return empty_positions_xyz()
+        return np.vstack(tuple(positions)).astype(np.float64, copy=False)
+
+
+class WorkerRuntime(Generic[SnapshotT, StreamT]):
+    def __init__(
+        self,
+        *,
+        empty_snapshot: Callable[[], SnapshotT],
+        stop_timeout_message: str,
+        disconnect_stream: Callable[[StreamT], None],
+    ) -> None:
+        self._empty_snapshot = empty_snapshot
+        self._stop_timeout_message = stop_timeout_message
+        self._disconnect_stream = disconnect_stream
+        self._lock = Lock()
+        self._snapshot = empty_snapshot()
+        self._active_stream: StreamT | None = None
+        self._active_stop_event: Event | None = None
+        self._worker_thread: Thread | None = None
+
+    def snapshot(self) -> SnapshotT:
+        with self._lock:
+            return self._snapshot.model_copy(deep=True)
+
+    def launch(
+        self,
+        *,
+        connecting_snapshot: SnapshotT,
+        thread_name: str,
+        worker_target: Callable[[Event], None],
+    ) -> None:
+        self.stop()
+        stop_event = Event()
+        worker = Thread(target=worker_target, args=(stop_event,), name=thread_name, daemon=True)
+        with self._lock:
+            self._active_stop_event = stop_event
+            self._worker_thread = worker
+            self._snapshot = connecting_snapshot
+        worker.start()
+
+    def register_stream(self, *, stop_event: Event, stream: StreamT) -> None:
+        with self._lock:
+            if self._active_stop_event is stop_event:
+                self._active_stream = stream
+
+    def update_fields(self, **fields: object) -> None:
+        with self._lock:
+            self._snapshot = self._snapshot.model_copy(update=fields)
+
+    def disconnect(self, stream: StreamT) -> None:
+        self._disconnect_stream(stream)
+
+    def stop(self) -> None:
+        with self._lock:
+            worker = self._worker_thread
+            stream = self._active_stream
+            stop_event = self._active_stop_event
+        if stop_event is not None:
+            stop_event.set()
+        if stream is not None:
+            self._disconnect_stream(stream)
+        if worker is not None:
+            worker.join(timeout=2.0)
+            if worker.is_alive():
+                raise RuntimeError(self._stop_timeout_message)
+        with self._lock:
+            self._active_stream = None
+            self._active_stop_event = None
+            self._worker_thread = None
+            self._snapshot = self._empty_snapshot()
+
+    def finalize_run(
+        self,
+        *,
+        stop_event: Event,
+        disconnected_snapshot: Callable[[SnapshotT], SnapshotT],
+    ) -> None:
+        with self._lock:
+            if self._active_stop_event is stop_event:
+                self._active_stream = None
+                self._active_stop_event = None
+                self._worker_thread = None
+            self._snapshot = self._empty_snapshot() if stop_event.is_set() else disconnected_snapshot(self._snapshot)
 
 
 class Record3DAppService:
-    """App-facing discovery helpers for Record3D transports."""
-
     def list_usb_devices(self) -> list[Record3DDevice]:
-        """List USB-connected Record3D devices visible to the current machine."""
         stream = Record3DUSBPacketStreamConfig().setup_target()
         if stream is None:
             raise Record3DConnectionError("Failed to initialize the USB Record3D packet stream.")
@@ -41,8 +173,6 @@ class Record3DAppService:
 
 
 class AdvioPreviewStreamState(StrEnum):
-    """Lifecycle states for the session-local ADVIO preview runtime."""
-
     IDLE = "idle"
     CONNECTING = "connecting"
     STREAMING = "streaming"
@@ -52,8 +182,6 @@ class AdvioPreviewStreamState(StrEnum):
 
 class AdvioPreviewSnapshot(BaseData):
     """Latest preview state exposed to the ADVIO Streamlit page."""
-
-    model_config = {"arbitrary_types_allowed": True}
 
     state: AdvioPreviewStreamState = AdvioPreviewStreamState.IDLE
     """Current runtime state."""
@@ -76,10 +204,10 @@ class AdvioPreviewSnapshot(BaseData):
     measured_fps: float = 0.0
     """Measured receive rate over the recent window."""
 
-    trajectory_positions_xyz: np.ndarray = Field(default_factory=lambda: np.empty((0, 3), dtype=np.float64))
+    trajectory_positions_xyz: np.ndarray = Field(default_factory=empty_positions_xyz)
     """Recent camera positions in meters."""
 
-    trajectory_timestamps_s: np.ndarray = Field(default_factory=lambda: np.empty((0,), dtype=np.float64))
+    trajectory_timestamps_s: np.ndarray = Field(default_factory=empty_timestamps_s)
     """Elapsed preview timestamps aligned to `trajectory_positions_xyz`."""
 
     error_message: str = ""
@@ -87,8 +215,6 @@ class AdvioPreviewSnapshot(BaseData):
 
 
 class AdvioPreviewRuntimeController:
-    """Own the looped ADVIO preview worker thread for one Streamlit browser session."""
-
     def __init__(
         self,
         *,
@@ -99,17 +225,14 @@ class AdvioPreviewRuntimeController:
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
         self.trajectory_window_size = trajectory_window_size
-        self.console = Console(__name__).child(self.__class__.__name__)
-        self._lock = Lock()
-        self._snapshot = AdvioPreviewSnapshot()
-        self._active_stream: VideoPacketStream | None = None
-        self._active_stop_event: Event | None = None
-        self._worker_thread: Thread | None = None
+        self._runtime = WorkerRuntime(
+            empty_snapshot=AdvioPreviewSnapshot,
+            stop_timeout_message="Timed out stopping the ADVIO preview worker thread.",
+            disconnect_stream=lambda stream: stream.disconnect(),
+        )
 
     def snapshot(self) -> AdvioPreviewSnapshot:
-        """Return a copy of the latest ADVIO preview snapshot."""
-        with self._lock:
-            return self._snapshot.model_copy(deep=True)
+        return self._runtime.snapshot()
 
     def start(
         self,
@@ -119,51 +242,25 @@ class AdvioPreviewRuntimeController:
         pose_source: AdvioPoseSource,
         stream: VideoPacketStream,
     ) -> None:
-        """Start one ADVIO preview worker from a prepared packet stream."""
-        self.stop()
-        stop_event = Event()
-        worker = Thread(
-            target=self._run_stream_worker,
-            kwargs={
-                "sequence_id": sequence_id,
-                "sequence_label": sequence_label,
-                "pose_source": pose_source,
-                "stream": stream,
-                "stop_event": stop_event,
-            },
-            name=f"ADVIO-preview-{sequence_id:02d}",
-            daemon=True,
-        )
-        with self._lock:
-            self._active_stream = stream
-            self._active_stop_event = stop_event
-            self._worker_thread = worker
-            self._snapshot = AdvioPreviewSnapshot(
+        self._runtime.launch(
+            connecting_snapshot=AdvioPreviewSnapshot(
                 state=AdvioPreviewStreamState.CONNECTING,
                 sequence_id=sequence_id,
                 sequence_label=sequence_label,
                 pose_source=pose_source,
-            )
-        worker.start()
+            ),
+            thread_name=f"ADVIO-preview-{sequence_id:02d}",
+            worker_target=lambda stop_event: self._run_stream_worker(
+                sequence_id=sequence_id,
+                sequence_label=sequence_label,
+                pose_source=pose_source,
+                stream=stream,
+                stop_event=stop_event,
+            ),
+        )
 
     def stop(self) -> None:
-        """Stop the active ADVIO preview worker and clear the snapshot."""
-        with self._lock:
-            worker = self._worker_thread
-            stop_event = self._active_stop_event
-
-        if stop_event is not None:
-            stop_event.set()
-        if worker is not None:
-            worker.join(timeout=2.0)
-            if worker.is_alive():
-                raise RuntimeError("Timed out stopping the ADVIO preview worker thread.")
-
-        with self._lock:
-            self._active_stream = None
-            self._active_stop_event = None
-            self._worker_thread = None
-            self._snapshot = AdvioPreviewSnapshot()
+        self._runtime.stop()
 
     def _run_stream_worker(
         self,
@@ -174,15 +271,16 @@ class AdvioPreviewRuntimeController:
         stream: VideoPacketStream,
         stop_event: Event,
     ) -> None:
-        frames_received = 0
-        arrival_times: deque[float] = deque(maxlen=self.fps_window_size)
-        trajectory_positions: deque[np.ndarray] = deque(maxlen=self.trajectory_window_size)
-        trajectory_timestamps: deque[float] = deque(maxlen=self.trajectory_window_size)
+        metrics = RollingRuntimeMetrics(
+            fps_window_size=self.fps_window_size,
+            trajectory_window_size=self.trajectory_window_size,
+        )
         first_packet_timestamp_ns: int | None = None
 
         try:
+            self._runtime.register_stream(stop_event=stop_event, stream=stream)
             stream.connect()
-            self._update_snapshot(
+            self._runtime.update_fields(
                 state=AdvioPreviewStreamState.STREAMING,
                 sequence_id=sequence_id,
                 sequence_label=sequence_label,
@@ -191,29 +289,26 @@ class AdvioPreviewRuntimeController:
             )
             while not stop_event.is_set():
                 packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
-                frames_received += 1
-                arrival_times.append(time.monotonic())
                 if first_packet_timestamp_ns is None:
                     first_packet_timestamp_ns = packet.timestamp_ns
                 camera_position = self._extract_camera_position(packet)
-                if camera_position is not None and first_packet_timestamp_ns is not None:
-                    trajectory_positions.append(camera_position)
-                    trajectory_timestamps.append(max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9)
-                self._update_snapshot(
+                metrics.record(
+                    arrival_time_s=time.monotonic(),
+                    position_xyz=camera_position,
+                    trajectory_time_s=self._trajectory_time_s(packet, first_packet_timestamp_ns),
+                )
+                self._runtime.update_fields(
                     state=AdvioPreviewStreamState.STREAMING,
                     sequence_id=sequence_id,
                     sequence_label=sequence_label,
                     pose_source=pose_source,
                     latest_packet=packet,
-                    received_frames=frames_received,
-                    measured_fps=self._measure_fps(arrival_times),
-                    trajectory_positions_xyz=self._to_positions_array(trajectory_positions),
-                    trajectory_timestamps_s=np.asarray(tuple(trajectory_timestamps), dtype=np.float64),
                     error_message="",
+                    **metrics.snapshot_fields(),
                 )
         except Exception as exc:
             if not stop_event.is_set():
-                self._update_snapshot(
+                self._runtime.update_fields(
                     state=AdvioPreviewStreamState.FAILED,
                     sequence_id=sequence_id,
                     sequence_label=sequence_label,
@@ -221,64 +316,8 @@ class AdvioPreviewRuntimeController:
                     error_message=str(exc),
                 )
         finally:
-            stream.disconnect()
-            with self._lock:
-                if self._active_stop_event is stop_event:
-                    self._active_stream = None
-                    self._active_stop_event = None
-                    self._worker_thread = None
-                if stop_event.is_set():
-                    self._snapshot = AdvioPreviewSnapshot()
-                elif self._snapshot.state is AdvioPreviewStreamState.STREAMING:
-                    self._snapshot = self._snapshot.model_copy(
-                        update={
-                            "state": AdvioPreviewStreamState.DISCONNECTED,
-                            "latest_packet": None,
-                            "received_frames": 0,
-                            "measured_fps": 0.0,
-                        }
-                    )
-
-    def _update_snapshot(
-        self,
-        *,
-        state: AdvioPreviewStreamState,
-        sequence_id: int | None,
-        sequence_label: str,
-        pose_source: AdvioPoseSource | None,
-        latest_packet: VideoFramePacket | None = None,
-        received_frames: int = 0,
-        measured_fps: float = 0.0,
-        trajectory_positions_xyz: np.ndarray | None = None,
-        trajectory_timestamps_s: np.ndarray | None = None,
-        error_message: str = "",
-    ) -> None:
-        with self._lock:
-            self._snapshot = AdvioPreviewSnapshot(
-                state=state,
-                sequence_id=sequence_id,
-                sequence_label=sequence_label,
-                pose_source=pose_source,
-                latest_packet=latest_packet,
-                received_frames=received_frames,
-                measured_fps=measured_fps,
-                trajectory_positions_xyz=(
-                    np.empty((0, 3), dtype=np.float64) if trajectory_positions_xyz is None else trajectory_positions_xyz
-                ),
-                trajectory_timestamps_s=(
-                    np.empty((0,), dtype=np.float64) if trajectory_timestamps_s is None else trajectory_timestamps_s
-                ),
-                error_message=error_message,
-            )
-
-    @staticmethod
-    def _measure_fps(arrival_times: deque[float]) -> float:
-        if len(arrival_times) < 2:
-            return 0.0
-        elapsed = arrival_times[-1] - arrival_times[0]
-        if elapsed <= 0.0:
-            return 0.0
-        return float((len(arrival_times) - 1) / elapsed)
+            self._runtime.disconnect(stream)
+            self._runtime.finalize_run(stop_event=stop_event, disconnected_snapshot=self._disconnected_snapshot)
 
     @staticmethod
     def _extract_camera_position(packet: VideoFramePacket) -> np.ndarray | None:
@@ -293,15 +332,26 @@ class AdvioPreviewRuntimeController:
         return position
 
     @staticmethod
-    def _to_positions_array(positions: deque[np.ndarray]) -> np.ndarray:
-        if not positions:
-            return np.empty((0, 3), dtype=np.float64)
-        return np.vstack(tuple(positions)).astype(np.float64, copy=False)
+    def _trajectory_time_s(packet: VideoFramePacket, first_packet_timestamp_ns: int | None) -> float | None:
+        if first_packet_timestamp_ns is None:
+            return None
+        return max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9
+
+    @staticmethod
+    def _disconnected_snapshot(snapshot: AdvioPreviewSnapshot) -> AdvioPreviewSnapshot:
+        if snapshot.state is not AdvioPreviewStreamState.STREAMING:
+            return snapshot
+        return snapshot.model_copy(
+            update={
+                "state": AdvioPreviewStreamState.DISCONNECTED,
+                "latest_packet": None,
+                "received_frames": 0,
+                "measured_fps": 0.0,
+            }
+        )
 
 
 class Record3DStreamRuntimeController:
-    """Own the live Record3D reader thread for one Streamlit browser session."""
-
     def __init__(
         self,
         *,
@@ -316,20 +366,16 @@ class Record3DStreamRuntimeController:
         self.trajectory_window_size = trajectory_window_size
         self.usb_stream_factory = usb_stream_factory or self._default_usb_stream_factory
         self.wifi_stream_factory = wifi_stream_factory or self._default_wifi_stream_factory
-        self.console = Console(__name__).child(self.__class__.__name__)
-        self._lock = Lock()
-        self._snapshot = Record3DStreamSnapshot()
-        self._active_stream: Record3DPacketStream | None = None
-        self._active_stop_event: Event | None = None
-        self._worker_thread: Thread | None = None
+        self._runtime = WorkerRuntime(
+            empty_snapshot=Record3DStreamSnapshot,
+            stop_timeout_message="Timed out stopping the Record3D runtime worker thread.",
+            disconnect_stream=lambda stream: stream.disconnect(),
+        )
 
     def snapshot(self) -> Record3DStreamSnapshot:
-        """Return a copy of the latest live-stream snapshot."""
-        with self._lock:
-            return self._snapshot.model_copy(deep=True)
+        return self._runtime.snapshot()
 
     def start_usb(self, *, device_index: int) -> None:
-        """Start a USB-backed live Record3D reader thread."""
         self._start_worker(
             transport=Record3DTransportId.USB,
             source_descriptor=f"USB device #{device_index}",
@@ -337,7 +383,6 @@ class Record3DStreamRuntimeController:
         )
 
     def start_wifi(self, *, device_address: str) -> None:
-        """Start a Wi-Fi-backed live Record3D reader thread."""
         self._start_worker(
             transport=Record3DTransportId.WIFI,
             source_descriptor=device_address,
@@ -345,26 +390,7 @@ class Record3DStreamRuntimeController:
         )
 
     def stop(self) -> None:
-        """Stop the active reader thread and clear the live snapshot."""
-        with self._lock:
-            worker = self._worker_thread
-            stream = self._active_stream
-            stop_event = self._active_stop_event
-
-        if stop_event is not None:
-            stop_event.set()
-        if stream is not None:
-            stream.disconnect()
-        if worker is not None:
-            worker.join(timeout=2.0)
-            if worker.is_alive():
-                raise RuntimeError("Timed out stopping the Record3D runtime worker thread.")
-
-        with self._lock:
-            self._active_stream = None
-            self._active_stop_event = None
-            self._worker_thread = None
-            self._snapshot = Record3DStreamSnapshot()
+        self._runtime.stop()
 
     def _start_worker(
         self,
@@ -373,28 +399,20 @@ class Record3DStreamRuntimeController:
         source_descriptor: str,
         stream_factory: Callable[[], Record3DPacketStream],
     ) -> None:
-        self.stop()
-        stop_event = Event()
-        worker = Thread(
-            target=self._run_stream_worker,
-            kwargs={
-                "transport": transport,
-                "source_descriptor": source_descriptor,
-                "stop_event": stop_event,
-                "stream_factory": stream_factory,
-            },
-            name=f"Record3D-{transport.value}-worker",
-            daemon=True,
-        )
-        with self._lock:
-            self._active_stop_event = stop_event
-            self._worker_thread = worker
-            self._snapshot = Record3DStreamSnapshot(
+        self._runtime.launch(
+            connecting_snapshot=Record3DStreamSnapshot(
                 transport=transport,
                 state=Record3DStreamState.CONNECTING,
                 source_label=source_descriptor,
-            )
-        worker.start()
+            ),
+            thread_name=f"Record3D-{transport.value}-worker",
+            worker_target=lambda stop_event: self._run_stream_worker(
+                transport=transport,
+                source_descriptor=source_descriptor,
+                stop_event=stop_event,
+                stream_factory=stream_factory,
+            ),
+        )
 
     def _run_stream_worker(
         self,
@@ -404,23 +422,22 @@ class Record3DStreamRuntimeController:
         stop_event: Event,
         stream_factory: Callable[[], Record3DPacketStream],
     ) -> None:
-        frames_received = 0
-        arrival_times: deque[float] = deque(maxlen=self.fps_window_size)
-        trajectory_positions: deque[np.ndarray] = deque(maxlen=self.trajectory_window_size)
-        trajectory_timestamps: deque[float] = deque(maxlen=self.trajectory_window_size)
+        metrics = RollingRuntimeMetrics(
+            fps_window_size=self.fps_window_size,
+            trajectory_window_size=self.trajectory_window_size,
+        )
         stream: Record3DPacketStream | None = None
 
         try:
             stream = stream_factory()
-            with self._lock:
-                self._active_stream = stream
+            self._runtime.register_stream(stop_event=stop_event, stream=stream)
             connected_target = stream.connect()
             source_label = self._format_source_label(
                 transport=transport,
                 source_descriptor=source_descriptor,
                 connected_target=connected_target,
             )
-            self._update_snapshot(
+            self._runtime.update_fields(
                 transport=transport,
                 state=Record3DStreamState.STREAMING,
                 source_label=source_label,
@@ -432,26 +449,23 @@ class Record3DStreamRuntimeController:
                     packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
                 except Record3DTimeoutError:
                     continue
-                frames_received += 1
-                arrival_times.append(packet.arrival_timestamp_s)
                 camera_position = self._extract_camera_position(packet)
-                if camera_position is not None:
-                    trajectory_positions.append(camera_position)
-                    trajectory_timestamps.append(packet.arrival_timestamp_s)
-                self._update_snapshot(
+                metrics.record(
+                    arrival_time_s=packet.arrival_timestamp_s,
+                    position_xyz=camera_position,
+                    trajectory_time_s=packet.arrival_timestamp_s if camera_position is not None else None,
+                )
+                self._runtime.update_fields(
                     transport=transport,
                     state=Record3DStreamState.STREAMING,
                     source_label=source_label,
                     latest_packet=packet,
-                    received_frames=frames_received,
-                    measured_fps=self._measure_fps(arrival_times),
-                    trajectory_positions_xyz=self._to_positions_array(trajectory_positions),
-                    trajectory_timestamps_s=np.asarray(tuple(trajectory_timestamps), dtype=np.float64),
                     error_message="",
+                    **metrics.snapshot_fields(),
                 )
         except Exception as exc:
             if not stop_event.is_set():
-                self._update_snapshot(
+                self._runtime.update_fields(
                     transport=transport,
                     state=Record3DStreamState.FAILED,
                     source_label=source_descriptor,
@@ -459,53 +473,8 @@ class Record3DStreamRuntimeController:
                 )
         finally:
             if stream is not None:
-                stream.disconnect()
-            with self._lock:
-                if self._active_stop_event is stop_event:
-                    self._active_stream = None
-                    self._active_stop_event = None
-                    self._worker_thread = None
-                if stop_event.is_set():
-                    self._snapshot = Record3DStreamSnapshot()
-                elif self._snapshot.state is Record3DStreamState.STREAMING:
-                    self._snapshot = self._snapshot.model_copy(
-                        update={
-                            "state": Record3DStreamState.DISCONNECTED,
-                            "latest_packet": None,
-                            "received_frames": 0,
-                            "measured_fps": 0.0,
-                        }
-                    )
-
-    def _update_snapshot(
-        self,
-        *,
-        transport: Record3DTransportId,
-        state: Record3DStreamState,
-        source_label: str,
-        latest_packet: Any | None = None,
-        received_frames: int = 0,
-        measured_fps: float = 0.0,
-        trajectory_positions_xyz: np.ndarray | None = None,
-        trajectory_timestamps_s: np.ndarray | None = None,
-        error_message: str = "",
-    ) -> None:
-        with self._lock:
-            self._snapshot = Record3DStreamSnapshot(
-                transport=transport,
-                state=state,
-                source_label=source_label,
-                latest_packet=latest_packet,
-                received_frames=received_frames,
-                measured_fps=measured_fps,
-                trajectory_positions_xyz=(
-                    np.empty((0, 3), dtype=np.float64) if trajectory_positions_xyz is None else trajectory_positions_xyz
-                ),
-                trajectory_timestamps_s=(
-                    np.empty((0,), dtype=np.float64) if trajectory_timestamps_s is None else trajectory_timestamps_s
-                ),
-                error_message=error_message,
-            )
+                self._runtime.disconnect(stream)
+            self._runtime.finalize_run(stop_event=stop_event, disconnected_snapshot=self._disconnected_snapshot)
 
     @staticmethod
     def _default_usb_stream_factory(device_index: int, frame_timeout_seconds: float) -> Record3DPacketStream:
@@ -545,15 +514,6 @@ class Record3DStreamRuntimeController:
         return source_descriptor
 
     @staticmethod
-    def _measure_fps(arrival_times: deque[float]) -> float:
-        if len(arrival_times) < 2:
-            return 0.0
-        elapsed = arrival_times[-1] - arrival_times[0]
-        if elapsed <= 0.0:
-            return 0.0
-        return float((len(arrival_times) - 1) / elapsed)
-
-    @staticmethod
     def _extract_camera_position(packet: Any) -> np.ndarray | None:
         camera_pose = getattr(packet, "metadata", {}).get("camera_pose")
         if not isinstance(camera_pose, dict):
@@ -574,10 +534,17 @@ class Record3DStreamRuntimeController:
         return position
 
     @staticmethod
-    def _to_positions_array(positions: deque[np.ndarray]) -> np.ndarray:
-        if not positions:
-            return np.empty((0, 3), dtype=np.float64)
-        return np.vstack(tuple(positions)).astype(np.float64, copy=False)
+    def _disconnected_snapshot(snapshot: Record3DStreamSnapshot) -> Record3DStreamSnapshot:
+        if snapshot.state is not Record3DStreamState.STREAMING:
+            return snapshot
+        return snapshot.model_copy(
+            update={
+                "state": Record3DStreamState.DISCONNECTED,
+                "latest_packet": None,
+                "received_frames": 0,
+                "measured_fps": 0.0,
+            }
+        )
 
 
 __all__ = [
