@@ -1,5 +1,3 @@
-"""Mock trajectory evaluation services for the app and tests."""
-
 from __future__ import annotations
 
 import json
@@ -21,35 +19,67 @@ from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.utils.path_config import PathConfig
 
 
+def resolve_dataset_root(path_config: PathConfig, dataset: DatasetId) -> Path:
+    """Return the repo-owned root for one dataset."""
+    match dataset:
+        case DatasetId.ADVIO:
+            return path_config.resolve_dataset_dir(dataset.value)
+        case _:
+            raise NotImplementedError(f"Unsupported dataset: {dataset!r}")
+
+
+def list_sequences(*, dataset: DatasetId, dataset_root: Path) -> list[str]:
+    """List locally available sequence slugs for a resolved dataset root."""
+    prefix = f"{dataset.value}-"
+    return sorted(
+        {
+            path.name
+            for candidate_root in (dataset_root, dataset_root / "data")
+            if candidate_root.exists()
+            for path in candidate_root.iterdir()
+            if path.is_dir() and path.name.startswith(prefix)
+        }
+    )
+
+
+def resolve_reference_path(*, dataset_root: Path, sequence_slug: str) -> Path | None:
+    """Return the local TUM reference trajectory when it already exists."""
+    sequence_root = dataset_root / sequence_slug
+    for candidate in (
+        sequence_root / "ground-truth" / "ground_truth.tum",
+        sequence_root / "ground_truth.tum",
+        sequence_root / "evaluation" / "ground_truth.tum",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def build_selection(
+    *,
+    dataset: DatasetId,
+    dataset_root: Path,
+    sequence_slug: str,
+    run: DiscoveredRun,
+) -> SelectionSnapshot:
+    """Build the selection snapshot used by the metrics page and tests."""
+    return SelectionSnapshot(
+        dataset=dataset,
+        sequence_slug=sequence_slug,
+        dataset_root=dataset_root,
+        reference_path=resolve_reference_path(dataset_root=dataset_root, sequence_slug=sequence_slug),
+        run=run,
+    )
+
+
 class TrajectoryEvaluationService:
     """Discover runs and persist a lightweight local trajectory-delta mock."""
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
 
-    def dataset_root(self, dataset: DatasetId) -> Path:
-        """Return the repo-owned root for the selected dataset."""
-        match dataset:
-            case DatasetId.ADVIO:
-                return self.path_config.resolve_dataset_dir(dataset.value)
-            case _:
-                raise NotImplementedError(f"Unsupported dataset: {dataset!r}")
-
-    def list_sequences(self, dataset: DatasetId) -> list[str]:
-        """List locally available sequence slugs for the selected dataset."""
-        root = self.dataset_root(dataset)
-        sequence_names = {
-            path.name
-            for candidate_root in (root, root / "data")
-            if candidate_root.exists()
-            for path in candidate_root.iterdir()
-            if path.is_dir() and path.name.startswith(f"{dataset.value}-")
-        }
-        return sorted(sequence_names)
-
-    def discover_runs(self, dataset: DatasetId, sequence_slug: str | None) -> list[DiscoveredRun]:
-        """Return all runs under the artifacts root that match `sequence_slug`."""
-        del dataset
+    def discover_runs(self, sequence_slug: str | None) -> list[DiscoveredRun]:
+        """Return all runs under the artifacts root that match one sequence slug."""
         if sequence_slug is None:
             return []
 
@@ -70,40 +100,6 @@ class TrajectoryEvaluationService:
             )
         return runs
 
-    def resolve_selection(
-        self,
-        *,
-        dataset: DatasetId,
-        sequence_slug: str | None,
-        run_root: Path | None,
-    ) -> SelectionSnapshot | None:
-        """Resolve the current selector state into concrete dataset and run paths."""
-        if sequence_slug is None:
-            return None
-        runs = self.discover_runs(dataset, sequence_slug)
-        if not runs:
-            return None
-        selected_run = next((run for run in runs if run.artifact_root == run_root), runs[0])
-        return SelectionSnapshot(
-            dataset=dataset,
-            sequence_slug=sequence_slug,
-            dataset_root=self.dataset_root(dataset),
-            reference_path=self.reference_path(dataset=dataset, sequence_slug=sequence_slug),
-            run=selected_run,
-        )
-
-    def reference_path(self, *, dataset: DatasetId, sequence_slug: str) -> Path | None:
-        """Return the local TUM reference trajectory when it already exists."""
-        sequence_root = self.dataset_root(dataset) / sequence_slug
-        for candidate in (
-            sequence_root / "ground-truth" / "ground_truth.tum",
-            sequence_root / "ground_truth.tum",
-            sequence_root / "evaluation" / "ground_truth.tum",
-        ):
-            if candidate.exists():
-                return candidate
-        return None
-
     def load_evaluation(
         self,
         *,
@@ -111,15 +107,21 @@ class TrajectoryEvaluationService:
         controls: EvaluationControls,
     ) -> EvaluationArtifact | None:
         """Load a persisted local mock evaluation when it exists."""
+        reference_path = selection.reference_path
         result_path = self.result_path(selection.run.artifact_root, controls)
-        if not result_path.exists() or selection.reference_path is None:
+        if reference_path is None or not result_path.exists():
             return None
         payload = json.loads(result_path.read_text(encoding="utf-8"))
-        return self._build_evaluation_artifact(
+        return _build_evaluation_artifact(
             result_path=result_path,
-            selection=selection,
             controls=controls,
             payload=payload,
+            reference_path=reference_path,
+            estimate_path=selection.run.estimate_path,
+            trajectories=_load_trajectory_pair(
+                reference_path=reference_path,
+                estimate_path=selection.run.estimate_path,
+            ),
         )
 
     def compute_evaluation(
@@ -129,17 +131,21 @@ class TrajectoryEvaluationService:
         controls: EvaluationControls,
     ) -> EvaluationArtifact:
         """Compute and persist a simple local trajectory-delta mock."""
-        if selection.reference_path is None:
+        reference_path = selection.reference_path
+        if reference_path is None:
             raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
 
-        reference_timestamps_s, reference_positions_xyz = _load_tum_trajectory(selection.reference_path)
-        estimate_timestamps_s, estimate_positions_xyz = _load_tum_trajectory(selection.run.estimate_path)
-        matched_pairs = min(len(reference_timestamps_s), len(estimate_timestamps_s))
+        trajectories = _load_trajectory_pair(
+            reference_path=reference_path,
+            estimate_path=selection.run.estimate_path,
+        )
+        reference_trajectory, estimate_trajectory = trajectories
+        matched_pairs = min(len(reference_trajectory.timestamps_s), len(estimate_trajectory.timestamps_s))
         if matched_pairs == 0:
             raise ValueError("Mock evaluation requires at least one trajectory row in both files.")
 
         error_values = np.linalg.norm(
-            estimate_positions_xyz[:matched_pairs] - reference_positions_xyz[:matched_pairs],
+            estimate_trajectory.positions_xyz[:matched_pairs] - reference_trajectory.positions_xyz[:matched_pairs],
             axis=1,
         )
         result_path = self.result_path(selection.run.artifact_root, controls)
@@ -148,15 +154,17 @@ class TrajectoryEvaluationService:
             "title": "Mock Trajectory Error",
             "matched_pairs": matched_pairs,
             "stats": _stats_payload(error_values),
-            "error_timestamps_s": reference_timestamps_s[:matched_pairs].tolist(),
+            "error_timestamps_s": reference_trajectory.timestamps_s[:matched_pairs].tolist(),
             "error_values": error_values.tolist(),
         }
         result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return self._build_evaluation_artifact(
+        return _build_evaluation_artifact(
             result_path=result_path,
-            selection=selection,
             controls=controls,
             payload=payload,
+            reference_path=reference_path,
+            estimate_path=selection.run.estimate_path,
+            trajectories=trajectories,
         )
 
     @staticmethod
@@ -189,41 +197,43 @@ class TrajectoryEvaluationService:
         method_label = method.display_name if method is not None else relative_parts[-1]
         return method_label if not visible_parts else f"{method_label} · {' / '.join(visible_parts)}"
 
-    @staticmethod
-    def _build_evaluation_artifact(
-        *,
-        result_path: Path,
-        selection: SelectionSnapshot,
-        controls: EvaluationControls,
-        payload: dict[str, object],
-    ) -> EvaluationArtifact:
-        reference_timestamps_s, reference_positions_xyz = _load_tum_trajectory(selection.reference_path or Path())
-        estimate_timestamps_s, estimate_positions_xyz = _load_tum_trajectory(selection.run.estimate_path)
-        return EvaluationArtifact(
-            path=result_path,
-            controls=controls,
-            title=str(payload["title"]),
-            matched_pairs=int(payload["matched_pairs"]),
-            stats=MetricStats.model_validate(payload["stats"]),
-            reference_path=selection.reference_path or Path(),
-            estimate_path=selection.run.estimate_path,
-            trajectories=[
-                TrajectorySeries(
-                    name="Reference",
-                    positions_xyz=reference_positions_xyz,
-                    timestamps_s=reference_timestamps_s,
-                ),
-                TrajectorySeries(
-                    name="Estimate",
-                    positions_xyz=estimate_positions_xyz,
-                    timestamps_s=estimate_timestamps_s,
-                ),
-            ],
-            error_series=ErrorSeries(
-                timestamps_s=np.asarray(payload["error_timestamps_s"], dtype=np.float64),
-                values=np.asarray(payload["error_values"], dtype=np.float64),
-            ),
-        )
+
+def _build_evaluation_artifact(
+    *,
+    result_path: Path,
+    controls: EvaluationControls,
+    payload: dict[str, object],
+    reference_path: Path,
+    estimate_path: Path,
+    trajectories: tuple[TrajectorySeries, TrajectorySeries],
+) -> EvaluationArtifact:
+    reference_trajectory, estimate_trajectory = trajectories
+    return EvaluationArtifact(
+        path=result_path,
+        controls=controls,
+        title=str(payload["title"]),
+        matched_pairs=int(payload["matched_pairs"]),
+        stats=MetricStats.model_validate(payload["stats"]),
+        reference_path=reference_path,
+        estimate_path=estimate_path,
+        trajectories=[reference_trajectory, estimate_trajectory],
+        error_series=ErrorSeries(
+            timestamps_s=np.asarray(payload["error_timestamps_s"], dtype=np.float64),
+            values=np.asarray(payload["error_values"], dtype=np.float64),
+        ),
+    )
+
+
+def _load_trajectory_pair(*, reference_path: Path, estimate_path: Path) -> tuple[TrajectorySeries, TrajectorySeries]:
+    return (
+        _load_trajectory_series(reference_path, "Reference"),
+        _load_trajectory_series(estimate_path, "Estimate"),
+    )
+
+
+def _load_trajectory_series(path: Path, name: str) -> TrajectorySeries:
+    timestamps_s, positions_xyz = _load_tum_trajectory(path)
+    return TrajectorySeries(name=name, positions_xyz=positions_xyz, timestamps_s=timestamps_s)
 
 
 def _load_tum_trajectory(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -251,6 +261,3 @@ def _stats_payload(error_values: np.ndarray) -> dict[str, float]:
         "max": float(np.max(error_values)),
         "sse": float(np.sum(squared)),
     }
-
-
-__all__ = ["TrajectoryEvaluationService"]
