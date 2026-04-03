@@ -18,13 +18,13 @@ from prml_vslam.io import (
 )
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
-    BenchmarkEvaluationConfig,
+    CloudEvaluationConfig,
     DenseConfig,
-    PipelineMode,
-    PipelinePlannerService,
+    EfficiencyEvaluationConfig,
     ReferenceConfig,
     RunRequest,
     TrackingConfig,
+    TrajectoryEvaluationConfig,
     VideoSourceSpec,
 )
 from prml_vslam.utils.console import Console
@@ -41,96 +41,6 @@ advio_app = typer.Typer(
     help="ADVIO dataset inspection and download helpers.",
 )
 console = Console(__name__)
-planner = PipelinePlannerService()
-
-ExperimentNameArg = Annotated[str, typer.Argument(help="Human-readable experiment name.")]
-VideoPathArg = Annotated[Path, typer.Argument(help="Path to the input video.")]
-OutputDirOption = Annotated[
-    Path,
-    typer.Option("--output-dir", help="Root directory for benchmark artifacts."),
-]
-MethodOption = Annotated[
-    MethodId,
-    typer.Option(
-        "--method",
-        help="External monocular VSLAM backend to plan for.",
-        case_sensitive=False,
-    ),
-]
-FrameStrideOption = Annotated[
-    int,
-    typer.Option(min=1, max=30, help="Frame subsampling stride."),
-]
-DenseOption = Annotated[
-    bool,
-    typer.Option(
-        "--dense/--no-dense",
-        help="Whether the plan should include dense map export.",
-    ),
-]
-ArcoreOption = Annotated[
-    bool,
-    typer.Option(
-        "--arcore/--no-arcore",
-        help="Whether the plan assumes ARCore comparison data is available.",
-    ),
-]
-ReferenceCloudOption = Annotated[
-    bool,
-    typer.Option(
-        "--reference-cloud/--no-reference-cloud",
-        help="Whether the plan reserves a reference reconstruction stage.",
-    ),
-]
-DeviceIndexOption = Annotated[
-    int,
-    typer.Option("--device-index", min=0, help="Zero-based index into the connected Record3D devices."),
-]
-FrameTimeoutOption = Annotated[
-    float,
-    typer.Option("--frame-timeout", min=0.1, help="Seconds to wait for the next Record3D frame."),
-]
-MaxFramesOption = Annotated[
-    int | None,
-    typer.Option("--max-frames", min=1, help="Optional number of frames to preview before stopping."),
-]
-ConfidenceOption = Annotated[
-    bool,
-    typer.Option(
-        "--confidence/--no-confidence",
-        help="Whether to open a preview window for the Record3D confidence map.",
-    ),
-]
-AdvioSequenceOption = Annotated[
-    list[int] | None,
-    typer.Option(
-        "--sequence",
-        help="Repeat to select one or more ADVIO sequence ids. Omit to target all scenes.",
-    ),
-]
-AdvioPresetOption = Annotated[
-    AdvioDownloadPreset,
-    typer.Option(
-        "--preset",
-        help="Curated modality bundle used when no explicit modality override is provided.",
-        case_sensitive=False,
-    ),
-]
-AdvioModalityOption = Annotated[
-    list[AdvioModality] | None,
-    typer.Option(
-        "--modality",
-        help="Repeat to override the preset with explicit modality groups.",
-        case_sensitive=False,
-    ),
-]
-OverwriteExistingOption = Annotated[
-    bool,
-    typer.Option(
-        "--overwrite/--reuse",
-        help="Whether to re-download cached ZIPs and replace extracted files.",
-    ),
-]
 
 app.add_typer(advio_app, name="advio")
 
@@ -152,31 +62,55 @@ def info() -> None:
 
 @app.command("plan-run")
 def plan_run(
-    experiment_name: ExperimentNameArg,
-    video_path: VideoPathArg,
-    output_dir: OutputDirOption = Path("artifacts"),
-    method: MethodOption = MethodId.VISTA,
-    frame_stride: FrameStrideOption = 1,
-    dense_mapping: DenseOption = True,
-    compare_to_arcore: ArcoreOption = True,
-    ground_truth_cloud: ReferenceCloudOption = True,
+    experiment_name: Annotated[str, typer.Argument(help="Human-readable experiment name.")],
+    video_path: Annotated[Path, typer.Argument(help="Path to the input video.")],
+    output_dir: Annotated[Path, typer.Option("--output-dir", help="Root directory for benchmark artifacts.")] = Path(
+        "artifacts"
+    ),
+    method: Annotated[
+        MethodId,
+        typer.Option(
+            "--method",
+            help="External monocular VSLAM backend to plan for.",
+            case_sensitive=False,
+        ),
+    ] = MethodId.VISTA,
+    frame_stride: Annotated[int, typer.Option(min=1, max=30, help="Frame subsampling stride.")] = 1,
+    dense_mapping: Annotated[
+        bool,
+        typer.Option("--dense/--no-dense", help="Whether the plan should include dense map export."),
+    ] = True,
+    compare_to_arcore: Annotated[
+        bool,
+        typer.Option(
+            "--arcore/--no-arcore",
+            help="Whether the plan assumes ARCore comparison data is available.",
+        ),
+    ] = True,
+    ground_truth_cloud: Annotated[
+        bool,
+        typer.Option(
+            "--reference-cloud/--no-reference-cloud",
+            help="Whether the plan reserves a reference reconstruction stage.",
+        ),
+    ] = True,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
     request = RunRequest(
         experiment_name=experiment_name,
-        mode=PipelineMode.OFFLINE,
         output_dir=output_dir,
         source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
-        tracking=TrackingConfig(method=method),
-        dense=DenseConfig(enabled=dense_mapping),
-        reference=ReferenceConfig(enabled=ground_truth_cloud),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=compare_to_arcore,
-            evaluate_cloud=dense_mapping and ground_truth_cloud,
-            evaluate_efficiency=True,
-        ),
-    )
-    plan = planner.build_plan(request)
+    ).add_tracking(TrackingConfig(method=method))
+    if dense_mapping:
+        request.add_dense(DenseConfig())
+    if ground_truth_cloud:
+        request.add_reference(ReferenceConfig())
+    if compare_to_arcore:
+        request.add_trajectory_evaluation(TrajectoryEvaluationConfig())
+    if dense_mapping and ground_truth_cloud:
+        request.add_cloud_evaluation(CloudEvaluationConfig())
+    request.add_efficiency_evaluation(EfficiencyEvaluationConfig())
+    plan = request.build()
     console.plog(plan.model_dump(mode="json"))
 
 
@@ -203,10 +137,25 @@ def record3d_devices() -> None:
 
 @app.command("record3d-preview")
 def record3d_preview(
-    device_index: DeviceIndexOption = 0,
-    frame_timeout: FrameTimeoutOption = 5.0,
-    max_frames: MaxFramesOption = None,
-    show_confidence: ConfidenceOption = True,
+    device_index: Annotated[
+        int,
+        typer.Option("--device-index", min=0, help="Zero-based index into the connected Record3D devices."),
+    ] = 0,
+    frame_timeout: Annotated[
+        float,
+        typer.Option("--frame-timeout", min=0.1, help="Seconds to wait for the next Record3D frame."),
+    ] = 5.0,
+    max_frames: Annotated[
+        int | None,
+        typer.Option("--max-frames", min=1, help="Optional number of frames to preview before stopping."),
+    ] = None,
+    show_confidence: Annotated[
+        bool,
+        typer.Option(
+            "--confidence/--no-confidence",
+            help="Whether to open a preview window for the Record3D confidence map.",
+        ),
+    ] = True,
 ) -> None:
     """Open a simple OpenCV preview for the live Record3D RGBD stream."""
     preview = Record3DPreviewConfig(
@@ -246,10 +195,33 @@ def advio_summary() -> None:
 
 @advio_app.command("download")
 def advio_download(
-    sequence_ids: AdvioSequenceOption = None,
-    preset: AdvioPresetOption = AdvioDownloadPreset.OFFLINE,
-    modalities: AdvioModalityOption = None,
-    overwrite: OverwriteExistingOption = False,
+    sequence_ids: Annotated[
+        list[int] | None,
+        typer.Option("--sequence", help="Repeat to select one or more ADVIO sequence ids. Omit to target all scenes."),
+    ] = None,
+    preset: Annotated[
+        AdvioDownloadPreset,
+        typer.Option(
+            "--preset",
+            help="Curated modality bundle used when no explicit modality override is provided.",
+            case_sensitive=False,
+        ),
+    ] = AdvioDownloadPreset.OFFLINE,
+    modalities: Annotated[
+        list[AdvioModality] | None,
+        typer.Option(
+            "--modality",
+            help="Repeat to override the preset with explicit modality groups.",
+            case_sensitive=False,
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite/--reuse",
+            help="Whether to re-download cached ZIPs and replace extracted files.",
+        ),
+    ] = False,
 ) -> None:
     """Download selected ADVIO scene archives and extract only requested modality bundles."""
     service = AdvioDatasetService(get_path_config())

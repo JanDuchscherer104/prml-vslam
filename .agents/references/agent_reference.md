@@ -31,3 +31,8 @@
 - ViSTA-SLAM repo: <https://github.com/zhangganlin/vista-slam>
 - MASt3R-SLAM paper: <https://arxiv.org/abs/2412.12392>
 - MASt3R-SLAM repo: <https://github.com/rmurai0610/MASt3R-SLAM>
+
+## Repo Contract Notes
+
+- Pipeline plans are built from `RunRequest.build()` after explicit fluent `add_<stage>(config)` calls.
+- `DenseConfig` and `ReferenceConfig` share one toggle storage shape; evaluation stage config names alias one shared empty config.
