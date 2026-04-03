@@ -10,6 +10,7 @@ NC := \033[0m
 # Tooling
 TYPST ?= typst
 TYPSTYLE ?= typstyle
+PYTEST_ARGS ?=
 
 # Bibliography
 BIB_FILE ?= docs/references.bib
@@ -53,8 +54,8 @@ typst-lint: ## Run non-mutating Typst formatting checks
 
 typst-check: typst-lint report-pdf slides-pdf ## Lint and compile the report and update slides
 
-test: ## Run the Python test suite
-	uv run pytest
+test: ## Run the Python test suite (for parallel runs: make test PYTEST_ARGS="-n auto")
+	uv run --extra dev pytest $(PYTEST_ARGS)
 
 #  ═══════════════════════════════════════════════════════════════════════
 #  📚 Bibliography
