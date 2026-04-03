@@ -11,29 +11,17 @@ if TYPE_CHECKING:
     from .bootstrap import AppContext
 
 
-_ACTIVE_STREAM_STATES = {
-    Record3DStreamState.CONNECTING,
-    Record3DStreamState.STREAMING,
-}
+_ACTIVE_STREAM_STATES = {Record3DStreamState.CONNECTING, Record3DStreamState.STREAMING}
 
 
 class Record3DPageAction(BaseData):
     """Typed Record3D page action payload."""
 
     transport: Record3DTransportId
-    """Currently selected transport."""
-
     usb_device_index: int | None = None
-    """Selected USB device index when relevant."""
-
     wifi_device_address: str | None = None
-    """Selected Wi-Fi device address when relevant."""
-
     start_requested: bool = False
-    """Whether the user submitted the start or restart action."""
-
     stop_requested: bool = False
-    """Whether the user submitted the stop action."""
 
 
 def handle_record3d_page_action(context: AppContext, action: Record3DPageAction) -> Record3DStreamSnapshot:
