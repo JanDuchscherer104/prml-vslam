@@ -9,12 +9,7 @@ import numpy as np
 import streamlit as st
 
 from prml_vslam.datasets import AdvioDownloadRequest, AdvioLocalSceneStatus
-from prml_vslam.datasets.advio import (
-    AdvioDownloadPreset,
-    AdvioModality,
-    AdvioOfflineSample,
-    AdvioPoseSource,
-)
+from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioOfflineSample, AdvioPoseSource
 from prml_vslam.interfaces import FramePacket
 
 from .. import plotting as plots
@@ -23,6 +18,8 @@ from ..advio_controller import (
     AdvioPreviewFormData,
     build_advio_page_data,
     handle_advio_preview_action,
+    load_advio_explorer_sample,
+    sync_advio_download_state,
     sync_advio_preview_state,
 )
 from ..camera_display import format_camera_intrinsics_latex
@@ -118,19 +115,9 @@ def _render_download_form(context: AppContext) -> AdvioDownloadFormData:
         overwrite = st.toggle("Overwrite existing archives and extracted files", value=page_state.overwrite_existing)
         st.caption("Resolved bundle: " + ", ".join(item.label for item in (modalities or list(preset.modalities))))
         submitted = st.form_submit_button("Download selected scenes", type="primary", width="stretch")
-    _set_page_state(
-        context,
-        selected_sequence_ids=sequence_ids,
-        download_preset=preset,
-        selected_modalities=modalities,
-        overwrite_existing=overwrite,
-    )
-    return AdvioDownloadFormData(
-        request=AdvioDownloadRequest(
-            sequence_ids=sequence_ids, preset=preset, modalities=modalities, overwrite=overwrite
-        ),
-        submitted=submitted,
-    )
+    request = AdvioDownloadRequest(sequence_ids=sequence_ids, preset=preset, modalities=modalities, overwrite=overwrite)
+    sync_advio_download_state(context, request)
+    return AdvioDownloadFormData(request=request, submitted=submitted)
 
 
 def _render_sequence_explorer(context: AppContext, statuses: list[AdvioLocalSceneStatus]) -> None:
@@ -150,15 +137,17 @@ def _render_sequence_explorer(context: AppContext, statuses: list[AdvioLocalScen
             "Local Scene",
             options=offline_ids,
             index=offline_ids.index(
-                _selected(page_state_id=context.state.advio.explorer_sequence_id, options=offline_ids)
+                context.state.advio.explorer_sequence_id
+                if context.state.advio.explorer_sequence_id in offline_ids
+                else offline_ids[0]
             ),
             format_func=lambda sequence_id: service.scene(sequence_id).display_name,
         )
-        _set_page_state(context, explorer_sequence_id=selected_id)
-        try:
-            _render_sequence_details(service.load_local_sample(selected_id))
-        except (FileNotFoundError, ValueError) as exc:
-            st.warning(str(exc))
+        sample, error_message = load_advio_explorer_sample(context, sequence_id=selected_id)
+        if error_message:
+            st.warning(error_message)
+        elif sample is not None:
+            _render_sequence_details(sample)
 
 
 def _render_sequence_details(sample: AdvioOfflineSample) -> None:
@@ -240,7 +229,9 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
             st.info("Download the streaming bundle for at least one scene to unlock loop preview.")
             return
         page_state, service = context.state.advio, context.advio_service
-        selected_id = _selected(page_state_id=page_state.preview_sequence_id, options=previewable_ids)
+        selected_id = (
+            page_state.preview_sequence_id if page_state.preview_sequence_id in previewable_ids else previewable_ids[0]
+        )
         pose_source = page_state.preview_pose_source
         with st.form("advio_preview_form", border=False):
             selected_id = st.selectbox(
@@ -264,12 +255,6 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
                 use_container_width=True,
             )
         stop_requested = st.button("Stop preview", disabled=not page_state.preview_is_running, use_container_width=True)
-        _set_page_state(
-            context,
-            preview_sequence_id=selected_id,
-            preview_pose_source=pose_source,
-            preview_respect_video_rotation=respect_video_rotation,
-        )
         error_message = handle_advio_preview_action(
             context,
             AdvioPreviewFormData(
@@ -282,15 +267,12 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
         )
         if error_message:
             st.error(error_message)
-        _render_loop_snapshot(context)
 
+        @st.fragment(run_every=0.2 if context.state.advio.preview_is_running else None)
+        def _render_fragment() -> None:
+            _render_preview_snapshot(sync_advio_preview_state(context))
 
-def _render_loop_snapshot(context: AppContext) -> None:
-    @st.fragment(run_every=0.2 if context.state.advio.preview_is_running else None)
-    def _render_fragment() -> None:
-        _render_preview_snapshot(sync_advio_preview_state(context))
-
-    _render_fragment()
+        _render_fragment()
 
 
 def _render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:
@@ -359,19 +341,6 @@ def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
         case AdvioPreviewStreamState.STREAMING:
             if snapshot.error_message:
                 st.warning(snapshot.error_message)
-
-
-def _set_page_state(context: AppContext, **updates: object) -> None:
-    page_state = context.state.advio
-    if all(getattr(page_state, key) == value for key, value in updates.items()):
-        return
-    for key, value in updates.items():
-        setattr(page_state, key, value)
-    context.store.save(context.state)
-
-
-def _selected(*, page_state_id: int | None, options: list[int]) -> int:
-    return page_state_id if page_state_id in options else options[0]
 
 
 def _pose_source_label(pose_source: AdvioPoseSource | None) -> str:
