@@ -16,7 +16,7 @@ from .pages.advio import render as render_advio_page
 from .pages.metrics import render as render_metrics_page
 from .pages.pipeline import render as render_pipeline_page
 from .pages.record3d import render as render_record3d_page
-from .services import Record3DAppService, Record3DStreamRuntimeController
+from .services import AdvioPreviewRuntimeController, Record3DAppService, Record3DStreamRuntimeController
 from .state import SessionStateStore
 from .ui import inject_styles
 
@@ -30,6 +30,7 @@ class AppContext:
     evaluation_service: TrajectoryEvaluationService
     record3d_service: Record3DAppService
     record3d_runtime: Record3DStreamRuntimeController
+    advio_runtime: AdvioPreviewRuntimeController
     store: SessionStateStore
     state: AppState
 
@@ -44,6 +45,7 @@ def build_context() -> AppContext:
         evaluation_service=TrajectoryEvaluationService(path_config),
         record3d_service=Record3DAppService(),
         record3d_runtime=store.load_record3d_runtime(),
+        advio_runtime=store.load_advio_runtime(),
         store=store,
         state=store.load(),
     )
@@ -128,6 +130,10 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
     if page_id is not AppPageId.RECORD3D and context.state.record3d.is_running:
         context.record3d_runtime.stop()
         context.state.record3d.is_running = False
+        context.store.save(context.state)
+    if page_id is not AppPageId.ADVIO and context.state.advio.preview_is_running:
+        context.advio_runtime.stop()
+        context.state.advio.preview_is_running = False
         context.store.save(context.state)
 
 
