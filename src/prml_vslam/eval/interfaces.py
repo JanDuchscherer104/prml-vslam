@@ -9,7 +9,6 @@ import numpy as np
 from jaxtyping import Float
 from pydantic import Field
 
-from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.utils import BaseConfig, BaseData
 
@@ -53,6 +52,20 @@ class MetricStats(BaseData):
     max: float
     sse: float
 
+    @classmethod
+    def from_error_values(cls, error_values: np.ndarray) -> MetricStats:
+        """Build scalar summary metrics from one error series."""
+        squared = np.square(error_values)
+        return cls(
+            rmse=float(np.sqrt(np.mean(squared))),
+            mean=float(np.mean(error_values)),
+            median=float(np.median(error_values)),
+            std=float(np.std(error_values)),
+            min=float(np.min(error_values)),
+            max=float(np.max(error_values)),
+            sse=float(np.sum(squared)),
+        )
+
 
 class TrajectorySeries(BaseData):
     """One trajectory rendered in the overlay figure."""
@@ -82,6 +95,34 @@ class EvaluationArtifact(BaseData):
     trajectories: list[TrajectorySeries] = Field(default_factory=list)
     error_series: ErrorSeries | None = None
 
+    @classmethod
+    def from_payload(
+        cls,
+        *,
+        path: Path,
+        controls: EvaluationControls,
+        payload: dict[str, object],
+        reference_path: Path,
+        estimate_path: Path,
+        trajectories: tuple[TrajectorySeries, TrajectorySeries],
+    ) -> EvaluationArtifact:
+        """Build an evaluation artifact from one persisted mock payload."""
+        reference_trajectory, estimate_trajectory = trajectories
+        return cls(
+            path=path,
+            controls=controls,
+            title=str(payload["title"]),
+            matched_pairs=int(payload["matched_pairs"]),
+            stats=MetricStats.model_validate(payload["stats"]),
+            reference_path=reference_path,
+            estimate_path=estimate_path,
+            trajectories=[reference_trajectory, estimate_trajectory],
+            error_series=ErrorSeries(
+                timestamps_s=np.asarray(payload["error_timestamps_s"], dtype=np.float64),
+                values=np.asarray(payload["error_values"], dtype=np.float64),
+            ),
+        )
+
 
 class DiscoveredRun(BaseData):
     """One benchmark run discovered under the configured artifacts root."""
@@ -102,14 +143,8 @@ class DiscoveredRun(BaseData):
 class SelectionSnapshot(BaseData):
     """Resolved dataset-selection snapshot for one metrics render."""
 
-    dataset: DatasetId
-    """Selected dataset."""
-
     sequence_slug: str
     """Selected sequence slug."""
-
-    dataset_root: Path
-    """Root directory for the selected dataset."""
 
     reference_path: Path | None = None
     """Reference TUM trajectory path when available."""

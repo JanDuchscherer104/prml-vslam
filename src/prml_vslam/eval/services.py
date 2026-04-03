@@ -5,26 +5,19 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.eval.interfaces import DiscoveredRun, EvaluationArtifact, EvaluationControls, SelectionSnapshot
+from prml_vslam.eval.interfaces import (
+    DiscoveredRun,
+    EvaluationArtifact,
+    EvaluationControls,
+    MetricStats,
+    SelectionSnapshot,
+)
 from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.utils.path_config import PathConfig
 
-from . import selection as _selection
-from .mock_metrics import build_evaluation_artifact, load_trajectory_pair, stats_payload
+from .mock_metrics import load_trajectory_pair
 
-# Backwards-compatible re-exports for app code and tests that still import from eval.services.
-build_selection = _selection.build_selection
-list_sequences = _selection.list_sequences
-resolve_dataset_root = _selection.resolve_dataset_root
-resolve_reference_path = _selection.resolve_reference_path
-
-__all__ = [
-    "TrajectoryEvaluationService",
-    "build_selection",
-    "list_sequences",
-    "resolve_dataset_root",
-    "resolve_reference_path",
-]
+__all__ = ["TrajectoryEvaluationService"]
 
 
 class TrajectoryEvaluationService:
@@ -62,12 +55,17 @@ class TrajectoryEvaluationService:
         if reference_path is None or not result_path.exists():
             return None
         payload = json.loads(result_path.read_text(encoding="utf-8"))
-        return build_evaluation_artifact(
-            result_path=result_path,
+        trajectories = load_trajectory_pair(
+            reference_path=reference_path,
+            estimate_path=selection.run.estimate_path,
+        )
+        return EvaluationArtifact.from_payload(
+            path=result_path,
             controls=controls,
             payload=payload,
             reference_path=reference_path,
             estimate_path=selection.run.estimate_path,
+            trajectories=trajectories,
         )
 
     def compute_evaluation(
@@ -96,16 +94,17 @@ class TrajectoryEvaluationService:
         )
         result_path = self.result_path(selection.run.artifact_root, controls)
         result_path.parent.mkdir(parents=True, exist_ok=True)
+        stats = MetricStats.from_error_values(error_values)
         payload = {
             "title": "Mock Trajectory Error",
             "matched_pairs": matched_pairs,
-            "stats": stats_payload(error_values),
+            "stats": stats.model_dump(mode="python"),
             "error_timestamps_s": reference_trajectory.timestamps_s[:matched_pairs].tolist(),
             "error_values": error_values.tolist(),
         }
         result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return build_evaluation_artifact(
-            result_path=result_path,
+        return EvaluationArtifact.from_payload(
+            path=result_path,
             controls=controls,
             payload=payload,
             reference_path=reference_path,

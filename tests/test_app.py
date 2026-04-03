@@ -22,10 +22,10 @@ from prml_vslam.app.services import (
 )
 from prml_vslam.app.state import SessionStateStore
 from prml_vslam.datasets.advio import AdvioPoseSource
+from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
-from prml_vslam.eval.interfaces import EvaluationControls
-from prml_vslam.eval.services import build_selection, resolve_dataset_root
+from prml_vslam.eval.interfaces import EvaluationControls, SelectionSnapshot
 from prml_vslam.io import CameraPose, PinholeCameraIntrinsics, VideoFramePacket
 from prml_vslam.io.record3d import (
     Record3DDevice,
@@ -417,10 +417,11 @@ def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> 
     runs = service.discover_runs("advio-15")
 
     assert len(runs) == 1
-    selection = build_selection(
-        dataset=DatasetId.ADVIO,
-        dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
+    selection = SelectionSnapshot(
         sequence_slug="advio-15",
+        reference_path=resolve_existing_reference_tum(
+            path_config.resolve_dataset_dir(DatasetId.ADVIO.value), "advio-15"
+        ),
         run=runs[0],
     )
 
@@ -438,10 +439,11 @@ def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> 
 def test_compute_evaluation_loads_each_trajectory_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path_config = _build_path_config(tmp_path)
     service = TrajectoryEvaluationService(path_config)
-    selection = build_selection(
-        dataset=DatasetId.ADVIO,
-        dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
+    selection = SelectionSnapshot(
         sequence_slug="advio-15",
+        reference_path=resolve_existing_reference_tum(
+            path_config.resolve_dataset_dir(DatasetId.ADVIO.value), "advio-15"
+        ),
         run=service.discover_runs("advio-15")[0],
     )
     assert selection.reference_path is not None
@@ -487,10 +489,10 @@ def test_render_metrics_page_entry_shows_metrics_content(
 
         from prml_vslam.app import bootstrap
         from prml_vslam.app.models import AppState
+        from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
         from prml_vslam.datasets.interfaces import DatasetId
         from prml_vslam.eval import TrajectoryEvaluationService
-        from prml_vslam.eval.interfaces import EvaluationControls
-        from prml_vslam.eval.services import build_selection, resolve_dataset_root
+        from prml_vslam.eval.interfaces import EvaluationControls, SelectionSnapshot
         from prml_vslam.utils.path_config import PathConfig
 
         def _write_tum(path: Path, rows: list[tuple[float, float, float, float]]) -> None:
@@ -537,10 +539,11 @@ def test_render_metrics_page_entry_shows_metrics_content(
             captures_dir=root / "captures",
         )
         service = TrajectoryEvaluationService(path_config)
-        selection = build_selection(
-            dataset=DatasetId.ADVIO,
-            dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
+        selection = SelectionSnapshot(
             sequence_slug="advio-15",
+            reference_path=resolve_existing_reference_tum(
+                path_config.resolve_dataset_dir(DatasetId.ADVIO.value), "advio-15"
+            ),
             run=service.discover_runs("advio-15")[0],
         )
         result = service.compute_evaluation(selection=selection, controls=EvaluationControls())
