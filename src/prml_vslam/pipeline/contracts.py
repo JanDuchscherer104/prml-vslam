@@ -6,11 +6,11 @@ from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.methods.interfaces import MethodId
-from prml_vslam.utils import BaseConfig, BaseData, PathConfig
+from prml_vslam.utils import BaseConfig, BaseData, PathConfig, RunArtifactPaths
 
 
 class PipelineMode(StrEnum):
@@ -74,7 +74,8 @@ class StageToggleConfig(BaseConfig):
     """Whether the run should include the corresponding stage."""
 
 
-DenseConfig = StageToggleConfig
+class DenseConfig(StageToggleConfig):
+    """Boolean toggle used by the optional dense-mapping stage."""
 
 
 class ReferenceConfig(StageToggleConfig):
@@ -88,7 +89,16 @@ class EvaluationStageConfig(BaseConfig):
     """Configuration accepted by stage-specific evaluation builder methods."""
 
 
-TrajectoryEvaluationConfig = CloudEvaluationConfig = EfficiencyEvaluationConfig = EvaluationStageConfig
+class TrajectoryEvaluationConfig(EvaluationStageConfig):
+    """Builder marker for trajectory-evaluation stage selection."""
+
+
+class CloudEvaluationConfig(EvaluationStageConfig):
+    """Builder marker for dense-cloud evaluation stage selection."""
+
+
+class EfficiencyEvaluationConfig(EvaluationStageConfig):
+    """Builder marker for efficiency-evaluation stage selection."""
 
 
 class BenchmarkEvaluationConfig(BaseConfig):
@@ -159,77 +169,98 @@ class RunRequest(BaseConfig):
             stages=self._build_stages(run_paths),
         )
 
-    def _build_stages(self, run_paths) -> list[RunPlanStage]:
+    def _build_stages(self, run_paths: RunArtifactPaths) -> list[RunPlanStage]:
         assert self.tracking is not None
-        stages = [
-            self._stage(
-                RunPlanStageId.INGEST,
-                "Normalize Input Sequence",
-                self._ingest_summary(self.source),
-                run_paths.sequence_manifest_path,
-            ),
-            self._stage(
-                RunPlanStageId.SLAM,
-                "Run SLAM Backend",
-                self._method_summary(self.tracking.method),
-                run_paths.trajectory_path,
-                run_paths.sparse_points_path,
-            ),
-        ]
-        stages.extend(
-            self._stage(stage_id, title, summary, *outputs)
-            for enabled, stage_id, title, summary, outputs in (
+        optional_stages = (
+            (
+                self.dense.enabled,
                 (
-                    self.dense.enabled,
                     RunPlanStageId.DENSE_MAPPING,
                     "Export Dense Mapping",
                     "Generate dense geometry artifacts suitable for downstream quality evaluation.",
-                    (run_paths.dense_points_path,),
+                    ("dense_points_path",),
                 ),
+            ),
+            (
+                self.reference.enabled,
                 (
-                    self.reference.enabled,
                     RunPlanStageId.REFERENCE_RECONSTRUCTION,
                     "Build Reference Reconstruction",
                     "Reserve the offline reconstruction step used as a dense geometry reference.",
-                    (run_paths.reference_cloud_path,),
+                    ("reference_cloud_path",),
                 ),
+            ),
+            (
+                self.evaluation.compare_to_arcore,
                 (
-                    self.evaluation.compare_to_arcore,
                     RunPlanStageId.TRAJECTORY_EVALUATION,
                     "Evaluate Trajectory",
                     "Align the trajectory against the available reference and persist trajectory metrics.",
-                    (run_paths.trajectory_metrics_path,),
+                    ("trajectory_metrics_path",),
                 ),
+            ),
+            (
+                self.evaluation.evaluate_cloud,
                 (
-                    self.evaluation.evaluate_cloud,
                     RunPlanStageId.CLOUD_EVALUATION,
                     "Evaluate Dense Cloud",
                     "Compare reconstructed dense geometry against the reference cloud.",
-                    (run_paths.cloud_metrics_path,),
+                    ("cloud_metrics_path",),
                 ),
+            ),
+            (
+                self.evaluation.evaluate_efficiency,
                 (
-                    self.evaluation.evaluate_efficiency,
                     RunPlanStageId.EFFICIENCY_EVALUATION,
                     "Measure Efficiency",
                     "Persist runtime and resource-usage metrics for the run.",
-                    (run_paths.efficiency_metrics_path,),
+                    ("efficiency_metrics_path",),
                 ),
-            )
-            if enabled
+            ),
         )
-        stages.append(
-            self._stage(
-                RunPlanStageId.SUMMARY,
-                "Write Run Summary",
-                "Persist the stage status and top-level artifact summary for the run.",
-                run_paths.summary_path,
-            )
-        )
-        return stages
+        return [
+            self._stage_from_spec(
+                run_paths,
+                (
+                    RunPlanStageId.INGEST,
+                    "Normalize Input Sequence",
+                    self._ingest_summary(self.source),
+                    ("sequence_manifest_path",),
+                ),
+            ),
+            self._stage_from_spec(
+                run_paths,
+                (
+                    RunPlanStageId.SLAM,
+                    "Run SLAM Backend",
+                    self._method_summary(self.tracking.method),
+                    ("trajectory_path", "sparse_points_path"),
+                ),
+            ),
+            *(self._stage_from_spec(run_paths, spec) for enabled, spec in optional_stages if enabled),
+            self._stage_from_spec(
+                run_paths,
+                (
+                    RunPlanStageId.SUMMARY,
+                    "Write Run Summary",
+                    "Persist the stage status and top-level artifact summary for the run.",
+                    ("summary_path",),
+                ),
+            ),
+        ]
 
     @staticmethod
-    def _stage(stage_id: RunPlanStageId, title: str, summary: str, *outputs: Path) -> RunPlanStage:
-        return RunPlanStage(id=stage_id, title=title, summary=summary, outputs=list(outputs))
+    def _stage_from_spec(
+        run_paths: RunArtifactPaths,
+        spec: tuple[RunPlanStageId, str, str, tuple[str, ...]],
+    ) -> RunPlanStage:
+        stage_id, title, summary, output_names = spec
+        return RunPlanStage(
+            id=stage_id,
+            title=title,
+            summary=summary,
+            outputs=[getattr(run_paths, output_name) for output_name in output_names],
+        )
 
     @staticmethod
     def _ingest_summary(source: SourceSpec) -> str:
@@ -246,13 +277,15 @@ class RunRequest(BaseConfig):
     def _method_summary(method: MethodId) -> str:
         return f"Plan the {method.display_name} wrapper and export trajectory plus sparse geometry artifacts."
 
-    def _set_stage_toggle(self, field_name: str, config: StageToggleConfig) -> Self:
-        config.enabled = True
-        setattr(self, field_name, config)
+    def _set_stage_toggle(self, field_name: Literal["dense", "reference"], config: StageToggleConfig) -> Self:
+        setattr(self, field_name, config.model_copy(update={"enabled": True}))
         return self
 
-    def _enable_evaluation(self, field_name: str) -> Self:
-        setattr(self.evaluation, field_name, True)
+    def _enable_evaluation(
+        self,
+        field_name: Literal["compare_to_arcore", "evaluate_cloud", "evaluate_efficiency"],
+    ) -> Self:
+        self.evaluation = self.evaluation.model_copy(update={field_name: True})
         return self
 
 
@@ -340,30 +373,17 @@ class TrackingArtifacts(BaseData):
     """Optional preview/event log produced during live tracking."""
 
 
-class NamedArtifactBundle(BaseData):
-    """Storage shape for one artifact exposed under a stable public field name."""
-
-    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
-    artifact: ArtifactRef
-    """Stored artifact reference."""
-
-    def __getattr__(self, name: str) -> ArtifactRef:
-        if name == self.__class__.model_fields["artifact"].alias:
-            return self.artifact
-        raise AttributeError(name)
-
-
-class DenseArtifacts(NamedArtifactBundle):
+class DenseArtifacts(BaseData):
     """Materialized outputs produced by the dense-mapping stage."""
 
-    artifact: ArtifactRef = Field(alias="dense_points_ply")
+    dense_points_ply: ArtifactRef
     """Normalized dense point cloud artifact."""
 
 
-class ReferenceArtifacts(NamedArtifactBundle):
+class ReferenceArtifacts(BaseData):
     """Materialized outputs produced by the reference-reconstruction stage."""
 
-    artifact: ArtifactRef = Field(alias="reference_cloud_ply")
+    reference_cloud_ply: ArtifactRef
     """Normalized reference cloud artifact."""
 
 
@@ -374,7 +394,16 @@ class MetricsBundle(BaseData):
     """Serialized metric results."""
 
 
-TrajectoryMetrics = CloudMetrics = EfficiencyMetrics = MetricsBundle
+class TrajectoryMetrics(MetricsBundle):
+    """Persisted trajectory-metric artifact bundle."""
+
+
+class CloudMetrics(MetricsBundle):
+    """Persisted dense-cloud metric artifact bundle."""
+
+
+class EfficiencyMetrics(MetricsBundle):
+    """Persisted efficiency-metric artifact bundle."""
 
 
 class StageExecutionStatus(StrEnum):
