@@ -5,9 +5,11 @@
 This document is the source of truth for the packaged Streamlit app in
 `src/prml_vslam/app/`.
 
-The app now exposes two top-level pages:
+The app now exposes four top-level pages:
 
 - `Record3D`
+- `ADVIO`
+- `Pipeline`
 - `Metrics`
 
 `Record3D` is the default landing page. `Metrics` remains the trajectory-evaluation
@@ -18,6 +20,12 @@ surface for persisted `evo` results.
 - The app must default to the `Record3D` page on first load.
 - The app must keep the `Metrics` page reachable without removing any existing
   trajectory-evaluation functionality.
+- The app must expose a `Pipeline` page that explains the typed run-planning
+  surface, the builder pattern, and concrete usage examples without executing
+  a pipeline.
+- The `Pipeline` page must also show one mock completed run with stage status,
+  artifact contracts, and serialized output examples so users can inspect what
+  the planner hands to downstream execution surfaces.
 - The `Record3D` page must support both `USB` and `Wi-Fi` transports through one
   transport selector.
 - The `Record3D` page must show:
@@ -79,6 +87,13 @@ surface for persisted `evo` results.
 - A user switches to `Metrics`.
 - If a matching persisted `evo` result exists, the app renders it without
   recomputing anything.
+
+### Pipeline Guide
+
+- A user switches to `Pipeline`.
+- The app shows example pipeline shapes, the `RunRequest(...).add_<stage>(...)`
+  builder workflow, one generated `RunPlan` table, and one mock executed run.
+- The page does not execute any backend or write artifacts as a side effect.
 
 ### Explicit Evaluation
 

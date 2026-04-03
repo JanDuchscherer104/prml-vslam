@@ -19,6 +19,7 @@ class AppPageId(StrEnum):
 
     RECORD3D = "record3d"
     ADVIO = "advio"
+    PIPELINE = "pipeline"
     METRICS = "metrics"
 
     @property
@@ -27,6 +28,7 @@ class AppPageId(StrEnum):
         return {
             AppPageId.RECORD3D: "Record3D",
             AppPageId.ADVIO: "ADVIO",
+            AppPageId.PIPELINE: "Pipeline",
             AppPageId.METRICS: "Metrics",
         }[self]
 

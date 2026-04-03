@@ -14,6 +14,7 @@ from prml_vslam.utils.path_config import PathConfig, get_path_config
 from .models import AppPageId, AppState
 from .pages.advio import render as render_advio_page
 from .pages.metrics import render as render_metrics_page
+from .pages.pipeline import render as render_pipeline_page
 from .pages.record3d import render as render_record3d_page
 from .services import Record3DAppService, Record3DStreamRuntimeController
 from .state import SessionStateStore
@@ -87,6 +88,13 @@ def _build_pages(context: AppContext) -> list[st.Page]:
             default=False,
         ),
         st.Page(
+            partial(_render_pipeline_page_entry, context),
+            title=AppPageId.PIPELINE.label,
+            icon=":material/account_tree:",
+            url_path=AppPageId.PIPELINE.value,
+            default=False,
+        ),
+        st.Page(
             partial(_render_metrics_page_entry, context),
             title=AppPageId.METRICS.label,
             icon=":material/show_chart:",
@@ -104,6 +112,11 @@ def _render_record3d_page_entry(context: AppContext) -> None:
 def _render_metrics_page_entry(context: AppContext) -> None:
     _enter_page(context, AppPageId.METRICS)
     render_metrics_page(context)
+
+
+def _render_pipeline_page_entry(context: AppContext) -> None:
+    _enter_page(context, AppPageId.PIPELINE)
+    render_pipeline_page(context)
 
 
 def _render_advio_page_entry(context: AppContext) -> None:
