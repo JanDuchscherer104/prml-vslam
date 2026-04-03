@@ -73,6 +73,14 @@ def _write_advio_local_sequence(dataset_root: Path, *, sequence_id: int = 15) ->
 
     (sequence_dir / "iphone" / "frames.mov").write_bytes(b"")
     (sequence_dir / "iphone" / "frames.csv").write_text("0.0,0\n0.1,1\n0.2,2\n", encoding="utf-8")
+    for name in (
+        "platform-location.csv",
+        "accelerometer.csv",
+        "gyroscope.csv",
+        "magnetometer.csv",
+        "barometer.csv",
+    ):
+        (sequence_dir / "iphone" / name).write_text("0.0,0.0,0.0,0.0\n", encoding="utf-8")
     (sequence_dir / "iphone" / "arkit.csv").write_text(
         "0.0,1.0,2.0,3.0,1.0,0.0,0.0,0.0\n0.1,1.5,2.5,3.5,1.0,0.0,0.0,0.0\n",
         encoding="utf-8",
@@ -438,16 +446,16 @@ def test_compute_evaluation_loads_each_trajectory_once(tmp_path: Path, monkeypat
     )
     assert selection.reference_path is not None
 
-    import prml_vslam.eval.services as eval_services
+    import prml_vslam.eval.mock_metrics as mock_metrics
 
     counts: Counter[Path] = Counter()
-    original = eval_services._load_tum_trajectory
+    original = mock_metrics._load_tum_trajectory
 
     def counted_load(path: Path) -> tuple[np.ndarray, np.ndarray]:
         counts[path] += 1
         return original(path)
 
-    monkeypatch.setattr(eval_services, "_load_tum_trajectory", counted_load)
+    monkeypatch.setattr(mock_metrics, "_load_tum_trajectory", counted_load)
 
     service.compute_evaluation(selection=selection, controls=EvaluationControls())
 
@@ -979,6 +987,7 @@ def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
     class ServiceSpy:
         def __init__(self) -> None:
             self.calls = {"download": 0, "summarize": 0, "local_scene_statuses": 0}
+            self.summary_statuses: list[AdvioLocalSceneStatus] | None = None
 
         def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
             self.calls["download"] += 1
@@ -989,8 +998,9 @@ def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
                 written_paths=[Path("data/advio/advio-15")],
             )
 
-        def summarize(self) -> AdvioDatasetSummary:
+        def summarize(self, statuses: list[AdvioLocalSceneStatus] | None = None) -> AdvioDatasetSummary:
             self.calls["summarize"] += 1
+            self.summary_statuses = statuses
             return summary
 
         def local_scene_statuses(self) -> list[object]:
@@ -1007,6 +1017,7 @@ def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
     )
 
     assert service.calls == {"download": 1, "summarize": 1, "local_scene_statuses": 1}
+    assert service.summary_statuses is statuses
     assert page_data.summary == summary
     assert page_data.rows == [
         {
@@ -1023,6 +1034,158 @@ def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
     ]
     assert page_data.notice_level == "success"
     assert "Prepared 1 scene(s)" in page_data.notice_message
+
+
+def test_advio_controller_handles_preview_start_and_stop() -> None:
+    from prml_vslam.app.advio_controller import AdvioPreviewFormData, handle_advio_preview_action
+
+    stream = object()
+
+    class ServiceSpy:
+        def __init__(self) -> None:
+            self.preview_calls: list[tuple[int, AdvioPoseSource, bool]] = []
+
+        def scene(self, sequence_id: int) -> SimpleNamespace:
+            return SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Office 03")
+
+        def open_preview_stream(
+            self,
+            *,
+            sequence_id: int,
+            pose_source: AdvioPoseSource,
+            respect_video_rotation: bool,
+        ) -> object:
+            self.preview_calls.append((sequence_id, pose_source, respect_video_rotation))
+            return stream
+
+    class RuntimeSpy:
+        def __init__(self) -> None:
+            self.start_calls: list[dict[str, object]] = []
+            self.stop_calls = 0
+
+        def start(self, **kwargs: object) -> None:
+            self.start_calls.append(kwargs)
+
+        def stop(self) -> None:
+            self.stop_calls += 1
+
+    service = ServiceSpy()
+    runtime = RuntimeSpy()
+    context = SimpleNamespace(
+        state=AppState(),
+        store=FakeStore(),
+        advio_service=service,
+        advio_runtime=runtime,
+    )
+
+    error_message = handle_advio_preview_action(
+        context,
+        AdvioPreviewFormData(
+            sequence_id=15,
+            pose_source=AdvioPoseSource.GROUND_TRUTH,
+            respect_video_rotation=True,
+            start_requested=True,
+        ),
+    )
+
+    assert error_message is None
+    assert context.state.advio.preview_is_running is True
+    assert service.preview_calls == [(15, AdvioPoseSource.GROUND_TRUTH, True)]
+    assert runtime.start_calls == [
+        {
+            "sequence_id": 15,
+            "sequence_label": "advio-15 · Office 03",
+            "pose_source": AdvioPoseSource.GROUND_TRUTH,
+            "stream": stream,
+        }
+    ]
+
+    error_message = handle_advio_preview_action(
+        context,
+        AdvioPreviewFormData(
+            sequence_id=15,
+            pose_source=AdvioPoseSource.GROUND_TRUTH,
+            stop_requested=True,
+        ),
+    )
+
+    assert error_message is None
+    assert context.state.advio.preview_is_running is False
+    assert runtime.stop_calls == 1
+
+
+def test_advio_sequence_explorer_only_loads_selected_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.app.pages import advio as advio_page
+    from prml_vslam.datasets import (
+        AdvioEnvironment,
+        AdvioLocalSceneStatus,
+        AdvioPeopleLevel,
+        AdvioSceneMetadata,
+    )
+
+    rendered_samples: list[int] = []
+    loaded_ids: list[int] = []
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    class ServiceSpy:
+        def scene(self, sequence_id: int) -> SimpleNamespace:
+            return SimpleNamespace(display_name=f"advio-{sequence_id:02d}")
+
+        def load_local_sample(self, sequence_id: int) -> SimpleNamespace:
+            loaded_ids.append(sequence_id)
+            return SimpleNamespace(sequence_id=sequence_id)
+
+    def _status(sequence_id: int) -> AdvioLocalSceneStatus:
+        return AdvioLocalSceneStatus(
+            scene=AdvioSceneMetadata(
+                sequence_id=sequence_id,
+                sequence_slug=f"advio-{sequence_id:02d}",
+                venue="Office",
+                dataset_code="03",
+                environment=AdvioEnvironment.INDOOR,
+                has_stairs=False,
+                has_escalator=False,
+                has_elevator=False,
+                people_level=AdvioPeopleLevel.NONE,
+                has_vehicles=False,
+                calibration_name="iphone-03.yaml",
+                archive_url=f"https://example.com/advio-{sequence_id:02d}.zip",
+                archive_size_bytes=10_000_000,
+                archive_md5="abc123",
+            ),
+            sequence_dir=Path(f"/tmp/advio-{sequence_id:02d}"),
+            replay_ready=True,
+            offline_ready=True,
+        )
+
+    monkeypatch.setattr(advio_page.st, "container", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(advio_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "selectbox", lambda *args, **kwargs: 16)
+    monkeypatch.setattr(advio_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        advio_page, "_render_sequence_details", lambda sample: rendered_samples.append(sample.sequence_id)
+    )
+
+    advio_page._render_sequence_explorer(
+        SimpleNamespace(
+            state=AppState(advio=AdvioPageState(explorer_sequence_id=16)),
+            store=FakeStore(),
+            advio_service=ServiceSpy(),
+        ),
+        [_status(15), _status(16)],
+    )
+
+    assert loaded_ids == [16]
+    assert rendered_samples == [16]
 
 
 def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) -> None:
@@ -1123,15 +1286,69 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
     monkeypatch.setattr(record3d_page.st, "warning", lambda *args, **kwargs: None)
     monkeypatch.setattr(record3d_page.st, "info", lambda *args, **kwargs: None)
 
-    transport, _, _, start_requested, stop_requested = record3d_page._render_sidebar_controls(context)
+    action = record3d_page._render_sidebar_controls(context)
     monkeypatch.undo()
 
     assert runtime.start_usb_calls == 0
     assert runtime.start_wifi_calls == 0
-    assert transport is Record3DTransportId.WIFI
-    assert start_requested is False
-    assert stop_requested is False
+    assert action.transport is Record3DTransportId.WIFI
+    assert action.start_requested is False
+    assert action.stop_requested is False
     assert context.state.record3d.transport is Record3DTransportId.WIFI
+
+
+def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector() -> None:
+    from prml_vslam.app.record3d_controller import Record3DPageAction, handle_record3d_page_action
+
+    class RuntimeSpy:
+        def __init__(self) -> None:
+            self.stop_calls = 0
+            self.start_usb_calls: list[int] = []
+
+        def snapshot(self) -> Record3DStreamSnapshot:
+            if not self.start_usb_calls:
+                return Record3DStreamSnapshot(
+                    transport=Record3DTransportId.USB,
+                    state=Record3DStreamState.STREAMING,
+                )
+            return Record3DStreamSnapshot(
+                transport=Record3DTransportId.USB,
+                state=Record3DStreamState.CONNECTING,
+                source_label=f"USB device #{self.start_usb_calls[-1]}",
+            )
+
+        def stop(self) -> None:
+            self.stop_calls += 1
+
+        def start_usb(self, *, device_index: int) -> None:
+            self.start_usb_calls.append(device_index)
+
+        def start_wifi(self, *, device_address: str) -> None:
+            raise AssertionError(f"Unexpected Wi-Fi start for {device_address}")
+
+    context = SimpleNamespace(
+        state=AppState(
+            record3d=Record3DPageState(transport=Record3DTransportId.USB, usb_device_index=0, is_running=True)
+        ),
+        store=FakeStore(),
+        record3d_runtime=RuntimeSpy(),
+    )
+
+    snapshot = handle_record3d_page_action(
+        context,
+        Record3DPageAction(
+            transport=Record3DTransportId.USB,
+            usb_device_index=1,
+            start_requested=True,
+        ),
+    )
+
+    assert context.record3d_runtime.stop_calls == 1
+    assert context.record3d_runtime.start_usb_calls == [1]
+    assert context.state.record3d.usb_device_index == 1
+    assert context.state.record3d.is_running is True
+    assert snapshot.transport is Record3DTransportId.USB
+    assert snapshot.state is Record3DStreamState.CONNECTING
 
 
 def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
@@ -1385,16 +1602,28 @@ def test_session_state_store_accepts_hot_reloaded_advio_runtime_shape(monkeypatc
 
 
 def test_normalize_grayscale_ignores_non_finite_depth_values() -> None:
-    from prml_vslam.app.pages.record3d import _normalize_grayscale
+    from prml_vslam.app.image_utils import normalize_grayscale_image
 
     image = np.array([[np.nan, 1.0], [np.inf, 3.0]], dtype=np.float32)
 
     with warnings.catch_warnings(record=True) as captured_warnings:
         warnings.simplefilter("always")
-        normalized = _normalize_grayscale(image)
+        normalized = normalize_grayscale_image(image)
 
     assert normalized.dtype == np.uint8
     assert normalized.shape == image.shape
     assert not captured_warnings
     assert normalized[0, 0] == 0
     assert normalized[1, 0] == 0
+
+
+def test_format_camera_intrinsics_latex_preserves_existing_output() -> None:
+    from prml_vslam.app.camera_display import format_camera_intrinsics_latex
+
+    assert format_camera_intrinsics_latex(fx=100.0, fy=101.0, cx=32.0, cy=24.0) == (
+        "K = \\begin{bmatrix}"
+        "100.000 & 0.000 & 32.000 \\\\ "
+        "0.000 & 101.000 & 24.000 \\\\ "
+        "0.000 & 0.000 & 1.000"
+        "\\end{bmatrix}"
+    )

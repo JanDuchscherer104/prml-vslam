@@ -29,7 +29,8 @@ from prml_vslam.datasets import (
     load_advio_sequence,
     write_advio_pose_tum,
 )
-from prml_vslam.eval.services import list_sequences, resolve_dataset_root, resolve_reference_path
+from prml_vslam.eval.interfaces import DiscoveredRun
+from prml_vslam.eval.selection import build_selection, list_sequences, resolve_dataset_root, resolve_reference_path
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.utils import PathConfig
 
@@ -403,6 +404,32 @@ def test_metrics_service_only_uses_existing_advio_reference_tum(tmp_path: Path) 
     assert reference_path is None
 
 
+def test_build_selection_resolves_existing_reference_tum(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "data" / "advio"
+    sequence_dir = _write_advio_sequence(dataset_root, sequence_id=15)
+    reference_path = sequence_dir / "ground-truth" / "ground_truth.tum"
+    reference_path.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
+
+    estimate_path = tmp_path / "artifacts" / "advio-15" / "vista" / "slam" / "trajectory.tum"
+    estimate_path.parent.mkdir(parents=True, exist_ok=True)
+    estimate_path.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    run = DiscoveredRun(
+        artifact_root=estimate_path.parent.parent,
+        estimate_path=estimate_path,
+        label="ViSTA-SLAM",
+    )
+
+    selection = build_selection(
+        dataset=DatasetId.ADVIO,
+        dataset_root=dataset_root,
+        sequence_slug="advio-15",
+        run=run,
+    )
+
+    assert selection.reference_path == reference_path
+    assert selection.run == run
+
+
 def test_load_advio_catalog_commits_all_scene_metadata() -> None:
     catalog = load_advio_catalog()
 
@@ -459,6 +486,19 @@ def test_advio_dataset_service_offline_preset_downloads_evaluation_ready_bundle(
     assert summary.offline_ready_scene_count == 1
     assert status.replay_ready is True
     assert status.offline_ready is True
+
+
+def test_advio_dataset_service_summarize_reuses_precomputed_statuses(tmp_path: Path) -> None:
+    catalog = _build_fake_catalog(tmp_path)
+    service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
+    statuses = service.local_scene_statuses()
+    service.local_scene_statuses = lambda: pytest.fail("local_scene_statuses should not be recomputed")  # type: ignore[method-assign]
+
+    summary = service.summarize(statuses)
+
+    assert summary.total_scene_count == 1
+    assert summary.local_scene_count == 0
+    assert summary.offline_ready_scene_count == 0
 
 
 def test_advio_dataset_service_handles_official_archive_layout(tmp_path: Path) -> None:
