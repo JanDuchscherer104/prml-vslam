@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from enum import Enum, StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.methods.interfaces import MethodId
-from prml_vslam.utils import BaseConfig, BaseData
+from prml_vslam.utils import BaseConfig, BaseData, PathConfig
 
 
 class PipelineMode(StrEnum):
@@ -25,10 +25,8 @@ class VideoSourceSpec(BaseConfig):
 
     kind: Literal["video"] = "video"
     """Discriminator for Pydantic source unions."""
-
     video_path: Path
     """Path to the input video that will be processed."""
-
     frame_stride: int = 1
     """Frame subsampling stride applied during ingestion."""
 
@@ -38,10 +36,8 @@ class DatasetSourceSpec(BaseConfig):
 
     kind: Literal["dataset"] = "dataset"
     """Discriminator for Pydantic source unions."""
-
     dataset_id: DatasetId
     """Dataset family that owns the sequence."""
-
     sequence_id: str
     """Dataset-specific sequence identifier."""
 
@@ -51,12 +47,13 @@ class LiveSourceSpec(BaseConfig):
 
     kind: Literal["live"] = "live"
     """Discriminator for Pydantic source unions."""
-
     source_id: str
     """Live source identifier such as `record3d_usb` or `record3d_wifi`."""
-
     persist_capture: bool = True
     """Whether to persist the captured session for downstream offline use."""
+
+
+SourceSpec = VideoSourceSpec | DatasetSourceSpec | LiveSourceSpec
 
 
 class TrackingConfig(BaseConfig):
@@ -64,26 +61,34 @@ class TrackingConfig(BaseConfig):
 
     method: MethodId
     """External monocular VSLAM backend to use for the run."""
-
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
-
     config_path: Path | None = None
     """Optional explicit backend config path."""
 
 
-class DenseConfig(BaseConfig):
-    """Dense-mapping stage toggle."""
+class StageToggleConfig(BaseConfig):
+    """Boolean toggle used by optional one-off pipeline stages."""
 
     enabled: bool = True
-    """Whether the run should include dense map export."""
+    """Whether the run should include the corresponding stage."""
 
 
-class ReferenceConfig(BaseConfig):
-    """Reference-reconstruction stage toggle."""
+DenseConfig = StageToggleConfig
+
+
+class ReferenceConfig(StageToggleConfig):
+    """Boolean toggle used by the optional reference-reconstruction stage."""
 
     enabled: bool = False
-    """Whether the run should include a reference reconstruction stage."""
+    """Whether the run should include the corresponding stage."""
+
+
+class EvaluationStageConfig(BaseConfig):
+    """Configuration accepted by stage-specific evaluation builder methods."""
+
+
+TrajectoryEvaluationConfig = CloudEvaluationConfig = EfficiencyEvaluationConfig = EvaluationStageConfig
 
 
 class BenchmarkEvaluationConfig(BaseConfig):
@@ -91,10 +96,8 @@ class BenchmarkEvaluationConfig(BaseConfig):
 
     compare_to_arcore: bool = True
     """Whether the plan should reserve an ARCore comparison stage."""
-
     evaluate_cloud: bool = False
     """Whether the run should include dense-cloud comparison."""
-
     evaluate_efficiency: bool = True
     """Whether the run should include efficiency metrics."""
 
@@ -104,27 +107,153 @@ class RunRequest(BaseConfig):
 
     experiment_name: str
     """Human-readable name for the benchmark run."""
-
     mode: PipelineMode = PipelineMode.OFFLINE
     """Whether the run is offline-only or live-backed."""
-
     output_dir: Path
     """Root directory where planned artifacts should be written."""
-
-    source: VideoSourceSpec | DatasetSourceSpec | LiveSourceSpec = Field(discriminator="kind")
+    source: SourceSpec = Field(discriminator="kind")
     """Source specification normalized before the main benchmark stages run."""
-
-    tracking: TrackingConfig
+    tracking: TrackingConfig | None = None
     """Tracking-stage configuration."""
-
     dense: DenseConfig = Field(default_factory=DenseConfig)
     """Dense-mapping configuration."""
-
     reference: ReferenceConfig = Field(default_factory=ReferenceConfig)
     """Reference-reconstruction configuration."""
-
     evaluation: BenchmarkEvaluationConfig = Field(default_factory=BenchmarkEvaluationConfig)
     """Benchmark evaluation configuration."""
+
+    def add_tracking(self, config: TrackingConfig) -> Self:
+        self.tracking = config
+        return self
+
+    def add_dense(self, config: DenseConfig) -> Self:
+        return self._set_stage_toggle("dense", config)
+
+    def add_reference(self, config: ReferenceConfig) -> Self:
+        return self._set_stage_toggle("reference", config)
+
+    def add_trajectory_evaluation(self, _config: TrajectoryEvaluationConfig) -> Self:
+        return self._enable_evaluation("compare_to_arcore")
+
+    def add_cloud_evaluation(self, _config: CloudEvaluationConfig) -> Self:
+        return self._enable_evaluation("evaluate_cloud")
+
+    def add_efficiency_evaluation(self, _config: EfficiencyEvaluationConfig) -> Self:
+        return self._enable_evaluation("evaluate_efficiency")
+
+    def build(self, path_config: PathConfig | None = None) -> RunPlan:
+        if self.tracking is None:
+            raise ValueError("RunRequest requires tracking configuration before building a plan.")
+        path_config = path_config or PathConfig()
+        run_paths = path_config.plan_run_paths(
+            experiment_name=self.experiment_name,
+            method_slug=self.tracking.method.artifact_slug,
+            output_dir=self.output_dir,
+        )
+        return RunPlan(
+            run_id=path_config.slugify_experiment_name(self.experiment_name),
+            mode=self.mode,
+            method=self.tracking.method,
+            artifact_root=run_paths.artifact_root,
+            source=self.source,
+            stages=self._build_stages(run_paths),
+        )
+
+    def _build_stages(self, run_paths) -> list[RunPlanStage]:
+        assert self.tracking is not None
+        stages = [
+            self._stage(
+                RunPlanStageId.INGEST,
+                "Normalize Input Sequence",
+                self._ingest_summary(self.source),
+                run_paths.sequence_manifest_path,
+            ),
+            self._stage(
+                RunPlanStageId.SLAM,
+                "Run SLAM Backend",
+                self._method_summary(self.tracking.method),
+                run_paths.trajectory_path,
+                run_paths.sparse_points_path,
+            ),
+        ]
+        stages.extend(
+            self._stage(stage_id, title, summary, *outputs)
+            for enabled, stage_id, title, summary, outputs in (
+                (
+                    self.dense.enabled,
+                    RunPlanStageId.DENSE_MAPPING,
+                    "Export Dense Mapping",
+                    "Generate dense geometry artifacts suitable for downstream quality evaluation.",
+                    (run_paths.dense_points_path,),
+                ),
+                (
+                    self.reference.enabled,
+                    RunPlanStageId.REFERENCE_RECONSTRUCTION,
+                    "Build Reference Reconstruction",
+                    "Reserve the offline reconstruction step used as a dense geometry reference.",
+                    (run_paths.reference_cloud_path,),
+                ),
+                (
+                    self.evaluation.compare_to_arcore,
+                    RunPlanStageId.TRAJECTORY_EVALUATION,
+                    "Evaluate Trajectory",
+                    "Align the trajectory against the available reference and persist trajectory metrics.",
+                    (run_paths.trajectory_metrics_path,),
+                ),
+                (
+                    self.evaluation.evaluate_cloud,
+                    RunPlanStageId.CLOUD_EVALUATION,
+                    "Evaluate Dense Cloud",
+                    "Compare reconstructed dense geometry against the reference cloud.",
+                    (run_paths.cloud_metrics_path,),
+                ),
+                (
+                    self.evaluation.evaluate_efficiency,
+                    RunPlanStageId.EFFICIENCY_EVALUATION,
+                    "Measure Efficiency",
+                    "Persist runtime and resource-usage metrics for the run.",
+                    (run_paths.efficiency_metrics_path,),
+                ),
+            )
+            if enabled
+        )
+        stages.append(
+            self._stage(
+                RunPlanStageId.SUMMARY,
+                "Write Run Summary",
+                "Persist the stage status and top-level artifact summary for the run.",
+                run_paths.summary_path,
+            )
+        )
+        return stages
+
+    @staticmethod
+    def _stage(stage_id: RunPlanStageId, title: str, summary: str, *outputs: Path) -> RunPlanStage:
+        return RunPlanStage(id=stage_id, title=title, summary=summary, outputs=list(outputs))
+
+    @staticmethod
+    def _ingest_summary(source: SourceSpec) -> str:
+        match source:
+            case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
+                return f"Decode '{video_path}' at stride {frame_stride} and materialize a normalized sequence manifest."
+            case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
+                return f"Normalize dataset sequence '{dataset_id.value}:{sequence_id}' into a shared sequence manifest."
+            case LiveSourceSpec(source_id=source_id, persist_capture=persist_capture):
+                persistence = "with persistence" if persist_capture else "without persistence"
+                return f"Capture the live source '{source_id}' {persistence} into a replayable sequence manifest."
+
+    @staticmethod
+    def _method_summary(method: MethodId) -> str:
+        return f"Plan the {method.display_name} wrapper and export trajectory plus sparse geometry artifacts."
+
+    def _set_stage_toggle(self, field_name: str, config: StageToggleConfig) -> Self:
+        config.enabled = True
+        setattr(self, field_name, config)
+        return self
+
+    def _enable_evaluation(self, field_name: str) -> Self:
+        setattr(self.evaluation, field_name, True)
+        return self
 
 
 class RunPlanStageId(str, Enum):
@@ -145,13 +274,10 @@ class RunPlanStage(BaseData):
 
     id: RunPlanStageId
     """Stable identifier for the stage."""
-
     title: str
     """Short human-readable stage title."""
-
     summary: str
     """Short description of the stage intent."""
-
     outputs: list[Path] = Field(default_factory=list)
     """Expected artifact paths for the stage."""
 
@@ -161,19 +287,14 @@ class RunPlan(BaseData):
 
     run_id: str
     """Stable filesystem-safe run identifier."""
-
     mode: PipelineMode
     """Selected pipeline mode."""
-
     method: MethodId
     """External backend chosen for the run."""
-
     artifact_root: Path
     """Root directory for all run artifacts."""
-
-    source: VideoSourceSpec | DatasetSourceSpec | LiveSourceSpec = Field(discriminator="kind")
+    source: SourceSpec = Field(discriminator="kind")
     """Source definition that the run plan was built from."""
-
     stages: list[RunPlanStage] = Field(default_factory=list)
     """Ordered execution stages for the benchmark run."""
 
@@ -183,10 +304,8 @@ class ArtifactRef(BaseData):
 
     path: Path
     """Filesystem path to the materialized artifact."""
-
     kind: str
     """Short artifact kind identifier."""
-
     fingerprint: str
     """Content or provenance fingerprint for cache decisions."""
 
@@ -196,22 +315,16 @@ class SequenceManifest(BaseData):
 
     sequence_id: str
     """Stable sequence identifier used across artifact stages."""
-
     video_path: Path | None = None
     """Video path when the sequence stays video-backed."""
-
     rgb_dir: Path | None = None
     """Materialized RGB frame directory when one exists."""
-
     timestamps_path: Path | None = None
     """Path to exact or normalized frame timestamps."""
-
     intrinsics_path: Path | None = None
     """Path to camera intrinsics or calibration metadata."""
-
     reference_tum_path: Path | None = None
     """Normalized reference trajectory in TUM format when available."""
-
     arcore_tum_path: Path | None = None
     """Normalized ARCore baseline trajectory in TUM format when available."""
 
@@ -221,47 +334,47 @@ class TrackingArtifacts(BaseData):
 
     trajectory_tum: ArtifactRef
     """Normalized TUM trajectory artifact."""
-
     sparse_points_ply: ArtifactRef | None = None
     """Optional sparse point cloud artifact."""
-
     preview_log_jsonl: ArtifactRef | None = None
     """Optional preview/event log produced during live tracking."""
 
 
-class DenseArtifacts(BaseData):
+class NamedArtifactBundle(BaseData):
+    """Storage shape for one artifact exposed under a stable public field name."""
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    artifact: ArtifactRef
+    """Stored artifact reference."""
+
+    def __getattr__(self, name: str) -> ArtifactRef:
+        if name == self.__class__.model_fields["artifact"].alias:
+            return self.artifact
+        raise AttributeError(name)
+
+
+class DenseArtifacts(NamedArtifactBundle):
     """Materialized outputs produced by the dense-mapping stage."""
 
-    dense_points_ply: ArtifactRef
+    artifact: ArtifactRef = Field(alias="dense_points_ply")
     """Normalized dense point cloud artifact."""
 
 
-class ReferenceArtifacts(BaseData):
+class ReferenceArtifacts(NamedArtifactBundle):
     """Materialized outputs produced by the reference-reconstruction stage."""
 
-    reference_cloud_ply: ArtifactRef
+    artifact: ArtifactRef = Field(alias="reference_cloud_ply")
     """Normalized reference cloud artifact."""
 
 
-class TrajectoryMetrics(BaseData):
-    """Persisted trajectory-metric artifact bundle."""
+class MetricsBundle(BaseData):
+    """Persisted metric-artifact bundle."""
 
     metrics_json: ArtifactRef
-    """Serialized trajectory metric results."""
+    """Serialized metric results."""
 
 
-class CloudMetrics(BaseData):
-    """Persisted cloud-metric artifact bundle."""
-
-    metrics_json: ArtifactRef
-    """Serialized cloud comparison results."""
-
-
-class EfficiencyMetrics(BaseData):
-    """Persisted efficiency-metric artifact bundle."""
-
-    metrics_json: ArtifactRef
-    """Serialized runtime or resource-usage results."""
+TrajectoryMetrics = CloudMetrics = EfficiencyMetrics = MetricsBundle
 
 
 class StageExecutionStatus(StrEnum):
@@ -277,16 +390,12 @@ class StageManifest(BaseData):
 
     stage_id: RunPlanStageId
     """Stage identity."""
-
     config_hash: str
     """Fingerprint of the relevant stage configuration."""
-
     input_fingerprint: str
     """Fingerprint of the stage inputs."""
-
     output_paths: dict[str, Path] = Field(default_factory=dict)
     """Named materialized outputs produced or reused by the stage."""
-
     status: StageExecutionStatus
     """Whether the stage was reused, executed, or failed."""
 
@@ -296,10 +405,8 @@ class RunSummary(BaseData):
 
     run_id: str
     """Stable run identifier."""
-
     artifact_root: Path
     """Root directory that owns all run artifacts."""
-
     stage_status: dict[RunPlanStageId, StageExecutionStatus] = Field(default_factory=dict)
     """Final status per stage."""
 
@@ -309,46 +416,22 @@ class FramePacket(BaseData):
 
     seq: int
     """Zero-based frame sequence number."""
-
     ts_ns: int
     """Frame timestamp in nanoseconds."""
-
     image_path: Path | None = None
     """Path-backed RGB image when the frame has already been materialized."""
-
     jpeg_bytes: bytes | None = None
     """Encoded image bytes when the frame is in-memory only."""
-
     width: int = 0
     """Frame width in pixels."""
-
     height: int = 0
     """Frame height in pixels."""
 
 
-__all__ = [
-    "ArtifactRef",
-    "BenchmarkEvaluationConfig",
-    "CloudMetrics",
-    "DatasetSourceSpec",
-    "DenseArtifacts",
-    "DenseConfig",
-    "EfficiencyMetrics",
-    "FramePacket",
-    "LiveSourceSpec",
-    "PipelineMode",
-    "ReferenceArtifacts",
-    "ReferenceConfig",
-    "RunPlan",
-    "RunPlanStage",
-    "RunPlanStageId",
-    "RunRequest",
-    "RunSummary",
-    "SequenceManifest",
-    "StageExecutionStatus",
-    "StageManifest",
-    "TrackingArtifacts",
-    "TrackingConfig",
-    "TrajectoryMetrics",
-    "VideoSourceSpec",
-]
+__all__ = """
+ArtifactRef BenchmarkEvaluationConfig CloudEvaluationConfig CloudMetrics DatasetSourceSpec DenseArtifacts
+DenseConfig EfficiencyEvaluationConfig EfficiencyMetrics FramePacket LiveSourceSpec PipelineMode
+ReferenceArtifacts ReferenceConfig RunPlan RunPlanStage RunPlanStageId RunRequest RunSummary
+SequenceManifest StageExecutionStatus StageManifest TrackingArtifacts TrackingConfig TrajectoryEvaluationConfig
+TrajectoryMetrics VideoSourceSpec
+""".split()
