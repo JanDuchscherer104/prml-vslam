@@ -13,8 +13,6 @@ from ..ui import render_page_intro
 
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
-
-# fmt: off
 EVALUATION_ERRORS = (FileNotFoundError, RuntimeError, ValueError)
 
 
@@ -32,7 +30,9 @@ def render(context: AppContext) -> None:
         with st.container(border=True):
             st.subheader("Benchmark Slice")
             datasets = list(DatasetId)
-            dataset = st.selectbox("Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label)
+            dataset = st.selectbox(
+                "Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label
+            )
             dataset_root = context.path_config.resolve_dataset_dir(dataset.value)
             sequences = dataset.list_sequence_slugs(dataset_root)
             if not sequences:
@@ -44,7 +44,9 @@ def render(context: AppContext) -> None:
             runs = service.discover_runs(sequence_slug)
             if not runs:
                 _save_state(context, dataset=dataset, sequence_slug=sequence_slug)
-                st.info(f"No benchmark runs with `slam/trajectory.tum` were found under `{context.path_config.artifacts_dir}`.")
+                st.info(
+                    f"No benchmark runs with `slam/trajectory.tum` were found under `{context.path_config.artifacts_dir}`."
+                )
                 return
             run_paths = [run.artifact_root for run in runs]
             run_index = run_paths.index(metrics.run_root) if metrics.run_root in run_paths else 0
@@ -53,8 +55,17 @@ def render(context: AppContext) -> None:
         with st.container(border=True):
             st.subheader("Evaluation Controls")
             controls = _render_controls(metrics.evaluation)
-            st.caption("Evaluation never runs on selector changes. Only the primary action below writes or refreshes persisted metric results.")
-    _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=run.artifact_root, controls=controls, result_path=metrics.result_path)
+            st.caption(
+                "Evaluation never runs on selector changes. Only the primary action below writes or refreshes persisted metric results."
+            )
+    _save_state(
+        context,
+        dataset=dataset,
+        sequence_slug=sequence_slug,
+        run_root=run.artifact_root,
+        controls=controls,
+        result_path=metrics.result_path,
+    )
     selection = SelectionSnapshot(
         sequence_slug=sequence_slug,
         reference_path=dataset.resolve_reference_path(dataset_root, sequence_slug),
@@ -71,7 +82,9 @@ def render(context: AppContext) -> None:
         action_col, status_col = st.columns((0.9, 1.1), gap="large")
         compute = action_col.button("Compute metrics", type="primary", disabled=not can_compute, width="stretch")
         if selection.reference_path is None:
-            status_col.warning("Missing `ground_truth.tum` for the selected sequence. The app only evaluates when a TUM reference trajectory already exists.")
+            status_col.warning(
+                "Missing `ground_truth.tum` for the selected sequence. The app only evaluates when a TUM reference trajectory already exists."
+            )
         elif evaluation is not None:
             status_col.success(f"Loaded persisted result from `{evaluation.path}`.")
         else:
@@ -123,8 +136,15 @@ def _save_state(context: AppContext, *, dataset: DatasetId, sequence_slug: str |
 
 def _render_controls(current: EvaluationControls) -> EvaluationControls:
     pose_options = list(PoseRelationId)
-    pose_relation = st.selectbox("Pose Relation", pose_options, index=pose_options.index(current.pose_relation), format_func=lambda item: item.label)
-    max_diff_s = st.number_input("Max timestamp diff (s)", min_value=0.0, step=0.01, format="%.3f", value=float(current.max_diff_s))
+    pose_relation = st.selectbox(
+        "Pose Relation",
+        pose_options,
+        index=pose_options.index(current.pose_relation),
+        format_func=lambda item: item.label,
+    )
+    max_diff_s = st.number_input(
+        "Max timestamp diff (s)", min_value=0.0, step=0.01, format="%.3f", value=float(current.max_diff_s)
+    )
     return EvaluationControls(
         pose_relation=pose_relation,
         align=st.toggle("Rigid alignment", value=current.align),
@@ -139,10 +159,22 @@ def _render_provenance(
     selection: SelectionSnapshot,
     evaluation: EvaluationArtifact | None,
 ) -> None:
-    lines = [f"- Dataset: `{dataset.label}`", f"- Sequence: `{selection.sequence_slug}`", f"- Run: `{selection.run.label}`", f"- Estimate path: `{selection.run.estimate_path}`", f"- Reference path: `{selection.reference_path}`"]
+    lines = [
+        f"- Dataset: `{dataset.label}`",
+        f"- Sequence: `{selection.sequence_slug}`",
+        f"- Run: `{selection.run.label}`",
+        f"- Estimate path: `{selection.run.estimate_path}`",
+        f"- Reference path: `{selection.reference_path}`",
+    ]
     if evaluation is not None:
-        lines += [f"- Pose relation: `{evaluation.controls.pose_relation.label}`", f"- Alignment: `{evaluation.controls.align}`", f"- Scale correction: `{evaluation.controls.correct_scale}`", f"- Max timestamp diff (s): `{evaluation.controls.max_diff_s:.3f}`", f"- Matched pairs: `{evaluation.matched_pairs}`", f"- Persisted result: `{evaluation.path}`"]
+        lines += [
+            f"- Pose relation: `{evaluation.controls.pose_relation.label}`",
+            f"- Alignment: `{evaluation.controls.align}`",
+            f"- Scale correction: `{evaluation.controls.correct_scale}`",
+            f"- Max timestamp diff (s): `{evaluation.controls.max_diff_s:.3f}`",
+            f"- Matched pairs: `{evaluation.matched_pairs}`",
+            f"- Persisted result: `{evaluation.path}`",
+        ]
     with st.container(border=True):
         st.subheader("Provenance")
         st.markdown("\n".join(lines))
-# fmt: on
