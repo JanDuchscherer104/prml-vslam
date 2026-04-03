@@ -10,7 +10,7 @@
   - Dataset identifiers and normalized dataset-level trajectories.
 - `src/prml_vslam/eval/interfaces.py`
   - Evaluation controls, result payloads, and metrics-page discovery DTOs.
-- `src/prml_vslam/methods/contracts.py`
+- `src/prml_vslam/methods/interfaces.py`
   - Method identifiers and method-run contracts only.
 - `src/prml_vslam/pipeline/contracts.py`
   - Pipeline run requests, plans, manifests, artifact bundles, and summaries.

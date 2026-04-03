@@ -4,9 +4,7 @@
 
 - [ ] Survey ARCore functionalities
 - [ ] Read VSLAM papers
-
--
-
+- [ ] Define initial benchmark scope and success criteria
 ## WP1: Repository and Environment Scaffolding
 
 - Purpose: keep the repo installable, testable, and easy to onboard into.
@@ -21,7 +19,7 @@
 
 ## WP2: Data Capture and Logging App
 
-- Purpose: record raw monocular video together with ARCore baseline logs for custom evaoluation data.
+- Purpose: record raw monocular video together with ARCore baseline logs for custom evaluation data.
 - Inputs: smartphone capture requirements, ARCore logging needs, target export schema.
 - Outputs: recording workflow or app, sample sessions, capture documentation.
 - Dependencies: WP1.
