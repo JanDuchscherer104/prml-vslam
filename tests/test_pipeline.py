@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
     ArtifactRef,
+    BenchmarkEvaluationConfig,
     CloudEvaluationConfig,
+    CloudMetrics,
     DenseArtifacts,
     DenseConfig,
     EfficiencyEvaluationConfig,
+    EfficiencyMetrics,
+    ReferenceArtifacts,
     ReferenceConfig,
     RunPlanStageId,
     RunRequest,
@@ -88,17 +94,90 @@ def test_run_request_build_keeps_legacy_field_based_defaults() -> None:
     ]
 
 
-def test_single_artifact_bundle_preserves_public_dump_key() -> None:
-    artifact = ArtifactRef(path=Path("artifacts/dense.ply"), kind="ply", fingerprint="abc123")
-    dense = DenseArtifacts(dense_points_ply=artifact)
+@pytest.mark.parametrize(
+    ("builder_name", "field_name", "config_cls"),
+    [
+        ("add_dense", "dense", DenseConfig),
+        ("add_reference", "reference", ReferenceConfig),
+    ],
+)
+def test_stage_toggle_helpers_do_not_mutate_supplied_configs(
+    builder_name: str,
+    field_name: str,
+    config_cls: type[DenseConfig] | type[ReferenceConfig],
+) -> None:
+    config = config_cls(enabled=False)
+    request = RunRequest(
+        experiment_name="Mutation Check",
+        output_dir=Path("artifacts"),
+        source=VideoSourceSpec(video_path=Path("captures/mutation-check.mp4")),
+    )
 
-    assert dense.dense_points_ply == artifact
-    assert dense.model_dump() == {"dense_points_ply": artifact.model_dump()}
+    getattr(request, builder_name)(config)
+
+    request_config = getattr(request, field_name)
+    assert config.enabled is False
+    assert request_config.enabled is True
+    assert request_config is not config
 
 
-def test_metrics_bundle_alias_preserves_metrics_json_dump() -> None:
+@pytest.mark.parametrize(
+    ("builder_name", "field_name", "config_cls"),
+    [
+        ("add_trajectory_evaluation", "compare_to_arcore", TrajectoryEvaluationConfig),
+        ("add_cloud_evaluation", "evaluate_cloud", CloudEvaluationConfig),
+        ("add_efficiency_evaluation", "evaluate_efficiency", EfficiencyEvaluationConfig),
+    ],
+)
+def test_evaluation_helpers_do_not_mutate_supplied_config(
+    builder_name: str,
+    field_name: str,
+    config_cls: type[TrajectoryEvaluationConfig] | type[CloudEvaluationConfig] | type[EfficiencyEvaluationConfig],
+) -> None:
+    evaluation = BenchmarkEvaluationConfig(
+        compare_to_arcore=False,
+        evaluate_cloud=False,
+        evaluate_efficiency=False,
+    )
+    request = RunRequest(
+        experiment_name="Mutation Check",
+        output_dir=Path("artifacts"),
+        source=VideoSourceSpec(video_path=Path("captures/mutation-check.mp4")),
+        evaluation=evaluation,
+    )
+
+    getattr(request, builder_name)(config_cls())
+
+    assert getattr(evaluation, field_name) is False
+    assert request.evaluation is not evaluation
+    assert getattr(request.evaluation, field_name) is True
+
+
+@pytest.mark.parametrize(
+    ("bundle_cls", "field_name", "artifact_path"),
+    [
+        (DenseArtifacts, "dense_points_ply", "artifacts/dense.ply"),
+        (ReferenceArtifacts, "reference_cloud_ply", "artifacts/reference.ply"),
+    ],
+)
+def test_artifact_bundle_preserves_public_dump_key(
+    bundle_cls: type[DenseArtifacts] | type[ReferenceArtifacts],
+    field_name: str,
+    artifact_path: str,
+) -> None:
+    artifact = ArtifactRef(path=Path(artifact_path), kind="ply", fingerprint="abc123")
+    bundle = bundle_cls(**{field_name: artifact})
+
+    assert getattr(bundle, field_name) == artifact
+    assert bundle.model_dump() == {field_name: artifact.model_dump()}
+
+
+@pytest.mark.parametrize("metrics_cls", [TrajectoryMetrics, CloudMetrics, EfficiencyMetrics])
+def test_metrics_bundle_preserves_metrics_json_dump(
+    metrics_cls: type[TrajectoryMetrics] | type[CloudMetrics] | type[EfficiencyMetrics],
+) -> None:
     artifact = ArtifactRef(path=Path("artifacts/trajectory.json"), kind="json", fingerprint="def456")
-    metrics = TrajectoryMetrics(metrics_json=artifact)
+    metrics = metrics_cls(metrics_json=artifact)
 
     assert metrics.metrics_json == artifact
     assert metrics.model_dump() == {"metrics_json": artifact.model_dump()}
