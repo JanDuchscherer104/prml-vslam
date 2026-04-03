@@ -6,9 +6,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from prml_vslam.datasets.interfaces import TimedPoseTrajectory
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketStream, SE3Pose, TimedPoseTrajectory
 from prml_vslam.io.cv2_producer import Cv2ProducerConfig, Cv2ReplayMode, open_cv2_replay_stream
-from prml_vslam.io.interfaces import CameraPose, PinholeCameraIntrinsics, VideoFramePacket, VideoPacketStream
 
 from .advio_loading import load_advio_calibration, load_advio_frame_timestamps_ns, load_advio_trajectory
 from .advio_models import AdvioPoseSource
@@ -26,7 +25,7 @@ def open_advio_stream(
     loop: bool = True,
     replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
     respect_video_rotation: bool = False,
-) -> VideoPacketStream:
+) -> FramePacketStream:
     from .advio_sequence import AdvioSequencePaths
 
     scene = sequence.scene
@@ -78,7 +77,7 @@ def _load_pose_trajectory(
 def _poses_for_frame_timestamps(
     frame_timestamps_ns: NDArray[np.int64],
     trajectory: TimedPoseTrajectory | None,
-) -> list[CameraPose | None]:
+) -> list[SE3Pose | None]:
     if trajectory is None or frame_timestamps_ns.size == 0:
         return [None] * int(frame_timestamps_ns.size)
     target_timestamps_s = frame_timestamps_ns.astype(np.float64) / 1e9
@@ -93,19 +92,19 @@ def _poses_for_frame_timestamps(
         source_timestamps_s[nearest_indices] - target_timestamps_s
     )
     nearest_indices = np.where(pick_previous, previous_indices, nearest_indices)
-    poses: list[CameraPose] = []
+    poses: list[SE3Pose] = []
     for position, nearest_index in zip(interpolated_positions, nearest_indices, strict=True):
-        poses.append(CameraPose.from_quaternion_translation(trajectory.quaternions_xyzw[int(nearest_index)], position))
+        poses.append(SE3Pose.from_quaternion_translation(trajectory.quaternions_xyzw[int(nearest_index)], position))
     return poses
 
 
-def _wrap_with_advio_video_rotation(stream: VideoPacketStream, *, video_path: Path) -> VideoPacketStream:
+def _wrap_with_advio_video_rotation(stream: FramePacketStream, *, video_path: Path) -> FramePacketStream:
     rotation_degrees = read_advio_video_rotation_degrees(video_path)
     return stream if rotation_degrees == 0 else _RotatedVideoStream(stream, rotation_degrees)
 
 
 class _RotatedVideoStream:
-    def __init__(self, stream: VideoPacketStream, rotation_degrees: int) -> None:
+    def __init__(self, stream: FramePacketStream, rotation_degrees: int) -> None:
         self._stream = stream
         self._rotation_degrees = rotation_degrees
 
@@ -115,7 +114,7 @@ class _RotatedVideoStream:
     def disconnect(self) -> None:
         self._stream.disconnect()
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> VideoFramePacket:
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
         packet = self._stream.wait_for_packet(timeout_seconds)
         return packet.model_copy(
             update={
@@ -201,9 +200,9 @@ def _rotate_rgb(rgb: NDArray[np.uint8], rotation_degrees: int) -> NDArray[np.uin
 
 
 def _rotate_intrinsics(
-    intrinsics: PinholeCameraIntrinsics | None,
+    intrinsics: CameraIntrinsics | None,
     rotation_degrees: int,
-) -> PinholeCameraIntrinsics | None:
+) -> CameraIntrinsics | None:
     if intrinsics is None or rotation_degrees == 0:
         return intrinsics
     match rotation_degrees:

@@ -233,17 +233,17 @@ def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path
     packet_3 = stream.wait_for_packet()
     stream.disconnect()
 
-    assert packet_0.frame_index == 0
-    assert packet_1.frame_index == 1
-    assert packet_2.frame_index == 2
-    assert packet_3.frame_index == 0
+    assert packet_0.seq == 0
+    assert packet_1.seq == 1
+    assert packet_2.seq == 2
+    assert packet_3.seq == 0
     assert packet_0.timestamp_ns == 0
     assert packet_1.timestamp_ns == 100_000_000
     assert packet_0.intrinsics is not None
-    assert packet_0.camera_pose is not None
-    assert packet_0.camera_pose.tx == 1.0
-    assert packet_2.camera_pose is not None
-    assert packet_2.camera_pose.tz == 4.0
+    assert packet_0.pose is not None
+    assert packet_0.pose.tx == 1.0
+    assert packet_2.pose is not None
+    assert packet_2.pose.tz == 4.0
     assert packet_3.metadata["loop_index"] == 1
     assert packet_0.metadata["dataset"] == "ADVIO"
     assert packet_0.metadata["pose_source"] == AdvioPoseSource.GROUND_TRUTH.value
@@ -264,9 +264,9 @@ def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path:
     packet = stream.wait_for_packet()
     stream.disconnect()
 
-    assert packet.frame_index == 0
-    assert packet.camera_pose is not None
-    assert packet.camera_pose.tx == 1.0
+    assert packet.seq == 0
+    assert packet.pose is not None
+    assert packet.pose.tx == 1.0
 
 
 def test_advio_open_stream_rotation_opt_in_keeps_default_behavior_without_metadata(

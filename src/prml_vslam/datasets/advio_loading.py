@@ -8,10 +8,9 @@ import numpy as np
 import yaml
 from numpy.typing import NDArray
 
-from prml_vslam.datasets.interfaces import TimedPoseTrajectory
-from prml_vslam.io.interfaces import PinholeCameraIntrinsics
+from prml_vslam.interfaces import CameraIntrinsics, SE3Pose, TimedPoseTrajectory
 from prml_vslam.utils import BaseData
-from prml_vslam.utils.geometry import SE3Pose, write_tum_trajectory
+from prml_vslam.utils.geometry import write_tum_trajectory
 
 _CSV_FLOAT_PATTERN = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 _NUMERIC_CSV_ROW_PATTERN = re.compile(
@@ -22,7 +21,7 @@ _NUMERIC_CSV_ROW_PATTERN = re.compile(
 
 class AdvioCalibration(BaseData):
     calibration_path: Path
-    intrinsics: PinholeCameraIntrinsics
+    intrinsics: CameraIntrinsics
     t_cam_imu: NDArray[np.float64]
 
 
@@ -58,13 +57,13 @@ def load_advio_calibration(path: Path) -> AdvioCalibration:
     distortion = _expect_mapping(camera, "distortion")
     return AdvioCalibration(
         calibration_path=path,
-        intrinsics=PinholeCameraIntrinsics(
-            width_px=int(camera["image_width"]),
-            height_px=int(camera["image_height"]),
+        intrinsics=CameraIntrinsics(
             fx=intrinsics[0],
             fy=intrinsics[1],
             cx=intrinsics[2],
             cy=intrinsics[3],
+            width_px=int(camera["image_width"]),
+            height_px=int(camera["image_height"]),
             distortion_model=str(distortion.get("type")) if distortion.get("type") is not None else None,
             distortion_coefficients=tuple(_expect_float_list(distortion, "parameters", "data")),
         ),
@@ -76,15 +75,7 @@ def write_advio_pose_tum(source_path: Path, target_path: Path) -> Path:
     """Convert an ADVIO pose CSV into a TUM trajectory file."""
     trajectory = load_advio_trajectory(source_path)
     poses = [
-        SE3Pose(
-            qx=float(quaternion[0]),
-            qy=float(quaternion[1]),
-            qz=float(quaternion[2]),
-            qw=float(quaternion[3]),
-            tx=float(position[0]),
-            ty=float(position[1]),
-            tz=float(position[2]),
-        )
+        SE3Pose.from_quaternion_translation(quaternion, position)
         for position, quaternion in zip(
             trajectory.positions_xyz,
             trajectory.quaternions_xyzw,

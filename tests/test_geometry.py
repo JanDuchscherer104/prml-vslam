@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from prml_vslam.utils import CameraIntrinsics, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, SE3Pose
 
 
 def test_camera_intrinsics_roundtrip_from_matrix() -> None:

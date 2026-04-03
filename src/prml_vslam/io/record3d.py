@@ -6,12 +6,13 @@ import importlib
 import time
 from enum import IntEnum, StrEnum
 from threading import Event
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.utils import BaseConfig, BaseData, Console
 
 if TYPE_CHECKING:
@@ -78,58 +79,6 @@ class Record3DDevice(BaseData):
     """Unique device identifier reported by the bindings."""
 
 
-class Record3DIntrinsicMatrix(BaseData):
-    """Intrinsic matrix coefficients of the current RGB frame."""
-
-    fx: float
-    """Focal length in pixels along the x axis."""
-
-    fy: float
-    """Focal length in pixels along the y axis."""
-
-    tx: float
-    """Principal point x coordinate in pixels."""
-
-    ty: float
-    """Principal point y coordinate in pixels."""
-
-    def as_matrix(self) -> NDArray[np.float64]:
-        """Return the intrinsic coefficients as a 3x3 camera matrix."""
-        return np.array(
-            [
-                [self.fx, 0.0, self.tx],
-                [0.0, self.fy, self.ty],
-                [0.0, 0.0, 1.0],
-            ],
-            dtype=np.float64,
-        )
-
-
-class Record3DCameraPose(BaseData):
-    """Camera pose reported by Record3D for the current frame."""
-
-    qx: float
-    """Quaternion x component."""
-
-    qy: float
-    """Quaternion y component."""
-
-    qz: float
-    """Quaternion z component."""
-
-    qw: float
-    """Quaternion w component."""
-
-    tx: float
-    """Translation x component in world coordinates."""
-
-    ty: float
-    """Translation y component in world coordinates."""
-
-    tz: float
-    """Translation z component in world coordinates."""
-
-
 class Record3DFrame(BaseData):
     """One RGBD frame sampled from the USB Record3D stream."""
 
@@ -142,39 +91,14 @@ class Record3DFrame(BaseData):
     confidence: NDArray[np.uint8]
     """Per-pixel confidence map aligned with the depth image."""
 
-    intrinsic_matrix: Record3DIntrinsicMatrix
+    intrinsics: CameraIntrinsics
     """Camera intrinsics associated with the RGB frame."""
 
-    camera_pose: Record3DCameraPose
+    pose: SE3Pose
     """Camera pose associated with the current frame."""
 
     device_type: Record3DDeviceType
     """Source camera type used for the stream."""
-
-
-class Record3DFramePacket(BaseData):
-    """Transport-agnostic frame packet exposed to the Streamlit app."""
-
-    transport: Record3DTransportId
-    """Transport that emitted the packet."""
-
-    rgb: NDArray[np.uint8]
-    """RGB image in HxWx3 layout."""
-
-    depth: NDArray[np.float32]
-    """Depth image aligned with the RGB frame."""
-
-    intrinsic_matrix: Record3DIntrinsicMatrix | None = None
-    """Camera intrinsics associated with the packet when available."""
-
-    uncertainty: NDArray[np.float32] | None = None
-    """Optional uncertainty or confidence image aligned with `depth`."""
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    """Extra transport-specific metadata associated with the packet."""
-
-    arrival_timestamp_s: float
-    """Local wall-clock timestamp when the packet reached Python."""
 
 
 class Record3DStreamSnapshot(BaseData):
@@ -195,7 +119,7 @@ class Record3DStreamSnapshot(BaseData):
     measured_fps: float = 0.0
     """Rolling transport frame rate measured at the packet sink."""
 
-    latest_packet: Record3DFramePacket | None = None
+    latest_packet: FramePacket | None = None
     """Most recent frame packet, if any."""
 
     trajectory_positions_xyz: NDArray[np.float64] = Field(default_factory=lambda: np.empty((0, 3), dtype=np.float64))
@@ -208,24 +132,13 @@ class Record3DStreamSnapshot(BaseData):
     """Last surfaced error message."""
 
 
-class Record3DPacketStream(Protocol):
-    """Common blocking packet-stream interface used by app runtimes."""
-
-    def connect(self) -> Any:
-        """Connect to the configured transport and start streaming."""
-
-    def disconnect(self) -> None:
-        """Disconnect the current transport session."""
-
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> Record3DFramePacket:
-        """Wait for the next transport packet."""
-
-
 def record3d_frame_to_packet(
     frame: Record3DFrame,
     *,
+    seq: int,
+    timestamp_ns: int | None = None,
     arrival_timestamp_s: float | None = None,
-) -> Record3DFramePacket:
+) -> FramePacket:
     """Adapt a USB `Record3DFrame` into the shared packet contract.
 
     Args:
@@ -235,17 +148,24 @@ def record3d_frame_to_packet(
     Returns:
         Shared packet payload that can be consumed uniformly by the app.
     """
-    return Record3DFramePacket(
-        transport=Record3DTransportId.USB,
+    if timestamp_ns is None:
+        timestamp_ns = time.time_ns()
+    if arrival_timestamp_s is None:
+        arrival_timestamp_s = timestamp_ns / 1e9
+
+    return FramePacket(
+        seq=seq,
+        timestamp_ns=timestamp_ns,
+        arrival_timestamp_s=arrival_timestamp_s,
         rgb=frame.rgb,
         depth=frame.depth,
-        intrinsic_matrix=frame.intrinsic_matrix,
+        intrinsics=frame.intrinsics,
+        pose=frame.pose,
         uncertainty=frame.confidence.astype(np.float32) if frame.confidence.size else None,
         metadata={
-            "camera_pose": frame.camera_pose.model_dump(mode="python"),
+            "transport": Record3DTransportId.USB.value,
             "device_type": frame.device_type.value,
         },
-        arrival_timestamp_s=time.time() if arrival_timestamp_s is None else arrival_timestamp_s,
     )
 
 
@@ -402,8 +322,8 @@ class Record3DStreamSession:
             rgb=np.asarray(self._stream.get_rgb_frame(), dtype=np.uint8),
             depth=np.asarray(self._stream.get_depth_frame(), dtype=np.float32),
             confidence=np.asarray(self._stream.get_confidence_frame(), dtype=np.uint8),
-            intrinsic_matrix=self._intrinsics_from_binding(self._stream.get_intrinsic_mat()),
-            camera_pose=self._camera_pose_from_binding(self._stream.get_camera_pose()),
+            intrinsics=self._intrinsics_from_binding(self._stream.get_intrinsic_mat()),
+            pose=self._camera_pose_from_binding(self._stream.get_camera_pose()),
             device_type=Record3DDeviceType(self._stream.get_device_type()),
         )
         self._event.clear()
@@ -429,17 +349,17 @@ class Record3DStreamSession:
         return Record3DDevice(product_id=int(device.product_id), udid=str(device.udid))
 
     @staticmethod
-    def _intrinsics_from_binding(coeffs: Any) -> Record3DIntrinsicMatrix:
-        return Record3DIntrinsicMatrix(
+    def _intrinsics_from_binding(coeffs: Any) -> CameraIntrinsics:
+        return CameraIntrinsics(
             fx=float(coeffs.fx),
             fy=float(coeffs.fy),
-            tx=float(coeffs.tx),
-            ty=float(coeffs.ty),
+            cx=float(coeffs.tx),
+            cy=float(coeffs.ty),
         )
 
     @staticmethod
-    def _camera_pose_from_binding(camera_pose: Any) -> Record3DCameraPose:
-        return Record3DCameraPose(
+    def _camera_pose_from_binding(camera_pose: Any) -> SE3Pose:
+        return SE3Pose(
             qx=float(camera_pose.qx),
             qy=float(camera_pose.qy),
             qz=float(camera_pose.qz),
@@ -456,6 +376,7 @@ class Record3DUSBPacketStream:
     def __init__(self, config: Record3DUSBPacketStreamConfig) -> None:
         self.config = config
         self.session = config.stream.setup_target()
+        self._packet_seq = 0
 
     def _require_session(self) -> Record3DStreamSession:
         if self.session is None:
@@ -468,18 +389,28 @@ class Record3DUSBPacketStream:
 
     def connect(self) -> Record3DDevice:
         """Connect to the configured USB device."""
+        self._packet_seq = 0
         return self._require_session().connect()
 
     def disconnect(self) -> None:
         """Disconnect the current USB device if one is active."""
         if self.session is not None:
             self.session.disconnect()
+        self._packet_seq = 0
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> Record3DFramePacket:
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
         """Wait for the next shared packet emitted by the USB device."""
-        return record3d_frame_to_packet(self._require_session().wait_for_frame(timeout_seconds=timeout_seconds))
+        timestamp_ns = time.time_ns()
+        packet = record3d_frame_to_packet(
+            self._require_session().wait_for_frame(timeout_seconds=timeout_seconds),
+            seq=self._packet_seq,
+            timestamp_ns=timestamp_ns,
+            arrival_timestamp_s=timestamp_ns / 1e9,
+        )
+        self._packet_seq += 1
+        return packet
 
-    def iter_packets(self) -> Iterator[Record3DFramePacket]:
+    def iter_packets(self) -> Iterator[FramePacket]:
         """Yield shared packets indefinitely until the caller stops consuming them."""
         while True:
             yield self.wait_for_packet()
@@ -553,16 +484,12 @@ class Record3DPreviewApp:
 
 
 __all__ = [
-    "Record3DCameraPose",
     "Record3DConnectionError",
     "Record3DDependencyError",
     "Record3DDevice",
     "Record3DDeviceType",
     "Record3DError",
     "Record3DFrame",
-    "Record3DFramePacket",
-    "Record3DIntrinsicMatrix",
-    "Record3DPacketStream",
     "Record3DPreviewApp",
     "Record3DPreviewConfig",
     "Record3DStreamConfig",

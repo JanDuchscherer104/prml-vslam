@@ -10,9 +10,8 @@ import cv2
 import numpy as np
 from pydantic import Field
 
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketStream, SE3Pose
 from prml_vslam.utils import BaseConfig
-
-from .interfaces import CameraPose, PinholeCameraIntrinsics, VideoFramePacket, VideoPacketStream
 
 
 class Cv2ReplayMode(StrEnum):
@@ -40,10 +39,10 @@ class Cv2ProducerConfig(BaseConfig):
     replay_mode: Cv2ReplayMode = Cv2ReplayMode.FAST_AS_POSSIBLE
     """Whether playback should follow dataset timing or return frames immediately."""
 
-    intrinsics: PinholeCameraIntrinsics | None = None
+    intrinsics: CameraIntrinsics | None = None
     """Camera intrinsics associated with the replayed sample when known."""
 
-    poses_by_frame: list[CameraPose | None] | None = None
+    poses_by_frame: list[SE3Pose | None] | None = None
     """Optional per-frame camera poses aligned to source frame indices."""
 
     static_metadata: dict[str, object] = Field(default_factory=dict)
@@ -85,7 +84,7 @@ class Cv2FrameProducer:
             self._capture.release()
         self._capture = None
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> VideoFramePacket:
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
         """Decode and return the next sampled RGB frame."""
         del timeout_seconds
         capture = self._require_capture()
@@ -111,12 +110,13 @@ class Cv2FrameProducer:
                 "loop_index": self._loop_index,
                 "source_frame_index": source_frame_index,
             }
-            return VideoFramePacket(
-                frame_index=source_frame_index,
+            return FramePacket(
+                seq=source_frame_index,
                 timestamp_ns=timestamp_ns,
+                arrival_timestamp_s=time.time(),
                 rgb=np.asarray(frame_rgb, dtype=np.uint8),
                 intrinsics=self.config.intrinsics,
-                camera_pose=self._pose_for_frame(source_frame_index),
+                pose=self._pose_for_frame(source_frame_index),
                 metadata=metadata,
             )
 
@@ -156,14 +156,14 @@ class Cv2FrameProducer:
         if sleep_seconds > 0.0:
             time.sleep(sleep_seconds)
 
-    def _pose_for_frame(self, frame_index: int) -> CameraPose | None:
+    def _pose_for_frame(self, frame_index: int) -> SE3Pose | None:
         poses_by_frame = self.config.poses_by_frame
         if poses_by_frame is None or frame_index >= len(poses_by_frame):
             return None
         return poses_by_frame[frame_index]
 
 
-def open_cv2_replay_stream(config: Cv2ProducerConfig) -> VideoPacketStream:
+def open_cv2_replay_stream(config: Cv2ProducerConfig) -> FramePacketStream:
     """Return a ready-to-use replay stream for `config`."""
     return Cv2FrameProducer(config)
 

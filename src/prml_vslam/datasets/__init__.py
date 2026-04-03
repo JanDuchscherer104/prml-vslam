@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from .interfaces import DatasetId, TimedPoseTrajectory
+from prml_vslam.interfaces import TimedPoseTrajectory
+
+from .interfaces import DatasetId
 
 _ADVIO_EXPORTS = {
     "ADVIO_SEQUENCE_COUNT",
@@ -67,7 +69,7 @@ __all__ = [
 
 def __getattr__(name: str) -> object:
     """Lazily load heavy dataset adapters to avoid package import cycles."""
-    if name in {"DatasetId", "TimedPoseTrajectory"}:
+    if name == "DatasetId":
         return globals()[name]
     if name in _ADVIO_EXPORTS:
         from . import advio

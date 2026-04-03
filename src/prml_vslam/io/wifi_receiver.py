@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
-from .record3d import (
-    Record3DConnectionError,
-    Record3DDependencyError,
-    Record3DFramePacket,
-)
+from prml_vslam.interfaces import FramePacket
+
+from .record3d import Record3DConnectionError, Record3DDependencyError
 from .wifi_packets import Record3DWiFiMetadata, record3d_wifi_packet_from_video_frame
 from .wifi_signaling import build_record3d_answer_request_payload
 
@@ -42,7 +41,7 @@ class _Record3DWiFiReceiverRuntime:
         send_answer: Callable[[dict[str, Any]], None],
         on_metadata: Callable[[Record3DWiFiMetadata], None],
         on_connected: Callable[[Record3DWiFiMetadata], None],
-        on_packet: Callable[[Record3DFramePacket], None],
+        on_packet: Callable[[FramePacket], None],
         on_failure: Callable[[str], None],
         stop_requested: Callable[[], bool],
     ) -> None:
@@ -59,6 +58,7 @@ class _Record3DWiFiReceiverRuntime:
         self.stop_requested = stop_requested
         self.metadata = Record3DWiFiMetadata(device_address=device_address)
         self._connected = False
+        self._next_packet_seq = 0
         self._loop: asyncio.AbstractEventLoop | None = None
         self._async_stop: asyncio.Event | None = None
 
@@ -203,7 +203,16 @@ class _Record3DWiFiReceiverRuntime:
                 if self.stop_requested():
                     break
                 raise Record3DConnectionError("The Record3D Wi-Fi video track stopped unexpectedly.") from exc
-            self.on_packet(record3d_wifi_packet_from_video_frame(video_frame, metadata=self.metadata))
+            timestamp_ns = time.time_ns()
+            self.on_packet(
+                record3d_wifi_packet_from_video_frame(
+                    video_frame,
+                    metadata=self.metadata,
+                    seq=self._next_packet_seq,
+                    timestamp_ns=timestamp_ns,
+                )
+            )
+            self._next_packet_seq += 1
 
 
 def _should_suppress_record3d_async_exception(
