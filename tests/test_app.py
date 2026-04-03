@@ -13,13 +13,20 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
-from prml_vslam.app.models import AppState, Record3DPageState
-from prml_vslam.app.services import Record3DStreamRuntimeController
+from prml_vslam.app.models import AdvioPageState, AppState, Record3DPageState
+from prml_vslam.app.services import (
+    AdvioPreviewRuntimeController,
+    AdvioPreviewSnapshot,
+    AdvioPreviewStreamState,
+    Record3DStreamRuntimeController,
+)
 from prml_vslam.app.state import SessionStateStore
+from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.interfaces import EvaluationControls
 from prml_vslam.eval.services import build_selection, resolve_dataset_root
+from prml_vslam.io import CameraPose, PinholeCameraIntrinsics, VideoFramePacket
 from prml_vslam.io.record3d import (
     Record3DDevice,
     Record3DFramePacket,
@@ -152,6 +159,37 @@ class FakeRecord3DRuntime:
         )
 
 
+class FakeAdvioRuntime:
+    """Minimal ADVIO preview runtime stand-in for direct page-render and navigation tests."""
+
+    def __init__(self, snapshot: AdvioPreviewSnapshot | None = None) -> None:
+        self._snapshot = snapshot or AdvioPreviewSnapshot()
+        self.stop_calls = 0
+
+    def snapshot(self) -> AdvioPreviewSnapshot:
+        return self._snapshot
+
+    def stop(self) -> None:
+        self.stop_calls += 1
+        self._snapshot = AdvioPreviewSnapshot()
+
+    def start(
+        self,
+        *,
+        sequence_id: int,
+        sequence_label: str,
+        pose_source: AdvioPoseSource,
+        stream,
+    ) -> None:
+        del stream
+        self._snapshot = AdvioPreviewSnapshot(
+            state=AdvioPreviewStreamState.CONNECTING,
+            sequence_id=sequence_id,
+            sequence_label=sequence_label,
+            pose_source=pose_source,
+        )
+
+
 class FakePacketStream:
     """Tiny packet-stream stand-in for runtime-controller tests."""
 
@@ -168,6 +206,28 @@ class FakePacketStream:
         self.disconnected = True
 
     def wait_for_packet(self, timeout_seconds: float | None = None) -> Record3DFramePacket:
+        index = min(self.wait_calls, len(self.packets) - 1)
+        self.wait_calls += 1
+        time.sleep(0.01)
+        return self.packets[index]
+
+
+class FakeVideoPacketStream:
+    """Tiny video packet-stream stand-in for ADVIO preview runtime tests."""
+
+    def __init__(self, *, packets: list[VideoFramePacket]) -> None:
+        self.packets = packets
+        self.disconnected = False
+        self.wait_calls = 0
+
+    def connect(self) -> str:
+        return "connected"
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> VideoFramePacket:
+        del timeout_seconds
         index = min(self.wait_calls, len(self.packets) - 1)
         self.wait_calls += 1
         time.sleep(0.01)
@@ -218,6 +278,45 @@ def _wifi_snapshot() -> Record3DStreamSnapshot:
             uncertainty=None,
             metadata={"device_address": "http://myiPhone.local"},
             arrival_timestamp_s=24.0,
+        ),
+    )
+
+
+def _advio_preview_snapshot() -> AdvioPreviewSnapshot:
+    return AdvioPreviewSnapshot(
+        state=AdvioPreviewStreamState.STREAMING,
+        sequence_id=15,
+        sequence_label="advio-15 · Office 03",
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        received_frames=9,
+        measured_fps=9.8,
+        trajectory_positions_xyz=np.array(
+            [
+                [1.0, 2.0, 3.0],
+                [1.5, 2.5, 3.5],
+                [2.0, 3.0, 4.0],
+            ],
+            dtype=np.float64,
+        ),
+        trajectory_timestamps_s=np.array([0.0, 0.1, 0.2], dtype=np.float64),
+        latest_packet=VideoFramePacket(
+            frame_index=2,
+            timestamp_ns=200_000_000,
+            rgb=np.ones((4, 6, 3), dtype=np.uint8) * 7,
+            intrinsics=PinholeCameraIntrinsics(
+                width_px=64,
+                height_px=48,
+                fx=100.0,
+                fy=101.0,
+                cx=32.0,
+                cy=24.0,
+            ),
+            camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=2.0, ty=3.0, tz=4.0),
+            metadata={
+                "loop_index": 1,
+                "source_frame_index": 2,
+                "video_rotation_degrees": 90,
+            },
         ),
     )
 
@@ -401,6 +500,19 @@ def test_render_metrics_page_entry_shows_metrics_content(
             def stop(self) -> None:
                 return None
 
+        class _AdvioRuntime:
+            def snapshot(self):
+                from prml_vslam.app.services import AdvioPreviewSnapshot
+
+                return AdvioPreviewSnapshot()
+
+            def stop(self) -> None:
+                return None
+
+            def start(self, *, sequence_id: int, sequence_label: str, pose_source, stream) -> None:
+                del sequence_id, sequence_label, pose_source, stream
+                return None
+
         root = Path(root_path)
         _write_tum(
             root / "data" / "advio" / "advio-15" / "ground-truth" / "ground_truth.tum",
@@ -428,6 +540,7 @@ def test_render_metrics_page_entry_shows_metrics_content(
             path_config=path_config,
             evaluation_service=service,
             record3d_runtime=_Runtime(),
+            advio_runtime=_AdvioRuntime(),
             store=_Store(),
             state=AppState(
                 metrics={
@@ -446,6 +559,67 @@ def test_render_metrics_page_entry_shows_metrics_content(
 
     assert at.title[0].value == "Trajectory Metrics"
     assert {metric.label for metric in at.metric} >= {"RMSE", "Mean", "Median", "Max"}
+
+
+def test_render_pipeline_page_entry_shows_builder_guidance(tmp_path: Path) -> None:
+    def _render_pipeline_page_entry_script(root_path: str) -> None:
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        from prml_vslam.app import bootstrap
+        from prml_vslam.app.models import AppState
+        from prml_vslam.utils.path_config import PathConfig
+
+        class _Store:
+            def save(self, state: AppState) -> None:
+                self.last_state = state.model_copy(deep=True)
+
+        class _Runtime:
+            def stop(self) -> None:
+                return None
+
+        class _AdvioRuntime:
+            def snapshot(self):
+                from prml_vslam.app.services import AdvioPreviewSnapshot
+
+                return AdvioPreviewSnapshot()
+
+            def stop(self) -> None:
+                return None
+
+            def start(self, *, sequence_id: int, sequence_label: str, pose_source, stream) -> None:
+                del sequence_id, sequence_label, pose_source, stream
+                return None
+
+        root = Path(root_path)
+        context = SimpleNamespace(
+            path_config=PathConfig(
+                root=root,
+                artifacts_dir=root / "artifacts",
+                captures_dir=root / "captures",
+            ),
+            state=AppState(),
+            store=_Store(),
+            record3d_runtime=_Runtime(),
+            advio_runtime=_AdvioRuntime(),
+        )
+        bootstrap._render_pipeline_page_entry(context)
+
+    at = AppTest.from_function(_render_pipeline_page_entry_script, args=(str(tmp_path),))
+    at.run()
+
+    assert at.title[0].value == "Pipeline Builder"
+    assert {item.value for item in at.subheader} >= {
+        "Example Pipelines",
+        "Design Pattern",
+        "How To Use It",
+        "Helper Methods",
+        "Generated Plan",
+        "Mock Run",
+    }
+    assert any("never executes a backend" in item.value.lower() for item in at.info)
+    assert len(at.dataframe) >= 3
+    assert {metric.label for metric in at.metric} >= {"Run Id", "Method", "Stages", "Artifact Root"}
 
 
 def test_record3d_page_renders_usb_controls_and_frames() -> None:
@@ -502,6 +676,19 @@ def test_advio_page_renders_summary_and_download_controls(tmp_path: Path) -> Non
             def save(self, state: AppState) -> None:
                 self.last_state = state.model_copy(deep=True)
 
+        class _AdvioRuntime:
+            def snapshot(self):
+                from prml_vslam.app.services import AdvioPreviewSnapshot
+
+                return AdvioPreviewSnapshot()
+
+            def stop(self) -> None:
+                return None
+
+            def start(self, *, sequence_id: int, sequence_label: str, pose_source, stream) -> None:
+                del sequence_id, sequence_label, pose_source, stream
+                return None
+
         advio_service = AdvioDatasetService(
             PathConfig(root=Path(root_path)),
             catalog=AdvioCatalog(
@@ -539,6 +726,7 @@ def test_advio_page_renders_summary_and_download_controls(tmp_path: Path) -> Non
             state=AppState(advio=AdvioPageState(download_preset=AdvioDownloadPreset.OFFLINE)),
             store=_Store(),
             advio_service=advio_service,
+            advio_runtime=_AdvioRuntime(),
         )
         render_advio_page(context)
 
@@ -553,9 +741,9 @@ def test_advio_page_renders_summary_and_download_controls(tmp_path: Path) -> Non
         "Offline Ready",
         "Cached Archives",
     }
-    assert at.button[0].label == "Download selected scenes"
-    assert at.button[0].disabled is False
-    assert at.selectbox[0].label == "Bundle"
+    assert any(button.label == "Download selected scenes" and button.disabled is False for button in at.button)
+    assert any(item.value == "Loop Preview" for item in at.subheader)
+    assert any(selectbox.label == "Bundle" for selectbox in at.selectbox)
     assert at.multiselect[0].label == "Scenes"
     assert at.multiselect[1].label == "Modalities Override"
     assert len(_plotly_specs(at)) == 4
@@ -583,10 +771,24 @@ def test_advio_page_renders_local_sequence_explorer(tmp_path: Path) -> None:
             def save(self, state: AppState) -> None:
                 self.last_state = state.model_copy(deep=True)
 
+        class _AdvioRuntime:
+            def snapshot(self):
+                from prml_vslam.app.services import AdvioPreviewSnapshot
+
+                return AdvioPreviewSnapshot()
+
+            def stop(self) -> None:
+                return None
+
+            def start(self, *, sequence_id: int, sequence_label: str, pose_source, stream) -> None:
+                del sequence_id, sequence_label, pose_source, stream
+                return None
+
         context = SimpleNamespace(
             state=AppState(),
             store=_Store(),
             advio_service=AdvioDatasetService(PathConfig(root=Path(root_path))),
+            advio_runtime=_AdvioRuntime(),
         )
         render_advio_page(context)
 
@@ -594,7 +796,10 @@ def test_advio_page_renders_local_sequence_explorer(tmp_path: Path) -> None:
     at.run()
 
     assert any(item.value == "Sequence Explorer" for item in at.subheader)
+    assert any(item.value == "Loop Preview" for item in at.subheader)
     assert any(selectbox.label == "Local Scene" for selectbox in at.selectbox)
+    assert any(selectbox.label == "Preview Scene" for selectbox in at.selectbox)
+    assert any(selectbox.label == "Pose Source" for selectbox in at.selectbox)
     specs = "\n".join(_plotly_specs(at))
     assert "BEV Trajectory Overlay" in specs
     assert "3D Trajectory Overlay" in specs
@@ -602,6 +807,83 @@ def test_advio_page_renders_local_sequence_explorer(tmp_path: Path) -> None:
     assert "Height Profile" in specs
     assert "Sampling Intervals" in specs
     assert "Trajectory Cadence" in specs
+
+
+def test_advio_page_renders_loop_preview_snapshot(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "data" / "advio"
+    _write_advio_local_sequence(dataset_root)
+
+    def _render_advio_page_script(root_path: str) -> None:
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        import numpy as np
+
+        from prml_vslam.app.models import AdvioPageState, AppState
+        from prml_vslam.app.pages.advio import render as render_advio_page
+        from prml_vslam.app.services import AdvioPreviewSnapshot, AdvioPreviewStreamState
+        from prml_vslam.datasets import AdvioDatasetService
+        from prml_vslam.datasets.advio import AdvioPoseSource
+        from prml_vslam.io import CameraPose, PinholeCameraIntrinsics, VideoFramePacket
+        from prml_vslam.utils import PathConfig
+
+        class _Store:
+            def save(self, state: AppState) -> None:
+                self.last_state = state.model_copy(deep=True)
+
+        class _AdvioRuntime:
+            def snapshot(self) -> AdvioPreviewSnapshot:
+                return AdvioPreviewSnapshot(
+                    state=AdvioPreviewStreamState.STREAMING,
+                    sequence_id=15,
+                    sequence_label="advio-15 · Office 03",
+                    pose_source=AdvioPoseSource.GROUND_TRUTH,
+                    received_frames=9,
+                    measured_fps=9.8,
+                    trajectory_positions_xyz=np.array(
+                        [[1.0, 2.0, 3.0], [1.5, 2.5, 3.5], [2.0, 3.0, 4.0]],
+                        dtype=np.float64,
+                    ),
+                    trajectory_timestamps_s=np.array([0.0, 0.1, 0.2], dtype=np.float64),
+                    latest_packet=VideoFramePacket(
+                        frame_index=2,
+                        timestamp_ns=200_000_000,
+                        rgb=np.ones((4, 6, 3), dtype=np.uint8) * 7,
+                        intrinsics=PinholeCameraIntrinsics(
+                            width_px=64,
+                            height_px=48,
+                            fx=100.0,
+                            fy=101.0,
+                            cx=32.0,
+                            cy=24.0,
+                        ),
+                        camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=2.0, ty=3.0, tz=4.0),
+                        metadata={"loop_index": 1, "source_frame_index": 2, "video_rotation_degrees": 90},
+                    ),
+                )
+
+            def stop(self) -> None:
+                return None
+
+            def start(self, *, sequence_id: int, sequence_label: str, pose_source, stream) -> None:
+                del sequence_id, sequence_label, pose_source, stream
+                return None
+
+        context = SimpleNamespace(
+            state=AppState(advio=AdvioPageState(preview_is_running=True)),
+            store=_Store(),
+            advio_service=AdvioDatasetService(PathConfig(root=Path(root_path))),
+            advio_runtime=_AdvioRuntime(),
+        )
+        render_advio_page(context)
+
+    at = AppTest.from_function(_render_advio_page_script, args=(str(tmp_path),))
+    at.run()
+
+    assert {metric.label for metric in at.metric} >= {"Status", "Received Frames", "Frame Rate", "Loop Index"}
+    assert {tab.label for tab in at.tabs} >= {"Frames", "Trajectory", "Camera"}
+    specs = "\n".join(_plotly_specs(at))
+    assert "Ego Trajectory" in specs
 
 
 def test_advio_download_form_returns_typed_request_model(
@@ -632,6 +914,7 @@ def test_advio_download_form_returns_typed_request_model(
         state=AppState(),
         store=FakeStore(),
         advio_service=AdvioDatasetService(PathConfig(root=tmp_path)),
+        advio_runtime=FakeAdvioRuntime(),
     )
     form = advio_page._render_download_form(context)
 
@@ -649,7 +932,15 @@ def test_advio_download_form_returns_typed_request_model(
 
 def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
     from prml_vslam.app.advio_controller import AdvioDownloadFormData, build_advio_page_data
-    from prml_vslam.datasets import AdvioDatasetSummary, AdvioDownloadRequest, AdvioDownloadResult
+    from prml_vslam.datasets import (
+        AdvioDatasetSummary,
+        AdvioDownloadRequest,
+        AdvioDownloadResult,
+        AdvioEnvironment,
+        AdvioLocalSceneStatus,
+        AdvioPeopleLevel,
+        AdvioSceneMetadata,
+    )
     from prml_vslam.datasets.advio import AdvioDownloadPreset
 
     summary = AdvioDatasetSummary(
@@ -661,11 +952,33 @@ def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
         cached_archive_count=1,
         total_remote_archive_bytes=10,
     )
-    rows = [{"Scene": "advio-15"}]
+    statuses = [
+        AdvioLocalSceneStatus(
+            scene=AdvioSceneMetadata(
+                sequence_id=15,
+                sequence_slug="advio-15",
+                venue="Office",
+                dataset_code="03",
+                environment=AdvioEnvironment.INDOOR,
+                has_stairs=False,
+                has_escalator=False,
+                has_elevator=False,
+                people_level=AdvioPeopleLevel.NONE,
+                has_vehicles=False,
+                calibration_name="iphone-03.yaml",
+                archive_url="https://example.com/advio-15.zip",
+                archive_size_bytes=10_000_000,
+                archive_md5="abc123",
+            ),
+            replay_ready=True,
+            offline_ready=True,
+            full_ready=True,
+        )
+    ]
 
     class ServiceSpy:
         def __init__(self) -> None:
-            self.calls = {"download": 0, "summarize": 0, "local_scene_statuses": 0, "scene_rows": 0}
+            self.calls = {"download": 0, "summarize": 0, "local_scene_statuses": 0}
 
         def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
             self.calls["download"] += 1
@@ -682,11 +995,7 @@ def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
 
         def local_scene_statuses(self) -> list[object]:
             self.calls["local_scene_statuses"] += 1
-            return []
-
-        def scene_rows(self) -> list[dict[str, object]]:
-            self.calls["scene_rows"] += 1
-            return rows
+            return statuses
 
     service = ServiceSpy()
     page_data = build_advio_page_data(
@@ -697,9 +1006,21 @@ def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
         ),
     )
 
-    assert service.calls == {"download": 1, "summarize": 1, "local_scene_statuses": 1, "scene_rows": 1}
+    assert service.calls == {"download": 1, "summarize": 1, "local_scene_statuses": 1}
     assert page_data.summary == summary
-    assert page_data.rows == rows
+    assert page_data.rows == [
+        {
+            "Scene": "advio-15",
+            "Venue": "Office",
+            "Dataset": "03",
+            "Environment": "Indoor",
+            "Packed Size (MB)": 10.0,
+            "Local": False,
+            "Replay Ready": True,
+            "Offline Ready": True,
+            "Local Modalities": "",
+        }
+    ]
     assert page_data.notice_level == "success"
     assert "Prepared 1 scene(s)" in page_data.notice_message
 
@@ -724,10 +1045,24 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
             def save(self, state: AppState) -> None:
                 self.last_state = state.model_copy(deep=True)
 
+        class _AdvioRuntime:
+            def snapshot(self):
+                from prml_vslam.app.services import AdvioPreviewSnapshot
+
+                return AdvioPreviewSnapshot()
+
+            def stop(self) -> None:
+                return None
+
+            def start(self, *, sequence_id: int, sequence_label: str, pose_source, stream) -> None:
+                del sequence_id, sequence_label, pose_source, stream
+                return None
+
         context = SimpleNamespace(
             state=AppState(),
             store=_Store(),
             advio_service=AdvioDatasetService(PathConfig(root=Path(root_path))),
+            advio_runtime=_AdvioRuntime(),
         )
         render_advio_page(context)
 
@@ -735,6 +1070,7 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
     at.run()
 
     assert any(item.value == "Sequence Explorer" for item in at.subheader)
+    assert any(item.value == "Loop Preview" for item in at.subheader)
     assert any("none are offline-ready yet" in item.value.lower() for item in at.warning)
 
 
@@ -870,6 +1206,70 @@ def test_record3d_runtime_controller_stops_previous_stream_when_switching_transp
     assert wifi_stream.disconnected is True
 
 
+def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> None:
+    stream = FakeVideoPacketStream(
+        packets=[
+            VideoFramePacket(
+                frame_index=0,
+                timestamp_ns=0,
+                rgb=np.ones((2, 2, 3), dtype=np.uint8),
+                intrinsics=PinholeCameraIntrinsics(
+                    width_px=64,
+                    height_px=48,
+                    fx=100.0,
+                    fy=101.0,
+                    cx=32.0,
+                    cy=24.0,
+                ),
+                camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                metadata={"loop_index": 0, "source_frame_index": 0},
+            ),
+            VideoFramePacket(
+                frame_index=1,
+                timestamp_ns=100_000_000,
+                rgb=np.ones((2, 2, 3), dtype=np.uint8) * 2,
+                intrinsics=PinholeCameraIntrinsics(
+                    width_px=64,
+                    height_px=48,
+                    fx=100.0,
+                    fy=101.0,
+                    cx=32.0,
+                    cy=24.0,
+                ),
+                camera_pose=CameraPose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
+                metadata={"loop_index": 0, "source_frame_index": 1},
+            ),
+        ]
+    )
+    controller = AdvioPreviewRuntimeController()
+
+    controller.start(
+        sequence_id=15,
+        sequence_label="advio-15 · Office 03",
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        stream=stream,
+    )
+    _wait_for(lambda: controller.snapshot().received_frames >= 2)
+    snapshot = controller.snapshot()
+
+    assert snapshot.state is AdvioPreviewStreamState.STREAMING
+    assert snapshot.sequence_id == 15
+    assert snapshot.pose_source is AdvioPoseSource.GROUND_TRUTH
+    assert snapshot.latest_packet is not None
+    assert snapshot.measured_fps > 0.0
+    assert snapshot.trajectory_positions_xyz.shape[1] == 3
+    assert snapshot.trajectory_positions_xyz.shape[0] >= 2
+    np.testing.assert_allclose(snapshot.trajectory_positions_xyz[-1], np.array([1.0, 0.5, 0.25]))
+    np.testing.assert_allclose(snapshot.trajectory_timestamps_s[-1], 0.1)
+
+    controller.stop()
+
+    assert stream.disconnected is True
+    assert controller.snapshot().state is AdvioPreviewStreamState.IDLE
+    assert controller.snapshot().latest_packet is None
+    assert controller.snapshot().trajectory_positions_xyz.shape == (0, 3)
+
+
 def test_run_app_uses_streamlit_navigation(monkeypatch: pytest.MonkeyPatch) -> None:
     navigation_calls: list[tuple[str, bool, list[str], list[bool]]] = []
 
@@ -884,6 +1284,7 @@ def test_run_app_uses_streamlit_navigation(monkeypatch: pytest.MonkeyPatch) -> N
     fake_context = SimpleNamespace(
         state=AppState(),
         record3d_runtime=FakeRecord3DRuntime(),
+        advio_runtime=FakeAdvioRuntime(),
         store=FakeStore(),
     )
 
@@ -904,7 +1305,9 @@ def test_run_app_uses_streamlit_navigation(monkeypatch: pytest.MonkeyPatch) -> N
 
     bootstrap.run_app()
 
-    assert navigation_calls == [("sidebar", True, ["Record3D", "ADVIO", "Metrics"], [True, False, False])]
+    assert navigation_calls == [
+        ("sidebar", True, ["Record3D", "ADVIO", "Pipeline", "Metrics"], [True, False, False, False])
+    ]
 
 
 def test_metrics_page_entry_stops_record3d_runtime_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -913,12 +1316,29 @@ def test_metrics_page_entry_stops_record3d_runtime_when_switching(monkeypatch: p
         state=AppState(record3d=Record3DPageState(is_running=True)),
         store=FakeStore(),
         record3d_runtime=runtime,
+        advio_runtime=FakeAdvioRuntime(),
     )
     monkeypatch.setattr(bootstrap, "render_metrics_page", lambda ctx: None)
 
     bootstrap._render_metrics_page_entry(context)
 
     assert context.state.record3d.is_running is False
+    assert runtime.stop_calls == 1
+
+
+def test_pipeline_page_entry_stops_advio_runtime_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = FakeAdvioRuntime()
+    context = SimpleNamespace(
+        state=AppState(advio=AdvioPageState(preview_is_running=True)),
+        store=FakeStore(),
+        record3d_runtime=FakeRecord3DRuntime(),
+        advio_runtime=runtime,
+    )
+    monkeypatch.setattr(bootstrap, "render_pipeline_page", lambda ctx: None)
+
+    bootstrap._render_pipeline_page_entry(context)
+
+    assert context.state.advio.preview_is_running is False
     assert runtime.stop_calls == 1
 
 
@@ -942,6 +1362,26 @@ def test_session_state_store_accepts_hot_reloaded_runtime_shape(monkeypatch: pyt
     runtime = SessionStateStore().load_record3d_runtime()
 
     assert runtime is fake_session_state["_prml_vslam_record3d_runtime"]
+
+
+def test_session_state_store_accepts_hot_reloaded_advio_runtime_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    class HotReloadedRuntime:
+        def snapshot(self) -> AdvioPreviewSnapshot:
+            return AdvioPreviewSnapshot()
+
+        def stop(self) -> None:
+            return None
+
+        def start(self, *, sequence_id: int, sequence_label: str, pose_source: AdvioPoseSource, stream) -> None:
+            del sequence_id, sequence_label, pose_source, stream
+            return None
+
+    fake_session_state = {"_prml_vslam_advio_runtime": HotReloadedRuntime()}
+    monkeypatch.setattr("prml_vslam.app.state.st.session_state", fake_session_state)
+
+    runtime = SessionStateStore().load_advio_runtime()
+
+    assert runtime is fake_session_state["_prml_vslam_advio_runtime"]
 
 
 def test_normalize_grayscale_ignores_non_finite_depth_values() -> None:

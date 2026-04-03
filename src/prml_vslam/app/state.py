@@ -7,7 +7,7 @@ from typing import Any, cast
 import streamlit as st
 
 from .models import AppState
-from .services import Record3DStreamRuntimeController
+from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
 
 
 class SessionStateStore:
@@ -18,9 +18,11 @@ class SessionStateStore:
         *,
         state_key: str = "_prml_vslam_app_state",
         record3d_runtime_key: str = "_prml_vslam_record3d_runtime",
+        advio_runtime_key: str = "_prml_vslam_advio_runtime",
     ) -> None:
         self.state_key = state_key
         self.record3d_runtime_key = record3d_runtime_key
+        self.advio_runtime_key = advio_runtime_key
 
     def load(self) -> AppState:
         """Load the current typed app state from Streamlit session storage."""
@@ -56,9 +58,31 @@ class SessionStateStore:
         st.session_state[self.record3d_runtime_key] = replacement
         return replacement
 
+    def load_advio_runtime(self) -> AdvioPreviewRuntimeController:
+        """Load or create the opaque ADVIO preview runtime controller for this session."""
+        runtime = st.session_state.get(self.advio_runtime_key)
+        if runtime is None:
+            runtime = AdvioPreviewRuntimeController()
+            st.session_state[self.advio_runtime_key] = runtime
+            return runtime
+        if isinstance(runtime, AdvioPreviewRuntimeController):
+            return runtime
+        if self._is_advio_runtime_compatible(runtime):
+            return cast(AdvioPreviewRuntimeController, runtime)
+
+        self._shutdown_stale_runtime(runtime)
+        replacement = AdvioPreviewRuntimeController()
+        st.session_state[self.advio_runtime_key] = replacement
+        return replacement
+
     @staticmethod
     def _is_runtime_compatible(runtime: Any) -> bool:
         required_methods = ("snapshot", "stop", "start_usb", "start_wifi")
+        return all(callable(getattr(runtime, method_name, None)) for method_name in required_methods)
+
+    @staticmethod
+    def _is_advio_runtime_compatible(runtime: Any) -> bool:
+        required_methods = ("snapshot", "stop", "start")
         return all(callable(getattr(runtime, method_name, None)) for method_name in required_methods)
 
     @staticmethod
