@@ -457,17 +457,18 @@ class Record3DUSBPacketStream:
         self.config = config
         self.session = config.stream.setup_target()
 
-    def list_devices(self) -> list[Record3DDevice]:
-        """List the currently connected USB Record3D devices."""
+    def _require_session(self) -> Record3DStreamSession:
         if self.session is None:
             raise Record3DConnectionError("Failed to initialize the USB Record3D stream session.")
-        return self.session.list_devices()
+        return self.session
+
+    def list_devices(self) -> list[Record3DDevice]:
+        """List the currently connected USB Record3D devices."""
+        return self._require_session().list_devices()
 
     def connect(self) -> Record3DDevice:
         """Connect to the configured USB device."""
-        if self.session is None:
-            raise Record3DConnectionError("Failed to initialize the USB Record3D stream session.")
-        return self.session.connect()
+        return self._require_session().connect()
 
     def disconnect(self) -> None:
         """Disconnect the current USB device if one is active."""
@@ -476,9 +477,7 @@ class Record3DUSBPacketStream:
 
     def wait_for_packet(self, timeout_seconds: float | None = None) -> Record3DFramePacket:
         """Wait for the next shared packet emitted by the USB device."""
-        if self.session is None:
-            raise Record3DConnectionError("Failed to initialize the USB Record3D stream session.")
-        return record3d_frame_to_packet(self.session.wait_for_frame(timeout_seconds=timeout_seconds))
+        return record3d_frame_to_packet(self._require_session().wait_for_frame(timeout_seconds=timeout_seconds))
 
     def iter_packets(self) -> Iterator[Record3DFramePacket]:
         """Yield shared packets indefinitely until the caller stops consuming them."""
