@@ -10,12 +10,7 @@ import plotly.graph_objects as go
 
 from prml_vslam.interfaces import SE3Pose, TimedPoseTrajectory
 
-_DEFAULT_COLORS = np.asarray(("#1368ce", "#ef6c00", "#0f9d58", "#c62828"), dtype=object)
-_AXIS_COLORS = {
-    "x": "#c62828",
-    "y": "#0f9d58",
-    "z": "#1368ce",
-}
+from .theme import AXIS_COLORS, DEFAULT_COLORS, apply_standard_3d_layout, apply_standard_xy_layout
 
 
 def build_bev_trajectory_figure(
@@ -26,7 +21,7 @@ def build_bev_trajectory_figure(
     """Build a bird's-eye trajectory overlay for one or more trajectories."""
     builder = TrajectoryPlotBuilder(mode="bev", title=title)
     for index, (name, trajectory) in enumerate(trajectories):
-        builder.add_trajectory(trajectory, name=name, color=str(_DEFAULT_COLORS[index % len(_DEFAULT_COLORS)]))
+        builder.add_trajectory(trajectory, name=name, color=str(DEFAULT_COLORS[index % len(DEFAULT_COLORS)]))
     return builder.finalize()
 
 
@@ -40,7 +35,7 @@ def build_3d_trajectory_figure(
     """Build a 3D trajectory overlay and optional sampled pose axes."""
     builder = TrajectoryPlotBuilder(mode="3d", title=title)
     for index, (name, trajectory) in enumerate(trajectories):
-        color = str(_DEFAULT_COLORS[index % len(_DEFAULT_COLORS)])
+        color = str(DEFAULT_COLORS[index % len(DEFAULT_COLORS)])
         builder.add_trajectory(trajectory, name=name, color=color)
         if pose_axes_name == name:
             builder.add_pose_axes(trajectory, stride=pose_axis_stride, axis_length_m=0.15)
@@ -64,16 +59,10 @@ def build_speed_profile_figure(
                 y=speeds_mps,
                 mode="lines",
                 name=name,
-                line={"width": 2.2, "color": str(_DEFAULT_COLORS[index % len(_DEFAULT_COLORS)])},
+                line={"width": 2.2, "color": str(DEFAULT_COLORS[index % len(DEFAULT_COLORS)])},
             )
         )
-    figure.update_layout(
-        title=title,
-        xaxis_title="Timestamp (s)",
-        yaxis_title="Speed (m/s)",
-        margin={"l": 24, "r": 16, "t": 44, "b": 24},
-        legend={"orientation": "h", "y": 1.12, "x": 0},
-    )
+    apply_standard_xy_layout(figure, title=title, xaxis_title="Timestamp (s)", yaxis_title="Speed (m/s)")
     figure.update_xaxes(showgrid=True)
     figure.update_yaxes(showgrid=True, rangemode="tozero")
     return figure
@@ -93,16 +82,10 @@ def build_height_profile_figure(
                 y=trajectory.positions_xyz[:, 2],
                 mode="lines",
                 name=name,
-                line={"width": 2.2, "color": str(_DEFAULT_COLORS[index % len(_DEFAULT_COLORS)])},
+                line={"width": 2.2, "color": str(DEFAULT_COLORS[index % len(DEFAULT_COLORS)])},
             )
         )
-    figure.update_layout(
-        title=title,
-        xaxis_title="Timestamp (s)",
-        yaxis_title="Z (m)",
-        margin={"l": 24, "r": 16, "t": 44, "b": 24},
-        legend={"orientation": "h", "y": 1.12, "x": 0},
-    )
+    apply_standard_xy_layout(figure, title=title, xaxis_title="Timestamp (s)", yaxis_title="Z (m)")
     figure.update_xaxes(showgrid=True)
     figure.update_yaxes(showgrid=True)
     return figure
@@ -125,16 +108,10 @@ def build_sample_interval_figure(
                 y=intervals_ms,
                 mode="lines",
                 name=name,
-                line={"width": 2.0, "color": str(_DEFAULT_COLORS[index % len(_DEFAULT_COLORS)])},
+                line={"width": 2.0, "color": str(DEFAULT_COLORS[index % len(DEFAULT_COLORS)])},
             )
         )
-    figure.update_layout(
-        title=title,
-        xaxis_title="Sample Index",
-        yaxis_title="Delta t (ms)",
-        margin={"l": 24, "r": 16, "t": 44, "b": 24},
-        legend={"orientation": "h", "y": 1.12, "x": 0},
-    )
+    apply_standard_xy_layout(figure, title=title, xaxis_title="Sample Index", yaxis_title="Delta t (ms)")
     figure.update_xaxes(showgrid=True)
     figure.update_yaxes(showgrid=True, rangemode="tozero")
     return figure
@@ -247,7 +224,7 @@ class TrajectoryPlotBuilder:
         if indices[-1] != len(trajectory.positions_xyz) - 1:
             indices = np.concatenate([indices, np.array([len(trajectory.positions_xyz) - 1], dtype=np.int64)])
 
-        axis_segments = {axis_name: [] for axis_name in _AXIS_COLORS}
+        axis_segments = {axis_name: [] for axis_name in AXIS_COLORS}
         basis = {
             "x": np.array([axis_length_m, 0.0, 0.0], dtype=np.float64),
             "y": np.array([0.0, axis_length_m, 0.0], dtype=np.float64),
@@ -282,7 +259,7 @@ class TrajectoryPlotBuilder:
                     z=flattened[:, 2],
                     mode="lines",
                     name=f"{axis_name.upper()} axis",
-                    line={"width": 2, "color": _AXIS_COLORS[axis_name]},
+                    line={"width": 2, "color": AXIS_COLORS[axis_name]},
                     showlegend=False,
                     hoverinfo="skip",
                 )
@@ -292,20 +269,13 @@ class TrajectoryPlotBuilder:
     def finalize(self) -> go.Figure:
         """Finalize the figure layout and return it."""
         if self.mode == "bev":
-            self.figure.update_layout(
-                title=self.title,
-                margin={"l": 24, "r": 16, "t": 44, "b": 24},
-                legend={"orientation": "h", "y": 1.12, "x": 0},
-                xaxis_title="X (m)",
-                yaxis_title="Y (m)",
-            )
+            apply_standard_xy_layout(self.figure, title=self.title, xaxis_title="X (m)", yaxis_title="Y (m)")
             self.figure.update_xaxes(showgrid=True)
             self.figure.update_yaxes(showgrid=True, scaleanchor="x", scaleratio=1)
         else:
-            self.figure.update_layout(
+            apply_standard_3d_layout(
+                self.figure,
                 title=self.title,
-                margin={"l": 0, "r": 0, "t": 44, "b": 0},
-                legend={"orientation": "h", "y": 1.02, "x": 0},
                 scene={
                     "xaxis_title": "X (m)",
                     "yaxis_title": "Y (m)",

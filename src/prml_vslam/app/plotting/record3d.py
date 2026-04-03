@@ -6,6 +6,8 @@ import numpy as np
 import plotly.graph_objects as go
 from jaxtyping import Float
 
+from .theme import BLUE, GREEN, RED, apply_standard_3d_layout
+
 
 def build_live_trajectory_figure(
     positions_xyz: Float[np.ndarray, "num_points 3"],  # noqa: F722
@@ -24,8 +26,8 @@ def build_live_trajectory_figure(
             z=positions_xyz[:, 2],
             mode="lines+markers",
             name="Ego trajectory",
-            line={"width": 5, "color": "#1368ce"},
-            marker={"size": 3, "color": "#1368ce"},
+            line={"width": 5, "color": BLUE},
+            marker={"size": 3, "color": BLUE},
             text=hover_text,
             hovertemplate="x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<br>%{text}<extra></extra>"
             if hover_text is not None
@@ -39,7 +41,7 @@ def build_live_trajectory_figure(
             z=[positions_xyz[0, 2]],
             mode="markers",
             name="Start",
-            marker={"size": 5, "color": "#0f9d58"},
+            marker={"size": 5, "color": GREEN},
             hovertemplate="Start<extra></extra>",
         )
     )
@@ -50,14 +52,13 @@ def build_live_trajectory_figure(
             z=[positions_xyz[-1, 2]],
             mode="markers",
             name="Current",
-            marker={"size": 6, "color": "#c62828"},
+            marker={"size": 6, "color": RED},
             hovertemplate="Current pose<extra></extra>",
         )
     )
-    figure.update_layout(
+    apply_standard_3d_layout(
+        figure,
         title="Ego Trajectory",
-        margin={"l": 0, "r": 0, "t": 44, "b": 0},
-        legend={"orientation": "h", "y": 1.02, "x": 0},
         scene={
             "xaxis_title": "X (m)",
             "yaxis_title": "Y (m)",
