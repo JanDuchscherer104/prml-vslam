@@ -13,10 +13,37 @@ from prml_vslam.io.record3d_wifi import (
     Record3DWiFiMetadata,
     Record3DWiFiSignalingClient,
     Record3DWiFiStreamConfig,
-    Record3DWiFiStreamSession,
     decode_record3d_wifi_depth,
     normalize_record3d_device_address,
 )
+from prml_vslam.io.wifi_packets import record3d_wifi_packet_from_video_frame
+from prml_vslam.io.wifi_receiver import (
+    _Record3DWiFiReceiverRuntime,
+    should_suppress_record3d_async_exception,
+)
+from prml_vslam.io.wifi_signaling import build_record3d_answer_request_payload
+
+
+def _build_runtime(
+    *,
+    console: SimpleNamespace | None = None,
+    get_metadata=None,
+    on_failure=None,
+    stop_requested=None,
+) -> _Record3DWiFiReceiverRuntime:
+    return _Record3DWiFiReceiverRuntime(
+        config=Record3DWiFiStreamConfig(device_address="myiPhone.local"),
+        console=console or SimpleNamespace(warning=lambda *args: None),
+        device_address="http://myiPhone.local",
+        get_offer=lambda: {"type": "offer", "sdp": "demo"},
+        get_metadata=get_metadata or (lambda: {}),
+        send_answer=lambda answer: None,
+        on_metadata=lambda metadata: None,
+        on_connected=lambda metadata: None,
+        on_packet=lambda packet: None,
+        on_failure=on_failure or (lambda message: None),
+        stop_requested=stop_requested or (lambda: False),
+    )
 
 
 def test_normalize_record3d_device_address_adds_http_scheme() -> None:
@@ -115,7 +142,7 @@ def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
         device_address="http://myiPhone.local",
         payload={"K": [[100.0, 0.0, 10.0], [0.0, 200.0, 20.0], [0.0, 0.0, 1.0]], "maxDepth": 3.0},
     )
-    packet = Record3DWiFiStreamSession._packet_from_video_frame(FakeVideoFrame(), metadata=metadata)
+    packet = record3d_wifi_packet_from_video_frame(FakeVideoFrame(), metadata=metadata)
 
     assert packet.transport is Record3DTransportId.WIFI
     assert packet.rgb.shape == (2, 2, 3)
@@ -133,7 +160,7 @@ def test_record3d_wifi_stream_config_keeps_manual_device_address() -> None:
 
 
 def test_record3d_wifi_answer_payload_matches_official_demo() -> None:
-    payload = Record3DWiFiStreamSession._answer_request_payload(sdp="demo-sdp")
+    payload = build_record3d_answer_request_payload(sdp="demo-sdp")
 
     assert payload == {"type": "answer", "data": "demo-sdp"}
 
@@ -147,31 +174,30 @@ def test_record3d_wifi_disconnect_does_not_raise_when_worker_lingers(monkeypatch
         is_alive=lambda: True,
     )
     session._worker = fake_worker
-    monkeypatch.setattr(session.console, "warning", lambda message, *args: warnings.append(message % args if args else message))
+    monkeypatch.setattr(
+        session.console, "warning", lambda message, *args: warnings.append(message % args if args else message)
+    )
 
     session.disconnect()
 
     assert warnings == ["Timed out stopping the Record3D Wi-Fi worker thread during cleanup."]
 
 
-def test_record3d_wifi_closed_before_track_sets_setup_failure_without_logging(monkeypatch) -> None:
-    session = Record3DWiFiStreamConfig(device_address="myiPhone.local").setup_target()
-    assert session is not None
+def test_record3d_wifi_closed_before_track_sets_setup_failure_without_logging() -> None:
     errors: list[str] = []
     stop_requests: list[bool] = []
+    runtime = _build_runtime(on_failure=errors.append)
     future = SimpleNamespace(
         _done=False,
         exception=None,
         done=lambda: future._done,
         set_exception=lambda exc: setattr(future, "_done", True) or setattr(future, "exception", exc),
     )
-    monkeypatch.setattr(session.console, "error", lambda message, *args: errors.append(message % args if args else message))
-    session._async_stop = SimpleNamespace(set=lambda: stop_requests.append(True))
+    runtime._async_stop = SimpleNamespace(set=lambda: stop_requests.append(True))
 
-    session._handle_connection_state_change(connection_state="closed", video_track_ready=future)
+    runtime._handle_connection_state_change(connection_state="closed", video_track_ready=future)
 
     assert errors == []
-    assert not session._failure_event.is_set()
     assert stop_requests == [True]
     assert isinstance(future.exception, Record3DConnectionError)
     assert str(future.exception) == (
@@ -179,57 +205,50 @@ def test_record3d_wifi_closed_before_track_sets_setup_failure_without_logging(mo
     )
 
 
-def test_record3d_wifi_closed_after_connect_logs_runtime_failure(monkeypatch) -> None:
-    session = Record3DWiFiStreamConfig(device_address="myiPhone.local").setup_target()
-    assert session is not None
+def test_record3d_wifi_closed_after_connect_logs_runtime_failure() -> None:
     errors: list[str] = []
     stop_requests: list[bool] = []
-    monkeypatch.setattr(session.console, "error", lambda message, *args: errors.append(message % args if args else message))
-    session._async_stop = SimpleNamespace(set=lambda: stop_requests.append(True))
-    session._connected_event.set()
+    runtime = _build_runtime(on_failure=errors.append)
+    runtime._async_stop = SimpleNamespace(set=lambda: stop_requests.append(True))
+    runtime._connected = True
 
-    session._handle_connection_state_change(connection_state="closed", video_track_ready=None)
+    runtime._handle_connection_state_change(connection_state="closed", video_track_ready=None)
 
-    assert session._failure_event.is_set()
     assert stop_requests == [True]
     assert errors == ["The Record3D Wi-Fi peer connection entered `closed`."]
 
 
 def test_record3d_wifi_shutdown_exception_filter_only_suppresses_expected_stop_noise() -> None:
-    session = Record3DWiFiStreamConfig(device_address="myiPhone.local").setup_target()
-    assert session is not None
-
-    assert session._should_suppress_async_exception(
+    assert should_suppress_record3d_async_exception(
         exception=AttributeError("'NoneType' object has no attribute 'sendto'"),
         message="Exception in callback Transaction.__retry()",
         stop_requested=True,
     )
-    assert session._should_suppress_async_exception(
+    assert should_suppress_record3d_async_exception(
         exception=RuntimeError("RTCIceTransport is closed"),
         message="Task exception was never retrieved",
         stop_requested=True,
     )
-    assert not session._should_suppress_async_exception(
+    assert not should_suppress_record3d_async_exception(
         exception=RuntimeError("unexpected"),
         message="Task exception was never retrieved",
         stop_requested=True,
     )
-    assert not session._should_suppress_async_exception(
+    assert not should_suppress_record3d_async_exception(
         exception=AttributeError("'NoneType' object has no attribute 'sendto'"),
         message="Exception in callback Transaction.__retry()",
         stop_requested=False,
     )
 
 
-def test_record3d_wifi_metadata_failure_is_non_fatal(monkeypatch) -> None:
-    session = Record3DWiFiStreamConfig(device_address="myiPhone.local").setup_target()
-    assert session is not None
-    session._metadata = Record3DWiFiMetadata(device_address="http://myiPhone.local")
+def test_record3d_wifi_metadata_failure_is_non_fatal() -> None:
     warnings: list[str] = []
-    monkeypatch.setattr(session.signaling_client, "get_metadata", lambda: (_ for _ in ()).throw(TimeoutError("slow")))
-    monkeypatch.setattr(session.console, "warning", lambda message, *args: warnings.append(message % args if args else message))
+    runtime = _build_runtime(
+        console=SimpleNamespace(warning=lambda message, *args: warnings.append(message % args if args else message)),
+        get_metadata=lambda: (_ for _ in ()).throw(TimeoutError("slow")),
+    )
 
-    asyncio.run(session._load_metadata_best_effort())
+    asyncio.run(runtime._load_metadata_best_effort())
 
     assert warnings == ["Could not retrieve Record3D Wi-Fi metadata: slow"]
-    assert session._metadata.device_address == "http://myiPhone.local"
+    assert runtime.metadata.device_address == "http://myiPhone.local"
