@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import warnings
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ from prml_vslam.app.state import SessionStateStore
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.interfaces import EvaluationControls
+from prml_vslam.eval.services import build_selection, resolve_dataset_root
 from prml_vslam.io.record3d import (
     Record3DDevice,
     Record3DFramePacket,
@@ -305,15 +307,15 @@ def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> 
     path_config = _build_path_config(tmp_path)
     service = TrajectoryEvaluationService(path_config)
 
-    runs = service.discover_runs(DatasetId.ADVIO, "advio-15")
+    runs = service.discover_runs("advio-15")
 
     assert len(runs) == 1
-    selection = service.resolve_selection(
+    selection = build_selection(
         dataset=DatasetId.ADVIO,
+        dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
         sequence_slug="advio-15",
-        run_root=runs[0].artifact_root,
+        run=runs[0],
     )
-    assert selection is not None
 
     result = service.compute_evaluation(
         selection=selection,
@@ -324,6 +326,34 @@ def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> 
     assert result.matched_pairs == 3
     assert result.stats.rmse > 0.0
     assert len(result.trajectories) == 2
+
+
+def test_compute_evaluation_loads_each_trajectory_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path_config = _build_path_config(tmp_path)
+    service = TrajectoryEvaluationService(path_config)
+    selection = build_selection(
+        dataset=DatasetId.ADVIO,
+        dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
+        sequence_slug="advio-15",
+        run=service.discover_runs("advio-15")[0],
+    )
+    assert selection.reference_path is not None
+
+    import prml_vslam.eval.services as eval_services
+
+    counts: Counter[Path] = Counter()
+    original = eval_services._load_tum_trajectory
+
+    def counted_load(path: Path) -> tuple[np.ndarray, np.ndarray]:
+        counts[path] += 1
+        return original(path)
+
+    monkeypatch.setattr(eval_services, "_load_tum_trajectory", counted_load)
+
+    service.compute_evaluation(selection=selection, controls=EvaluationControls())
+
+    assert counts[selection.reference_path] == 1
+    assert counts[selection.run.estimate_path] == 1
 
 
 def test_run_app_defaults_to_record3d_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -353,6 +383,7 @@ def test_render_metrics_page_entry_shows_metrics_content(
         from prml_vslam.datasets.interfaces import DatasetId
         from prml_vslam.eval import TrajectoryEvaluationService
         from prml_vslam.eval.interfaces import EvaluationControls
+        from prml_vslam.eval.services import build_selection, resolve_dataset_root
         from prml_vslam.utils.path_config import PathConfig
 
         def _write_tum(path: Path, rows: list[tuple[float, float, float, float]]) -> None:
@@ -386,12 +417,12 @@ def test_render_metrics_page_entry_shows_metrics_content(
             captures_dir=root / "captures",
         )
         service = TrajectoryEvaluationService(path_config)
-        selection = service.resolve_selection(
+        selection = build_selection(
             dataset=DatasetId.ADVIO,
+            dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
             sequence_slug="advio-15",
-            run_root=service.discover_runs(DatasetId.ADVIO, "advio-15")[0].artifact_root,
+            run=service.discover_runs("advio-15")[0],
         )
-        assert selection is not None
         result = service.compute_evaluation(selection=selection, controls=EvaluationControls())
         context = SimpleNamespace(
             path_config=path_config,
@@ -571,6 +602,106 @@ def test_advio_page_renders_local_sequence_explorer(tmp_path: Path) -> None:
     assert "Height Profile" in specs
     assert "Sampling Intervals" in specs
     assert "Trajectory Cadence" in specs
+
+
+def test_advio_download_form_returns_typed_request_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.app.advio_controller import AdvioDownloadFormData
+    from prml_vslam.app.pages import advio as advio_page
+    from prml_vslam.datasets import AdvioDatasetService
+    from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    selections = iter([[15], [AdvioModality.CALIBRATION]])
+    monkeypatch.setattr(advio_page.st, "form", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(advio_page.st, "multiselect", lambda *args, **kwargs: next(selections))
+    monkeypatch.setattr(advio_page.st, "selectbox", lambda *args, **kwargs: AdvioDownloadPreset.FULL)
+    monkeypatch.setattr(advio_page.st, "toggle", lambda *args, **kwargs: True)
+    monkeypatch.setattr(advio_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "form_submit_button", lambda *args, **kwargs: True)
+
+    context = SimpleNamespace(
+        state=AppState(),
+        store=FakeStore(),
+        advio_service=AdvioDatasetService(PathConfig(root=tmp_path)),
+    )
+    form = advio_page._render_download_form(context)
+
+    assert isinstance(form, AdvioDownloadFormData)
+    assert form.submitted is True
+    assert form.request.sequence_ids == [15]
+    assert form.request.preset is AdvioDownloadPreset.FULL
+    assert form.request.modalities == [AdvioModality.CALIBRATION]
+    assert form.request.overwrite is True
+    assert context.state.advio.selected_sequence_ids == [15]
+    assert context.state.advio.download_preset is AdvioDownloadPreset.FULL
+    assert context.state.advio.selected_modalities == [AdvioModality.CALIBRATION]
+    assert context.state.advio.overwrite_existing is True
+
+
+def test_advio_page_controller_handles_download_and_refreshes_once() -> None:
+    from prml_vslam.app.advio_controller import AdvioDownloadFormData, build_advio_page_data
+    from prml_vslam.datasets import AdvioDatasetSummary, AdvioDownloadRequest, AdvioDownloadResult
+    from prml_vslam.datasets.advio import AdvioDownloadPreset
+
+    summary = AdvioDatasetSummary(
+        total_scene_count=1,
+        local_scene_count=1,
+        replay_ready_scene_count=1,
+        offline_ready_scene_count=1,
+        full_scene_count=1,
+        cached_archive_count=1,
+        total_remote_archive_bytes=10,
+    )
+    rows = [{"Scene": "advio-15"}]
+
+    class ServiceSpy:
+        def __init__(self) -> None:
+            self.calls = {"download": 0, "summarize": 0, "local_scene_statuses": 0, "scene_rows": 0}
+
+        def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
+            self.calls["download"] += 1
+            return AdvioDownloadResult(
+                sequence_ids=request.sequence_ids,
+                modalities=list(request.resolved_modalities()),
+                downloaded_archives=[Path("advio-15.zip")],
+                written_paths=[Path("data/advio/advio-15")],
+            )
+
+        def summarize(self) -> AdvioDatasetSummary:
+            self.calls["summarize"] += 1
+            return summary
+
+        def local_scene_statuses(self) -> list[object]:
+            self.calls["local_scene_statuses"] += 1
+            return []
+
+        def scene_rows(self) -> list[dict[str, object]]:
+            self.calls["scene_rows"] += 1
+            return rows
+
+    service = ServiceSpy()
+    page_data = build_advio_page_data(
+        SimpleNamespace(advio_service=service),
+        AdvioDownloadFormData(
+            request=AdvioDownloadRequest(sequence_ids=[15], preset=AdvioDownloadPreset.OFFLINE),
+            submitted=True,
+        ),
+    )
+
+    assert service.calls == {"download": 1, "summarize": 1, "local_scene_statuses": 1, "scene_rows": 1}
+    assert page_data.summary == summary
+    assert page_data.rows == rows
+    assert page_data.notice_level == "success"
+    assert "Prepared 1 scene(s)" in page_data.notice_message
 
 
 def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) -> None:

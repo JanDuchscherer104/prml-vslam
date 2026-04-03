@@ -27,7 +27,7 @@ from prml_vslam.datasets import (
     load_advio_sequence,
     write_advio_pose_tum,
 )
-from prml_vslam.eval import TrajectoryEvaluationService
+from prml_vslam.eval.services import list_sequences, resolve_dataset_root, resolve_reference_path
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.utils import PathConfig
 
@@ -269,9 +269,10 @@ def test_metrics_service_lists_advio_sequences_from_nested_layout(tmp_path: Path
         captures_dir=tmp_path / "captures",
     )
 
-    service = TrajectoryEvaluationService(path_config)
-
-    assert service.list_sequences(DatasetId.ADVIO) == ["advio-07", "advio-15"]
+    assert list_sequences(dataset=DatasetId.ADVIO, dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO)) == [
+        "advio-07",
+        "advio-15",
+    ]
 
 
 def test_metrics_service_only_uses_existing_advio_reference_tum(tmp_path: Path) -> None:
@@ -283,8 +284,10 @@ def test_metrics_service_only_uses_existing_advio_reference_tum(tmp_path: Path) 
         captures_dir=tmp_path / "captures",
     )
 
-    service = TrajectoryEvaluationService(path_config)
-    reference_path = service.reference_path(dataset=DatasetId.ADVIO, sequence_slug="advio-15")
+    reference_path = resolve_reference_path(
+        dataset_root=resolve_dataset_root(path_config, DatasetId.ADVIO),
+        sequence_slug="advio-15",
+    )
 
     assert reference_path is None
 
