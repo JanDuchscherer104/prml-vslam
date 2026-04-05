@@ -11,6 +11,8 @@ from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioP
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval.interfaces import EvaluationControls
 from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.methods import MethodId
+from prml_vslam.pipeline.contracts import PipelineMode
 from prml_vslam.utils import BaseData
 
 
@@ -99,6 +101,28 @@ class Record3DPageState(BaseData):
     """Whether the current browser session expects a live stream to be active."""
 
 
+class PipelinePageState(BaseData):
+    """Persisted selector state for the interactive Pipeline demo."""
+
+    sequence_id: int | None = None
+    """Selected ADVIO sequence shown in the demo runner."""
+
+    mode: PipelineMode = PipelineMode.OFFLINE
+    """Whether the demo should run one pass or keep looping."""
+
+    method: MethodId = MethodId.VISTA
+    """Selected mock tracking backend label."""
+
+    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
+    """Selected pose source injected into the ADVIO replay packets."""
+
+    respect_video_rotation: bool = False
+    """Whether the replay should honor video rotation metadata when available."""
+
+    is_running: bool = False
+    """Whether the current browser session expects a pipeline demo to be active."""
+
+
 class AppState(BaseData):
     """Fully typed app state persisted in Streamlit session storage."""
 
@@ -107,6 +131,9 @@ class AppState(BaseData):
 
     advio: AdvioPageState = Field(default_factory=AdvioPageState)
     """ADVIO page selector state."""
+
+    pipeline: PipelinePageState = Field(default_factory=PipelinePageState)
+    """Pipeline-page selector state."""
 
     metrics: MetricsPageState = Field(default_factory=MetricsPageState)
     """Metrics-page selector state."""
@@ -117,5 +144,6 @@ __all__ = [
     "AppState",
     "AdvioPageState",
     "MetricsPageState",
+    "PipelinePageState",
     "Record3DPageState",
 ]

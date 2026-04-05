@@ -7,6 +7,7 @@ from typing import Any, cast
 import streamlit as st
 
 from .models import AppState
+from .pipeline_runtime import PipelineDemoRuntimeController
 from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
 
 
@@ -19,10 +20,12 @@ class SessionStateStore:
         state_key: str = "_prml_vslam_app_state",
         record3d_runtime_key: str = "_prml_vslam_record3d_runtime",
         advio_runtime_key: str = "_prml_vslam_advio_runtime",
+        pipeline_runtime_key: str = "_prml_vslam_pipeline_runtime",
     ) -> None:
         self.state_key = state_key
         self.record3d_runtime_key = record3d_runtime_key
         self.advio_runtime_key = advio_runtime_key
+        self.pipeline_runtime_key = pipeline_runtime_key
 
     def load(self) -> AppState:
         """Load the current typed app state from Streamlit session storage."""
@@ -75,6 +78,23 @@ class SessionStateStore:
         st.session_state[self.advio_runtime_key] = replacement
         return replacement
 
+    def load_pipeline_runtime(self) -> PipelineDemoRuntimeController:
+        """Load or create the opaque Pipeline demo runtime controller for this session."""
+        runtime = st.session_state.get(self.pipeline_runtime_key)
+        if runtime is None:
+            runtime = PipelineDemoRuntimeController()
+            st.session_state[self.pipeline_runtime_key] = runtime
+            return runtime
+        if isinstance(runtime, PipelineDemoRuntimeController):
+            return runtime
+        if self._is_pipeline_runtime_compatible(runtime):
+            return cast(PipelineDemoRuntimeController, runtime)
+
+        self._shutdown_stale_runtime(runtime)
+        replacement = PipelineDemoRuntimeController()
+        st.session_state[self.pipeline_runtime_key] = replacement
+        return replacement
+
     @staticmethod
     def _is_runtime_compatible(runtime: Any) -> bool:
         required_methods = ("snapshot", "stop", "start_usb", "start_wifi")
@@ -82,6 +102,11 @@ class SessionStateStore:
 
     @staticmethod
     def _is_advio_runtime_compatible(runtime: Any) -> bool:
+        required_methods = ("snapshot", "stop", "start")
+        return all(callable(getattr(runtime, method_name, None)) for method_name in required_methods)
+
+    @staticmethod
+    def _is_pipeline_runtime_compatible(runtime: Any) -> bool:
         required_methods = ("snapshot", "stop", "start")
         return all(callable(getattr(runtime, method_name, None)) for method_name in required_methods)
 
