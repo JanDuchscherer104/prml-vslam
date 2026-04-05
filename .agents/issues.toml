@@ -1,58 +1,36 @@
 [meta]
-schema_version = 1
+schema_version = 2
 repo = "prml-vslam"
 updated_on = "2026-04-05"
-source = "Validated review findings plus follow-up repository policy notes."
-
-[[issues]]
-id = "ISSUE-0001"
-title = "BaseConfig-derived workflows are not TOML-first"
-status = "open"
-priority = "high"
-category = "configuration"
-summary = "User-facing and reproducible BaseConfig graphs should be loaded from TOML, but current durable workflows still rely heavily on direct in-code construction."
-files = [
-  "src/prml_vslam/utils/base_config.py",
-  "src/prml_vslam/utils/path_config.py",
-  "src/prml_vslam/main.py",
-]
-notes = [
-  "BaseConfig already exposes from_toml(), to_toml(), and save_toml().",
-  "PathConfig already resolves repo-relative .toml paths.",
-  "Current CLI entrypoints still build RunRequest graphs directly from flags.",
-]
-
-[[issues]]
-id = "ISSUE-0002"
-title = "ADVIO calibration parsing depends on undeclared PyYAML"
-status = "open"
-priority = "high"
-category = "dependency"
-summary = "The ADVIO loader imports yaml directly, but PyYAML is not declared in pyproject.toml core dependencies."
-files = [
-  "src/prml_vslam/datasets/advio/advio_loading.py",
-  "pyproject.toml",
-]
-notes = [
-  "The current environment works only because pyyaml is installed transitively.",
-  "Fresh installs should not rely on dependency coincidence for a core dataset path.",
-]
+source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, and a later narrative-review relevance triage."
+active_collection = "issues"
 
 [[issues]]
 id = "ISSUE-0003"
-title = "Record3D live snapshot model lives in the IO layer"
+title = "Live preview snapshot contracts are not owned consistently by app models"
 status = "open"
 priority = "medium"
 category = "architecture"
-summary = "Record3DStreamSnapshot is app-facing session state layered on top of packet-session fields, but it is still owned by prml_vslam.io.record3d."
+summary = "App-facing preview snapshots still live outside `prml_vslam.app.models`: `Record3DStreamSnapshot` is owned by `prml_vslam.io.record3d`, while `AdvioPreviewSnapshot` and `AdvioPreviewStreamState` are still defined in `prml_vslam.app.services`."
 files = [
-  "src/prml_vslam/io/record3d.py",
-  "src/prml_vslam/app/services.py",
-  "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "tests/test_app.py",
 ]
 notes = [
-  "The snapshot is consumed by the Streamlit app and worker controllers rather than by transport adapters.",
-  "This blurs the repo rule that io owns transport and app owns UI/session state.",
+    "The Streamlit app imports these runtime snapshots directly for rendering and test doubles.",
+    "This still blurs two repo rules: app-facing state belongs under `prml_vslam.app.models`, and `services.py` should not own public contract types.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/models.py",
+    "tests/test_app.py",
 ]
 
 [[issues]]
@@ -63,30 +41,44 @@ priority = "medium"
 category = "maintainability"
 summary = "Multiple app modules repeat near-identical save-if-changed logic for typed page state."
 files = [
-  "src/prml_vslam/app/advio_controller.py",
-  "src/prml_vslam/app/pages/pipeline.py",
-  "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/record3d_controller.py",
 ]
 notes = [
-  "The duplication is small but repeated enough to encourage drift in state handling.",
-  "A generic helper should preserve the typed models while removing controller boilerplate.",
+    "The duplication is small but repeated enough to encourage drift in state handling.",
+    "A generic helper should preserve the typed models while removing controller boilerplate.",
 ]
 
 [[issues]]
 id = "ISSUE-0005"
-title = "Runtime contracts still mix canonical and preview-only payloads"
+title = "FramePacket and SlamUpdate still overlap ingress and preview semantics"
 status = "open"
 priority = "medium"
 category = "contracts"
-summary = "FramePacket and SlamUpdate still carry fields that are either unused in current flows or only needed for app preview surfaces."
+summary = "The canonical ingress packet still carries preview- and method-oriented fields (`pointmap`, `uncertainty`, `image_path`, `jpeg_bytes`) while `SlamUpdate` also owns `pointmap` and `uncertainty`, leaving the current tree with overlapping owners and a live sensor-confidence naming collision."
 files = [
-  "src/prml_vslam/interfaces/runtime.py",
-  "src/prml_vslam/pipeline/contracts.py",
-  "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/pages/pipeline.py",
 ]
 notes = [
-  "FramePacket.image_path and FramePacket.jpeg_bytes are currently unused in this repo.",
-  "SlamUpdate.pointmap and SlamUpdate.uncertainty are app-preview oriented rather than core pipeline artifacts.",
+    "Record3D currently maps USB depth confidence into `FramePacket.uncertainty`, even though `SlamUpdate.uncertainty` reads like method output.",
+    "The mock SLAM session also consumes `FramePacket.pointmap` while emitting `SlamUpdate.pointmap`, so the same semantic concept still has two owners.",
+    "FramePacket.image_path and FramePacket.jpeg_bytes remain unused in the current repository tree.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
 ]
 
 [[issues]]
@@ -95,16 +87,138 @@ title = "Placeholder config and state fields remain in active models"
 status = "open"
 priority = "medium"
 category = "cleanup"
-summary = "Several config and state models still contain placeholder or shape-only fields that add maintenance cost without current value."
+summary = "Several active config models still carry shape-only fields and wrappers that add maintenance cost without current value."
 files = [
-  "src/prml_vslam/eval/contracts.py",
-  "src/prml_vslam/methods/mstr.py",
-  "src/prml_vslam/app/models.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "README.md",
+    "tests/test_main.py",
+    "tests/test_methods.py",
 ]
 notes = [
-  "EvaluationControls is still an empty placeholder.",
-  "MSTRMethodConfig.calibration_path is retained only to satisfy a shared shape.",
-  "Record3DPageState still hard-codes a Wi-Fi IP default that is unlikely to be broadly correct.",
+    "The `kind` discriminator on source-spec configs is shape-only boilerplate in the current tree because the three source models are already structurally distinct.",
+    "Record3DUSBPacketStreamConfig still wraps Record3DStreamConfig through a one-field `stream` indirection.",
+    "MockSlamBackendConfig.method_id is currently validated and forwarded even though the mock backend does not use it.",
+    "Tests and TOML examples still encode some of the older boilerplate surface and should converge with the simplified contracts.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "tests/test_main.py",
+    "tests/test_methods.py",
+]
+
+[[issues]]
+id = "ISSUE-0009"
+title = "Method wrapper contracts still duplicate pipeline artifact ownership"
+status = "open"
+priority = "medium"
+category = "architecture"
+summary = "The methods layer still exposes `MethodRunRequest` and `MethodRunResult` as public normalized-output contracts even though the architecture guide already treats `SequenceManifest`, `SlamArtifacts`, and `RunSummary` as the repository-owned artifact boundary."
+files = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+notes = [
+    "The mock method runtime still plans and materializes normalized trajectory and point-cloud paths directly through `MethodRunResult`.",
+    "The architecture guide explicitly calls this overlap transitional and says wrapper outputs should converge on pipeline-owned artifacts.",
+    "The broader older review recommendation to keep upstream wrappers thin is still relevant here even though the current repository scope intentionally keeps `methods` mock-only.",
+]
+sources = [
+    "README.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+    "https://github.com/zhangganlin/vista-slam",
+    "https://github.com/rmurai0610/MASt3R-SLAM",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15",
+]
+
+[[issues]]
+id = "ISSUE-0010"
+title = "Package re-export surfaces remain broader than the minimal public API"
+status = "open"
+priority = "medium"
+category = "api"
+summary = "The `io` and `pipeline` package roots still re-export transport internals, snapshot types, signaling helpers, and session classes beyond the minimal public surface documented in the architecture rules."
+files = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+notes = [
+    "`prml_vslam.io.__init__` still exports transport sessions, Wi-Fi signaling helpers, and the Record3D snapshot type.",
+    "`prml_vslam.pipeline.__init__` still exports `PipelineSessionService`, `PipelineSessionSnapshot`, and `PipelineSessionState` via a dynamic import bridge even though the documented minimal public surface is narrower.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+
+[[issues]]
+id = "ISSUE-0011"
+title = "ADVIO download flow still owns bespoke cache and fetch mechanics"
+status = "open"
+priority = "medium"
+category = "maintainability"
+summary = "The ADVIO download manager still owns low-level HTTP download, temp-file replacement, checksum validation, and ZIP extraction logic directly instead of delegating archive retrieval and cache handling to a dedicated dataset helper."
+files = [
+    "src/prml_vslam/datasets/README.md",
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+]
+notes = [
+    "The current implementation manually combines `urllib.request`, `tempfile`, `hashlib`, and `zipfile` for archive retrieval and caching.",
+    "The archive-cache correctness bug has been fixed locally, but the surrounding retrieval and cache-management path is still bespoke.",
+    "ADVIO upstream already publishes per-sequence ZIP files on Zenodo, which fits a registry-based data fetcher well.",
+    "A library such as Pooch would let the repo keep its typed catalog and local-readiness logic while shrinking the bespoke download path.",
+]
+sources = [
+    "src/prml_vslam/datasets/README.md",
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+    "https://github.com/AaltoVision/ADVIO",
+    "https://zenodo.org/record/1320824",
+    "https://www.fatiando.org/pooch/latest/",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245887",
+]
+
+[[issues]]
+id = "ISSUE-0013"
+title = "Source-of-truth docs still contain stale packet names, broken links, and placeholder TODO text"
+status = "open"
+priority = "low"
+category = "documentation"
+summary = "Several repo docs still drift from the current code surface: `Record3DFramePacket` remains in Record3D docs, `app/AGENTS.md` still has a quoted markdown target, and `docs/Questions.md` still contains an unresolved ARCore placeholder TODO."
+files = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+]
+notes = [
+    "The shared runtime packet contract is `FramePacket`, not `Record3DFramePacket`.",
+    "The quoted markdown target in `app/AGENTS.md` renders as a broken link on GitHub.",
+    "The Q&A document is one of the repo sources of truth, so leaving placeholder TODO text there increases requirements drift.",
+]
+sources = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3036947625",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245891",
 ]
 
 [[issues]]
@@ -115,9 +229,65 @@ priority = "low"
 category = "testing"
 summary = "The session-state adapter can replace incompatible runtimes, but the current test coverage only verifies a basic pipeline-runtime round trip."
 files = [
-  "src/prml_vslam/app/state.py",
-  "tests/test_app.py",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
 ]
 notes = [
-  "Compatibility fallback and stale-runtime shutdown behavior are implemented but not directly covered.",
+    "Compatibility fallback and stale-runtime shutdown behavior are implemented but not directly covered.",
+]
+
+[[issues]]
+id = "ISSUE-0014"
+title = "Record3D Wi-Fi remains a repo-owned first-class transport beside the official USB bindings"
+status = "open"
+priority = "medium"
+category = "architecture"
+summary = "The repository already uses the official `record3d` Python bindings for USB capture, but the app and IO layers still treat a custom HTTP/WebRTC Wi-Fi receiver as a peer transport. That leaves signaling, peer lifecycle, packet decoding, and transport-specific UI state as permanent-looking repo code even though Record3D documents USB streaming as the Python/C++ integration surface and presents Wi-Fi separately as a browser/local-network feature."
+files = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+]
+notes = [
+    "USB capture already flows through the upstream `record3d` bindings, so the custom Wi-Fi stack is a qualitatively different maintenance obligation than the official adapter.",
+    "The older review recommendation is still relevant in the current tree: either keep Wi-Fi clearly optional/private, or justify it as an explicit separate boundary for the real-time streaming requirement recorded in `docs/Questions.md`.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "https://record3d.app/",
+    "https://github.com/marek-simonik/record3d",
+]
+
+[[issues]]
+id = "ISSUE-0015"
+title = "SessionStateStore repeats per-runtime load, compatibility, and replacement flows"
+status = "open"
+priority = "low"
+category = "maintainability"
+summary = "The Streamlit session-state adapter still reimplements the same get-or-create, compatibility-check, stale-runtime shutdown, and replacement path for Record3D, ADVIO, and Pipeline runtimes. This matches the older review's app-heaviness concern and leaves a concrete duplication hotspot even after packet-session lifecycle was consolidated."
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+notes = [
+    "The three runtime loaders differ mostly in the constructor and required-method predicate.",
+    "A generic helper would reduce app boilerplate while keeping the dedicated typed controllers and pipeline service intact.",
+]
+sources = [
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
 ]

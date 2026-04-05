@@ -1,55 +1,41 @@
 [meta]
-schema_version = 1
+schema_version = 2
 repo = "prml-vslam"
 updated_on = "2026-04-05"
-source = "Seeded from validated review findings."
-
-[[todos]]
-id = "TODO-0001"
-title = "Add TOML-backed config entrypoints for durable BaseConfig workflows"
-status = "pending"
-priority = "high"
-issue_ids = ["ISSUE-0001"]
-files = [
-  "src/prml_vslam/main.py",
-  "README.md",
-]
-acceptance = [
-  "At least one durable CLI workflow accepts a repo-owned .toml config path.",
-  "The implementation uses BaseConfig.from_toml() and PathConfig.resolve_toml_path().",
-  "README or CLI help documents the TOML-first configuration path.",
-]
-
-[[todos]]
-id = "TODO-0002"
-title = "Declare PyYAML explicitly for ADVIO calibration loading"
-status = "pending"
-priority = "high"
-issue_ids = ["ISSUE-0002"]
-files = [
-  "pyproject.toml",
-  "src/prml_vslam/datasets/advio/advio_loading.py",
-]
-acceptance = [
-  "PyYAML is declared in the appropriate dependency group.",
-  "ADVIO calibration loading works in a clean install without transitive dependency luck.",
-]
+source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review and a later narrative-review relevance triage."
+active_collection = "todos"
+loc_unit = "lines"
 
 [[todos]]
 id = "TODO-0003"
-title = "Move Record3D snapshot ownership out of the IO layer"
+title = "Move live preview snapshot contracts into app-owned models"
 status = "pending"
 priority = "medium"
-issue_ids = ["ISSUE-0003"]
+issue_ids = [
+    "ISSUE-0003",
+]
+loc_min = 30
+loc_expected = 95
+loc_max = 180
 files = [
-  "src/prml_vslam/io/record3d.py",
-  "src/prml_vslam/app/services.py",
-  "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "tests/test_app.py",
 ]
 acceptance = [
-  "Record3D transport code only exposes packet and transport-facing contracts.",
-  "App-facing session snapshot models live under prml_vslam.app.",
-  "Imports no longer require the app to depend on an IO-owned snapshot type.",
+    "Record3D transport code exposes only packet and transport-facing contracts.",
+    "Record3D and ADVIO preview snapshot models live under `prml_vslam.app` instead of `io.record3d` or `app.services`.",
+    "App pages, runtime controllers, and tests no longer depend on preview snapshot types owned by transport or service modules.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/models.py",
+    "tests/test_app.py",
 ]
 
 [[todos]]
@@ -57,33 +43,56 @@ id = "TODO-0004"
 title = "Consolidate app page-state save-if-changed helpers"
 status = "pending"
 priority = "medium"
-issue_ids = ["ISSUE-0004"]
+issue_ids = [
+    "ISSUE-0004",
+]
+loc_min = 20
+loc_expected = 45
+loc_max = 90
 files = [
-  "src/prml_vslam/app/advio_controller.py",
-  "src/prml_vslam/app/pages/pipeline.py",
-  "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/record3d_controller.py",
 ]
 acceptance = [
-  "One shared helper handles typed page-state mutation and persistence.",
-  "ADVIO, Pipeline, and Record3D controllers stop duplicating the same save-if-changed pattern.",
-  "Existing app tests still cover the preserved behavior.",
+    "One shared helper handles typed page-state mutation and persistence.",
+    "ADVIO, Pipeline, and Record3D controllers stop duplicating the same save-if-changed pattern.",
+    "Existing app tests still cover the preserved behavior.",
 ]
 
 [[todos]]
 id = "TODO-0005"
-title = "Trim or relocate preview-only fields from core runtime contracts"
+title = "Split ingress packets from preview-only SLAM and confidence payloads"
 status = "pending"
 priority = "medium"
-issue_ids = ["ISSUE-0005"]
+issue_ids = [
+    "ISSUE-0005",
+]
+loc_min = 40
+loc_expected = 125
+loc_max = 240
 files = [
-  "src/prml_vslam/interfaces/runtime.py",
-  "src/prml_vslam/pipeline/contracts.py",
-  "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/pages/pipeline.py",
 ]
 acceptance = [
-  "Unused FramePacket fields are removed or justified by an active caller.",
-  "Preview-only fields move closer to the app surface when they are not canonical pipeline contracts.",
-  "The resulting contracts remain typed and backward-clean within the repo.",
+    "Unused `FramePacket` fields are removed or justified by an active ingress caller.",
+    "Sensor confidence is no longer exposed as `FramePacket.uncertainty` when `SlamUpdate.uncertainty` is method-oriented output.",
+    "Pointmap ownership is narrowed so ingress packets and SLAM updates do not both claim the same preview payload without a clear contract boundary.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
 ]
 
 [[todos]]
@@ -91,16 +100,33 @@ id = "TODO-0006"
 title = "Remove placeholder config and state fields that no longer earn their keep"
 status = "pending"
 priority = "medium"
-issue_ids = ["ISSUE-0006"]
+issue_ids = [
+    "ISSUE-0006",
+]
+loc_min = 25
+loc_expected = 45
+loc_max = 90
 files = [
-  "src/prml_vslam/eval/contracts.py",
-  "src/prml_vslam/methods/mstr.py",
-  "src/prml_vslam/app/models.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "README.md",
+    "tests/test_main.py",
+    "tests/test_methods.py",
 ]
 acceptance = [
-  "Empty placeholder config models are removed or given at least one real control.",
-  "Shape-only method fields are replaced with a clearer configuration boundary.",
-  "The Record3D Wi-Fi state no longer defaults to a likely-wrong hard-coded address.",
+    "Source-spec config loading no longer depends on explicit `kind` discriminator fields.",
+    "The USB Record3D packet-stream config no longer wraps the low-level stream config through a one-field `stream` indirection.",
+    "Mock SLAM backend config no longer validates unused `method_id` state.",
+    "TOML examples and tests match the simplified config surfaces.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "tests/test_main.py",
+    "tests/test_methods.py",
 ]
 
 [[todos]]
@@ -108,12 +134,205 @@ id = "TODO-0007"
 title = "Add focused tests for stale runtime replacement in SessionStateStore"
 status = "pending"
 priority = "low"
-issue_ids = ["ISSUE-0007"]
+issue_ids = [
+    "ISSUE-0007",
+]
+loc_min = 25
+loc_expected = 60
+loc_max = 120
 files = [
-  "src/prml_vslam/app/state.py",
-  "tests/test_app.py",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
 ]
 acceptance = [
-  "Tests cover incompatible runtime replacement for record3d, advio, and pipeline adapters.",
-  "Tests assert stale runtimes are shut down exactly once before replacement.",
+    "Tests cover incompatible runtime replacement for record3d, advio, and pipeline adapters.",
+    "Tests assert stale runtimes are shut down exactly once before replacement.",
+]
+
+[[todos]]
+id = "TODO-0009"
+title = "Remove or privatize MethodRunResult as a parallel normalized-output surface"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0009",
+]
+loc_min = 35
+loc_expected = 90
+loc_max = 190
+files = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+acceptance = [
+    "Method wrappers no longer expose a public normalized-output contract that duplicates pipeline-owned artifacts.",
+    "Any remaining wrapper planning object is clearly private to the methods layer or maps directly onto pipeline-owned outputs.",
+    "Method tests assert the new ownership boundary rather than the old `MethodRunResult` shape.",
+]
+sources = [
+    "README.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+    "src/prml_vslam/methods/README.md",
+    "https://github.com/zhangganlin/vista-slam",
+    "https://github.com/rmurai0610/MASt3R-SLAM",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15",
+]
+
+[[todos]]
+id = "TODO-0010"
+title = "Trim io and pipeline package exports to the documented minimal surface"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0010",
+]
+loc_min = 15
+loc_expected = 40
+loc_max = 90
+files = [
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+acceptance = [
+    "The package roots stop re-exporting transport internals, snapshot types, and signaling helpers that are not part of the minimal public API.",
+    "Imports in the repo become explicit module imports when they need package-private helpers.",
+    "The remaining package-root exports match the architecture guide and `AGENTS.md` policy.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+
+[[todos]]
+id = "TODO-0011"
+title = "Delegate ADVIO archive fetching mechanics to a dataset fetch helper"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0011",
+]
+loc_min = 35
+loc_expected = 90
+loc_max = 180
+files = [
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+    "tests/test_advio.py",
+]
+acceptance = [
+    "Archive caching, checksum verification, and download retries are handled by a dedicated helper such as Pooch rather than bespoke HTTP glue.",
+    "The ADVIO catalog remains the source of truth for sequence metadata and hashes.",
+    "Existing higher-level dataset service behavior stays compatible for the app and tests.",
+]
+sources = [
+    "src/prml_vslam/datasets/README.md",
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+    "https://github.com/AaltoVision/ADVIO",
+    "https://zenodo.org/record/1320824",
+    "https://www.fatiando.org/pooch/latest/",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245887",
+]
+
+[[todos]]
+id = "TODO-0013"
+title = "Clean up stale Record3D docs references and source-of-truth placeholders"
+status = "pending"
+priority = "low"
+issue_ids = [
+    "ISSUE-0013",
+]
+loc_min = 6
+loc_expected = 18
+loc_max = 45
+files = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+]
+acceptance = [
+    "Record3D docs use the current `FramePacket` contract name instead of `Record3DFramePacket`.",
+    "The markdown link in `app/AGENTS.md` resolves correctly on GitHub.",
+    "The ARCore placeholder TODO in `docs/Questions.md` is replaced with actual wording or removed.",
+]
+sources = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3036947625",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245891",
+]
+
+[[todos]]
+id = "TODO-0014"
+title = "Narrow the Record3D Wi-Fi/WebRTC path behind an explicit optional boundary"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0014",
+]
+loc_min = 40
+loc_expected = 110
+loc_max = 220
+files = [
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "README.md",
+]
+acceptance = [
+    "The official `record3d` USB bindings remain the canonical programmatic ingress path for Record3D capture.",
+    "The custom Wi-Fi signaling and receiver flow is either hidden behind a clearly optional/private adapter boundary or explicitly documented as a separate supported integration surface.",
+    "README and app-facing transport semantics make the Wi-Fi support level clear instead of treating it as an unqualified peer of the official USB path.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "https://record3d.app/",
+    "https://github.com/marek-simonik/record3d",
+]
+
+[[todos]]
+id = "TODO-0015"
+title = "Factor SessionStateStore runtime loading through one generic helper"
+status = "pending"
+priority = "low"
+issue_ids = [
+    "ISSUE-0007",
+    "ISSUE-0015",
+]
+loc_min = 25
+loc_expected = 55
+loc_max = 120
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "One shared helper handles session-state lookup, compatibility validation, stale-runtime shutdown, and replacement.",
+    "Record3D, ADVIO, and Pipeline runtime loads configure that helper instead of reimplementing the same control flow.",
+    "Focused tests cover the preserved stale-runtime replacement behavior after the refactor.",
+]
+sources = [
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
 ]
