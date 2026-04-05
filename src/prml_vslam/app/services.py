@@ -46,7 +46,7 @@ class AdvioPreviewSnapshot(PacketSessionSnapshot):
     pose_source: AdvioPoseSource | None = None
 
 
-class AdvioPreviewRuntimeController:
+class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
     def __init__(
         self,
         *,
@@ -57,13 +57,10 @@ class AdvioPreviewRuntimeController:
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
         self.trajectory_window_size = trajectory_window_size
-        self._runtime = PacketSessionRuntime(
+        super().__init__(
             empty_snapshot=AdvioPreviewSnapshot,
             stop_timeout_message="Timed out stopping the ADVIO preview worker thread.",
         )
-
-    def snapshot(self) -> AdvioPreviewSnapshot:
-        return self._runtime.snapshot()
 
     def start(
         self,
@@ -73,7 +70,7 @@ class AdvioPreviewRuntimeController:
         pose_source: AdvioPoseSource,
         stream: FramePacketStream,
     ) -> None:
-        self._runtime.launch(
+        self.launch(
             connecting_snapshot=AdvioPreviewSnapshot(
                 state=AdvioPreviewStreamState.CONNECTING,
                 sequence_id=sequence_id,
@@ -89,9 +86,6 @@ class AdvioPreviewRuntimeController:
                 stop_event=stop_event,
             ),
         )
-
-    def stop(self) -> None:
-        self._runtime.stop()
 
     def _run_stream_worker(
         self,
@@ -123,7 +117,7 @@ class AdvioPreviewRuntimeController:
                     else max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9
                 ),
             )
-            self._runtime.update_fields(
+            self.update_fields(
                 state=AdvioPreviewStreamState.STREAMING,
                 sequence_id=sequence_id,
                 sequence_label=sequence_label,
@@ -134,10 +128,10 @@ class AdvioPreviewRuntimeController:
             )
 
         try:
-            self._runtime.register_stream(stop_event=stop_event, stream=stream)
+            self.register_stream(stop_event=stop_event, stream=stream)
             stream.connect()
             (
-                self._runtime.update_fields(
+                self.update_fields(
                     state=AdvioPreviewStreamState.STREAMING,
                     sequence_id=sequence_id,
                     sequence_label=sequence_label,
@@ -149,7 +143,7 @@ class AdvioPreviewRuntimeController:
                 _consume_packet(stream)
         except Exception as exc:
             if not stop_event.is_set():
-                self._runtime.update_fields(
+                self.update_fields(
                     state=AdvioPreviewStreamState.FAILED,
                     sequence_id=sequence_id,
                     sequence_label=sequence_label,
@@ -157,7 +151,7 @@ class AdvioPreviewRuntimeController:
                     error_message=str(exc),
                 )
         finally:
-            self._runtime.finalize(
+            self.finalize(
                 stop_event=stop_event,
                 snapshot_update=lambda snapshot: (
                     AdvioPreviewSnapshot()
@@ -178,7 +172,7 @@ class AdvioPreviewRuntimeController:
             )
 
 
-class Record3DStreamRuntimeController:
+class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapshot]):
     def __init__(
         self,
         *,
@@ -203,16 +197,13 @@ class Record3DStreamRuntimeController:
                 frame_timeout_seconds=timeout_seconds,
             )
         )
-        self._runtime = PacketSessionRuntime(
+        super().__init__(
             empty_snapshot=Record3DStreamSnapshot,
             stop_timeout_message="Timed out stopping the Record3D runtime worker thread.",
         )
 
-    def snapshot(self) -> Record3DStreamSnapshot:
-        return self._runtime.snapshot()
-
     def start_usb(self, *, device_index: int) -> None:
-        self._runtime.launch(
+        self.launch(
             connecting_snapshot=Record3DStreamSnapshot(
                 transport=Record3DTransportId.USB,
                 state=Record3DStreamState.CONNECTING,
@@ -228,7 +219,7 @@ class Record3DStreamRuntimeController:
         )
 
     def start_wifi(self, *, device_address: str) -> None:
-        self._runtime.launch(
+        self.launch(
             connecting_snapshot=Record3DStreamSnapshot(
                 transport=Record3DTransportId.WIFI,
                 state=Record3DStreamState.CONNECTING,
@@ -242,9 +233,6 @@ class Record3DStreamRuntimeController:
                 stream_factory=lambda: self.wifi_stream_factory(device_address, self.frame_timeout_seconds),
             ),
         )
-
-    def stop(self) -> None:
-        self._runtime.stop()
 
     def _run_stream_worker(
         self,
@@ -273,7 +261,7 @@ class Record3DStreamRuntimeController:
                 position_xyz=camera_position,
                 trajectory_time_s=arrival_time_s if camera_position is not None else None,
             )
-            self._runtime.update_fields(
+            self.update_fields(
                 transport=transport,
                 state=Record3DStreamState.STREAMING,
                 source_label=source_label_holder["source_label"],
@@ -286,9 +274,9 @@ class Record3DStreamRuntimeController:
 
         try:
             stream = stream_factory()
-            self._runtime.register_stream(stop_event=stop_event, stream=stream)
+            self.register_stream(stop_event=stop_event, stream=stream)
             _set_record3d_connected_state(
-                runtime=self._runtime,
+                runtime=self,
                 transport=transport,
                 source_descriptor=source_descriptor,
                 connected_target=stream.connect(),
@@ -298,14 +286,14 @@ class Record3DStreamRuntimeController:
                 _consume_packet(stream)
         except Exception as exc:
             if not stop_event.is_set():
-                self._runtime.update_fields(
+                self.update_fields(
                     transport=transport,
                     state=Record3DStreamState.FAILED,
                     source_label=source_descriptor,
                     error_message=str(exc),
                 )
         finally:
-            self._runtime.finalize(
+            self.finalize(
                 stop_event=stop_event,
                 snapshot_update=lambda snapshot: (
                     Record3DStreamSnapshot()
