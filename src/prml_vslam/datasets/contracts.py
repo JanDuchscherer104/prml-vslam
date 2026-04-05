@@ -1,4 +1,4 @@
-"""Dataset-owned identifiers."""
+"""Dataset-owned contracts."""
 
 from __future__ import annotations
 

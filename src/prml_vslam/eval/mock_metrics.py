@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.eval.interfaces import TrajectorySeries
+from prml_vslam.eval.contracts import TrajectorySeries
 
 
 def load_trajectory_pair(*, reference_path: Path, estimate_path: Path) -> tuple[TrajectorySeries, TrajectorySeries]:

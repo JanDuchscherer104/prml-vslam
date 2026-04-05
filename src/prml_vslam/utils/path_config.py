@@ -48,6 +48,8 @@ class RunArtifactPaths(BaseData):
     """Path to the reference reconstruction artifact."""
     summary_path: Path
     """Path to the run-level summary artifact."""
+    stage_manifests_path: Path
+    """Path to the persisted stage-manifest bundle."""
 
     @classmethod
     def build(cls, artifact_root: Path) -> RunArtifactPaths:
@@ -67,6 +69,7 @@ class RunArtifactPaths(BaseData):
             efficiency_metrics_path=(resolved_root / "evaluation" / "efficiency_metrics.json").resolve(),
             reference_cloud_path=(resolved_root / "reference" / "reference_cloud.ply").resolve(),
             summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),
+            stage_manifests_path=(resolved_root / "summary" / "stage_manifests.json").resolve(),
         )
 
     def plotly_scene_path(self, method_slug: str) -> Path:

@@ -1,4 +1,4 @@
-"""Reusable live-preview services for the packaged Streamlit app."""
+"""Reusable live-preview services for the packaged Streamlit app. Every component of the app must define its own service layer derived from shared service interfaces / protocols."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 from pydantic import Field
 
 from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.interfaces import FramePacket, FramePacketStream
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.io.record3d import (
     Record3DDevice,
     Record3DStreamConfig,
@@ -23,6 +23,7 @@ from prml_vslam.io.record3d import (
     Record3DUSBPacketStreamConfig,
 )
 from prml_vslam.io.wifi_session import Record3DWiFiStreamConfig
+from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
 
 SnapshotT = TypeVar("SnapshotT", bound=BaseData)

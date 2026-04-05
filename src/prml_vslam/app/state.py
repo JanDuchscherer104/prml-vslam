@@ -6,8 +6,10 @@ from typing import Any, cast
 
 import streamlit as st
 
+from prml_vslam.pipeline import PipelineSessionService
+from prml_vslam.utils import PathConfig
+
 from .models import AppState
-from .pipeline_runtime import PipelineDemoRuntimeController
 from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
 
 
@@ -78,20 +80,20 @@ class SessionStateStore:
         st.session_state[self.advio_runtime_key] = replacement
         return replacement
 
-    def load_pipeline_runtime(self) -> PipelineDemoRuntimeController:
-        """Load or create the opaque Pipeline demo runtime controller for this session."""
+    def load_pipeline_runtime(self, *, path_config: PathConfig | None = None) -> PipelineSessionService:
+        """Load or create the opaque pipeline session service for this session."""
         runtime = st.session_state.get(self.pipeline_runtime_key)
         if runtime is None:
-            runtime = PipelineDemoRuntimeController()
+            runtime = PipelineSessionService(path_config=path_config)
             st.session_state[self.pipeline_runtime_key] = runtime
             return runtime
-        if isinstance(runtime, PipelineDemoRuntimeController):
+        if isinstance(runtime, PipelineSessionService):
             return runtime
         if self._is_pipeline_runtime_compatible(runtime):
-            return cast(PipelineDemoRuntimeController, runtime)
+            return cast(PipelineSessionService, runtime)
 
         self._shutdown_stale_runtime(runtime)
-        replacement = PipelineDemoRuntimeController()
+        replacement = PipelineSessionService(path_config=path_config)
         st.session_state[self.pipeline_runtime_key] = replacement
         return replacement
 

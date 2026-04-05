@@ -9,15 +9,16 @@ import numpy as np
 from numpy.typing import NDArray
 
 from prml_vslam.interfaces import FramePacket, SE3Pose
-from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.methods.contracts import MethodId
 from prml_vslam.pipeline.contracts import (
     ArtifactRef,
     DenseArtifacts,
     SequenceManifest,
     TrackingArtifacts,
     TrackingConfig,
+    TrackingUpdate,
 )
-from prml_vslam.pipeline.interfaces import OfflineTrackerBackend, StreamingTrackerBackend, TrackingUpdate
+from prml_vslam.pipeline.protocols import OfflineTrackerBackend, StreamingTrackerBackend
 from prml_vslam.utils import BaseConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 

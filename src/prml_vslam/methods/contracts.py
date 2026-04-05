@@ -1,4 +1,4 @@
-"""Typed interfaces for external VSLAM method adapters."""
+"""Typed contracts for external VSLAM method adapters."""
 
 from __future__ import annotations
 

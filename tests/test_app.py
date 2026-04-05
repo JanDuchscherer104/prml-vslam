@@ -13,7 +13,6 @@ from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
 from prml_vslam.app.models import AdvioPageState, AppState, Record3DPageState
-from prml_vslam.app.pipeline_runtime import PipelineDemoRuntimeController, PipelineDemoSnapshot, PipelineDemoState
 from prml_vslam.app.services import (
     AdvioPreviewRuntimeController,
     AdvioPreviewSnapshot,
@@ -23,9 +22,9 @@ from prml_vslam.app.services import (
 from prml_vslam.app.state import SessionStateStore
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
-from prml_vslam.datasets.interfaces import DatasetId
+from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
-from prml_vslam.eval.interfaces import EvaluationControls, SelectionSnapshot
+from prml_vslam.eval.contracts import EvaluationControls, SelectionSnapshot
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.record3d import (
     Record3DDevice,
@@ -33,6 +32,8 @@ from prml_vslam.io.record3d import (
     Record3DStreamState,
     Record3DTransportId,
 )
+from prml_vslam.methods import MethodId
+from prml_vslam.pipeline import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig
 
 
@@ -199,19 +200,21 @@ class FakeAdvioRuntime:
 class FakePipelineRuntime:
     """Minimal pipeline runtime stand-in for direct page-render and navigation tests."""
 
-    def __init__(self, snapshot: PipelineDemoSnapshot | None = None) -> None:
-        self._snapshot = snapshot or PipelineDemoSnapshot()
+    def __init__(self, snapshot: PipelineSessionSnapshot | None = None) -> None:
+        self._snapshot = snapshot or PipelineSessionSnapshot()
         self.stop_calls = 0
+        self.start_calls: list[dict[str, object]] = []
 
-    def snapshot(self) -> PipelineDemoSnapshot:
+    def snapshot(self) -> PipelineSessionSnapshot:
         return self._snapshot
 
     def stop(self) -> None:
         self.stop_calls += 1
-        self._snapshot = PipelineDemoSnapshot(state=PipelineDemoState.STOPPED)
+        self._snapshot = PipelineSessionSnapshot(state=PipelineSessionState.STOPPED)
 
-    def start(self, **_: object) -> None:
-        self._snapshot = PipelineDemoSnapshot(state=PipelineDemoState.CONNECTING)
+    def start(self, **kwargs: object) -> None:
+        self.start_calls.append(kwargs)
+        self._snapshot = PipelineSessionSnapshot(state=PipelineSessionState.CONNECTING)
 
 
 class FakePacketStream:
@@ -234,29 +237,6 @@ class FakePacketStream:
         self.wait_calls += 1
         time.sleep(0.01)
         return self.packets[index]
-
-
-class FinitePacketStream:
-    """Packet stream that terminates with EOF after the last packet."""
-
-    def __init__(self, packets: list[FramePacket]) -> None:
-        self.packets = packets
-        self.disconnected = False
-        self.wait_calls = 0
-
-    def connect(self) -> str:
-        return "finite-stream"
-
-    def disconnect(self) -> None:
-        self.disconnected = True
-
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
-        del timeout_seconds
-        if self.wait_calls >= len(self.packets):
-            raise EOFError("stream complete")
-        packet = self.packets[self.wait_calls]
-        self.wait_calls += 1
-        return packet
 
 
 class FakeFramePacketStream:
@@ -331,113 +311,6 @@ def _wifi_snapshot() -> Record3DStreamSnapshot:
     )
 
 
-def _advio_preview_snapshot() -> AdvioPreviewSnapshot:
-    return AdvioPreviewSnapshot(
-        state=AdvioPreviewStreamState.STREAMING,
-        sequence_id=15,
-        sequence_label="advio-15 · Office 03",
-        pose_source=AdvioPoseSource.GROUND_TRUTH,
-        received_frames=9,
-        measured_fps=9.8,
-        trajectory_positions_xyz=np.array(
-            [
-                [1.0, 2.0, 3.0],
-                [1.5, 2.5, 3.5],
-                [2.0, 3.0, 4.0],
-            ],
-            dtype=np.float64,
-        ),
-        trajectory_timestamps_s=np.array([0.0, 0.1, 0.2], dtype=np.float64),
-        latest_packet=FramePacket(
-            seq=2,
-            timestamp_ns=200_000_000,
-            rgb=np.ones((4, 6, 3), dtype=np.uint8) * 7,
-            intrinsics=CameraIntrinsics(
-                width_px=64,
-                height_px=48,
-                fx=100.0,
-                fy=101.0,
-                cx=32.0,
-                cy=24.0,
-            ),
-            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=2.0, ty=3.0, tz=4.0),
-            metadata={
-                "loop_index": 1,
-                "source_frame_index": 2,
-                "video_rotation_degrees": 90,
-            },
-        ),
-    )
-
-
-def _render_record3d_page_script(snapshot, transport, devices) -> None:
-    from types import SimpleNamespace
-
-    from prml_vslam.app.models import AppState, Record3DPageState
-    from prml_vslam.app.pages.record3d import render as render_record3d_page
-
-    class _Store:
-        def save(self, state: AppState) -> None:
-            self.last_state = state.model_copy(deep=True)
-
-    class _Runtime:
-        def __init__(self, current_snapshot) -> None:
-            self.current_snapshot = current_snapshot
-
-        def snapshot(self):
-            return self.current_snapshot
-
-        def stop(self) -> None:
-            self.current_snapshot = type(snapshot)()
-
-        def start_usb(self, *, device_index: int) -> None:
-            return None
-
-        def start_wifi(self, *, device_address: str) -> None:
-            return None
-
-    class _Service:
-        def __init__(self, current_devices) -> None:
-            self.current_devices = current_devices
-
-        def list_usb_devices(self):
-            return list(self.current_devices)
-
-    context = SimpleNamespace(
-        state=AppState(record3d=Record3DPageState(transport=transport, is_running=False)),
-        store=_Store(),
-        record3d_runtime=_Runtime(snapshot),
-        record3d_service=_Service(devices),
-    )
-    render_record3d_page(context)
-
-
-def _render_record3d_page_script_with_runtime(runtime, transport, devices) -> None:
-    from types import SimpleNamespace
-
-    from prml_vslam.app.models import AppState, Record3DPageState
-    from prml_vslam.app.pages.record3d import render as render_record3d_page
-
-    class _Store:
-        def save(self, state: AppState) -> None:
-            self.last_state = state.model_copy(deep=True)
-
-    class _Service:
-        def __init__(self, current_devices) -> None:
-            self.current_devices = current_devices
-
-        def list_usb_devices(self):
-            return list(self.current_devices)
-
-    context = SimpleNamespace(
-        state=AppState(record3d=Record3DPageState(transport=transport, is_running=False)),
-        store=_Store(),
-        record3d_runtime=runtime,
-        record3d_service=_Service(devices),
-    )
-    render_record3d_page(context)
-
-
 def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -445,10 +318,6 @@ def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
             return
         time.sleep(0.02)
     raise AssertionError("Timed out waiting for the expected runtime state.")
-
-
-def _plotly_specs(at: AppTest) -> list[str]:
-    return [element.proto.spec for element in at.main if getattr(element, "type", None) == "plotly_chart"]
 
 
 def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> None:
@@ -477,91 +346,62 @@ def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> 
     assert len(result.trajectories) == 2
 
 
-def test_pipeline_demo_runtime_completes_offline_run_and_writes_outputs(tmp_path: Path) -> None:
-    from prml_vslam.methods import MethodId
-    from prml_vslam.methods.mock_tracking import MockTrackingRuntimeConfig
-    from prml_vslam.pipeline.contracts import (
-        BenchmarkEvaluationConfig,
-        DatasetSourceSpec,
-        DenseConfig,
-        PipelineMode,
-        ReferenceConfig,
-        RunRequest,
-        SequenceManifest,
-        TrackingConfig,
+def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_writes(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    source = object()
+
+    class AdvioServiceSpy:
+        def __init__(self) -> None:
+            self.source_calls: list[tuple[int, AdvioPoseSource, bool]] = []
+
+        def scene(self, sequence_id: int) -> SimpleNamespace:
+            return SimpleNamespace(sequence_slug=f"advio-{sequence_id:02d}", display_name=f"advio-{sequence_id:02d}")
+
+        def build_streaming_source(
+            self,
+            *,
+            sequence_id: int,
+            pose_source: AdvioPoseSource,
+            respect_video_rotation: bool,
+        ) -> object:
+            self.source_calls.append((sequence_id, pose_source, respect_video_rotation))
+            return source
+
+        def build_sequence_manifest(self, **_: object) -> object:
+            raise AssertionError("Pipeline page should not materialize the sequence manifest directly.")
+
+    runtime = FakePipelineRuntime()
+    context = SimpleNamespace(
+        path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts", captures_dir=tmp_path / "captures"),
+        advio_service=AdvioServiceSpy(),
+        pipeline_runtime=runtime,
+        state=AppState(),
+        store=FakeStore(),
     )
 
-    path_config = PathConfig(
-        root=tmp_path,
-        artifacts_dir=tmp_path / "artifacts",
-        captures_dir=tmp_path / "captures",
-    )
-    request = RunRequest(
-        experiment_name="advio-offline-demo-vista",
-        mode=PipelineMode.OFFLINE,
-        output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        tracking=TrackingConfig(method=MethodId.VISTA),
-        dense=DenseConfig(enabled=True),
-        reference=ReferenceConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=False,
+    error_message = pipeline_page._handle_pipeline_page_action(
+        context,
+        pipeline_page.PipelinePageAction(
+            sequence_id=15,
+            mode=pipeline_page.PipelineMode.OFFLINE,
+            method=MethodId.VISTA,
+            pose_source=AdvioPoseSource.GROUND_TRUTH,
+            respect_video_rotation=True,
+            start_requested=True,
         ),
     )
-    plan = request.build(path_config)
-    runtime = PipelineDemoRuntimeController(frame_timeout_seconds=0.01)
-    tracker = MockTrackingRuntimeConfig(method_id=MethodId.VISTA).setup_target()
-    assert tracker is not None
-    sequence_manifest = SequenceManifest(sequence_id="advio-15", video_path=tmp_path / "data" / "advio" / "frames.mov")
-    stream = FinitePacketStream(
-        [
-            FramePacket(
-                seq=0,
-                timestamp_ns=1_000_000_000,
-                rgb=np.zeros((4, 4, 3), dtype=np.uint8),
-                intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            ),
-            FramePacket(
-                seq=1,
-                timestamp_ns=2_000_000_000,
-                rgb=np.zeros((4, 4, 3), dtype=np.uint8),
-                intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
-            ),
-        ]
-    )
 
-    runtime.start(
-        sequence_id=15,
-        sequence_label="advio-15 · Office 03",
-        pose_source=AdvioPoseSource.GROUND_TRUTH,
-        plan=plan,
-        tracking_config=request.tracking,
-        sequence_manifest=sequence_manifest,
-        stream=stream,
-        tracker=tracker,
-    )
-
-    deadline = time.time() + 2.0
-    snapshot = runtime.snapshot()
-    while snapshot.state in {PipelineDemoState.CONNECTING, PipelineDemoState.RUNNING} and time.time() < deadline:
-        time.sleep(0.01)
-        snapshot = runtime.snapshot()
-
-    assert snapshot.state is PipelineDemoState.COMPLETED
-    assert snapshot.tracking is not None
-    assert snapshot.latest_update is not None
-    assert snapshot.latest_update.pointmap is not None
-    assert snapshot.summary is not None
-    assert snapshot.tracking.trajectory_tum.path.exists()
-    assert snapshot.tracking.dense is not None
-    assert snapshot.tracking.dense.dense_points_ply.path.exists()
-    assert snapshot.summary.artifact_root == plan.artifact_root
-    assert any(manifest.stage_id.value == "slam" for manifest in snapshot.stage_manifests)
-    assert any(manifest.stage_id.value == "dense_mapping" for manifest in snapshot.stage_manifests)
+    assert error_message is None
+    assert context.advio_service.source_calls == [(15, AdvioPoseSource.GROUND_TRUTH, True)]
+    assert len(runtime.start_calls) == 1
+    assert runtime.start_calls[0]["source"] is source
+    request = runtime.start_calls[0]["request"]
+    assert request.source.dataset_id is DatasetId.ADVIO
+    assert request.tracking.method is MethodId.VISTA
+    assert request.evaluation.compare_to_arcore is False
+    assert request.evaluation.evaluate_cloud is False
+    assert request.evaluation.evaluate_efficiency is False
 
 
 def test_advio_download_form_returns_typed_request_model(
@@ -1003,6 +843,7 @@ def test_metrics_page_entry_stops_record3d_runtime_when_switching(monkeypatch: p
         store=FakeStore(),
         record3d_runtime=runtime,
         advio_runtime=FakeAdvioRuntime(),
+        pipeline_runtime=FakePipelineRuntime(),
     )
     monkeypatch.setattr(bootstrap, "render_metrics_page", lambda ctx: None)
 
@@ -1029,9 +870,9 @@ def test_pipeline_page_entry_stops_advio_runtime_when_switching(monkeypatch: pyt
 
 
 def test_metrics_page_entry_stops_pipeline_runtime_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
-    runtime = FakePipelineRuntime()
+    runtime = FakePipelineRuntime(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING))
     context = SimpleNamespace(
-        state=AppState(pipeline={"is_running": True}),
+        state=AppState(),
         store=FakeStore(),
         record3d_runtime=FakeRecord3DRuntime(),
         advio_runtime=FakeAdvioRuntime(),
@@ -1041,8 +882,18 @@ def test_metrics_page_entry_stops_pipeline_runtime_when_switching(monkeypatch: p
 
     bootstrap._render_metrics_page_entry(context)
 
-    assert context.state.pipeline.is_running is False
     assert runtime.stop_calls == 1
+
+
+def test_session_state_store_round_trips_pipeline_session_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_session_state: dict[str, object] = {}
+    monkeypatch.setattr("prml_vslam.app.state.st.session_state", fake_session_state)
+    store = SessionStateStore()
+
+    runtime = store.load_pipeline_runtime()
+
+    assert fake_session_state["_prml_vslam_pipeline_runtime"] is runtime
+    assert store.load_pipeline_runtime() is runtime
 
 
 def test_normalize_grayscale_ignores_non_finite_depth_values() -> None:
@@ -1059,5 +910,3 @@ def test_normalize_grayscale_ignores_non_finite_depth_values() -> None:
     assert not captured_warnings
     assert normalized[0, 0] == 0
     assert normalized[1, 0] == 0
-
-

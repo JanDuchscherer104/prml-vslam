@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from prml_vslam.methods.base import MockMethodConfig
-from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.methods.contracts import MethodId
 
 
 class MSTRMethodConfig(MockMethodConfig):

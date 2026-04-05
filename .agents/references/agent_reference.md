@@ -32,10 +32,25 @@
 - MASt3R-SLAM paper: <https://arxiv.org/abs/2412.12392>
 - MASt3R-SLAM repo: <https://github.com/rmurai0610/MASt3R-SLAM>
 
-## Repo Contract Notes
+## Contract Lookup
 
-- Pipeline plans are built from `RunRequest.build()` after `RunRequest(...)` is fully specified with nested tracking, stage, and evaluation configs.
-- `DenseConfig` and `ReferenceConfig` share one toggle storage shape, while `BenchmarkEvaluationConfig` owns the optional evaluation stage toggles.
-- The repository-local metrics surface currently persists one deterministic mock trajectory-comparison result per run and does not expose pose/alignment/scale/tolerance knobs until a real `evo` adapter exists.
-- Shared camera, pose, trajectory, and runtime frame contracts live in `prml_vslam.interfaces`.
-- `SE3Pose`, `CameraIntrinsics`, `TimedPoseTrajectory`, `FramePacket`, and `FramePacketStream` are the canonical repo-wide datamodels.
+- Full restructuring rationale, current-state findings, target ownership rules,
+  minimal public surface, and migration guidance live in
+  `docs/architecture/interfaces-and-contracts.md`.
+- One semantic concept should have one owner in the repo.
+- Repo-wide shared datamodels live in `prml_vslam.interfaces.*`.
+- Repo-wide shared protocols live in `prml_vslam.protocols.*`.
+  - `FramePacketStream` is owned by `prml_vslam.protocols.runtime`.
+- Package DTOs, enums, configs, manifests, requests, and results belong in
+  `<package>/contracts.py`.
+- Package-local `Protocol` seams belong in `<package>/protocols.py` when a
+  package needs them.
+- `prml_vslam.app.models` owns Streamlit-only state.
+- `services.py` modules own implementations only.
+- Minimal public surface to preserve:
+  `CameraIntrinsics`, `SE3Pose`, `TimedPoseTrajectory`, `FramePacket`,
+  `RunRequest`, `RunPlan`, `SequenceManifest`, `TrackingArtifacts`,
+  `RunSummary`, `OfflineTrackerBackend`, `StreamingTrackerBackend`, `MethodId`
+- ViSTA-SLAM and MASt3R-SLAM wrappers should normalize into pipeline-owned
+  artifacts instead of exposing upstream-native result layouts or live modes as
+  repo-wide contracts.

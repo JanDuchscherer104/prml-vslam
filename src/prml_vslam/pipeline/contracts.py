@@ -6,10 +6,13 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
+from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.interfaces import SE3Pose
+from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseConfig, BaseData, PathConfig
 
 
@@ -210,6 +213,31 @@ class SequenceManifest(BaseData):
     """Normalized ARCore baseline trajectory in TUM format when available."""
 
 
+class TrackingUpdate(BaseData):
+    """Incremental tracking update emitted by streaming-capable backends."""
+
+    seq: int
+    """Frame sequence number associated with the update."""
+
+    timestamp_ns: int
+    """Timestamp in nanoseconds."""
+
+    pose: SE3Pose | None = None
+    """Optional canonical pose estimate."""
+
+    num_map_points: int = 0
+    """Current sparse map size when the backend exposes it."""
+
+    num_dense_points: int = 0
+    """Current cumulative dense-point count when the backend exposes reconstruction output."""
+
+    pointmap: NDArray[np.float32] | None = None
+    """Optional HxWx3 pointmap in camera coordinates for the current frame."""
+
+    uncertainty: NDArray[np.float32] | None = None
+    """Optional HxW uncertainty map for the current frame, aligned with the pointmap if present."""
+
+
 class TrackingArtifacts(BaseData):
     """Materialized outputs produced by the tracking stage."""
 
@@ -315,6 +343,7 @@ __all__ = [
     "StageManifest",
     "TrackingArtifacts",
     "TrackingConfig",
+    "TrackingUpdate",
     "TrajectoryMetrics",
     "VideoSourceSpec",
 ]
