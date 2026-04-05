@@ -973,7 +973,7 @@ def test_pipeline_page_entry_stops_advio_runtime_when_switching(monkeypatch: pyt
     assert runtime.stop_calls == 1
 
 
-def test_metrics_page_entry_stops_pipeline_runtime_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_metrics_page_entry_keeps_pipeline_runtime_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime = FakePipelineRuntime(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING))
     context = SimpleNamespace(
         state=AppState(),
@@ -986,7 +986,7 @@ def test_metrics_page_entry_stops_pipeline_runtime_when_switching(monkeypatch: p
 
     bootstrap._render_metrics_page_entry(context)
 
-    assert runtime.stop_calls == 1
+    assert runtime.stop_calls == 0
 
 
 def test_session_state_store_round_trips_pipeline_session_service(monkeypatch: pytest.MonkeyPatch) -> None:
