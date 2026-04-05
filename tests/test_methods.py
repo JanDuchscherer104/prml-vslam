@@ -8,7 +8,6 @@ import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.methods import MethodId, MSTRMethodConfig
-from prml_vslam.methods.contracts import MethodRunRequest
 from prml_vslam.methods.mock_vslam import MockSlamBackendConfig
 from prml_vslam.pipeline.contracts import SequenceManifest, SlamConfig
 from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
@@ -48,16 +47,14 @@ def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> N
     assert runtime is not None
 
     result = runtime.infer(
-        MethodRunRequest(
-            input_path=input_dir,
-            artifact_root=tmp_path / "artifacts" / "demo" / "mstr",
-        ),
+        input_path=input_dir,
+        artifact_root=tmp_path / "artifacts" / "demo" / "mstr",
         execute=True,
     )
 
-    assert result.executed is True
-    assert result.normalized_trajectory_path.exists()
-    assert result.normalized_point_cloud_path.exists()
+    assert result.trajectory_tum.path.exists()
+    assert result.dense_points_ply is not None
+    assert result.dense_points_ply.path.exists()
 
 
 def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> None:

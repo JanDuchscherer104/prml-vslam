@@ -428,6 +428,41 @@ resolved_on = "2026-04-06"
 resolution_note = "FramePacket now carries sensor confidence instead of uncertainty, ingress no longer owns pointmaps, and SlamUpdate is the sole pointmap owner."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0009"
+title = "Method wrapper contracts still duplicate pipeline artifact ownership"
+status = "resolved"
+priority = "medium"
+category = "architecture"
+summary = "The methods layer still exposes `MethodRunRequest` and `MethodRunResult` as public normalized-output contracts even though the architecture guide already treats `SequenceManifest`, `SlamArtifacts`, and `RunSummary` as the repository-owned artifact boundary."
+files = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+notes = [
+    "The mock method runtime still plans and materializes normalized trajectory and point-cloud paths directly through `MethodRunResult`.",
+    "The architecture guide explicitly calls this overlap transitional and says wrapper outputs should converge on pipeline-owned artifacts.",
+    "The broader older review recommendation to keep upstream wrappers thin is still relevant here even though the current repository scope intentionally keeps `methods` mock-only.",
+]
+sources = [
+    "README.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+    "https://github.com/zhangganlin/vista-slam",
+    "https://github.com/rmurai0610/MASt3R-SLAM",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Mock method runtimes now emit pipeline-owned SlamArtifacts directly instead of a parallel MethodRunResult contract."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -741,4 +776,41 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Ingress packets no longer duplicate pointmap ownership and the Record3D confidence raster uses a dedicated confidence field."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0009"
+title = "Remove or privatize MethodRunResult as a parallel normalized-output surface"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0009",
+]
+loc_min = 35
+loc_expected = 90
+loc_max = 190
+files = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+acceptance = [
+    "Method wrappers no longer expose a public normalized-output contract that duplicates pipeline-owned artifacts.",
+    "Any remaining wrapper planning object is clearly private to the methods layer or maps directly onto pipeline-owned outputs.",
+    "Method tests assert the new ownership boundary rather than the old `MethodRunResult` shape.",
+]
+sources = [
+    "README.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+    "src/prml_vslam/methods/README.md",
+    "https://github.com/zhangganlin/vista-slam",
+    "https://github.com/rmurai0610/MASt3R-SLAM",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "The public method mock surface now takes raw paths and returns pipeline-owned SlamArtifacts rather than a separate normalized-output DTO."
 source_collection = "todos"

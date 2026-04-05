@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.methods.contracts import (
-    MethodId,
-    MethodRunRequest,
-    MethodRunResult,
-)
+from prml_vslam.methods.contracts import MethodId
+from prml_vslam.pipeline.contracts import ArtifactRef, SlamArtifacts
 from prml_vslam.utils import BaseConfig
 
 _MOCK_TRAJECTORY = """# timestamp tx ty tz qx qy qz qw
@@ -39,27 +36,38 @@ class MockMethodRuntime:
     def __init__(self, config: MockMethodConfig) -> None:
         self.config = config
 
-    def infer(self, request: MethodRunRequest, *, execute: bool = True) -> MethodRunResult:
-        source_path = request.input_path.expanduser().resolve()
+    def infer(self, input_path: Path, artifact_root: Path, *, execute: bool = True) -> SlamArtifacts:
+        """Materialize deterministic mock artifacts on the pipeline-owned surface."""
+        source_path = input_path.expanduser().resolve()
         if not source_path.exists():
             raise FileNotFoundError(f"Input path '{source_path}' does not exist.")
-        artifact_root = request.artifact_root.expanduser().resolve()
-        result = MethodRunResult(
-            method=self.config.method_id,
-            normalized_trajectory_path=artifact_root / "slam" / "trajectory.tum",
-            normalized_point_cloud_path=artifact_root / "dense" / "dense_points.ply",
+        resolved_artifact_root = artifact_root.expanduser().resolve()
+        artifacts = SlamArtifacts(
+            trajectory_tum=_artifact_ref(
+                resolved_artifact_root / "slam" / "trajectory.tum",
+                kind="tum",
+                fingerprint=f"{self.config.method_id.value}-mock-trajectory",
+            ),
+            dense_points_ply=_artifact_ref(
+                resolved_artifact_root / "dense" / "dense_points.ply",
+                kind="ply",
+                fingerprint=f"{self.config.method_id.value}-mock-dense-points",
+            ),
         )
         if execute:
             for path, content in (
-                (result.normalized_trajectory_path, _MOCK_TRAJECTORY),
-                (result.normalized_point_cloud_path, _MOCK_POINT_CLOUD),
+                (artifacts.trajectory_tum.path, _MOCK_TRAJECTORY),
+                (artifacts.dense_points_ply.path, _MOCK_POINT_CLOUD),
             ):
                 self._write_mock_artifact(path, content)
-            result.executed = True
-        return result
+        return artifacts
 
     @staticmethod
     def _write_mock_artifact(path: Path, content: str) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return path.resolve()
+
+
+def _artifact_ref(path: Path, *, kind: str, fingerprint: str) -> ArtifactRef:
+    return ArtifactRef(path=path, kind=kind, fingerprint=fingerprint)
