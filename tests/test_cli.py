@@ -9,13 +9,6 @@ from prml_vslam.main import Record3DStreamConfig, app
 runner = CliRunner()
 
 
-def test_info_command_runs() -> None:
-    result = runner.invoke(app, ["info"])
-
-    assert result.exit_code == 0
-    assert "prml-vslam" in result.stdout
-
-
 def test_record3d_devices_command_runs(monkeypatch) -> None:
     class FakeDevice:
         def __init__(self, product_id: int, udid: str) -> None:

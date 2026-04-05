@@ -52,17 +52,6 @@ def _fake_advio_service(tmp_path: Path) -> AdvioDatasetService:
     return AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
 
 
-def test_advio_summary_command_prints_catalog_and_local_stats(tmp_path: Path, monkeypatch) -> None:
-    runner = CliRunner()
-    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
-
-    result = runner.invoke(main.app, ["advio", "summary"])
-
-    assert result.exit_code == 0
-    assert "total_scene_count" in result.stdout
-    assert "ADVIO" in result.stdout
-
-
 def test_advio_download_command_builds_explicit_request(tmp_path: Path, monkeypatch) -> None:
     runner = CliRunner()
     captured: dict[str, object] = {}

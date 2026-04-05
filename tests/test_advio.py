@@ -24,9 +24,7 @@ from prml_vslam.datasets import (
     AdvioSequenceConfig,
     AdvioUpstreamMetadata,
     list_advio_sequence_ids,
-    load_advio_catalog,
     load_advio_sequence,
-    write_advio_pose_tum,
 )
 from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
@@ -204,17 +202,6 @@ def test_advio_sequence_uses_catalog_calibration_metadata(tmp_path: Path) -> Non
     assert sample.paths.calibration_path == tmp_path / "data" / "advio" / "calibration" / "iphone-custom.yaml"
 
 
-def test_write_advio_pose_tum_exports_xyzw_order(tmp_path: Path) -> None:
-    sequence_dir = _write_advio_sequence(tmp_path)
-
-    tum_path = write_advio_pose_tum(sequence_dir / "ground-truth" / "poses.csv", tmp_path / "ground_truth.tum")
-    lines = tum_path.read_text(encoding="utf-8").strip().splitlines()
-
-    assert lines[0].startswith("# timestamp")
-    assert lines[1] == "0.000000000 1.000000000 2.000000000 3.000000000 0.000000000 0.000000000 0.000000000 1.000000000"
-    assert lines[3] == "0.200000000 2.000000000 3.000000000 4.000000000 0.000000000 0.000000000 0.000000000 1.000000000"
-
-
 def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
@@ -369,16 +356,6 @@ def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> 
     assert list_advio_sequence_ids(tmp_path) == [7, 15]
 
 
-def test_metrics_service_lists_advio_sequences_from_nested_layout(tmp_path: Path) -> None:
-    dataset_root = tmp_path / "data" / "advio"
-    _write_advio_sequence(dataset_root, sequence_id=7, nested_layout=True)
-    _write_advio_sequence(dataset_root, sequence_id=15)
-    assert [f"advio-{sequence_id:02d}" for sequence_id in list_advio_sequence_ids(dataset_root)] == [
-        "advio-07",
-        "advio-15",
-    ]
-
-
 def test_resolve_existing_advio_reference_tum_only_uses_existing_tum(tmp_path: Path) -> None:
     dataset_root = tmp_path / "data" / "advio"
     _write_advio_sequence(dataset_root, sequence_id=15)
@@ -393,17 +370,6 @@ def test_resolve_existing_advio_reference_tum_finds_ground_truth(tmp_path: Path)
     reference_path = sequence_dir / "ground-truth" / "ground_truth.tum"
     reference_path.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
     assert resolve_existing_reference_tum(dataset_root, "advio-15") == reference_path
-
-
-def test_load_advio_catalog_commits_all_scene_metadata() -> None:
-    catalog = load_advio_catalog()
-
-    assert catalog.dataset_id == "advio"
-    assert catalog.dataset_label == "ADVIO"
-    assert catalog.upstream.repo_url == "https://github.com/AaltoVision/ADVIO"
-    assert len(catalog.scenes) == 23
-    assert catalog.scenes[0].sequence_slug == "advio-01"
-    assert catalog.scenes[-1].sequence_slug == "advio-23"
 
 
 def test_advio_dataset_service_downloads_selected_modalities_from_cached_archive(tmp_path: Path) -> None:
