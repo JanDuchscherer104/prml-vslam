@@ -22,6 +22,7 @@ into that shared manifest before the main benchmark stages run.
 
 - [README.md](../../../README.md)
 - [Questions.md](../../../docs/Questions.md)
+- [pipeline/README.md](README.md)
 - [contracts.py](contracts.py)
 - [services.py](services.py)
 - [app/REQUIREMENTS.md](../app/REQUIREMENTS.md)
@@ -35,6 +36,14 @@ not own pipeline semantics or architecture decisions.
 - The current `pipeline/` package is only a lightweight typed planning surface.
   It currently contains planner-oriented contracts and one planner service, not
   a full runtime architecture.
+- A package-local `README.md` now documents the current contracts, usage
+  patterns, and stage-extension workflow. This requirements document remains
+  the source of truth for the target architecture rather than the current demo
+  behavior.
+- The current executable pipeline demo lives in `prml_vslam.app`, where the
+  Streamlit `Pipeline` page uses ADVIO replay plus `MockTrackingRuntime` to
+  exercise the shared contracts. That demo is intentionally not the final
+  reusable runner API for `prml_vslam.pipeline`.
 - The repo already has stable top-level seams for `app`, `io`, `methods`,
   `eval`, `pipeline`, and `utils`. The target pipeline architecture must stay
   close to that package layout.
@@ -45,8 +54,6 @@ not own pipeline semantics or architecture decisions.
 - There is no evidence in the current repo for Burr, Dagster, or any other
   workflow-framework dependency. The visible dependency set is standard Python
   tooling plus method/evaluation/capture integrations.
-- `pipeline/README.md` does not exist today, so this document must carry the
-  pipeline architecture rationale directly until a future README is added.
 
 ## Architecture Requirements
 
