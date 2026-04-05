@@ -109,7 +109,7 @@ def _render_download_form(context: AppContext) -> AdvioDownloadFormData:
             options=[scene.sequence_id for scene in service.list_scenes()],
             default=page_state.selected_sequence_ids,
             format_func=lambda sequence_id: service.scene(sequence_id).display_name,
-            placeholder="Choose one or more scenes to download",
+            placeholder="Leave empty to download every scene, or choose a subset",
         )
         preset = st.selectbox(
             "Bundle",
@@ -126,7 +126,7 @@ def _render_download_form(context: AppContext) -> AdvioDownloadFormData:
         )
         overwrite = st.toggle("Overwrite existing archives and extracted files", value=page_state.overwrite_existing)
         st.caption("Resolved bundle: " + ", ".join(item.label for item in (modalities or list(preset.modalities))))
-        submitted = st.form_submit_button("Download selected scenes", type="primary", width="stretch")
+        submitted = st.form_submit_button("Download scenes", type="primary", width="stretch")
     request = AdvioDownloadRequest(sequence_ids=sequence_ids, preset=preset, modalities=modalities, overwrite=overwrite)
     sync_advio_download_state(context, request)
     return AdvioDownloadFormData(request=request, submitted=submitted)
