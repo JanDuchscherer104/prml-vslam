@@ -554,6 +554,44 @@ resolved_on = "2026-04-06"
 resolution_note = "Source-of-truth docs now use FramePacket, the app plotting link resolves correctly, and the placeholder ARCore/Nerfstudio text has been replaced with concrete wording."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0014"
+title = "Record3D Wi-Fi remains a repo-owned first-class transport beside the official USB bindings"
+status = "resolved"
+priority = "medium"
+category = "architecture"
+summary = "The repository already uses the official `record3d` Python bindings for USB capture, but the app and IO layers still treat a custom HTTP/WebRTC Wi-Fi receiver as a peer transport. That leaves signaling, peer lifecycle, packet decoding, and transport-specific UI state as permanent-looking repo code even though Record3D documents USB streaming as the Python/C++ integration surface and presents Wi-Fi separately as a browser/local-network feature."
+files = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+]
+notes = [
+    "USB capture already flows through the upstream `record3d` bindings, so the custom Wi-Fi stack is a qualitatively different maintenance obligation than the official adapter.",
+    "The older review recommendation is still relevant in the current tree: either keep Wi-Fi clearly optional/private, or justify it as an explicit separate boundary for the real-time streaming requirement recorded in `docs/Questions.md`.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "https://record3d.app/",
+    "https://github.com/marek-simonik/record3d",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Record3D Wi-Fi now uses preview-scoped entry points and app wording, while README and requirements make USB the canonical programmatic integration boundary."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1005,4 +1043,46 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "The stale Record3D packet references, broken local markdown link, and placeholder questions text are now replaced with current repo terminology and concrete wording."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0014"
+title = "Narrow the Record3D Wi-Fi/WebRTC path behind an explicit optional boundary"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0014",
+]
+loc_min = 40
+loc_expected = 110
+loc_max = 220
+files = [
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "README.md",
+]
+acceptance = [
+    "The official `record3d` USB bindings remain the canonical programmatic ingress path for Record3D capture.",
+    "The custom Wi-Fi signaling and receiver flow is either hidden behind a clearly optional/private adapter boundary or explicitly documented as a separate supported integration surface.",
+    "README and app-facing transport semantics make the Wi-Fi support level clear instead of treating it as an unqualified peer of the official USB path.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "https://record3d.app/",
+    "https://github.com/marek-simonik/record3d",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "The custom Wi-Fi/WebRTC path is now positioned as an optional preview transport with explicit lower-fidelity guarantees instead of a co-equal capture boundary."
 source_collection = "todos"

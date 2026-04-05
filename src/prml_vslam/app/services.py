@@ -13,7 +13,7 @@ from prml_vslam.io.record3d import (
     Record3DTransportId,
     open_record3d_usb_packet_stream,
 )
-from prml_vslam.io.wifi_session import open_record3d_wifi_stream
+from prml_vslam.io.wifi_session import open_record3d_wifi_preview_stream
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils.packet_session import (
     PacketSessionMetrics,
@@ -168,7 +168,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         fps_window_size: int = 30,
         trajectory_window_size: int = 512,
         usb_stream_factory: Callable[[int, float], FramePacketStream] | None = None,
-        wifi_stream_factory: Callable[[str, float], FramePacketStream] | None = None,
+        wifi_preview_stream_factory: Callable[[str, float], FramePacketStream] | None = None,
     ) -> None:
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
@@ -179,8 +179,8 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                 frame_timeout_seconds=timeout_seconds,
             )
         )
-        self.wifi_stream_factory = wifi_stream_factory or (
-            lambda device_address, timeout_seconds: open_record3d_wifi_stream(
+        self.wifi_preview_stream_factory = wifi_preview_stream_factory or (
+            lambda device_address, timeout_seconds: open_record3d_wifi_preview_stream(
                 device_address=device_address,
                 frame_timeout_seconds=timeout_seconds,
             )
@@ -206,7 +206,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             ),
         )
 
-    def start_wifi(self, *, device_address: str) -> None:
+    def start_wifi_preview(self, *, device_address: str) -> None:
         self.launch(
             connecting_snapshot=Record3DStreamSnapshot(
                 transport=Record3DTransportId.WIFI,
@@ -218,7 +218,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                 transport=Record3DTransportId.WIFI,
                 source_descriptor=device_address,
                 stop_event=stop_event,
-                stream_factory=lambda: self.wifi_stream_factory(device_address, self.frame_timeout_seconds),
+                stream_factory=lambda: self.wifi_preview_stream_factory(device_address, self.frame_timeout_seconds),
             ),
         )
 

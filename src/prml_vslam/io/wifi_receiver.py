@@ -1,4 +1,4 @@
-"""Async Record3D Wi-Fi receiver runtime."""
+"""Async Record3D Wi-Fi preview receiver runtime."""
 
 from __future__ import annotations
 
@@ -20,14 +20,14 @@ def _import_aiortc_modules() -> tuple[type[Any], type[Any]]:
         from aiortc import RTCPeerConnection, RTCSessionDescription
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "The optional `aiortc` dependency is required for Record3D Wi-Fi streaming. "
+            "The optional `aiortc` dependency is required for Record3D Wi-Fi preview streaming. "
             "Install it with `uv sync --extra streaming`."
         ) from exc
     return RTCPeerConnection, RTCSessionDescription
 
 
 class _Record3DWiFiReceiverRuntime:
-    """Async receiver runtime used by the public Wi-Fi session wrapper."""
+    """Async receiver runtime used by the preview-only Wi-Fi session wrapper."""
 
     def __init__(
         self,
@@ -171,7 +171,7 @@ class _Record3DWiFiReceiverRuntime:
             await self._wait_for_ice_gathering_complete(peer_connection=peer_connection)
             local_description = peer_connection.localDescription
             if local_description is None:
-                raise RuntimeError("Failed to produce a local WebRTC answer for the Record3D Wi-Fi stream.")
+                raise RuntimeError("Failed to produce a local WebRTC answer for the Record3D Wi-Fi preview stream.")
 
             await asyncio.to_thread(
                 self.send_answer,
@@ -201,7 +201,7 @@ class _Record3DWiFiReceiverRuntime:
             except Exception as exc:
                 if self.stop_requested():
                     break
-                raise RuntimeError("The Record3D Wi-Fi video track stopped unexpectedly.") from exc
+                raise RuntimeError("The Record3D Wi-Fi preview video track stopped unexpectedly.") from exc
             timestamp_ns = time.time_ns()
             self.on_packet(
                 record3d_wifi_packet_from_video_frame(

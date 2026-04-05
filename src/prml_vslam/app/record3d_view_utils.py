@@ -25,12 +25,12 @@ def record3d_stream_hint(transport: Record3DTransportId) -> str:
     """Return the short transport-specific helper text."""
     return {
         Record3DTransportId.USB: (
-            "USB capture uses the native `record3d` Python bindings and can expose RGB, depth, intrinsics, "
-            "and confidence."
+            "USB capture uses the native `record3d` Python bindings and is the canonical programmatic ingress for "
+            "Record3D in this repo. It can expose RGB, depth, intrinsics, pose, and confidence."
         ),
         Record3DTransportId.WIFI: (
-            "Wi-Fi capture uses a Python-side WebRTC receiver. Enter the Record3D device address shown in "
-            "the iPhone app."
+            "Wi-Fi Preview uses a Python-side WebRTC receiver. It is an optional lower-fidelity preview path for "
+            "the app, not the canonical ingestion boundary. Enter the device address shown in the iPhone app."
         ),
     }[transport]
 
