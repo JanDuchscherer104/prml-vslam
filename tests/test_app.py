@@ -633,6 +633,48 @@ def test_render_pipeline_page_entry_shows_builder_guidance(tmp_path: Path) -> No
     assert {metric.label for metric in at.metric} >= {"Run Id", "Method", "Stages", "Artifact Root"}
 
 
+def test_pipeline_mock_stage_statuses_follow_stage_ids(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.methods import MethodId
+    from prml_vslam.pipeline import (
+        BenchmarkEvaluationConfig,
+        DenseConfig,
+        ReferenceConfig,
+        RunRequest,
+        TrackingConfig,
+        VideoSourceSpec,
+    )
+    from prml_vslam.pipeline.contracts import RunPlanStageId, StageExecutionStatus
+
+    path_config = PathConfig(
+        root=tmp_path,
+        artifacts_dir=tmp_path / "artifacts",
+        captures_dir=tmp_path / "captures",
+    )
+    plan = RunRequest(
+        experiment_name="tracking-only-demo",
+        output_dir=path_config.artifacts_dir,
+        source=VideoSourceSpec(video_path=path_config.captures_dir / "tracking-only.mp4"),
+        tracking=TrackingConfig(method=MethodId.VISTA, max_frames=300),
+        dense=DenseConfig(enabled=False),
+        reference=ReferenceConfig(enabled=False),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=False,
+            evaluate_cloud=False,
+            evaluate_efficiency=True,
+        ),
+    ).build(path_config)
+
+    stage_status = pipeline_page._mock_stage_statuses(plan)
+
+    assert set(stage_status) == {stage.id for stage in plan.stages}
+    assert stage_status[RunPlanStageId.INGEST] is StageExecutionStatus.HIT
+    assert RunPlanStageId.REFERENCE_RECONSTRUCTION not in stage_status
+    assert stage_status[RunPlanStageId.SLAM] is StageExecutionStatus.RAN
+    assert stage_status[RunPlanStageId.EFFICIENCY_EVALUATION] is StageExecutionStatus.RAN
+    assert stage_status[RunPlanStageId.SUMMARY] is StageExecutionStatus.RAN
+
+
 def test_record3d_page_renders_usb_controls_and_frames() -> None:
     devices = [Record3DDevice(product_id=101, udid="device-101")]
     at = AppTest.from_function(

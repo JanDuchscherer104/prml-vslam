@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import Field
 
-from prml_vslam.pipeline.workspace import PreparedInput
 from prml_vslam.utils import BaseData
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.workspace import PreparedInput
 
 
 class MethodId(StrEnum):
@@ -103,6 +107,13 @@ class MethodRunResult(BaseData):
 
     notes: list[str] = Field(default_factory=list)
     """Human-readable caveats and backend-specific setup notes."""
+
+
+MethodRunResult.model_rebuild(
+    _types_namespace={
+        "PreparedInput": import_module("prml_vslam.pipeline.workspace").PreparedInput,
+    }
+)
 
 
 __all__ = [
