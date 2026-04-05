@@ -23,9 +23,8 @@ from prml_vslam.utils.packet_session import (
 
 from .models import (
     AdvioPreviewSnapshot,
-    AdvioPreviewStreamState,
+    PreviewStreamState,
     Record3DStreamSnapshot,
-    Record3DStreamState,
 )
 
 
@@ -60,7 +59,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
     ) -> None:
         self.launch(
             connecting_snapshot=AdvioPreviewSnapshot(
-                state=AdvioPreviewStreamState.CONNECTING,
+                state=PreviewStreamState.CONNECTING,
                 sequence_id=sequence_id,
                 sequence_label=sequence_label,
                 pose_source=pose_source,
@@ -106,7 +105,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
                 ),
             )
             self.update_fields(
-                state=AdvioPreviewStreamState.STREAMING,
+                state=PreviewStreamState.STREAMING,
                 sequence_id=sequence_id,
                 sequence_label=sequence_label,
                 pose_source=pose_source,
@@ -120,7 +119,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
             stream.connect()
             (
                 self.update_fields(
-                    state=AdvioPreviewStreamState.STREAMING,
+                    state=PreviewStreamState.STREAMING,
                     sequence_id=sequence_id,
                     sequence_label=sequence_label,
                     pose_source=pose_source,
@@ -132,7 +131,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         except Exception as exc:
             if not stop_event.is_set():
                 self.update_fields(
-                    state=AdvioPreviewStreamState.FAILED,
+                    state=PreviewStreamState.FAILED,
                     sequence_id=sequence_id,
                     sequence_label=sequence_label,
                     pose_source=pose_source,
@@ -147,8 +146,8 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
                     else snapshot.model_copy(
                         update={
                             "state": (
-                                AdvioPreviewStreamState.DISCONNECTED
-                                if snapshot.state is AdvioPreviewStreamState.STREAMING
+                                PreviewStreamState.DISCONNECTED
+                                if snapshot.state is PreviewStreamState.STREAMING
                                 else snapshot.state
                             ),
                             "latest_packet": None,
@@ -194,7 +193,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         self.launch(
             connecting_snapshot=Record3DStreamSnapshot(
                 transport=Record3DTransportId.USB,
-                state=Record3DStreamState.CONNECTING,
+                state=PreviewStreamState.CONNECTING,
                 source_label=f"USB device #{device_index}",
             ),
             thread_name=f"Record3D-{Record3DTransportId.USB.value}-worker",
@@ -210,7 +209,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         self.launch(
             connecting_snapshot=Record3DStreamSnapshot(
                 transport=Record3DTransportId.WIFI,
-                state=Record3DStreamState.CONNECTING,
+                state=PreviewStreamState.CONNECTING,
                 source_label=device_address,
             ),
             thread_name=f"Record3D-{Record3DTransportId.WIFI.value}-worker",
@@ -252,7 +251,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             )
             self.update_fields(
                 transport=transport,
-                state=Record3DStreamState.STREAMING,
+                state=PreviewStreamState.STREAMING,
                 source_label=source_label,
                 latest_packet=packet,
                 error_message="",
@@ -270,7 +269,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             )
             self.update_fields(
                 transport=transport,
-                state=Record3DStreamState.STREAMING,
+                state=PreviewStreamState.STREAMING,
                 source_label=source_label,
                 error_message="",
             )
@@ -280,7 +279,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             if not stop_event.is_set():
                 self.update_fields(
                     transport=transport,
-                    state=Record3DStreamState.FAILED,
+                    state=PreviewStreamState.FAILED,
                     source_label=source_descriptor,
                     error_message=str(exc),
                 )
@@ -293,8 +292,8 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                     else snapshot.model_copy(
                         update={
                             "state": (
-                                Record3DStreamState.DISCONNECTED
-                                if snapshot.state is Record3DStreamState.STREAMING
+                                PreviewStreamState.DISCONNECTED
+                                if snapshot.state is PreviewStreamState.STREAMING
                                 else snapshot.state
                             ),
                             "latest_packet": None,

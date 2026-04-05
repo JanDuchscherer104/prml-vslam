@@ -646,6 +646,39 @@ resolved_on = "2026-04-06"
 resolution_note = "Removed empty-array wrapper helpers from packet_session and inlined Record3D source-label updates into the worker."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0017"
+title = "App preview state ownership is split across duplicate enums"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The app models still define separate `Record3DStreamState` and `AdvioPreviewStreamState` enums even though both surfaces expose the same lifecycle values and transitions."
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+]
+notes = [
+    "The duplicated enums force page, controller, and test code to carry two names for one lifecycle contract.",
+    "The current app requirements describe both surfaces as preview-oriented monitoring flows, so one shared app-owned preview state is sufficient.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Replaced the duplicate Record3D and ADVIO preview-state enums with one shared PreviewStreamState across the app layer."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1201,4 +1234,43 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 01 after reducing LOC while preserving app and packet-stream behavior under the frozen harness."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0017"
+title = "Unify app preview lifecycle states under one enum"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0017",
+]
+loc_min = 15
+loc_expected = 30
+loc_max = 60
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "One app-owned enum defines the preview lifecycle shared by the ADVIO and Record3D runtime snapshots.",
+    "Controllers, services, pages, and tests stop importing parallel enum names for the same state machine.",
+    "The existing app tests continue to pass without changing runtime behavior.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "tests/test_app.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 02 after reducing LOC while preserving app controller and page behavior under tests/test_app.py."
 source_collection = "todos"

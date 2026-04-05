@@ -15,11 +15,10 @@ from prml_vslam.app import bootstrap
 from prml_vslam.app.models import (
     AdvioPageState,
     AdvioPreviewSnapshot,
-    AdvioPreviewStreamState,
     AppState,
+    PreviewStreamState,
     Record3DPageState,
     Record3DStreamSnapshot,
-    Record3DStreamState,
 )
 from prml_vslam.app.services import (
     AdvioPreviewRuntimeController,
@@ -142,14 +141,14 @@ class FakeRecord3DRuntime:
     def start_usb(self, *, device_index: int) -> None:
         self._snapshot = Record3DStreamSnapshot(
             transport=Record3DTransportId.USB,
-            state=Record3DStreamState.CONNECTING,
+            state=PreviewStreamState.CONNECTING,
             source_label=f"USB device #{device_index}",
         )
 
     def start_wifi_preview(self, *, device_address: str) -> None:
         self._snapshot = Record3DStreamSnapshot(
             transport=Record3DTransportId.WIFI,
-            state=Record3DStreamState.CONNECTING,
+            state=PreviewStreamState.CONNECTING,
             source_label=device_address,
         )
 
@@ -178,7 +177,7 @@ class FakeAdvioRuntime:
     ) -> None:
         del stream
         self._snapshot = AdvioPreviewSnapshot(
-            state=AdvioPreviewStreamState.CONNECTING,
+            state=PreviewStreamState.CONNECTING,
             sequence_id=sequence_id,
             sequence_label=sequence_label,
             pose_source=pose_source,
@@ -253,7 +252,7 @@ def _usb_snapshot(*, confidence: bool) -> Record3DStreamSnapshot:
     confidence_frame = np.array([[0.0, 0.5], [0.75, 1.0]], dtype=np.float32) if confidence else None
     return Record3DStreamSnapshot(
         transport=Record3DTransportId.USB,
-        state=Record3DStreamState.STREAMING,
+        state=PreviewStreamState.STREAMING,
         source_label="device-101",
         received_frames=12,
         measured_fps=29.7,
@@ -282,7 +281,7 @@ def _usb_snapshot(*, confidence: bool) -> Record3DStreamSnapshot:
 def _wifi_snapshot() -> Record3DStreamSnapshot:
     return Record3DStreamSnapshot(
         transport=Record3DTransportId.WIFI,
-        state=Record3DStreamState.STREAMING,
+        state=PreviewStreamState.STREAMING,
         source_label="http://myiPhone.local",
         received_frames=8,
         measured_fps=15.5,
@@ -759,11 +758,11 @@ def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector(
             if not self.start_usb_calls:
                 return Record3DStreamSnapshot(
                     transport=Record3DTransportId.USB,
-                    state=Record3DStreamState.STREAMING,
+                    state=PreviewStreamState.STREAMING,
                 )
             return Record3DStreamSnapshot(
                 transport=Record3DTransportId.USB,
-                state=Record3DStreamState.CONNECTING,
+                state=PreviewStreamState.CONNECTING,
                 source_label=f"USB device #{self.start_usb_calls[-1]}",
             )
 
@@ -798,7 +797,7 @@ def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector(
     assert context.state.record3d.usb_device_index == 1
     assert context.state.record3d.is_running is True
     assert snapshot.transport is Record3DTransportId.USB
-    assert snapshot.state is Record3DStreamState.CONNECTING
+    assert snapshot.state is PreviewStreamState.CONNECTING
 
 
 def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
@@ -848,7 +847,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
     controller.stop()
 
     assert usb_stream.disconnected is True
-    assert controller.snapshot().state is Record3DStreamState.IDLE
+    assert controller.snapshot().state is PreviewStreamState.IDLE
     assert controller.snapshot().latest_packet is None
     assert controller.snapshot().trajectory_positions_xyz.shape == (0, 3)
 
@@ -923,7 +922,7 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
     _wait_for(lambda: controller.snapshot().received_frames >= 2)
     snapshot = controller.snapshot()
 
-    assert snapshot.state is AdvioPreviewStreamState.STREAMING
+    assert snapshot.state is PreviewStreamState.STREAMING
     assert snapshot.sequence_id == 15
     assert snapshot.pose_source is AdvioPoseSource.GROUND_TRUTH
     assert snapshot.latest_packet is not None
@@ -936,7 +935,7 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
     controller.stop()
 
     assert stream.disconnected is True
-    assert controller.snapshot().state is AdvioPreviewStreamState.IDLE
+    assert controller.snapshot().state is PreviewStreamState.IDLE
     assert controller.snapshot().latest_packet is None
     assert controller.snapshot().trajectory_positions_xyz.shape == (0, 3)
 

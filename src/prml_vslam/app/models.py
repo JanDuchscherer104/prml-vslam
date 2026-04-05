@@ -35,8 +35,8 @@ class AppPageId(StrEnum):
         }[self]
 
 
-class Record3DStreamState(StrEnum):
-    """Lifecycle states rendered by the Record3D app page."""
+class PreviewStreamState(StrEnum):
+    """Lifecycle states shared by app-owned preview surfaces."""
 
     IDLE = "idle"
     CONNECTING = "connecting"
@@ -51,27 +51,17 @@ class Record3DStreamSnapshot(PacketSessionSnapshot):
     transport: Record3DTransportId | None = None
     """Transport currently backing the snapshot, when active."""
 
-    state: Record3DStreamState = Record3DStreamState.IDLE
+    state: PreviewStreamState = PreviewStreamState.IDLE
     """Current lifecycle state of the live transport."""
 
     source_label: str = ""
     """Human-readable source descriptor such as a UDID or Wi-Fi address."""
 
 
-class AdvioPreviewStreamState(StrEnum):
-    """Lifecycle states rendered by the ADVIO preview section."""
-
-    IDLE = "idle"
-    CONNECTING = "connecting"
-    STREAMING = "streaming"
-    DISCONNECTED = "disconnected"
-    FAILED = "failed"
-
-
 class AdvioPreviewSnapshot(PacketSessionSnapshot):
     """Latest ADVIO loop-preview snapshot shared inside the app layer."""
 
-    state: AdvioPreviewStreamState = AdvioPreviewStreamState.IDLE
+    state: PreviewStreamState = PreviewStreamState.IDLE
     """Current lifecycle state of the loop preview."""
 
     sequence_id: int | None = None
@@ -187,10 +177,9 @@ __all__ = [
     "AppState",
     "AdvioPageState",
     "AdvioPreviewSnapshot",
-    "AdvioPreviewStreamState",
     "MetricsPageState",
     "PipelinePageState",
+    "PreviewStreamState",
     "Record3DPageState",
     "Record3DStreamSnapshot",
-    "Record3DStreamState",
 ]

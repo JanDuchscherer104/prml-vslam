@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.utils import BaseData
 
-from .models import Record3DStreamSnapshot, Record3DStreamState
+from .models import PreviewStreamState, Record3DStreamSnapshot
 from .state import save_model_updates
 
 if TYPE_CHECKING:
     from .bootstrap import AppContext
 
 
-_ACTIVE_STREAM_STATES = {Record3DStreamState.CONNECTING, Record3DStreamState.STREAMING}
+_ACTIVE_STREAM_STATES = {PreviewStreamState.CONNECTING, PreviewStreamState.STREAMING}
 
 
 class Record3DPageAction(BaseData):

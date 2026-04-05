@@ -13,14 +13,14 @@ from prml_vslam.datasets.advio import (
 )
 from prml_vslam.utils import BaseData
 
-from .models import AdvioPreviewSnapshot, AdvioPreviewStreamState
+from .models import AdvioPreviewSnapshot, PreviewStreamState
 from .state import save_model_updates
 
 if TYPE_CHECKING:
     from .bootstrap import AppContext
 
 
-_ACTIVE_PREVIEW_STATES = {AdvioPreviewStreamState.CONNECTING, AdvioPreviewStreamState.STREAMING}
+_ACTIVE_PREVIEW_STATES = {PreviewStreamState.CONNECTING, PreviewStreamState.STREAMING}
 
 
 class AdvioDownloadFormData(BaseData):

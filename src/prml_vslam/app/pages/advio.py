@@ -35,7 +35,7 @@ from ..live_session import (
     render_live_packet_tabs,
     render_live_session_shell,
 )
-from ..models import AdvioPreviewSnapshot, AdvioPreviewStreamState
+from ..models import AdvioPreviewSnapshot, PreviewStreamState
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -333,15 +333,15 @@ def _render_preview_frame(packet: FramePacket) -> None:
 
 def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
     match snapshot.state:
-        case AdvioPreviewStreamState.IDLE:
+        case PreviewStreamState.IDLE:
             st.info("Start a replay-ready scene to inspect looped ADVIO frames in-place.")
-        case AdvioPreviewStreamState.CONNECTING:
+        case PreviewStreamState.CONNECTING:
             st.info("Starting ADVIO loop preview...")
-        case AdvioPreviewStreamState.FAILED:
+        case PreviewStreamState.FAILED:
             st.error(snapshot.error_message or "The ADVIO preview failed.")
-        case AdvioPreviewStreamState.DISCONNECTED:
+        case PreviewStreamState.DISCONNECTED:
             st.warning(snapshot.error_message or "The ADVIO preview ended.")
-        case AdvioPreviewStreamState.STREAMING:
+        case PreviewStreamState.STREAMING:
             if snapshot.error_message:
                 st.warning(snapshot.error_message)
 
