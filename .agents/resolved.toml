@@ -727,6 +727,32 @@ resolved_on = "2026-04-06"
 resolution_note = "Delegated world-frame point transforms to pytransform3d instead of rebuilding homogeneous coordinates locally."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0020"
+title = "App preview snapshot ownership still repeats shared state fields"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The app models still repeat the same `state` field across both preview snapshot types, and both controllers still repeat the same active-state set."
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+notes = [
+    "The shared preview lifecycle already has one enum; the snapshot base and active-state constant can follow the same ownership model.",
+    "This is local app boilerplate rather than user-facing behavior, so it is a good simplification target for the bounded app test harness.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Centralized the shared preview state field and active-state set under the app models module."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1377,4 +1403,35 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 04 after holding code LOC flat, reducing total LOC, and preserving geometry/method behavior."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0020"
+title = "Centralize shared app preview snapshot state"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0020",
+]
+loc_min = 6
+loc_expected = 14
+loc_max = 25
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+acceptance = [
+    "One app-owned preview snapshot base defines the shared `state` field.",
+    "One app-owned constant defines the active preview states used by both controllers.",
+    "The app test harness continues to pass without changing preview behavior.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 05 after reducing LOC and preserving app behavior under tests/test_app.py."
 source_collection = "todos"

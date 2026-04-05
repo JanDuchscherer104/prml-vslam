@@ -45,24 +45,28 @@ class PreviewStreamState(StrEnum):
     FAILED = "failed"
 
 
-class Record3DStreamSnapshot(PacketSessionSnapshot):
+ACTIVE_PREVIEW_STREAM_STATES = frozenset({PreviewStreamState.CONNECTING, PreviewStreamState.STREAMING})
+
+
+class PreviewSessionSnapshot(PacketSessionSnapshot):
+    """Common snapshot state shared by app-owned preview runtimes."""
+
+    state: PreviewStreamState = PreviewStreamState.IDLE
+    """Current lifecycle state of the preview."""
+
+
+class Record3DStreamSnapshot(PreviewSessionSnapshot):
     """Latest Record3D preview snapshot shared inside the app layer."""
 
     transport: Record3DTransportId | None = None
     """Transport currently backing the snapshot, when active."""
 
-    state: PreviewStreamState = PreviewStreamState.IDLE
-    """Current lifecycle state of the live transport."""
-
     source_label: str = ""
     """Human-readable source descriptor such as a UDID or Wi-Fi address."""
 
 
-class AdvioPreviewSnapshot(PacketSessionSnapshot):
+class AdvioPreviewSnapshot(PreviewSessionSnapshot):
     """Latest ADVIO loop-preview snapshot shared inside the app layer."""
-
-    state: PreviewStreamState = PreviewStreamState.IDLE
-    """Current lifecycle state of the loop preview."""
 
     sequence_id: int | None = None
     """Active ADVIO sequence identifier when a preview is selected."""

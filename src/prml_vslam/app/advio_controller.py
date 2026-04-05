@@ -13,14 +13,11 @@ from prml_vslam.datasets.advio import (
 )
 from prml_vslam.utils import BaseData
 
-from .models import AdvioPreviewSnapshot, PreviewStreamState
+from .models import ACTIVE_PREVIEW_STREAM_STATES, AdvioPreviewSnapshot
 from .state import save_model_updates
 
 if TYPE_CHECKING:
     from .bootstrap import AppContext
-
-
-_ACTIVE_PREVIEW_STATES = {PreviewStreamState.CONNECTING, PreviewStreamState.STREAMING}
 
 
 class AdvioDownloadFormData(BaseData):
@@ -94,7 +91,7 @@ def load_advio_explorer_sample(
 def sync_advio_preview_state(context: AppContext, snapshot: AdvioPreviewSnapshot | None = None) -> AdvioPreviewSnapshot:
     """Keep persisted preview state aligned with the runtime snapshot."""
     snapshot = context.advio_runtime.snapshot() if snapshot is None else snapshot
-    if context.state.advio.preview_is_running and snapshot.state not in _ACTIVE_PREVIEW_STATES:
+    if context.state.advio.preview_is_running and snapshot.state not in ACTIVE_PREVIEW_STREAM_STATES:
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
     return snapshot
 
