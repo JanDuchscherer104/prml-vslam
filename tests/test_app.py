@@ -146,7 +146,7 @@ class FakeRecord3DRuntime:
             source_label=f"USB device #{device_index}",
         )
 
-    def start_wifi(self, *, device_address: str) -> None:
+    def start_wifi_preview(self, *, device_address: str) -> None:
         self._snapshot = Record3DStreamSnapshot(
             transport=Record3DTransportId.WIFI,
             state=Record3DStreamState.CONNECTING,
@@ -682,7 +682,7 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
     class RuntimeSpy:
         def __init__(self) -> None:
             self.start_usb_calls = 0
-            self.start_wifi_calls = 0
+            self.start_wifi_preview_calls = 0
 
         def snapshot(self) -> Record3DStreamSnapshot:
             return Record3DStreamSnapshot()
@@ -693,8 +693,8 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
         def start_usb(self, *, device_index: int) -> None:
             self.start_usb_calls += 1
 
-        def start_wifi(self, *, device_address: str) -> None:
-            self.start_wifi_calls += 1
+        def start_wifi_preview(self, *, device_address: str) -> None:
+            self.start_wifi_preview_calls += 1
 
     class DummyContext:
         def __enter__(self):
@@ -733,7 +733,7 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
     monkeypatch.undo()
 
     assert runtime.start_usb_calls == 0
-    assert runtime.start_wifi_calls == 0
+    assert runtime.start_wifi_preview_calls == 0
     assert context.state.record3d.wifi_device_address == ""
     assert action.transport is Record3DTransportId.WIFI
     assert action.start_requested is False
@@ -743,7 +743,7 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
     handle_record3d_page_action(context, action)
 
     assert runtime.start_usb_calls == 0
-    assert runtime.start_wifi_calls == 0
+    assert runtime.start_wifi_preview_calls == 0
     assert context.state.record3d.transport is Record3DTransportId.WIFI
 
 
@@ -773,7 +773,7 @@ def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector(
         def start_usb(self, *, device_index: int) -> None:
             self.start_usb_calls.append(device_index)
 
-        def start_wifi(self, *, device_address: str) -> None:
+        def start_wifi_preview(self, *, device_address: str) -> None:
             raise AssertionError(f"Unexpected Wi-Fi start for {device_address}")
 
     context = SimpleNamespace(
@@ -864,12 +864,12 @@ def test_record3d_runtime_controller_stops_previous_stream_when_switching_transp
     )
     controller = Record3DStreamRuntimeController(
         usb_stream_factory=lambda device_index, timeout_seconds: usb_stream,
-        wifi_stream_factory=lambda device_address, timeout_seconds: wifi_stream,
+        wifi_preview_stream_factory=lambda device_address, timeout_seconds: wifi_stream,
     )
 
     controller.start_usb(device_index=0)
     _wait_for(lambda: controller.snapshot().transport is Record3DTransportId.USB)
-    controller.start_wifi(device_address="myiPhone.local")
+    controller.start_wifi_preview(device_address="myiPhone.local")
     _wait_for(lambda: controller.snapshot().transport is Record3DTransportId.WIFI)
 
     assert usb_stream.disconnected is True

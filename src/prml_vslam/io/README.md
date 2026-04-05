@@ -23,9 +23,10 @@ prerequisites from the official project README:
 - `uv run streamlit run streamlit_app.py` opens the packaged Streamlit app.
 - The app exposes a dedicated `Record3D` page that renders pure Streamlit
   controls and previews.
-- The page can start either a USB packet source or a Python-side Wi-Fi receiver.
+- The page can start the official USB packet source or an optional Python-side
+  Wi-Fi preview receiver.
 
-### Wi-Fi Python Receiver
+### Wi-Fi Python Preview Receiver
 
 - The Wi-Fi path now runs in Python instead of in a browser-owned custom
   component.
@@ -39,7 +40,8 @@ prerequisites from the official project README:
 - Manual device-address entry is the default. Enter the address shown in the
   Record3D iPhone app, such as `myiPhone.local` or a LAN IP.
 - Record3D allows only one Wi-Fi receiver at a time.
-- Wi-Fi streaming is lower fidelity than the USB Python integration.
+- Wi-Fi preview is lower fidelity than the USB Python integration and remains a
+  preview-only fallback instead of the canonical ingestion path.
 
 ```bash
 uv sync --extra streaming

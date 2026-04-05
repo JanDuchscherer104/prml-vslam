@@ -34,8 +34,9 @@ def render(context: AppContext) -> None:
         eyebrow="Live Capture",
         title="Record3D Stream",
         body=(
-            "Capture from USB or Wi-Fi, inspect RGBD frames, and monitor a live session without leaving the "
-            "workbench. Stream setup stays explicit, while the preview panel refreshes independently."
+            "Capture from the official USB bindings or use the optional Wi-Fi preview fallback, inspect RGBD "
+            "frames, and monitor a live session without leaving the workbench. USB remains the canonical "
+            "programmatic path, while the preview panel refreshes independently."
         ),
     )
     handle_record3d_page_action(context, _render_sidebar_controls(context))
@@ -46,7 +47,7 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
     page_state = context.state.record3d
     with st.sidebar:
         st.subheader("Stream Controls")
-        st.caption("Choose a source, then start or restart the active stream.")
+        st.caption("Choose a source, then start or restart the active stream. USB is the recommended capture path.")
         selected_transport = st.segmented_control(
             "Transport",
             options=list(Record3DTransportId),
@@ -73,7 +74,7 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
                 )
             else:
                 wifi_device_address = st.text_input(
-                    "Wi-Fi Device Address",
+                    "Wi-Fi Preview Device Address",
                     value=page_state.wifi_device_address,
                     placeholder="myiPhone.local or 192.168.1.100",
                 ).strip()
@@ -92,6 +93,8 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
                 st.warning(usb_error_message)
             elif transport is Record3DTransportId.USB and not usb_devices:
                 st.info("No USB Record3D devices are currently connected.")
+            elif transport is Record3DTransportId.WIFI:
+                st.info("Wi-Fi Preview is optional and lower fidelity than the official USB integration.")
     return Record3DPageAction(
         transport=transport,
         usb_device_index=selected_usb_index,

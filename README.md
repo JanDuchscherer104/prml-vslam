@@ -30,17 +30,20 @@ make test PYTEST_ARGS="-n auto"
 
 ```bash
 uv sync
-# add `--extra streaming` to enable Record3D USB / Wi-Fi preview support
+# add `--extra streaming` to enable Record3D USB plus optional Wi-Fi preview support
 uv run streamlit run streamlit_app.py
 ```
 
 The app supports:
 
-- a `Record3D` live-capture page for USB and Wi-Fi preview inside the workbench
+- a `Record3D` live-capture page for official USB capture plus optional Wi-Fi preview inside the workbench
 - an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
 - a `Pipeline` page for run planning, a minimal ADVIO mock pipeline demo, and artifact monitoring
 - a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
 - `PathConfig`-driven dataset and artifact discovery without app-local path defaults
+
+USB remains the canonical Record3D programmatic integration in this repo. The Wi-Fi path is kept as an optional
+preview-only fallback for the Streamlit workbench and does not expose the same pose or confidence surfaces.
 
 Pipeline contract and extension guidance lives in
 [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).

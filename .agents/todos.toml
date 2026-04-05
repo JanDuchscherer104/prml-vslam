@@ -7,44 +7,6 @@ active_collection = "todos"
 loc_unit = "lines"
 
 [[todos]]
-id = "TODO-0014"
-title = "Narrow the Record3D Wi-Fi/WebRTC path behind an explicit optional boundary"
-status = "pending"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0014",
-]
-loc_min = 40
-loc_expected = 110
-loc_max = 220
-files = [
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/io/wifi_session.py",
-    "src/prml_vslam/io/wifi_signaling.py",
-    "src/prml_vslam/io/wifi_receiver.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "README.md",
-]
-acceptance = [
-    "The official `record3d` USB bindings remain the canonical programmatic ingress path for Record3D capture.",
-    "The custom Wi-Fi signaling and receiver flow is either hidden behind a clearly optional/private adapter boundary or explicitly documented as a separate supported integration surface.",
-    "README and app-facing transport semantics make the Wi-Fi support level clear instead of treating it as an unqualified peer of the official USB path.",
-]
-sources = [
-    "README.md",
-    "docs/Questions.md",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/io/wifi_session.py",
-    "src/prml_vslam/io/wifi_signaling.py",
-    "src/prml_vslam/io/wifi_receiver.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "https://record3d.app/",
-    "https://github.com/marek-simonik/record3d",
-]
-
-[[todos]]
 id = "TODO-0015"
 title = "Consolidate repeated trajectory plotting internals"
 status = "pending"

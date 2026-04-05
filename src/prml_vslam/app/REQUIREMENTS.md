@@ -22,7 +22,7 @@ The app now exposes four top-level pages:
 - The `Pipeline` page must also show one mock completed run with stage status, artifact contracts, and serialized output examples so users can inspect what the planner hands to downstream execution surfaces.
 - The `Pipeline` page may execute a minimal repository-local demo pipeline for monitoring purposes when the input and backend are explicitly bounded by the app.
 - The `Pipeline` page should render an explicit `evo` APE trajectory visualization for completed demo runs when both reference and estimate TUM trajectories are available.
-- The `Record3D` page must support both `USB` and `Wi-Fi` transports through one transport selector.
+- The `Record3D` page must support the canonical `USB` transport and the optional `Wi-Fi Preview` transport through one transport selector.
 - The `Record3D` page must show:
   - transport status
   - received frames
@@ -30,7 +30,7 @@ The app now exposes four top-level pages:
   - camera intrinsics
   - RGB preview
   - depth preview
-  - uncertainty or confidence preview when available
+  - confidence preview when available
 - The `Metrics` page must keep explicit `evo` computation semantics: never compute on selector changes or reruns.
 
 ## Architecture Requirements
@@ -67,8 +67,8 @@ The app now exposes four top-level pages:
 ### Record3D Preview
 
 - A user opens the app and lands on `Record3D`.
-- They select `USB` or `Wi-Fi`.
-- Starting the stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and uncertainty when available.
+- They select `USB` or `Wi-Fi Preview`.
+- Starting the stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and confidence when available.
 
 ### Metrics Review
 

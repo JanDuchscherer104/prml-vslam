@@ -1,4 +1,4 @@
-"""Public Record3D Wi-Fi session wrapper."""
+"""Preview-only Record3D Wi-Fi session wrapper."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from .wifi_receiver import _Record3DWiFiReceiverRuntime
 from .wifi_signaling import Record3DWiFiSignalingClient
 
 
-class Record3DWiFiStreamConfig(BaseConfig):
-    """Configuration for a Python-side Record3D Wi-Fi receiver."""
+class Record3DWiFiPreviewStreamConfig(BaseConfig):
+    """Configuration for the optional Python-side Record3D Wi-Fi preview receiver."""
 
     device_address: str = ""
     """mDNS host, IP address, or absolute URL advertised by the Record3D app."""
@@ -30,14 +30,14 @@ class Record3DWiFiStreamConfig(BaseConfig):
     """Maximum time to wait for ICE gathering and the initial video track."""
 
     @property
-    def target_type(self) -> type[Record3DWiFiStreamSession]:
-        return Record3DWiFiStreamSession
+    def target_type(self) -> type[Record3DWiFiPreviewStreamSession]:
+        return Record3DWiFiPreviewStreamSession
 
 
-class Record3DWiFiStreamSession:
-    """Manage one Python-side Record3D Wi-Fi session."""
+class Record3DWiFiPreviewStreamSession:
+    """Manage one optional Python-side Record3D Wi-Fi preview session."""
 
-    def __init__(self, config: Record3DWiFiStreamConfig) -> None:
+    def __init__(self, config: Record3DWiFiPreviewStreamConfig) -> None:
         self.config = config
         self.console = Console(__name__).child(self.__class__.__name__)
         self.signaling_client = Record3DWiFiSignalingClient(
@@ -76,13 +76,15 @@ class Record3DWiFiStreamSession:
             on_failure=self._register_failure,
             stop_requested=self._stop_event.is_set,
         )
-        self._worker = Thread(target=self._runtime.run, name="Record3DWiFiStreamSession", daemon=True)
+        self._worker = Thread(target=self._runtime.run, name="Record3DWiFiPreviewStreamSession", daemon=True)
         self._worker.start()
 
         deadline = time.monotonic() + self.config.setup_timeout_seconds
         while time.monotonic() < deadline:
             if self._connected_event.wait(timeout=0.05):
-                self.console.info("Connected to Record3D Wi-Fi stream at %s.", self.signaling_client.device_address)
+                self.console.info(
+                    "Connected to Record3D Wi-Fi preview stream at %s.", self.signaling_client.device_address
+                )
                 return self._metadata or Record3DWiFiMetadata(device_address=self.signaling_client.device_address)
             if self._failure_event.is_set():
                 raise RuntimeError(self._failure_message)
@@ -91,7 +93,7 @@ class Record3DWiFiStreamSession:
 
         self.disconnect()
         raise RuntimeError(
-            f"Timed out establishing the Record3D Wi-Fi stream at {self.signaling_client.device_address}."
+            f"Timed out establishing the Record3D Wi-Fi preview stream at {self.signaling_client.device_address}."
         )
 
     def disconnect(self) -> None:
@@ -105,7 +107,7 @@ class Record3DWiFiStreamSession:
 
         worker.join(timeout=max(5.0, self.config.setup_timeout_seconds + 1.0))
         if worker.is_alive():
-            self.console.warning("Timed out stopping the Record3D Wi-Fi worker thread during cleanup.")
+            self.console.warning("Timed out stopping the Record3D Wi-Fi preview worker thread during cleanup.")
             return
         self._worker = None
         self._runtime = None
@@ -118,8 +120,8 @@ class Record3DWiFiStreamSession:
             if self._failure_event.is_set():
                 raise RuntimeError(self._failure_message) from exc
             if self._stop_event.is_set():
-                raise RuntimeError("The Record3D Wi-Fi stream is not active.") from exc
-            raise RuntimeError(f"Timed out waiting {timeout:.2f}s for a Record3D Wi-Fi frame.") from exc
+                raise RuntimeError("The Record3D Wi-Fi preview stream is not active.") from exc
+            raise RuntimeError(f"Timed out waiting {timeout:.2f}s for a Record3D Wi-Fi preview frame.") from exc
 
     def _store_metadata(self, metadata: Record3DWiFiMetadata) -> None:
         self._metadata = metadata
@@ -136,14 +138,18 @@ class Record3DWiFiStreamSession:
         self.console.error(message)
 
 
-def open_record3d_wifi_stream(*, device_address: str, frame_timeout_seconds: float) -> Record3DWiFiStreamSession:
-    """Build one shared Record3D Wi-Fi stream session with explicit validation."""
-    stream = Record3DWiFiStreamConfig(
+def open_record3d_wifi_preview_stream(
+    *,
+    device_address: str,
+    frame_timeout_seconds: float,
+) -> Record3DWiFiPreviewStreamSession:
+    """Build one optional Record3D Wi-Fi preview stream with explicit validation."""
+    stream = Record3DWiFiPreviewStreamConfig(
         device_address=device_address,
         frame_timeout_seconds=max(1.0, frame_timeout_seconds),
         signaling_timeout_seconds=10.0,
         setup_timeout_seconds=12.0,
     ).setup_target()
     if stream is None:
-        raise RuntimeError("Failed to initialize the Record3D Wi-Fi stream.")
+        raise RuntimeError("Failed to initialize the Record3D Wi-Fi preview stream.")
     return stream
