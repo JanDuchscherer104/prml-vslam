@@ -103,6 +103,7 @@ def load_tum_trajectory(path: Path) -> TimedPoseTrajectory:
     )
 
 
+# TODO: should be handeled via open3d or other high-level library!
 def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     """Write an XYZ point cloud to PLY using the repository's Open3D dependency."""
     positions = np.asarray(points_xyz, dtype=np.float64)
@@ -133,6 +134,7 @@ def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     return path.resolve()
 
 
+# TODO: should be handeled via pytransform3d or other high-level library!
 def transform_points_world_camera(
     points_xyz_camera: np.ndarray,
     pose_world_camera: SE3Pose,
@@ -147,6 +149,7 @@ def transform_points_world_camera(
     return (pose_world_camera.as_matrix() @ homogeneous_points.T).T[:, :3]
 
 
+# TODO: should be handeled via pytransform3d or other high-level library!
 def pointmap_from_depth(
     depth_map_m: np.ndarray,
     intrinsics: CameraIntrinsics,
@@ -179,6 +182,7 @@ def pointmap_from_depth(
     ).astype(np.float32)
 
 
+# TODO:make imports mandatory, remove this function and import at the top of the file instead
 def _require_evo_tum_backend() -> tuple[object, type[object]]:
     """Return evo's TUM file adapter and pose-trajectory type or fail clearly."""
     try:

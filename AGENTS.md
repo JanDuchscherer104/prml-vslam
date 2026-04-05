@@ -16,6 +16,8 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
 - `.agents/issues.toml`: structured backlog of validated defects, architectural debts, and
   integration gaps.
 - `.agents/todos.toml`: structured action list linked to the validated issues backlog.
+- `.agents/resolved.toml`: archive of resolved or retired issues and todos moved out of the active
+  backlogs.
 - `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary
   sources relevant to this project.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
@@ -33,7 +35,10 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   - read `.agents/AGENTS_INTERNAL_DB.md` before substantial repo work
   - update `.agents/issues.toml` when you validate a new issue or materially change an existing one
   - update `.agents/todos.toml` when you identify, reprioritize, or complete concrete follow-up work
-  - do not delete historical entries; update their status in place
+  - move resolved or retired work into `.agents/resolved.toml` instead of deleting it
+  - every todo must define `loc_min`, `loc_expected`, and `loc_max` in lines of code
+  - use `make agents-db` to review the ranked active backlog
+  - pass `AGENTS_ARGS="..."` to `make agents-db` for filtered ranking or resolve actions
 - Read the nearest nested `AGENTS.md` before editing.
   - Python/package rules: `src/prml_vslam/AGENTS.md`
   - App-specific Streamlit rules: `src/prml_vslam/app/AGENTS.md`
@@ -42,6 +47,7 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   unless the user explicitly asks for it.
 - Use conventional commits with concise, focused messages. Split larger changes into multiple
   logical commits when appropriate.
+- Before creating a commit, run `make ci`.
 - After editing a file, run `ruff format` on touched Python files before finishing the task.
 - Do not use destructive git commands unless explicitly requested. This includes `git restore`,
   `git reset --hard`, and similar commands.

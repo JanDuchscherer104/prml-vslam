@@ -295,6 +295,51 @@ resolved_on = "2026-04-05"
 resolution_note = "Removed the source discriminator fields, flattened the USB packet-stream config, and dropped the unused mock backend method_id config field."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0015"
+title = "SessionStateStore repeats per-runtime load, compatibility, and replacement flows"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The Streamlit session-state adapter still reimplements the same get-or-create, compatibility-check, stale-runtime shutdown, and replacement path for Record3D, ADVIO, and Pipeline runtimes. This matches the older review's app-heaviness concern and leaves a concrete duplication hotspot even after packet-session lifecycle was consolidated."
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+notes = [
+    "The three runtime loaders differ mostly in the constructor and required-method predicate.",
+    "A generic helper would reduce app boilerplate while keeping the dedicated typed controllers and pipeline service intact.",
+]
+sources = [
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "SessionStateStore now uses one generic loader for session-state runtime lookup, compatibility checks, stale-runtime shutdown, and replacement."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0007"
+title = "SessionStateStore stale-runtime replacement paths lack focused tests"
+status = "resolved"
+priority = "low"
+category = "testing"
+summary = "The session-state adapter can replace incompatible runtimes, but the current test coverage only verifies a basic pipeline-runtime round trip."
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+notes = [
+    "Compatibility fallback and stale-runtime shutdown behavior are implemented but not directly covered.",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "Focused app tests now cover stale SessionStateStore runtime replacement for record3d, ADVIO, and pipeline adapters."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -451,4 +496,60 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-05"
 resolution_note = "Updated the contracts, TOML example, and tests to the simplified config surfaces; full make ci passed."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0015"
+title = "Factor SessionStateStore runtime loading through one generic helper"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0007",
+    "ISSUE-0015",
+]
+loc_min = 25
+loc_expected = 55
+loc_max = 120
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "One shared helper handles session-state lookup, compatibility validation, stale-runtime shutdown, and replacement.",
+    "Record3D, ADVIO, and Pipeline runtime loads configure that helper instead of reimplementing the same control flow.",
+    "Focused tests cover the preserved stale-runtime replacement behavior after the refactor.",
+]
+sources = [
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "Factored SessionStateStore runtime loading through a shared helper and added focused stale-runtime replacement coverage in tests/test_app.py."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0007"
+title = "Add focused tests for stale runtime replacement in SessionStateStore"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0007",
+]
+loc_min = 25
+loc_expected = 60
+loc_max = 120
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "Tests cover incompatible runtime replacement for record3d, advio, and pipeline adapters.",
+    "Tests assert stale runtimes are shut down exactly once before replacement.",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "Added focused SessionStateStore replacement tests for record3d, ADVIO, and pipeline runtimes, asserting stale runtimes are stopped exactly once before replacement."
 source_collection = "todos"
