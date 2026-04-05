@@ -86,8 +86,6 @@ def write_advio_pose_tum(source_path: Path, target_path: Path) -> Path:
         target_path,
         poses,
         trajectory.timestamps_s.tolist(),
-        include_header=True,
-        decimal_places=9,
     )
 
 

@@ -24,7 +24,7 @@ from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tum
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
-from prml_vslam.eval.contracts import EvaluationControls, SelectionSnapshot
+from prml_vslam.eval.contracts import SelectionSnapshot
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.record3d import (
     Record3DDevice,
@@ -33,7 +33,7 @@ from prml_vslam.io.record3d import (
     Record3DTransportId,
 )
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineSessionSnapshot, PipelineSessionState
+from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig
 
 
@@ -322,10 +322,7 @@ def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> N
         run=runs[0],
     )
 
-    result = service.compute_evaluation(
-        selection=selection,
-        controls=EvaluationControls(),
-    )
+    result = service.compute_evaluation(selection=selection)
 
     assert result.path.exists()
     assert result.path.name == "trajectory_metrics.json"
@@ -333,7 +330,7 @@ def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> N
     assert result.stats.rmse > 0.0
     assert len(result.trajectories) == 2
 
-    reloaded = service.load_evaluation(selection=selection, controls=EvaluationControls())
+    reloaded = service.load_evaluation(selection=selection)
 
     assert reloaded is not None
     assert reloaded.path == result.path
@@ -361,7 +358,7 @@ def test_metrics_service_fails_when_timestamps_do_not_match(tmp_path: Path) -> N
     )
 
     with pytest.raises(ValueError, match="No matching trajectory timestamps"):
-        service.compute_evaluation(selection=selection, controls=EvaluationControls())
+        service.compute_evaluation(selection=selection)
 
 
 def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> None:

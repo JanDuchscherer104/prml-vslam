@@ -1354,6 +1354,7 @@ name = "prml-vslam"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "evo" },
     { name = "jaxtyping" },
     { name = "numpy" },
     { name = "open3d" },
@@ -1378,9 +1379,6 @@ dev = [
     { name = "rebiber" },
     { name = "ruff" },
 ]
-eval = [
-    { name = "evo" },
-]
 replay = [
     { name = "av" },
 ]
@@ -1397,7 +1395,7 @@ requires-dist = [
     { name = "aiortc", marker = "extra == 'streaming'", specifier = ">=1.9,<2" },
     { name = "av", marker = "extra == 'replay'", specifier = ">=16,<17" },
     { name = "bibtex-updater", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "evo", marker = "extra == 'eval'", specifier = ">=1.31,<2" },
+    { name = "evo", specifier = ">=1.31,<2" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11,<2" },
     { name = "numpy", specifier = ">=1.26,<3" },
@@ -1419,7 +1417,7 @@ requires-dist = [
     { name = "tomli-w", specifier = ">=1.2,<2" },
     { name = "typer", specifier = ">=0.12,<1" },
 ]
-provides-extras = ["dev", "eval", "repo-context", "replay", "streaming"]
+provides-extras = ["dev", "repo-context", "replay", "streaming"]
 
 [[package]]
 name = "protobuf"

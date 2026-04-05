@@ -53,67 +53,52 @@ def write_tum_trajectory(
     trajectory_path: Path,
     poses: Sequence[SE3Pose],
     timestamps: Sequence[float],
-    *,
-    include_header: bool = False,
-    decimal_places: int = 6,
 ) -> Path:
     """Write a TUM trajectory file from canonical SE(3) poses and timestamps."""
     if len(poses) != len(timestamps):
         raise ValueError(f"Expected one timestamp per pose, got {len(timestamps)} timestamps for {len(poses)} poses.")
 
     trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-    pose_array = np.asarray(
-        [(pose.tx, pose.ty, pose.tz, pose.qx, pose.qy, pose.qz, pose.qw) for pose in poses],
-        dtype=np.float64,
-    )
-    if len(pose_array):
-        quaternion_norms = np.linalg.norm(pose_array[:, 3:], axis=1, keepdims=True)
-        if np.any(quaternion_norms == 0.0):
-            raise ValueError("SE3 quaternions must be non-zero.")
-        tum_rows = np.column_stack(
-            (
-                np.asarray(timestamps, dtype=np.float64),
-                pose_array[:, :3],
-                pose_array[:, 3:] / quaternion_norms,
-            )
-        )
-    else:
-        tum_rows = np.empty((0, 8), dtype=np.float64)
-    np.savetxt(
+    if not poses:
+        trajectory_path.write_text("", encoding="utf-8")
+        return trajectory_path.resolve()
+
+    file_interface, pose_trajectory_type = _require_evo_tum_backend()
+    pose_array = np.asarray([pose.to_tum_fields() for pose in poses], dtype=np.float64)
+    quaternions_xyzw = pose_array[:, 3:]
+    quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
+    if np.any(quaternion_norms == 0.0):
+        raise ValueError("SE3 quaternions must be non-zero.")
+
+    file_interface.write_tum_trajectory_file(
         trajectory_path,
-        tum_rows,
-        fmt=f"%.{decimal_places}f",
-        header="timestamp tx ty tz qx qy qz qw" if include_header else "",
-        comments="# ",
+        pose_trajectory_type(
+            positions_xyz=pose_array[:, :3],
+            orientations_quat_wxyz=np.roll(quaternions_xyzw / quaternion_norms, 1, axis=1),
+            timestamps=np.asarray(timestamps, dtype=np.float64),
+        ),
     )
     return trajectory_path.resolve()
 
 
 def load_tum_trajectory(path: Path) -> TimedPoseTrajectory:
     """Load a TUM trajectory file into the canonical timed trajectory model."""
-    rows: list[tuple[float, float, float, float, float, float, float, float]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        values = stripped.split()
-        if len(values) != 8:
-            raise ValueError(f"Expected 8 columns in TUM trajectory row, got {len(values)}: {stripped}")
-        rows.append(tuple(float(value) for value in values))
-    if not rows:
+    if path.stat().st_size == 0:
         return TimedPoseTrajectory(
             timestamps_s=np.empty((0,), dtype=np.float64),
             positions_xyz=np.empty((0, 3), dtype=np.float64),
             quaternions_xyzw=np.empty((0, 4), dtype=np.float64),
         )
-    trajectory = np.asarray(rows, dtype=np.float64)
-    quaternions_xyzw = trajectory[:, 4:8]
+
+    file_interface, _ = _require_evo_tum_backend()
+    trajectory = file_interface.read_tum_trajectory_file(path)
+    quaternions_xyzw = np.roll(np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64), -1, axis=1)
     quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
     if np.any(quaternion_norms == 0.0):
         raise ValueError("TUM quaternions must be non-zero.")
     return TimedPoseTrajectory(
-        timestamps_s=trajectory[:, 0],
-        positions_xyz=trajectory[:, 1:4],
+        timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
+        positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
         quaternions_xyzw=quaternions_xyzw / quaternion_norms,
     )
 
@@ -192,6 +177,16 @@ def pointmap_from_depth(
         ],
         axis=-1,
     ).astype(np.float32)
+
+
+def _require_evo_tum_backend() -> tuple[object, type[object]]:
+    """Return evo's TUM file adapter and pose-trajectory type or fail clearly."""
+    try:
+        from evo.core.trajectory import PoseTrajectory3D
+        from evo.tools import file_interface
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("TUM trajectory I/O requires the `evo` package to be installed.") from exc
+    return file_interface, PoseTrajectory3D
 
 
 __all__ = [
