@@ -136,7 +136,7 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
         context.advio_runtime.stop()
         context.state.advio.preview_is_running = False
         context.store.save(context.state)
-    if page_id is not AppPageId.PIPELINE and context.pipeline_runtime.snapshot().state in {
+    if page_id not in {AppPageId.PIPELINE, AppPageId.METRICS} and context.pipeline_runtime.snapshot().state in {
         PipelineSessionState.CONNECTING,
         PipelineSessionState.RUNNING,
     }:
