@@ -8,26 +8,21 @@ import plotly.graph_objects as go
 from prml_vslam.eval.contracts import ErrorSeries, TrajectorySeries
 
 from .theme import BLUE, DEFAULT_COLORS, apply_standard_xy_layout
+from .trajectories import _add_xy_trajectory_trace, _apply_standard_trajectory_xy_layout
 
 
 def build_trajectory_figure(series_list: list[TrajectorySeries]) -> go.Figure:
     """Build a compact XY trajectory overlay figure."""
     colors = DEFAULT_COLORS[np.arange(len(series_list), dtype=np.intp) % DEFAULT_COLORS.size]
-    figure = go.Figure(
-        data=tuple(
-            go.Scattergl(
-                x=series.positions_xyz[:, 0],
-                y=series.positions_xyz[:, 1],
-                mode="lines",
-                name=series.name,
-                line={"width": 2.5, "color": color},
-            )
-            for series, color in zip(series_list, colors, strict=True)
+    figure = go.Figure()
+    for series, color in zip(series_list, colors, strict=True):
+        _add_xy_trajectory_trace(
+            figure,
+            series.positions_xyz,
+            name=series.name,
+            line={"width": 2.5, "color": str(color)},
         )
-    )
-    apply_standard_xy_layout(figure, title="Trajectory Overlay", xaxis_title="X (m)", yaxis_title="Y (m)")
-    figure.update_xaxes(showgrid=True)
-    figure.update_yaxes(showgrid=True, scaleanchor="x", scaleratio=1)
+    _apply_standard_trajectory_xy_layout(figure, title="Trajectory Overlay")
     return figure
 
 
