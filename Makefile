@@ -12,6 +12,7 @@ PYTEST_ARGS ?= -n $(PYTEST_WORKERS)
 PARALLEL_MAKE ?= $(MAKE) -j$(CPU_COUNT)
 AGENTS_DB ?= $(UV_RUN) python .agents/scripts/agents_db.py
 AGENTS_ARGS ?= rank
+LOC_ARGS ?=
 
 BIB_FILE ?= docs/references.bib
 BIB_CACHE_DIR ?= .cache/bib
@@ -63,10 +64,10 @@ test: ## Run the Python test suite (for parallel runs: make test PYTEST_ARGS="-n
 agents-db: ## Run the local .agents backlog tool (example: make agents-db AGENTS_ARGS="rank --kind todos")
 	$(AGENTS_DB) $(AGENTS_ARGS)
 
-loc-py: ## Print Python LOC for src/ and tests/
-	$(UV_RUN) python scripts/loc_stats.py
+loc-py: ## Print Python LOC for src/ and tests/ (example: make loc LOC_ARGS="--todo --fixme")
+	$(UV_RUN) python scripts/loc_stats.py $(LOC_ARGS)
 
-loc: ## Alias for loc-py (Python lines of code in src/ and tests/)
+loc: ## Alias for loc-py (pass flags with LOC_ARGS="--todo --fixme")
 	$(MAKE) loc-py
 
 bib-check: ## Run strict source-backed bibliography verification
