@@ -23,11 +23,10 @@ reference sheet. This document carries the full rationale and migration model.
 - `src/prml_vslam/pipeline/protocols.py` now owns the pipeline behavior seams,
   while `src/prml_vslam/pipeline/contracts.py` owns the planner surface,
   artifact bundles, stage manifests, and `TrackingUpdate`.
-- Method-local DTOs currently overlap conceptually with the pipeline-owned
-  artifact boundary. For example, `MethodArtifacts` and `MethodRunResult`
-  describe normalized trajectory and point-cloud outputs even though downstream
-  execution already centers on `SequenceManifest`, `TrackingArtifacts`, and
-  `RunSummary`.
+- Method-local DTOs still overlap conceptually with the pipeline-owned artifact
+  boundary. `MethodRunResult` still describes normalized trajectory and
+  point-cloud outputs even though downstream execution already centers on
+  `SequenceManifest`, `TrackingArtifacts`, and `RunSummary`.
 - The repo scan found overlapping contract-reference guidance across the
   compact agent reference, enforcement-oriented agent instructions, and
   package-level documentation. That overlap made it too easy for current-state
