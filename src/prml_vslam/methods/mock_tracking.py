@@ -9,8 +9,8 @@ import numpy as np
 
 from prml_vslam.interfaces import FramePacket, SE3Pose
 from prml_vslam.methods.interfaces import MethodId
-from prml_vslam.pipeline.contracts import ArtifactRef, TrackingArtifacts, TrackingConfig
-from prml_vslam.pipeline.interfaces import TrackingUpdate
+from prml_vslam.pipeline.contracts import ArtifactRef, SequenceManifest, TrackingArtifacts, TrackingConfig
+from prml_vslam.pipeline.interfaces import OfflineTrackerBackend, StreamingTrackerBackend, TrackingUpdate
 from prml_vslam.utils import BaseConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 
@@ -30,8 +30,8 @@ class MockTrackingRuntimeConfig(BaseConfig):
         return MockTrackingRuntime
 
 
-class MockTrackingRuntime:
-    """Incremental mock tracker that mirrors source poses and persists small artifacts."""
+class MockTrackingRuntime(OfflineTrackerBackend, StreamingTrackerBackend):
+    """Mock tracker that supports both offline and incremental tracking contracts."""
 
     def __init__(self, config: MockTrackingRuntimeConfig) -> None:
         self.config = config
@@ -54,29 +54,29 @@ class MockTrackingRuntime:
         """Consume one frame and return a deterministic tracking update."""
         self._require_open()
         pose = frame.pose if frame.pose is not None else self._fallback_pose()
-        timestamp_s = self._normalize_timestamp_seconds(frame.timestamp_ns / 1e9)
-        self._poses.append(pose)
-        self._timestamps_s.append(timestamp_s)
-
-        num_map_points = max(len(self._poses) * 12, 12)
-        self._preview_events.append(
-            {
-                "seq": frame.seq,
-                "timestamp_ns": frame.timestamp_ns,
-                "timestamp_s": timestamp_s,
-                "num_map_points": num_map_points,
-                "used_source_pose": frame.pose is not None,
-                "tx": pose.tx,
-                "ty": pose.ty,
-                "tz": pose.tz,
-            }
-        )
-        return TrackingUpdate(
+        return self._append_pose(
             seq=frame.seq,
             timestamp_ns=frame.timestamp_ns,
             pose=pose,
-            num_map_points=num_map_points,
+            used_source_pose=frame.pose is not None,
         )
+
+    def run_sequence(
+        self,
+        sequence: SequenceManifest,
+        cfg: TrackingConfig,
+        artifact_root: Path,
+    ) -> TrackingArtifacts:
+        """Run the mock tracker over a materialized sequence manifest offline."""
+        self.open(cfg, artifact_root)
+        for seq, timestamp_s, pose, used_source_pose in self._offline_samples(sequence):
+            self._append_pose(
+                seq=seq,
+                timestamp_ns=int(round(timestamp_s * 1e9)),
+                pose=pose,
+                used_source_pose=used_source_pose,
+            )
+        return self.close()
 
     def close(self) -> TrackingArtifacts:
         """Finalize the current run and persist the minimal tracking artifacts."""
@@ -111,6 +111,37 @@ class MockTrackingRuntime:
             raise RuntimeError("MockTrackingRuntime.open() must be called before tracking frames.")
         return self._artifact_root
 
+    def _append_pose(
+        self,
+        *,
+        seq: int,
+        timestamp_ns: int,
+        pose: SE3Pose,
+        used_source_pose: bool,
+    ) -> TrackingUpdate:
+        timestamp_s = self._normalize_timestamp_seconds(timestamp_ns / 1e9)
+        self._poses.append(pose)
+        self._timestamps_s.append(timestamp_s)
+        num_map_points = max(len(self._poses) * 12, 12)
+        self._preview_events.append(
+            {
+                "seq": seq,
+                "timestamp_ns": timestamp_ns,
+                "timestamp_s": timestamp_s,
+                "num_map_points": num_map_points,
+                "used_source_pose": used_source_pose,
+                "tx": pose.tx,
+                "ty": pose.ty,
+                "tz": pose.tz,
+            }
+        )
+        return TrackingUpdate(
+            seq=seq,
+            timestamp_ns=timestamp_ns,
+            pose=pose,
+            num_map_points=num_map_points,
+        )
+
     def _fallback_pose(self) -> SE3Pose:
         previous_pose = self._poses[-1] if self._poses else None
         tx = self.config.step_distance_m if previous_pose is None else previous_pose.tx + self.config.step_distance_m
@@ -122,6 +153,34 @@ class MockTrackingRuntime:
         if not self._timestamps_s:
             return float(timestamp_s)
         return max(float(timestamp_s), self._timestamps_s[-1] + 1e-3)
+
+    def _offline_samples(self, sequence: SequenceManifest) -> list[tuple[int, float, SE3Pose, bool]]:
+        reference_path = sequence.reference_tum_path or sequence.arcore_tum_path
+        if reference_path is not None and reference_path.exists():
+            return [
+                (seq, timestamp_s, pose, True)
+                for seq, (timestamp_s, pose) in enumerate(self._load_tum_sequence(reference_path))
+            ]
+        return [(0, 0.0, self._fallback_pose(), False)]
+
+    @staticmethod
+    def _load_tum_sequence(path: Path) -> list[tuple[float, SE3Pose]]:
+        rows: list[tuple[float, SE3Pose]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            values = stripped.split()
+            if len(values) != 8:
+                raise ValueError(f"Expected 8 columns in TUM trajectory row, got {len(values)}: {stripped}")
+            timestamp_s, tx, ty, tz, qx, qy, qz, qw = (float(value) for value in values)
+            rows.append(
+                (
+                    timestamp_s,
+                    SE3Pose(qx=qx, qy=qy, qz=qz, qw=qw, tx=tx, ty=ty, tz=tz),
+                )
+            )
+        return rows
 
     def _write_sparse_points(self, path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)

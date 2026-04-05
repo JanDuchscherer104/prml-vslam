@@ -9,7 +9,7 @@ import numpy as np
 from prml_vslam.interfaces import FramePacket, SE3Pose
 from prml_vslam.methods import MethodId, MethodRunRequest, MSTRMethodConfig, VISTAMethodConfig
 from prml_vslam.methods.mock_tracking import MockTrackingRuntimeConfig
-from prml_vslam.pipeline.contracts import TrackingConfig
+from prml_vslam.pipeline.contracts import SequenceManifest, TrackingConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 
 
@@ -102,6 +102,37 @@ def test_mock_tracking_runtime_steps_frames_and_writes_tracking_artifacts(tmp_pa
     assert update.pose.tx == 1.0
     assert update.num_map_points == 12
     assert artifacts.trajectory_tum.path.exists()
+    assert artifacts.sparse_points_ply is not None
+    assert artifacts.sparse_points_ply.path.exists()
+    assert artifacts.preview_log_jsonl is not None
+    assert artifacts.preview_log_jsonl.path.exists()
+
+
+def test_mock_tracking_runtime_runs_sequence_manifest_offline(tmp_path: Path) -> None:
+    runtime = MockTrackingRuntimeConfig(method_id=MethodId.VISTA).setup_target()
+    assert runtime is not None
+
+    reference_path = tmp_path / "reference.tum"
+    write_tum_trajectory(
+        reference_path,
+        [
+            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.0),
+        ],
+        [0.0, 1.0],
+    )
+
+    artifacts = runtime.run_sequence(
+        SequenceManifest(sequence_id="advio-15", reference_tum_path=reference_path),
+        TrackingConfig(method=MethodId.VISTA),
+        tmp_path / "offline-artifacts",
+    )
+
+    trajectory_lines = artifacts.trajectory_tum.path.read_text(encoding="utf-8").splitlines()
+
+    assert len(trajectory_lines) == 2
+    assert trajectory_lines[0].startswith("0.000000 0.000000 0.000000 0.000000")
+    assert trajectory_lines[1].startswith("1.000000 1.000000 0.500000 0.000000")
     assert artifacts.sparse_points_ply is not None
     assert artifacts.sparse_points_ply.path.exists()
     assert artifacts.preview_log_jsonl is not None

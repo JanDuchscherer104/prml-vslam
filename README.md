@@ -40,9 +40,12 @@ The app supports:
 
 - a `Record3D` live-capture page for USB and Wi-Fi preview inside the workbench
 - an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
-- a `Pipeline` page for run planning and artifact-path inspection
+- a `Pipeline` page for run planning, a minimal ADVIO mock pipeline demo, and artifact monitoring
 - a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
 - `PathConfig`-driven dataset and artifact discovery without app-local path defaults
+
+Pipeline contract and extension guidance lives in
+[`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).
 
 ## Challenge
 

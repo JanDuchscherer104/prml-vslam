@@ -21,11 +21,13 @@ surface for persisted `evo` results.
 - The app must keep the `Metrics` page reachable without removing any existing
   trajectory-evaluation functionality.
 - The app must expose a `Pipeline` page that explains the typed run-planning
-  surface, the direct request pattern, and concrete usage examples without
-  executing a pipeline.
+  surface, the direct request pattern, and concrete usage examples.
 - The `Pipeline` page must also show one mock completed run with stage status,
   artifact contracts, and serialized output examples so users can inspect what
   the planner hands to downstream execution surfaces.
+- The `Pipeline` page may execute a minimal repository-local demo pipeline for
+  monitoring purposes when the input and backend are explicitly bounded by the
+  app.
 - The `Record3D` page must support both `USB` and `Wi-Fi` transports through one
   transport selector.
 - The `Record3D` page must show:
@@ -94,7 +96,9 @@ surface for persisted `evo` results.
 - The app shows example pipeline shapes, the direct `RunRequest(...)` workflow
   with nested stage configs, one generated `RunPlan` table, and one mock
   executed run.
-- The page does not execute any backend or write artifacts as a side effect.
+- The page may also run the minimal ADVIO replay plus mock-tracking demo and
+  render frames, trajectory, artifacts, and stage status for that bounded
+  session.
 
 ### Explicit Evaluation
 
@@ -107,5 +111,6 @@ surface for persisted `evo` results.
 
 - Browser-owned Record3D widgets or browser-side frame decoding.
 - Implicit metric computation on load or selector changes.
-- Pipeline execution or unrelated dataset tooling from the app layer.
+- General-purpose pipeline orchestration or unrelated dataset tooling from the
+  app layer.
 - Replacing `evo` with an app-local trajectory-metrics implementation.
