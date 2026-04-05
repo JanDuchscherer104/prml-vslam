@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -93,3 +94,57 @@ def test_advio_download_command_builds_explicit_request(tmp_path: Path, monkeypa
     assert isinstance(request, AdvioDownloadRequest)
     assert request.sequence_ids == [15]
     assert request.preset is AdvioDownloadPreset.STREAMING
+
+
+def test_plan_run_config_command_loads_toml_request(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+    config_path = tmp_path / "configs" / "advio-vista.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        """
+experiment_name = "Advio Office Offline Vista"
+mode = "offline"
+output_dir = "artifacts"
+
+[source]
+kind = "video"
+video_path = "captures/office-03.mp4"
+frame_stride = 2
+
+[slam]
+method = "vista"
+emit_dense_points = true
+emit_sparse_points = true
+
+[reference]
+enabled = false
+
+[evaluation]
+compare_to_arcore = true
+evaluate_cloud = false
+evaluate_efficiency = true
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
+    monkeypatch.setattr(main.console, "plog", lambda payload: captured.setdefault("payload", payload))
+
+    result = runner.invoke(main.app, ["plan-run-config", "configs/advio-vista.toml"])
+
+    assert result.exit_code == 0
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["run_id"] == "advio-office-offline-vista"
+    assert payload["method"] == "vista"
+    assert payload["source"]["kind"] == "video"
+    assert payload["source"]["video_path"] == "captures/office-03.mp4"
+
+
+def test_runtime_dependencies_include_pyyaml() -> None:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
+
+    assert any(dependency.lower().startswith("pyyaml") for dependency in dependencies)

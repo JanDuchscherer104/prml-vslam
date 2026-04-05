@@ -25,6 +25,11 @@
 - PyTorch3D README: <https://github.com/facebookresearch/pytorch3d>
 - PyTorch3D batching note: <https://github.com/facebookresearch/pytorch3d/blob/main/docs/notes/batching.md>
 - pytransform3d docs: <https://dfki-ric.github.io/pytransform3d/>
+- evo repo: <https://github.com/MichaelGrupp/evo>
+- evo plotting wiki: <https://github.com/MichaelGrupp/evo/wiki/Plotting>
+- evo trajectory tool wiki (`--plot_mode`, sync/alignment options): <https://github.com/MichaelGrupp/evo/wiki/evo_traj>
+- evo APE tool wiki: <https://github.com/MichaelGrupp/evo/wiki/evo_ape>
+- evo plot helpers (`traj_colormap`, trajectory plotting internals): <https://github.com/MichaelGrupp/evo/blob/master/evo/tools/plot.py>
 - Nerfstudio docs: <https://docs.nerf.studio/>
 - Nerfstudio data conventions: <https://docs.nerf.studio/quickstart/data_conventions.html>
 - ViSTA-SLAM paper: <https://arxiv.org/abs/2509.01584>
