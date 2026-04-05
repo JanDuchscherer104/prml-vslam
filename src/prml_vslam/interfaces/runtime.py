@@ -23,9 +23,8 @@ class FramePacket(BaseData):
     arrival_timestamp_s: float | None = None
     rgb: NDArray[np.uint8] | None = None
     depth: NDArray[np.float32] | None = None
-    pointmap: NDArray[np.float32] | None = None
-    """Optional HxWx3 dense point cloud in camera coordinates."""
-    uncertainty: NDArray[np.float32] | None = None
+    confidence: NDArray[np.float32] | None = None
+    """Optional HxW sensor-confidence raster aligned with the depth image."""
     intrinsics: CameraIntrinsics | None = None
     pose: SE3Pose | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

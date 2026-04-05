@@ -151,7 +151,7 @@ def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
     assert packet.metadata["transport"] == Record3DTransportId.WIFI.value
     assert packet.rgb.shape == (2, 2, 3)
     assert packet.depth.shape == (2, 2)
-    assert packet.uncertainty is None
+    assert packet.confidence is None
     assert packet.intrinsics is not None
     assert packet.intrinsics.fx == 100.0
     assert packet.metadata["device_address"] == "http://myiPhone.local"

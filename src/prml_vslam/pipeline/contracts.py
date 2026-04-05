@@ -217,9 +217,6 @@ class SlamUpdate(BaseData):
     pointmap: NDArray[np.float32] | None = None
     """Optional HxWx3 pointmap in camera coordinates for the current frame."""
 
-    uncertainty: NDArray[np.float32] | None = None
-    """Optional HxW uncertainty map for the current frame, aligned with the pointmap if present."""
-
 
 class SlamArtifacts(BaseData):
     """Materialized outputs produced by the SLAM stage."""

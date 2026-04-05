@@ -159,11 +159,11 @@ def _render_frame_preview(packet) -> None:
     with frame_columns[1]:
         st.markdown("**Depth Frame**")
         st.image(normalize_grayscale_image(packet.depth), clamp=True)
-    st.markdown("**Uncertainty / Confidence**")
-    if packet.uncertainty is None:
-        st.info("Uncertainty / confidence is not available for this transport.")
+    st.markdown("**Depth Confidence**")
+    if packet.confidence is None:
+        st.info("Depth confidence is not available for this transport.")
     else:
-        st.image(normalize_grayscale_image(packet.uncertainty), clamp=True)
+        st.image(normalize_grayscale_image(packet.confidence), clamp=True)
 
 
 def _start_disabled(

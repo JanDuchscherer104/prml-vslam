@@ -6,37 +6,6 @@ source = "Validated review findings plus follow-up repository policy notes, the 
 active_collection = "issues"
 
 [[issues]]
-id = "ISSUE-0005"
-title = "FramePacket and SlamUpdate still overlap ingress and preview semantics"
-status = "open"
-priority = "medium"
-category = "contracts"
-summary = "The canonical ingress packet still carries preview- and method-oriented fields (`pointmap`, `uncertainty`, `image_path`, `jpeg_bytes`) while `SlamUpdate` also owns `pointmap` and `uncertainty`, leaving the current tree with overlapping owners and a live sensor-confidence naming collision."
-files = [
-    "src/prml_vslam/interfaces/runtime.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-]
-notes = [
-    "Record3D currently maps USB depth confidence into `FramePacket.uncertainty`, even though `SlamUpdate.uncertainty` reads like method output.",
-    "The mock SLAM session also consumes `FramePacket.pointmap` while emitting `SlamUpdate.pointmap`, so the same semantic concept still has two owners.",
-    "FramePacket.image_path and FramePacket.jpeg_bytes remain unused in the current repository tree.",
-]
-sources = [
-    "README.md",
-    "docs/Questions.md",
-    "src/prml_vslam/app/REQUIREMENTS.md",
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/interfaces/runtime.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-]
-
-[[issues]]
 id = "ISSUE-0009"
 title = "Method wrapper contracts still duplicate pipeline artifact ownership"
 status = "open"

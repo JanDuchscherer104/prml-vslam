@@ -144,8 +144,8 @@ def test_record3d_frame_to_packet_preserves_intrinsics_and_confidence(monkeypatc
     assert packet.pose is not None
     assert packet.pose.tx == 1.0
     assert packet.pose.tz == 3.0
-    assert packet.uncertainty is not None
-    np.testing.assert_array_equal(packet.uncertainty, np.array([[0, 1], [2, 3]], dtype=np.float32))
+    assert packet.confidence is not None
+    np.testing.assert_array_equal(packet.confidence, np.array([[0, 1], [2, 3]], dtype=np.float32))
 
 
 def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: pytest.MonkeyPatch) -> None:

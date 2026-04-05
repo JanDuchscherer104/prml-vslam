@@ -249,8 +249,8 @@ class FakeFramePacketStream:
         return self.packets[index]
 
 
-def _usb_snapshot(*, uncertainty: bool) -> Record3DStreamSnapshot:
-    uncertainty_frame = np.array([[0.0, 0.5], [0.75, 1.0]], dtype=np.float32) if uncertainty else None
+def _usb_snapshot(*, confidence: bool) -> Record3DStreamSnapshot:
+    confidence_frame = np.array([[0.0, 0.5], [0.75, 1.0]], dtype=np.float32) if confidence else None
     return Record3DStreamSnapshot(
         transport=Record3DTransportId.USB,
         state=Record3DStreamState.STREAMING,
@@ -273,7 +273,7 @@ def _usb_snapshot(*, uncertainty: bool) -> Record3DStreamSnapshot:
             rgb=np.ones((2, 2, 3), dtype=np.uint8),
             depth=np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
             intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
-            uncertainty=uncertainty_frame,
+            confidence=confidence_frame,
             metadata={"original_size": [960, 720], "transport": Record3DTransportId.USB.value},
         ),
     )
@@ -293,7 +293,7 @@ def _wifi_snapshot() -> Record3DStreamSnapshot:
             rgb=np.ones((2, 2, 3), dtype=np.uint8) * 3,
             depth=np.ones((2, 2), dtype=np.float32),
             intrinsics=CameraIntrinsics(fx=50.0, fy=60.0, cx=5.0, cy=6.0),
-            uncertainty=None,
+            confidence=None,
             metadata={"device_address": "http://myiPhone.local", "transport": Record3DTransportId.WIFI.value},
         ),
     )
@@ -812,7 +812,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
                 pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                uncertainty=np.ones((2, 2), dtype=np.float32),
+                confidence=np.ones((2, 2), dtype=np.float32),
                 metadata={"transport": Record3DTransportId.USB.value},
             ),
             FramePacket(
@@ -823,7 +823,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
                 pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
-                uncertainty=np.ones((2, 2), dtype=np.float32),
+                confidence=np.ones((2, 2), dtype=np.float32),
                 metadata={"transport": Record3DTransportId.USB.value},
             ),
         ],
@@ -839,7 +839,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
 
     assert snapshot.transport is Record3DTransportId.USB
     assert snapshot.latest_packet is not None
-    assert snapshot.latest_packet.uncertainty is not None
+    assert snapshot.latest_packet.confidence is not None
     assert snapshot.measured_fps > 0.0
     assert snapshot.trajectory_positions_xyz.shape[1] == 3
     assert snapshot.trajectory_positions_xyz.shape[0] >= 2
@@ -855,7 +855,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
 
 def test_record3d_runtime_controller_stops_previous_stream_when_switching_transport() -> None:
     usb_stream = FakePacketStream(
-        packets=[_usb_snapshot(uncertainty=True).latest_packet],
+        packets=[_usb_snapshot(confidence=True).latest_packet],
         connected_target=Record3DDevice(product_id=101, udid="device-101"),
     )
     wifi_stream = FakePacketStream(
