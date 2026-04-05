@@ -11,6 +11,11 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   project scope, assumptions, or evaluation intent.
 - `.github/CODEOWNERS`: ownership hints for code paths, review surfaces, and intent resolution when
   repo responsibilities are ambiguous.
+- `.agents/AGENTS_INTERNAL_DB.md`: compact internal alignment database for stable repo facts,
+  workflow constraints, and configuration policy.
+- `.agents/issues.toml`: structured backlog of validated defects, architectural debts, and
+  integration gaps.
+- `.agents/todos.toml`: structured action list linked to the validated issues backlog.
 - `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary
   sources relevant to this project.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
@@ -24,6 +29,11 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
 
 ## Repo-Wide Rules
 
+- Use the internal `.agents` databases as working memory:
+  - read `.agents/AGENTS_INTERNAL_DB.md` before substantial repo work
+  - update `.agents/issues.toml` when you validate a new issue or materially change an existing one
+  - update `.agents/todos.toml` when you identify, reprioritize, or complete concrete follow-up work
+  - do not delete historical entries; update their status in place
 - Read the nearest nested `AGENTS.md` before editing.
   - Python/package rules: `src/prml_vslam/AGENTS.md`
   - App-specific Streamlit rules: `src/prml_vslam/app/AGENTS.md`
@@ -47,6 +57,10 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   - do not hide fallback behavior inside wrappers
 - Treat ARCore, reference reconstructions, and benchmark tools as explicit external baselines, not
   hidden parts of a method wrapper.
+- For repo-owned persisted configuration, prefer TOML for `BaseConfig` derivatives.
+  - use `BaseConfig.from_toml()`, `BaseConfig.to_toml()`, and `BaseConfig.save_toml()`
+  - use `PathConfig.resolve_toml_path()` for repo-relative config files
+  - avoid inventing parallel ad hoc config formats for durable workflows
 
 ## Requirements And App Guidance
 

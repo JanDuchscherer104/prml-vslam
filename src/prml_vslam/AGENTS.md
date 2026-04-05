@@ -121,6 +121,11 @@ def compute_rri(
 - Config classes should inherit from `prml_vslam.utils.BaseConfig` where appropriate.
 - Runtime objects should be instantiated from config objects via `.setup_target()`, not from loose dicts or long argument lists.
 - Keep setup, construction, and non-runtime validation in config objects.
+- Prefer TOML as the persisted configuration surface for `BaseConfig` derivatives that represent
+  durable repo-owned workflows.
+  - load configs with `BaseConfig.from_toml()`
+  - persist configs with `BaseConfig.to_toml()` / `save_toml()`
+  - resolve repo-owned config paths with `PathConfig.resolve_toml_path()`
 - Prefer composable hierarchical config objects over untyped blobs.
 - Use `field_validator` and `model_validator` when validation belongs in the config layer.
 - Do not convert config objects to raw dicts just to instantiate internal runtime classes.
