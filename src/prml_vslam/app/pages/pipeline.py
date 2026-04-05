@@ -11,7 +11,6 @@ import streamlit as st
 
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
-    ArtifactRef,
     BenchmarkEvaluationConfig,
     CloudMetrics,
     DenseArtifacts,
@@ -25,13 +24,13 @@ from prml_vslam.pipeline import (
     RunRequest,
     RunSummary,
     SequenceManifest,
-    StageExecutionStatus,
     StageManifest,
     TrackingArtifacts,
     TrackingConfig,
     TrajectoryMetrics,
     VideoSourceSpec,
 )
+from prml_vslam.pipeline.contracts import ArtifactRef, RunPlanStageId, StageExecutionStatus
 from prml_vslam.utils import PathConfig
 
 from ..ui import render_page_intro
@@ -65,6 +64,12 @@ class MockRunDossier:
     efficiency_metrics: EfficiencyMetrics
     stage_manifests: list[StageManifest]
     summary: RunSummary
+
+
+_MOCK_STAGE_STATUS_OVERRIDES = {
+    RunPlanStageId.INGEST: StageExecutionStatus.HIT,
+    RunPlanStageId.REFERENCE_RECONSTRUCTION: StageExecutionStatus.HIT,
+}
 
 
 def render(context: AppContext) -> None:
@@ -257,16 +262,7 @@ def _build_mock_run(path_config: PathConfig) -> MockRunDossier:
     efficiency_metrics = EfficiencyMetrics(
         metrics_json=_artifact(run_paths.efficiency_metrics_path, kind="json", fingerprint="efficiency-metrics-v1")
     )
-    stage_status = {
-        plan.stages[0].id: StageExecutionStatus.HIT,
-        plan.stages[1].id: StageExecutionStatus.RAN,
-        plan.stages[2].id: StageExecutionStatus.RAN,
-        plan.stages[3].id: StageExecutionStatus.HIT,
-        plan.stages[4].id: StageExecutionStatus.RAN,
-        plan.stages[5].id: StageExecutionStatus.RAN,
-        plan.stages[6].id: StageExecutionStatus.RAN,
-        plan.stages[7].id: StageExecutionStatus.RAN,
-    }
+    stage_status = _mock_stage_statuses(plan)
     stage_manifests = [
         StageManifest(
             stage_id=stage.id,
@@ -291,6 +287,10 @@ def _build_mock_run(path_config: PathConfig) -> MockRunDossier:
         stage_manifests=stage_manifests,
         summary=summary,
     )
+
+
+def _mock_stage_statuses(plan: RunPlan) -> dict[RunPlanStageId, StageExecutionStatus]:
+    return {stage.id: _MOCK_STAGE_STATUS_OVERRIDES.get(stage.id, StageExecutionStatus.RAN) for stage in plan.stages}
 
 
 def _stage_rows(plan: RunPlan) -> list[dict[str, str]]:

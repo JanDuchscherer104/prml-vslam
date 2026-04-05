@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
-    ArtifactRef,
     BenchmarkEvaluationConfig,
     CloudMetrics,
     DenseArtifacts,
@@ -17,12 +16,12 @@ from prml_vslam.pipeline import (
     EfficiencyMetrics,
     ReferenceArtifacts,
     ReferenceConfig,
-    RunPlanStageId,
     RunRequest,
     TrackingConfig,
     TrajectoryMetrics,
     VideoSourceSpec,
 )
+from prml_vslam.pipeline.contracts import ArtifactRef, RunPlanStageId
 from prml_vslam.pipeline.services import RunPlannerService
 from prml_vslam.utils import PathConfig
 
