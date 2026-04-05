@@ -77,7 +77,7 @@ class MetricsPageState(BaseData):
     """Selected artifact root for one evaluated run."""
 
     evaluation: EvaluationControls = Field(default_factory=EvaluationControls)
-    """Current `evo` controls."""
+    """Reserved placeholder for future explicit evaluation options."""
 
     result_path: Path | None = None
     """Most recently loaded or computed persisted result path."""

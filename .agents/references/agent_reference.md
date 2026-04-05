@@ -36,5 +36,6 @@
 
 - Pipeline plans are built from `RunRequest.build()` after `RunRequest(...)` is fully specified with nested tracking, stage, and evaluation configs.
 - `DenseConfig` and `ReferenceConfig` share one toggle storage shape, while `BenchmarkEvaluationConfig` owns the optional evaluation stage toggles.
+- The repository-local metrics surface currently persists one deterministic mock trajectory-comparison result per run and does not expose pose/alignment/scale/tolerance knobs until a real `evo` adapter exists.
 - Shared camera, pose, trajectory, and runtime frame contracts live in `prml_vslam.interfaces`.
 - `SE3Pose`, `CameraIntrinsics`, `TimedPoseTrajectory`, `FramePacket`, and `FramePacketStream` are the canonical repo-wide datamodels.
