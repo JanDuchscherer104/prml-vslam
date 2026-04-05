@@ -1,18 +1,18 @@
 .DEFAULT_GOAL := help
 
-# Color codes
-BLUE := \033[0;34m
-GREEN := \033[0;32m
-YELLOW := \033[0;33m
-RED := \033[0;31m
-NC := \033[0m
-
-# Tooling
+CPU_COUNT ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || python3 -c 'import os; print(os.cpu_count() or 1)' 2>/dev/null || echo 1)
+UV_RUN ?= uv run
+RUFF ?= $(UV_RUN) ruff
+PRE_COMMIT ?= $(UV_RUN) pre-commit run --all-files --show-diff-on-failure
 TYPST ?= typst
 TYPSTYLE ?= typstyle
-PYTEST_ARGS ?=
+PYTEST ?= $(UV_RUN) --extra dev pytest
+PYTEST_WORKERS ?= auto
+PYTEST_ARGS ?= -n $(PYTEST_WORKERS)
+PARALLEL_MAKE ?= $(MAKE) -j$(CPU_COUNT)
+AGENTS_DB ?= $(UV_RUN) python .agents/scripts/agents_db.py
+AGENTS_ARGS ?= rank
 
-# Bibliography
 BIB_FILE ?= docs/references.bib
 BIB_CACHE_DIR ?= .cache/bib
 BIB_REBIBER_OUTPUT ?= $(BIB_CACHE_DIR)/references.rebiber.bib
@@ -24,10 +24,12 @@ BIB_FIELD_REPORT ?= $(BIB_CACHE_DIR)/field-report.json
 BIB_FACT_CACHE ?= $(BIB_CACHE_DIR)/fact-cache.db
 BIB_UPDATER_CACHE ?= $(BIB_CACHE_DIR)/updater-cache.db
 BIB_RESOLUTION_CACHE ?= $(BIB_CACHE_DIR)/resolution-cache.db
+BIB_ARTIFACTS ?= $(BIB_REBIBER_OUTPUT) $(BIB_REBIBER_LOG) $(BIB_UPDATE_OUTPUT) $(BIB_CHECK_REPORT) $(BIB_UPDATE_REPORT) $(BIB_FIELD_REPORT) $(BIB_FACT_CACHE) $(BIB_UPDATER_CACHE) $(BIB_RESOLUTION_CACHE)
 BIB_TIMEOUT ?= 240
+BIB_WORKERS ?= $(CPU_COUNT)
 
-# Documentation
 TYPST_ROOT ?= $(abspath .)
+TYPST_COMPILE ?= $(TYPST) compile --root $(TYPST_ROOT)
 REPORT_TYP ?= docs/report/main.typ
 REPORT_PDF ?= docs/report/build/report.pdf
 UPDATE_SLIDES_TYP ?= docs/slides/update-meetings/update-slides.typ
@@ -35,81 +37,55 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint lint-check typst-lint typst-check test bib-check bib-check-strict report-pdf slides-pdf final-slides docs-build
+.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db
 
-#  ═══════════════════════════════════════════════════════════════════════
-#  🔧 Quality
-#  ═══════════════════════════════════════════════════════════════════════
-
-fmt: ## Auto-format Python files and apply Ruff fixes
-	uv run ruff format .
-	uv run ruff check . --fix
-
-lint: fmt ## Auto-format Python files and apply Ruff fixes
+lint: ## Auto-format Python files and apply Ruff fixes
+	$(RUFF) format .
+	$(RUFF) check . --fix
 
 lint-check: ## Run non-mutating Ruff format and lint checks
-	uv run ruff format --check .
-	uv run ruff check .
+	$(RUFF) format --check .
+	$(RUFF) check .
+
+ci: ## Run the local CI verification suite
+	$(PRE_COMMIT)
+	$(PARALLEL_MAKE) test report-pdf slides-pdf
 
 typst-lint: ## Run non-mutating Typst formatting checks
 	$(TYPSTYLE) --check $(REPORT_TYP) $(UPDATE_SLIDES_TYP)
 
-typst-check: typst-lint report-pdf slides-pdf ## Lint and compile the report and update slides
+typst-check: ## Lint and compile the report and update slides
+	$(PARALLEL_MAKE) typst-lint report-pdf slides-pdf
 
 test: ## Run the Python test suite (for parallel runs: make test PYTEST_ARGS="-n auto")
-	uv run --extra dev pytest $(PYTEST_ARGS)
+	$(PYTEST) $(PYTEST_ARGS)
 
-#  ═══════════════════════════════════════════════════════════════════════
-#  📚 Bibliography
-#  ═══════════════════════════════════════════════════════════════════════
+agents-db: ## Run the local .agents backlog tool (example: make agents-db AGENTS_ARGS="rank --kind todos")
+	$(AGENTS_DB) $(AGENTS_ARGS)
 
-bib-check: ## Run non-destructive bibliography normalization and field audits
+bib-check: ## Run strict source-backed bibliography verification
 	mkdir -p $(BIB_CACHE_DIR)
-	rm -f $(BIB_REBIBER_OUTPUT) $(BIB_REBIBER_LOG) $(BIB_UPDATE_OUTPUT) $(BIB_CHECK_REPORT) $(BIB_UPDATE_REPORT) $(BIB_FIELD_REPORT) $(BIB_FACT_CACHE) $(BIB_UPDATER_CACHE) $(BIB_RESOLUTION_CACHE)
-	timeout $(BIB_TIMEOUT) uv run rebiber -i $(BIB_FILE) -o $(BIB_REBIBER_OUTPUT) -d True -st True > $(BIB_REBIBER_LOG) 2>&1
-	TMPDIR=$(abspath $(BIB_CACHE_DIR)) timeout $(BIB_TIMEOUT) uv run bibtex-update $(BIB_FILE) -o $(BIB_UPDATE_OUTPUT) --dry-run --check-fields --field-fill-mode recommended --skip-preprint-upgrade --max-workers 1 --cache $(BIB_UPDATER_CACHE) --resolution-cache $(BIB_RESOLUTION_CACHE) --report $(BIB_UPDATE_REPORT) --field-report $(BIB_FIELD_REPORT)
-
-bib-check-strict: bib-check ## Run strict source-backed bibliography verification
-	TMPDIR=$(abspath $(BIB_CACHE_DIR)) timeout $(BIB_TIMEOUT) uv run bibtex-check $(BIB_FILE) --strict --workers 1 --cache-file $(BIB_FACT_CACHE) --report $(BIB_CHECK_REPORT)
-
-#  ═══════════════════════════════════════════════════════════════════════
-#  📄 Docs
-#  ═══════════════════════════════════════════════════════════════════════
+	rm -f $(BIB_ARTIFACTS)
+	timeout $(BIB_TIMEOUT) $(UV_RUN) rebiber -i $(BIB_FILE) -o $(BIB_REBIBER_OUTPUT) -d True -st True > $(BIB_REBIBER_LOG) 2>&1
+	TMPDIR=$(abspath $(BIB_CACHE_DIR)) timeout $(BIB_TIMEOUT) $(UV_RUN) bibtex-update $(BIB_FILE) -o $(BIB_UPDATE_OUTPUT) --dry-run --check-fields --field-fill-mode recommended --skip-preprint-upgrade --max-workers $(BIB_WORKERS) --cache $(BIB_UPDATER_CACHE) --resolution-cache $(BIB_RESOLUTION_CACHE) --report $(BIB_UPDATE_REPORT) --field-report $(BIB_FIELD_REPORT)
+	TMPDIR=$(abspath $(BIB_CACHE_DIR)) timeout $(BIB_TIMEOUT) $(UV_RUN) bibtex-check $(BIB_FILE) --strict --workers $(BIB_WORKERS) --cache-file $(BIB_FACT_CACHE) --report $(BIB_CHECK_REPORT)
 
 report-pdf: ## Compile the Typst report PDF
 	mkdir -p $(dir $(REPORT_PDF))
-	$(TYPST) compile --root $(TYPST_ROOT) $(REPORT_TYP) $(REPORT_PDF)
+	$(TYPST_COMPILE) $(REPORT_TYP) $(REPORT_PDF)
 
 slides-pdf: ## Compile the unified update-meeting slide deck
-	@if [ ! -f "$(UPDATE_SLIDES_TYP)" ]; then \
-		echo "$(RED)Missing slide deck: $(UPDATE_SLIDES_TYP)$(NC)"; \
-		exit 1; \
-	fi
+	test -f "$(UPDATE_SLIDES_TYP)" || { echo "Missing slide deck: $(UPDATE_SLIDES_TYP)"; exit 1; }
 	mkdir -p $(dir $(UPDATE_SLIDES_PDF))
-	$(TYPST) compile --root $(TYPST_ROOT) $(UPDATE_SLIDES_TYP) $(UPDATE_SLIDES_PDF)
+	$(TYPST_COMPILE) $(UPDATE_SLIDES_TYP) $(UPDATE_SLIDES_PDF)
 
 final-slides: ## Compile the final presentation slides
 	mkdir -p $(dir $(FINAL_PDF))
-	$(TYPST) compile --root $(TYPST_ROOT) $(FINAL_TYP) $(FINAL_PDF)
+	$(TYPST_COMPILE) $(FINAL_TYP) $(FINAL_PDF)
 
-docs-build: report-pdf slides-pdf final-slides ## Build the report, meeting slides, and final slides
-
-#  ═══════════════════════════════════════════════════════════════════════
-#  ℹ️  Help
-#  ═══════════════════════════════════════════════════════════════════════
+docs-build: ## Build the report, meeting slides, and final slides
+	$(PARALLEL_MAKE) report-pdf slides-pdf final-slides
 
 help: ## Show this help message
-	@echo ""
-	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
-	@echo "$(GREEN)             PRML VSLAM - Makefile Commands                $(NC)"
-	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
-	@echo ""
-	@echo "$(YELLOW)Usage:$(NC) make <target>"
-	@echo "$(YELLOW)Docs:$(NC)  make typst-check"
-	@awk 'BEGIN {FS = ":.*?## "; section=""} \
-		/^#  ═+$$/ {next} \
-		/^#  [🔧📚📄ℹ️]/ {if (section) print ""; section=$$0; gsub(/^#  /, "", section); print "$(YELLOW)" section "$(NC)"; next} \
-		/^[a-zA-Z0-9_.-]+:.*?## / {printf "  $(BLUE)%-18s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ""
-	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
-	@echo ""
+	@echo "Usage: make <target>"
+	@awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z0-9_.-]+:.*?## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

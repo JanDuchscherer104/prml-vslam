@@ -13,13 +13,7 @@ from pydantic import ValidationError
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import (
-    PipelineMode,
-    PipelineSessionService,
-    PipelineSessionState,
-    RunRequest,
-    SequenceManifest,
-)
+from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DatasetSourceSpec,
@@ -29,6 +23,7 @@ from prml_vslam.pipeline.contracts import (
     StageExecutionStatus,
     VideoSourceSpec,
 )
+from prml_vslam.pipeline.session import PipelineSessionService, PipelineSessionState
 from prml_vslam.utils import PathConfig
 
 

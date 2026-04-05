@@ -71,6 +71,17 @@ def test_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> Non
     assert np.allclose(trajectory.positions_xyz, np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float64))
 
 
+def test_empty_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> None:
+    path = tmp_path / "trajectory.tum"
+
+    write_tum_trajectory(path, [], [])
+    trajectory = load_tum_trajectory(path)
+
+    assert trajectory.timestamps_s.shape == (0,)
+    assert trajectory.positions_xyz.shape == (0, 3)
+    assert trajectory.quaternions_xyzw.shape == (0, 4)
+
+
 def test_pointmap_from_depth_uses_intrinsics_and_stride() -> None:
     pointmap = pointmap_from_depth(
         np.full((4, 4), 2.0, dtype=np.float32),

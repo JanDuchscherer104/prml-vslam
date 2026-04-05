@@ -11,7 +11,7 @@ from prml_vslam.methods import MethodId, MSTRMethodConfig
 from prml_vslam.methods.contracts import MethodRunRequest
 from prml_vslam.methods.mock_vslam import MockSlamBackendConfig
 from prml_vslam.pipeline.contracts import SequenceManifest, SlamConfig
-from prml_vslam.utils.geometry import write_tum_trajectory
+from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
 
 
 def _write_calibration(path: Path, *, width_px: int = 64, height_px: int = 64) -> None:
@@ -88,14 +88,14 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
         tmp_path / "offline-artifacts",
     )
 
-    trajectory_lines = artifacts.trajectory_tum.path.read_text(encoding="utf-8").splitlines()
+    trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
     dense_lines = (
         artifacts.dense_points_ply.path.read_text(encoding="utf-8").splitlines() if artifacts.dense_points_ply else []
     )
 
-    assert len(trajectory_lines) == 2
-    assert trajectory_lines[0].startswith("0.000000 0.000000 0.000000 0.000000")
-    assert trajectory_lines[1].startswith("1.000000 1.000000 0.500000 0.000000")
+    assert trajectory.timestamps_s.shape == (2,)
+    assert np.allclose(trajectory.positions_xyz[0], np.array([0.0, 0.0, 0.0], dtype=np.float64))
+    assert np.allclose(trajectory.positions_xyz[1], np.array([1.0, 0.5, 0.0], dtype=np.float64))
     assert artifacts.sparse_points_ply is not None
     assert artifacts.sparse_points_ply.path.exists()
     assert artifacts.preview_log_jsonl is not None

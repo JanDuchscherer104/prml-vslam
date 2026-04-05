@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import field_validator
-
 from prml_vslam.methods.contracts import (
     MethodId,
     MethodRunRequest,
@@ -28,13 +26,6 @@ end_header
 
 
 class MockMethodConfig(BaseConfig):
-    repo_path: Path
-
-    @field_validator("repo_path", mode="before")
-    @classmethod
-    def _resolve_repo_path(cls, value: str | Path) -> Path:
-        return Path(value).expanduser().resolve()
-
     @property
     def target_type(self) -> type[MockMethodRuntime]:
         return MockMethodRuntime

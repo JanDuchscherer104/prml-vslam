@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import streamlit as st
 
-from prml_vslam.pipeline import PipelineSessionService
+from prml_vslam.pipeline.session import PipelineSessionService
 from prml_vslam.utils import PathConfig
 
 from .models import AppState
@@ -123,4 +123,14 @@ class SessionStateStore:
             return
 
 
-__all__ = ["SessionStateStore"]
+def save_model_updates(store: SessionStateStore, state: AppState, model: Any, **updates: object) -> bool:
+    """Persist model updates only when at least one value changed."""
+    if all(getattr(model, key) == value for key, value in updates.items()):
+        return False
+    for key, value in updates.items():
+        setattr(model, key, value)
+    store.save(state)
+    return True
+
+
+__all__ = ["SessionStateStore", "save_model_updates"]
