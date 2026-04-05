@@ -5,46 +5,44 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
     ArtifactRef,
     BenchmarkEvaluationConfig,
-    CloudEvaluationConfig,
     CloudMetrics,
     DenseArtifacts,
     DenseConfig,
-    EfficiencyEvaluationConfig,
     EfficiencyMetrics,
     ReferenceArtifacts,
     ReferenceConfig,
     RunPlanStageId,
     RunRequest,
     TrackingConfig,
-    TrajectoryEvaluationConfig,
     TrajectoryMetrics,
     VideoSourceSpec,
 )
+from prml_vslam.pipeline.services import RunPlannerService
 from prml_vslam.utils import PathConfig
 
 
-def test_run_request_builder_builds_expected_stage_sequence() -> None:
+def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None:
     path_config = PathConfig()
-    request = (
-        RunRequest(
-            experiment_name="Lobby Sweep 01",
-            output_dir=Path("artifacts"),
-            source=VideoSourceSpec(video_path=Path("captures/lobby.mp4"), frame_stride=2),
-        )
-        .add_tracking(TrackingConfig(method=MethodId.VISTA))
-        .add_dense(DenseConfig())
-        .add_reference(ReferenceConfig())
-        .add_trajectory_evaluation(TrajectoryEvaluationConfig())
-        .add_cloud_evaluation(CloudEvaluationConfig())
-        .add_efficiency_evaluation(EfficiencyEvaluationConfig())
+    request = RunRequest(
+        experiment_name="Lobby Sweep 01",
+        output_dir=Path("artifacts"),
+        source=VideoSourceSpec(video_path=Path("captures/lobby.mp4"), frame_stride=2),
+        tracking=TrackingConfig(method=MethodId.VISTA),
+        dense=DenseConfig(enabled=True),
+        reference=ReferenceConfig(enabled=True),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=True,
+            evaluate_cloud=True,
+            evaluate_efficiency=True,
+        ),
     )
     plan = request.build(path_config)
-    assert request.tracking is not None
     run_paths = path_config.plan_run_paths(
         experiment_name=request.experiment_name,
         method_slug=request.tracking.method.artifact_slug,
@@ -72,7 +70,39 @@ def test_run_request_builder_builds_expected_stage_sequence() -> None:
     }
 
 
-def test_run_request_build_keeps_legacy_field_based_defaults() -> None:
+def test_run_request_build_delegates_to_run_planner_service() -> None:
+    request = RunRequest(
+        experiment_name="Delegate Check",
+        output_dir=Path("artifacts"),
+        source=VideoSourceSpec(video_path=Path("captures/delegate-check.mp4")),
+        tracking=TrackingConfig(method=MethodId.VISTA),
+    )
+    service_plan = RunPlannerService().build_run_plan(request)
+
+    assert request.build() == service_plan
+
+
+def test_run_request_build_keeps_legacy_default_stage_selection() -> None:
+    request = RunRequest(
+        experiment_name="Default Check",
+        output_dir=Path("artifacts"),
+        source=VideoSourceSpec(video_path=Path("captures/default-check.mp4")),
+        tracking=TrackingConfig(method=MethodId.MSTR),
+    )
+
+    plan = request.build()
+
+    assert [stage.id for stage in plan.stages] == [
+        RunPlanStageId.INGEST,
+        RunPlanStageId.SLAM,
+        RunPlanStageId.DENSE_MAPPING,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
+        RunPlanStageId.EFFICIENCY_EVALUATION,
+        RunPlanStageId.SUMMARY,
+    ]
+
+
+def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
     request = RunRequest(
         experiment_name="Quick Check",
         output_dir=Path("artifacts"),
@@ -94,63 +124,13 @@ def test_run_request_build_keeps_legacy_field_based_defaults() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("builder_name", "field_name", "config_cls"),
-    [
-        ("add_dense", "dense", DenseConfig),
-        ("add_reference", "reference", ReferenceConfig),
-    ],
-)
-def test_stage_toggle_helpers_do_not_mutate_supplied_configs(
-    builder_name: str,
-    field_name: str,
-    config_cls: type[DenseConfig] | type[ReferenceConfig],
-) -> None:
-    config = config_cls(enabled=False)
-    request = RunRequest(
-        experiment_name="Mutation Check",
-        output_dir=Path("artifacts"),
-        source=VideoSourceSpec(video_path=Path("captures/mutation-check.mp4")),
-    )
-
-    getattr(request, builder_name)(config)
-
-    request_config = getattr(request, field_name)
-    assert config.enabled is False
-    assert request_config.enabled is True
-    assert request_config is not config
-
-
-@pytest.mark.parametrize(
-    ("builder_name", "field_name", "config_cls"),
-    [
-        ("add_trajectory_evaluation", "compare_to_arcore", TrajectoryEvaluationConfig),
-        ("add_cloud_evaluation", "evaluate_cloud", CloudEvaluationConfig),
-        ("add_efficiency_evaluation", "evaluate_efficiency", EfficiencyEvaluationConfig),
-    ],
-)
-def test_evaluation_helpers_do_not_mutate_supplied_config(
-    builder_name: str,
-    field_name: str,
-    config_cls: type[TrajectoryEvaluationConfig] | type[CloudEvaluationConfig] | type[EfficiencyEvaluationConfig],
-) -> None:
-    evaluation = BenchmarkEvaluationConfig(
-        compare_to_arcore=False,
-        evaluate_cloud=False,
-        evaluate_efficiency=False,
-    )
-    request = RunRequest(
-        experiment_name="Mutation Check",
-        output_dir=Path("artifacts"),
-        source=VideoSourceSpec(video_path=Path("captures/mutation-check.mp4")),
-        evaluation=evaluation,
-    )
-
-    getattr(request, builder_name)(config_cls())
-
-    assert getattr(evaluation, field_name) is False
-    assert request.evaluation is not evaluation
-    assert getattr(request.evaluation, field_name) is True
+def test_run_request_requires_tracking_config() -> None:
+    with pytest.raises(ValidationError):
+        RunRequest(
+            experiment_name="Missing Tracking",
+            output_dir=Path("artifacts"),
+            source=VideoSourceSpec(video_path=Path("captures/missing-tracking.mp4")),
+        )
 
 
 @pytest.mark.parametrize(

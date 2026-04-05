@@ -21,8 +21,8 @@ surface for persisted `evo` results.
 - The app must keep the `Metrics` page reachable without removing any existing
   trajectory-evaluation functionality.
 - The app must expose a `Pipeline` page that explains the typed run-planning
-  surface, the builder pattern, and concrete usage examples without executing
-  a pipeline.
+  surface, the direct request pattern, and concrete usage examples without
+  executing a pipeline.
 - The `Pipeline` page must also show one mock completed run with stage status,
   artifact contracts, and serialized output examples so users can inspect what
   the planner hands to downstream execution surfaces.
@@ -91,8 +91,9 @@ surface for persisted `evo` results.
 ### Pipeline Guide
 
 - A user switches to `Pipeline`.
-- The app shows example pipeline shapes, the `RunRequest(...).add_<stage>(...)`
-  builder workflow, one generated `RunPlan` table, and one mock executed run.
+- The app shows example pipeline shapes, the direct `RunRequest(...)` workflow
+  with nested stage configs, one generated `RunPlan` table, and one mock
+  executed run.
 - The page does not execute any backend or write artifacts as a side effect.
 
 ### Explicit Evaluation

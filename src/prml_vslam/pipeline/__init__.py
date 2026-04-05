@@ -5,11 +5,11 @@ from __future__ import annotations
 from importlib import import_module
 
 _CONTRACT_EXPORTS = """
-ArtifactRef BenchmarkEvaluationConfig CloudEvaluationConfig CloudMetrics DatasetSourceSpec DenseArtifacts
-DenseConfig EfficiencyEvaluationConfig EfficiencyMetrics LiveSourceSpec PipelineMode
+ArtifactRef BenchmarkEvaluationConfig CloudMetrics DatasetSourceSpec DenseArtifacts DenseConfig
+EfficiencyMetrics LiveSourceSpec PipelineMode
 ReferenceArtifacts ReferenceConfig RunPlan RunPlanStage RunPlanStageId RunRequest RunSummary
-SequenceManifest StageExecutionStatus StageManifest TrackingArtifacts TrackingConfig TrajectoryEvaluationConfig
-TrajectoryMetrics VideoSourceSpec
+SequenceManifest StageExecutionStatus StageManifest TrackingArtifacts TrackingConfig TrajectoryMetrics
+VideoSourceSpec
 """.split()
 _INTERFACE_EXPORTS = """
 CloudEvaluator DenseBackend OfflineTrackerBackend ReferenceBuilder StreamingTrackerBackend TrackingUpdate
