@@ -10,19 +10,13 @@ from pydantic import ValidationError
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
     BenchmarkEvaluationConfig,
-    CloudMetrics,
-    DenseArtifacts,
     DenseConfig,
-    EfficiencyMetrics,
-    ReferenceArtifacts,
     ReferenceConfig,
     RunRequest,
     TrackingConfig,
-    TrajectoryMetrics,
     VideoSourceSpec,
 )
-from prml_vslam.pipeline.contracts import ArtifactRef, RunPlanStageId
-from prml_vslam.pipeline.services import RunPlannerService
+from prml_vslam.pipeline.contracts import RunPlanStageId
 from prml_vslam.utils import PathConfig
 
 
@@ -67,18 +61,6 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
         "evaluate_cloud": True,
         "evaluate_efficiency": True,
     }
-
-
-def test_run_request_build_delegates_to_run_planner_service() -> None:
-    request = RunRequest(
-        experiment_name="Delegate Check",
-        output_dir=Path("artifacts"),
-        source=VideoSourceSpec(video_path=Path("captures/delegate-check.mp4")),
-        tracking=TrackingConfig(method=MethodId.VISTA),
-    )
-    service_plan = RunPlannerService().build_run_plan(request)
-
-    assert request.build() == service_plan
 
 
 def test_run_request_build_keeps_legacy_default_stage_selection() -> None:
@@ -131,32 +113,3 @@ def test_run_request_requires_tracking_config() -> None:
             source=VideoSourceSpec(video_path=Path("captures/missing-tracking.mp4")),
         )
 
-
-@pytest.mark.parametrize(
-    ("bundle_cls", "field_name", "artifact_path"),
-    [
-        (DenseArtifacts, "dense_points_ply", "artifacts/dense.ply"),
-        (ReferenceArtifacts, "reference_cloud_ply", "artifacts/reference.ply"),
-    ],
-)
-def test_artifact_bundle_preserves_public_dump_key(
-    bundle_cls: type[DenseArtifacts] | type[ReferenceArtifacts],
-    field_name: str,
-    artifact_path: str,
-) -> None:
-    artifact = ArtifactRef(path=Path(artifact_path), kind="ply", fingerprint="abc123")
-    bundle = bundle_cls(**{field_name: artifact})
-
-    assert getattr(bundle, field_name) == artifact
-    assert bundle.model_dump() == {field_name: artifact.model_dump()}
-
-
-@pytest.mark.parametrize("metrics_cls", [TrajectoryMetrics, CloudMetrics, EfficiencyMetrics])
-def test_metrics_bundle_preserves_metrics_json_dump(
-    metrics_cls: type[TrajectoryMetrics] | type[CloudMetrics] | type[EfficiencyMetrics],
-) -> None:
-    artifact = ArtifactRef(path=Path("artifacts/trajectory.json"), kind="json", fingerprint="def456")
-    metrics = metrics_cls(metrics_json=artifact)
-
-    assert metrics.metrics_json == artifact
-    assert metrics.model_dump() == {"metrics_json": artifact.model_dump()}

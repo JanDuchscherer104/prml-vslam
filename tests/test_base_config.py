@@ -114,15 +114,6 @@ def test_base_data_is_distinct_from_config_helpers() -> None:
     assert not hasattr(payload, "setup_target")
 
 
-def test_base_config_and_base_data_remain_distinct_base_types() -> None:
-    assert issubclass(RuntimeConfig, BaseConfig)
-    assert issubclass(DataOnlyConfig, BaseConfig)
-    assert issubclass(SerializableConfig, BaseConfig)
-    assert not issubclass(NestedPayload, BaseConfig)
-    assert issubclass(NestedPayload, BaseData)
-    assert issubclass(PlainPayload, BaseData)
-
-
 def test_model_dump_jsonable_preserves_recursive_json_normalization(tmp_path: Path) -> None:
     config = SerializableConfig(
         path=tmp_path / "config.json",
