@@ -5,10 +5,12 @@ from pathlib import Path
 
 import numpy as np
 
+from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.eval.interfaces import (
     DiscoveredRun,
     EvaluationArtifact,
     EvaluationControls,
+    EvaluationSelection,
     MetricStats,
     SelectionSnapshot,
 )
@@ -42,6 +44,51 @@ class TrajectoryEvaluationService:
             )
             is not None
         ]
+
+    def resolve_selection(
+        self,
+        *,
+        dataset: DatasetId,
+        preferred_sequence_slug: str | None,
+        preferred_run_root: Path | None,
+    ) -> EvaluationSelection:
+        """Resolve dataset sequences, runs, and the current metrics-page selection."""
+        dataset_root = self.path_config.resolve_dataset_dir(dataset.value)
+        artifacts_root = self.path_config.artifacts_dir
+        sequence_slugs = dataset.list_sequence_slugs(dataset_root)
+        if not sequence_slugs:
+            return EvaluationSelection(
+                dataset=dataset,
+                dataset_root=dataset_root,
+                artifacts_root=artifacts_root,
+            )
+
+        sequence_slug = preferred_sequence_slug if preferred_sequence_slug in sequence_slugs else sequence_slugs[0]
+        runs = self.discover_runs(sequence_slug)
+        if not runs:
+            return EvaluationSelection(
+                dataset=dataset,
+                dataset_root=dataset_root,
+                artifacts_root=artifacts_root,
+                sequence_slugs=sequence_slugs,
+                sequence_slug=sequence_slug,
+                runs=runs,
+            )
+
+        run = next((candidate for candidate in runs if candidate.artifact_root == preferred_run_root), runs[0])
+        return EvaluationSelection(
+            dataset=dataset,
+            dataset_root=dataset_root,
+            artifacts_root=artifacts_root,
+            sequence_slugs=sequence_slugs,
+            sequence_slug=sequence_slug,
+            runs=runs,
+            selection=SelectionSnapshot(
+                sequence_slug=sequence_slug,
+                reference_path=dataset.resolve_reference_path(dataset_root, sequence_slug),
+                run=run,
+            ),
+        )
 
     def load_evaluation(
         self,
