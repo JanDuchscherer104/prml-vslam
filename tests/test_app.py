@@ -1241,8 +1241,8 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
 
 
 def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
-    from prml_vslam.app.record3d_controller import handle_record3d_page_action
     from prml_vslam.app.pages import record3d as record3d_page
+    from prml_vslam.app.record3d_controller import handle_record3d_page_action
 
     class RuntimeSpy:
         def __init__(self) -> None:
