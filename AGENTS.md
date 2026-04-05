@@ -45,6 +45,15 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   - Documentation and Typst rules: `docs/AGENTS.md`
 - Stay within the requested task scope. Do not implement adjacent features or speculative cleanup
   unless the user explicitly asks for it.
+- Use `make loc` as the canonical Python LOC measurement for `src/` and `tests/` when reasoning
+  about code size, simplification, pruning, or boilerplate removal.
+- When tasked to prune code, prefer removing redundancy, dead paths, duplicated logic, stale
+  adapters, and boilerplate over moving code around without reducing complexity.
+- When tasked to simplify code, the `make loc` result should not move in the positive direction for
+  Python code unless the user explicitly approves that tradeoff.
+  - Prefer a flat-or-negative `code` delta, not just a flat total-line delta.
+  - If safety requires adding tests or scaffolding, offset that growth by removing more redundancy
+    than you add, or explicitly call out the LOC tradeoff before finishing.
 - Use conventional commits with concise, focused messages. Split larger changes into multiple
   logical commits when appropriate.
 - Before creating a commit, run `make ci`.
