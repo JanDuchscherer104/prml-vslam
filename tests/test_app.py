@@ -627,7 +627,7 @@ def test_render_metrics_page_entry_shows_metrics_content(
     assert {metric.label for metric in at.metric} >= {"RMSE", "Mean", "Median", "Max"}
 
 
-def test_render_pipeline_page_entry_shows_builder_guidance(tmp_path: Path) -> None:
+def test_render_pipeline_page_entry_shows_demo_empty_state(tmp_path: Path) -> None:
     def _render_pipeline_page_entry_script(root_path: str) -> None:
         from pathlib import Path
         from types import SimpleNamespace
@@ -690,61 +690,9 @@ def test_render_pipeline_page_entry_shows_builder_guidance(tmp_path: Path) -> No
     at = AppTest.from_function(_render_pipeline_page_entry_script, args=(str(tmp_path),))
     at.run()
 
-    assert at.title[0].value == "Pipeline Planning"
-    assert {item.value for item in at.subheader} >= {
-        "Example Pipelines",
-        "Design Pattern",
-        "How To Use It",
-        "Request Shape",
-        "Generated Plan",
-        "Minimal ADVIO Runner",
-        "Mock Run",
-    }
-    assert any("minimal advio -> mock tracking pipeline" in item.value.lower() for item in at.info)
-    assert len(at.dataframe) >= 3
-    assert {metric.label for metric in at.metric} >= {"Run Id", "Method", "Stages", "Artifact Root"}
-
-
-def test_pipeline_mock_stage_statuses_follow_stage_ids(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
-    from prml_vslam.methods import MethodId
-    from prml_vslam.pipeline import (
-        BenchmarkEvaluationConfig,
-        DenseConfig,
-        ReferenceConfig,
-        RunRequest,
-        TrackingConfig,
-        VideoSourceSpec,
-    )
-    from prml_vslam.pipeline.contracts import RunPlanStageId, StageExecutionStatus
-
-    path_config = PathConfig(
-        root=tmp_path,
-        artifacts_dir=tmp_path / "artifacts",
-        captures_dir=tmp_path / "captures",
-    )
-    plan = RunRequest(
-        experiment_name="tracking-only-demo",
-        output_dir=path_config.artifacts_dir,
-        source=VideoSourceSpec(video_path=path_config.captures_dir / "tracking-only.mp4"),
-        tracking=TrackingConfig(method=MethodId.VISTA, max_frames=300),
-        dense=DenseConfig(enabled=False),
-        reference=ReferenceConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=True,
-        ),
-    ).build(path_config)
-
-    stage_status = pipeline_page._mock_stage_statuses(plan)
-
-    assert set(stage_status) == {stage.id for stage in plan.stages}
-    assert stage_status[RunPlanStageId.INGEST] is StageExecutionStatus.HIT
-    assert RunPlanStageId.REFERENCE_RECONSTRUCTION not in stage_status
-    assert stage_status[RunPlanStageId.SLAM] is StageExecutionStatus.RAN
-    assert stage_status[RunPlanStageId.EFFICIENCY_EVALUATION] is StageExecutionStatus.RAN
-    assert stage_status[RunPlanStageId.SUMMARY] is StageExecutionStatus.RAN
+    assert at.title[0].value == "Pipeline Demo"
+    assert {item.value for item in at.subheader} >= {"ADVIO Replay Demo"}
+    assert any("unlock the interactive pipeline demo" in item.value.lower() for item in at.info)
 
 
 def test_pipeline_demo_runtime_completes_offline_run_and_writes_outputs(tmp_path: Path) -> None:
