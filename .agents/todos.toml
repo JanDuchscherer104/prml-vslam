@@ -1,64 +1,10 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-05"
+updated_on = "2026-04-06"
 source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review and a later narrative-review relevance triage."
 active_collection = "todos"
 loc_unit = "lines"
-
-[[todos]]
-id = "TODO-0003"
-title = "Move live preview snapshot contracts into app-owned models"
-status = "pending"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0003",
-]
-loc_min = 30
-loc_expected = 95
-loc_max = 180
-files = [
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/models.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "tests/test_app.py",
-]
-acceptance = [
-    "Record3D transport code exposes only packet and transport-facing contracts.",
-    "Record3D and ADVIO preview snapshot models live under `prml_vslam.app` instead of `io.record3d` or `app.services`.",
-    "App pages, runtime controllers, and tests no longer depend on preview snapshot types owned by transport or service modules.",
-]
-sources = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/models.py",
-    "tests/test_app.py",
-]
-
-[[todos]]
-id = "TODO-0004"
-title = "Consolidate app page-state save-if-changed helpers"
-status = "pending"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0004",
-]
-loc_min = 20
-loc_expected = 45
-loc_max = 90
-files = [
-    "src/prml_vslam/app/advio_controller.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-    "src/prml_vslam/app/record3d_controller.py",
-]
-acceptance = [
-    "One shared helper handles typed page-state mutation and persistence.",
-    "ADVIO, Pipeline, and Record3D controllers stop duplicating the same save-if-changed pattern.",
-    "Existing app tests still cover the preserved behavior.",
-]
 
 [[todos]]
 id = "TODO-0005"
@@ -253,4 +199,33 @@ sources = [
     "src/prml_vslam/app/pages/record3d.py",
     "https://record3d.app/",
     "https://github.com/marek-simonik/record3d",
+]
+
+[[todos]]
+id = "TODO-0015"
+title = "Consolidate repeated trajectory plotting internals"
+status = "pending"
+priority = "low"
+issue_ids = [
+    "ISSUE-0015",
+]
+loc_min = 25
+loc_expected = 60
+loc_max = 130
+files = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
+]
+acceptance = [
+    "One internal helper or builder owns the repeated trajectory trace and layout assembly used across plotting modules.",
+    "Page-specific plots still keep their unique behavior such as APE coloring or live hover text without duplicating the common trajectory scaffolding.",
+    "The remaining public plotting functions stay small and page-oriented instead of reimplementing base trajectory rendering each time.",
+]
+sources = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
 ]

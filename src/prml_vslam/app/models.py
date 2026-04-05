@@ -1,4 +1,4 @@
-"""App-owned models for Streamlit page state and view selections."""
+"""App-owned models for Streamlit page state, snapshots, and view selections."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline.contracts import PipelineMode
 from prml_vslam.utils import BaseData
+from prml_vslam.utils.packet_session import PacketSessionSnapshot
 
 
 class AppPageId(StrEnum):
@@ -32,6 +33,55 @@ class AppPageId(StrEnum):
             AppPageId.PIPELINE: "Pipeline",
             AppPageId.METRICS: "Metrics",
         }[self]
+
+
+class Record3DStreamState(StrEnum):
+    """Lifecycle states rendered by the Record3D app page."""
+
+    IDLE = "idle"
+    CONNECTING = "connecting"
+    STREAMING = "streaming"
+    DISCONNECTED = "disconnected"
+    FAILED = "failed"
+
+
+class Record3DStreamSnapshot(PacketSessionSnapshot):
+    """Latest Record3D preview snapshot shared inside the app layer."""
+
+    transport: Record3DTransportId | None = None
+    """Transport currently backing the snapshot, when active."""
+
+    state: Record3DStreamState = Record3DStreamState.IDLE
+    """Current lifecycle state of the live transport."""
+
+    source_label: str = ""
+    """Human-readable source descriptor such as a UDID or Wi-Fi address."""
+
+
+class AdvioPreviewStreamState(StrEnum):
+    """Lifecycle states rendered by the ADVIO preview section."""
+
+    IDLE = "idle"
+    CONNECTING = "connecting"
+    STREAMING = "streaming"
+    DISCONNECTED = "disconnected"
+    FAILED = "failed"
+
+
+class AdvioPreviewSnapshot(PacketSessionSnapshot):
+    """Latest ADVIO loop-preview snapshot shared inside the app layer."""
+
+    state: AdvioPreviewStreamState = AdvioPreviewStreamState.IDLE
+    """Current lifecycle state of the loop preview."""
+
+    sequence_id: int | None = None
+    """Active ADVIO sequence identifier when a preview is selected."""
+
+    sequence_label: str = ""
+    """Human-readable label for the selected ADVIO sequence."""
+
+    pose_source: AdvioPoseSource | None = None
+    """Pose source currently used for the preview stream."""
 
 
 class AdvioPageState(BaseData):
@@ -136,7 +186,11 @@ __all__ = [
     "AppPageId",
     "AppState",
     "AdvioPageState",
+    "AdvioPreviewSnapshot",
+    "AdvioPreviewStreamState",
     "MetricsPageState",
     "PipelinePageState",
     "Record3DPageState",
+    "Record3DStreamSnapshot",
+    "Record3DStreamState",
 ]

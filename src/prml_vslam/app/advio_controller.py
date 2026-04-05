@@ -13,7 +13,7 @@ from prml_vslam.datasets.advio import (
 )
 from prml_vslam.utils import BaseData
 
-from .services import AdvioPreviewSnapshot, AdvioPreviewStreamState
+from .models import AdvioPreviewSnapshot, AdvioPreviewStreamState
 from .state import save_model_updates
 
 if TYPE_CHECKING:

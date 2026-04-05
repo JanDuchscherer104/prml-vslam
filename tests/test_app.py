@@ -12,11 +12,17 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
-from prml_vslam.app.models import AdvioPageState, AppState, Record3DPageState
-from prml_vslam.app.services import (
-    AdvioPreviewRuntimeController,
+from prml_vslam.app.models import (
+    AdvioPageState,
     AdvioPreviewSnapshot,
     AdvioPreviewStreamState,
+    AppState,
+    Record3DPageState,
+    Record3DStreamSnapshot,
+    Record3DStreamState,
+)
+from prml_vslam.app.services import (
+    AdvioPreviewRuntimeController,
     Record3DStreamRuntimeController,
 )
 from prml_vslam.app.state import SessionStateStore
@@ -26,12 +32,7 @@ from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.contracts import SelectionSnapshot
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
-from prml_vslam.io.record3d import (
-    Record3DDevice,
-    Record3DStreamSnapshot,
-    Record3DStreamState,
-    Record3DTransportId,
-)
+from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig
@@ -647,7 +648,7 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
 
         class _AdvioRuntime:
             def snapshot(self):
-                from prml_vslam.app.services import AdvioPreviewSnapshot
+                from prml_vslam.app.models import AdvioPreviewSnapshot
 
                 return AdvioPreviewSnapshot()
 

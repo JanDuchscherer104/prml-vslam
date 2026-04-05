@@ -325,8 +325,10 @@ def _render_pipeline_notice(snapshot: PipelineSessionSnapshot) -> None:
 
 def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction) -> str | None:
     """Apply one pipeline-page action and return a surfaced error when one occurs."""
-    _save_page_state(
-        context,
+    save_model_updates(
+        context.store,
+        context.state,
+        context.state.pipeline,
         sequence_id=action.sequence_id,
         mode=action.mode,
         method=action.method,
@@ -351,11 +353,6 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
         return None
     except Exception as exc:
         return str(exc)
-
-
-def _save_page_state(context: AppContext, **updates: object) -> None:
-    """Persist selector-only pipeline page state when it changes."""
-    save_model_updates(context.store, context.state, context.state.pipeline, **updates)
 
 
 def _is_pipeline_active(snapshot: PipelineSessionSnapshot) -> bool:
