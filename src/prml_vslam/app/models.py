@@ -27,12 +27,7 @@ class AppPageId(StrEnum):
     @property
     def label(self) -> str:
         """Return the user-facing page label."""
-        return {
-            AppPageId.RECORD3D: "Record3D",
-            AppPageId.ADVIO: "ADVIO",
-            AppPageId.PIPELINE: "Pipeline",
-            AppPageId.METRICS: "Metrics",
-        }[self]
+        return {AppPageId.RECORD3D: "Record3D", AppPageId.ADVIO: "ADVIO"}.get(self, self.value.capitalize())
 
 
 class PreviewStreamState(StrEnum):

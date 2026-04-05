@@ -1768,3 +1768,60 @@ previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 12 after reducing LOC and preserving dataset-facing behavior under the frozen harness plus full make ci."
 source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0027"
+title = "Several enum label helpers still restate trivially derivable values"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "A few app and dataset enums still own full mapping tables even though most labels are already a direct capitalization or uppercasing of the enum value."
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+notes = [
+    "Full enum-to-label tables add boilerplate when only one or two entries are true special cases.",
+    "Keeping the special cases explicit while deriving the default shape from the enum value preserves the contract with less code.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Collapsed mostly-derived enum label mappings into value-based formatting while preserving the explicit special cases."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0027"
+title = "Collapse mostly-derived enum label mappings"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0027",
+]
+loc_min = 6
+loc_expected = 10
+loc_max = 18
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+acceptance = [
+    "AppPageId, AdvioDownloadPreset, and Record3DTransportId stop using full mapping tables where only a small special case remains.",
+    "The user-facing labels shown in the app and CLI remain unchanged.",
+    "Focused tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 13 after reducing LOC and preserving app-facing enum labels under the frozen harness plus full make ci."
+source_collection = "todos"
