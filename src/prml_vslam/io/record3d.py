@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
-from pydantic import Field
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.utils import BaseConfig, BaseData, Console
@@ -161,16 +160,20 @@ class Record3DStreamConfig(BaseConfig):
         return Record3DStreamSession
 
 
-class Record3DUSBPacketStreamConfig(BaseConfig):
+class Record3DUSBPacketStreamConfig(Record3DStreamConfig):
     """Configuration for the USB packet adapter used by the Streamlit app."""
-
-    stream: Record3DStreamConfig = Field(default_factory=Record3DStreamConfig)
-    """Nested low-level USB stream configuration."""
 
     @property
     def target_type(self) -> type[Record3DUSBPacketStream]:
         """Runtime type that exposes shared packet objects."""
         return Record3DUSBPacketStream
+
+    def stream_config(self) -> Record3DStreamConfig:
+        """Return the low-level USB stream configuration used by the packet adapter."""
+        return Record3DStreamConfig(
+            device_index=self.device_index,
+            frame_timeout_seconds=self.frame_timeout_seconds,
+        )
 
 
 class Record3DStreamSession:
@@ -302,7 +305,7 @@ class Record3DUSBPacketStream:
 
     def __init__(self, config: Record3DUSBPacketStreamConfig) -> None:
         self.config = config
-        self.session = config.stream.setup_target()
+        self.session = config.stream_config().setup_target()
         self._packet_seq = 0
 
     def _require_session(self) -> Record3DStreamSession:
@@ -354,10 +357,8 @@ def list_record3d_usb_devices() -> list[Record3DDevice]:
 def open_record3d_usb_packet_stream(*, device_index: int, frame_timeout_seconds: float) -> Record3DUSBPacketStream:
     """Build one shared USB packet stream with explicit runtime validation."""
     stream = Record3DUSBPacketStreamConfig(
-        stream=Record3DStreamConfig(
-            device_index=device_index,
-            frame_timeout_seconds=frame_timeout_seconds,
-        )
+        device_index=device_index,
+        frame_timeout_seconds=frame_timeout_seconds,
     ).setup_target()
     if stream is None:
         raise RuntimeError("Failed to initialize the USB Record3D packet stream.")

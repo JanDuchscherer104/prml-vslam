@@ -82,36 +82,6 @@ sources = [
 ]
 
 [[issues]]
-id = "ISSUE-0006"
-title = "Placeholder config and state fields remain in active models"
-status = "open"
-priority = "medium"
-category = "cleanup"
-summary = "Several active config models still carry shape-only fields and wrappers that add maintenance cost without current value."
-files = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-    "README.md",
-    "tests/test_main.py",
-    "tests/test_methods.py",
-]
-notes = [
-    "The `kind` discriminator on source-spec configs is shape-only boilerplate in the current tree because the three source models are already structurally distinct.",
-    "Record3DUSBPacketStreamConfig still wraps Record3DStreamConfig through a one-field `stream` indirection.",
-    "MockSlamBackendConfig.method_id is currently validated and forwarded even though the mock backend does not use it.",
-    "Tests and TOML examples still encode some of the older boilerplate surface and should converge with the simplified contracts.",
-]
-sources = [
-    "README.md",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-    "tests/test_main.py",
-    "tests/test_methods.py",
-]
-
-[[issues]]
 id = "ISSUE-0009"
 title = "Method wrapper contracts still duplicate pipeline artifact ownership"
 status = "open"

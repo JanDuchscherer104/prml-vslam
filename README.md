@@ -56,7 +56,6 @@ mode = "offline"
 output_dir = "artifacts"
 
 [source]
-kind = "video"
 video_path = "captures/office-03.mp4"
 frame_stride = 2
 

@@ -163,6 +163,138 @@ resolved_on = "2026-04-05"
 resolution_note = "Replaced mock metrics with explicit evo APE evaluation and persisted trajectory_metrics.json."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0012"
+title = "ADVIO app download flow disagrees with the shared empty-selection contract"
+status = "resolved"
+priority = "medium"
+category = "contracts"
+summary = "The shared `AdvioDownloadRequest` contract and CLI already treat `sequence_ids=[]` as 'all scenes', and the app now honors the same contract instead of blocking empty selections."
+files = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/main.py",
+    "tests/test_app.py",
+]
+notes = [
+    "The controller no longer warns on an empty scene selection before calling the dataset service.",
+    "The ADVIO download form now explains that leaving the scene selection empty prepares the full catalog.",
+    "App tests cover the empty-selection path so the UI stays aligned with the shared request semantics.",
+]
+sources = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/main.py",
+    "tests/test_app.py",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245906",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "Aligned the app controller and ADVIO page copy with the shared empty-selection-means-all-scenes contract."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-PR15-0004"
+title = "Replace repo-owned SE3Pose and TimedPoseTrajectory with evo-native arrays only"
+status = "resolved"
+priority = "medium"
+category = "review-triage"
+summary = "The older narrative review recommended deleting the repo-owned SE(3) and trajectory datamodels in favor of plain arrays and `evo`-native objects. That recommendation was not promoted into the active backlog because the current architecture guide explicitly keeps `SE3Pose` and `TimedPoseTrajectory` as the canonical shared datamodels while already delegating TUM I/O to `evo`."
+files = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/trajectory.py",
+    "src/prml_vslam/utils/geometry.py",
+]
+notes = [
+    "The current tree already standardizes TUM trajectory I/O on `evo` while retaining repo-owned typed datamodels for shared boundaries.",
+    "This review recommendation conflicts with the current source-of-truth ownership model rather than describing drift inside that model.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/trajectory.py",
+    "src/prml_vslam/utils/geometry.py",
+    "https://github.com/MichaelGrupp/evo",
+]
+previous_status = "imported_review"
+resolved_on = "2026-04-05"
+resolution_note = "Retired during the narrative PR15 review triage because the current repo policy intentionally preserves these shared datamodels."
+source_collection = "review_import"
+
+[[resolved_issues]]
+id = "ISSUE-PR15-0005"
+title = "Turn methods and eval into the repo-owned home for full upstream orchestration"
+status = "resolved"
+priority = "medium"
+category = "review-triage"
+summary = "The older narrative review argued for replacing the local mock `methods` and `eval` surfaces with the repository-owned home for direct upstream method orchestration and a larger evaluation layer. That broad restructuring was not promoted as an active issue because the current package rules intentionally scope `methods` and `eval` as thin local interface/mock surfaces; only the narrower overlap and placeholder debts remain active."
+files = [
+    "README.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/eval/contracts.py",
+]
+notes = [
+    "The still-relevant parts of that review are already represented in active backlog items such as duplicate normalized-output ownership, placeholder controls, bespoke ADVIO download glue, and the custom Record3D Wi-Fi boundary.",
+    "If repo scope later expands to direct upstream orchestration, that should be recorded as a fresh scope change instead of implicitly reopening this older recommendation.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/eval/contracts.py",
+    "https://github.com/zhangganlin/vista-slam",
+    "https://github.com/rmurai0610/MASt3R-SLAM",
+    "https://github.com/MichaelGrupp/evo",
+]
+previous_status = "imported_review"
+resolved_on = "2026-04-05"
+resolution_note = "Retired during the narrative PR15 review triage because the current repo policy keeps `methods` and `eval` intentionally thin unless project scope changes."
+source_collection = "review_import"
+
+[[resolved_issues]]
+id = "ISSUE-0006"
+title = "Placeholder config and state fields remain in active models"
+status = "resolved"
+priority = "medium"
+category = "cleanup"
+summary = "Several active config models still carry shape-only fields and wrappers that add maintenance cost without current value."
+files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "README.md",
+    "tests/test_main.py",
+    "tests/test_methods.py",
+]
+notes = [
+    "The `kind` discriminator on source-spec configs is shape-only boilerplate in the current tree because the three source models are already structurally distinct.",
+    "Record3DUSBPacketStreamConfig still wraps Record3DStreamConfig through a one-field `stream` indirection.",
+    "MockSlamBackendConfig.method_id is currently validated and forwarded even though the mock backend does not use it.",
+    "Tests and TOML examples still encode some of the older boilerplate surface and should converge with the simplified contracts.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "tests/test_main.py",
+    "tests/test_methods.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "Removed the source discriminator fields, flattened the USB packet-stream config, and dropped the unused mock backend method_id config field."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -248,38 +380,6 @@ resolved_on = "2026-04-05"
 resolution_note = "Switched metrics service to explicit evo APE flow and canonical trajectory_metrics.json persistence."
 source_collection = "todos"
 
-[[resolved_issues]]
-id = "ISSUE-0012"
-title = "ADVIO app download flow disagrees with the shared empty-selection contract"
-status = "resolved"
-priority = "medium"
-category = "contracts"
-summary = "The shared `AdvioDownloadRequest` contract and CLI already treat `sequence_ids=[]` as 'all scenes', and the app now honors the same contract instead of blocking empty selections."
-files = [
-    "src/prml_vslam/datasets/advio/advio_models.py",
-    "src/prml_vslam/app/advio_controller.py",
-    "src/prml_vslam/app/pages/advio.py",
-    "src/prml_vslam/main.py",
-    "tests/test_app.py",
-]
-notes = [
-    "The controller no longer warns on an empty scene selection before calling the dataset service.",
-    "The ADVIO download form now explains that leaving the scene selection empty prepares the full catalog.",
-    "App tests cover the empty-selection path so the UI stays aligned with the shared request semantics.",
-]
-sources = [
-    "src/prml_vslam/datasets/advio/advio_models.py",
-    "src/prml_vslam/app/advio_controller.py",
-    "src/prml_vslam/app/pages/advio.py",
-    "src/prml_vslam/main.py",
-    "tests/test_app.py",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245906",
-]
-previous_status = "open"
-resolved_on = "2026-04-05"
-resolution_note = "Aligned the app controller and ADVIO page copy with the shared empty-selection-means-all-scenes contract."
-source_collection = "issues"
-
 [[resolved_todos]]
 id = "TODO-0012"
 title = "Align ADVIO app downloads with the empty-selection means all-scenes contract"
@@ -315,68 +415,40 @@ resolved_on = "2026-04-05"
 resolution_note = "The app now treats an empty ADVIO scene selection as the full catalog and documents that behavior in the form UI."
 source_collection = "todos"
 
-[[resolved_issues]]
-id = "ISSUE-PR15-0004"
-title = "Replace repo-owned SE3Pose and TimedPoseTrajectory with evo-native arrays only"
+[[resolved_todos]]
+id = "TODO-0006"
+title = "Remove placeholder config and state fields that no longer earn their keep"
 status = "resolved"
 priority = "medium"
-category = "review-triage"
-summary = "The older narrative review recommended deleting the repo-owned SE(3) and trajectory datamodels in favor of plain arrays and `evo`-native objects. That recommendation was not promoted into the active backlog because the current architecture guide explicitly keeps `SE3Pose` and `TimedPoseTrajectory` as the canonical shared datamodels while already delegating TUM I/O to `evo`."
+issue_ids = [
+    "ISSUE-0006",
+]
+loc_min = 25
+loc_expected = 45
+loc_max = 90
 files = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/interfaces/camera.py",
-    "src/prml_vslam/interfaces/trajectory.py",
-    "src/prml_vslam/utils/geometry.py",
-]
-notes = [
-    "The current tree already standardizes TUM trajectory I/O on `evo` while retaining repo-owned typed datamodels for shared boundaries.",
-    "This review recommendation conflicts with the current source-of-truth ownership model rather than describing drift inside that model.",
-]
-sources = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/interfaces/camera.py",
-    "src/prml_vslam/interfaces/trajectory.py",
-    "src/prml_vslam/utils/geometry.py",
-    "https://github.com/MichaelGrupp/evo",
-]
-previous_status = "imported_review"
-resolved_on = "2026-04-05"
-resolution_note = "Retired during the narrative PR15 review triage because the current repo policy intentionally preserves these shared datamodels."
-source_collection = "review_import"
-
-[[resolved_issues]]
-id = "ISSUE-PR15-0005"
-title = "Turn methods and eval into the repo-owned home for full upstream orchestration"
-status = "resolved"
-priority = "medium"
-category = "review-triage"
-summary = "The older narrative review argued for replacing the local mock `methods` and `eval` surfaces with the repository-owned home for direct upstream method orchestration and a larger evaluation layer. That broad restructuring was not promoted as an active issue because the current package rules intentionally scope `methods` and `eval` as thin local interface/mock surfaces; only the narrower overlap and placeholder debts remain active."
-files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
     "README.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/methods/README.md",
-    "src/prml_vslam/eval/README.md",
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/eval/contracts.py",
+    "tests/test_main.py",
+    "tests/test_methods.py",
 ]
-notes = [
-    "The still-relevant parts of that review are already represented in active backlog items such as duplicate normalized-output ownership, placeholder controls, bespoke ADVIO download glue, and the custom Record3D Wi-Fi boundary.",
-    "If repo scope later expands to direct upstream orchestration, that should be recorded as a fresh scope change instead of implicitly reopening this older recommendation.",
+acceptance = [
+    "Source-spec config loading no longer depends on explicit `kind` discriminator fields.",
+    "The USB Record3D packet-stream config no longer wraps the low-level stream config through a one-field `stream` indirection.",
+    "Mock SLAM backend config no longer validates unused `method_id` state.",
+    "TOML examples and tests match the simplified config surfaces.",
 ]
 sources = [
     "README.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/methods/README.md",
-    "src/prml_vslam/eval/README.md",
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/eval/contracts.py",
-    "https://github.com/zhangganlin/vista-slam",
-    "https://github.com/rmurai0610/MASt3R-SLAM",
-    "https://github.com/MichaelGrupp/evo",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "tests/test_main.py",
+    "tests/test_methods.py",
 ]
-previous_status = "imported_review"
+previous_status = "pending"
 resolved_on = "2026-04-05"
-resolution_note = "Retired during the narrative PR15 review triage because the current repo policy keeps `methods` and `eval` intentionally thin unless project scope changes."
-source_collection = "review_import"
+resolution_note = "Updated the contracts, TOML example, and tests to the simplified config surfaces; full make ci passed."
+source_collection = "todos"
