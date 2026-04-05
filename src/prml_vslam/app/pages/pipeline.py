@@ -35,10 +35,6 @@ def render(context: AppContext) -> None:
             "and monitor frames, trajectory, planned stages, and written artifacts."
         ),
     )
-    _render_pipeline_demo(context)
-
-
-def _render_pipeline_demo(context: AppContext) -> None:
     sync_pipeline_demo_state(context)
     statuses = context.advio_service.local_scene_statuses()
     previewable_ids = [status.scene.sequence_id for status in statuses if status.replay_ready]
