@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -9,12 +10,14 @@ from pydantic import Field
 
 from prml_vslam.interfaces import FramePacketStream, TimedPoseTrajectory
 from prml_vslam.io import Cv2ReplayMode
-from prml_vslam.pipeline.contracts import SequenceManifest
 from prml_vslam.utils import BaseData
 
 from . import advio_layout, advio_loading
 from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioPoseSource, AdvioSceneMetadata, AdvioSequenceConfig
 from .advio_replay_adapter import open_advio_stream
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.contracts import SequenceManifest
 
 
 class AdvioSequencePaths(BaseData):
@@ -116,6 +119,8 @@ class AdvioSequence(BaseData):
         )
 
     def to_sequence_manifest(self, *, output_dir: Path | None = None) -> SequenceManifest:
+        from prml_vslam.pipeline.contracts import SequenceManifest
+
         paths = self._resolve_paths(require_arcore=False)
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
         evaluation_dir.mkdir(parents=True, exist_ok=True)
