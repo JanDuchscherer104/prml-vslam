@@ -1,3 +1,5 @@
+todos = []
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
@@ -5,32 +7,3 @@ updated_on = "2026-04-06"
 source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review and a later narrative-review relevance triage."
 active_collection = "todos"
 loc_unit = "lines"
-
-[[todos]]
-id = "TODO-0015"
-title = "Consolidate repeated trajectory plotting internals"
-status = "pending"
-priority = "low"
-issue_ids = [
-    "ISSUE-0015",
-]
-loc_min = 25
-loc_expected = 60
-loc_max = 130
-files = [
-    "src/prml_vslam/plotting/metrics.py",
-    "src/prml_vslam/plotting/record3d.py",
-    "src/prml_vslam/plotting/trajectories.py",
-    "src/prml_vslam/plotting/pipeline.py",
-]
-acceptance = [
-    "One internal helper or builder owns the repeated trajectory trace and layout assembly used across plotting modules.",
-    "Page-specific plots still keep their unique behavior such as APE coloring or live hover text without duplicating the common trajectory scaffolding.",
-    "The remaining public plotting functions stay small and page-oriented instead of reimplementing base trajectory rendering each time.",
-]
-sources = [
-    "src/prml_vslam/plotting/metrics.py",
-    "src/prml_vslam/plotting/record3d.py",
-    "src/prml_vslam/plotting/trajectories.py",
-    "src/prml_vslam/plotting/pipeline.py",
-]

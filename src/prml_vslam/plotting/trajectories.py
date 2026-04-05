@@ -124,6 +124,143 @@ def trajectory_length_m(trajectory: TimedPoseTrajectory) -> float:
     return float(np.linalg.norm(np.diff(trajectory.positions_xyz, axis=0), axis=1).sum())
 
 
+def _add_xy_trajectory_trace(
+    figure: go.Figure,
+    positions_xyz: np.ndarray,
+    *,
+    name: str,
+    line: dict[str, object],
+    mode: str = "lines",
+    marker: dict[str, object] | None = None,
+    hovertemplate: str | None = None,
+    showlegend: bool = True,
+) -> None:
+    if len(positions_xyz) == 0:
+        return
+    figure.add_trace(
+        go.Scattergl(
+            x=positions_xyz[:, 0],
+            y=positions_xyz[:, 1],
+            mode=mode,
+            name=name,
+            line=line,
+            marker=marker,
+            hovertemplate=hovertemplate,
+            showlegend=showlegend,
+        )
+    )
+
+
+def _add_3d_trajectory_trace(
+    figure: go.Figure,
+    positions_xyz: np.ndarray,
+    *,
+    name: str,
+    line: dict[str, object] | None = None,
+    mode: str = "lines",
+    marker: dict[str, object] | None = None,
+    text: Sequence[str] | None = None,
+    hovertemplate: str | None = None,
+    opacity: float | None = None,
+    showlegend: bool = True,
+) -> None:
+    if len(positions_xyz) == 0:
+        return
+    figure.add_trace(
+        go.Scatter3d(
+            x=positions_xyz[:, 0],
+            y=positions_xyz[:, 1],
+            z=positions_xyz[:, 2],
+            mode=mode,
+            name=name,
+            line=line,
+            marker=marker,
+            text=text,
+            hovertemplate=hovertemplate,
+            opacity=opacity,
+            showlegend=showlegend,
+        )
+    )
+
+
+def _add_xy_end_markers(figure: go.Figure, positions_xyz: np.ndarray, *, name: str, color: str) -> None:
+    if len(positions_xyz) == 0:
+        return
+    _add_xy_trajectory_trace(
+        figure,
+        positions_xyz[[0]],
+        name=f"{name} start",
+        mode="markers",
+        line={},
+        marker={"size": 7, "color": color, "symbol": "circle"},
+        showlegend=False,
+    )
+    _add_xy_trajectory_trace(
+        figure,
+        positions_xyz[[-1]],
+        name=f"{name} end",
+        mode="markers",
+        line={},
+        marker={"size": 8, "color": color, "symbol": "x"},
+        showlegend=False,
+    )
+
+
+def _add_3d_end_markers(
+    figure: go.Figure,
+    positions_xyz: np.ndarray,
+    *,
+    start_name: str,
+    end_name: str,
+    start_marker: dict[str, object],
+    end_marker: dict[str, object],
+    start_hovertemplate: str | None = None,
+    end_hovertemplate: str | None = None,
+    showlegend: bool = False,
+) -> None:
+    if len(positions_xyz) == 0:
+        return
+    _add_3d_trajectory_trace(
+        figure,
+        positions_xyz[[0]],
+        name=start_name,
+        mode="markers",
+        marker=start_marker,
+        hovertemplate=start_hovertemplate,
+        showlegend=showlegend,
+    )
+    _add_3d_trajectory_trace(
+        figure,
+        positions_xyz[[-1]],
+        name=end_name,
+        mode="markers",
+        marker=end_marker,
+        hovertemplate=end_hovertemplate,
+        showlegend=showlegend,
+    )
+
+
+def _apply_standard_trajectory_xy_layout(figure: go.Figure, *, title: str) -> go.Figure:
+    apply_standard_xy_layout(figure, title=title, xaxis_title="X (m)", yaxis_title="Y (m)")
+    figure.update_xaxes(showgrid=True)
+    figure.update_yaxes(showgrid=True, scaleanchor="x", scaleratio=1)
+    return figure
+
+
+def _apply_standard_trajectory_3d_layout(figure: go.Figure, *, title: str) -> go.Figure:
+    apply_standard_3d_layout(
+        figure,
+        title=title,
+        scene={
+            "xaxis_title": "X (m)",
+            "yaxis_title": "Y (m)",
+            "zaxis_title": "Z (m)",
+            "aspectmode": "data",
+        },
+    )
+    return figure
+
+
 class TrajectoryPlotBuilder:
     """Lightweight builder for BEV and 3D trajectory views."""
 
@@ -145,67 +282,27 @@ class TrajectoryPlotBuilder:
             return self
 
         if self.mode == "bev":
-            self.figure.add_trace(
-                go.Scattergl(
-                    x=positions[:, 0],
-                    y=positions[:, 1],
-                    mode="lines",
-                    name=name,
-                    line={"width": 2.8, "color": color},
-                )
+            _add_xy_trajectory_trace(
+                self.figure,
+                positions,
+                name=name,
+                line={"width": 2.8, "color": color},
             )
-            self.figure.add_trace(
-                go.Scattergl(
-                    x=[positions[0, 0]],
-                    y=[positions[0, 1]],
-                    mode="markers",
-                    name=f"{name} start",
-                    marker={"size": 7, "color": color, "symbol": "circle"},
-                    showlegend=False,
-                )
-            )
-            self.figure.add_trace(
-                go.Scattergl(
-                    x=[positions[-1, 0]],
-                    y=[positions[-1, 1]],
-                    mode="markers",
-                    name=f"{name} end",
-                    marker={"size": 8, "color": color, "symbol": "x"},
-                    showlegend=False,
-                )
-            )
+            _add_xy_end_markers(self.figure, positions, name=name, color=color)
         else:
-            self.figure.add_trace(
-                go.Scatter3d(
-                    x=positions[:, 0],
-                    y=positions[:, 1],
-                    z=positions[:, 2],
-                    mode="lines",
-                    name=name,
-                    line={"width": 5, "color": color},
-                )
+            _add_3d_trajectory_trace(
+                self.figure,
+                positions,
+                name=name,
+                line={"width": 5, "color": color},
             )
-            self.figure.add_trace(
-                go.Scatter3d(
-                    x=[positions[0, 0]],
-                    y=[positions[0, 1]],
-                    z=[positions[0, 2]],
-                    mode="markers",
-                    name=f"{name} start",
-                    marker={"size": 4, "color": color, "symbol": "circle"},
-                    showlegend=False,
-                )
-            )
-            self.figure.add_trace(
-                go.Scatter3d(
-                    x=[positions[-1, 0]],
-                    y=[positions[-1, 1]],
-                    z=[positions[-1, 2]],
-                    mode="markers",
-                    name=f"{name} end",
-                    marker={"size": 5, "color": color, "symbol": "diamond"},
-                    showlegend=False,
-                )
+            _add_3d_end_markers(
+                self.figure,
+                positions,
+                start_name=f"{name} start",
+                end_name=f"{name} end",
+                start_marker={"size": 4, "color": color, "symbol": "circle"},
+                end_marker={"size": 5, "color": color, "symbol": "diamond"},
             )
         return self
 
@@ -269,20 +366,9 @@ class TrajectoryPlotBuilder:
     def finalize(self) -> go.Figure:
         """Finalize the figure layout and return it."""
         if self.mode == "bev":
-            apply_standard_xy_layout(self.figure, title=self.title, xaxis_title="X (m)", yaxis_title="Y (m)")
-            self.figure.update_xaxes(showgrid=True)
-            self.figure.update_yaxes(showgrid=True, scaleanchor="x", scaleratio=1)
+            _apply_standard_trajectory_xy_layout(self.figure, title=self.title)
         else:
-            apply_standard_3d_layout(
-                self.figure,
-                title=self.title,
-                scene={
-                    "xaxis_title": "X (m)",
-                    "yaxis_title": "Y (m)",
-                    "zaxis_title": "Z (m)",
-                    "aspectmode": "data",
-                },
-            )
+            _apply_standard_trajectory_3d_layout(self.figure, title=self.title)
         return self.figure
 
 
