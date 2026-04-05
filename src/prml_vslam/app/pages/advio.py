@@ -26,8 +26,8 @@ from ..live_session import (
     LiveMetric,
     render_camera_intrinsics,
     render_live_fragment,
+    render_live_packet_tabs,
     render_live_session_shell,
-    render_live_trajectory,
 )
 from ..services import AdvioPreviewSnapshot, AdvioPreviewStreamState
 from ..ui import render_page_intro
@@ -281,20 +281,27 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
 
 
 def _render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:
-    packet = snapshot.latest_packet
     render_live_session_shell(
         title=None,
         status_renderer=lambda: _render_preview_status_notice(snapshot),
-        metrics=_preview_metrics(snapshot, packet),
+        metrics=_preview_metrics(snapshot),
         caption=_preview_caption(snapshot),
-        body_renderer=None if packet is None else lambda: _render_preview_tabs(snapshot),
+        body_renderer=lambda: render_live_packet_tabs(
+            packet=snapshot.latest_packet,
+            preview_renderer=_render_preview_frame,
+            positions_xyz=snapshot.trajectory_positions_xyz,
+            timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
+            trajectory_empty_message="No camera trajectory is available for the selected pose source yet.",
+            details_payload={}
+            if snapshot.latest_packet is None
+            else _preview_frame_details(snapshot, snapshot.latest_packet),
+            intrinsics_missing_message="Camera intrinsics are not available for the current packet.",
+        ),
     )
 
 
-def _preview_metrics(
-    snapshot: AdvioPreviewSnapshot,
-    packet: FramePacket | None,
-) -> tuple[LiveMetric, ...]:
+def _preview_metrics(snapshot: AdvioPreviewSnapshot) -> tuple[LiveMetric, ...]:
+    packet = snapshot.latest_packet
     loop_index = 0 if packet is None else int(packet.metadata.get("loop_index", 0))
     return (
         ("Status", snapshot.state.value.upper()),
@@ -313,31 +320,9 @@ def _preview_caption(snapshot: AdvioPreviewSnapshot) -> str | None:
     return f"Sequence: {snapshot.sequence_label} · Pose Source: {pose_label}"
 
 
-def _render_preview_tabs(snapshot: AdvioPreviewSnapshot) -> None:
-    packet = snapshot.latest_packet
-    if packet is None:
-        return
-    preview_tab, trajectory_tab, camera_tab = st.tabs(["Frames", "Trajectory", "Camera"])
-    with preview_tab:
-        st.markdown("**RGB Frame**")
-        st.image(packet.rgb, channels="RGB", clamp=True)
-    with trajectory_tab:
-        render_live_trajectory(
-            positions_xyz=snapshot.trajectory_positions_xyz,
-            timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
-            empty_message="No camera trajectory is available for the selected pose source yet.",
-        )
-    with camera_tab:
-        left, right = st.columns((0.9, 1.1), gap="large")
-        with left:
-            st.markdown("**Camera Intrinsics**")
-            render_camera_intrinsics(
-                intrinsics=packet.intrinsics,
-                missing_message="Camera intrinsics are not available for the current packet.",
-            )
-        with right:
-            st.markdown("**Frame Details**")
-            st.json(_preview_frame_details(snapshot, packet), expanded=False)
+def _render_preview_frame(packet: FramePacket) -> None:
+    st.markdown("**RGB Frame**")
+    st.image(packet.rgb, channels="RGB", clamp=True)
 
 
 def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
