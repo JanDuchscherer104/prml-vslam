@@ -4,26 +4,29 @@ import json
 from pathlib import Path
 
 import numpy as np
+from evo.core import metrics, sync
+from evo.core.trajectory import PoseTrajectory3D
 
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import (
     DiscoveredRun,
     EvaluationArtifact,
-    EvaluationControls,
     EvaluationSelection,
     MetricStats,
     SelectionSnapshot,
+    TrajectorySeries,
 )
 from prml_vslam.methods.contracts import MethodId
+from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.path_config import PathConfig
-
-from .mock_metrics import load_trajectory_pair
 
 __all__ = ["TrajectoryEvaluationService"]
 
+_EVO_ASSOCIATION_MAX_DIFF_S = 0.01
+
 
 class TrajectoryEvaluationService:
-    """Discover runs and persist a lightweight local trajectory-delta mock."""
+    """Discover runs and persist explicit `evo` trajectory metrics."""
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
@@ -94,21 +97,18 @@ class TrajectoryEvaluationService:
         self,
         *,
         selection: SelectionSnapshot,
-        controls: EvaluationControls,
     ) -> EvaluationArtifact | None:
-        """Load a persisted local mock evaluation when it exists."""
+        """Load a persisted `evo` evaluation when it exists."""
         reference_path = selection.reference_path
-        result_path = self.result_path(selection.run.artifact_root, controls)
+        result_path = self.result_path(selection.run.artifact_root)
         if reference_path is None or not result_path.exists():
             return None
         payload = json.loads(result_path.read_text(encoding="utf-8"))
-        trajectories = load_trajectory_pair(
-            reference_path=reference_path,
-            estimate_path=selection.run.estimate_path,
-        )
+        reference_series, _ = _load_trajectory_input(reference_path, "Reference")
+        estimate_series, _ = _load_trajectory_input(selection.run.estimate_path, "Estimate")
+        trajectories = (reference_series, estimate_series)
         return EvaluationArtifact.from_payload(
             path=result_path,
-            controls=controls,
             payload=payload,
             reference_path=reference_path,
             estimate_path=selection.run.estimate_path,
@@ -119,40 +119,47 @@ class TrajectoryEvaluationService:
         self,
         *,
         selection: SelectionSnapshot,
-        controls: EvaluationControls,
     ) -> EvaluationArtifact:
-        """Compute and persist a simple local trajectory-delta mock."""
+        """Compute and persist trajectory APE via the `evo` Python API."""
         reference_path = selection.reference_path
         if reference_path is None:
             raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
 
-        trajectories = load_trajectory_pair(
-            reference_path=reference_path,
-            estimate_path=selection.run.estimate_path,
-        )
-        reference_trajectory, estimate_trajectory = trajectories
-        matched_pairs = min(len(reference_trajectory.timestamps_s), len(estimate_trajectory.timestamps_s))
-        if matched_pairs == 0:
-            raise ValueError("Mock evaluation requires at least one trajectory row in both files.")
+        reference_series, reference_trajectory = _load_trajectory_input(reference_path, "Reference")
+        estimate_series, estimate_trajectory = _load_trajectory_input(selection.run.estimate_path, "Estimate")
+        trajectories = (reference_series, estimate_series)
+        try:
+            associated_reference, associated_estimate = sync.associate_trajectories(
+                reference_trajectory,
+                estimate_trajectory,
+                max_diff=_EVO_ASSOCIATION_MAX_DIFF_S,
+            )
+        except sync.SyncException as exc:
+            raise ValueError(
+                "No matching trajectory timestamps were found for evo APE "
+                f"(max_diff={_EVO_ASSOCIATION_MAX_DIFF_S:.3f}s)."
+            ) from exc
 
-        error_values = np.linalg.norm(
-            estimate_trajectory.positions_xyz[:matched_pairs] - reference_trajectory.positions_xyz[:matched_pairs],
-            axis=1,
-        )
-        result_path = self.result_path(selection.run.artifact_root, controls)
+        metric = metrics.APE(metrics.PoseRelation.translation_part)
+        metric.process_data((associated_reference, associated_estimate))
+        error_values = np.asarray(metric.error, dtype=np.float64)
+        matched_pairs = int(error_values.size)
+        if matched_pairs == 0:
+            raise ValueError("evo APE produced zero matched trajectory pairs.")
+
+        result_path = self.result_path(selection.run.artifact_root)
         result_path.parent.mkdir(parents=True, exist_ok=True)
         stats = MetricStats.from_error_values(error_values)
         payload = {
-            "title": "Mock Trajectory Error",
+            "title": "Trajectory APE (evo)",
             "matched_pairs": matched_pairs,
             "stats": stats.model_dump(mode="python"),
-            "error_timestamps_s": reference_trajectory.timestamps_s[:matched_pairs].tolist(),
+            "error_timestamps_s": associated_reference.timestamps.tolist(),
             "error_values": error_values.tolist(),
         }
         result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return EvaluationArtifact.from_payload(
             path=result_path,
-            controls=controls,
             payload=payload,
             reference_path=reference_path,
             estimate_path=selection.run.estimate_path,
@@ -160,10 +167,26 @@ class TrajectoryEvaluationService:
         )
 
     @staticmethod
-    def result_path(run_root: Path, controls: EvaluationControls) -> Path:
-        """Return the deterministic persisted mock-result path for the controls."""
-        del controls
-        return run_root / "evaluation" / "mock_metrics.json"
+    def result_path(run_root: Path) -> Path:
+        """Return the deterministic persisted trajectory-metrics path for the controls."""
+        return run_root / "evaluation" / "trajectory_metrics.json"
+
+
+def _load_trajectory_input(path: Path, name: str) -> tuple[TrajectorySeries, PoseTrajectory3D]:
+    """Load one TUM trajectory as both plotting series and evo-native trajectory."""
+    trajectory = load_tum_trajectory(path)
+    return (
+        TrajectorySeries(
+            name=name,
+            timestamps_s=trajectory.timestamps_s,
+            positions_xyz=trajectory.positions_xyz,
+        ),
+        PoseTrajectory3D(
+            positions_xyz=trajectory.positions_xyz,
+            orientations_quat_wxyz=np.roll(trajectory.quaternions_xyzw, 1, axis=1),
+            timestamps=trajectory.timestamps_s,
+        ),
+    )
 
 
 def _discover_run(*, trajectory_path: Path, artifacts_dir: Path, sequence_slug: str) -> DiscoveredRun | None:

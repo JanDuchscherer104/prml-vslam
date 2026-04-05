@@ -307,7 +307,7 @@ def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
     raise AssertionError("Timed out waiting for the expected runtime state.")
 
 
-def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> None:
+def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> None:
     path_config = _build_path_config(tmp_path)
     service = TrajectoryEvaluationService(path_config)
 
@@ -328,9 +328,83 @@ def test_metrics_service_discovers_and_persists_mock_results(tmp_path: Path) -> 
     )
 
     assert result.path.exists()
+    assert result.path.name == "trajectory_metrics.json"
     assert result.matched_pairs == 3
     assert result.stats.rmse > 0.0
     assert len(result.trajectories) == 2
+
+    reloaded = service.load_evaluation(selection=selection, controls=EvaluationControls())
+
+    assert reloaded is not None
+    assert reloaded.path == result.path
+    assert len(reloaded.trajectories) == 2
+    assert reloaded.error_series is not None
+
+
+def test_metrics_service_fails_when_timestamps_do_not_match(tmp_path: Path) -> None:
+    reference_path = tmp_path / "data" / "advio" / "advio-15" / "ground-truth" / "ground_truth.tum"
+    estimate_path = tmp_path / "artifacts" / "advio-15" / "vista" / "slam" / "trajectory.tum"
+    _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0)])
+    _write_tum(estimate_path, [(10.0, 0.0, 0.0, 0.0), (10.1, 1.0, 0.0, 0.0)])
+
+    path_config = PathConfig(
+        root=tmp_path,
+        artifacts_dir=tmp_path / "artifacts",
+        captures_dir=tmp_path / "captures",
+    )
+    service = TrajectoryEvaluationService(path_config)
+    runs = service.discover_runs("advio-15")
+    selection = SelectionSnapshot(
+        sequence_slug="advio-15",
+        reference_path=reference_path,
+        run=runs[0],
+    )
+
+    with pytest.raises(ValueError, match="No matching trajectory timestamps"):
+        service.compute_evaluation(selection=selection, controls=EvaluationControls())
+
+
+def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.pipeline.contracts import ArtifactRef, SequenceManifest, SlamArtifacts
+
+    pipeline_page._compute_evo_preview.cache_clear()
+    reference_path = tmp_path / "reference.tum"
+    estimate_path = tmp_path / "estimate.tum"
+    _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0), (0.2, 2.0, 1.0, 0.0)])
+    _write_tum(estimate_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.1, 0.1, 0.0), (0.2, 2.2, 1.2, 0.0)])
+
+    snapshot = PipelineSessionSnapshot(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15", reference_tum_path=reference_path),
+        slam=SlamArtifacts(
+            trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="trajectory"),
+        ),
+    )
+
+    evo_preview, evo_error = pipeline_page._resolve_evo_preview(snapshot)
+
+    assert evo_error is None
+    assert evo_preview is not None
+    assert len(evo_preview.error_series.values) == 3
+    assert evo_preview.stats.rmse > 0.0
+
+
+def test_pipeline_page_evo_preview_fails_when_timestamps_do_not_match(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    pipeline_page._compute_evo_preview.cache_clear()
+    reference_path = tmp_path / "reference.tum"
+    estimate_path = tmp_path / "estimate.tum"
+    _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0)])
+    _write_tum(estimate_path, [(10.0, 0.0, 0.0, 0.0), (10.1, 1.0, 0.0, 0.0)])
+
+    with pytest.raises(ValueError, match="No matching timestamps"):
+        pipeline_page._compute_evo_preview(
+            reference_path=reference_path,
+            estimate_path=estimate_path,
+            reference_mtime_ns=reference_path.stat().st_mtime_ns,
+            estimate_mtime_ns=estimate_path.stat().st_mtime_ns,
+        )
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_writes(tmp_path: Path) -> None:
@@ -432,6 +506,48 @@ def test_advio_download_form_returns_typed_request_model(
     assert context.state.advio.download_preset is AdvioDownloadPreset.FULL
     assert context.state.advio.selected_modalities == [AdvioModality.CALIBRATION]
     assert context.state.advio.overwrite_existing is True
+
+
+def test_advio_page_data_treats_empty_download_selection_as_full_catalog() -> None:
+    from prml_vslam.app.advio_controller import AdvioDownloadFormData, build_advio_page_data
+    from prml_vslam.datasets.advio import AdvioDatasetSummary, AdvioDownloadRequest
+
+    class ServiceSpy:
+        def __init__(self) -> None:
+            self.requests: list[AdvioDownloadRequest] = []
+
+        def download(self, request: AdvioDownloadRequest) -> SimpleNamespace:
+            self.requests.append(request)
+            return SimpleNamespace(
+                sequence_ids=[15, 16],
+                downloaded_archive_count=1,
+                written_path_count=2,
+            )
+
+        def local_scene_statuses(self) -> list[object]:
+            return []
+
+        def summarize(self, statuses: list[object]) -> AdvioDatasetSummary:
+            return AdvioDatasetSummary(
+                total_scene_count=0,
+                local_scene_count=0,
+                replay_ready_scene_count=0,
+                offline_ready_scene_count=0,
+                full_scene_count=0,
+                cached_archive_count=0,
+                total_remote_archive_bytes=0,
+            )
+
+    service = ServiceSpy()
+    page_data = build_advio_page_data(
+        SimpleNamespace(advio_service=service),
+        AdvioDownloadFormData(request=AdvioDownloadRequest(sequence_ids=[]), submitted=True),
+    )
+
+    assert page_data.notice_level == "success"
+    assert "Prepared 2 scene(s)" in page_data.notice_message
+    assert len(service.requests) == 1
+    assert service.requests[0].sequence_ids == []
 
 
 def test_advio_controller_handles_preview_start_and_stop() -> None:
@@ -620,6 +736,7 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
 
     assert runtime.start_usb_calls == 0
     assert runtime.start_wifi_calls == 0
+    assert context.state.record3d.wifi_device_address == ""
     assert action.transport is Record3DTransportId.WIFI
     assert action.start_requested is False
     assert action.stop_requested is False

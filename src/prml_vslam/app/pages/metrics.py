@@ -25,8 +25,8 @@ def render(context: AppContext) -> None:
     render_page_intro(
         eyebrow="Benchmark Review",
         title="Trajectory Metrics",
-        body="Inspect persisted trajectory metrics or trigger a fresh local comparison for one dataset, sequence, "
-        "and artifact slice. Evaluation stays explicit so metrics never run as a side effect.",
+        body="Inspect persisted trajectory metrics or trigger a fresh explicit `evo` APE evaluation for one "
+        "dataset, sequence, and artifact slice. Evaluation stays explicit so metrics never run as a side effect.",
     )
     metrics = context.state.metrics
     with st.container(border=True):
@@ -69,7 +69,7 @@ def render(context: AppContext) -> None:
             format_func=lambda item: item.label,
         )
         st.caption(
-            "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted mock result."
+            "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted `evo` result."
         )
     controls = metrics.evaluation
     selection_state = _resolve_selection(
@@ -107,7 +107,7 @@ def render(context: AppContext) -> None:
     can_compute = selection.reference_path is not None and selection.run.estimate_path.exists()
     with st.container(border=True):
         action_col, status_col = st.columns((0.9, 1.1), gap="large")
-        compute = action_col.button("Compute metrics", type="primary", disabled=not can_compute, width="stretch")
+        compute = action_col.button("Compute evo metrics", type="primary", disabled=not can_compute, width="stretch")
         if selection.reference_path is None:
             status_col.warning(
                 "Missing `ground_truth.tum` for the selected sequence. The app only evaluates when a TUM reference trajectory already exists."
@@ -117,7 +117,7 @@ def render(context: AppContext) -> None:
         else:
             status_col.info("No persisted result matches the current controls yet.")
     if compute:
-        with st.spinner("Computing trajectory metrics..."):
+        with st.spinner("Computing evo trajectory metrics..."):
             try:
                 evaluation = context.evaluation_service.compute_evaluation(selection=selection, controls=controls)
             except EVALUATION_ERRORS as exc:
@@ -131,7 +131,7 @@ def render(context: AppContext) -> None:
             controls=controls,
             result_path=evaluation.path,
         )
-        st.success(f"Persisted fresh metric result to `{evaluation.path}`.")
+        st.success(f"Persisted fresh evo metric result to `{evaluation.path}`.")
     if evaluation is None:
         _render_provenance(dataset=dataset, selection=selection, evaluation=None)
         return

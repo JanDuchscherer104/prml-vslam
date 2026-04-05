@@ -35,12 +35,6 @@ console = Console(__name__)
 app.add_typer(advio_app, name="advio")
 
 
-@app.callback()
-def callback() -> None:
-    """Register the root command group."""
-    return None
-
-
 @app.command()
 def info() -> None:
     """Print a short summary of the current scaffold."""
@@ -99,6 +93,27 @@ def plan_run(
         ),
     )
     plan = request.build()
+    console.plog(plan.model_dump(mode="json"))
+
+
+@app.command("plan-run-config")
+def plan_run_config(
+    config_path: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to a RunRequest TOML file (repo-relative paths are resolved via PathConfig).",
+        ),
+    ],
+) -> None:
+    """Build a typed benchmark run plan from a TOML config file."""
+    path_config = get_path_config()
+    try:
+        resolved_config_path = path_config.resolve_toml_path(config_path, must_exist=True)
+        request = RunRequest.from_toml(resolved_config_path)
+        plan = request.build(path_config)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
     console.plog(plan.model_dump(mode="json"))
 
 

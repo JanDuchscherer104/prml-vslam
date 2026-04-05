@@ -10,11 +10,7 @@ from pydantic import Field
 
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods.contracts import MethodId
-from prml_vslam.utils import BaseConfig, BaseData
-
-
-class EvaluationControls(BaseConfig):
-    """Reserved placeholder for future explicit evaluation options."""
+from prml_vslam.utils import BaseData
 
 
 class MetricStats(BaseData):
@@ -62,7 +58,6 @@ class EvaluationArtifact(BaseData):
     """Loaded or freshly computed persisted `evo` result."""
 
     path: Path
-    controls: EvaluationControls
     title: str
     matched_pairs: int
     stats: MetricStats
@@ -76,17 +71,15 @@ class EvaluationArtifact(BaseData):
         cls,
         *,
         path: Path,
-        controls: EvaluationControls,
         payload: dict[str, object],
         reference_path: Path,
         estimate_path: Path,
         trajectories: tuple[TrajectorySeries, TrajectorySeries],
     ) -> EvaluationArtifact:
-        """Build an evaluation artifact from one persisted mock payload."""
+        """Build an evaluation artifact from one persisted metrics payload."""
         reference_trajectory, estimate_trajectory = trajectories
         return cls(
             path=path,
-            controls=controls,
             title=str(payload["title"]),
             matched_pairs=int(payload["matched_pairs"]),
             stats=MetricStats.model_validate(payload["stats"]),
@@ -158,7 +151,6 @@ __all__ = [
     "DiscoveredRun",
     "ErrorSeries",
     "EvaluationArtifact",
-    "EvaluationControls",
     "EvaluationSelection",
     "MetricStats",
     "SelectionSnapshot",
