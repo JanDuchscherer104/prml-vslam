@@ -463,6 +463,34 @@ resolved_on = "2026-04-06"
 resolution_note = "Mock method runtimes now emit pipeline-owned SlamArtifacts directly instead of a parallel MethodRunResult contract."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0010"
+title = "Package re-export surfaces remain broader than the minimal public API"
+status = "resolved"
+priority = "medium"
+category = "api"
+summary = "The `io` and `pipeline` package roots still re-export transport internals, snapshot types, signaling helpers, and session classes beyond the minimal public surface documented in the architecture rules."
+files = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+notes = [
+    "`prml_vslam.io.__init__` still exports transport sessions, Wi-Fi signaling helpers, and the Record3D snapshot type.",
+    "`prml_vslam.pipeline.__init__` still exports `PipelineSessionService`, `PipelineSessionSnapshot`, and `PipelineSessionState` via a dynamic import bridge even though the documented minimal public surface is narrower.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "The io and pipeline package roots already match the documented minimal API, and package-export tests now guard against broader re-exports."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -813,4 +841,35 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "The public method mock surface now takes raw paths and returns pipeline-owned SlamArtifacts rather than a separate normalized-output DTO."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0010"
+title = "Trim io and pipeline package exports to the documented minimal surface"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0010",
+]
+loc_min = 15
+loc_expected = 40
+loc_max = 90
+files = [
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+acceptance = [
+    "The package roots stop re-exporting transport internals, snapshot types, and signaling helpers that are not part of the minimal public API.",
+    "Imports in the repo become explicit module imports when they need package-private helpers.",
+    "The remaining package-root exports match the architecture guide and `AGENTS.md` policy.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/io/__init__.py",
+    "src/prml_vslam/pipeline/__init__.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Minimal package-root exports are now documented and verified by tests so transport internals and session helpers stay module-local."
 source_collection = "todos"
