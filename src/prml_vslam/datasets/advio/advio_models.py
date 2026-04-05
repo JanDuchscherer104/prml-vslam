@@ -181,9 +181,9 @@ class AdvioDownloadResult(BaseData):
 
     sequence_ids: list[int]
     modalities: list[AdvioModality]
-    downloaded_archives: list[Path] = Field(default_factory=list)
-    reused_archives: list[Path] = Field(default_factory=list)
-    written_paths: list[Path] = Field(default_factory=list)
+    downloaded_archive_count: int = 0
+    reused_archive_count: int = 0
+    written_path_count: int = 0
 
 
 class AdvioLocalSceneStatus(BaseData):

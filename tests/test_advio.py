@@ -375,24 +375,28 @@ def test_resolve_existing_advio_reference_tum_finds_ground_truth(tmp_path: Path)
 def test_advio_dataset_service_downloads_selected_modalities_from_cached_archive(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
-
-    result = service.download(
-        AdvioDownloadRequest(
-            sequence_ids=[15],
-            modalities=[AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO],
-        )
+    request = AdvioDownloadRequest(
+        sequence_ids=[15],
+        modalities=[AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO],
     )
 
+    first_result = service.download(request)
+    second_result = service.download(request)
+
     dataset_root = tmp_path / "data" / "advio"
-    assert len(result.downloaded_archives) == 1
-    assert not (dataset_root / ".archives" / "advio-15.zip").exists()
+    archive_path = dataset_root / ".archives" / "advio-15.zip"
+    assert first_result.downloaded_archive_count == 1
+    assert first_result.reused_archive_count == 0
+    assert second_result.downloaded_archive_count == 0
+    assert second_result.reused_archive_count == 1
+    assert archive_path.exists()
     assert (dataset_root / "calibration" / "iphone-03.yaml").exists()
     assert (dataset_root / "data" / "advio-15" / "iphone" / "frames.mov").exists()
     assert (dataset_root / "data" / "advio-15" / "iphone" / "frames.csv").exists()
     assert not (dataset_root / "data" / "advio-15" / "pixel" / "arcore.csv").exists()
 
     status = service.local_scene_statuses()[0]
-    assert status.archive_path is None
+    assert status.archive_path == archive_path
     assert status.local_modalities == [AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO]
     assert status.replay_ready is False
     assert status.offline_ready is False
@@ -409,7 +413,7 @@ def test_advio_dataset_service_offline_preset_downloads_evaluation_ready_bundle(
         )
     )
 
-    assert len(result.downloaded_archives) == 1
+    assert result.downloaded_archive_count == 1
     summary = service.summarize()
     status = service.local_scene_statuses()[0]
 
