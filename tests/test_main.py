@@ -108,7 +108,6 @@ mode = "offline"
 output_dir = "artifacts"
 
 [source]
-kind = "video"
 video_path = "captures/office-03.mp4"
 frame_stride = 2
 
@@ -138,7 +137,6 @@ evaluate_efficiency = true
     assert isinstance(payload, dict)
     assert payload["run_id"] == "advio-office-offline-vista"
     assert payload["method"] == "vista"
-    assert payload["source"]["kind"] == "video"
     assert payload["source"]["video_path"] == "captures/office-03.mp4"
 
 
