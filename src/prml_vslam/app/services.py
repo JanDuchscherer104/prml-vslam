@@ -15,16 +15,14 @@ from pydantic import Field
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.interfaces import FramePacket, FramePacketStream
 from prml_vslam.io.record3d import (
-    Record3DConnectionError,
     Record3DDevice,
     Record3DStreamConfig,
     Record3DStreamSnapshot,
     Record3DStreamState,
-    Record3DTimeoutError,
     Record3DTransportId,
     Record3DUSBPacketStreamConfig,
 )
-from prml_vslam.io.record3d_wifi import Record3DWiFiStreamConfig
+from prml_vslam.io.wifi_session import Record3DWiFiStreamConfig
 from prml_vslam.utils import BaseData
 
 SnapshotT = TypeVar("SnapshotT", bound=BaseData)
@@ -52,6 +50,11 @@ def _to_disconnected_snapshot(snapshot: SnapshotT, *, streaming_state: Any, disc
     return snapshot.model_copy(
         update={"state": disconnected_state, "latest_packet": None, "received_frames": 0, "measured_fps": 0.0}
     )
+
+
+def _is_record3d_frame_timeout(error: RuntimeError) -> bool:
+    message = str(error)
+    return message.startswith("Timed out waiting ") and "Record3D" in message and " frame." in message
 
 
 class RollingRuntimeMetrics:
@@ -182,7 +185,7 @@ class Record3DAppService:
     def list_usb_devices(self) -> list[Record3DDevice]:
         stream = Record3DUSBPacketStreamConfig().setup_target()
         if stream is None:
-            raise Record3DConnectionError("Failed to initialize the USB Record3D packet stream.")
+            raise RuntimeError("Failed to initialize the USB Record3D packet stream.")
         return stream.list_devices()
 
 
@@ -415,8 +418,10 @@ class Record3DStreamRuntimeController:
             while not stop_event.is_set():
                 try:
                     packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
-                except Record3DTimeoutError:
-                    continue
+                except RuntimeError as exc:
+                    if _is_record3d_frame_timeout(exc):
+                        continue
+                    raise
                 arrival_time_s = packet.arrival_timestamp_s if packet.arrival_timestamp_s is not None else time.time()
                 camera_position = _extract_camera_position_from_pose(packet)
                 metrics.record(
@@ -459,7 +464,7 @@ class Record3DStreamRuntimeController:
             )
         ).setup_target()
         if stream is None:
-            raise Record3DConnectionError("Failed to initialize the USB Record3D packet stream.")
+            raise RuntimeError("Failed to initialize the USB Record3D packet stream.")
         return stream
 
     @staticmethod
@@ -471,7 +476,7 @@ class Record3DStreamRuntimeController:
             setup_timeout_seconds=12.0,
         ).setup_target()
         if stream is None:
-            raise Record3DConnectionError("Failed to initialize the Record3D Wi-Fi stream.")
+            raise RuntimeError("Failed to initialize the Record3D Wi-Fi stream.")
         return stream
 
     @staticmethod

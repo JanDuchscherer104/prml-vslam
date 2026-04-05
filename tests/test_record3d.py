@@ -10,7 +10,6 @@ import pytest
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.io import record3d as record3d_module
 from prml_vslam.io.record3d import (
-    Record3DDependencyError,
     Record3DDeviceType,
     Record3DStreamConfig,
     Record3DTransportId,
@@ -86,7 +85,7 @@ def test_record3d_stream_requires_optional_dependency(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(record3d_module.importlib, "import_module", raise_missing)
 
-    with pytest.raises(Record3DDependencyError, match="uv sync --extra streaming"):
+    with pytest.raises(RuntimeError, match="uv sync --extra streaming"):
         Record3DStreamConfig().setup_target()
 
 

@@ -12,8 +12,8 @@ from prml_vslam.eval.interfaces import (
     EvaluationSelection,
     SelectionSnapshot,
 )
+from prml_vslam.plotting import build_error_figure, build_trajectory_figure
 
-from ..plotting.metrics import build_error_figure, build_trajectory_figure
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:

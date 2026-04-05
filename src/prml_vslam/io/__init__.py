@@ -9,30 +9,21 @@ from .cv2_producer import (
     open_cv2_replay_stream,
 )
 from .record3d import (
-    Record3DConnectionError,
-    Record3DDependencyError,
     Record3DDevice,
     Record3DDeviceType,
-    Record3DError,
     Record3DFrame,
     Record3DStreamConfig,
     Record3DStreamSession,
     Record3DStreamSnapshot,
     Record3DStreamState,
-    Record3DTimeoutError,
     Record3DTransportId,
     Record3DUSBPacketStream,
     Record3DUSBPacketStreamConfig,
     record3d_frame_to_packet,
 )
-from .record3d_wifi import (
-    Record3DWiFiMetadata,
-    Record3DWiFiSignalingClient,
-    Record3DWiFiStreamConfig,
-    Record3DWiFiStreamSession,
-    decode_record3d_wifi_depth,
-    normalize_record3d_device_address,
-)
+from .wifi_packets import Record3DWiFiMetadata, decode_record3d_wifi_depth
+from .wifi_session import Record3DWiFiStreamConfig, Record3DWiFiStreamSession
+from .wifi_signaling import Record3DWiFiSignalingClient, normalize_record3d_device_address
 
 __all__ = [
     "CameraIntrinsics",
@@ -41,17 +32,13 @@ __all__ = [
     "Cv2ReplayMode",
     "FramePacket",
     "FramePacketStream",
-    "Record3DConnectionError",
-    "Record3DDependencyError",
     "Record3DDevice",
     "Record3DDeviceType",
-    "Record3DError",
     "Record3DFrame",
     "Record3DStreamConfig",
     "Record3DStreamSession",
     "Record3DStreamSnapshot",
     "Record3DStreamState",
-    "Record3DTimeoutError",
     "Record3DTransportId",
     "Record3DUSBPacketStream",
     "Record3DUSBPacketStreamConfig",

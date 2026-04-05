@@ -9,7 +9,6 @@ from threading import Event, Thread, current_thread
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.utils import BaseConfig, Console
 
-from .record3d import Record3DConnectionError, Record3DTimeoutError
 from .wifi_packets import Record3DWiFiMetadata
 from .wifi_receiver import _Record3DWiFiReceiverRuntime
 from .wifi_signaling import Record3DWiFiSignalingClient
@@ -56,7 +55,7 @@ class Record3DWiFiStreamSession:
 
     def connect(self) -> Record3DWiFiMetadata:
         if self._worker is not None and self._worker.is_alive():
-            raise Record3DConnectionError("The Record3D Wi-Fi session is already active.")
+            raise RuntimeError("The Record3D Wi-Fi session is already active.")
 
         self._packet_queue = Queue()
         self._connected_event.clear()
@@ -86,12 +85,12 @@ class Record3DWiFiStreamSession:
                 self.console.info("Connected to Record3D Wi-Fi stream at %s.", self.signaling_client.device_address)
                 return self._metadata or Record3DWiFiMetadata(device_address=self.signaling_client.device_address)
             if self._failure_event.is_set():
-                raise Record3DConnectionError(self._failure_message)
+                raise RuntimeError(self._failure_message)
             if self._worker is not None and not self._worker.is_alive():
                 break
 
         self.disconnect()
-        raise Record3DConnectionError(
+        raise RuntimeError(
             f"Timed out establishing the Record3D Wi-Fi stream at {self.signaling_client.device_address}."
         )
 
@@ -117,10 +116,10 @@ class Record3DWiFiStreamSession:
             return self._packet_queue.get(timeout=timeout)
         except Empty as exc:
             if self._failure_event.is_set():
-                raise Record3DConnectionError(self._failure_message) from exc
+                raise RuntimeError(self._failure_message) from exc
             if self._stop_event.is_set():
-                raise Record3DConnectionError("The Record3D Wi-Fi stream is not active.") from exc
-            raise Record3DTimeoutError(f"Timed out waiting {timeout:.2f}s for a Record3D Wi-Fi frame.") from exc
+                raise RuntimeError("The Record3D Wi-Fi stream is not active.") from exc
+            raise RuntimeError(f"Timed out waiting {timeout:.2f}s for a Record3D Wi-Fi frame.") from exc
 
     def _store_metadata(self, metadata: Record3DWiFiMetadata) -> None:
         self._metadata = metadata
