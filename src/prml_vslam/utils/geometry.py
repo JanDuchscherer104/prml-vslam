@@ -104,7 +104,6 @@ def load_tum_trajectory(path: Path) -> TimedPoseTrajectory:
     )
 
 
-# TODO: should be handeled via open3d or other high-level library!
 def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     """Write an XYZ point cloud to PLY using the repository's Open3D dependency."""
     positions = np.asarray(points_xyz, dtype=np.float64)
@@ -148,7 +147,6 @@ def transform_points_world_camera(
     return transform(pose_world_camera.as_matrix(), vectors_to_points(points))[:, :3]
 
 
-# TODO: should be handeled via pytransform3d or other high-level library!
 def pointmap_from_depth(
     depth_map_m: np.ndarray,
     intrinsics: CameraIntrinsics,

@@ -753,6 +753,30 @@ resolved_on = "2026-04-06"
 resolution_note = "Centralized the shared preview state field and active-state set under the app models module."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0021"
+title = "Remaining geometry TODO markers are stale against current dependency usage"
+status = "resolved"
+priority = "low"
+category = "repo-hygiene"
+summary = "The last two TODO markers in `geometry.py` no longer describe live debt: point-cloud writing already delegates to Open3D except for the required empty-cloud fallback, and dense depth unprojection has no matching helper in the current pytransform3d camera API."
+files = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+notes = [
+    "Open3D fails to materialize empty point clouds, so the repo-owned zero-vertex fallback is intentional rather than a missed delegation.",
+    "The current pytransform3d camera module exposes projection helpers such as `cam2sensor` and `sensor2img`, but not a dense inverse-unprojection helper that would replace `pointmap_from_depth()`.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Retired the remaining stale geometry TODO markers after validating the current Open3D and pytransform3d surfaces."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1434,4 +1458,32 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 05 after reducing LOC and preserving app behavior under tests/test_app.py."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0021"
+title = "Retire stale geometry TODO markers"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0021",
+]
+loc_min = 2
+loc_expected = 4
+loc_max = 8
+files = [
+    "src/prml_vslam/utils/geometry.py",
+]
+acceptance = [
+    "The remaining geometry TODO markers are removed once their underlying debt has been validated as stale.",
+    "Geometry and mock-method tests continue to pass.",
+    "The TODO-marker count reported by `make loc LOC_ARGS=\"--todo\"` decreases.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 06 after reducing total LOC, reducing TODO markers to zero, and preserving geometry/method behavior."
 source_collection = "todos"
