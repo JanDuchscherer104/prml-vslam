@@ -4,6 +4,7 @@ from pathlib import Path
 
 from prml_vslam.interfaces import FramePacketStream
 from prml_vslam.io import Cv2ReplayMode
+from prml_vslam.pipeline.contracts import SequenceManifest
 from prml_vslam.utils import Console, PathConfig
 
 from .advio_download import AdvioDownloadManager
@@ -64,13 +65,22 @@ class AdvioDatasetService:
     def load_local_sample(self, sequence_id: int) -> AdvioOfflineSample:
         return self._sequence(sequence_id).load_offline_sample()
 
+    def build_sequence_manifest(self, *, sequence_id: int, output_dir: Path | None = None) -> SequenceManifest:
+        return self._sequence(sequence_id).to_sequence_manifest(output_dir=output_dir)
+
     def open_preview_stream(
-        self, *, sequence_id: int, pose_source: AdvioPoseSource, respect_video_rotation: bool
+        self,
+        *,
+        sequence_id: int,
+        pose_source: AdvioPoseSource,
+        respect_video_rotation: bool,
+        loop: bool = True,
+        replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
     ) -> FramePacketStream:
         return self._sequence(sequence_id).open_stream(
             pose_source=pose_source,
-            loop=True,
-            replay_mode=Cv2ReplayMode.REALTIME,
+            loop=loop,
+            replay_mode=replay_mode,
             respect_video_rotation=respect_video_rotation,
         )
 
