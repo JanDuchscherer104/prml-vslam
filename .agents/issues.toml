@@ -1,0 +1,123 @@
+[meta]
+schema_version = 1
+repo = "prml-vslam"
+updated_on = "2026-04-05"
+source = "Validated review findings plus follow-up repository policy notes."
+
+[[issues]]
+id = "ISSUE-0001"
+title = "BaseConfig-derived workflows are not TOML-first"
+status = "open"
+priority = "high"
+category = "configuration"
+summary = "User-facing and reproducible BaseConfig graphs should be loaded from TOML, but current durable workflows still rely heavily on direct in-code construction."
+files = [
+  "src/prml_vslam/utils/base_config.py",
+  "src/prml_vslam/utils/path_config.py",
+  "src/prml_vslam/main.py",
+]
+notes = [
+  "BaseConfig already exposes from_toml(), to_toml(), and save_toml().",
+  "PathConfig already resolves repo-relative .toml paths.",
+  "Current CLI entrypoints still build RunRequest graphs directly from flags.",
+]
+
+[[issues]]
+id = "ISSUE-0002"
+title = "ADVIO calibration parsing depends on undeclared PyYAML"
+status = "open"
+priority = "high"
+category = "dependency"
+summary = "The ADVIO loader imports yaml directly, but PyYAML is not declared in pyproject.toml core dependencies."
+files = [
+  "src/prml_vslam/datasets/advio/advio_loading.py",
+  "pyproject.toml",
+]
+notes = [
+  "The current environment works only because pyyaml is installed transitively.",
+  "Fresh installs should not rely on dependency coincidence for a core dataset path.",
+]
+
+[[issues]]
+id = "ISSUE-0003"
+title = "Record3D live snapshot model lives in the IO layer"
+status = "open"
+priority = "medium"
+category = "architecture"
+summary = "Record3DStreamSnapshot is app-facing session state layered on top of packet-session fields, but it is still owned by prml_vslam.io.record3d."
+files = [
+  "src/prml_vslam/io/record3d.py",
+  "src/prml_vslam/app/services.py",
+  "src/prml_vslam/app/pages/record3d.py",
+]
+notes = [
+  "The snapshot is consumed by the Streamlit app and worker controllers rather than by transport adapters.",
+  "This blurs the repo rule that io owns transport and app owns UI/session state.",
+]
+
+[[issues]]
+id = "ISSUE-0004"
+title = "Page-state persistence helpers are duplicated across app surfaces"
+status = "open"
+priority = "medium"
+category = "maintainability"
+summary = "Multiple app modules repeat near-identical save-if-changed logic for typed page state."
+files = [
+  "src/prml_vslam/app/advio_controller.py",
+  "src/prml_vslam/app/pages/pipeline.py",
+  "src/prml_vslam/app/record3d_controller.py",
+]
+notes = [
+  "The duplication is small but repeated enough to encourage drift in state handling.",
+  "A generic helper should preserve the typed models while removing controller boilerplate.",
+]
+
+[[issues]]
+id = "ISSUE-0005"
+title = "Runtime contracts still mix canonical and preview-only payloads"
+status = "open"
+priority = "medium"
+category = "contracts"
+summary = "FramePacket and SlamUpdate still carry fields that are either unused in current flows or only needed for app preview surfaces."
+files = [
+  "src/prml_vslam/interfaces/runtime.py",
+  "src/prml_vslam/pipeline/contracts.py",
+  "src/prml_vslam/app/pages/pipeline.py",
+]
+notes = [
+  "FramePacket.image_path and FramePacket.jpeg_bytes are currently unused in this repo.",
+  "SlamUpdate.pointmap and SlamUpdate.uncertainty are app-preview oriented rather than core pipeline artifacts.",
+]
+
+[[issues]]
+id = "ISSUE-0006"
+title = "Placeholder config and state fields remain in active models"
+status = "open"
+priority = "medium"
+category = "cleanup"
+summary = "Several config and state models still contain placeholder or shape-only fields that add maintenance cost without current value."
+files = [
+  "src/prml_vslam/eval/contracts.py",
+  "src/prml_vslam/methods/mstr.py",
+  "src/prml_vslam/app/models.py",
+]
+notes = [
+  "EvaluationControls is still an empty placeholder.",
+  "MSTRMethodConfig.calibration_path is retained only to satisfy a shared shape.",
+  "Record3DPageState still hard-codes a Wi-Fi IP default that is unlikely to be broadly correct.",
+]
+
+[[issues]]
+id = "ISSUE-0007"
+title = "SessionStateStore stale-runtime replacement paths lack focused tests"
+status = "open"
+priority = "low"
+category = "testing"
+summary = "The session-state adapter can replace incompatible runtimes, but the current test coverage only verifies a basic pipeline-runtime round trip."
+files = [
+  "src/prml_vslam/app/state.py",
+  "tests/test_app.py",
+]
+notes = [
+  "Compatibility fallback and stale-runtime shutdown behavior are implemented but not directly covered.",
+]
