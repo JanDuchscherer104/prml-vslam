@@ -6,30 +6,6 @@ source = "Validated review findings plus follow-up repository policy notes, the 
 active_collection = "issues"
 
 [[issues]]
-id = "ISSUE-0010"
-title = "Package re-export surfaces remain broader than the minimal public API"
-status = "open"
-priority = "medium"
-category = "api"
-summary = "The `io` and `pipeline` package roots still re-export transport internals, snapshot types, signaling helpers, and session classes beyond the minimal public surface documented in the architecture rules."
-files = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/io/__init__.py",
-    "src/prml_vslam/pipeline/__init__.py",
-]
-notes = [
-    "`prml_vslam.io.__init__` still exports transport sessions, Wi-Fi signaling helpers, and the Record3D snapshot type.",
-    "`prml_vslam.pipeline.__init__` still exports `PipelineSessionService`, `PipelineSessionSnapshot`, and `PipelineSessionState` via a dynamic import bridge even though the documented minimal public surface is narrower.",
-]
-sources = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/io/__init__.py",
-    "src/prml_vslam/pipeline/__init__.py",
-]
-
-[[issues]]
 id = "ISSUE-0011"
 title = "ADVIO download flow still owns bespoke cache and fetch mechanics"
 status = "open"

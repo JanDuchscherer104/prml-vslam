@@ -7,33 +7,6 @@ active_collection = "todos"
 loc_unit = "lines"
 
 [[todos]]
-id = "TODO-0010"
-title = "Trim io and pipeline package exports to the documented minimal surface"
-status = "pending"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0010",
-]
-loc_min = 15
-loc_expected = 40
-loc_max = 90
-files = [
-    "src/prml_vslam/io/__init__.py",
-    "src/prml_vslam/pipeline/__init__.py",
-]
-acceptance = [
-    "The package roots stop re-exporting transport internals, snapshot types, and signaling helpers that are not part of the minimal public API.",
-    "Imports in the repo become explicit module imports when they need package-private helpers.",
-    "The remaining package-root exports match the architecture guide and `AGENTS.md` policy.",
-]
-sources = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/io/__init__.py",
-    "src/prml_vslam/pipeline/__init__.py",
-]
-
-[[todos]]
 id = "TODO-0011"
 title = "Delegate ADVIO archive fetching mechanics to a dataset fetch helper"
 status = "pending"

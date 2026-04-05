@@ -71,10 +71,9 @@ the restructuring.
 All other types are package-local unless they are later promoted under the
 shared-type rule.
 
-This is intentionally narrower than the current re-export surface. Transitional
-types may continue to exist while the repo migrates, but they should not be
-treated as long-term public API unless they are explicitly promoted into the
-minimal surface above.
+The `prml_vslam.io` and `prml_vslam.pipeline` package roots now match this
+minimal surface. New root-level re-exports should be treated as deliberate API
+additions rather than migration defaults.
 
 ## Migration Rules
 
@@ -86,7 +85,8 @@ minimal surface above.
 - If a package later needs a new behavior seam, add it to
   `<package>/protocols.py` instead of mixing it into a DTO module.
 - Preserve the minimal public surface while migrating. Temporary re-exports are
-  acceptable only when they are explicitly intentional and documented.
+  acceptable only when they are explicitly intentional, documented, and have a
+  clear removal plan.
 - Do not create parallel public result shapes when a pipeline-owned artifact
   contract already exists.
 - Wrapper-private transport payloads, native CLI argument objects, and
