@@ -619,12 +619,12 @@ def test_render_pipeline_page_entry_shows_builder_guidance(tmp_path: Path) -> No
     at = AppTest.from_function(_render_pipeline_page_entry_script, args=(str(tmp_path),))
     at.run()
 
-    assert at.title[0].value == "Pipeline Builder"
+    assert at.title[0].value == "Pipeline Planning"
     assert {item.value for item in at.subheader} >= {
         "Example Pipelines",
         "Design Pattern",
         "How To Use It",
-        "Helper Methods",
+        "Request Shape",
         "Generated Plan",
         "Mock Run",
     }
