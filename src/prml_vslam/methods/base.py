@@ -1,3 +1,5 @@
+"""Repository-local mock method config and runtime."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,13 +28,12 @@ end_header
 
 
 class MockMethodConfig(BaseConfig):
+    method_id: MethodId = MethodId.VISTA
+    """Selected mock backend label."""
+
     @property
     def target_type(self) -> type[MockMethodRuntime]:
         return MockMethodRuntime
-
-    @property
-    def method_id(self) -> MethodId:
-        raise NotImplementedError
 
 
 class MockMethodRuntime:

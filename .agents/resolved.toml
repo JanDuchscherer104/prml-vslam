@@ -777,6 +777,36 @@ resolved_on = "2026-04-06"
 resolution_note = "Retired the remaining stale geometry TODO markers after validating the current Open3D and pytransform3d surfaces."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0022"
+title = "Methods package still splits mock configs across per-backend wrapper modules"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The methods package still exports `MSTRMethodConfig` and `VISTAMethodConfig` as separate one-line subclasses in dedicated modules even though the repo only needs one typed mock config plus `MethodId` to build the deterministic placeholder runtime."
+files = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "src/prml_vslam/methods/mstr.py",
+    "src/prml_vslam/methods/vista.py",
+    "tests/test_methods.py",
+]
+notes = [
+    "The wrapper modules add public surface and file count without adding behavior beyond binding one enum value.",
+    "The only in-repo consumer is the mock-method test, so the extra subclasses are local boilerplate rather than a required compatibility seam.",
+]
+sources = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "src/prml_vslam/methods/mstr.py",
+    "src/prml_vslam/methods/vista.py",
+    "tests/test_methods.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Collapsed the methods mock config surface into one typed MockMethodConfig and removed the one-line per-backend wrapper modules."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1486,4 +1516,35 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 06 after reducing total LOC, reducing TODO markers to zero, and preserving geometry/method behavior."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0022"
+title = "Collapse mock method configs into one typed config"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0022",
+]
+loc_min = 20
+loc_expected = 30
+loc_max = 45
+files = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+acceptance = [
+    "The methods package exposes one typed mock config plus `MethodId` instead of one-line per-backend config subclasses.",
+    "Mock method setup still works through `BaseConfig.setup_target()` under the existing method and config tests.",
+    "The change reduces Python LOC while preserving the current deterministic mock-artifact behavior.",
+]
+sources = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 07 after reducing LOC and preserving mock-method behavior under the frozen harness plus full make ci."
 source_collection = "todos"
