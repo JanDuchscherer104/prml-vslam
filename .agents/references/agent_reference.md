@@ -34,7 +34,7 @@
 
 ## Repo Contract Notes
 
-- Pipeline plans are built from `RunRequest.build()` after explicit fluent `add_<stage>(config)` calls.
-- `DenseConfig` and `ReferenceConfig` share one toggle storage shape; evaluation stage config names alias one shared empty config.
+- Pipeline plans are built from `RunRequest.build()` after `RunRequest(...)` is fully specified with nested tracking, stage, and evaluation configs.
+- `DenseConfig` and `ReferenceConfig` share one toggle storage shape, while `BenchmarkEvaluationConfig` owns the optional evaluation stage toggles.
 - Shared camera, pose, trajectory, and runtime frame contracts live in `prml_vslam.interfaces`.
 - `SE3Pose`, `CameraIntrinsics`, `TimedPoseTrajectory`, `FramePacket`, and `FramePacketStream` are the canonical repo-wide datamodels.

@@ -1,4 +1,4 @@
-"""Static Streamlit page describing the typed pipeline builder surface."""
+"""Static Streamlit page describing the typed pipeline planning surface."""
 
 from __future__ import annotations
 
@@ -13,11 +13,9 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
     ArtifactRef,
     BenchmarkEvaluationConfig,
-    CloudEvaluationConfig,
     CloudMetrics,
     DenseArtifacts,
     DenseConfig,
-    EfficiencyEvaluationConfig,
     EfficiencyMetrics,
     LiveSourceSpec,
     PipelineMode,
@@ -31,7 +29,6 @@ from prml_vslam.pipeline import (
     StageManifest,
     TrackingArtifacts,
     TrackingConfig,
-    TrajectoryEvaluationConfig,
     TrajectoryMetrics,
     VideoSourceSpec,
 )
@@ -71,12 +68,12 @@ class MockRunDossier:
 
 
 def render(context: AppContext) -> None:
-    """Render a lightweight guide to the pipeline builder API."""
+    """Render a lightweight guide to the pipeline planning API."""
     render_page_intro(
         eyebrow="Planning Surface",
-        title="Pipeline Builder",
+        title="Pipeline Planning",
         body=(
-            "Review the typed run-planning API, the builder pattern used to compose stages, "
+            "Review the typed run-planning API, the direct request shape used to compose stages, "
             "and the exact stage rows produced by one benchmark-style request."
         ),
     )
@@ -97,8 +94,8 @@ def render(context: AppContext) -> None:
         st.markdown(
             "\n".join(
                 [
-                    "- `RunRequest(...)` owns the normalized source, the output root, and the cross-stage defaults.",
-                    "- Each `.add_<stage>(config)` call takes the official config object for that stage family.",
+                    "- `RunRequest(...)` owns the normalized source, the output root, the tracking config, and the stage toggles.",
+                    "- `DenseConfig`, `ReferenceConfig`, and `BenchmarkEvaluationConfig` make enabled stages explicit in one typed payload.",
                     "- `.build(path_config)` materializes a typed `RunPlan` with ordered `RunPlanStage` rows and canonical artifact paths.",
                 ]
             )
@@ -107,11 +104,11 @@ def render(context: AppContext) -> None:
         st.subheader("How To Use It")
         st.code(examples[1].code, language="python")
     with st.container(border=True):
-        st.subheader("Helper Methods")
-        builder_tab, config_tab, output_tab = st.tabs(["Builder Helpers", "Config Serialization", "Output Aliases"])
-        with builder_tab:
-            st.caption("The builder stays explicit: stages only exist when their helper is called.")
-            st.code(_builder_helpers_code(), language="python")
+        st.subheader("Request Shape")
+        request_tab, config_tab, output_tab = st.tabs(["Direct Request", "Config Serialization", "Output Aliases"])
+        with request_tab:
+            st.caption("The request stays explicit: stages only exist when their nested config toggles are enabled.")
+            st.code(_request_shape_code(), language="python")
         with config_tab:
             st.caption(
                 "`RunRequest` inherits `BaseConfig`, so JSON-friendly and TOML-friendly views are already available."
@@ -168,27 +165,28 @@ def _build_examples(path_config: PathConfig) -> list[PipelineExample]:
                 experiment_name="tracking-only-demo",
                 output_dir=output_dir,
                 source=VideoSourceSpec(video_path=path_config.captures_dir / "tracking-only.mp4"),
+                tracking=TrackingConfig(method=MethodId.VISTA, max_frames=300),
                 dense=DenseConfig(enabled=False),
                 evaluation=disabled_eval.model_copy(deep=True),
-            ).add_tracking(TrackingConfig(method=MethodId.VISTA, max_frames=300)),
+            ),
             code=_tracking_only_code(),
         ),
         PipelineExample(
             title="Benchmark",
-            summary="An explicit builder chain that opts into dense export, reference reconstruction, and evaluation.",
+            summary="An explicit request that opts into dense export, reference reconstruction, and evaluation.",
             request=RunRequest(
                 experiment_name="benchmark-demo",
                 output_dir=output_dir,
                 source=VideoSourceSpec(video_path=path_config.captures_dir / "lobby.mp4", frame_stride=2),
-                dense=DenseConfig(enabled=False),
-                evaluation=disabled_eval.model_copy(deep=True),
-            )
-            .add_tracking(TrackingConfig(method=MethodId.VISTA))
-            .add_dense(DenseConfig())
-            .add_reference(ReferenceConfig())
-            .add_trajectory_evaluation(TrajectoryEvaluationConfig())
-            .add_cloud_evaluation(CloudEvaluationConfig())
-            .add_efficiency_evaluation(EfficiencyEvaluationConfig()),
+                tracking=TrackingConfig(method=MethodId.VISTA),
+                dense=DenseConfig(enabled=True),
+                reference=ReferenceConfig(enabled=True),
+                evaluation=BenchmarkEvaluationConfig(
+                    compare_to_arcore=True,
+                    evaluate_cloud=True,
+                    evaluate_efficiency=True,
+                ),
+            ),
             code=_benchmark_code(),
         ),
         PipelineExample(
@@ -199,33 +197,28 @@ def _build_examples(path_config: PathConfig) -> list[PipelineExample]:
                 mode=PipelineMode.STREAMING,
                 output_dir=output_dir,
                 source=LiveSourceSpec(source_id="record3d_usb", persist_capture=True),
+                tracking=TrackingConfig(method=MethodId.MSTR),
                 dense=DenseConfig(enabled=False),
                 evaluation=disabled_eval.model_copy(deep=True),
-            ).add_tracking(TrackingConfig(method=MethodId.MSTR)),
+            ),
             code=_live_capture_code(),
         ),
     ]
 
 
 def _build_mock_run(path_config: PathConfig) -> MockRunDossier:
-    request = (
-        RunRequest(
-            experiment_name="mock-lobby-benchmark",
-            output_dir=path_config.artifacts_dir,
-            source=VideoSourceSpec(video_path=path_config.captures_dir / "lobby.mp4", frame_stride=2),
-            dense=DenseConfig(enabled=False),
-            evaluation=BenchmarkEvaluationConfig(
-                compare_to_arcore=False,
-                evaluate_cloud=False,
-                evaluate_efficiency=False,
-            ),
-        )
-        .add_tracking(TrackingConfig(method=MethodId.VISTA))
-        .add_dense(DenseConfig())
-        .add_reference(ReferenceConfig())
-        .add_trajectory_evaluation(TrajectoryEvaluationConfig())
-        .add_cloud_evaluation(CloudEvaluationConfig())
-        .add_efficiency_evaluation(EfficiencyEvaluationConfig())
+    request = RunRequest(
+        experiment_name="mock-lobby-benchmark",
+        output_dir=path_config.artifacts_dir,
+        source=VideoSourceSpec(video_path=path_config.captures_dir / "lobby.mp4", frame_stride=2),
+        tracking=TrackingConfig(method=MethodId.VISTA),
+        dense=DenseConfig(enabled=True),
+        reference=ReferenceConfig(enabled=True),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=True,
+            evaluate_cloud=True,
+            evaluate_efficiency=True,
+        ),
     )
     plan = request.build(path_config)
     run_paths = path_config.plan_run_paths(
@@ -371,13 +364,17 @@ def _json_dump(payload: object) -> str:
     return json.dumps(payload, indent=2, sort_keys=True)
 
 
-def _builder_helpers_code() -> str:
-    return """request = (
-    RunRequest(...)
-    .add_tracking(TrackingConfig(...))
-    .add_dense(DenseConfig())
-    .add_reference(ReferenceConfig())
-    .add_trajectory_evaluation(TrajectoryEvaluationConfig())
+def _request_shape_code() -> str:
+    return """request = RunRequest(
+    ...,
+    tracking=TrackingConfig(...),
+    dense=DenseConfig(enabled=True),
+    reference=ReferenceConfig(enabled=False),
+    evaluation=BenchmarkEvaluationConfig(
+        compare_to_arcore=True,
+        evaluate_cloud=False,
+        evaluate_efficiency=True,
+    ),
 )
 
 plan = request.build(path_config)
@@ -392,59 +389,39 @@ def _tracking_only_code() -> str:
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import BenchmarkEvaluationConfig, DenseConfig, RunRequest, TrackingConfig, VideoSourceSpec
 
-plan = (
-    RunRequest(
-        experiment_name="tracking-only-demo",
-        output_dir=Path("artifacts"),
-        source=VideoSourceSpec(video_path=Path("captures/tracking-only.mp4")),
-        dense=DenseConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=False,
-        ),
-    )
-    .add_tracking(TrackingConfig(method=MethodId.VISTA, max_frames=300))
-    .build(path_config)
-)"""
+plan = RunRequest(
+    experiment_name="tracking-only-demo",
+    output_dir=Path("artifacts"),
+    source=VideoSourceSpec(video_path=Path("captures/tracking-only.mp4")),
+    tracking=TrackingConfig(method=MethodId.VISTA, max_frames=300),
+    dense=DenseConfig(enabled=False),
+    evaluation=BenchmarkEvaluationConfig(
+        compare_to_arcore=False,
+        evaluate_cloud=False,
+        evaluate_efficiency=False,
+    ),
+).build(path_config)"""
 
 
 def _benchmark_code() -> str:
     return """from pathlib import Path
 
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import (
-    BenchmarkEvaluationConfig,
-    CloudEvaluationConfig,
-    DenseConfig,
-    EfficiencyEvaluationConfig,
-    ReferenceConfig,
-    RunRequest,
-    TrackingConfig,
-    TrajectoryEvaluationConfig,
-    VideoSourceSpec,
-)
+from prml_vslam.pipeline import BenchmarkEvaluationConfig, DenseConfig, ReferenceConfig, RunRequest, TrackingConfig, VideoSourceSpec
 
-plan = (
-    RunRequest(
-        experiment_name="benchmark-demo",
-        output_dir=Path("artifacts"),
-        source=VideoSourceSpec(video_path=Path("captures/lobby.mp4"), frame_stride=2),
-        dense=DenseConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=False,
-        ),
-    )
-    .add_tracking(TrackingConfig(method=MethodId.VISTA))
-    .add_dense(DenseConfig())
-    .add_reference(ReferenceConfig())
-    .add_trajectory_evaluation(TrajectoryEvaluationConfig())
-    .add_cloud_evaluation(CloudEvaluationConfig())
-    .add_efficiency_evaluation(EfficiencyEvaluationConfig())
-    .build(path_config)
-)"""
+plan = RunRequest(
+    experiment_name="benchmark-demo",
+    output_dir=Path("artifacts"),
+    source=VideoSourceSpec(video_path=Path("captures/lobby.mp4"), frame_stride=2),
+    tracking=TrackingConfig(method=MethodId.VISTA),
+    dense=DenseConfig(enabled=True),
+    reference=ReferenceConfig(enabled=True),
+    evaluation=BenchmarkEvaluationConfig(
+        compare_to_arcore=True,
+        evaluate_cloud=True,
+        evaluate_efficiency=True,
+    ),
+).build(path_config)"""
 
 
 def _live_capture_code() -> str:
@@ -453,22 +430,19 @@ def _live_capture_code() -> str:
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import BenchmarkEvaluationConfig, DenseConfig, LiveSourceSpec, PipelineMode, RunRequest, TrackingConfig
 
-plan = (
-    RunRequest(
-        experiment_name="live-capture-demo",
-        mode=PipelineMode.STREAMING,
-        output_dir=Path("artifacts"),
-        source=LiveSourceSpec(source_id="record3d_usb", persist_capture=True),
-        dense=DenseConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=False,
-        ),
-    )
-    .add_tracking(TrackingConfig(method=MethodId.MSTR))
-    .build(path_config)
-)"""
+plan = RunRequest(
+    experiment_name="live-capture-demo",
+    mode=PipelineMode.STREAMING,
+    output_dir=Path("artifacts"),
+    source=LiveSourceSpec(source_id="record3d_usb", persist_capture=True),
+    tracking=TrackingConfig(method=MethodId.MSTR),
+    dense=DenseConfig(enabled=False),
+    evaluation=BenchmarkEvaluationConfig(
+        compare_to_arcore=False,
+        evaluate_cloud=False,
+        evaluate_efficiency=False,
+    ),
+).build(path_config)"""
 
 
 __all__ = ["render"]
