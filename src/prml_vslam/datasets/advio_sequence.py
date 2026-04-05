@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -8,10 +9,10 @@ from pydantic import Field
 
 from prml_vslam.interfaces import FramePacketStream, TimedPoseTrajectory
 from prml_vslam.io import Cv2ReplayMode
+from prml_vslam.pipeline.contracts import SequenceManifest
 from prml_vslam.utils import BaseData
 
 from . import advio_layout, advio_loading
-from .advio_manifest_adapter import SequenceManifestType, build_advio_sequence_manifest
 from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioPoseSource, AdvioSceneMetadata, AdvioSequenceConfig
 from .advio_replay_adapter import open_advio_stream
 
@@ -86,6 +87,9 @@ class AdvioSequence(BaseData):
     config: AdvioSequenceConfig
     catalog: AdvioCatalog | None = None
 
+    def _resolve_paths(self, *, require_arcore: bool = True) -> AdvioSequencePaths:
+        return AdvioSequencePaths.resolve(self.config, self.scene, require_arcore=require_arcore)
+
     @property
     def scene(self) -> AdvioSceneMetadata:
         return advio_layout.scene_for_sequence_id(
@@ -94,7 +98,7 @@ class AdvioSequence(BaseData):
 
     @property
     def paths(self) -> AdvioSequencePaths:
-        return AdvioSequencePaths.resolve(self.config, self.scene)
+        return self._resolve_paths()
 
     def load_offline_sample(self) -> AdvioOfflineSample:
         paths = self.paths
@@ -111,8 +115,24 @@ class AdvioSequence(BaseData):
             ),
         )
 
-    def to_sequence_manifest(self, *, output_dir: Path | None = None) -> SequenceManifestType:
-        return build_advio_sequence_manifest(self, output_dir=output_dir)
+    def to_sequence_manifest(self, *, output_dir: Path | None = None) -> SequenceManifest:
+        paths = self._resolve_paths(require_arcore=False)
+        evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
+        evaluation_dir.mkdir(parents=True, exist_ok=True)
+        reference_tum_path = _ensure_tum(self.write_ground_truth_tum, evaluation_dir / "ground_truth.tum")
+        arcore_tum_path = (
+            _ensure_tum(self.write_arcore_tum, evaluation_dir / "arcore.tum")
+            if paths.arcore_csv_path.exists()
+            else None
+        )
+        return SequenceManifest(
+            sequence_id=self.scene.sequence_slug,
+            video_path=paths.video_path,
+            timestamps_path=paths.frame_timestamps_path,
+            intrinsics_path=paths.calibration_path,
+            reference_tum_path=reference_tum_path,
+            arcore_tum_path=arcore_tum_path,
+        )
 
     def open_stream(
         self,
@@ -133,13 +153,17 @@ class AdvioSequence(BaseData):
         )
 
     def write_ground_truth_tum(self, target_path: Path) -> Path:
-        return advio_loading.write_advio_pose_tum(self.paths.ground_truth_csv_path, target_path)
+        return advio_loading.write_advio_pose_tum(
+            self._resolve_paths(require_arcore=False).ground_truth_csv_path, target_path
+        )
 
     def write_arcore_tum(self, target_path: Path) -> Path:
-        return advio_loading.write_advio_pose_tum(self.paths.arcore_csv_path, target_path)
+        return advio_loading.write_advio_pose_tum(
+            self._resolve_paths(require_arcore=False).arcore_csv_path, target_path
+        )
 
     def write_arkit_tum(self, target_path: Path) -> Path:
-        if (arkit_path := self.paths.arkit_csv_path) is None:
+        if (arkit_path := self._resolve_paths(require_arcore=False).arkit_csv_path) is None:
             raise FileNotFoundError(f"Sequence {self.scene.sequence_slug} does not include an ARKit baseline CSV.")
         return advio_loading.write_advio_pose_tum(arkit_path, target_path)
 
@@ -150,3 +174,9 @@ def load_advio_sequence(config: AdvioSequenceConfig) -> AdvioOfflineSample:
 
 def list_advio_sequence_ids(dataset_root: Path) -> list[int]:
     return advio_layout.list_local_sequence_ids(dataset_root)
+
+
+def _ensure_tum(write_tum: Callable[[Path], Path], target_path: Path) -> Path:
+    if not target_path.exists():
+        write_tum(target_path)
+    return target_path
