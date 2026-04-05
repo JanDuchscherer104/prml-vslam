@@ -7,8 +7,7 @@ from typing import Annotated
 
 import typer
 
-from prml_vslam.datasets import AdvioDatasetService
-from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioDownloadRequest, AdvioModality
+from prml_vslam.datasets.advio import AdvioDatasetService, AdvioDownloadPreset, AdvioDownloadRequest, AdvioModality
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import RunRequest

@@ -9,8 +9,14 @@ import numpy as np
 import streamlit as st
 
 import prml_vslam.plotting as plots
-from prml_vslam.datasets import AdvioDownloadRequest, AdvioLocalSceneStatus
-from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioOfflineSample, AdvioPoseSource
+from prml_vslam.datasets.advio import (
+    AdvioDownloadPreset,
+    AdvioDownloadRequest,
+    AdvioLocalSceneStatus,
+    AdvioModality,
+    AdvioOfflineSample,
+    AdvioPoseSource,
+)
 from prml_vslam.interfaces import FramePacket
 
 from ..advio_controller import (

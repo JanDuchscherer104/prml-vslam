@@ -21,7 +21,7 @@ from prml_vslam.app.services import (
 )
 from prml_vslam.app.state import SessionStateStore
 from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
+from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tum
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.contracts import EvaluationControls, SelectionSnapshot
@@ -410,8 +410,7 @@ def test_advio_download_form_returns_typed_request_model(
 ) -> None:
     from prml_vslam.app.advio_controller import AdvioDownloadFormData
     from prml_vslam.app.pages import advio as advio_page
-    from prml_vslam.datasets import AdvioDatasetService
-    from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality
+    from prml_vslam.datasets.advio import AdvioDatasetService, AdvioDownloadPreset, AdvioModality
 
     class DummyContext:
         def __enter__(self):
@@ -539,7 +538,7 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
 
         from prml_vslam.app.models import AppState
         from prml_vslam.app.pages.advio import render as render_advio_page
-        from prml_vslam.datasets import AdvioDatasetService
+        from prml_vslam.datasets.advio import AdvioDatasetService
         from prml_vslam.utils import PathConfig
 
         class _Store:

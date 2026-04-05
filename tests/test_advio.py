@@ -9,8 +9,8 @@ import cv2
 import numpy as np
 import pytest
 
-import prml_vslam.datasets.advio_replay_adapter as advio_replay_module
-from prml_vslam.datasets import (
+import prml_vslam.datasets.advio.advio_replay_adapter as advio_replay_module
+from prml_vslam.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
     AdvioDownloadPreset,
@@ -26,7 +26,7 @@ from prml_vslam.datasets import (
     list_advio_sequence_ids,
     load_advio_sequence,
 )
-from prml_vslam.datasets.advio_layout import resolve_existing_reference_tum
+from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tum
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.utils import PathConfig
 

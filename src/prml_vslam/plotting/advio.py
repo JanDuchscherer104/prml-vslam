@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import plotly.graph_objects as go
 
-from prml_vslam.datasets import AdvioEnvironment, AdvioLocalSceneStatus, AdvioPeopleLevel
+from prml_vslam.datasets.advio import AdvioEnvironment, AdvioLocalSceneStatus, AdvioPeopleLevel
 
 from .theme import BLUE, GRAY, GREEN, ORANGE, PURPLE, RED, apply_standard_xy_layout
 
