@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from prml_vslam.interfaces import FramePacketStream
 from prml_vslam.io import Cv2ReplayMode
-from prml_vslam.pipeline.contracts import SequenceManifest
 from prml_vslam.utils import Console, PathConfig
 
 from .advio_download import AdvioDownloadManager
@@ -20,6 +20,9 @@ from .advio_models import (
     AdvioSequenceConfig,
 )
 from .advio_sequence import AdvioOfflineSample, AdvioSequence
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.contracts import SequenceManifest
 
 
 class AdvioDatasetService:
