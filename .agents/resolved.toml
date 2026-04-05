@@ -592,6 +592,36 @@ resolved_on = "2026-04-06"
 resolution_note = "Record3D Wi-Fi now uses preview-scoped entry points and app wording, while README and requirements make USB the canonical programmatic integration boundary."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0015"
+title = "Trajectory plotting remains fragmented across multiple near-overlapping builders"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The plotting layer currently spreads trajectory rendering across `metrics.py`, `record3d.py`, `trajectories.py`, and `pipeline.py`, with repeated trace assembly, marker, and layout logic instead of one shared internal builder."
+files = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
+]
+notes = [
+    "The figure types are not identical, but XY overlays, 3D trajectory traces, start/end markers, and standard axis/layout setup still repeat enough to drift.",
+    "The app already centralizes live-session rendering in `app/live_session.py`, so plotting internals are the remaining main place where trajectory presentation is split by page.",
+]
+sources = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Trajectory plotting now shares internal XY/3D trace and layout helpers across the metrics, live Record3D, and pipeline figures instead of repeating the scaffolding per module."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1085,4 +1115,37 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "The custom Wi-Fi/WebRTC path is now positioned as an optional preview transport with explicit lower-fidelity guarantees instead of a co-equal capture boundary."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0015"
+title = "Consolidate repeated trajectory plotting internals"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0015",
+]
+loc_min = 25
+loc_expected = 60
+loc_max = 130
+files = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
+]
+acceptance = [
+    "One internal helper or builder owns the repeated trajectory trace and layout assembly used across plotting modules.",
+    "Page-specific plots still keep their unique behavior such as APE coloring or live hover text without duplicating the common trajectory scaffolding.",
+    "The remaining public plotting functions stay small and page-oriented instead of reimplementing base trajectory rendering each time.",
+]
+sources = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Shared internal trajectory helpers now own the repeated Plotly trace and layout assembly, and plotting tests cover the consolidated behavior."
 source_collection = "todos"

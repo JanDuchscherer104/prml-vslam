@@ -7,7 +7,8 @@ import plotly.graph_objects as go
 
 from prml_vslam.eval.contracts import ErrorSeries, TrajectorySeries
 
-from .theme import BLUE, GRAY, apply_standard_3d_layout
+from .theme import BLUE, GRAY
+from .trajectories import _add_3d_trajectory_trace, _apply_standard_trajectory_3d_layout
 
 
 def build_evo_ape_colormap_figure(
@@ -29,28 +30,20 @@ def build_evo_ape_colormap_figure(
         color_max = color_min + 1e-6
 
     figure = go.Figure()
-    figure.add_trace(
-        go.Scatter3d(
-            x=reference.positions_xyz[:, 0],
-            y=reference.positions_xyz[:, 1],
-            z=reference.positions_xyz[:, 2],
-            mode="lines",
-            name="Reference",
-            line={"width": 4, "color": GRAY, "dash": "dash"},
-            hovertemplate="Reference<br>x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<extra></extra>",
-        )
+    _add_3d_trajectory_trace(
+        figure,
+        reference.positions_xyz,
+        name="Reference",
+        line={"width": 4, "color": GRAY, "dash": "dash"},
+        hovertemplate="Reference<br>x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<extra></extra>",
     )
-    figure.add_trace(
-        go.Scatter3d(
-            x=estimate_positions_xyz[:, 0],
-            y=estimate_positions_xyz[:, 1],
-            z=estimate_positions_xyz[:, 2],
-            mode="lines",
-            name="Estimate",
-            line={"width": 3, "color": BLUE},
-            opacity=0.35,
-            hovertemplate="Estimate<br>x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<extra></extra>",
-        )
+    _add_3d_trajectory_trace(
+        figure,
+        estimate_positions_xyz,
+        name="Estimate",
+        line={"width": 3, "color": BLUE},
+        opacity=0.35,
+        hovertemplate="Estimate<br>x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<extra></extra>",
     )
     figure.add_trace(
         go.Scatter3d(
@@ -70,16 +63,7 @@ def build_evo_ape_colormap_figure(
             hovertemplate=("APE=%{marker.color:.4f} m<br>x=%{x:.3f} m<br>y=%{y:.3f} m<br>z=%{z:.3f} m<extra></extra>"),
         )
     )
-    apply_standard_3d_layout(
-        figure,
-        title="Evo APE Trajectory Colormap",
-        scene={
-            "xaxis_title": "X (m)",
-            "yaxis_title": "Y (m)",
-            "zaxis_title": "Z (m)",
-            "aspectmode": "data",
-        },
-    )
+    _apply_standard_trajectory_3d_layout(figure, title="Evo APE Trajectory Colormap")
     return figure
 
 
