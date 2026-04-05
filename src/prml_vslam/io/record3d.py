@@ -19,22 +19,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
-class Record3DError(RuntimeError):
-    """Base exception for Record3D integration failures."""
-
-
-class Record3DDependencyError(Record3DError):
-    """Raised when the optional Record3D dependency is unavailable."""
-
-
-class Record3DConnectionError(Record3DError):
-    """Raised when a Record3D device cannot be connected."""
-
-
-class Record3DTimeoutError(Record3DError):
-    """Raised when waiting for a streamed frame exceeds the configured timeout."""
-
-
 class Record3DTransportId(StrEnum):
     """Stable transport identifiers used by the app and IO layers."""
 
@@ -172,7 +156,7 @@ def _import_record3d_module() -> Any:
     try:
         return importlib.import_module("record3d")
     except ModuleNotFoundError as exc:
-        raise Record3DDependencyError(
+        raise RuntimeError(
             "The optional `record3d` package is required for streaming. "
             "Install it with `uv sync --extra streaming` and make sure the upstream prerequisites are installed "
             "(CMake, iTunes on macOS/Windows, or libusbmuxd on Linux)."
@@ -225,13 +209,13 @@ class Record3DStreamSession:
         """Connect to the configured Record3D device and start streaming."""
         devices = self._get_connected_devices()
         if not devices:
-            raise Record3DConnectionError(
+            raise RuntimeError(
                 "No Record3D devices detected. Connect the iPhone via USB, open the Record3D app, "
                 "and enable USB Streaming mode."
             )
 
         if self.config.device_index >= len(devices):
-            raise Record3DConnectionError(
+            raise RuntimeError(
                 f"Configured device index {self.config.device_index} is out of range for {len(devices)} connected device(s)."
             )
 
@@ -241,7 +225,7 @@ class Record3DStreamSession:
         stream.on_stream_stopped = self._on_stream_stopped
 
         if not stream.connect(target_device):
-            raise Record3DConnectionError(f"Failed to connect to Record3D device at index {self.config.device_index}.")
+            raise RuntimeError(f"Failed to connect to Record3D device at index {self.config.device_index}.")
 
         self._stream = stream
         self._stream_stopped = False
@@ -269,14 +253,14 @@ class Record3DStreamSession:
             The latest RGBD frame emitted by the device.
         """
         if self._stream is None:
-            raise Record3DConnectionError("No active Record3D stream. Call `connect()` first.")
+            raise RuntimeError("No active Record3D stream. Call `connect()` first.")
 
         timeout = self.config.frame_timeout_seconds if timeout_seconds is None else timeout_seconds
         if not self._event.wait(timeout=timeout):
-            raise Record3DTimeoutError(f"Timed out waiting {timeout:.2f}s for a Record3D frame.")
+            raise RuntimeError(f"Timed out waiting {timeout:.2f}s for a Record3D frame.")
 
         if self._stream_stopped:
-            raise Record3DConnectionError("The Record3D stream stopped before a frame could be consumed.")
+            raise RuntimeError("The Record3D stream stopped before a frame could be consumed.")
 
         frame = Record3DFrame(
             rgb=np.asarray(self._stream.get_rgb_frame(), dtype=np.uint8),
@@ -340,7 +324,7 @@ class Record3DUSBPacketStream:
 
     def _require_session(self) -> Record3DStreamSession:
         if self.session is None:
-            raise Record3DConnectionError("Failed to initialize the USB Record3D stream session.")
+            raise RuntimeError("Failed to initialize the USB Record3D stream session.")
         return self.session
 
     def list_devices(self) -> list[Record3DDevice]:
@@ -377,17 +361,13 @@ class Record3DUSBPacketStream:
 
 
 __all__ = [
-    "Record3DConnectionError",
-    "Record3DDependencyError",
     "Record3DDevice",
     "Record3DDeviceType",
-    "Record3DError",
     "Record3DFrame",
     "Record3DStreamConfig",
     "Record3DStreamSession",
     "Record3DStreamSnapshot",
     "Record3DStreamState",
-    "Record3DTimeoutError",
     "Record3DTransportId",
     "Record3DUSBPacketStream",
     "Record3DUSBPacketStreamConfig",

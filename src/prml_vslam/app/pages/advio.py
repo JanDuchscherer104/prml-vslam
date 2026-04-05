@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 import streamlit as st
 
+import prml_vslam.plotting as plots
 from prml_vslam.datasets import AdvioDownloadRequest, AdvioLocalSceneStatus
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioOfflineSample, AdvioPoseSource
 from prml_vslam.interfaces import FramePacket
 
-from .. import plotting as plots
 from ..advio_controller import (
     AdvioDownloadFormData,
     AdvioPreviewFormData,

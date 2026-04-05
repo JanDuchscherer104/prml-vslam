@@ -12,7 +12,7 @@ from pydantic import Field
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket
 from prml_vslam.utils import BaseData
 
-from .record3d import Record3DError, Record3DTransportId
+from .record3d import Record3DTransportId
 
 
 class Record3DWiFiMetadata(BaseData):
@@ -68,7 +68,7 @@ def _parse_intrinsic_matrix(
     if matrix.shape == (9,):
         matrix = matrix.reshape(3, 3)
     if matrix.shape != (3, 3):
-        raise Record3DError(
+        raise RuntimeError(
             "Record3D Wi-Fi metadata field `K` must be a flat 9-vector or a 3x3 matrix, "
             f"but received shape {tuple(matrix.shape)}."
         )
@@ -142,9 +142,9 @@ def record3d_wifi_packet_from_video_frame(
     """Convert one Record3D composite WebRTC frame into the shared packet contract."""
     composite_frame = np.asarray(video_frame.to_ndarray(format="rgb24"), dtype=np.uint8)
     if composite_frame.ndim != 3 or composite_frame.shape[2] != 3:
-        raise Record3DError("Record3D Wi-Fi video frames must be RGB images with shape `(height, width, 3)`.")
+        raise RuntimeError("Record3D Wi-Fi video frames must be RGB images with shape `(height, width, 3)`.")
     if composite_frame.shape[1] < 2:
-        raise Record3DError("Record3D Wi-Fi composite frames must contain both depth and RGB halves.")
+        raise RuntimeError("Record3D Wi-Fi composite frames must contain both depth and RGB halves.")
 
     half_width = composite_frame.shape[1] // 2
     packet_metadata = dict(metadata.raw_metadata)

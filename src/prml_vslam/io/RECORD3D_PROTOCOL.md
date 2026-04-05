@@ -129,7 +129,7 @@ If pose is required for evaluation or ingestion, the current practical path is U
 ### Wi-Fi path
 
 - transport: browser WebRTC + HTTP metadata
-- consumer: [record3d_wifi.py](record3d_wifi.py)
+- consumer: [wifi_session.py](wifi_session.py), [wifi_signaling.py](wifi_signaling.py), and [wifi_packets.py](wifi_packets.py)
 - output:
   - composite RGBD video preview
   - decoded RGB preview

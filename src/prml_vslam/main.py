@@ -9,12 +9,7 @@ import typer
 
 from prml_vslam.datasets import AdvioDatasetService
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioDownloadRequest, AdvioModality
-from prml_vslam.io import (
-    Record3DConnectionError,
-    Record3DDependencyError,
-    Record3DStreamConfig,
-    Record3DTimeoutError,
-)
+from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
     BenchmarkEvaluationConfig,
@@ -116,9 +111,9 @@ def record3d_devices() -> None:
     try:
         session = Record3DStreamConfig().setup_target()
         if session is None:
-            raise Record3DConnectionError("Failed to initialize the Record3D session.")
+            raise RuntimeError("Failed to initialize the Record3D session.")
         devices = session.list_devices()
-    except (Record3DConnectionError, Record3DDependencyError, Record3DTimeoutError) as exc:
+    except RuntimeError as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
 

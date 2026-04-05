@@ -12,10 +12,10 @@ from prml_vslam.io.record3d import (
     Record3DStreamState,
     Record3DTransportId,
 )
+from prml_vslam.plotting import build_live_trajectory_figure
 
 from ..camera_display import format_camera_intrinsics_latex
 from ..image_utils import normalize_grayscale_image
-from ..plotting import build_live_trajectory_figure
 from ..record3d_controller import Record3DPageAction, handle_record3d_page_action, sync_record3d_running_state
 from ..record3d_view_utils import build_record3d_frame_details, record3d_stream_hint
 from ..ui import render_page_intro
