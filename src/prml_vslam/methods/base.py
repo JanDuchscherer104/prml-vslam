@@ -5,13 +5,11 @@ from pathlib import Path
 from pydantic import field_validator
 
 from prml_vslam.methods.contracts import (
-    MethodArtifacts,
     MethodCommand,
     MethodId,
     MethodRunRequest,
     MethodRunResult,
 )
-from prml_vslam.pipeline.workspace import PreparedInput
 from prml_vslam.utils import BaseConfig
 
 _MOCK_TRAJECTORY = """# timestamp tx ty tz qx qy qz qw
@@ -48,7 +46,6 @@ class MockMethodConfig(BaseConfig):
         raise NotImplementedError
 
 
-# TODO: Mock is defined in mock_vslam.py, and interfaces / base classes must be defined in dedicated modules.
 class MockMethodRuntime:
     def __init__(self, config: MockMethodConfig) -> None:
         self.config = config
@@ -63,19 +60,14 @@ class MockMethodRuntime:
         native_output_dir = artifact_root / "native" / method_slug
         return MethodRunResult(
             method=method_id,
-            prepared_input=PreparedInput(source_path=source_path, resolved_input_path=source_path),
             command=MethodCommand(
                 cwd=self.config.repo_path,
                 argv=[self.config.python_executable, f"<mock-{method_slug}>", source_path.as_posix()],
             ),
-            artifacts=MethodArtifacts(
-                artifact_root=artifact_root,
-                native_output_dir=native_output_dir,
-                normalized_trajectory_path=artifact_root / "slam" / "trajectory.tum",
-                normalized_point_cloud_path=artifact_root / "dense" / "dense_points.ply",
-                raw_trajectory_path=native_output_dir / "trajectory.tum",
-                raw_point_cloud_path=native_output_dir / "dense_points.ply",
-            ),
+            normalized_trajectory_path=artifact_root / "slam" / "trajectory.tum",
+            normalized_point_cloud_path=artifact_root / "dense" / "dense_points.ply",
+            raw_trajectory_path=native_output_dir / "trajectory.tum",
+            raw_point_cloud_path=native_output_dir / "dense_points.ply",
             notes=[f"{method_id.display_name} is a mock interface in this repository."],
         )
 
@@ -87,10 +79,10 @@ class MockMethodRuntime:
         return result
 
     def _materialize_outputs(self, result: MethodRunResult) -> None:
-        for path in (result.artifacts.normalized_trajectory_path, result.artifacts.raw_trajectory_path):
+        for path in (result.normalized_trajectory_path, result.raw_trajectory_path):
             if path is not None:
                 self._write_mock_artifact(path, _MOCK_TRAJECTORY)
-        for path in (result.artifacts.normalized_point_cloud_path, result.artifacts.raw_point_cloud_path):
+        for path in (result.normalized_point_cloud_path, result.raw_point_cloud_path):
             if path is not None:
                 self._write_mock_artifact(path, _MOCK_POINT_CLOUD)
 

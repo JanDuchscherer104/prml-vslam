@@ -30,8 +30,8 @@ def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> N
     )
 
     assert result.executed is True
-    assert result.artifacts.normalized_trajectory_path.exists()
-    assert result.artifacts.normalized_point_cloud_path.exists()
+    assert result.normalized_trajectory_path.exists()
+    assert result.normalized_point_cloud_path.exists()
 
 
 def test_mock_tracking_runtime_runs_sequence_manifest_offline(tmp_path: Path) -> None:
