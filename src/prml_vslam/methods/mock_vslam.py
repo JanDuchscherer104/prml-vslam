@@ -229,15 +229,7 @@ class MockSlamSession:
         frame: FramePacket | None = None,
         intrinsics: CameraIntrinsics | None = None,
     ) -> NDArray[np.float32] | None:
-        """Resolve one pointmap from frame-native data or known camera intrinsics."""
-        if frame is not None and frame.pointmap is not None:
-            pointmap = np.asarray(frame.pointmap, dtype=np.float32)
-            if pointmap.ndim != 3 or pointmap.shape[-1] != 3:
-                raise ValueError(f"Expected frame pointmap shape (H, W, 3), got {pointmap.shape}.")
-            if not np.all(np.isfinite(pointmap)):
-                raise ValueError(f"Frame pointmap contains non-finite values for frame {frame.seq}.")
-            return pointmap
-
+        """Resolve one mock-SLAM pointmap from depth or known camera intrinsics."""
         resolved_intrinsics = (
             intrinsics if intrinsics is not None else (frame.intrinsics if frame is not None else None)
         )
