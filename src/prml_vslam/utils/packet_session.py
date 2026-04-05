@@ -18,11 +18,13 @@ from .base_data import BaseData
 SnapshotT = TypeVar("SnapshotT", bound=BaseData)
 
 
+# TODO: inline behaviour, rm function
 def empty_positions_xyz() -> np.ndarray:
     """Return an empty trajectory-position array with stable shape."""
     return np.empty((0, 3), dtype=np.float64)
 
 
+# TODO: inline behaviour, rm function
 def empty_timestamps_s() -> np.ndarray:
     """Return an empty trajectory-timestamp array."""
     return np.empty((0,), dtype=np.float64)
