@@ -26,6 +26,59 @@ There is one executable demo today:
 That demo lives in `prml_vslam.app`, not in `prml_vslam.pipeline`, because it
 is a bounded monitoring surface rather than the final reusable runner API.
 
+## Current Streaming Demo Implementation
+
+The current runnable streaming demo is split across the following files.
+
+- [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
+  - renders the `Pipeline` page, the bounded demo controls, and the live
+    monitoring tabs
+- [`../app/pipeline_controller.py`](../app/pipeline_controller.py)
+  - translates page actions into a `RunRequest`, `RunPlan`,
+    `SequenceManifest`, and replay-stream startup
+- [`../app/pipeline_runtime.py`](../app/pipeline_runtime.py)
+  - owns the background worker, runtime snapshot, stage-manifest updates, and
+    final `RunSummary`
+- [`../app/bootstrap.py`](../app/bootstrap.py)
+  - wires the pipeline page and `PipelineDemoRuntimeController` into the
+    packaged Streamlit app
+- [`../app/state.py`](../app/state.py)
+  - persists the opaque pipeline runtime controller in Streamlit session state
+- [`../app/models.py`](../app/models.py)
+  - defines the persisted `PipelinePageState` used by the page controls
+- [`../methods/mock_tracking.py`](../methods/mock_tracking.py)
+  - implements the repository-local `MockTrackingRuntime` used by both the
+    streaming demo loop and the offline mock path
+- [`../datasets/advio_service.py`](../datasets/advio_service.py)
+  - exposes the app-facing ADVIO helpers that build a `SequenceManifest` and
+    open the replay stream
+- [`../datasets/advio_sequence.py`](../datasets/advio_sequence.py)
+  - materializes ADVIO scenes into `SequenceManifest` and forwards replay
+    requests into the adapter layer
+- [`../datasets/advio_replay_adapter.py`](../datasets/advio_replay_adapter.py)
+  - converts ADVIO video, timestamps, calibration, and optional reference
+    poses into a `FramePacketStream`
+- [`../io/cv2_producer.py`](../io/cv2_producer.py)
+  - provides the replay-capable OpenCV `FramePacketStream` used by the ADVIO
+    demo
+- [`../interfaces/runtime.py`](../interfaces/runtime.py)
+  - defines `FramePacket` and `FramePacketStream`, the shared live-frame
+    contracts used by replay and streaming tracking
+- [`../app/plotting/record3d.py`](../app/plotting/record3d.py)
+  - builds the live trajectory figure shown on the Pipeline page
+- [`contracts.py`](./contracts.py)
+  - defines `RunRequest`, `RunPlan`, `SequenceManifest`, `StageManifest`,
+    `RunSummary`, and the typed artifact bundles that the demo exercises
+- [`interfaces.py`](./interfaces.py)
+  - defines the `OfflineTrackerBackend`, `StreamingTrackerBackend`, and
+    `TrackingUpdate` contracts used by the mock backend and demo runtime
+- [`services.py`](./services.py)
+  - defines `RunPlannerService`, which turns the page-built `RunRequest` into
+    the ordered `RunPlan`
+- [`../utils/path_config.py`](../utils/path_config.py)
+  - defines `PathConfig.plan_run_paths(...)`, the canonical artifact layout
+    used by the demo controller and runtime
+
 ## Two Pipeline Modes
 
 The pipeline supports two top-level modes through `PipelineMode`.
@@ -314,4 +367,14 @@ Use the following decision rule:
 - [`interfaces.py`](./interfaces.py)
 - [`services.py`](./services.py)
 - [`workspace.py`](./workspace.py)
+- [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
+- [`../app/pipeline_controller.py`](../app/pipeline_controller.py)
+- [`../app/pipeline_runtime.py`](../app/pipeline_runtime.py)
+- [`../methods/mock_tracking.py`](../methods/mock_tracking.py)
+- [`../datasets/advio_service.py`](../datasets/advio_service.py)
+- [`../datasets/advio_sequence.py`](../datasets/advio_sequence.py)
+- [`../datasets/advio_replay_adapter.py`](../datasets/advio_replay_adapter.py)
+- [`../io/cv2_producer.py`](../io/cv2_producer.py)
+- [`../interfaces/runtime.py`](../interfaces/runtime.py)
+- [`../utils/path_config.py`](../utils/path_config.py)
 - [`REQUIREMENTS.md`](./REQUIREMENTS.md)
