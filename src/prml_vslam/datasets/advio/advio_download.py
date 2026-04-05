@@ -65,39 +65,34 @@ class AdvioDownloadManager:
 
         sequence_ids = request.sequence_ids or [scene.sequence_id for scene in self.catalog.scenes]
         modalities = request.resolved_modalities()
-        downloaded_archives: list[Path] = []
-        reused_archives: list[Path] = []
-        written_paths: list[Path] = []
+        archive_modalities = tuple(modality for modality in modalities if modality is not AdvioModality.CALIBRATION)
+        downloaded_archive_count = 0
+        reused_archive_count = 0
+        written_paths: set[Path] = set()
 
         for sequence_id in sequence_ids:
             scene = self.scene(sequence_id)
             if AdvioModality.CALIBRATION in modalities:
-                calibration_path = self._ensure_calibration(scene, overwrite=request.overwrite)
-                if calibration_path not in written_paths:
-                    written_paths.append(calibration_path)
-
-            archive_modalities = tuple(modality for modality in modalities if modality is not AdvioModality.CALIBRATION)
-            if not archive_modalities:
-                continue
-
-            archive_path, downloaded = self._ensure_archive(scene, overwrite=request.overwrite)
-            (downloaded_archives if downloaded else reused_archives).append(archive_path)
-            written_paths.extend(
-                self._extract_modalities(
-                    scene=scene,
-                    archive_path=archive_path,
-                    modalities=archive_modalities,
-                    overwrite=request.overwrite,
+                written_paths.add(self._ensure_calibration(scene, overwrite=request.overwrite))
+            if archive_modalities:
+                archive_path, downloaded = self._ensure_archive(scene, overwrite=request.overwrite)
+                downloaded_archive_count += int(downloaded)
+                reused_archive_count += int(not downloaded)
+                written_paths.update(
+                    self._extract_modalities(
+                        scene=scene,
+                        archive_path=archive_path,
+                        modalities=archive_modalities,
+                        overwrite=request.overwrite,
+                    )
                 )
-            )
-            archive_path.unlink()
 
         return AdvioDownloadResult(
             sequence_ids=sequence_ids,
             modalities=list(modalities),
-            downloaded_archives=downloaded_archives,
-            reused_archives=reused_archives,
-            written_paths=list(dict.fromkeys(written_paths)),
+            downloaded_archive_count=downloaded_archive_count,
+            reused_archive_count=reused_archive_count,
+            written_path_count=len(written_paths),
         )
 
     def _local_modalities(self, scene: AdvioSceneMetadata) -> list[AdvioModality]:
@@ -143,8 +138,8 @@ class AdvioDownloadManager:
         archive_path: Path,
         modalities: tuple[AdvioModality, ...],
         overwrite: bool,
-    ) -> list[Path]:
-        written_paths: list[Path] = []
+    ) -> set[Path]:
+        written_paths: set[Path] = set()
         matched_members = 0
         with zipfile.ZipFile(archive_path) as archive:
             for member in archive.infolist():
@@ -160,13 +155,11 @@ class AdvioDownloadManager:
                     continue
                 matched_members += 1
                 target_path = self.dataset_root / Path(*normalized)
-                if target_path.exists() and not overwrite:
-                    written_paths.append(target_path)
-                    continue
-                _ensure_directory_parent(target_path)
-                with archive.open(member, "r") as source, target_path.open("wb") as sink:
-                    sink.write(source.read())
-                written_paths.append(target_path)
+                if not target_path.exists() or overwrite:
+                    _ensure_directory_parent(target_path)
+                    with archive.open(member, "r") as source, target_path.open("wb") as sink:
+                        sink.write(source.read())
+                written_paths.add(target_path)
 
         if matched_members == 0:
             requested = ", ".join(modality.value for modality in modalities)
