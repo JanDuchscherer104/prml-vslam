@@ -8,20 +8,8 @@ allows recording and streaming RGBD data from an iPhone.
 
 ## Implemented Consumers
 
-### USB Python Preview
-
 - `prml-vslam record3d-devices` lists USB-connected Record3D devices exposed by
   the upstream Python bindings.
-- `prml-vslam record3d-preview` opens a simple OpenCV consumer that displays the
-  incoming RGB, depth, and optional confidence stream.
-- The preview remains intentionally decoupled from the benchmark pipeline so the
-  same typed packet stream can later be fed into downstream consumers.
-
-```bash
-uv sync --extra streaming
-prml-vslam record3d-devices
-prml-vslam record3d-preview --device-index 0
-```
 
 The upstream `record3d` package currently requires the native Record3D
 prerequisites from the official project README:
