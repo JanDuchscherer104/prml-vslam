@@ -11,6 +11,7 @@ import open3d as o3d
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 from pydantic import ConfigDict
+from pytransform3d.transformations import transform, vectors_to_points
 
 from prml_vslam.interfaces import CameraIntrinsics, SE3Pose, TimedPoseTrajectory
 
@@ -134,7 +135,6 @@ def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     return path.resolve()
 
 
-# TODO: should be handeled via pytransform3d or other high-level library!
 def transform_points_world_camera(
     points_xyz_camera: np.ndarray,
     pose_world_camera: SE3Pose,
@@ -145,8 +145,7 @@ def transform_points_world_camera(
         raise ValueError(f"Expected point array shape (N, 3), got {points.shape}.")
     if len(points) == 0:
         return np.empty((0, 3), dtype=np.float64)
-    homogeneous_points = np.column_stack((points, np.ones((len(points), 1), dtype=np.float64)))
-    return (pose_world_camera.as_matrix() @ homogeneous_points.T).T[:, :3]
+    return transform(pose_world_camera.as_matrix(), vectors_to_points(points))[:, :3]
 
 
 # TODO: should be handeled via pytransform3d or other high-level library!

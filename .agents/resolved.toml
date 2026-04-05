@@ -703,6 +703,30 @@ resolved_on = "2026-04-06"
 resolution_note = "Removed the redundant lazy evo import helper and imported the TUM backend directly in geometry.py."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0019"
+title = "World-frame point transforms still reimplement pytransform3d primitives"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The shared geometry helper still hand-builds homogeneous points for `transform_points_world_camera()` even though `pytransform3d` is already a declared dependency and exposes the same transform primitive."
+files = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+notes = [
+    "The current implementation duplicates library behavior with local homogeneous-coordinate scaffolding.",
+    "Using the repo's existing transform helper should narrow local ownership to validation plus repo-specific typing.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Delegated world-frame point transforms to pytransform3d instead of rebuilding homogeneous coordinates locally."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1325,4 +1349,32 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 03 after reducing LOC and preserving TUM trajectory behavior under geometry, method, pipeline, and app tests."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0019"
+title = "Delegate point transforms to pytransform3d"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0019",
+]
+loc_min = 4
+loc_expected = 10
+loc_max = 20
+files = [
+    "src/prml_vslam/utils/geometry.py",
+]
+acceptance = [
+    "The world-frame point-transform helper uses the existing pytransform3d transform primitive instead of manually building homogeneous points.",
+    "Geometry and mock-method tests continue to pass.",
+    "The change reduces or keeps flat the Python LOC baseline while simplifying the helper.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 04 after holding code LOC flat, reducing total LOC, and preserving geometry/method behavior."
 source_collection = "todos"
