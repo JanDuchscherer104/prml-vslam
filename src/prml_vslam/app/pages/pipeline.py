@@ -18,13 +18,7 @@ from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
 from prml_vslam.interfaces import TimedPoseTrajectory
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import (
-    PipelineMode,
-    PipelineSessionSnapshot,
-    PipelineSessionState,
-    RunPlan,
-    RunRequest,
-)
+from prml_vslam.pipeline import PipelineMode, RunPlan, RunRequest
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DatasetSourceSpec,
@@ -32,6 +26,7 @@ from prml_vslam.pipeline.contracts import (
     SlamConfig,
     StageManifest,
 )
+from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.plotting import build_evo_ape_colormap_figure
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import load_tum_trajectory
@@ -44,6 +39,7 @@ from ..live_session import (
     render_live_session_shell,
     render_live_trajectory,
 )
+from ..state import save_model_updates
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -393,12 +389,7 @@ def _build_demo_request(
 
 def _save_page_state(context: AppContext, **updates: object) -> None:
     """Persist selector-only pipeline page state when it changes."""
-    page_state = context.state.pipeline
-    if all(getattr(page_state, key) == value for key, value in updates.items()):
-        return
-    for key, value in updates.items():
-        setattr(page_state, key, value)
-    context.store.save(context.state)
+    save_model_updates(context.store, context.state, context.state.pipeline, **updates)
 
 
 def _is_pipeline_active(snapshot: PipelineSessionSnapshot) -> bool:

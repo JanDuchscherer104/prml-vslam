@@ -14,6 +14,7 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.utils import BaseData
 
 from .services import AdvioPreviewSnapshot, AdvioPreviewStreamState
+from .state import save_model_updates
 
 if TYPE_CHECKING:
     from .bootstrap import AppContext
@@ -44,7 +45,18 @@ class AdvioPageData(BaseData):
 
 
 def build_advio_page_data(context: AppContext, form: AdvioDownloadFormData) -> AdvioPageData:
-    notice_level, notice_message = _handle_download(context, form.request) if form.submitted else (None, "")
+    notice_level: Literal["error", "warning", "success"] | None = None
+    notice_message = ""
+    if form.submitted:
+        try:
+            result = context.advio_service.download(form.request)
+        except Exception as exc:
+            notice_level, notice_message = "error", str(exc)
+        else:
+            notice_level, notice_message = (
+                "success",
+                f"Prepared {len(result.sequence_ids)} scene(s), fetched {result.downloaded_archive_count} archive(s), and wrote {result.written_path_count} path(s).",
+            )
     statuses = context.advio_service.local_scene_statuses()
     return AdvioPageData(
         summary=context.advio_service.summarize(statuses),
@@ -81,8 +93,7 @@ def sync_advio_preview_state(context: AppContext, snapshot: AdvioPreviewSnapshot
     """Keep persisted preview state aligned with the runtime snapshot."""
     snapshot = context.advio_runtime.snapshot() if snapshot is None else snapshot
     if context.state.advio.preview_is_running and snapshot.state not in _ACTIVE_PREVIEW_STATES:
-        context.state.advio.preview_is_running = False
-        context.store.save(context.state)
+        save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
     return snapshot
 
 
@@ -96,8 +107,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
     )
     if form.stop_requested:
         context.advio_runtime.stop()
-        context.state.advio.preview_is_running = False
-        context.store.save(context.state)
+        save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
         return None
     if not form.start_requested:
         return None
@@ -113,38 +123,16 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
                 respect_video_rotation=form.respect_video_rotation,
             ),
         )
-        context.state.advio.preview_is_running = True
-        context.store.save(context.state)
+        save_model_updates(context.store, context.state, context.state.advio, preview_is_running=True)
         return None
     except Exception as exc:
-        context.state.advio.preview_is_running = False
-        context.store.save(context.state)
+        save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
         return str(exc)
 
 
 def _save_page_state(context: AppContext, **updates: object) -> None:
     """Persist ADVIO page-state changes only when values actually changed."""
-    page_state = context.state.advio
-    if all(getattr(page_state, key) == value for key, value in updates.items()):
-        return
-    for key, value in updates.items():
-        setattr(page_state, key, value)
-    context.store.save(context.state)
-
-
-def _handle_download(
-    context: AppContext, request: AdvioDownloadRequest
-) -> tuple[Literal["error", "warning", "success"], str]:
-    if not request.sequence_ids:
-        return "warning", "Select at least one scene before starting a download."
-    try:
-        result = context.advio_service.download(request)
-    except Exception as exc:
-        return "error", str(exc)
-    return (
-        "success",
-        f"Prepared {len(result.sequence_ids)} scene(s), fetched {len(result.downloaded_archives)} archive(s), and wrote {len(result.written_paths)} path(s).",
-    )
+    save_model_updates(context.store, context.state, context.state.advio, **updates)
 
 
 def _scene_rows(statuses: list[AdvioLocalSceneStatus]) -> list[dict[str, object]]:

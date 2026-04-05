@@ -9,7 +9,6 @@ from pydantic import Field
 
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.eval.contracts import EvaluationControls
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline.contracts import PipelineMode
@@ -78,9 +77,6 @@ class MetricsPageState(BaseData):
     run_root: Path | None = None
     """Selected artifact root for one evaluated run."""
 
-    evaluation: EvaluationControls = Field(default_factory=EvaluationControls)
-    """Reserved placeholder for future explicit evaluation options."""
-
     result_path: Path | None = None
     """Most recently loaded or computed persisted result path."""
 
@@ -94,7 +90,7 @@ class Record3DPageState(BaseData):
     usb_device_index: int = 0
     """Zero-based USB device index selected in the app."""
 
-    wifi_device_address: str = "192.168.159.24"
+    wifi_device_address: str = ""
     """User-supplied Wi-Fi device address."""
 
     is_running: bool = False

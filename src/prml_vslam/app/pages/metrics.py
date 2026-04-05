@@ -6,14 +6,10 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.eval.contracts import (
-    EvaluationArtifact,
-    EvaluationControls,
-    EvaluationSelection,
-    SelectionSnapshot,
-)
+from prml_vslam.eval.contracts import EvaluationArtifact, EvaluationSelection, SelectionSnapshot
 from prml_vslam.plotting import build_error_figure, build_trajectory_figure
 
+from ..state import save_model_updates
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -71,7 +67,6 @@ def render(context: AppContext) -> None:
         st.caption(
             "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted `evo` result."
         )
-    controls = metrics.evaluation
     selection_state = _resolve_selection(
         context,
         dataset=dataset,
@@ -87,11 +82,10 @@ def render(context: AppContext) -> None:
         dataset=dataset,
         sequence_slug=sequence_slug,
         run_root=selection.run.artifact_root,
-        controls=controls,
         result_path=None,
     )
     try:
-        evaluation = context.evaluation_service.load_evaluation(selection=selection, controls=controls)
+        evaluation = context.evaluation_service.load_evaluation(selection=selection)
     except EVALUATION_ERRORS as exc:
         st.error(str(exc))
         return
@@ -100,7 +94,6 @@ def render(context: AppContext) -> None:
         dataset=dataset,
         sequence_slug=selection.sequence_slug,
         run_root=selection.run.artifact_root,
-        controls=controls,
         result_path=None if evaluation is None else evaluation.path,
     )
 
@@ -119,7 +112,7 @@ def render(context: AppContext) -> None:
     if compute:
         with st.spinner("Computing evo trajectory metrics..."):
             try:
-                evaluation = context.evaluation_service.compute_evaluation(selection=selection, controls=controls)
+                evaluation = context.evaluation_service.compute_evaluation(selection=selection)
             except EVALUATION_ERRORS as exc:
                 st.error(str(exc))
                 return
@@ -128,7 +121,6 @@ def render(context: AppContext) -> None:
             dataset=dataset,
             sequence_slug=selection.sequence_slug,
             run_root=selection.run.artifact_root,
-            controls=controls,
             result_path=evaluation.path,
         )
         st.success(f"Persisted fresh evo metric result to `{evaluation.path}`.")
@@ -161,25 +153,17 @@ def _save_state(
     dataset: DatasetId,
     sequence_slug: str | None = None,
     run_root: Path | None = None,
-    controls: EvaluationControls | None = None,
     result_path: Path | None = None,
 ) -> None:
-    metrics = context.state.metrics
-    next_controls = controls or EvaluationControls()
-    if (
-        metrics.dataset == dataset
-        and metrics.sequence_slug == sequence_slug
-        and metrics.run_root == run_root
-        and metrics.evaluation == next_controls
-        and metrics.result_path == result_path
-    ):
-        return
-    metrics.dataset = dataset
-    metrics.sequence_slug = sequence_slug
-    metrics.run_root = run_root
-    metrics.evaluation = next_controls
-    metrics.result_path = result_path
-    context.store.save(context.state)
+    save_model_updates(
+        context.store,
+        context.state,
+        context.state.metrics,
+        dataset=dataset,
+        sequence_slug=sequence_slug,
+        run_root=run_root,
+        result_path=result_path,
+    )
 
 
 def _resolve_selection(

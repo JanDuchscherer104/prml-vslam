@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from prml_vslam.io.record3d import Record3DStreamSnapshot, Record3DStreamState, Record3DTransportId
 from prml_vslam.utils import BaseData
 
+from .state import save_model_updates
+
 if TYPE_CHECKING:
     from .bootstrap import AppContext
 
@@ -74,8 +76,7 @@ def sync_record3d_running_state(
     """Keep persisted running state aligned with the latest runtime snapshot."""
     current_snapshot = context.record3d_runtime.snapshot() if snapshot is None else snapshot
     if context.state.record3d.is_running and current_snapshot.state not in _ACTIVE_STREAM_STATES:
-        context.state.record3d.is_running = False
-        context.store.save(context.state)
+        save_model_updates(context.store, context.state, context.state.record3d, is_running=False)
     return current_snapshot
 
 
