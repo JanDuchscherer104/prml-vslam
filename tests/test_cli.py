@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from prml_vslam.main import Record3DPreviewConfig, Record3DStreamConfig, app
+from prml_vslam.main import Record3DStreamConfig, app
 
 runner = CliRunner()
 
@@ -35,18 +35,3 @@ def test_record3d_devices_command_runs(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "device-42" in result.stdout
-
-
-def test_record3d_preview_command_runs(monkeypatch) -> None:
-    run_state = {"called": False}
-
-    class FakePreview:
-        def run(self) -> None:
-            run_state["called"] = True
-
-    monkeypatch.setattr(Record3DPreviewConfig, "setup_target", lambda self: FakePreview())
-
-    result = runner.invoke(app, ["record3d-preview", "--device-index", "1", "--max-frames", "3"])
-
-    assert result.exit_code == 0
-    assert run_state["called"] is True

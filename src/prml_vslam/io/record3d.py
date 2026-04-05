@@ -1,4 +1,4 @@
-"""Record3D streaming integration for local RGBD preview and app ingestion."""
+"""Record3D streaming integration for shared packet ingestion."""
 
 from __future__ import annotations
 
@@ -179,17 +179,6 @@ def _import_record3d_module() -> Any:
         ) from exc
 
 
-def _import_cv2_module() -> Any:
-    """Import OpenCV lazily so Wi-Fi streaming does not load FFmpeg twice."""
-    try:
-        return importlib.import_module("cv2")
-    except ModuleNotFoundError as exc:
-        raise Record3DDependencyError(
-            "The optional `opencv-python` package is required for the Record3D preview. "
-            "Install the project dependencies with `uv sync`."
-        ) from exc
-
-
 class Record3DStreamConfig(BaseConfig):
     """Configuration for a USB Record3D streaming session."""
 
@@ -215,33 +204,6 @@ class Record3DUSBPacketStreamConfig(BaseConfig):
     def target_type(self) -> type[Record3DUSBPacketStream]:
         """Runtime type that exposes shared packet objects."""
         return Record3DUSBPacketStream
-
-
-class Record3DPreviewConfig(BaseConfig):
-    """Configuration for the OpenCV-based Record3D preview consumer."""
-
-    stream: Record3DStreamConfig = Field(default_factory=Record3DStreamConfig)
-    """Nested stream configuration describing the USB device and timeouts."""
-
-    window_prefix: str = "Record3D"
-    """Prefix used for the preview window titles."""
-
-    show_confidence: bool = True
-    """Whether to open a preview window for the confidence map."""
-
-    wait_key_millis: int = 1
-    """Delay passed into ``cv2.waitKey`` for UI refresh."""
-
-    exit_key: str = "q"
-    """Single-character key that stops the preview loop."""
-
-    max_frames: int | None = None
-    """Optional hard limit for the number of frames displayed."""
-
-    @property
-    def target_type(self) -> type[Record3DPreviewApp]:
-        """Runtime type used to preview the live stream."""
-        return Record3DPreviewApp
 
 
 class Record3DStreamSession:
@@ -414,73 +376,6 @@ class Record3DUSBPacketStream:
             yield self.wait_for_packet()
 
 
-class Record3DPreviewApp:
-    """Preview the Record3D RGBD stream through OpenCV windows."""
-
-    def __init__(self, config: Record3DPreviewConfig) -> None:
-        self.config = config
-        self.console = Console(__name__).child(self.__class__.__name__)
-        self.stream = config.stream.setup_target()
-        self._cv2 = _import_cv2_module()
-
-    def run(self) -> None:
-        """Connect to Record3D and show the live RGBD preview."""
-        if self.stream is None:
-            raise Record3DConnectionError("Failed to initialize the Record3D stream session.")
-
-        self.stream.connect()
-        frames_seen = 0
-
-        try:
-            for frame in self.stream.iter_frames():
-                self._show_frame(frame)
-                frames_seen += 1
-
-                key_code = self._cv2.waitKey(self.config.wait_key_millis) & 0xFF
-                if key_code == ord(self.config.exit_key):
-                    self.console.info("Stopping Record3D preview after exit key `%s`.", self.config.exit_key)
-                    break
-
-                if self.config.max_frames is not None and frames_seen >= self.config.max_frames:
-                    self.console.info("Stopping Record3D preview after %s frame(s).", self.config.max_frames)
-                    break
-        finally:
-            self.stream.disconnect()
-            self._cv2.destroyAllWindows()
-
-    def _show_frame(self, frame: Record3DFrame) -> None:
-        rgb = frame.rgb
-        depth = frame.depth
-        confidence = frame.confidence
-
-        if frame.device_type is Record3DDeviceType.TRUEDEPTH:
-            rgb = self._cv2.flip(rgb, 1)
-            depth = self._cv2.flip(depth, 1)
-            confidence = self._cv2.flip(confidence, 1) if confidence.size else confidence
-
-        rgb_bgr = self._cv2.cvtColor(rgb, self._cv2.COLOR_RGB2BGR)
-        self._cv2.imshow(f"{self.config.window_prefix} RGB", rgb_bgr)
-        self._cv2.imshow(f"{self.config.window_prefix} Depth", self._render_depth(depth))
-
-        if self.config.show_confidence and confidence.size:
-            self._cv2.imshow(f"{self.config.window_prefix} Confidence", self._render_confidence(confidence))
-
-    @staticmethod
-    def _render_depth(depth: NDArray[np.float32]) -> NDArray[np.uint8]:
-        if depth.size == 0:
-            return np.zeros((1, 1), dtype=np.uint8)
-
-        cv2_module = _import_cv2_module()
-        normalized = cv2_module.normalize(depth, None, alpha=0, beta=255, norm_type=cv2_module.NORM_MINMAX)
-        return normalized.astype(np.uint8)
-
-    @staticmethod
-    def _render_confidence(confidence: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        if confidence.size == 0:
-            return np.zeros((1, 1), dtype=np.uint8)
-        return (confidence.astype(np.uint16) * 100).clip(0, 255).astype(np.uint8)
-
-
 __all__ = [
     "Record3DConnectionError",
     "Record3DDependencyError",
@@ -488,8 +383,6 @@ __all__ = [
     "Record3DDeviceType",
     "Record3DError",
     "Record3DFrame",
-    "Record3DPreviewApp",
-    "Record3DPreviewConfig",
     "Record3DStreamConfig",
     "Record3DStreamSession",
     "Record3DStreamSnapshot",

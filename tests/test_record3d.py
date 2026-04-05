@@ -12,7 +12,6 @@ from prml_vslam.io import record3d as record3d_module
 from prml_vslam.io.record3d import (
     Record3DDependencyError,
     Record3DDeviceType,
-    Record3DPreviewConfig,
     Record3DStreamConfig,
     Record3DTransportId,
     Record3DUSBPacketStreamConfig,
@@ -164,34 +163,3 @@ def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: 
     assert packet.depth.shape == (2, 2)
     assert packet.intrinsics is not None
     assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
-
-
-def test_record3d_preview_runs_single_frame_and_disconnects(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
-    monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
-
-    shown_windows: list[str] = []
-    destroyed = {"called": False}
-    fake_cv2 = SimpleNamespace(
-        COLOR_RGB2BGR=1,
-        NORM_MINMAX=2,
-        imshow=lambda name, image: shown_windows.append(name),
-        waitKey=lambda _: ord("q"),
-        destroyAllWindows=lambda: destroyed.__setitem__("called", True),
-        cvtColor=lambda image, code: image,
-        flip=lambda image, axis: image,
-        normalize=lambda image, dst, alpha, beta, norm_type: image,
-    )
-
-    monkeypatch.setattr(record3d_module, "_import_cv2_module", lambda: fake_cv2)
-
-    preview = Record3DPreviewConfig(max_frames=1).setup_target()
-
-    assert preview is not None
-    preview.run()
-
-    assert "Record3D RGB" in shown_windows
-    assert "Record3D Depth" in shown_windows
-    assert "Record3D Confidence" in shown_windows
-    assert FakeRecord3DStream.instances[-1].disconnected is True
-    assert destroyed["called"] is True

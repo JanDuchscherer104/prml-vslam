@@ -12,7 +12,6 @@ from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioDownloadRequest,
 from prml_vslam.io import (
     Record3DConnectionError,
     Record3DDependencyError,
-    Record3DPreviewConfig,
     Record3DStreamConfig,
     Record3DTimeoutError,
 )
@@ -130,48 +129,6 @@ def record3d_devices() -> None:
         return
 
     console.plog([device.model_dump(mode="json") for device in devices])
-
-
-@app.command("record3d-preview")
-def record3d_preview(
-    device_index: Annotated[
-        int,
-        typer.Option("--device-index", min=0, help="Zero-based index into the connected Record3D devices."),
-    ] = 0,
-    frame_timeout: Annotated[
-        float,
-        typer.Option("--frame-timeout", min=0.1, help="Seconds to wait for the next Record3D frame."),
-    ] = 5.0,
-    max_frames: Annotated[
-        int | None,
-        typer.Option("--max-frames", min=1, help="Optional number of frames to preview before stopping."),
-    ] = None,
-    show_confidence: Annotated[
-        bool,
-        typer.Option(
-            "--confidence/--no-confidence",
-            help="Whether to open a preview window for the Record3D confidence map.",
-        ),
-    ] = True,
-) -> None:
-    """Open a simple OpenCV preview for the live Record3D RGBD stream."""
-    preview = Record3DPreviewConfig(
-        stream=Record3DStreamConfig(
-            device_index=device_index,
-            frame_timeout_seconds=frame_timeout,
-        ),
-        max_frames=max_frames,
-        show_confidence=show_confidence,
-    )
-
-    try:
-        app_instance = preview.setup_target()
-        if app_instance is None:
-            raise Record3DConnectionError("Failed to initialize the Record3D preview app.")
-        app_instance.run()
-    except (Record3DConnectionError, Record3DDependencyError, Record3DTimeoutError) as exc:
-        console.error(str(exc))
-        raise typer.Exit(code=1) from exc
 
 
 @advio_app.command("summary")
