@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -29,6 +28,4 @@ class FramePacket(BaseData):
     uncertainty: NDArray[np.float32] | None = None
     intrinsics: CameraIntrinsics | None = None
     pose: SE3Pose | None = None
-    image_path: Path | None = None
-    jpeg_bytes: bytes | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
