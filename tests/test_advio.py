@@ -419,13 +419,14 @@ def test_advio_dataset_service_downloads_selected_modalities_from_cached_archive
 
     dataset_root = tmp_path / "data" / "advio"
     assert len(result.downloaded_archives) == 1
-    assert (dataset_root / ".archives" / "advio-15.zip").exists()
+    assert not (dataset_root / ".archives" / "advio-15.zip").exists()
     assert (dataset_root / "calibration" / "iphone-03.yaml").exists()
     assert (dataset_root / "data" / "advio-15" / "iphone" / "frames.mov").exists()
     assert (dataset_root / "data" / "advio-15" / "iphone" / "frames.csv").exists()
     assert not (dataset_root / "data" / "advio-15" / "pixel" / "arcore.csv").exists()
 
     status = service.local_scene_statuses()[0]
+    assert status.archive_path is None
     assert status.local_modalities == [AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO]
     assert status.replay_ready is False
     assert status.offline_ready is False
