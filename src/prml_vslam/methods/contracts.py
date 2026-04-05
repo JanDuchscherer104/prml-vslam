@@ -3,16 +3,11 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pydantic import Field
 
 from prml_vslam.utils import BaseData
-
-if TYPE_CHECKING:
-    from prml_vslam.pipeline.workspace import PreparedInput
 
 
 class MethodId(StrEnum):
@@ -46,31 +41,6 @@ class MethodCommand(BaseData):
     """Exact argv vector used to invoke the upstream backend."""
 
 
-class MethodArtifacts(BaseData):
-    """Normalized and native artifact paths for one method run."""
-
-    artifact_root: Path
-    """Repository-owned artifact root for this run."""
-
-    native_output_dir: Path
-    """Method-native output directory inside or alongside the upstream repo."""
-
-    normalized_trajectory_path: Path
-    """Normalized TUM trajectory path owned by this repository."""
-
-    normalized_point_cloud_path: Path
-    """Normalized dense point cloud path owned by this repository."""
-
-    raw_trajectory_path: Path | None = None
-    """Method-native trajectory artifact path before normalization."""
-
-    raw_point_cloud_path: Path | None = None
-    """Method-native point-cloud artifact path before normalization."""
-
-    view_graph_path: Path | None = None
-    """Optional graph artifact path used by some upstream tooling."""
-
-
 class MethodRunRequest(BaseData):
     """Shared inference request accepted by every method adapter."""
 
@@ -90,17 +60,20 @@ class MethodRunResult(BaseData):
     method: MethodId
     """Backend that produced or will produce the artifacts."""
 
-    prepared_input: PreparedInput
-    """Materialized input that the upstream backend consumed."""
-
     command: MethodCommand
     """Primary upstream inference command."""
 
-    artifacts: MethodArtifacts
-    """Normalized and native artifact locations for the run."""
+    normalized_trajectory_path: Path
+    """Normalized TUM trajectory path owned by this repository."""
 
-    native_viewer_command: MethodCommand | None = None
-    """Optional native post-hoc viewer command for the backend."""
+    normalized_point_cloud_path: Path
+    """Normalized dense point cloud path owned by this repository."""
+
+    raw_trajectory_path: Path | None = None
+    """Method-native trajectory artifact path before normalization."""
+
+    raw_point_cloud_path: Path | None = None
+    """Method-native point-cloud artifact path before normalization."""
 
     executed: bool = False
     """Whether the upstream inference command already ran successfully."""
@@ -109,15 +82,7 @@ class MethodRunResult(BaseData):
     """Human-readable caveats and backend-specific setup notes."""
 
 
-MethodRunResult.model_rebuild(
-    _types_namespace={
-        "PreparedInput": import_module("prml_vslam.pipeline.workspace").PreparedInput,
-    }
-)
-
-
 __all__ = [
-    "MethodArtifacts",
     "MethodCommand",
     "MethodId",
     "MethodRunRequest",

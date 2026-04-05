@@ -45,30 +45,7 @@ class CaptureManifest(BaseData):
     """Sampled frames written for downstream backends."""
 
 
-class PreparedInput(BaseData):
-    """Method-ready input description derived from a shared capture source."""
-
-    source_path: Path
-    """Original input path passed by the caller."""
-
-    resolved_input_path: Path
-    """Concrete input path that the upstream backend should consume."""
-
-    frames_dir: Path | None = None
-    """Directory containing materialized RGB frames when one was created."""
-
-    image_glob: str | None = None
-    """Glob pattern suitable for backends that consume image sequences."""
-
-    manifest_path: Path | None = None
-    """JSON manifest path describing the materialized frame sequence."""
-
-    manifest: CaptureManifest | None = None
-    """Loaded manifest object for timestamp lookup and debugging."""
-
-
 __all__ = [
     "CaptureManifest",
     "FrameSample",
-    "PreparedInput",
 ]
