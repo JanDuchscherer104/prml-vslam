@@ -7,39 +7,6 @@ active_collection = "todos"
 loc_unit = "lines"
 
 [[todos]]
-id = "TODO-0009"
-title = "Remove or privatize MethodRunResult as a parallel normalized-output surface"
-status = "pending"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0009",
-]
-loc_min = 35
-loc_expected = 90
-loc_max = 190
-files = [
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/methods/base.py",
-    "tests/test_methods.py",
-]
-acceptance = [
-    "Method wrappers no longer expose a public normalized-output contract that duplicates pipeline-owned artifacts.",
-    "Any remaining wrapper planning object is clearly private to the methods layer or maps directly onto pipeline-owned outputs.",
-    "Method tests assert the new ownership boundary rather than the old `MethodRunResult` shape.",
-]
-sources = [
-    "README.md",
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/methods/base.py",
-    "tests/test_methods.py",
-    "src/prml_vslam/methods/README.md",
-    "https://github.com/zhangganlin/vista-slam",
-    "https://github.com/rmurai0610/MASt3R-SLAM",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15",
-]
-
-[[todos]]
 id = "TODO-0010"
 title = "Trim io and pipeline package exports to the documented minimal surface"
 status = "pending"

@@ -6,37 +6,6 @@ source = "Validated review findings plus follow-up repository policy notes, the 
 active_collection = "issues"
 
 [[issues]]
-id = "ISSUE-0009"
-title = "Method wrapper contracts still duplicate pipeline artifact ownership"
-status = "open"
-priority = "medium"
-category = "architecture"
-summary = "The methods layer still exposes `MethodRunRequest` and `MethodRunResult` as public normalized-output contracts even though the architecture guide already treats `SequenceManifest`, `SlamArtifacts`, and `RunSummary` as the repository-owned artifact boundary."
-files = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/methods/base.py",
-    "tests/test_methods.py",
-]
-notes = [
-    "The mock method runtime still plans and materializes normalized trajectory and point-cloud paths directly through `MethodRunResult`.",
-    "The architecture guide explicitly calls this overlap transitional and says wrapper outputs should converge on pipeline-owned artifacts.",
-    "The broader older review recommendation to keep upstream wrappers thin is still relevant here even though the current repository scope intentionally keeps `methods` mock-only.",
-]
-sources = [
-    "README.md",
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/methods/README.md",
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/methods/base.py",
-    "tests/test_methods.py",
-    "https://github.com/zhangganlin/vista-slam",
-    "https://github.com/rmurai0610/MASt3R-SLAM",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15",
-]
-
-[[issues]]
 id = "ISSUE-0010"
 title = "Package re-export surfaces remain broader than the minimal public API"
 status = "open"
