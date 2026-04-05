@@ -165,6 +165,6 @@ def record3d_wifi_packet_from_video_frame(
             depth_max_meters=metadata.depth_max_meters,
         ),
         intrinsics=metadata.intrinsics,
-        uncertainty=None,
+        confidence=None,
         metadata={**packet_metadata, "transport": Record3DTransportId.WIFI.value},
     )

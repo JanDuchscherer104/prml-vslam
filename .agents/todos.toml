@@ -7,41 +7,6 @@ active_collection = "todos"
 loc_unit = "lines"
 
 [[todos]]
-id = "TODO-0005"
-title = "Split ingress packets from preview-only SLAM and confidence payloads"
-status = "pending"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0005",
-]
-loc_min = 40
-loc_expected = 125
-loc_max = 240
-files = [
-    "src/prml_vslam/interfaces/runtime.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-]
-acceptance = [
-    "Unused `FramePacket` fields are removed or justified by an active ingress caller.",
-    "Sensor confidence is no longer exposed as `FramePacket.uncertainty` when `SlamUpdate.uncertainty` is method-oriented output.",
-    "Pointmap ownership is narrowed so ingress packets and SLAM updates do not both claim the same preview payload without a clear contract boundary.",
-]
-sources = [
-    "README.md",
-    "docs/Questions.md",
-    "src/prml_vslam/app/REQUIREMENTS.md",
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/interfaces/runtime.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-]
-
-[[todos]]
 id = "TODO-0009"
 title = "Remove or privatize MethodRunResult as a parallel normalized-output surface"
 status = "pending"

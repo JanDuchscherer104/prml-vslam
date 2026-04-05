@@ -101,7 +101,7 @@ def record3d_frame_to_packet(
         depth=frame.depth,
         intrinsics=frame.intrinsics,
         pose=frame.pose,
-        uncertainty=frame.confidence.astype(np.float32) if frame.confidence.size else None,
+        confidence=frame.confidence.astype(np.float32) if frame.confidence.size else None,
         metadata={
             "transport": Record3DTransportId.USB.value,
             "device_type": frame.device_type.value,

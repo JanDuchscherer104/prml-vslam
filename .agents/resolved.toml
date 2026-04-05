@@ -393,6 +393,41 @@ resolved_on = "2026-04-06"
 resolution_note = "Removed the remaining one-off page-state save wrappers and switched Record3D action handling to the shared save_model_updates path."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0005"
+title = "FramePacket and SlamUpdate still overlap ingress and preview semantics"
+status = "resolved"
+priority = "medium"
+category = "contracts"
+summary = "The canonical ingress packet still carries preview- and method-oriented fields (`pointmap`, `uncertainty`, `image_path`, `jpeg_bytes`) while `SlamUpdate` also owns `pointmap` and `uncertainty`, leaving the current tree with overlapping owners and a live sensor-confidence naming collision."
+files = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+notes = [
+    "Record3D currently maps USB depth confidence into `FramePacket.uncertainty`, even though `SlamUpdate.uncertainty` reads like method output.",
+    "The mock SLAM session also consumes `FramePacket.pointmap` while emitting `SlamUpdate.pointmap`, so the same semantic concept still has two owners.",
+    "FramePacket.image_path and FramePacket.jpeg_bytes remain unused in the current repository tree.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "FramePacket now carries sensor confidence instead of uncertainty, ingress no longer owns pointmaps, and SlamUpdate is the sole pointmap owner."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -667,4 +702,43 @@ acceptance = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "The shared save_model_updates helper now owns the app page-state persistence path without the old per-surface wrappers."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0005"
+title = "Split ingress packets from preview-only SLAM and confidence payloads"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0005",
+]
+loc_min = 40
+loc_expected = 125
+loc_max = 240
+files = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+acceptance = [
+    "Unused `FramePacket` fields are removed or justified by an active ingress caller.",
+    "Sensor confidence is no longer exposed as `FramePacket.uncertainty` when `SlamUpdate.uncertainty` is method-oriented output.",
+    "Pointmap ownership is narrowed so ingress packets and SLAM updates do not both claim the same preview payload without a clear contract boundary.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/record3d.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Ingress packets no longer duplicate pointmap ownership and the Record3D confidence raster uses a dedicated confidence field."
 source_collection = "todos"
