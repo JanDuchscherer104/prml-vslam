@@ -1,0 +1,382 @@
+[meta]
+schema_version = 2
+repo = "prml-vslam"
+updated_on = "2026-04-05"
+source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
+
+[[resolved_issues]]
+id = "ISSUE-PR15-0001"
+title = "Packet-session runtime duplication between app and pipeline"
+status = "resolved"
+priority = "medium"
+category = "architecture"
+summary = "The older PR15 review flagged duplicated worker-thread and rolling-metrics infrastructure across the app and pipeline, but the current tree already consolidates that logic in `prml_vslam.utils.packet_session`."
+files = [
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/pipeline/session.py",
+    "src/prml_vslam/utils/packet_session.py",
+]
+notes = [
+    "Both preview controllers and the pipeline session now build on `PacketSessionRuntime`, `PacketSessionMetrics`, and `PacketSessionSnapshot`.",
+    "The active debt has moved from duplication to ownership of the app-facing snapshot types layered on top of the shared runtime primitive.",
+]
+sources = [
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/pipeline/session.py",
+    "src/prml_vslam/utils/packet_session.py",
+]
+previous_status = "imported_review"
+resolved_on = "2026-04-05"
+resolution_note = "Assessed during PR15 review import; the current tree already shares packet-session lifecycle through `prml_vslam.utils.packet_session`."
+source_collection = "review_import"
+
+[[resolved_issues]]
+id = "ISSUE-PR15-0002"
+title = "Point-cloud PLY writing should delegate to Open3D"
+status = "resolved"
+priority = "medium"
+category = "maintainability"
+summary = "The older PR15 review recommended deleting manual ASCII PLY writing. The current tree already routes point-cloud persistence through `write_point_cloud_ply()` in `prml_vslam.utils.geometry`, which uses Open3D."
+files = [
+    "src/prml_vslam/utils/geometry.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+]
+notes = [
+    "The mock SLAM backend already uses the shared geometry helper instead of writing PLY inline.",
+    "The helper keeps one explicit empty-cloud fallback for the zero-vertex case, but normal point-cloud export is already library-backed.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "src/prml_vslam/methods/mock_vslam.py",
+    "https://www.open3d.org/docs/release/python_api/open3d.io.write_point_cloud.html",
+]
+previous_status = "imported_review"
+resolved_on = "2026-04-05"
+resolution_note = "Assessed during PR15 review import; Open3D-backed point-cloud writing is already in place."
+source_collection = "review_import"
+
+[[resolved_issues]]
+id = "ISSUE-PR15-0003"
+title = "Streamlit width-API review threads are stale against the current dependency surface"
+status = "resolved"
+priority = "low"
+category = "review-triage"
+summary = "Several unresolved PR15 comments claim that `width=\"stretch\"` is unsupported on Streamlit widgets such as `button`, `plotly_chart`, `link_button`, `dataframe`, `form_submit_button`, `image`, and `segmented_control`, but the current local Streamlit API surface exposes a `width` parameter on those call sites."
+files = [
+    "pyproject.toml",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/metrics.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/live_session.py",
+]
+notes = [
+    "Assessed by inspecting the current local Streamlit function signatures in the working environment.",
+    "The comments were not promoted into the active backlog because they do not describe a validated bug in the current tree and environment.",
+]
+sources = [
+    "pyproject.toml",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/metrics.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/live_session.py",
+]
+previous_status = "imported_review"
+resolved_on = "2026-04-05"
+resolution_note = "Assessed during PR15 comment triage; current local Streamlit signatures accept the flagged `width` parameter, so the review cluster was not promoted."
+source_collection = "review_import"
+
+[[resolved_issues]]
+id = "ISSUE-0002"
+title = "ADVIO calibration parsing depends on undeclared PyYAML"
+status = "resolved"
+priority = "high"
+category = "dependency"
+summary = "The ADVIO loader imports yaml directly, but PyYAML is not declared in pyproject.toml core dependencies."
+files = [
+    "src/prml_vslam/datasets/advio/advio_loading.py",
+    "pyproject.toml",
+]
+notes = [
+    "The current environment works only because pyyaml is installed transitively.",
+    "Fresh installs should not rely on dependency coincidence for a core dataset path.",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "Declared PyYAML as a runtime dependency and added a pyproject regression test."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0001"
+title = "BaseConfig-derived workflows are not TOML-first"
+status = "resolved"
+priority = "high"
+category = "configuration"
+summary = "User-facing and reproducible BaseConfig graphs should be loaded from TOML, but current durable workflows still rely heavily on direct in-code construction."
+files = [
+    "src/prml_vslam/utils/base_config.py",
+    "src/prml_vslam/utils/path_config.py",
+    "src/prml_vslam/main.py",
+]
+notes = [
+    "BaseConfig already exposes from_toml(), to_toml(), and save_toml().",
+    "PathConfig already resolves repo-relative .toml paths.",
+    "Current CLI entrypoints still build RunRequest graphs directly from flags.",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "Added TOML-first CLI run-planning entrypoint plan-run-config with PathConfig + RunRequest.from_toml."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0008"
+title = "Metrics evaluation still persists mock results instead of evo outputs"
+status = "resolved"
+priority = "high"
+category = "evaluation"
+summary = "The Metrics page and evaluation service still compute a local L2 trajectory-delta mock and persist `mock_metrics.json`, even though the repo README and app requirements describe the surface as explicit `evo` evaluation over persisted results."
+files = [
+    "README.md",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/eval/REQUIREMENTS.md",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+notes = [
+    "The current implementation computes a direct Euclidean position delta and writes `evaluation/mock_metrics.json`.",
+    "The app copy and requirements still describe the action as `Compute evo metrics` and persisted `evo` results.",
+    "This leaves the current tree with requirements drift as well as a missing thin adapter to the dependency the repo already ships.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/eval/REQUIREMENTS.md",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/app/pages/metrics.py",
+    "https://github.com/MichaelGrupp/evo",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "Replaced mock metrics with explicit evo APE evaluation and persisted trajectory_metrics.json."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0002"
+title = "Declare PyYAML explicitly for ADVIO calibration loading"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0002",
+]
+loc_min = 1
+loc_expected = 4
+loc_max = 12
+files = [
+    "pyproject.toml",
+    "src/prml_vslam/datasets/advio/advio_loading.py",
+]
+acceptance = [
+    "PyYAML is declared in the appropriate dependency group.",
+    "ADVIO calibration loading works in a clean install without transitive dependency luck.",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "Added PyYAML to runtime dependencies and locked with a pyproject dependency test."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0001"
+title = "Add TOML-backed config entrypoints for durable BaseConfig workflows"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0001",
+]
+loc_min = 25
+loc_expected = 60
+loc_max = 120
+files = [
+    "src/prml_vslam/main.py",
+    "README.md",
+]
+acceptance = [
+    "At least one durable CLI workflow accepts a repo-owned .toml config path.",
+    "The implementation uses BaseConfig.from_toml() and PathConfig.resolve_toml_path().",
+    "README or CLI help documents the TOML-first configuration path.",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "Implemented plan-run-config TOML entrypoint and documented TOML-first run planning in README."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0008"
+title = "Replace mock metrics persistence with a thin explicit evo adapter"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0008",
+]
+loc_min = 70
+loc_expected = 170
+loc_max = 320
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/app/pages/metrics.py",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/eval/REQUIREMENTS.md",
+]
+acceptance = [
+    "The explicit compute action runs an `evo`-backed evaluation flow instead of the current local L2 mock.",
+    "Persisted evaluation results no longer use the `mock_metrics.json` contract name.",
+    "The app, package README, and requirements describe the same evaluation semantics.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/eval/REQUIREMENTS.md",
+    "src/prml_vslam/eval/services.py",
+    "https://github.com/MichaelGrupp/evo",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "Switched metrics service to explicit evo APE flow and canonical trajectory_metrics.json persistence."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0012"
+title = "ADVIO app download flow disagrees with the shared empty-selection contract"
+status = "resolved"
+priority = "medium"
+category = "contracts"
+summary = "The shared `AdvioDownloadRequest` contract and CLI already treat `sequence_ids=[]` as 'all scenes', and the app now honors the same contract instead of blocking empty selections."
+files = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/main.py",
+    "tests/test_app.py",
+]
+notes = [
+    "The controller no longer warns on an empty scene selection before calling the dataset service.",
+    "The ADVIO download form now explains that leaving the scene selection empty prepares the full catalog.",
+    "App tests cover the empty-selection path so the UI stays aligned with the shared request semantics.",
+]
+sources = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/main.py",
+    "tests/test_app.py",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245906",
+]
+previous_status = "open"
+resolved_on = "2026-04-05"
+resolution_note = "Aligned the app controller and ADVIO page copy with the shared empty-selection-means-all-scenes contract."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0012"
+title = "Align ADVIO app downloads with the empty-selection means all-scenes contract"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0012",
+]
+loc_min = 8
+loc_expected = 20
+loc_max = 50
+files = [
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "The app either honors `sequence_ids=[]` as 'all scenes' or the shared ADVIO request contract is changed consistently across app, CLI, and dataset code.",
+    "UI messaging no longer contradicts the shared request semantics.",
+    "Tests cover the chosen empty-selection behavior.",
+]
+sources = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/main.py",
+    "tests/test_app.py",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245906",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "The app now treats an empty ADVIO scene selection as the full catalog and documents that behavior in the form UI."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-PR15-0004"
+title = "Replace repo-owned SE3Pose and TimedPoseTrajectory with evo-native arrays only"
+status = "resolved"
+priority = "medium"
+category = "review-triage"
+summary = "The older narrative review recommended deleting the repo-owned SE(3) and trajectory datamodels in favor of plain arrays and `evo`-native objects. That recommendation was not promoted into the active backlog because the current architecture guide explicitly keeps `SE3Pose` and `TimedPoseTrajectory` as the canonical shared datamodels while already delegating TUM I/O to `evo`."
+files = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/trajectory.py",
+    "src/prml_vslam/utils/geometry.py",
+]
+notes = [
+    "The current tree already standardizes TUM trajectory I/O on `evo` while retaining repo-owned typed datamodels for shared boundaries.",
+    "This review recommendation conflicts with the current source-of-truth ownership model rather than describing drift inside that model.",
+]
+sources = [
+    "docs/architecture/interfaces-and-contracts.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/trajectory.py",
+    "src/prml_vslam/utils/geometry.py",
+    "https://github.com/MichaelGrupp/evo",
+]
+previous_status = "imported_review"
+resolved_on = "2026-04-05"
+resolution_note = "Retired during the narrative PR15 review triage because the current repo policy intentionally preserves these shared datamodels."
+source_collection = "review_import"
+
+[[resolved_issues]]
+id = "ISSUE-PR15-0005"
+title = "Turn methods and eval into the repo-owned home for full upstream orchestration"
+status = "resolved"
+priority = "medium"
+category = "review-triage"
+summary = "The older narrative review argued for replacing the local mock `methods` and `eval` surfaces with the repository-owned home for direct upstream method orchestration and a larger evaluation layer. That broad restructuring was not promoted as an active issue because the current package rules intentionally scope `methods` and `eval` as thin local interface/mock surfaces; only the narrower overlap and placeholder debts remain active."
+files = [
+    "README.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/eval/contracts.py",
+]
+notes = [
+    "The still-relevant parts of that review are already represented in active backlog items such as duplicate normalized-output ownership, placeholder controls, bespoke ADVIO download glue, and the custom Record3D Wi-Fi boundary.",
+    "If repo scope later expands to direct upstream orchestration, that should be recorded as a fresh scope change instead of implicitly reopening this older recommendation.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/eval/README.md",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/eval/contracts.py",
+    "https://github.com/zhangganlin/vista-slam",
+    "https://github.com/rmurai0610/MASt3R-SLAM",
+    "https://github.com/MichaelGrupp/evo",
+]
+previous_status = "imported_review"
+resolved_on = "2026-04-05"
+resolution_note = "Retired during the narrative PR15 review triage because the current repo policy keeps `methods` and `eval` intentionally thin unless project scope changes."
+source_collection = "review_import"
