@@ -37,7 +37,7 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db
+.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py
 
 lint: ## Auto-format Python files and apply Ruff fixes
 	$(RUFF) format .
@@ -62,6 +62,12 @@ test: ## Run the Python test suite (for parallel runs: make test PYTEST_ARGS="-n
 
 agents-db: ## Run the local .agents backlog tool (example: make agents-db AGENTS_ARGS="rank --kind todos")
 	$(AGENTS_DB) $(AGENTS_ARGS)
+
+loc-py: ## Print Python LOC for src/ and tests/
+	$(UV_RUN) python scripts/loc_stats.py
+
+loc: ## Alias for loc-py (Python lines of code in src/ and tests/)
+	$(MAKE) loc-py
 
 bib-check: ## Run strict source-backed bibliography verification
 	mkdir -p $(BIB_CACHE_DIR)
