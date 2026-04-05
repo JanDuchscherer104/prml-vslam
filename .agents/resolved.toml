@@ -1666,3 +1666,56 @@ previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 10 after reducing LOC and preserving ADVIO/app behavior under the frozen harness plus full make ci."
 source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0025"
+title = "Pipeline mode display text still lives in a page-local helper"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The pipeline page still owned the user-facing display text for `PipelineMode` even though `PipelineMode` is the canonical contract and other app-facing enums already own their labels directly."
+files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+notes = [
+    "The local `_pipeline_mode_label()` helper was only restating enum-owned semantics in page code.",
+    "The page also carried a one-line `_is_pipeline_active()` wrapper that did not add ownership value beyond the active-state constant.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Moved the display label onto PipelineMode and inlined the one-line activity helper in the pipeline page."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0025"
+title = "Move pipeline mode labels onto PipelineMode"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0025",
+]
+loc_min = 4
+loc_expected = 8
+loc_max = 16
+files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+acceptance = [
+    "PipelineMode owns its user-facing label instead of relying on a page-local helper.",
+    "The pipeline page drops the local mode-label helper and any similarly trivial one-line wrapper that no longer buys clarity.",
+    "Focused pipeline/app tests and full make ci continue to pass while Python LOC decreases.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 11 after reducing LOC and preserving pipeline page behavior under the frozen harness plus full make ci."
+source_collection = "todos"

@@ -21,6 +21,13 @@ class PipelineMode(StrEnum):
     OFFLINE = "offline"
     STREAMING = "streaming"
 
+    @property
+    def label(self) -> str:
+        return {
+            self.OFFLINE: "Offline (single pass)",
+            self.STREAMING: "Streaming (looped replay)",
+        }[self]
+
 
 class VideoSourceSpec(BaseConfig):
     """Video-backed source used for offline planning and execution."""
