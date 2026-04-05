@@ -5,8 +5,6 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import Field
-
 from prml_vslam.utils import BaseData
 
 
@@ -31,18 +29,8 @@ class MethodId(StrEnum):
                 return "MASt3R-SLAM"
 
 
-class MethodCommand(BaseData):
-    """One explicit external command invocation."""
-
-    cwd: Path
-    """Working directory from which the command must be executed."""
-
-    argv: list[str]
-    """Exact argv vector used to invoke the upstream backend."""
-
-
 class MethodRunRequest(BaseData):
-    """Shared inference request accepted by every method adapter."""
+    """Minimal inference request accepted by the repository-local method mocks."""
 
     input_path: Path
     """Video file or image-directory input that should be processed."""
@@ -50,18 +38,12 @@ class MethodRunRequest(BaseData):
     artifact_root: Path
     """Repository-owned output root where normalized artifacts belong."""
 
-    frame_stride: int = 1
-    """Stride used when materializing frames for methods that need images."""
-
 
 class MethodRunResult(BaseData):
-    """Planned or executed method invocation with normalized artifact paths."""
+    """Normalized artifact paths produced by one mock method run."""
 
     method: MethodId
-    """Backend that produced or will produce the artifacts."""
-
-    command: MethodCommand
-    """Primary upstream inference command."""
+    """Backend that produced the artifacts."""
 
     normalized_trajectory_path: Path
     """Normalized TUM trajectory path owned by this repository."""
@@ -69,21 +51,11 @@ class MethodRunResult(BaseData):
     normalized_point_cloud_path: Path
     """Normalized dense point cloud path owned by this repository."""
 
-    raw_trajectory_path: Path | None = None
-    """Method-native trajectory artifact path before normalization."""
-
-    raw_point_cloud_path: Path | None = None
-    """Method-native point-cloud artifact path before normalization."""
-
     executed: bool = False
-    """Whether the upstream inference command already ran successfully."""
-
-    notes: list[str] = Field(default_factory=list)
-    """Human-readable caveats and backend-specific setup notes."""
+    """Whether the mock runtime materialized the paths during this call."""
 
 
 __all__ = [
-    "MethodCommand",
     "MethodId",
     "MethodRunRequest",
     "MethodRunResult",
