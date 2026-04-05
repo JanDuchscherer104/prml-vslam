@@ -1,7 +1,8 @@
 # PRML VSLAM Pipeline Guide
 
-This package owns the typed planning contracts, stage protocols, and
-artifact-boundary definitions for the repository pipeline.
+This package owns the typed planning contracts, the currently implemented
+tracking/runtime protocols, and the artifact-boundary definitions for the
+repository pipeline.
 
 ## Current State
 
@@ -10,9 +11,10 @@ Today `prml_vslam.pipeline` is primarily a typed planning surface:
 - `contracts.py` defines the public request, plan, manifest, artifact, and
   streaming-update DTOs
 - `services.py` turns a `RunRequest` into an ordered `RunPlan`
-- `protocols.py` defines the stage protocol surface that future runners and
-  backends must satisfy
-- `workspace.py` defines prepared-input and capture-manifest helper models
+- `protocols.py` defines the currently implemented streaming-source and
+  tracking-backend seams
+- `workspace.py` defines the capture-manifest helper models used while
+  materializing sequences
 
 The generic `OfflineRunner` and `StreamingRunner` described in
 [`REQUIREMENTS.md`](./REQUIREMENTS.md) are target architecture, not implemented
@@ -72,8 +74,9 @@ The current runnable streaming demo is split across the following files.
     `RunSummary`, `TrackingUpdate`, and the typed artifact bundles that the
     demo exercises
 - [`protocols.py`](./protocols.py)
-  - defines the `OfflineTrackerBackend` and `StreamingTrackerBackend`
-    contracts used by the mock backend and demo runtime
+  - defines `StreamingSequenceSource`, `OfflineTrackerBackend`, and
+    `StreamingTrackerBackend`, the only currently implemented package-local
+    behavior seams
 - [`services.py`](./services.py)
   - defines `RunPlannerService`, which turns the page-built `RunRequest` into
     the ordered `RunPlan`
@@ -156,13 +159,14 @@ The intended long-term flow is:
 
 - `TrackingArtifacts`
 - `DenseArtifacts`
-- `ReferenceArtifacts`
-- `TrajectoryMetrics`
-- `CloudMetrics`
-- `EfficiencyMetrics`
 
 Large outputs must cross stage boundaries as artifact references, not large
 in-memory payloads.
+
+Reference-stage and evaluation-stage artifact bundles are still target-state
+concepts described in [`REQUIREMENTS.md`](./REQUIREMENTS.md). They should only
+be added to `contracts.py` once a real pipeline stage consumes or produces
+them.
 
 ### Provenance And Summary
 
@@ -174,7 +178,8 @@ in-memory payloads.
 
 ## Runtime Interfaces
 
-`protocols.py` defines the stage-level protocol surface.
+`protocols.py` defines the behavior seams that are actually consumed by the
+current planner and streaming session.
 
 ### Tracking
 
@@ -187,22 +192,15 @@ in-memory payloads.
   - `close() -> TrackingArtifacts`
   - used when tracking consumes `FramePacket` incrementally
 
-### Other Stages
-
-- `DenseBackend`
-  - consumes `TrackingArtifacts`
-- `ReferenceBuilder`
-  - consumes `SequenceManifest`
-- `TrajectoryEvaluator`
-  - consumes `TrackingArtifacts` plus `SequenceManifest`
-- `CloudEvaluator`
-  - consumes `DenseArtifacts` plus `ReferenceArtifacts`
-
 The important boundary rule is simple:
 
 - streaming logic may consume `FramePacket`
 - downstream stages should consume typed artifact bundles or
   `SequenceManifest`, not live packets
+
+Future dense, reference, and evaluation stages can introduce additional
+protocols later, but those seams should be added only when a concrete runtime
+or service needs them.
 
 ## Artifact Layout
 
