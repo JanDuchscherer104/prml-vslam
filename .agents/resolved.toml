@@ -1548,3 +1548,60 @@ previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 07 after reducing LOC and preserving mock-method behavior under the frozen harness plus full make ci."
 source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0023"
+title = "App bootstrap still hard-codes page entry wrappers and a dead style hook"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The app bootstrap still carries four page-specific entry wrappers plus a no-op `inject_styles()` hook even though page registration can be expressed as one small registry and one generic entry helper."
+files = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+notes = [
+    "The page-entry wrappers differ only by page id and renderer function.",
+    "The style injection hook does nothing and only adds an import and call path to the bootstrap flow.",
+]
+sources = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Replaced the page-specific bootstrap entry wrappers with one page registry and generic entry helper, and removed the dead inject_styles hook."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0023"
+title = "Data-drive app page registration and retire inject_styles"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0023",
+]
+loc_min = 15
+loc_expected = 24
+loc_max = 40
+files = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "App page registration uses one small registry plus one generic entry helper instead of four page-specific wrappers.",
+    "The dead `inject_styles()` seam is removed from the bootstrap path.",
+    "The focused app-entry tests and full `make ci` continue to pass while Python LOC decreases.",
+]
+sources = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 08 after reducing LOC and preserving bootstrap navigation behavior under focused app tests plus full make ci."
+source_collection = "todos"

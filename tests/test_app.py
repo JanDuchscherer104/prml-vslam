@@ -15,6 +15,7 @@ from prml_vslam.app import bootstrap
 from prml_vslam.app.models import (
     AdvioPageState,
     AdvioPreviewSnapshot,
+    AppPageId,
     AppState,
     PreviewStreamState,
     Record3DPageState,
@@ -949,9 +950,7 @@ def test_metrics_page_entry_stops_record3d_runtime_when_switching(monkeypatch: p
         advio_runtime=FakeAdvioRuntime(),
         pipeline_runtime=FakePipelineRuntime(),
     )
-    monkeypatch.setattr(bootstrap, "render_metrics_page", lambda ctx: None)
-
-    bootstrap._render_metrics_page_entry(context)
+    bootstrap._render_page_entry(context, AppPageId.METRICS, lambda ctx: None)
 
     assert context.state.record3d.is_running is False
     assert runtime.stop_calls == 1
@@ -965,9 +964,7 @@ def test_pipeline_page_entry_stops_advio_runtime_when_switching(monkeypatch: pyt
         record3d_runtime=FakeRecord3DRuntime(),
         advio_runtime=runtime,
     )
-    monkeypatch.setattr(bootstrap, "render_pipeline_page", lambda ctx: None)
-
-    bootstrap._render_pipeline_page_entry(context)
+    bootstrap._render_page_entry(context, AppPageId.PIPELINE, lambda ctx: None)
 
     assert context.state.advio.preview_is_running is False
     assert runtime.stop_calls == 1
@@ -982,9 +979,7 @@ def test_metrics_page_entry_keeps_pipeline_runtime_when_switching(monkeypatch: p
         advio_runtime=FakeAdvioRuntime(),
         pipeline_runtime=runtime,
     )
-    monkeypatch.setattr(bootstrap, "render_metrics_page", lambda ctx: None)
-
-    bootstrap._render_metrics_page_entry(context)
+    bootstrap._render_page_entry(context, AppPageId.METRICS, lambda ctx: None)
 
     assert runtime.stop_calls == 0
 
