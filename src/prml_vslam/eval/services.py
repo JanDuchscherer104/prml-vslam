@@ -162,11 +162,8 @@ class TrajectoryEvaluationService:
     @staticmethod
     def result_path(run_root: Path, controls: EvaluationControls) -> Path:
         """Return the deterministic persisted mock-result path for the controls."""
-        diff_token = str(controls.max_diff_s).replace(".", "p")
-        align_flag = "align" if controls.align else "no-align"
-        scale_flag = "scale" if controls.correct_scale else "no-scale"
-        filename = f"mock_metrics__{controls.pose_relation.value}__{align_flag}__{scale_flag}__diff-{diff_token}.json"
-        return run_root / "evaluation" / filename
+        del controls
+        return run_root / "evaluation" / "mock_metrics.json"
 
 
 def _discover_run(*, trajectory_path: Path, artifacts_dir: Path, sequence_slug: str) -> DiscoveredRun | None:

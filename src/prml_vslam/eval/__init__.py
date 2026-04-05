@@ -7,7 +7,6 @@ from .interfaces import (
     EvaluationControls,
     EvaluationSelection,
     MetricStats,
-    PoseRelationId,
     SelectionSnapshot,
     TrajectorySeries,
 )
@@ -20,7 +19,6 @@ __all__ = [
     "EvaluationControls",
     "EvaluationSelection",
     "MetricStats",
-    "PoseRelationId",
     "SelectionSnapshot",
     "TrajectoryEvaluationService",
     "TrajectorySeries",

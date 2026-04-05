@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
@@ -14,32 +13,8 @@ from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.utils import BaseConfig, BaseData
 
 
-class PoseRelationId(StrEnum):
-    """Stable `evo` pose-relation options exposed in the app."""
-
-    TRANSLATION_PART = "translation_part"
-    FULL_TRANSFORMATION = "full_transformation"
-    ROTATION_ANGLE_DEG = "rotation_angle_deg"
-    ROTATION_ANGLE_RAD = "rotation_angle_rad"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing label."""
-        return {
-            PoseRelationId.TRANSLATION_PART: "Translation Part",
-            PoseRelationId.FULL_TRANSFORMATION: "Full Transformation",
-            PoseRelationId.ROTATION_ANGLE_DEG: "Rotation Angle (deg)",
-            PoseRelationId.ROTATION_ANGLE_RAD: "Rotation Angle (rad)",
-        }[self]
-
-
 class EvaluationControls(BaseConfig):
-    """User-controlled `evo` evaluation options."""
-
-    pose_relation: PoseRelationId = PoseRelationId.TRANSLATION_PART
-    align: bool = True
-    correct_scale: bool = True
-    max_diff_s: float = 0.02
+    """Reserved placeholder for future explicit evaluation options."""
 
 
 class MetricStats(BaseData):
@@ -186,7 +161,6 @@ __all__ = [
     "EvaluationControls",
     "EvaluationSelection",
     "MetricStats",
-    "PoseRelationId",
     "SelectionSnapshot",
     "TrajectorySeries",
 ]

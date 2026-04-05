@@ -10,7 +10,6 @@ from prml_vslam.eval.interfaces import (
     EvaluationArtifact,
     EvaluationControls,
     EvaluationSelection,
-    PoseRelationId,
     SelectionSnapshot,
 )
 
@@ -27,57 +26,52 @@ def render(context: AppContext) -> None:
         eyebrow="Benchmark Review",
         title="Trajectory Metrics",
         body="Inspect persisted trajectory metrics or trigger a fresh local comparison for one dataset, sequence, "
-        "and artifact slice. Controls stay explicit so evaluation never runs as a side effect.",
+        "and artifact slice. Evaluation stays explicit so metrics never run as a side effect.",
     )
     metrics = context.state.metrics
-    selectors_col, controls_col = st.columns((1.6, 1.0), gap="large")
-    with selectors_col:
-        with st.container(border=True):
-            st.subheader("Benchmark Slice")
-            datasets = list(DatasetId)
-            dataset = st.selectbox(
-                "Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label
+    with st.container(border=True):
+        st.subheader("Benchmark Slice")
+        datasets = list(DatasetId)
+        dataset = st.selectbox(
+            "Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label
+        )
+        selection_state = _resolve_selection(
+            context,
+            dataset=dataset,
+            preferred_sequence_slug=metrics.sequence_slug,
+            preferred_run_root=metrics.run_root,
+        )
+        if not selection_state.sequence_slugs:
+            _save_state(context, dataset=dataset)
+            st.warning(f"No local {dataset.label} sequences were found under `{selection_state.dataset_root}`.")
+            return
+        sequence_slug = st.selectbox(
+            "Sequence",
+            options=selection_state.sequence_slugs,
+            index=selection_state.sequence_slugs.index(_selected_sequence_slug(selection_state)),
+        )
+        selection_state = _resolve_selection(
+            context,
+            dataset=dataset,
+            preferred_sequence_slug=sequence_slug,
+            preferred_run_root=metrics.run_root,
+        )
+        if not selection_state.runs or selection_state.selection is None:
+            _save_state(context, dataset=dataset, sequence_slug=sequence_slug)
+            st.info(
+                f"No benchmark runs with `slam/trajectory.tum` were found under `{selection_state.artifacts_root}`."
             )
-            selection_state = _resolve_selection(
-                context,
-                dataset=dataset,
-                preferred_sequence_slug=metrics.sequence_slug,
-                preferred_run_root=metrics.run_root,
-            )
-            if not selection_state.sequence_slugs:
-                _save_state(context, dataset=dataset)
-                st.warning(f"No local {dataset.label} sequences were found under `{selection_state.dataset_root}`.")
-                return
-            sequence_slug = st.selectbox(
-                "Sequence",
-                options=selection_state.sequence_slugs,
-                index=selection_state.sequence_slugs.index(_selected_sequence_slug(selection_state)),
-            )
-            selection_state = _resolve_selection(
-                context,
-                dataset=dataset,
-                preferred_sequence_slug=sequence_slug,
-                preferred_run_root=metrics.run_root,
-            )
-            if not selection_state.runs or selection_state.selection is None:
-                _save_state(context, dataset=dataset, sequence_slug=sequence_slug)
-                st.info(
-                    f"No benchmark runs with `slam/trajectory.tum` were found under `{selection_state.artifacts_root}`."
-                )
-                return
-            run = st.selectbox(
-                "Run",
-                options=selection_state.runs,
-                index=selection_state.runs.index(selection_state.selection.run),
-                format_func=lambda item: item.label,
-            )
-    with controls_col:
-        with st.container(border=True):
-            st.subheader("Evaluation Controls")
-            controls = _render_controls(metrics.evaluation)
-            st.caption(
-                "Evaluation never runs on selector changes. Only the primary action below writes or refreshes persisted metric results."
-            )
+            return
+        run = st.selectbox(
+            "Run",
+            options=selection_state.runs,
+            index=selection_state.runs.index(selection_state.selection.run),
+            format_func=lambda item: item.label,
+        )
+        st.caption(
+            "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted mock result."
+        )
+    controls = metrics.evaluation
     selection_state = _resolve_selection(
         context,
         dataset=dataset,
@@ -210,25 +204,6 @@ def _selected_sequence_slug(selection_state: EvaluationSelection) -> str:
     return selection_state.sequence_slugs[0]
 
 
-def _render_controls(current: EvaluationControls) -> EvaluationControls:
-    pose_options = list(PoseRelationId)
-    pose_relation = st.selectbox(
-        "Pose Relation",
-        pose_options,
-        index=pose_options.index(current.pose_relation),
-        format_func=lambda item: item.label,
-    )
-    max_diff_s = st.number_input(
-        "Max timestamp diff (s)", min_value=0.0, step=0.01, format="%.3f", value=float(current.max_diff_s)
-    )
-    return EvaluationControls(
-        pose_relation=pose_relation,
-        align=st.toggle("Rigid alignment", value=current.align),
-        correct_scale=st.toggle("Scale correction", value=current.correct_scale),
-        max_diff_s=float(max_diff_s),
-    )
-
-
 def _render_provenance(
     *,
     dataset: DatasetId,
@@ -244,10 +219,6 @@ def _render_provenance(
     ]
     if evaluation is not None:
         lines += [
-            f"- Pose relation: `{evaluation.controls.pose_relation.label}`",
-            f"- Alignment: `{evaluation.controls.align}`",
-            f"- Scale correction: `{evaluation.controls.correct_scale}`",
-            f"- Max timestamp diff (s): `{evaluation.controls.max_diff_s:.3f}`",
             f"- Matched pairs: `{evaluation.matched_pairs}`",
             f"- Persisted result: `{evaluation.path}`",
         ]
