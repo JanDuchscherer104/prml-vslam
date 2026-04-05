@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import plotly.graph_objects as go
 
-from prml_vslam.eval.interfaces import ErrorSeries, TrajectorySeries
+from prml_vslam.eval.contracts import ErrorSeries, TrajectorySeries
 
 from .theme import BLUE, DEFAULT_COLORS, apply_standard_xy_layout
 
