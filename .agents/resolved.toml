@@ -1719,3 +1719,52 @@ previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 11 after reducing LOC and preserving pipeline page behavior under the frozen harness plus full make ci."
 source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0026"
+title = "DatasetId still carries single-case ADVIO dispatch boilerplate"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The repo is now ADVIO-only on the dataset surface, but `DatasetId` still kept one-entry dispatch helpers for labels, local sequence listing, and reference path resolution."
+files = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+notes = [
+    "The enum-backed label helper duplicated the raw enum value for the only supported dataset.",
+    "Single-case dispatch in DatasetId helpers adds structure without buying extensibility on the current evaluation surface.",
+]
+sources = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Collapsed the one-case label and ADVIO dispatch helpers into direct enum/value-backed behavior."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0026"
+title = "Simplify ADVIO-only DatasetId helpers"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0026",
+]
+loc_min = 4
+loc_expected = 8
+loc_max = 16
+files = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+acceptance = [
+    "DatasetId no longer uses single-case dispatch for label, local sequence listing, or reference-path resolution.",
+    "The ADVIO dataset contract behavior remains unchanged under the frozen dataset/pipeline-focused test harness.",
+    "Focused tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
+]
+sources = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 12 after reducing LOC and preserving dataset-facing behavior under the frozen harness plus full make ci."
+source_collection = "todos"
