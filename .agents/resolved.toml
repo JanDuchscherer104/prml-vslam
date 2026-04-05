@@ -491,6 +491,38 @@ resolved_on = "2026-04-06"
 resolution_note = "The io and pipeline package roots already match the documented minimal API, and package-export tests now guard against broader re-exports."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0011"
+title = "ADVIO download flow still owns bespoke cache and fetch mechanics"
+status = "resolved"
+priority = "medium"
+category = "maintainability"
+summary = "The ADVIO download manager still owns low-level HTTP download, temp-file replacement, checksum validation, and ZIP extraction logic directly instead of delegating archive retrieval and cache handling to a dedicated dataset helper."
+files = [
+    "src/prml_vslam/datasets/README.md",
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+]
+notes = [
+    "The current implementation manually combines `urllib.request`, `tempfile`, `hashlib`, and `zipfile` for archive retrieval and caching.",
+    "The archive-cache correctness bug has been fixed locally, but the surrounding retrieval and cache-management path is still bespoke.",
+    "ADVIO upstream already publishes per-sequence ZIP files on Zenodo, which fits a registry-based data fetcher well.",
+    "A library such as Pooch would let the repo keep its typed catalog and local-readiness logic while shrinking the bespoke download path.",
+]
+sources = [
+    "src/prml_vslam/datasets/README.md",
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+    "https://github.com/AaltoVision/ADVIO",
+    "https://zenodo.org/record/1320824",
+    "https://www.fatiando.org/pooch/latest/",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245887",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "ADVIO archive and calibration retrieval now flow through a shared DatasetFetchHelper backed by pooch instead of bespoke HTTP and checksum glue in the download manager."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -872,4 +904,39 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Minimal package-root exports are now documented and verified by tests so transport internals and session helpers stay module-local."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0011"
+title = "Delegate ADVIO archive fetching mechanics to a dataset fetch helper"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0011",
+]
+loc_min = 35
+loc_expected = 90
+loc_max = 180
+files = [
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+    "tests/test_advio.py",
+]
+acceptance = [
+    "Archive caching, checksum verification, and download retries are handled by a dedicated helper such as Pooch rather than bespoke HTTP glue.",
+    "The ADVIO catalog remains the source of truth for sequence metadata and hashes.",
+    "Existing higher-level dataset service behavior stays compatible for the app and tests.",
+]
+sources = [
+    "src/prml_vslam/datasets/README.md",
+    "src/prml_vslam/datasets/advio/advio_download.py",
+    "pyproject.toml",
+    "https://github.com/AaltoVision/ADVIO",
+    "https://zenodo.org/record/1320824",
+    "https://www.fatiando.org/pooch/latest/",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245887",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "ADVIO download now delegates cache validation and retrieval to DatasetFetchHelper, and tests cover refreshing a corrupted cached archive."
 source_collection = "todos"
