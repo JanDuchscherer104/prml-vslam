@@ -219,6 +219,8 @@ class TrackingArtifacts(BaseData):
     """Optional sparse point cloud artifact."""
     preview_log_jsonl: ArtifactRef | None = None
     """Optional preview/event log produced during live tracking."""
+    dense: DenseArtifacts | None = None
+    """Optional dense geometry produced directly by a joint tracking-reconstruction backend."""
 
 
 class DenseArtifacts(BaseData):
@@ -226,6 +228,9 @@ class DenseArtifacts(BaseData):
 
     dense_points_ply: ArtifactRef
     """Normalized dense point cloud artifact."""
+
+
+TrackingArtifacts.model_rebuild()
 
 
 class ReferenceArtifacts(BaseData):
