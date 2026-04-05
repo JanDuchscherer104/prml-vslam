@@ -54,7 +54,7 @@ def handle_record3d_page_action(context: AppContext, action: Record3DPageAction)
             case Record3DTransportId.USB:
                 context.record3d_runtime.start_usb(device_index=usb_device_index)
             case Record3DTransportId.WIFI:
-                context.record3d_runtime.start_wifi(device_address=wifi_device_address)
+                context.record3d_runtime.start_wifi_preview(device_address=wifi_device_address)
         is_running = True
     elif action.stop_requested and is_running:
         context.record3d_runtime.stop()

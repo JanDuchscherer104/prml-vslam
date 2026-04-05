@@ -6,40 +6,6 @@ source = "Validated review findings plus follow-up repository policy notes, the 
 active_collection = "issues"
 
 [[issues]]
-id = "ISSUE-0014"
-title = "Record3D Wi-Fi remains a repo-owned first-class transport beside the official USB bindings"
-status = "open"
-priority = "medium"
-category = "architecture"
-summary = "The repository already uses the official `record3d` Python bindings for USB capture, but the app and IO layers still treat a custom HTTP/WebRTC Wi-Fi receiver as a peer transport. That leaves signaling, peer lifecycle, packet decoding, and transport-specific UI state as permanent-looking repo code even though Record3D documents USB streaming as the Python/C++ integration surface and presents Wi-Fi separately as a browser/local-network feature."
-files = [
-    "README.md",
-    "docs/Questions.md",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/io/wifi_session.py",
-    "src/prml_vslam/io/wifi_signaling.py",
-    "src/prml_vslam/io/wifi_receiver.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/pages/record3d.py",
-]
-notes = [
-    "USB capture already flows through the upstream `record3d` bindings, so the custom Wi-Fi stack is a qualitatively different maintenance obligation than the official adapter.",
-    "The older review recommendation is still relevant in the current tree: either keep Wi-Fi clearly optional/private, or justify it as an explicit separate boundary for the real-time streaming requirement recorded in `docs/Questions.md`.",
-]
-sources = [
-    "README.md",
-    "docs/Questions.md",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/io/wifi_session.py",
-    "src/prml_vslam/io/wifi_signaling.py",
-    "src/prml_vslam/io/wifi_receiver.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "https://record3d.app/",
-    "https://github.com/marek-simonik/record3d",
-]
-
-[[issues]]
 id = "ISSUE-0015"
 title = "Trajectory plotting remains fragmented across multiple near-overlapping builders"
 status = "open"

@@ -1,4 +1,4 @@
-"""HTTP signaling helpers for Record3D Wi-Fi streaming."""
+"""HTTP signaling helpers for Record3D Wi-Fi preview streaming."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class Record3DWiFiSignalingClient:
     def __init__(self, device_address: str, *, timeout_seconds: float) -> None:
         normalized = normalize_record3d_device_address(device_address)
         if normalized == "":
-            raise RuntimeError("Record3D Wi-Fi streaming requires a device address.")
+            raise RuntimeError("Record3D Wi-Fi preview requires a device address.")
         self.device_address = normalized
         self.timeout_seconds = timeout_seconds
 

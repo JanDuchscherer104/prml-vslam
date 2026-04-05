@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class Record3DTransportId(StrEnum):
-    """Stable transport identifiers used by the app and IO layers."""
+    """Stable transport identifiers used by the app preview and capture layers."""
 
     USB = "usb"
     WIFI = "wifi"
@@ -29,7 +29,7 @@ class Record3DTransportId(StrEnum):
         """Return the user-facing transport label."""
         return {
             Record3DTransportId.USB: "USB",
-            Record3DTransportId.WIFI: "Wi-Fi",
+            Record3DTransportId.WIFI: "Wi-Fi Preview",
         }[self]
 
 
