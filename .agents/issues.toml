@@ -6,33 +6,6 @@ source = "Validated review findings plus follow-up repository policy notes, the 
 active_collection = "issues"
 
 [[issues]]
-id = "ISSUE-0013"
-title = "Source-of-truth docs still contain stale packet names, broken links, and placeholder TODO text"
-status = "open"
-priority = "low"
-category = "documentation"
-summary = "Several repo docs still drift from the current code surface: `Record3DFramePacket` remains in Record3D docs, `app/AGENTS.md` still has a quoted markdown target, and `docs/Questions.md` still contains an unresolved ARCore placeholder TODO."
-files = [
-    "src/prml_vslam/io/README.md",
-    "src/prml_vslam/app/README.qmd",
-    "src/prml_vslam/app/AGENTS.md",
-    "docs/Questions.md",
-]
-notes = [
-    "The shared runtime packet contract is `FramePacket`, not `Record3DFramePacket`.",
-    "The quoted markdown target in `app/AGENTS.md` renders as a broken link on GitHub.",
-    "The Q&A document is one of the repo sources of truth, so leaving placeholder TODO text there increases requirements drift.",
-]
-sources = [
-    "src/prml_vslam/io/README.md",
-    "src/prml_vslam/app/README.qmd",
-    "src/prml_vslam/app/AGENTS.md",
-    "docs/Questions.md",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3036947625",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245891",
-]
-
-[[issues]]
 id = "ISSUE-0014"
 title = "Record3D Wi-Fi remains a repo-owned first-class transport beside the official USB bindings"
 status = "open"

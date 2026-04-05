@@ -26,7 +26,7 @@ This file applies to work under `src/prml_vslam/app/`.
 
 ## Plotting and UX Rules
 
-- Keep Plotly figure construction in [dedicated plotting modules]("../plotting/__init__.py") instead of inline page code.
+- Keep Plotly figure construction in [dedicated plotting modules](../plotting/__init__.py) instead of inline page code.
 - Make `evo` computation an explicit user action rather than an implicit page-load side effect.
 - Favor a simple modern light-first design with restrained typography, compact analysis surfaces,
   and minimal sidebar dependence over decorative hero-first layouts.

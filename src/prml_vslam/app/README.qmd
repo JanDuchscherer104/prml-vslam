@@ -84,7 +84,7 @@ sequenceDiagram
         IO-->>Runtime: Blocking packet stream
         loop Background worker thread
             Runtime->>IO: wait_for_packet(...)
-            IO-->>Runtime: Record3DFramePacket
+            IO-->>Runtime: FramePacket
             Runtime->>Runtime: Update Record3DStreamSnapshot
         end
         loop Fragment rerun
