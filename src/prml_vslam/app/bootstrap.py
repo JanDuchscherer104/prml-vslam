@@ -7,7 +7,7 @@ from functools import partial
 
 import streamlit as st
 
-from prml_vslam.datasets import AdvioDatasetService
+from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.pipeline import PipelineSessionService, PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig, get_path_config

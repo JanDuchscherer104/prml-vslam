@@ -7,13 +7,15 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from prml_vslam import main
-from prml_vslam.datasets import AdvioCatalog, AdvioDatasetService, AdvioSceneMetadata
 from prml_vslam.datasets.advio import (
+    AdvioCatalog,
+    AdvioDatasetService,
     AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioDownloadResult,
     AdvioEnvironment,
     AdvioPeopleLevel,
+    AdvioSceneMetadata,
     AdvioUpstreamMetadata,
 )
 from prml_vslam.utils import PathConfig
