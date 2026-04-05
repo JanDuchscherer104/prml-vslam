@@ -11,10 +11,9 @@ the codebase:
 - config objects that still build runtimes via `setup_target()`
 - deterministic mock runtimes that materialize placeholder artifacts
 - local path bookkeeping for mock installs
-- tiny visualization stubs for the mock outputs
 
 Use `BaseConfig` only for runtime setup/configuration objects and `BaseData`
 for method requests, commands, artifact manifests, and run results.
 
-Do not add real upstream orchestration or heavyweight visualization logic here
-unless a later task explicitly expands the scope.
+Do not add real upstream orchestration or repository-owned visualization logic
+here unless a later task explicitly expands the scope.
