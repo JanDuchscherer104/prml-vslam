@@ -10,7 +10,6 @@ from typing import Any
 
 from prml_vslam.interfaces import FramePacket
 
-from .record3d import Record3DConnectionError, Record3DDependencyError
 from .wifi_packets import Record3DWiFiMetadata, record3d_wifi_packet_from_video_frame
 from .wifi_signaling import build_record3d_answer_request_payload
 
@@ -20,7 +19,7 @@ def _import_aiortc_modules() -> tuple[type[Any], type[Any]]:
     try:
         from aiortc import RTCPeerConnection, RTCSessionDescription
     except ModuleNotFoundError as exc:
-        raise Record3DDependencyError(
+        raise RuntimeError(
             "The optional `aiortc` dependency is required for Record3D Wi-Fi streaming. "
             "Install it with `uv sync --extra streaming`."
         ) from exc
@@ -96,7 +95,7 @@ class _Record3DWiFiReceiverRuntime:
         if video_track_ready is None or video_track_ready.done():
             return
         video_track_ready.set_exception(
-            Record3DConnectionError(
+            RuntimeError(
                 "The Record3D Wi-Fi peer connection "
                 f"entered `{connection_state}` before the video track became available."
             )
@@ -172,7 +171,7 @@ class _Record3DWiFiReceiverRuntime:
             await self._wait_for_ice_gathering_complete(peer_connection=peer_connection)
             local_description = peer_connection.localDescription
             if local_description is None:
-                raise Record3DConnectionError("Failed to produce a local WebRTC answer for the Record3D Wi-Fi stream.")
+                raise RuntimeError("Failed to produce a local WebRTC answer for the Record3D Wi-Fi stream.")
 
             await asyncio.to_thread(
                 self.send_answer,
@@ -202,7 +201,7 @@ class _Record3DWiFiReceiverRuntime:
             except Exception as exc:
                 if self.stop_requested():
                     break
-                raise Record3DConnectionError("The Record3D Wi-Fi video track stopped unexpectedly.") from exc
+                raise RuntimeError("The Record3D Wi-Fi video track stopped unexpectedly.") from exc
             timestamp_ns = time.time_ns()
             self.on_packet(
                 record3d_wifi_packet_from_video_frame(

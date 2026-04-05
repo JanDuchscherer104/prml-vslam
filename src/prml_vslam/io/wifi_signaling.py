@@ -7,8 +7,6 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .record3d import Record3DConnectionError, Record3DError
-
 
 def normalize_record3d_device_address(value: str) -> str:
     """Normalize a Record3D device address into an explicit HTTP URL."""
@@ -31,7 +29,7 @@ class Record3DWiFiSignalingClient:
     def __init__(self, device_address: str, *, timeout_seconds: float) -> None:
         normalized = normalize_record3d_device_address(device_address)
         if normalized == "":
-            raise Record3DConnectionError("Record3D Wi-Fi streaming requires a device address.")
+            raise RuntimeError("Record3D Wi-Fi streaming requires a device address.")
         self.device_address = normalized
         self.timeout_seconds = timeout_seconds
 
@@ -41,14 +39,14 @@ class Record3DWiFiSignalingClient:
             return self._request_json("GET", "/getOffer")
         except HTTPError as exc:
             if exc.code == 403:
-                raise Record3DConnectionError(
+                raise RuntimeError(
                     "Record3D allows only one Wi-Fi receiver at a time. Disconnect the existing peer and retry."
                 ) from exc
-            raise Record3DConnectionError(f"Record3D offer request failed with HTTP {exc.code}.") from exc
+            raise RuntimeError(f"Record3D offer request failed with HTTP {exc.code}.") from exc
         except TimeoutError as exc:
-            raise Record3DConnectionError("Timed out waiting for the Record3D Wi-Fi offer from the device.") from exc
+            raise RuntimeError("Timed out waiting for the Record3D Wi-Fi offer from the device.") from exc
         except URLError as exc:
-            raise Record3DConnectionError(
+            raise RuntimeError(
                 "Could not reach the Record3D device. Check that the iPhone and this machine are on the same network."
             ) from exc
 
@@ -57,11 +55,11 @@ class Record3DWiFiSignalingClient:
         try:
             return self._request_json("GET", "/metadata")
         except HTTPError as exc:
-            raise Record3DConnectionError(f"Record3D metadata request failed with HTTP {exc.code}.") from exc
+            raise RuntimeError(f"Record3D metadata request failed with HTTP {exc.code}.") from exc
         except TimeoutError as exc:
-            raise Record3DConnectionError("Timed out waiting for Record3D Wi-Fi metadata from the device.") from exc
+            raise RuntimeError("Timed out waiting for Record3D Wi-Fi metadata from the device.") from exc
         except URLError as exc:
-            raise Record3DConnectionError("Could not retrieve Record3D metadata from the configured device.") from exc
+            raise RuntimeError("Could not retrieve Record3D metadata from the configured device.") from exc
 
     def send_answer(self, answer: dict[str, Any]) -> None:
         """Post the local WebRTC answer back to the Record3D device."""
@@ -72,19 +70,17 @@ class Record3DWiFiSignalingClient:
             except HTTPError as exc:
                 if exc.code in {404, 405}:
                     continue
-                raise Record3DConnectionError(
-                    f"Record3D answer request to `{endpoint}` failed with HTTP {exc.code}."
-                ) from exc
+                raise RuntimeError(f"Record3D answer request to `{endpoint}` failed with HTTP {exc.code}.") from exc
             except TimeoutError as exc:
                 if endpoint == "/answer":
                     continue
-                raise Record3DConnectionError(
+                raise RuntimeError(
                     f"Timed out sending the WebRTC answer to `{endpoint}` on the Record3D device."
                 ) from exc
             except URLError as exc:
-                raise Record3DConnectionError("Could not send the WebRTC answer back to the Record3D device.") from exc
+                raise RuntimeError("Could not send the WebRTC answer back to the Record3D device.") from exc
 
-        raise Record3DConnectionError("Record3D did not accept the WebRTC answer on `/answer` or `/sendAnswer`.")
+        raise RuntimeError("Record3D did not accept the WebRTC answer on `/answer` or `/sendAnswer`.")
 
     def _request_json(
         self,
@@ -107,5 +103,5 @@ class Record3DWiFiSignalingClient:
             return {}
         loaded = json.loads(body.decode("utf-8"))
         if not isinstance(loaded, dict):
-            raise Record3DError(f"Expected JSON object from `{endpoint}`, but received {type(loaded).__name__}.")
+            raise RuntimeError(f"Expected JSON object from `{endpoint}`, but received {type(loaded).__name__}.")
         return loaded

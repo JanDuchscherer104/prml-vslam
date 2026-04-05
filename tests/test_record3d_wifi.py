@@ -9,20 +9,22 @@ from urllib.error import HTTPError
 import numpy as np
 
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.io.record3d import Record3DConnectionError, Record3DTransportId
-from prml_vslam.io.record3d_wifi import (
+from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.io.wifi_packets import (
     Record3DWiFiMetadata,
-    Record3DWiFiSignalingClient,
-    Record3DWiFiStreamConfig,
     decode_record3d_wifi_depth,
-    normalize_record3d_device_address,
+    record3d_wifi_packet_from_video_frame,
 )
-from prml_vslam.io.wifi_packets import record3d_wifi_packet_from_video_frame
 from prml_vslam.io.wifi_receiver import (
     _Record3DWiFiReceiverRuntime,
     _should_suppress_record3d_async_exception,
 )
-from prml_vslam.io.wifi_signaling import build_record3d_answer_request_payload
+from prml_vslam.io.wifi_session import Record3DWiFiStreamConfig
+from prml_vslam.io.wifi_signaling import (
+    Record3DWiFiSignalingClient,
+    build_record3d_answer_request_payload,
+    normalize_record3d_device_address,
+)
 
 
 def _build_runtime(
@@ -201,7 +203,7 @@ def test_record3d_wifi_closed_before_track_sets_setup_failure_without_logging() 
 
     assert errors == []
     assert stop_requests == [True]
-    assert isinstance(future.exception, Record3DConnectionError)
+    assert isinstance(future.exception, RuntimeError)
     assert str(future.exception) == (
         "The Record3D Wi-Fi peer connection entered `closed` before the video track became available."
     )
