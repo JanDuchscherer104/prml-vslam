@@ -14,11 +14,9 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 ### Bootstrap
 
 ```bash
-uv sync --extra dev --extra eval
+uv sync --extra dev
 uv run pre-commit install
-uv run pre-commit run --all-files
-uv run --extra dev pytest
-make typst-check
+make ci
 ```
 
 Optional parallel test runs are available with `pytest-xdist`:
@@ -31,7 +29,7 @@ make test PYTEST_ARGS="-n auto"
 ### Streamlit Workbench
 
 ```bash
-uv sync --extra eval
+uv sync
 # add `--extra streaming` to enable Record3D USB / Wi-Fi preview support
 uv run streamlit run streamlit_app.py
 ```
@@ -46,6 +44,39 @@ The app supports:
 
 Pipeline contract and extension guidance lives in
 [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).
+
+### TOML-First Run Planning
+
+For durable/reproducible planning, store a `RunRequest` as TOML and resolve it
+through the CLI:
+
+```toml
+experiment_name = "advio-office-offline-vista"
+mode = "offline"
+output_dir = "artifacts"
+
+[source]
+kind = "video"
+video_path = "captures/office-03.mp4"
+frame_stride = 2
+
+[slam]
+method = "vista"
+emit_dense_points = true
+emit_sparse_points = true
+
+[reference]
+enabled = false
+
+[evaluation]
+compare_to_arcore = true
+evaluate_cloud = false
+evaluate_efficiency = true
+```
+
+```bash
+uv run prml-vslam plan-run-config configs/advio-office-vista.toml
+```
 
 ## Challenge
 

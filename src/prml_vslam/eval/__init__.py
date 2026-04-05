@@ -1,4 +1,4 @@
-"""Mock trajectory-evaluation surfaces used by the app and tests."""
+"""Trajectory-evaluation surfaces used by the app and tests."""
 
 from .services import TrajectoryEvaluationService
 

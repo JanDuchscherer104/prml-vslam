@@ -8,11 +8,11 @@ This document defines the intended responsibilities and boundaries for
 The `eval` package owns the repository-local evaluation surface used by the app
 and tests. Its current scope is intentionally small: discover available runs,
 resolve reference and estimate trajectory artifacts, compute and persist a
-deterministic local trajectory-comparison result, and expose typed evaluation
+deterministic `evo` APE trajectory result, and expose typed evaluation
 contracts to downstream consumers.
 
-The package does not currently own a full benchmark-policy implementation or a
-complete `evo` integration.
+The package does not own full benchmark-policy implementation or a complete
+metrics framework.
 
 ## Necessary Requirements
 
@@ -27,16 +27,13 @@ complete `evo` integration.
 - The package must keep evaluation execution explicit. App consumers must call
   evaluation services intentionally rather than triggering evaluation as an
   implicit side effect of selection changes.
-- The package must remain compatible with the current lightweight local
-  trajectory-delta mock used by the app and tests until the project explicitly
-  expands the evaluation scope.
+- The package must evaluate trajectories through a thin explicit `evo` adapter
+  (translation APE) rather than a custom local metric implementation.
 - The package must keep evaluation logic separate from method wrappers,
   dataset adapters, and pipeline orchestration.
 
 ## Nice To Have
 
-- A thin adapter to `evo` that preserves the same typed contracts and explicit
-  execution semantics.
 - Additional typed evaluation surfaces for dense-cloud and efficiency metrics
   once those artifact contracts stabilize elsewhere in the repo.
 - Provenance metadata that records how an evaluation result was produced,

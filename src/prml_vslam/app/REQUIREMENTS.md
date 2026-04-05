@@ -21,6 +21,7 @@ The app now exposes four top-level pages:
 - The app must expose a `Pipeline` page that explains the typed run-planning surface, the direct request pattern, and concrete usage examples.
 - The `Pipeline` page must also show one mock completed run with stage status, artifact contracts, and serialized output examples so users can inspect what the planner hands to downstream execution surfaces.
 - The `Pipeline` page may execute a minimal repository-local demo pipeline for monitoring purposes when the input and backend are explicitly bounded by the app.
+- The `Pipeline` page should render an explicit `evo` APE trajectory visualization for completed demo runs when both reference and estimate TUM trajectories are available.
 - The `Record3D` page must support both `USB` and `Wi-Fi` transports through one transport selector.
 - The `Record3D` page must show:
   - transport status

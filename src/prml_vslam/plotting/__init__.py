@@ -7,6 +7,7 @@ from .advio import (
     build_scene_mix_figure,
 )
 from .metrics import build_error_figure, build_trajectory_figure
+from .pipeline import build_evo_ape_colormap_figure
 from .record3d import build_live_trajectory_figure
 from .trajectories import (
     build_3d_trajectory_figure,
@@ -22,6 +23,7 @@ __all__ = [
     "build_bev_trajectory_figure",
     "build_crowd_density_figure",
     "build_error_figure",
+    "build_evo_ape_colormap_figure",
     "build_height_profile_figure",
     "build_live_trajectory_figure",
     "build_local_readiness_figure",
