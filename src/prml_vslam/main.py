@@ -13,9 +13,8 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import RunRequest
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
-    DenseConfig,
     ReferenceConfig,
-    TrackingConfig,
+    SlamConfig,
     VideoSourceSpec,
 )
 from prml_vslam.utils.console import Console
@@ -91,8 +90,7 @@ def plan_run(
         experiment_name=experiment_name,
         output_dir=output_dir,
         source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
-        tracking=TrackingConfig(method=method),
-        dense=DenseConfig(enabled=dense_mapping),
+        slam=SlamConfig(method=method, emit_dense_points=dense_mapping),
         reference=ReferenceConfig(enabled=ground_truth_cloud),
         evaluation=BenchmarkEvaluationConfig(
             compare_to_arcore=compare_to_arcore,

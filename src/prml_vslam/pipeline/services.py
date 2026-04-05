@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from prml_vslam.methods.contracts import MethodId
 from prml_vslam.pipeline.contracts import (
     DatasetSourceSpec,
     LiveSourceSpec,
@@ -10,6 +9,7 @@ from prml_vslam.pipeline.contracts import (
     RunPlanStage,
     RunPlanStageId,
     RunRequest,
+    SlamConfig,
     SourceSpec,
     VideoSourceSpec,
 )
@@ -28,7 +28,7 @@ class RunPlannerService:
         """Build the canonical run plan for one fully specified request.
 
         Args:
-            request: Complete pipeline request containing the source, tracking
+            request: Complete pipeline request containing the source, SLAM
                 config, optional stage toggles, and evaluation toggles.
             path_config: Optional path helper that owns canonical repository
                 artifact layout.
@@ -37,32 +37,29 @@ class RunPlannerService:
             Run plan with stable stage ids, current planner ordering, and
             canonical artifact paths for each enabled stage.
         """
+        self._validate_request(request)
         config = path_config or PathConfig()
         run_paths = config.plan_run_paths(
             experiment_name=request.experiment_name,
-            method_slug=request.tracking.method.artifact_slug,
+            method_slug=request.slam.method.artifact_slug,
             output_dir=request.output_dir,
         )
         return RunPlan(
             run_id=config.slugify_experiment_name(request.experiment_name),
             mode=request.mode,
-            method=request.tracking.method,
+            method=request.slam.method,
             artifact_root=run_paths.artifact_root,
             source=request.source,
             stages=self._build_stages(request, run_paths),
         )
 
     def _build_stages(self, request: RunRequest, run_paths: RunArtifactPaths) -> list[RunPlanStage]:
+        slam_output_names = ["trajectory_path"]
+        if request.slam.emit_sparse_points:
+            slam_output_names.append("sparse_points_path")
+        if request.slam.emit_dense_points:
+            slam_output_names.append("dense_points_path")
         optional_stages = (
-            (
-                request.dense.enabled,
-                (
-                    RunPlanStageId.DENSE_MAPPING,
-                    "Export Dense Mapping",
-                    "Generate dense geometry artifacts suitable for downstream quality evaluation.",
-                    ("dense_points_path",),
-                ),
-            ),
             (
                 request.reference.enabled,
                 (
@@ -115,8 +112,8 @@ class RunPlannerService:
                 (
                     RunPlanStageId.SLAM,
                     "Run SLAM Backend",
-                    self._method_summary(request.tracking.method),
-                    ("trajectory_path", "sparse_points_path"),
+                    self._method_summary(request.slam),
+                    tuple(slam_output_names),
                 ),
             ),
             *(self._stage_from_spec(run_paths, spec) for enabled, spec in optional_stages if enabled),
@@ -156,8 +153,18 @@ class RunPlannerService:
                 return f"Capture the live source '{source_id}' {persistence} into a replayable sequence manifest."
 
     @staticmethod
-    def _method_summary(method: MethodId) -> str:
-        return f"Plan the {method.display_name} wrapper and export trajectory plus sparse geometry artifacts."
+    def _method_summary(config: SlamConfig) -> str:
+        artifact_names = ["trajectory"]
+        if config.emit_sparse_points:
+            artifact_names.append("sparse geometry")
+        if config.emit_dense_points:
+            artifact_names.append("dense geometry")
+        return f"Plan the {config.method.display_name} wrapper and export {', '.join(artifact_names)} artifacts."
+
+    @staticmethod
+    def _validate_request(request: RunRequest) -> None:
+        if request.evaluation.evaluate_cloud and not request.slam.emit_dense_points:
+            raise ValueError("Cloud evaluation requires `slam.emit_dense_points=True`.")
 
 
 __all__ = ["RunPlannerService"]

@@ -124,19 +124,6 @@ class FakeStore:
         self.last_state = state.model_copy(deep=True)
 
 
-class FakeRecord3DService:
-    """Minimal Record3D service stand-in for direct page-render tests."""
-
-    def __init__(self, devices: list[Record3DDevice], error_message: str = "") -> None:
-        self.devices = devices
-        self.error_message = error_message
-
-    def list_usb_devices(self) -> list[Record3DDevice]:
-        if self.error_message:
-            raise RuntimeError(self.error_message)
-        return list(self.devices)
-
-
 class FakeRecord3DRuntime:
     """Minimal runtime stand-in for direct page-render and navigation tests."""
 
@@ -398,7 +385,7 @@ def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_
     assert runtime.start_calls[0]["source"] is source
     request = runtime.start_calls[0]["request"]
     assert request.source.dataset_id is DatasetId.ADVIO
-    assert request.tracking.method is MethodId.VISTA
+    assert request.slam.method is MethodId.VISTA
     assert request.evaluation.compare_to_arcore is False
     assert request.evaluation.evaluate_cloud is False
     assert request.evaluation.evaluate_efficiency is False
@@ -607,10 +594,14 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
         state=AppState(record3d=Record3DPageState(transport=Record3DTransportId.USB, is_running=False)),
         store=FakeStore(),
         record3d_runtime=runtime,
-        record3d_service=FakeRecord3DService([Record3DDevice(product_id=101, udid="device-101")]),
     )
 
     monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        record3d_page,
+        "list_record3d_usb_devices",
+        lambda: [Record3DDevice(product_id=101, udid="device-101")],
+    )
     monkeypatch.setattr(record3d_page.st, "sidebar", DummyContext())
     monkeypatch.setattr(record3d_page.st, "subheader", lambda *args, **kwargs: None)
     monkeypatch.setattr(record3d_page.st, "caption", lambda *args, **kwargs: None)

@@ -5,18 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections import deque
 from enum import StrEnum
 from pathlib import Path
-from threading import Event, Lock, Thread
+from threading import Event
 from typing import TYPE_CHECKING
 
-import numpy as np
 from pydantic import Field
 
-from prml_vslam.interfaces import FramePacket
 from prml_vslam.methods.contracts import MethodId
-from prml_vslam.methods.mock_vslam import MockTrackingRuntimeConfig
+from prml_vslam.methods.mock_vslam import MockSlamBackendConfig
 from prml_vslam.pipeline.contracts import (
     PipelineMode,
     RunPlan,
@@ -24,14 +21,20 @@ from prml_vslam.pipeline.contracts import (
     RunRequest,
     RunSummary,
     SequenceManifest,
+    SlamArtifacts,
+    SlamUpdate,
     StageExecutionStatus,
     StageManifest,
-    TrackingArtifacts,
-    TrackingUpdate,
 )
-from prml_vslam.pipeline.protocols import StreamingSequenceSource, StreamingTrackerBackend
+from prml_vslam.pipeline.protocols import SlamBackend, SlamSession, StreamingSequenceSource
 from prml_vslam.protocols import FramePacketStream
-from prml_vslam.utils import BaseConfig, BaseData, Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils import BaseConfig, Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils.packet_session import (
+    PacketSessionMetrics,
+    PacketSessionRuntime,
+    PacketSessionSnapshot,
+    extract_pose_position,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -42,62 +45,9 @@ _SUPPORTED_STAGE_IDS = frozenset(
     {
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
-        RunPlanStageId.DENSE_MAPPING,
         RunPlanStageId.SUMMARY,
     }
 )
-
-
-def _empty_positions_xyz() -> np.ndarray:
-    return np.empty((0, 3), dtype=np.float64)
-
-
-def _empty_timestamps_s() -> np.ndarray:
-    return np.empty((0,), dtype=np.float64)
-
-
-class _RollingRuntimeMetrics:
-    """Small rolling metrics helper for live session snapshots."""
-
-    def __init__(self, *, fps_window_size: int, trajectory_window_size: int) -> None:
-        self._arrival_times: deque[float] = deque(maxlen=fps_window_size)
-        self._trajectory_positions: deque[np.ndarray] = deque(maxlen=trajectory_window_size)
-        self._trajectory_timestamps: deque[float] = deque(maxlen=trajectory_window_size)
-        self._received_frames = 0
-
-    def record(
-        self,
-        *,
-        arrival_time_s: float,
-        position_xyz: np.ndarray | None,
-        trajectory_time_s: float | None,
-    ) -> None:
-        """Append one frame arrival and optional trajectory sample."""
-        self._received_frames += 1
-        self._arrival_times.append(arrival_time_s)
-        if position_xyz is not None and trajectory_time_s is not None:
-            self._trajectory_positions.append(position_xyz)
-            self._trajectory_timestamps.append(trajectory_time_s)
-
-    def snapshot_fields(self) -> dict[str, int | float | np.ndarray]:
-        """Return the current metrics in snapshot-ready form."""
-        return {
-            "received_frames": self._received_frames,
-            "measured_fps": self._measure_fps(self._arrival_times),
-            "trajectory_positions_xyz": self._positions_to_array(self._trajectory_positions),
-            "trajectory_timestamps_s": np.asarray(tuple(self._trajectory_timestamps), dtype=np.float64),
-        }
-
-    @staticmethod
-    def _measure_fps(arrival_times: deque[float]) -> float:
-        if len(arrival_times) < 2:
-            return 0.0
-        elapsed = arrival_times[-1] - arrival_times[0]
-        return 0.0 if elapsed <= 0.0 else float((len(arrival_times) - 1) / elapsed)
-
-    @staticmethod
-    def _positions_to_array(positions: deque[np.ndarray]) -> np.ndarray:
-        return np.vstack(tuple(positions)).astype(np.float64, copy=False) if positions else _empty_positions_xyz()
 
 
 class PipelineSessionState(StrEnum):
@@ -111,7 +61,7 @@ class PipelineSessionState(StrEnum):
     FAILED = "failed"
 
 
-class PipelineSessionSnapshot(BaseData):
+class PipelineSessionSnapshot(PacketSessionSnapshot):
     """Current session state rendered by the Streamlit Pipeline page."""
 
     state: PipelineSessionState = PipelineSessionState.IDLE
@@ -123,14 +73,11 @@ class PipelineSessionSnapshot(BaseData):
     sequence_manifest: SequenceManifest | None = None
     """Normalized sequence manifest prepared by the ingest stage."""
 
-    latest_packet: FramePacket | None = None
-    """Most recent frame packet seen by the tracker."""
+    latest_slam_update: SlamUpdate | None = None
+    """Most recent incremental SLAM update."""
 
-    latest_update: TrackingUpdate | None = None
-    """Most recent incremental tracking update."""
-
-    tracking: TrackingArtifacts | None = None
-    """Persisted tracking artifacts returned by the backend."""
+    slam: SlamArtifacts | None = None
+    """Persisted SLAM artifacts returned by the backend."""
 
     summary: RunSummary | None = None
     """Final persisted run summary."""
@@ -138,26 +85,11 @@ class PipelineSessionSnapshot(BaseData):
     stage_manifests: list[StageManifest] = Field(default_factory=list)
     """Executed stage manifests owned by this slice."""
 
-    received_frames: int = 0
-    """Number of processed frames for the current session."""
-
-    measured_fps: float = 0.0
-    """Rolling measured frame rate."""
-
-    trajectory_positions_xyz: np.ndarray = Field(default_factory=_empty_positions_xyz)
-    """Current sparse trajectory positions in world coordinates."""
-
-    trajectory_timestamps_s: np.ndarray = Field(default_factory=_empty_timestamps_s)
-    """Current trajectory timestamps in seconds."""
-
-    num_map_points: int = 0
-    """Latest sparse-map size reported by the backend."""
+    num_sparse_points: int = 0
+    """Latest sparse-point count reported by the backend."""
 
     num_dense_points: int = 0
     """Latest dense-point count reported by the backend."""
-
-    error_message: str = ""
-    """Last surfaced error message."""
 
 
 class PipelineSessionService:
@@ -170,19 +102,20 @@ class PipelineSessionService:
         frame_timeout_seconds: float = 0.5,
         fps_window_size: int = 30,
         trajectory_window_size: int = 1024,
-        tracker_factory: Callable[[MethodId], StreamingTrackerBackend] | None = None,
+        slam_backend_factory: Callable[[MethodId], SlamBackend] | None = None,
     ) -> None:
         self.path_config = PathConfig() if path_config is None else path_config
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
         self.trajectory_window_size = trajectory_window_size
-        self._tracker_factory = _default_tracker_factory if tracker_factory is None else tracker_factory
+        self._slam_backend_factory = (
+            _default_slam_backend_factory if slam_backend_factory is None else slam_backend_factory
+        )
         self._console = Console(__name__).child(self.__class__.__name__)
-        self._lock = Lock()
-        self._snapshot = PipelineSessionSnapshot()
-        self._active_stream: FramePacketStream | None = None
-        self._active_stop_event: Event | None = None
-        self._worker_thread: Thread | None = None
+        self._runtime = PacketSessionRuntime(
+            empty_snapshot=PipelineSessionSnapshot,
+            stop_timeout_message="Timed out stopping the pipeline session worker thread.",
+        )
 
     def start(self, *, request: RunRequest, source: StreamingSequenceSource) -> None:
         """Start a new pipeline session for one run request and replay source."""
@@ -194,60 +127,36 @@ class PipelineSessionService:
                 stage_id.value for stage_id in unsupported_stage_ids
             )
             self._console.error(error_message)
-            with self._lock:
-                self._snapshot = PipelineSessionSnapshot(
+            self._runtime.replace_snapshot(
+                PipelineSessionSnapshot(
                     state=PipelineSessionState.FAILED,
                     plan=plan,
                     error_message=error_message,
                 )
+            )
             raise RuntimeError(error_message)
 
-        stop_event = Event()
-        worker = Thread(
-            target=self._run_worker,
-            kwargs={
-                "request": request,
-                "plan": plan,
-                "source": source,
-                "stop_event": stop_event,
-            },
-            name=f"Pipeline-session-{plan.run_id}",
-            daemon=True,
-        )
-        with self._lock:
-            self._active_stop_event = stop_event
-            self._worker_thread = worker
-            self._snapshot = PipelineSessionSnapshot(
+        self._runtime.launch(
+            connecting_snapshot=PipelineSessionSnapshot(
                 state=PipelineSessionState.CONNECTING,
                 plan=plan,
-            )
-        worker.start()
+            ),
+            thread_name=f"Pipeline-session-{plan.run_id}",
+            worker_target=lambda stop_event: self._run_worker(
+                request=request,
+                plan=plan,
+                source=source,
+                stop_event=stop_event,
+            ),
+        )
 
     def stop(self) -> None:
         """Stop the active session and preserve the last rendered snapshot."""
-        with self._lock:
-            worker = self._worker_thread
-            stop_event = self._active_stop_event
-            stream = self._active_stream
-        if stop_event is not None:
-            stop_event.set()
-        if stream is not None:
-            stream.disconnect()
-        if worker is not None:
-            worker.join(timeout=2.0)
-            if worker.is_alive():
-                raise RuntimeError("Timed out stopping the pipeline session worker thread.")
-        with self._lock:
-            if self._snapshot.state.value in _ACTIVE_SESSION_STATES:
-                self._snapshot = self._snapshot.model_copy(update={"state": PipelineSessionState.STOPPED})
-            self._active_stream = None
-            self._active_stop_event = None
-            self._worker_thread = None
+        self._runtime.stop(snapshot_update=self._to_stopped_snapshot)
 
     def snapshot(self) -> PipelineSessionSnapshot:
         """Return a deep copy of the latest session snapshot."""
-        with self._lock:
-            return self._snapshot.model_copy(deep=True)
+        return self._runtime.snapshot()
 
     def _run_worker(
         self,
@@ -258,23 +167,81 @@ class PipelineSessionService:
         stop_event: Event,
     ) -> None:
         run_paths = RunArtifactPaths.build(plan.artifact_root)
-        metrics = _RollingRuntimeMetrics(
+        metrics = PacketSessionMetrics(
             fps_window_size=self.fps_window_size,
             trajectory_window_size=self.trajectory_window_size,
         )
-        tracker: StreamingTrackerBackend | None = None
-        stream: FramePacketStream | None = None
+        slam_backend: SlamBackend | None = None
+        slam_session: SlamSession | None = None
         sequence_manifest: SequenceManifest | None = None
-        tracking_artifacts: TrackingArtifacts | None = None
+        slam_artifacts: SlamArtifacts | None = None
         summary: RunSummary | None = None
         stage_manifests: list[StageManifest] = []
         ingest_started = False
         slam_started = False
-        tracker_opened = False
         final_state = PipelineSessionState.COMPLETED
         pipeline_failed = False
         error_message = ""
         start_monotonic = time.monotonic()
+
+        def _record_runtime_error(exc: Exception) -> None:
+            nonlocal final_state, pipeline_failed, error_message
+            if isinstance(exc, EOFError):
+                final_state = PipelineSessionState.COMPLETED
+                return
+            final_state = PipelineSessionState.FAILED
+            pipeline_failed = True
+            error_message = str(exc)
+            self._console.error(error_message)
+
+        def _build_terminal_snapshot(
+            snapshot: PipelineSessionSnapshot,
+            stop_requested: bool,
+        ) -> PipelineSessionSnapshot:
+            nonlocal slam_artifacts, summary, stage_manifests, final_state, pipeline_failed, error_message
+            preserve_terminal_outcome = stop_requested or final_state is PipelineSessionState.FAILED
+            if slam_session is not None:
+                try:
+                    slam_artifacts = slam_session.close()
+                except Exception as exc:
+                    if preserve_terminal_outcome:
+                        self._console.warning(str(exc))
+                    else:
+                        final_state = PipelineSessionState.FAILED
+                        pipeline_failed = True
+                        error_message = str(exc)
+                        self._console.error(error_message)
+            if stop_requested and final_state is not PipelineSessionState.FAILED:
+                final_state = PipelineSessionState.STOPPED
+            try:
+                summary, stage_manifests = self._finalize_outputs(
+                    request=request,
+                    plan=plan,
+                    run_paths=run_paths,
+                    sequence_manifest=sequence_manifest,
+                    slam=slam_artifacts,
+                    ingest_started=ingest_started,
+                    slam_started=slam_started,
+                    pipeline_failed=pipeline_failed,
+                    error_message=error_message,
+                )
+            except Exception as exc:
+                final_state = PipelineSessionState.FAILED
+                error_message = str(exc)
+                self._console.error(error_message)
+                summary = None
+                stage_manifests = []
+            return snapshot.model_copy(
+                update={
+                    "state": final_state,
+                    "plan": plan,
+                    "sequence_manifest": sequence_manifest,
+                    "slam": slam_artifacts,
+                    "summary": summary,
+                    "stage_manifests": stage_manifests,
+                    "error_message": error_message,
+                }
+            )
 
         try:
             self._console.info(f"Preparing streaming run '{plan.run_id}' from source '{source.label}'.")
@@ -288,95 +255,52 @@ class PipelineSessionService:
                 error_message="",
             )
 
-            tracker = self._tracker_factory(request.tracking.method)
-            stream = source.open_stream(loop=request.mode is PipelineMode.STREAMING)
-            with self._lock:
-                if self._active_stop_event is stop_event:
-                    self._active_stream = stream
+            slam_backend = self._slam_backend_factory(request.slam.method)
 
-            stream.connect()
-            slam_started = True
-            tracker.open(request.tracking, plan.artifact_root)
-            tracker_opened = True
-            self._set_snapshot(
-                state=PipelineSessionState.RUNNING,
-                plan=plan,
-                sequence_manifest=sequence_manifest,
-                error_message="",
-            )
+            def _start_streaming_slam(_connected_target: object) -> None:
+                nonlocal slam_started, slam_session
+                slam_started = True
+                slam_session = slam_backend.start_session(request.slam, plan.artifact_root)
+                self._set_snapshot(
+                    state=PipelineSessionState.RUNNING,
+                    plan=plan,
+                    sequence_manifest=sequence_manifest,
+                    error_message="",
+                )
 
-            while not stop_event.is_set():
+            def _consume_packet(stream: FramePacketStream) -> None:
                 packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
-                update = tracker.step(packet)
+                update = slam_session.step(packet)
                 arrival_time_s = time.monotonic()
                 metrics.record(
                     arrival_time_s=arrival_time_s,
-                    position_xyz=_extract_position(update),
+                    position_xyz=extract_pose_position(update),
                     trajectory_time_s=arrival_time_s - start_monotonic if update.pose is not None else None,
                 )
                 self._set_snapshot(
                     state=PipelineSessionState.RUNNING,
                     latest_packet=packet,
-                    latest_update=update,
-                    num_map_points=update.num_map_points,
+                    latest_slam_update=update,
+                    num_sparse_points=update.num_sparse_points,
                     num_dense_points=update.num_dense_points,
                     error_message="",
                     **metrics.snapshot_fields(),
                 )
+
+            stream = source.open_stream(loop=request.mode is PipelineMode.STREAMING)
+            self._runtime.register_stream(stop_event=stop_event, stream=stream)
+            _start_streaming_slam(stream.connect())
+            while not stop_event.is_set():
+                _consume_packet(stream)
         except EOFError:
             final_state = PipelineSessionState.COMPLETED
         except Exception as exc:
-            final_state = PipelineSessionState.FAILED
-            pipeline_failed = True
-            error_message = str(exc)
-            self._console.error(error_message)
+            _record_runtime_error(exc)
         finally:
-            if tracker is not None and tracker_opened:
-                try:
-                    tracking_artifacts = tracker.close()
-                except Exception as exc:
-                    final_state = PipelineSessionState.FAILED
-                    pipeline_failed = True
-                    error_message = str(exc)
-                    self._console.error(error_message)
-            if stop_event.is_set() and final_state is not PipelineSessionState.FAILED:
-                final_state = PipelineSessionState.STOPPED
-            try:
-                summary, stage_manifests = self._finalize_outputs(
-                    request=request,
-                    plan=plan,
-                    run_paths=run_paths,
-                    sequence_manifest=sequence_manifest,
-                    tracking=tracking_artifacts,
-                    ingest_started=ingest_started,
-                    slam_started=slam_started,
-                    pipeline_failed=pipeline_failed,
-                    error_message=error_message,
-                )
-            except Exception as exc:
-                final_state = PipelineSessionState.FAILED
-                error_message = str(exc)
-                self._console.error(error_message)
-                summary = None
-                stage_manifests = []
-            if stream is not None:
-                stream.disconnect()
-            with self._lock:
-                if self._active_stop_event is stop_event:
-                    self._active_stream = None
-                    self._active_stop_event = None
-                    self._worker_thread = None
-                self._snapshot = self._snapshot.model_copy(
-                    update={
-                        "state": final_state,
-                        "plan": plan,
-                        "sequence_manifest": sequence_manifest,
-                        "tracking": tracking_artifacts,
-                        "summary": summary,
-                        "stage_manifests": stage_manifests,
-                        "error_message": error_message,
-                    }
-                )
+            self._runtime.finalize(
+                stop_event=stop_event,
+                snapshot_update=lambda snapshot: _build_terminal_snapshot(snapshot, stop_event.is_set()),
+            )
 
     def _finalize_outputs(
         self,
@@ -385,7 +309,7 @@ class PipelineSessionService:
         plan: RunPlan,
         run_paths: RunArtifactPaths,
         sequence_manifest: SequenceManifest | None,
-        tracking: TrackingArtifacts | None,
+        slam: SlamArtifacts | None,
         ingest_started: bool,
         slam_started: bool,
         pipeline_failed: bool,
@@ -395,7 +319,7 @@ class PipelineSessionService:
         stage_status = self._build_stage_status(
             plan=plan,
             sequence_manifest=sequence_manifest,
-            tracking=tracking,
+            slam=slam,
             ingest_started=ingest_started,
             slam_started=slam_started,
             pipeline_failed=pipeline_failed,
@@ -405,14 +329,14 @@ class PipelineSessionService:
             plan=plan,
             run_paths=run_paths,
             sequence_manifest=sequence_manifest,
-            tracking=tracking,
+            slam=slam,
             stage_status=stage_status,
         )
         summary_manifest = self._build_summary_manifest(
             request=request,
             run_paths=run_paths,
             sequence_manifest=sequence_manifest,
-            tracking=tracking,
+            slam=slam,
             stage_status=stage_status,
             existing_stage_manifests=non_summary_manifests,
             error_message=error_message,
@@ -434,7 +358,7 @@ class PipelineSessionService:
         *,
         plan: RunPlan,
         sequence_manifest: SequenceManifest | None,
-        tracking: TrackingArtifacts | None,
+        slam: SlamArtifacts | None,
         ingest_started: bool,
         slam_started: bool,
         pipeline_failed: bool,
@@ -448,15 +372,7 @@ class PipelineSessionService:
             )
         if RunPlanStageId.SLAM in planned_ids and slam_started:
             stage_status[RunPlanStageId.SLAM] = (
-                StageExecutionStatus.RAN
-                if tracking is not None and not pipeline_failed
-                else StageExecutionStatus.FAILED
-            )
-        if RunPlanStageId.DENSE_MAPPING in planned_ids and slam_started:
-            stage_status[RunPlanStageId.DENSE_MAPPING] = (
-                StageExecutionStatus.RAN
-                if tracking is not None and tracking.dense is not None and not pipeline_failed
-                else StageExecutionStatus.FAILED
+                StageExecutionStatus.RAN if slam is not None and not pipeline_failed else StageExecutionStatus.FAILED
             )
         return stage_status
 
@@ -467,7 +383,7 @@ class PipelineSessionService:
         plan: RunPlan,
         run_paths: RunArtifactPaths,
         sequence_manifest: SequenceManifest | None,
-        tracking: TrackingArtifacts | None,
+        slam: SlamArtifacts | None,
         stage_status: dict[RunPlanStageId, StageExecutionStatus],
     ) -> list[StageManifest]:
         """Build non-summary stage manifests for the executed pipeline slice."""
@@ -489,34 +405,21 @@ class PipelineSessionService:
             )
         if RunPlanStageId.SLAM in stage_status:
             output_paths: dict[str, Path] = {}
-            if tracking is not None:
-                output_paths["trajectory_tum"] = tracking.trajectory_tum.path
-                if tracking.sparse_points_ply is not None:
-                    output_paths["sparse_points_ply"] = tracking.sparse_points_ply.path
-                if tracking.preview_log_jsonl is not None:
-                    output_paths["preview_log_jsonl"] = tracking.preview_log_jsonl.path
+            if slam is not None:
+                output_paths["trajectory_tum"] = slam.trajectory_tum.path
+                if slam.sparse_points_ply is not None:
+                    output_paths["sparse_points_ply"] = slam.sparse_points_ply.path
+                if slam.dense_points_ply is not None:
+                    output_paths["dense_points_ply"] = slam.dense_points_ply.path
+                if slam.preview_log_jsonl is not None:
+                    output_paths["preview_log_jsonl"] = slam.preview_log_jsonl.path
             manifests.append(
                 StageManifest(
                     stage_id=RunPlanStageId.SLAM,
-                    config_hash=_stable_hash(request.tracking),
+                    config_hash=_stable_hash(request.slam),
                     input_fingerprint=_stable_hash(sequence_manifest or {"missing": "sequence_manifest"}),
                     output_paths=output_paths,
                     status=stage_status[RunPlanStageId.SLAM],
-                )
-            )
-        if RunPlanStageId.DENSE_MAPPING in stage_status:
-            output_paths = (
-                {"dense_points_ply": tracking.dense.dense_points_ply.path}
-                if tracking is not None and tracking.dense is not None
-                else {}
-            )
-            manifests.append(
-                StageManifest(
-                    stage_id=RunPlanStageId.DENSE_MAPPING,
-                    config_hash=_stable_hash(request.dense),
-                    input_fingerprint=_stable_hash(tracking or {"missing": "tracking"}),
-                    output_paths=output_paths,
-                    status=stage_status[RunPlanStageId.DENSE_MAPPING],
                 )
             )
         planned_ids = {stage.id for stage in plan.stages}
@@ -528,7 +431,7 @@ class PipelineSessionService:
         request: RunRequest,
         run_paths: RunArtifactPaths,
         sequence_manifest: SequenceManifest | None,
-        tracking: TrackingArtifacts | None,
+        slam: SlamArtifacts | None,
         stage_status: dict[RunPlanStageId, StageExecutionStatus],
         existing_stage_manifests: list[StageManifest],
         error_message: str,
@@ -540,7 +443,7 @@ class PipelineSessionService:
             input_fingerprint=_stable_hash(
                 {
                     "sequence_manifest": sequence_manifest,
-                    "tracking": tracking,
+                    "slam": slam,
                     "stage_status": stage_status,
                     "stage_manifests": existing_stage_manifests,
                     "error_message": error_message,
@@ -555,24 +458,22 @@ class PipelineSessionService:
 
     def _set_snapshot(self, **fields: object) -> None:
         """Update the session snapshot under the internal lock."""
-        with self._lock:
-            self._snapshot = self._snapshot.model_copy(update=fields)
+        self._runtime.update_fields(**fields)
+
+    @staticmethod
+    def _to_stopped_snapshot(snapshot: PipelineSessionSnapshot) -> PipelineSessionSnapshot:
+        """Mark one active session snapshot as stopped without discarding outputs."""
+        if snapshot.state.value not in _ACTIVE_SESSION_STATES:
+            return snapshot
+        return snapshot.model_copy(update={"state": PipelineSessionState.STOPPED})
 
 
-def _default_tracker_factory(method_id: MethodId) -> StreamingTrackerBackend:
-    """Build the streaming-capable mock backend for one method id."""
-    tracker = MockTrackingRuntimeConfig(method_id=method_id).setup_target()
-    if tracker is None:
-        raise RuntimeError(f"Failed to initialize the mock tracker for method '{method_id.value}'.")
-    return tracker
-
-
-def _extract_position(update: TrackingUpdate) -> np.ndarray | None:
-    """Extract a finite world-space translation from one tracking update."""
-    if update.pose is None:
-        return None
-    position = np.array([update.pose.tx, update.pose.ty, update.pose.tz], dtype=np.float64)
-    return position if np.all(np.isfinite(position)) else None
+def _default_slam_backend_factory(method_id: MethodId) -> SlamBackend:
+    """Build the mock SLAM backend for one method id."""
+    backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+    if backend is None:
+        raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
+    return backend
 
 
 def _stable_hash(payload: object) -> str:

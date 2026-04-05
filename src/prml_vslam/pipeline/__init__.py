@@ -9,15 +9,14 @@ from .contracts import (
     RunRequest,
     RunSummary,
     SequenceManifest,
-    TrackingArtifacts,
+    SlamArtifacts,
 )
-from .protocols import OfflineTrackerBackend, StreamingTrackerBackend
+from .protocols import SlamBackend, SlamSession
 
 if TYPE_CHECKING:
     from .session import PipelineSessionService, PipelineSessionSnapshot, PipelineSessionState
 
 __all__ = [
-    "OfflineTrackerBackend",
     "PipelineMode",
     "PipelineSessionService",
     "PipelineSessionSnapshot",
@@ -26,8 +25,9 @@ __all__ = [
     "RunRequest",
     "SequenceManifest",
     "RunSummary",
-    "StreamingTrackerBackend",
-    "TrackingArtifacts",
+    "SlamArtifacts",
+    "SlamBackend",
+    "SlamSession",
 ]
 
 

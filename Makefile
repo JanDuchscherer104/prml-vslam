@@ -35,7 +35,7 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint typst-lint typst-check test bib-check bib-check-strict report-pdf slides-pdf final-slides docs-build
+.PHONY: help fmt lint lint-check typst-lint typst-check test bib-check bib-check-strict report-pdf slides-pdf final-slides docs-build
 
 #  ═══════════════════════════════════════════════════════════════════════
 #  🔧 Quality
@@ -45,7 +45,9 @@ fmt: ## Auto-format Python files and apply Ruff fixes
 	uv run ruff format .
 	uv run ruff check . --fix
 
-lint: ## Run non-mutating Ruff format and lint checks
+lint: fmt ## Auto-format Python files and apply Ruff fixes
+
+lint-check: ## Run non-mutating Ruff format and lint checks
 	uv run ruff format --check .
 	uv run ruff check .
 

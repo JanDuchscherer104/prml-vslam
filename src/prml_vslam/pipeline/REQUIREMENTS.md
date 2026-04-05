@@ -41,7 +41,7 @@ not own pipeline semantics or architecture decisions.
   the source of truth for the target architecture rather than the current demo
   behavior.
 - The current executable pipeline demo lives in `prml_vslam.app`, where the
-  Streamlit `Pipeline` page uses ADVIO replay plus `MockTrackingRuntime` to
+  Streamlit `Pipeline` page uses ADVIO replay plus `MockSlamBackend` to
   exercise the shared contracts. That demo is intentionally not the final
   reusable runner API for `prml_vslam.pipeline`.
 - The repo already has stable top-level seams for `app`, `io`, `methods`,
@@ -102,8 +102,8 @@ contracts.
 
 - `RunRequest`
   - config-defined entry contract for pipeline execution
-  - includes mode, source specification, tracking config, optional dense config,
-    optional reference config, and evaluation config
+  - includes mode, source specification, SLAM config, optional reference
+    config, and evaluation config
 - `RunPlan`
   - ordered stage plan derived from `RunRequest`
   - contains `run_id`, `artifact_root`, selected mode, and ordered stage list
@@ -111,7 +111,7 @@ contracts.
   - normalized artifact boundary between capture/import and benchmark execution
   - references the materialized input sequence and related metadata
 - Artifact bundles
-  - separate typed bundles for tracking, dense mapping, reference
+  - separate typed bundles for SLAM, reference
     reconstruction, and evaluation outputs
   - large data should flow by artifact paths, not giant serialized payloads
 - `StageManifest`
@@ -170,8 +170,7 @@ The intended responsibilities are:
 Materialize only after major artifact boundaries:
 
 - ingest or normalize
-- tracking
-- dense mapping
+- SLAM
 - reference reconstruction
 - evaluation outputs
 - summary
@@ -182,7 +181,7 @@ or every frame-level computation.
 Only the live ingress path gets a bounded queue. Offline mode must not use
 queue-based inter-stage plumbing.
 
-No inter-stage queues are allowed between tracking, export, evaluation, or
+No inter-stage queues are allowed between SLAM, export, evaluation, or
 summary stages. Queueing is only justified between live capture ingress and the
 streaming worker.
 
@@ -212,7 +211,7 @@ streaming worker.
 - A dataset adapter provides ADVIO or custom-dataset inputs.
 - Those inputs are normalized into the same `SequenceManifest` used by other
   sources.
-- Downstream tracking, mapping, and evaluation stages consume the same manifest
+- Downstream SLAM, reference, and evaluation stages consume the same manifest
   contract regardless of origin.
 
 ### Live Streaming Session

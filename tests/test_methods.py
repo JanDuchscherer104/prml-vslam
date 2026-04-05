@@ -4,12 +4,40 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.interfaces import SE3Pose
+import numpy as np
+
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.methods import MethodId, MSTRMethodConfig
 from prml_vslam.methods.contracts import MethodRunRequest
-from prml_vslam.methods.mock_vslam import MockTrackingRuntimeConfig
-from prml_vslam.pipeline.contracts import SequenceManifest, TrackingConfig
+from prml_vslam.methods.mock_vslam import MockSlamBackendConfig
+from prml_vslam.pipeline.contracts import SequenceManifest, SlamConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
+
+
+def _write_calibration(path: Path, *, width_px: int = 64, height_px: int = 64) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""
+cameras:
+- camera:
+    image_height: {height_px}
+    image_width: {width_px}
+    type: pinhole
+    intrinsics:
+      data: [100.0, 101.0, 32.0, 24.0]
+    distortion:
+      type: radial-tangential
+      parameters:
+        data: [0.1, 0.01, 0.0, 0.0]
+    T_cam_imu:
+      data:
+      - [1.0, 0.0, 0.0, 0.01]
+      - [0.0, 1.0, 0.0, 0.02]
+      - [0.0, 0.0, 1.0, 0.03]
+      - [0.0, 0.0, 0.0, 1.0]
+""".strip(),
+        encoding="utf-8",
+    )
 
 
 def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> None:
@@ -34,11 +62,13 @@ def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> N
     assert result.normalized_point_cloud_path.exists()
 
 
-def test_mock_tracking_runtime_runs_sequence_manifest_offline(tmp_path: Path) -> None:
-    runtime = MockTrackingRuntimeConfig(method_id=MethodId.VISTA).setup_target()
-    assert runtime is not None
+def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> None:
+    backend = MockSlamBackendConfig(method_id=MethodId.VISTA).setup_target()
+    assert backend is not None
 
     reference_path = tmp_path / "reference.tum"
+    calibration_path = tmp_path / "iphone-03.yaml"
+    _write_calibration(calibration_path)
     write_tum_trajectory(
         reference_path,
         [
@@ -48,13 +78,20 @@ def test_mock_tracking_runtime_runs_sequence_manifest_offline(tmp_path: Path) ->
         [0.0, 1.0],
     )
 
-    artifacts = runtime.run_sequence(
-        SequenceManifest(sequence_id="advio-15", reference_tum_path=reference_path),
-        TrackingConfig(method=MethodId.VISTA),
+    artifacts = backend.run_sequence(
+        SequenceManifest(
+            sequence_id="advio-15",
+            reference_tum_path=reference_path,
+            intrinsics_path=calibration_path,
+        ),
+        SlamConfig(method=MethodId.VISTA),
         tmp_path / "offline-artifacts",
     )
 
     trajectory_lines = artifacts.trajectory_tum.path.read_text(encoding="utf-8").splitlines()
+    dense_lines = (
+        artifacts.dense_points_ply.path.read_text(encoding="utf-8").splitlines() if artifacts.dense_points_ply else []
+    )
 
     assert len(trajectory_lines) == 2
     assert trajectory_lines[0].startswith("0.000000 0.000000 0.000000 0.000000")
@@ -63,5 +100,49 @@ def test_mock_tracking_runtime_runs_sequence_manifest_offline(tmp_path: Path) ->
     assert artifacts.sparse_points_ply.path.exists()
     assert artifacts.preview_log_jsonl is not None
     assert artifacts.preview_log_jsonl.path.exists()
-    assert artifacts.dense is not None
-    assert artifacts.dense.dense_points_ply.path.exists()
+    assert artifacts.dense_points_ply is not None
+    assert artifacts.dense_points_ply.path.exists()
+    assert "element vertex 32" in dense_lines
+
+
+def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Path) -> None:
+    backend = MockSlamBackendConfig(method_id=MethodId.VISTA).setup_target()
+    assert backend is not None
+
+    session = backend.start_session(
+        SlamConfig(method=MethodId.VISTA),
+        tmp_path / "streaming-artifacts",
+    )
+    update0 = session.step(
+        FramePacket(
+            seq=0,
+            timestamp_ns=2_000_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=400.0, fy=400.0, cx=3.5, cy=3.5, width_px=8, height_px=8),
+            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+        )
+    )
+    update1 = session.step(
+        FramePacket(
+            seq=1,
+            timestamp_ns=1_500_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=400.0, fy=400.0, cx=3.5, cy=3.5, width_px=8, height_px=8),
+            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+        )
+    )
+    artifacts = session.close()
+
+    trajectory_lines = artifacts.trajectory_tum.path.read_text(encoding="utf-8").splitlines()
+    timestamps_s = [float(line.split()[0]) for line in trajectory_lines]
+
+    assert update0.num_sparse_points > 0
+    assert update0.num_dense_points > 0
+    assert update0.pointmap is not None
+    assert update1.num_sparse_points >= update0.num_sparse_points
+    assert update1.num_dense_points >= update0.num_dense_points
+    assert artifacts.sparse_points_ply is not None
+    assert artifacts.sparse_points_ply.path.exists()
+    assert artifacts.dense_points_ply is not None
+    assert artifacts.dense_points_ply.path.exists()
+    assert timestamps_s[1] > timestamps_s[0]
