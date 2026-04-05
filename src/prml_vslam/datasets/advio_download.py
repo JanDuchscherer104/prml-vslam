@@ -90,6 +90,7 @@ class AdvioDownloadManager:
                     overwrite=request.overwrite,
                 )
             )
+            archive_path.unlink()
 
         return AdvioDownloadResult(
             sequence_ids=sequence_ids,
