@@ -96,40 +96,6 @@ sources = [
 ]
 
 [[todos]]
-id = "TODO-0006"
-title = "Remove placeholder config and state fields that no longer earn their keep"
-status = "pending"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0006",
-]
-loc_min = 25
-loc_expected = 45
-loc_max = 90
-files = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-    "README.md",
-    "tests/test_main.py",
-    "tests/test_methods.py",
-]
-acceptance = [
-    "Source-spec config loading no longer depends on explicit `kind` discriminator fields.",
-    "The USB Record3D packet-stream config no longer wraps the low-level stream config through a one-field `stream` indirection.",
-    "Mock SLAM backend config no longer validates unused `method_id` state.",
-    "TOML examples and tests match the simplified config surfaces.",
-]
-sources = [
-    "README.md",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/methods/mock_vslam.py",
-    "tests/test_main.py",
-    "tests/test_methods.py",
-]
-
-[[todos]]
 id = "TODO-0007"
 title = "Add focused tests for stale runtime replacement in SessionStateStore"
 status = "pending"

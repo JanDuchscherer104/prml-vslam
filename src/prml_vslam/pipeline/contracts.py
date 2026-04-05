@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -26,8 +25,6 @@ class PipelineMode(StrEnum):
 class VideoSourceSpec(BaseConfig):
     """Video-backed source used for offline planning and execution."""
 
-    kind: Literal["video"] = "video"
-    """Discriminator for Pydantic source unions."""
     video_path: Path
     """Path to the input video that will be processed."""
     frame_stride: int = 1
@@ -37,8 +34,6 @@ class VideoSourceSpec(BaseConfig):
 class DatasetSourceSpec(BaseConfig):
     """Dataset-backed source used for offline planning and execution."""
 
-    kind: Literal["dataset"] = "dataset"
-    """Discriminator for Pydantic source unions."""
     dataset_id: DatasetId
     """Dataset family that owns the sequence."""
     sequence_id: str
@@ -48,8 +43,6 @@ class DatasetSourceSpec(BaseConfig):
 class LiveSourceSpec(BaseConfig):
     """Live source used for preview, capture, and optional persistence."""
 
-    kind: Literal["live"] = "live"
-    """Discriminator for Pydantic source unions."""
     source_id: str
     """Live source identifier such as `record3d_usb` or `record3d_wifi`."""
     persist_capture: bool = True
@@ -106,7 +99,7 @@ class RunRequest(BaseConfig):
     """Whether the run is offline-only or live-backed."""
     output_dir: Path
     """Root directory where planned artifacts should be written."""
-    source: SourceSpec = Field(discriminator="kind")
+    source: SourceSpec
     """Source specification normalized before the main benchmark stages run."""
     slam: SlamConfig
     """SLAM-stage configuration."""
@@ -167,7 +160,7 @@ class RunPlan(BaseData):
     """External backend chosen for the run."""
     artifact_root: Path
     """Root directory for all run artifacts."""
-    source: SourceSpec = Field(discriminator="kind")
+    source: SourceSpec
     """Source definition that the run plan was built from."""
     stages: list[RunPlanStage] = Field(default_factory=list)
     """Ordered execution stages for the benchmark run."""

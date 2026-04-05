@@ -470,7 +470,7 @@ class PipelineSessionService:
 
 def _default_slam_backend_factory(method_id: MethodId) -> SlamBackend:
     """Build the mock SLAM backend for one method id."""
-    backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+    backend = MockSlamBackendConfig().setup_target()
     if backend is None:
         raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
     return backend

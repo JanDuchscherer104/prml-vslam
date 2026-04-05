@@ -41,12 +41,10 @@ cameras:
 
 
 def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> None:
-    repo_path = tmp_path / "MASt3R-SLAM"
-    repo_path.mkdir()
     input_dir = tmp_path / "sequence"
     input_dir.mkdir()
 
-    runtime = MSTRMethodConfig(repo_path=repo_path).setup_target()
+    runtime = MSTRMethodConfig().setup_target()
     assert runtime is not None
 
     result = runtime.infer(
@@ -63,7 +61,7 @@ def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> N
 
 
 def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> None:
-    backend = MockSlamBackendConfig(method_id=MethodId.VISTA).setup_target()
+    backend = MockSlamBackendConfig().setup_target()
     assert backend is not None
 
     reference_path = tmp_path / "reference.tum"
@@ -106,7 +104,7 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
 
 
 def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Path) -> None:
-    backend = MockSlamBackendConfig(method_id=MethodId.VISTA).setup_target()
+    backend = MockSlamBackendConfig().setup_target()
     assert backend is not None
 
     session = backend.start_session(
