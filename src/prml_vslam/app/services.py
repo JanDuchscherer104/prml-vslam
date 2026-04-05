@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from enum import StrEnum
 from threading import Event
 from typing import Any
 
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.io.record3d import (
     Record3DDevice,
-    Record3DStreamSnapshot,
-    Record3DStreamState,
     Record3DTransportId,
     open_record3d_usb_packet_stream,
 )
@@ -21,29 +18,20 @@ from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils.packet_session import (
     PacketSessionMetrics,
     PacketSessionRuntime,
-    PacketSessionSnapshot,
     extract_pose_position,
+)
+
+from .models import (
+    AdvioPreviewSnapshot,
+    AdvioPreviewStreamState,
+    Record3DStreamSnapshot,
+    Record3DStreamState,
 )
 
 
 def _is_record3d_frame_timeout(error: RuntimeError) -> bool:
     message = str(error)
     return message.startswith("Timed out waiting ") and "Record3D" in message and " frame." in message
-
-
-class AdvioPreviewStreamState(StrEnum):
-    IDLE = "idle"
-    CONNECTING = "connecting"
-    STREAMING = "streaming"
-    DISCONNECTED = "disconnected"
-    FAILED = "failed"
-
-
-class AdvioPreviewSnapshot(PacketSessionSnapshot):
-    state: AdvioPreviewStreamState = AdvioPreviewStreamState.IDLE
-    sequence_id: int | None = None
-    sequence_label: str = ""
-    pose_source: AdvioPoseSource | None = None
 
 
 class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
@@ -352,7 +340,5 @@ def _set_record3d_connected_state(
 
 __all__ = [
     "AdvioPreviewRuntimeController",
-    "AdvioPreviewSnapshot",
-    "AdvioPreviewStreamState",
     "Record3DStreamRuntimeController",
 ]

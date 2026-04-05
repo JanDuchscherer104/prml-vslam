@@ -13,7 +13,6 @@ from numpy.typing import NDArray
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.utils import BaseConfig, BaseData, Console
-from prml_vslam.utils.packet_session import PacketSessionSnapshot
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -32,16 +31,6 @@ class Record3DTransportId(StrEnum):
             Record3DTransportId.USB: "USB",
             Record3DTransportId.WIFI: "Wi-Fi",
         }[self]
-
-
-class Record3DStreamState(StrEnum):
-    """Lifecycle states for one live Record3D transport."""
-
-    IDLE = "idle"
-    CONNECTING = "connecting"
-    STREAMING = "streaming"
-    DISCONNECTED = "disconnected"
-    FAILED = "failed"
 
 
 class Record3DDeviceType(IntEnum):
@@ -81,19 +70,6 @@ class Record3DFrame(BaseData):
 
     device_type: Record3DDeviceType
     """Source camera type used for the stream."""
-
-
-class Record3DStreamSnapshot(PacketSessionSnapshot):
-    """Latest live-stream snapshot shared between IO and app layers."""
-
-    transport: Record3DTransportId | None = None
-    """Transport currently backing the snapshot, when active."""
-
-    state: Record3DStreamState = Record3DStreamState.IDLE
-    """Current lifecycle state of the live transport."""
-
-    source_label: str = ""
-    """Human-readable source descriptor such as a UDID or Wi-Fi address."""
 
 
 def record3d_frame_to_packet(
@@ -373,8 +349,6 @@ __all__ = [
     "Record3DFrame",
     "Record3DStreamConfig",
     "Record3DStreamSession",
-    "Record3DStreamSnapshot",
-    "Record3DStreamState",
     "Record3DTransportId",
     "Record3DUSBPacketStream",
     "Record3DUSBPacketStreamConfig",

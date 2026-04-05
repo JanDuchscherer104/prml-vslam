@@ -1,54 +1,9 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-05"
+updated_on = "2026-04-06"
 source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, and a later narrative-review relevance triage."
 active_collection = "issues"
-
-[[issues]]
-id = "ISSUE-0003"
-title = "Live preview snapshot contracts are not owned consistently by app models"
-status = "open"
-priority = "medium"
-category = "architecture"
-summary = "App-facing preview snapshots still live outside `prml_vslam.app.models`: `Record3DStreamSnapshot` is owned by `prml_vslam.io.record3d`, while `AdvioPreviewSnapshot` and `AdvioPreviewStreamState` are still defined in `prml_vslam.app.services`."
-files = [
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/models.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "tests/test_app.py",
-]
-notes = [
-    "The Streamlit app imports these runtime snapshots directly for rendering and test doubles.",
-    "This still blurs two repo rules: app-facing state belongs under `prml_vslam.app.models`, and `services.py` should not own public contract types.",
-]
-sources = [
-    "docs/architecture/interfaces-and-contracts.md",
-    "src/prml_vslam/AGENTS.md",
-    "src/prml_vslam/app/AGENTS.md",
-    "src/prml_vslam/io/record3d.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/models.py",
-    "tests/test_app.py",
-]
-
-[[issues]]
-id = "ISSUE-0004"
-title = "Page-state persistence helpers are duplicated across app surfaces"
-status = "open"
-priority = "medium"
-category = "maintainability"
-summary = "Multiple app modules repeat near-identical save-if-changed logic for typed page state."
-files = [
-    "src/prml_vslam/app/advio_controller.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-    "src/prml_vslam/app/record3d_controller.py",
-]
-notes = [
-    "The duplication is small but repeated enough to encourage drift in state handling.",
-    "A generic helper should preserve the typed models while removing controller boilerplate.",
-]
 
 [[issues]]
 id = "ISSUE-0005"
@@ -223,4 +178,30 @@ sources = [
     "src/prml_vslam/app/pages/record3d.py",
     "https://record3d.app/",
     "https://github.com/marek-simonik/record3d",
+]
+
+[[issues]]
+id = "ISSUE-0015"
+title = "Trajectory plotting remains fragmented across multiple near-overlapping builders"
+status = "open"
+priority = "low"
+category = "maintainability"
+summary = "The plotting layer currently spreads trajectory rendering across `metrics.py`, `record3d.py`, `trajectories.py`, and `pipeline.py`, with repeated trace assembly, marker, and layout logic instead of one shared internal builder."
+files = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
+]
+notes = [
+    "The figure types are not identical, but XY overlays, 3D trajectory traces, start/end markers, and standard axis/layout setup still repeat enough to drift.",
+    "The app already centralizes live-session rendering in `app/live_session.py`, so plotting internals are the remaining main place where trajectory presentation is split by page.",
+]
+sources = [
+    "src/prml_vslam/plotting/metrics.py",
+    "src/prml_vslam/plotting/record3d.py",
+    "src/prml_vslam/plotting/trajectories.py",
+    "src/prml_vslam/plotting/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
 ]

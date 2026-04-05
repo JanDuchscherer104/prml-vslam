@@ -8,8 +8,6 @@ import streamlit as st
 
 from prml_vslam.io.record3d import (
     Record3DDevice,
-    Record3DStreamSnapshot,
-    Record3DStreamState,
     Record3DTransportId,
     list_record3d_usb_devices,
 )
@@ -21,6 +19,7 @@ from ..live_session import (
     render_live_packet_tabs,
     render_live_session_shell,
 )
+from ..models import Record3DStreamSnapshot, Record3DStreamState
 from ..record3d_controller import Record3DPageAction, handle_record3d_page_action, sync_record3d_running_state
 from ..record3d_view_utils import build_record3d_frame_details, record3d_stream_hint
 from ..ui import render_page_intro
