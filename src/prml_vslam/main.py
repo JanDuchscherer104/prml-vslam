@@ -18,13 +18,11 @@ from prml_vslam.io import (
 )
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import (
-    CloudEvaluationConfig,
+    BenchmarkEvaluationConfig,
     DenseConfig,
-    EfficiencyEvaluationConfig,
     ReferenceConfig,
     RunRequest,
     TrackingConfig,
-    TrajectoryEvaluationConfig,
     VideoSourceSpec,
 )
 from prml_vslam.utils.console import Console
@@ -100,16 +98,15 @@ def plan_run(
         experiment_name=experiment_name,
         output_dir=output_dir,
         source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
-    ).add_tracking(TrackingConfig(method=method))
-    if dense_mapping:
-        request.add_dense(DenseConfig())
-    if ground_truth_cloud:
-        request.add_reference(ReferenceConfig())
-    if compare_to_arcore:
-        request.add_trajectory_evaluation(TrajectoryEvaluationConfig())
-    if dense_mapping and ground_truth_cloud:
-        request.add_cloud_evaluation(CloudEvaluationConfig())
-    request.add_efficiency_evaluation(EfficiencyEvaluationConfig())
+        tracking=TrackingConfig(method=method),
+        dense=DenseConfig(enabled=dense_mapping),
+        reference=ReferenceConfig(enabled=ground_truth_cloud),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=compare_to_arcore,
+            evaluate_cloud=dense_mapping and ground_truth_cloud,
+            evaluate_efficiency=True,
+        ),
+    )
     plan = request.build()
     console.plog(plan.model_dump(mode="json"))
 

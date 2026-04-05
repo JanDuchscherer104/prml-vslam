@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from enum import Enum, StrEnum
+from enum import StrEnum
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal
 
 from pydantic import Field
 
 from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.methods.interfaces import MethodId
-from prml_vslam.utils import BaseConfig, BaseData, PathConfig, RunArtifactPaths
+from prml_vslam.utils import BaseConfig, BaseData, PathConfig
 
 
 class PipelineMode(StrEnum):
@@ -85,22 +85,6 @@ class ReferenceConfig(StageToggleConfig):
     """Whether the run should include the corresponding stage."""
 
 
-class EvaluationStageConfig(BaseConfig):
-    """Configuration accepted by stage-specific evaluation builder methods."""
-
-
-class TrajectoryEvaluationConfig(EvaluationStageConfig):
-    """Builder marker for trajectory-evaluation stage selection."""
-
-
-class CloudEvaluationConfig(EvaluationStageConfig):
-    """Builder marker for dense-cloud evaluation stage selection."""
-
-
-class EfficiencyEvaluationConfig(EvaluationStageConfig):
-    """Builder marker for efficiency-evaluation stage selection."""
-
-
 class BenchmarkEvaluationConfig(BaseConfig):
     """Evaluation-stage toggles for the benchmark pipeline."""
 
@@ -113,7 +97,12 @@ class BenchmarkEvaluationConfig(BaseConfig):
 
 
 class RunRequest(BaseConfig):
-    """Config-defined entry contract for one pipeline run."""
+    """Config-defined entry contract for one pipeline run.
+
+    Construct the request directly from nested source, stage, and evaluation
+    configs. Call :meth:`build` once the request is fully specified to
+    materialize the canonical ordered :class:`RunPlan`.
+    """
 
     experiment_name: str
     """Human-readable name for the benchmark run."""
@@ -123,7 +112,7 @@ class RunRequest(BaseConfig):
     """Root directory where planned artifacts should be written."""
     source: SourceSpec = Field(discriminator="kind")
     """Source specification normalized before the main benchmark stages run."""
-    tracking: TrackingConfig | None = None
+    tracking: TrackingConfig
     """Tracking-stage configuration."""
     dense: DenseConfig = Field(default_factory=DenseConfig)
     """Dense-mapping configuration."""
@@ -132,164 +121,23 @@ class RunRequest(BaseConfig):
     evaluation: BenchmarkEvaluationConfig = Field(default_factory=BenchmarkEvaluationConfig)
     """Benchmark evaluation configuration."""
 
-    def add_tracking(self, config: TrackingConfig) -> Self:
-        self.tracking = config
-        return self
-
-    def add_dense(self, config: DenseConfig) -> Self:
-        return self._set_stage_toggle("dense", config)
-
-    def add_reference(self, config: ReferenceConfig) -> Self:
-        return self._set_stage_toggle("reference", config)
-
-    def add_trajectory_evaluation(self, _config: TrajectoryEvaluationConfig) -> Self:
-        return self._enable_evaluation("compare_to_arcore")
-
-    def add_cloud_evaluation(self, _config: CloudEvaluationConfig) -> Self:
-        return self._enable_evaluation("evaluate_cloud")
-
-    def add_efficiency_evaluation(self, _config: EfficiencyEvaluationConfig) -> Self:
-        return self._enable_evaluation("evaluate_efficiency")
-
     def build(self, path_config: PathConfig | None = None) -> RunPlan:
-        if self.tracking is None:
-            raise ValueError("RunRequest requires tracking configuration before building a plan.")
-        path_config = path_config or PathConfig()
-        run_paths = path_config.plan_run_paths(
-            experiment_name=self.experiment_name,
-            method_slug=self.tracking.method.artifact_slug,
-            output_dir=self.output_dir,
-        )
-        return RunPlan(
-            run_id=path_config.slugify_experiment_name(self.experiment_name),
-            mode=self.mode,
-            method=self.tracking.method,
-            artifact_root=run_paths.artifact_root,
-            source=self.source,
-            stages=self._build_stages(run_paths),
-        )
+        """Materialize the canonical run plan for this request.
 
-    def _build_stages(self, run_paths: RunArtifactPaths) -> list[RunPlanStage]:
-        assert self.tracking is not None
-        optional_stages = (
-            (
-                self.dense.enabled,
-                (
-                    RunPlanStageId.DENSE_MAPPING,
-                    "Export Dense Mapping",
-                    "Generate dense geometry artifacts suitable for downstream quality evaluation.",
-                    ("dense_points_path",),
-                ),
-            ),
-            (
-                self.reference.enabled,
-                (
-                    RunPlanStageId.REFERENCE_RECONSTRUCTION,
-                    "Build Reference Reconstruction",
-                    "Reserve the offline reconstruction step used as a dense geometry reference.",
-                    ("reference_cloud_path",),
-                ),
-            ),
-            (
-                self.evaluation.compare_to_arcore,
-                (
-                    RunPlanStageId.TRAJECTORY_EVALUATION,
-                    "Evaluate Trajectory",
-                    "Align the trajectory against the available reference and persist trajectory metrics.",
-                    ("trajectory_metrics_path",),
-                ),
-            ),
-            (
-                self.evaluation.evaluate_cloud,
-                (
-                    RunPlanStageId.CLOUD_EVALUATION,
-                    "Evaluate Dense Cloud",
-                    "Compare reconstructed dense geometry against the reference cloud.",
-                    ("cloud_metrics_path",),
-                ),
-            ),
-            (
-                self.evaluation.evaluate_efficiency,
-                (
-                    RunPlanStageId.EFFICIENCY_EVALUATION,
-                    "Measure Efficiency",
-                    "Persist runtime and resource-usage metrics for the run.",
-                    ("efficiency_metrics_path",),
-                ),
-            ),
-        )
-        return [
-            self._stage_from_spec(
-                run_paths,
-                (
-                    RunPlanStageId.INGEST,
-                    "Normalize Input Sequence",
-                    self._ingest_summary(self.source),
-                    ("sequence_manifest_path",),
-                ),
-            ),
-            self._stage_from_spec(
-                run_paths,
-                (
-                    RunPlanStageId.SLAM,
-                    "Run SLAM Backend",
-                    self._method_summary(self.tracking.method),
-                    ("trajectory_path", "sparse_points_path"),
-                ),
-            ),
-            *(self._stage_from_spec(run_paths, spec) for enabled, spec in optional_stages if enabled),
-            self._stage_from_spec(
-                run_paths,
-                (
-                    RunPlanStageId.SUMMARY,
-                    "Write Run Summary",
-                    "Persist the stage status and top-level artifact summary for the run.",
-                    ("summary_path",),
-                ),
-            ),
-        ]
+        Args:
+            path_config: Optional path helper used to derive canonical artifact
+                locations for the run.
 
-    @staticmethod
-    def _stage_from_spec(
-        run_paths: RunArtifactPaths,
-        spec: tuple[RunPlanStageId, str, str, tuple[str, ...]],
-    ) -> RunPlanStage:
-        stage_id, title, summary, output_names = spec
-        return RunPlanStage(
-            id=stage_id,
-            title=title,
-            summary=summary,
-            outputs=[getattr(run_paths, output_name) for output_name in output_names],
-        )
+        Returns:
+            Ordered pipeline plan with stable stage ids, summaries, and
+            artifact paths.
+        """
+        from prml_vslam.pipeline.services import RunPlannerService
 
-    @staticmethod
-    def _ingest_summary(source: SourceSpec) -> str:
-        match source:
-            case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
-                return f"Decode '{video_path}' at stride {frame_stride} and materialize a normalized sequence manifest."
-            case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
-                return f"Normalize dataset sequence '{dataset_id.value}:{sequence_id}' into a shared sequence manifest."
-            case LiveSourceSpec(source_id=source_id, persist_capture=persist_capture):
-                persistence = "with persistence" if persist_capture else "without persistence"
-                return f"Capture the live source '{source_id}' {persistence} into a replayable sequence manifest."
-
-    @staticmethod
-    def _method_summary(method: MethodId) -> str:
-        return f"Plan the {method.display_name} wrapper and export trajectory plus sparse geometry artifacts."
-
-    def _set_stage_toggle(self, field_name: Literal["dense", "reference"], config: StageToggleConfig) -> Self:
-        setattr(self, field_name, config.model_copy(update={"enabled": True}))
-        return self
-
-    def _enable_evaluation(
-        self,
-        field_name: Literal["compare_to_arcore", "evaluate_cloud", "evaluate_efficiency"],
-    ) -> Self:
-        self.evaluation = self.evaluation.model_copy(update={field_name: True})
-        return self
+        return RunPlannerService().build_run_plan(request=self, path_config=path_config)
 
 
-class RunPlanStageId(str, Enum):
+class RunPlanStageId(StrEnum):
     """Canonical stage identifiers in the benchmark planner."""
 
     INGEST = "ingest"
@@ -440,10 +288,28 @@ class RunSummary(BaseData):
     """Final status per stage."""
 
 
-__all__ = """
-ArtifactRef BenchmarkEvaluationConfig CloudEvaluationConfig CloudMetrics DatasetSourceSpec DenseArtifacts
-DenseConfig EfficiencyEvaluationConfig EfficiencyMetrics LiveSourceSpec PipelineMode
-ReferenceArtifacts ReferenceConfig RunPlan RunPlanStage RunPlanStageId RunRequest RunSummary
-SequenceManifest StageExecutionStatus StageManifest TrackingArtifacts TrackingConfig TrajectoryEvaluationConfig
-TrajectoryMetrics VideoSourceSpec
-""".split()
+__all__ = [
+    "ArtifactRef",
+    "BenchmarkEvaluationConfig",
+    "CloudMetrics",
+    "DatasetSourceSpec",
+    "DenseArtifacts",
+    "DenseConfig",
+    "EfficiencyMetrics",
+    "LiveSourceSpec",
+    "PipelineMode",
+    "ReferenceArtifacts",
+    "ReferenceConfig",
+    "RunPlan",
+    "RunPlanStage",
+    "RunPlanStageId",
+    "RunRequest",
+    "RunSummary",
+    "SequenceManifest",
+    "StageExecutionStatus",
+    "StageManifest",
+    "TrackingArtifacts",
+    "TrackingConfig",
+    "TrajectoryMetrics",
+    "VideoSourceSpec",
+]
