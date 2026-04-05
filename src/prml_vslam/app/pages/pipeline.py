@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import numpy as np
 import streamlit as st
 
 from prml_vslam.datasets.advio import AdvioPoseSource
@@ -12,6 +13,7 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunPlan, StageManifest
 
 from ..camera_display import format_camera_intrinsics_latex
+from ..image_utils import normalize_grayscale_image
 from ..pipeline_controller import (
     PipelineDemoFormData,
     handle_pipeline_demo_action,
@@ -120,8 +122,9 @@ def _render_pipeline_demo_snapshot(snapshot: PipelineDemoSnapshot) -> None:
         ("Received Frames", str(snapshot.received_frames)),
         ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
         ("Map Points", str(snapshot.num_map_points)),
+        ("Dense Points", str(snapshot.num_dense_points)),
     )
-    for column, (label, value) in zip(st.columns(5, gap="small"), metrics, strict=True):
+    for column, (label, value) in zip(st.columns(6, gap="small"), metrics, strict=True):
         column.metric(label, value)
     if snapshot.plan is not None:
         st.caption(
@@ -133,16 +136,31 @@ def _render_pipeline_demo_snapshot(snapshot: PipelineDemoSnapshot) -> None:
         if packet is None:
             st.info("No frame has been processed yet.")
         else:
-            left, right = st.columns((1.1, 0.9), gap="large")
-            with left:
+            pointmap = snapshot.latest_update.pointmap if snapshot.latest_update is not None else None
+            preview_left, preview_right = st.columns(2, gap="large")
+            with preview_left:
                 st.markdown("**RGB Frame**")
-                st.image(packet.rgb, channels="RGB", clamp=True)
-            with right:
+                st.image(packet.rgb, channels="RGB", clamp=True, width="stretch")
+            with preview_right:
+                st.markdown("**Pointmap Depth**")
+                if pointmap is None:
+                    st.info("No pointmap preview is available for the current frame.")
+                else:
+                    st.image(_pointmap_depth_preview(pointmap), clamp=True, width="stretch")
+            details_left, details_right = st.columns((1.0, 1.0), gap="large")
+            with details_left:
                 st.markdown("**Tracking Update**")
                 if snapshot.latest_update is None:
                     st.info("No tracking update is available yet.")
                 else:
-                    st.json(snapshot.latest_update.model_dump(mode="json"), expanded=False)
+                    st.json(
+                        {
+                            **snapshot.latest_update.model_dump(mode="json", exclude={"pointmap"}),
+                            "pointmap_shape": None if pointmap is None else list(pointmap.shape),
+                        },
+                        expanded=False,
+                    )
+            with details_right:
                 st.markdown("**Frame Metadata**")
                 st.json(
                     {
@@ -237,6 +255,10 @@ def _pose_source_label(pose_source: AdvioPoseSource) -> str:
         AdvioPoseSource.ARKIT: "ARKit",
         AdvioPoseSource.NONE: "No Pose Overlay",
     }[pose_source]
+
+
+def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:
+    return normalize_grayscale_image(np.asarray(pointmap[..., 2], dtype=np.float32))
 
 
 def _stage_rows(plan: RunPlan) -> list[dict[str, str]]:

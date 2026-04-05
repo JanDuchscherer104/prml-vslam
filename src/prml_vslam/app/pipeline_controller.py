@@ -146,7 +146,7 @@ def _build_demo_request(
         output_dir=output_dir,
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug),
         tracking=TrackingConfig(method=method),
-        dense=DenseConfig(enabled=False),
+        dense=DenseConfig(enabled=True),
         reference=ReferenceConfig(enabled=False),
         evaluation=BenchmarkEvaluationConfig(
             compare_to_arcore=False,

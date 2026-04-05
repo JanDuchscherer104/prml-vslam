@@ -99,6 +99,9 @@ class PipelineDemoSnapshot(BaseData):
     num_map_points: int = 0
     """Latest sparse-map size reported by the mock runtime."""
 
+    num_dense_points: int = 0
+    """Latest cumulative dense-point count reported by the mock runtime."""
+
     error_message: str = ""
     """Last surfaced error message."""
 
@@ -250,6 +253,7 @@ class PipelineDemoRuntimeController:
                     latest_packet=packet,
                     latest_update=update,
                     num_map_points=update.num_map_points,
+                    num_dense_points=update.num_dense_points,
                     error_message="",
                     **metrics.snapshot_fields(),
                 )
@@ -308,7 +312,7 @@ class PipelineDemoRuntimeController:
         tracking: TrackingArtifacts | None,
         final_state: PipelineDemoState,
     ) -> tuple[RunSummary, list[StageManifest]]:
-        stage_status = self._build_stage_status(plan, final_state)
+        stage_status = self._build_stage_status(plan, final_state, tracking)
         summary = RunSummary(run_id=plan.run_id, artifact_root=plan.artifact_root, stage_status=stage_status)
         summary_path = next(stage.outputs[0] for stage in plan.stages if stage.id is RunPlanStageId.SUMMARY)
         summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -321,6 +325,8 @@ class PipelineDemoRuntimeController:
                 output_paths["ground_truth"] = sequence_manifest.reference_tum_path
             if stage.id is RunPlanStageId.SLAM and tracking is not None and tracking.preview_log_jsonl is not None:
                 output_paths["preview_log"] = tracking.preview_log_jsonl.path
+            if stage.id is RunPlanStageId.DENSE_MAPPING and tracking is not None and tracking.dense is not None:
+                output_paths["dense_points"] = tracking.dense.dense_points_ply.path
             stage_manifests.append(
                 StageManifest(
                     stage_id=stage.id,
@@ -334,7 +340,9 @@ class PipelineDemoRuntimeController:
 
     @staticmethod
     def _build_stage_status(
-        plan: RunPlan, final_state: PipelineDemoState
+        plan: RunPlan,
+        final_state: PipelineDemoState,
+        tracking: TrackingArtifacts | None,
     ) -> dict[RunPlanStageId, StageExecutionStatus]:
         stage_status: dict[RunPlanStageId, StageExecutionStatus] = {}
         for stage in plan.stages:
@@ -345,6 +353,12 @@ class PipelineDemoRuntimeController:
                     stage_status[stage.id] = (
                         StageExecutionStatus.FAILED
                         if final_state is PipelineDemoState.FAILED
+                        else StageExecutionStatus.RAN
+                    )
+                case RunPlanStageId.DENSE_MAPPING:
+                    stage_status[stage.id] = (
+                        StageExecutionStatus.FAILED
+                        if final_state is PipelineDemoState.FAILED or tracking is None or tracking.dense is None
                         else StageExecutionStatus.RAN
                     )
                 case RunPlanStageId.SUMMARY:
