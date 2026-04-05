@@ -1825,3 +1825,64 @@ previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 13 after reducing LOC and preserving app-facing enum labels under the frozen harness plus full make ci."
 source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0028"
+title = "MethodId still exposes an identity artifact_slug wrapper"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The planner and run-discovery code still went through `MethodId.artifact_slug` even though the method enum value already is the artifact slug used in artifact paths."
+files = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+notes = [
+    "The wrapper added an extra contract surface without any transformation logic.",
+    "Switching call sites to `MethodId.value` keeps artifact layout behavior unchanged while shrinking the enum API.",
+]
+sources = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Removed the identity wrapper and updated planning and run-discovery code to use the enum value directly."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0028"
+title = "Remove MethodId.artifact_slug"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0028",
+]
+loc_min = 4
+loc_expected = 8
+loc_max = 14
+files = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "MethodId no longer exposes an identity artifact-slug helper.",
+    "Pipeline planning and evaluation run discovery use the enum value directly without changing artifact layout behavior.",
+    "Focused planner/metrics tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
+]
+sources = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 14 after reducing LOC and preserving planner and run-discovery behavior under the frozen harness plus full make ci."
+source_collection = "todos"

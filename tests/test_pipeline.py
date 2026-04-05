@@ -44,7 +44,7 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
     plan = request.build(path_config)
     run_paths = path_config.plan_run_paths(
         experiment_name=request.experiment_name,
-        method_slug=request.slam.method.artifact_slug,
+        method_slug=request.slam.method.value,
         output_dir=request.output_dir,
     )
 
@@ -278,7 +278,7 @@ def test_pipeline_session_service_completes_supported_run_and_persists_outputs(t
     request = _build_streaming_request(path_config)
     run_paths = path_config.plan_run_paths(
         experiment_name=request.experiment_name,
-        method_slug=request.slam.method.artifact_slug,
+        method_slug=request.slam.method.value,
         output_dir=request.output_dir,
     )
     source = FakeStreamingSource(
