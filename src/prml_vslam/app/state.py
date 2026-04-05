@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from collections.abc import Callable
+from typing import Any, TypeVar, cast
 
 import streamlit as st
 
@@ -11,6 +12,8 @@ from prml_vslam.utils import PathConfig
 
 from .models import AppState
 from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
+
+RuntimeT = TypeVar("RuntimeT")
 
 
 class SessionStateStore:
@@ -48,69 +51,59 @@ class SessionStateStore:
 
     def load_record3d_runtime(self) -> Record3DStreamRuntimeController:
         """Load or create the opaque Record3D runtime controller for this session."""
-        runtime = st.session_state.get(self.record3d_runtime_key)
-        if runtime is None:
-            runtime = Record3DStreamRuntimeController()
-            st.session_state[self.record3d_runtime_key] = runtime
-            return runtime
-        if isinstance(runtime, Record3DStreamRuntimeController):
-            return runtime
-        if self._is_runtime_compatible(runtime):
-            return cast(Record3DStreamRuntimeController, runtime)
-
-        self._shutdown_stale_runtime(runtime)
-        replacement = Record3DStreamRuntimeController()
-        st.session_state[self.record3d_runtime_key] = replacement
-        return replacement
+        return self._load_runtime(
+            session_key=self.record3d_runtime_key,
+            runtime_type=Record3DStreamRuntimeController,
+            required_methods=("snapshot", "stop", "start_usb", "start_wifi"),
+            factory=Record3DStreamRuntimeController,
+        )
 
     def load_advio_runtime(self) -> AdvioPreviewRuntimeController:
         """Load or create the opaque ADVIO preview runtime controller for this session."""
-        runtime = st.session_state.get(self.advio_runtime_key)
-        if runtime is None:
-            runtime = AdvioPreviewRuntimeController()
-            st.session_state[self.advio_runtime_key] = runtime
-            return runtime
-        if isinstance(runtime, AdvioPreviewRuntimeController):
-            return runtime
-        if self._is_advio_runtime_compatible(runtime):
-            return cast(AdvioPreviewRuntimeController, runtime)
-
-        self._shutdown_stale_runtime(runtime)
-        replacement = AdvioPreviewRuntimeController()
-        st.session_state[self.advio_runtime_key] = replacement
-        return replacement
+        return self._load_runtime(
+            session_key=self.advio_runtime_key,
+            runtime_type=AdvioPreviewRuntimeController,
+            required_methods=("snapshot", "stop", "start"),
+            factory=AdvioPreviewRuntimeController,
+        )
 
     def load_pipeline_runtime(self, *, path_config: PathConfig | None = None) -> PipelineSessionService:
         """Load or create the opaque pipeline session service for this session."""
-        runtime = st.session_state.get(self.pipeline_runtime_key)
+        return self._load_runtime(
+            session_key=self.pipeline_runtime_key,
+            runtime_type=PipelineSessionService,
+            required_methods=("snapshot", "stop", "start"),
+            factory=lambda: PipelineSessionService(path_config=path_config),
+        )
+
+    def _load_runtime(
+        self,
+        *,
+        session_key: str,
+        runtime_type: type[RuntimeT],
+        required_methods: tuple[str, ...],
+        factory: Callable[[], RuntimeT],
+    ) -> RuntimeT:
+        """Return one stored runtime or replace a stale session object."""
+        runtime = st.session_state.get(session_key)
         if runtime is None:
-            runtime = PipelineSessionService(path_config=path_config)
-            st.session_state[self.pipeline_runtime_key] = runtime
+            return self._store_runtime(session_key=session_key, runtime=factory())
+        if isinstance(runtime, runtime_type):
             return runtime
-        if isinstance(runtime, PipelineSessionService):
-            return runtime
-        if self._is_pipeline_runtime_compatible(runtime):
-            return cast(PipelineSessionService, runtime)
+        if self._has_runtime_methods(runtime, required_methods):
+            return cast(RuntimeT, runtime)
 
         self._shutdown_stale_runtime(runtime)
-        replacement = PipelineSessionService(path_config=path_config)
-        st.session_state[self.pipeline_runtime_key] = replacement
-        return replacement
+        return self._store_runtime(session_key=session_key, runtime=factory())
 
     @staticmethod
-    def _is_runtime_compatible(runtime: Any) -> bool:
-        required_methods = ("snapshot", "stop", "start_usb", "start_wifi")
+    def _has_runtime_methods(runtime: Any, required_methods: tuple[str, ...]) -> bool:
         return all(callable(getattr(runtime, method_name, None)) for method_name in required_methods)
 
     @staticmethod
-    def _is_advio_runtime_compatible(runtime: Any) -> bool:
-        required_methods = ("snapshot", "stop", "start")
-        return all(callable(getattr(runtime, method_name, None)) for method_name in required_methods)
-
-    @staticmethod
-    def _is_pipeline_runtime_compatible(runtime: Any) -> bool:
-        required_methods = ("snapshot", "stop", "start")
-        return all(callable(getattr(runtime, method_name, None)) for method_name in required_methods)
+    def _store_runtime(*, session_key: str, runtime: RuntimeT) -> RuntimeT:
+        st.session_state[session_key] = runtime
+        return runtime
 
     @staticmethod
     def _shutdown_stale_runtime(runtime: Any) -> None:

@@ -96,26 +96,6 @@ sources = [
 ]
 
 [[todos]]
-id = "TODO-0007"
-title = "Add focused tests for stale runtime replacement in SessionStateStore"
-status = "pending"
-priority = "low"
-issue_ids = [
-    "ISSUE-0007",
-]
-loc_min = 25
-loc_expected = 60
-loc_max = 120
-files = [
-    "src/prml_vslam/app/state.py",
-    "tests/test_app.py",
-]
-acceptance = [
-    "Tests cover incompatible runtime replacement for record3d, advio, and pipeline adapters.",
-    "Tests assert stale runtimes are shut down exactly once before replacement.",
-]
-
-[[todos]]
 id = "TODO-0009"
 title = "Remove or privatize MethodRunResult as a parallel normalized-output surface"
 status = "pending"
@@ -273,32 +253,4 @@ sources = [
     "src/prml_vslam/app/pages/record3d.py",
     "https://record3d.app/",
     "https://github.com/marek-simonik/record3d",
-]
-
-[[todos]]
-id = "TODO-0015"
-title = "Factor SessionStateStore runtime loading through one generic helper"
-status = "pending"
-priority = "low"
-issue_ids = [
-    "ISSUE-0007",
-    "ISSUE-0015",
-]
-loc_min = 25
-loc_expected = 55
-loc_max = 120
-files = [
-    "src/prml_vslam/app/state.py",
-    "tests/test_app.py",
-]
-acceptance = [
-    "One shared helper handles session-state lookup, compatibility validation, stale-runtime shutdown, and replacement.",
-    "Record3D, ADVIO, and Pipeline runtime loads configure that helper instead of reimplementing the same control flow.",
-    "Focused tests cover the preserved stale-runtime replacement behavior after the refactor.",
-]
-sources = [
-    "src/prml_vslam/app/REQUIREMENTS.md",
-    "src/prml_vslam/app/AGENTS.md",
-    "src/prml_vslam/app/state.py",
-    "tests/test_app.py",
 ]

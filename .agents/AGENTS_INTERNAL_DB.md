@@ -14,6 +14,7 @@ configuration policy, and tracked technical debt.
 - Read this file, `README.md`, `docs/Questions.md`, and the nearest `AGENTS.md` before substantial
   work.
 - Use `rg` and narrow file reads instead of bulk-loading the repository.
+- Run `make ci` before creating a commit.
 - Never use destructive git commands unless the user explicitly requests them.
 - Keep changes scoped to the requested task; record validated debts in `.agents/issues.toml` and
   `.agents/todos.toml` instead of opportunistically fixing unrelated areas.
@@ -39,13 +40,29 @@ configuration policy, and tracked technical debt.
 ## 4) Internal Tracking Databases
 - `.agents/issues.toml`
   - Use for validated defects, integration gaps, and architectural debt.
-  - Keep entries stable and update `status`, `priority`, `summary`, `files`, and `notes` as the
-    repo evolves.
+  - Keep only active issue records here.
+  - Update `status`, `priority`, `summary`, `files`, and `notes` as the repo evolves.
 - `.agents/todos.toml`
   - Use for actionable follow-up work linked to issue IDs.
-  - Keep acceptance criteria explicit and update status in place instead of deleting rows.
+  - Keep only active todo records here.
+  - Each todo must define `loc_min`, `loc_expected`, and `loc_max` in lines of code.
+  - Keep acceptance criteria explicit.
+- `.agents/resolved.toml`
+  - Use for issues and todos moved out of the active backlogs after they are resolved, completed,
+    or intentionally retired.
+  - Preserve the original record and add resolution metadata instead of deleting it.
 
-## 5) Current Stable Facts
+## 5) Agent Backlog Script
+- Use `make agents-db` to print ranked active issues and todos.
+- Use `make agents-db AGENTS_ARGS='resolve issue ISSUE-XXXX --note "..."'` to move
+  an issue into `.agents/resolved.toml`.
+- Use `make agents-db AGENTS_ARGS='resolve todo TODO-XXXX --note "..."'` to move a
+  todo into `.agents/resolved.toml`.
+- Ranking rules:
+  - issues sort by priority first, then status, then ID
+  - todos sort by priority first, then status, then lower `loc_expected`, then ID
+
+## 6) Current Stable Facts
 - `BaseConfig` already supports TOML IO in `src/prml_vslam/utils/base_config.py`.
 - `PathConfig.resolve_toml_path()` already exists and should anchor repo-relative config resolution.
 - The current bounded pipeline demo runtime lives in `prml_vslam.pipeline.session`, not in

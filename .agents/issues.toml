@@ -192,21 +192,6 @@ sources = [
 ]
 
 [[issues]]
-id = "ISSUE-0007"
-title = "SessionStateStore stale-runtime replacement paths lack focused tests"
-status = "open"
-priority = "low"
-category = "testing"
-summary = "The session-state adapter can replace incompatible runtimes, but the current test coverage only verifies a basic pipeline-runtime round trip."
-files = [
-    "src/prml_vslam/app/state.py",
-    "tests/test_app.py",
-]
-notes = [
-    "Compatibility fallback and stale-runtime shutdown behavior are implemented but not directly covered.",
-]
-
-[[issues]]
 id = "ISSUE-0014"
 title = "Record3D Wi-Fi remains a repo-owned first-class transport beside the official USB bindings"
 status = "open"
@@ -238,26 +223,4 @@ sources = [
     "src/prml_vslam/app/pages/record3d.py",
     "https://record3d.app/",
     "https://github.com/marek-simonik/record3d",
-]
-
-[[issues]]
-id = "ISSUE-0015"
-title = "SessionStateStore repeats per-runtime load, compatibility, and replacement flows"
-status = "open"
-priority = "low"
-category = "maintainability"
-summary = "The Streamlit session-state adapter still reimplements the same get-or-create, compatibility-check, stale-runtime shutdown, and replacement path for Record3D, ADVIO, and Pipeline runtimes. This matches the older review's app-heaviness concern and leaves a concrete duplication hotspot even after packet-session lifecycle was consolidated."
-files = [
-    "src/prml_vslam/app/state.py",
-    "tests/test_app.py",
-]
-notes = [
-    "The three runtime loaders differ mostly in the constructor and required-method predicate.",
-    "A generic helper would reduce app boilerplate while keeping the dedicated typed controllers and pipeline service intact.",
-]
-sources = [
-    "src/prml_vslam/app/REQUIREMENTS.md",
-    "src/prml_vslam/app/AGENTS.md",
-    "src/prml_vslam/app/state.py",
-    "tests/test_app.py",
 ]

@@ -187,9 +187,10 @@ def compute_rri(
 
 ## Verification
 
-- For Python changes, run `make lint`.
+- For Python changes, run `make lint` during iteration.
 - Run targeted tests with `uv run pytest <path>` when a focused surface changed; use `make test`
   when the change is broad enough to justify the full suite.
+- Before creating a commit, run `make ci`.
 - When changing config contracts, artifact formats, or benchmark assumptions, update
   `.agents/references/agent_reference.md` in the same change.
 
