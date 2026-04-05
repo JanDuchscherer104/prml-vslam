@@ -1,0 +1,4 @@
+interface:
+  display_name: "Autoresearch VSLAM"
+  short_description: "Bounded keep-or-discard research loop"
+  default_prompt: "Use $autoresearch-vslam to run a bounded, evidence-driven research loop in this repo with a frozen evaluation harness, safe git flow, and a `.logs/autoresearch/` results log."
