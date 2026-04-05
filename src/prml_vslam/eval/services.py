@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.eval.interfaces import (
+from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.eval.contracts import (
     DiscoveredRun,
     EvaluationArtifact,
     EvaluationControls,
@@ -14,7 +14,7 @@ from prml_vslam.eval.interfaces import (
     MetricStats,
     SelectionSnapshot,
 )
-from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils.path_config import PathConfig
 
 from .mock_metrics import load_trajectory_pair

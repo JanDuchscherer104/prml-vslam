@@ -8,8 +8,9 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.interfaces import FramePacketStream, TimedPoseTrajectory
+from prml_vslam.interfaces import TimedPoseTrajectory
 from prml_vslam.io import Cv2ReplayMode
+from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
 
 from . import advio_layout, advio_loading

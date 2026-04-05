@@ -1,4 +1,4 @@
-"""Typed evaluation contracts for persisted artifacts and plotting, not a middleware layer."""
+"""Typed evaluation contracts for persisted artifacts and plotting."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import numpy as np
 from jaxtyping import Float
 from pydantic import Field
 
-from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseConfig, BaseData
 
 

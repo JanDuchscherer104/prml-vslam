@@ -45,6 +45,7 @@ def test_path_config_builds_canonical_run_layout(tmp_path: Path) -> None:
     assert run_paths.trajectory_path == expected_root / "slam" / "trajectory.tum"
     assert run_paths.trajectory_metrics_path == expected_root / "evaluation" / "trajectory_metrics.json"
     assert run_paths.summary_path == expected_root / "summary" / "run_summary.json"
+    assert run_paths.stage_manifests_path == expected_root / "summary" / "stage_manifests.json"
     assert run_paths.plotly_scene_path("vista") == expected_root / "visualization" / "vista_scene.html"
 
 

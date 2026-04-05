@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import field_validator
 
-from prml_vslam.methods.interfaces import (
+from prml_vslam.methods.contracts import (
     MethodArtifacts,
     MethodCommand,
     MethodId,
@@ -48,6 +48,7 @@ class MockMethodConfig(BaseConfig):
         raise NotImplementedError
 
 
+# TODO: Mock is defined in mock_vslam.py, and interfaces / base classes must be defined in dedicated modules.
 class MockMethodRuntime:
     def __init__(self, config: MockMethodConfig) -> None:
         self.config = config

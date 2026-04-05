@@ -1,6 +1,6 @@
 """Input and output helpers for videos, logs, and benchmark artifacts."""
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketStream, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 
 from .cv2_producer import (
     Cv2FrameProducer,
@@ -31,7 +31,6 @@ __all__ = [
     "Cv2ProducerConfig",
     "Cv2ReplayMode",
     "FramePacket",
-    "FramePacketStream",
     "Record3DDevice",
     "Record3DDeviceType",
     "Record3DFrame",

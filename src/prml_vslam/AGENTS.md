@@ -18,6 +18,8 @@
 - ✓ Identify present issues, overcomplications and redundancies and suggest elegant solutions to the user.
 - *NEVER* let anything fail silently.
 - *NEVER* write overly defensive workarounds to accommodate backwards compatibility or unlikely edge-cases.
+- *Do NOT* populate `__init__.py` files with imports that are not strictly necessary for the package's public API.
+
 
 When work is specific to the Streamlit app subtree, also follow `src/prml_vslam/app/AGENTS.md`.
 
@@ -123,6 +125,33 @@ def compute_rri(
 - Use `field_validator` and `model_validator` when validation belongs in the config layer.
 - Do not convert config objects to raw dicts just to instantiate internal runtime classes.
 
+## Contract Ownership And Namespacing
+
+- The full current-state findings, target ownership model, minimal public
+  surface, and migration rules live in
+  `docs/architecture/interfaces-and-contracts.md`.
+- One semantic concept must have exactly one owning module in this repository.
+- Repo-wide canonical datamodels live in `prml_vslam.interfaces.*`.
+  - Use this namespace only for shared geometry, pose, trajectory, calibration, and live-frame datamodels that are imported across top-level packages.
+- Repo-wide shared protocols live in `prml_vslam.protocols.*`.
+  - `FramePacketStream` is owned by `prml_vslam.protocols.runtime`.
+- Package-boundary DTOs, enums, config objects, manifests, requests, and results belong in `<package>/contracts.py`.
+- Package-local `Protocol` definitions belong in `<package>/protocols.py` when a package needs local behavior seams.
+- Do not reintroduce mixed `interfaces.py` owner modules.
+- Streamlit-only state belongs in `prml_vslam.app.models`.
+  - App models must not leak into `pipeline`, `datasets`, `methods`, `eval`, or `io`.
+- `services.py` owns implementations only.
+  - Do not define new public contract types in service modules.
+- Promote a type into `prml_vslam.interfaces` only when both of the following are true:
+  - it is imported by multiple top-level packages
+  - it has identical semantics across those packages
+- Prefer reuse over parallel shapes.
+  - Do not create method-local, app-local, or dataset-local copies of canonical pose, intrinsics, trajectory, frame, or pipeline artifact contracts.
+- Keep normalized pipeline boundaries authoritative.
+  - `SequenceManifest` is the shared offline input boundary.
+  - `TrackingArtifacts` and other pipeline artifact bundles are the normalized outputs that downstream stages consume.
+- Keep wrapper-private transport or upstream-native payloads private unless they are true shared repo contracts.
+
 ## VSLAM Contract Summary
 
 - Treat external SLAM systems, ARCore, and reference reconstructions as separate systems with
@@ -138,6 +167,18 @@ def compute_rri(
   cannot encode required benchmark information such as frame, units, color availability, or
   preprocessing.
 - Keep evaluation and alignment logic separate from method-execution wrappers.
+
+## External Method Wrapper Rules
+
+- Treat upstream repos as explicit external systems with thin adapters.
+- Use the upstream repo's official CLI or documented entrypoint when practical.
+- ViSTA-SLAM integration should treat `run.py --images ... --config ... --output ...` as the primary offline seam and normalize native artifacts such as `trajectory.npy` and `pointcloud.ply` into repo-owned outputs.
+- MASt3R-SLAM integration should treat `main.py --dataset ... --config ... [--calib ...] [--save-as ...]` as the primary offline seam and normalize its native trajectory text and reconstruction PLY into repo-owned outputs.
+- Do not adopt upstream live-camera modes as repository-wide streaming interfaces.
+  - Repo streaming remains owned by `FramePacket`, `FramePacketStream`, and pipeline session services.
+- Keep method wrappers thin.
+  - They should prepare normalized inputs, invoke the upstream entrypoint, validate expected native outputs, and write normalized repo artifacts.
+- If an upstream method needs image files instead of video, materialize that through pipeline workspace helpers rather than inventing a method-specific input contract.
 
 ## Verification
 

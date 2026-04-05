@@ -7,9 +7,10 @@ artifact-boundary definitions for the repository pipeline.
 
 Today `prml_vslam.pipeline` is primarily a typed planning surface:
 
-- `contracts.py` defines the public request, plan, manifest, and artifact DTOs
+- `contracts.py` defines the public request, plan, manifest, artifact, and
+  streaming-update DTOs
 - `services.py` turns a `RunRequest` into an ordered `RunPlan`
-- `interfaces.py` defines the protocol surface that future runners and
+- `protocols.py` defines the stage protocol surface that future runners and
   backends must satisfy
 - `workspace.py` defines prepared-input and capture-manifest helper models
 
@@ -31,27 +32,24 @@ is a bounded monitoring surface rather than the final reusable runner API.
 The current runnable streaming demo is split across the following files.
 
 - [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
-  - renders the `Pipeline` page, the bounded demo controls, and the live
-    monitoring tabs
-- [`../app/pipeline_controller.py`](../app/pipeline_controller.py)
-  - translates page actions into a `RunRequest`, `RunPlan`,
-    `SequenceManifest`, and replay-stream startup
-- [`../app/pipeline_runtime.py`](../app/pipeline_runtime.py)
+  - renders the `Pipeline` page, persists selector-only UI state, and drives
+    the pipeline-owned session service
+- [`session.py`](./session.py)
   - owns the background worker, runtime snapshot, stage-manifest updates, and
     final `RunSummary`
 - [`../app/bootstrap.py`](../app/bootstrap.py)
-  - wires the pipeline page and `PipelineDemoRuntimeController` into the
-    packaged Streamlit app
+  - wires the pipeline page and `PipelineSessionService` into the packaged
+    Streamlit app
 - [`../app/state.py`](../app/state.py)
-  - persists the opaque pipeline runtime controller in Streamlit session state
+  - persists the opaque pipeline session service in Streamlit session state
 - [`../app/models.py`](../app/models.py)
   - defines the persisted `PipelinePageState` used by the page controls
-- [`../methods/mock_tracking.py`](../methods/mock_tracking.py)
+- [`../methods/mock_vslam.py`](../methods/mock_vslam.py)
   - implements the repository-local `MockTrackingRuntime` used by both the
     streaming demo loop and the offline mock path
 - [`../datasets/advio_service.py`](../datasets/advio_service.py)
-  - exposes the app-facing ADVIO helpers that build a `SequenceManifest` and
-    open the replay stream
+  - exposes ADVIO helpers that build a pipeline-facing replay source plus the
+    normalized `SequenceManifest`
 - [`../datasets/advio_sequence.py`](../datasets/advio_sequence.py)
   - materializes ADVIO scenes into `SequenceManifest` and forwards replay
     requests into the adapter layer
@@ -62,16 +60,20 @@ The current runnable streaming demo is split across the following files.
   - provides the replay-capable OpenCV `FramePacketStream` used by the ADVIO
     demo
 - [`../interfaces/runtime.py`](../interfaces/runtime.py)
-  - defines `FramePacket` and `FramePacketStream`, the shared live-frame
-    contracts used by replay and streaming tracking
+  - defines `FramePacket`, the shared live-frame datamodel used by replay and
+    streaming tracking
+- [`../protocols/runtime.py`](../protocols/runtime.py)
+  - defines `FramePacketStream`, the shared frame-stream protocol used by
+    replay and streaming tracking
 - [`../app/plotting/record3d.py`](../app/plotting/record3d.py)
   - builds the live trajectory figure shown on the Pipeline page
 - [`contracts.py`](./contracts.py)
   - defines `RunRequest`, `RunPlan`, `SequenceManifest`, `StageManifest`,
-    `RunSummary`, and the typed artifact bundles that the demo exercises
-- [`interfaces.py`](./interfaces.py)
-  - defines the `OfflineTrackerBackend`, `StreamingTrackerBackend`, and
-    `TrackingUpdate` contracts used by the mock backend and demo runtime
+    `RunSummary`, `TrackingUpdate`, and the typed artifact bundles that the
+    demo exercises
+- [`protocols.py`](./protocols.py)
+  - defines the `OfflineTrackerBackend` and `StreamingTrackerBackend`
+    contracts used by the mock backend and demo runtime
 - [`services.py`](./services.py)
   - defines `RunPlannerService`, which turns the page-built `RunRequest` into
     the ordered `RunPlan`
@@ -172,7 +174,7 @@ in-memory payloads.
 
 ## Runtime Interfaces
 
-`interfaces.py` defines the stage-level protocol surface.
+`protocols.py` defines the stage-level protocol surface.
 
 ### Tracking
 
@@ -229,12 +231,11 @@ tracking config.
 from pathlib import Path
 
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import (
+from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DenseConfig,
-    PipelineMode,
     ReferenceConfig,
-    RunRequest,
     TrackingConfig,
     VideoSourceSpec,
 )
@@ -264,9 +265,10 @@ A dataset-backed offline request uses `DatasetSourceSpec` instead of
 ```python
 from pathlib import Path
 
-from prml_vslam.datasets.interfaces import DatasetId
+from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import DatasetSourceSpec, RunRequest, TrackingConfig
+from prml_vslam.pipeline import RunRequest
+from prml_vslam.pipeline.contracts import DatasetSourceSpec, TrackingConfig
 
 request = RunRequest(
     experiment_name="advio-office-vista",
@@ -284,7 +286,8 @@ A streaming plan uses `PipelineMode.STREAMING` together with `LiveSourceSpec`.
 from pathlib import Path
 
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import LiveSourceSpec, PipelineMode, RunRequest, TrackingConfig
+from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.contracts import LiveSourceSpec, TrackingConfig
 
 request = RunRequest(
     experiment_name="record3d-live-vista",
@@ -336,12 +339,11 @@ second.
    - The path layout belongs to `PathConfig`, not to the app or backend.
 5. Insert the stage into `RunPlannerService._build_stages(...)`.
    - Give it a stable title, summary, and explicit outputs.
-6. Define the execution protocol in `interfaces.py` if the stage introduces a
+6. Define the execution protocol in `protocols.py` if the stage introduces a
    new reusable execution seam.
 7. Wire the executor surface.
-   - For the current demo this means `prml_vslam.app.pipeline_runtime`.
-   - For the target architecture this means a reusable offline or streaming
-     runner under `prml_vslam.pipeline`.
+   - For the current demo this means `prml_vslam.pipeline.session`.
+   - Keep the Streamlit page as a thin client over the pipeline-owned service.
 8. Persist `StageManifest` and update `RunSummary`.
 9. Add tests for planning, artifact-path layout, and execution behavior.
 
@@ -364,17 +366,17 @@ Use the following decision rule:
 ## Related Files
 
 - [`contracts.py`](./contracts.py)
-- [`interfaces.py`](./interfaces.py)
+- [`protocols.py`](./protocols.py)
+- [`session.py`](./session.py)
 - [`services.py`](./services.py)
 - [`workspace.py`](./workspace.py)
 - [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
-- [`../app/pipeline_controller.py`](../app/pipeline_controller.py)
-- [`../app/pipeline_runtime.py`](../app/pipeline_runtime.py)
-- [`../methods/mock_tracking.py`](../methods/mock_tracking.py)
+- [`../methods/mock_vslam.py`](../methods/mock_vslam.py)
 - [`../datasets/advio_service.py`](../datasets/advio_service.py)
 - [`../datasets/advio_sequence.py`](../datasets/advio_sequence.py)
 - [`../datasets/advio_replay_adapter.py`](../datasets/advio_replay_adapter.py)
 - [`../io/cv2_producer.py`](../io/cv2_producer.py)
 - [`../interfaces/runtime.py`](../interfaces/runtime.py)
+- [`../protocols/runtime.py`](../protocols/runtime.py)
 - [`../utils/path_config.py`](../utils/path_config.py)
 - [`REQUIREMENTS.md`](./REQUIREMENTS.md)

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 from prml_vslam.interfaces import SE3Pose
-from prml_vslam.methods import MethodId, MethodRunRequest, MSTRMethodConfig
-from prml_vslam.methods.mock_tracking import MockTrackingRuntimeConfig
+from prml_vslam.methods import MethodId, MSTRMethodConfig
+from prml_vslam.methods.contracts import MethodRunRequest
+from prml_vslam.methods.mock_vslam import MockTrackingRuntimeConfig
 from prml_vslam.pipeline.contracts import SequenceManifest, TrackingConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 

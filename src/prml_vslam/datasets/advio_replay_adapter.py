@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketStream, SE3Pose, TimedPoseTrajectory
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose, TimedPoseTrajectory
 from prml_vslam.io.cv2_producer import Cv2ProducerConfig, Cv2ReplayMode, open_cv2_replay_stream
+from prml_vslam.protocols import FramePacketStream
 
 from .advio_loading import load_advio_calibration, load_advio_frame_timestamps_ns, load_advio_trajectory
 from .advio_models import AdvioPoseSource
