@@ -226,7 +226,14 @@ docs/slides/**/*.svgz
 # Agent scratch space
 .agents/tmp/
 .agents/work/
+.agents/skills/repo-context-explorer/
 
 # Local pipeline/demo outputs
 artifacts/
 data/
+.logs/
+
+# Generated local documentation exports
+README_files/
+src/prml_vslam/app/README.html
+docs/literature/ViSTA-SLAM.qmd

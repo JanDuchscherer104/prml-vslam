@@ -25,9 +25,40 @@
 - PyTorch3D README: <https://github.com/facebookresearch/pytorch3d>
 - PyTorch3D batching note: <https://github.com/facebookresearch/pytorch3d/blob/main/docs/notes/batching.md>
 - pytransform3d docs: <https://dfki-ric.github.io/pytransform3d/>
+- evo repo: <https://github.com/MichaelGrupp/evo>
+- evo plotting wiki: <https://github.com/MichaelGrupp/evo/wiki/Plotting>
+- evo trajectory tool wiki (`--plot_mode`, sync/alignment options): <https://github.com/MichaelGrupp/evo/wiki/evo_traj>
+- evo APE tool wiki: <https://github.com/MichaelGrupp/evo/wiki/evo_ape>
+- evo plot helpers (`traj_colormap`, trajectory plotting internals): <https://github.com/MichaelGrupp/evo/blob/master/evo/tools/plot.py>
 - Nerfstudio docs: <https://docs.nerf.studio/>
 - Nerfstudio data conventions: <https://docs.nerf.studio/quickstart/data_conventions.html>
 - ViSTA-SLAM paper: <https://arxiv.org/abs/2509.01584>
 - ViSTA-SLAM repo: <https://github.com/zhangganlin/vista-slam>
 - MASt3R-SLAM paper: <https://arxiv.org/abs/2412.12392>
 - MASt3R-SLAM repo: <https://github.com/rmurai0610/MASt3R-SLAM>
+
+## Contract Lookup
+
+- Full restructuring rationale, current-state findings, target ownership rules,
+  minimal public surface, and migration guidance live in
+  `docs/architecture/interfaces-and-contracts.md`.
+- One semantic concept should have one owner in the repo.
+- Repo-wide shared datamodels live in `prml_vslam.interfaces.*`.
+- Repo-wide shared protocols live in `prml_vslam.protocols.*`.
+  - `FramePacketStream` is owned by `prml_vslam.protocols.runtime`.
+- Package DTOs, enums, configs, manifests, requests, and results belong in
+  `<package>/contracts.py`.
+- Package-local `Protocol` seams belong in `<package>/protocols.py` when a
+  package needs them.
+- `prml_vslam.app.models` owns Streamlit-only state.
+- `services.py` modules own implementations only.
+- Minimal public surface to preserve:
+  `CameraIntrinsics`, `SE3Pose`, `TimedPoseTrajectory`, `FramePacket`,
+  `RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`,
+  `RunSummary`, `SlamBackend`, `SlamSession`, `MethodId`
+- ViSTA-SLAM and MASt3R-SLAM wrappers should normalize into pipeline-owned
+  artifacts instead of exposing upstream-native result layouts or live modes as
+  repo-wide contracts.
+- The pipeline owns one SLAM-stage config and one SLAM artifact bundle per
+  backend; dense output is a capability of the SLAM stage, not a separate
+  backend contract.

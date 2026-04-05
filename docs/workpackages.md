@@ -1,6 +1,10 @@
 # Work Packages
 
-This breakdown is intended to be copied into issues with minimal restructuring.
+## Issues and TODOs
+
+- [ ] Survey ARCore functionalities
+- [ ] Read VSLAM papers
+- [ ] Define initial benchmark scope and success criteria
 
 ## WP1: Repository and Environment Scaffolding
 
@@ -9,7 +13,8 @@ This breakdown is intended to be copied into issues with minimal restructuring.
 - Outputs: `uv` environment, package skeleton, tests, CI, contributor guidance.
 - Dependencies: none.
 - Suggested issue split:
-  - maintain `pyproject.toml` and editable install
+  - maintain `pyproject.toml`
+  - maintain system dependencies via conda or docker.
   - keep lint/test CI green
   - maintain README, AGENTS, and repo hygiene rules
 
@@ -68,13 +73,13 @@ This breakdown is intended to be copied into issues with minimal restructuring.
   - document calibration and export assumptions
   - generate reference artifacts for benchmark sequences
 
-## WP7: Benchmarking, Analysis, and Reporting
+## WP7: Benchmarking and Reporting
 
-- Purpose: consolidate results into update meetings, the final presentation, and the final report.
-- Inputs: outputs from WP3 to WP6.
-- Outputs: weekly deck updates, final report, final recommendation.
-- Dependencies: WP1, WP3, WP4, WP5, WP6.
+- Purpose: consolidate benchmark runs, summarize findings, and keep reporting assets current.
+- Inputs: trajectory metrics, dense-reconstruction comparisons, efficiency measurements, and reference artifacts.
+- Outputs: benchmark tables and figures, update-meeting materials, and the final evaluation narrative.
+- Dependencies: WP4, WP5, WP6.
 - Suggested issue split:
-  - maintain weekly meeting summaries
-  - keep the report structure aligned with experiments
-  - write the final recommendation with method tradeoffs
+  - define the final reporting slice and benchmark comparison matrix
+  - keep work package status and update-meeting artifacts in sync
+  - assemble the final report figures, tables, and recommendation

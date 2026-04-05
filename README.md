@@ -14,26 +14,71 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 ### Bootstrap
 
 ```bash
-uv sync --extra dev --extra eval
+uv sync --extra dev
 uv run pre-commit install
-uv run pre-commit run --all-files
-uv run pytest
-make typst-check
+make ci
+```
+
+Optional parallel test runs are available with `pytest-xdist`:
+
+```bash
+uv run --extra dev pytest -n auto
+make test PYTEST_ARGS="-n auto"
 ```
 
 ### Streamlit Workbench
 
 ```bash
+uv sync
+# add `--extra streaming` to enable Record3D USB plus optional Wi-Fi preview support
 uv run streamlit run streamlit_app.py
 ```
 
-The workbench supports:
+The app supports:
 
-- planning and materializing repo-owned workspaces
-- filesystem-path or uploaded-video inputs
-- offline batch execution from the UI
-- replayable streaming demo execution with persisted artifacts
-- an ADVIO dataset explorer page with Plotly modality coverage and asset-footprint views
+- a `Record3D` live-capture page for official USB capture plus optional Wi-Fi preview inside the workbench
+- an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
+- a `Pipeline` page for run planning, a minimal ADVIO mock pipeline demo, and artifact monitoring
+- a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
+- `PathConfig`-driven dataset and artifact discovery without app-local path defaults
+
+USB remains the canonical Record3D programmatic integration in this repo. The Wi-Fi path is kept as an optional
+preview-only fallback for the Streamlit workbench and does not expose the same pose or confidence surfaces.
+
+Pipeline contract and extension guidance lives in
+[`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).
+
+### TOML-First Run Planning
+
+For durable/reproducible planning, store a `RunRequest` as TOML and resolve it
+through the CLI:
+
+```toml
+experiment_name = "advio-office-offline-vista"
+mode = "offline"
+output_dir = "artifacts"
+
+[source]
+video_path = "captures/office-03.mp4"
+frame_stride = 2
+
+[slam]
+method = "vista"
+emit_dense_points = true
+emit_sparse_points = true
+
+[reference]
+enabled = false
+
+[evaluation]
+compare_to_arcore = true
+evaluate_cloud = false
+evaluate_efficiency = true
+```
+
+```bash
+uv run prml-vslam plan-run-config configs/advio-office-vista.toml
+```
 
 ## Challenge
 
