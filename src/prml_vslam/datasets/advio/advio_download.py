@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import hashlib
-import tempfile
-import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from prml_vslam.datasets.fetch import DatasetFetchHelper
 from prml_vslam.utils import Console
 
 from .advio_layout import (
@@ -33,6 +31,7 @@ class AdvioDownloadManager:
         self.dataset_root = dataset_root
         self.catalog = catalog
         self.console = console
+        self._fetch_helper = DatasetFetchHelper()
 
     @property
     def archive_root(self) -> Path:
@@ -100,13 +99,13 @@ class AdvioDownloadManager:
 
     def _ensure_archive(self, scene: AdvioSceneMetadata, *, overwrite: bool) -> tuple[Path, bool]:
         archive_path = self.archive_root / f"{scene.sequence_slug}.zip"
-        if archive_path.exists() and not overwrite:
-            self._validate_archive_checksum(archive_path, scene.archive_md5)
-            return archive_path, False
-        self.console.info(f"Downloading {scene.sequence_slug} from {scene.archive_url}.")
-        _download_binary_to_path(scene.archive_url, archive_path)
-        self._validate_archive_checksum(archive_path, scene.archive_md5)
-        return archive_path, True
+        self.console.info(f"Resolving archive {scene.sequence_slug} from {scene.archive_url}.")
+        return self._fetch_helper.fetch_to_path(
+            scene.archive_url,
+            archive_path,
+            known_hash=f"md5:{scene.archive_md5}",
+            overwrite=overwrite,
+        )
 
     def _ensure_calibration(self, scene: AdvioSceneMetadata, *, overwrite: bool) -> Path:
         calibration_path = resolve_calibration_path(self.dataset_root, scene)
@@ -114,22 +113,13 @@ class AdvioDownloadManager:
         if calibration_path.exists() and not overwrite:
             return calibration_path
         calibration_url = f"{self.catalog.upstream.calibration_base_url}{scene.calibration_name}"
-        self.console.info(f"Downloading calibration {scene.calibration_name} from {calibration_url}.")
-        calibration_path.write_text(_download_text(calibration_url), encoding="utf-8")
-        return calibration_path
+        self.console.info(f"Resolving calibration {scene.calibration_name} from {calibration_url}.")
+        fetched_path, _ = self._fetch_helper.fetch_to_path(calibration_url, calibration_path, overwrite=overwrite)
+        return fetched_path
 
     def _existing_archive_path(self, scene: AdvioSceneMetadata) -> Path | None:
         archive_path = self.archive_root / f"{scene.sequence_slug}.zip"
         return archive_path if archive_path.exists() else None
-
-    def _validate_archive_checksum(self, archive_path: Path, expected_md5: str) -> None:
-        actual_md5 = _md5_for_file(archive_path)
-        if actual_md5 != expected_md5:
-            msg = (
-                f"Checksum mismatch for {archive_path}. Expected {expected_md5}, got {actual_md5}. "
-                "Remove the corrupted archive and retry the download."
-            )
-            raise ValueError(msg)
 
     def _extract_modalities(
         self,
@@ -202,28 +192,3 @@ def _relative_sequence_path(normalized_parts: tuple[str, ...], sequence_slug: st
     if not root_parts or root_parts[0] != sequence_slug:
         return None
     return PurePosixPath(*root_parts[1:])
-
-
-def _download_binary_to_path(url: str, target_path: Path) -> None:
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "prml-vslam"})
-    with tempfile.NamedTemporaryFile(dir=target_path.parent, delete=False) as temp_file:
-        temp_path = Path(temp_file.name)
-        with urllib.request.urlopen(request, timeout=60) as response:
-            while chunk := response.read(_DOWNLOAD_CHUNK_SIZE_BYTES):
-                temp_file.write(chunk)
-    temp_path.replace(target_path)
-
-
-def _download_text(url: str) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": "prml-vslam"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8")
-
-
-def _md5_for_file(path: Path) -> str:
-    digest = hashlib.md5()
-    with path.open("rb") as handle:
-        while chunk := handle.read(_DOWNLOAD_CHUNK_SIZE_BYTES):
-            digest.update(chunk)
-    return digest.hexdigest()

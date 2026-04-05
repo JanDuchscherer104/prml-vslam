@@ -1322,6 +1322,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pooch"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "platformdirs" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/83/43/85ef45e8b36c6a48546af7b266592dc32d7f67837a6514d111bced6d7d75/pooch-1.9.0.tar.gz", hash = "sha256:de46729579b9857ffd3e741987a2f6d5e0e03219892c167c6578c0091fb511ed", size = 61788, upload-time = "2026-01-30T19:15:09.649Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl", hash = "sha256:f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b", size = 67175, upload-time = "2026-01-30T19:15:08.36Z" },
+]
+
+[[package]]
 name = "portalocker"
 version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1360,6 +1374,7 @@ dependencies = [
     { name = "open3d" },
     { name = "opencv-python" },
     { name = "plotly" },
+    { name = "pooch" },
     { name = "pydantic" },
     { name = "pytransform3d" },
     { name = "pyyaml" },
@@ -1403,6 +1418,7 @@ requires-dist = [
     { name = "open3d", specifier = ">=0.19.0,<0.20" },
     { name = "opencv-python", specifier = ">=4.10,<5" },
     { name = "plotly", specifier = ">=6.6.0,<7" },
+    { name = "pooch", specifier = ">=1.8,<2" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.2,<5" },
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<9" },
