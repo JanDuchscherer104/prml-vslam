@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.interfaces import SE3Pose
+import numpy as np
+
+from prml_vslam.interfaces import FramePacket, SE3Pose
 from prml_vslam.methods import MethodId, MethodRunRequest, MSTRMethodConfig, VISTAMethodConfig
+from prml_vslam.methods.mock_tracking import MockTrackingRuntimeConfig
+from prml_vslam.pipeline.contracts import TrackingConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 
 
@@ -77,3 +81,28 @@ def test_write_tum_trajectory_consumes_se3_pose_objects(tmp_path: Path) -> None:
         "0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 1.000000",
         "1.000000 1.000000 2.000000 3.000000 0.000000 0.000000 0.000000 1.000000",
     ]
+
+
+def test_mock_tracking_runtime_steps_frames_and_writes_tracking_artifacts(tmp_path: Path) -> None:
+    runtime = MockTrackingRuntimeConfig(method_id=MethodId.VISTA).setup_target()
+    assert runtime is not None
+
+    runtime.open(TrackingConfig(method=MethodId.VISTA), tmp_path / "artifacts")
+    update = runtime.step(
+        FramePacket(
+            seq=0,
+            timestamp_ns=1_000_000_000,
+            rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+        )
+    )
+    artifacts = runtime.close()
+
+    assert update.pose is not None
+    assert update.pose.tx == 1.0
+    assert update.num_map_points == 12
+    assert artifacts.trajectory_tum.path.exists()
+    assert artifacts.sparse_points_ply is not None
+    assert artifacts.sparse_points_ply.path.exists()
+    assert artifacts.preview_log_jsonl is not None
+    assert artifacts.preview_log_jsonl.path.exists()
