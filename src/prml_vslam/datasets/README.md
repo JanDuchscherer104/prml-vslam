@@ -39,7 +39,7 @@ Load one local sequence:
 ```python
 from pathlib import Path
 
-from prml_vslam.datasets import AdvioSequence, AdvioSequenceConfig
+from prml_vslam.datasets.advio import AdvioSequence, AdvioSequenceConfig
 
 sequence = AdvioSequence(
     config=AdvioSequenceConfig(dataset_root=Path("data/advio"), sequence_id=15)
@@ -56,7 +56,7 @@ Open a replay stream:
 ```python
 from pathlib import Path
 
-from prml_vslam.datasets import AdvioPoseSource, AdvioSequence, AdvioSequenceConfig
+from prml_vslam.datasets.advio import AdvioPoseSource, AdvioSequence, AdvioSequenceConfig
 from prml_vslam.io import Cv2ReplayMode
 
 sequence = AdvioSequence(
@@ -76,7 +76,7 @@ stream.disconnect()
 Use the high-level dataset service:
 
 ```python
-from prml_vslam.datasets import AdvioDatasetService
+from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.utils import PathConfig
 
 service = AdvioDatasetService(PathConfig())
