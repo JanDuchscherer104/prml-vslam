@@ -13,10 +13,9 @@ This file applies to work under `src/prml_vslam/app/`.
 ## Architecture Rules
 
 - Keep `streamlit_app.py` as a thin entrypoint that delegates into packaged app bootstrap code.
-- Keep app modules small and typed. Page modules should focus on rendering and orchestration rather
-  than inline domain logic.
-- Reuse repo-owned evaluation contracts and artifact formats rather than inventing app-local
-  semantics.
+- Keep app modules small and typed. Page modules should focus on rendering and orchestration rather than inline domain logic.
+- Reuse repo-owned evaluation contracts and artifact formats rather than inventing app-local semantics.
+- The streamlit app is not responsible for pipeline orchestration, data flow or domain logic.
 
 ## State and Path Rules
 
@@ -27,7 +26,7 @@ This file applies to work under `src/prml_vslam/app/`.
 
 ## Plotting and UX Rules
 
-- Keep Plotly figure construction in dedicated plotting modules instead of inline page code.
+- Keep Plotly figure construction in [dedicated plotting modules]("../plotting/__init__.py") instead of inline page code.
 - Make `evo` computation an explicit user action rather than an implicit page-load side effect.
 - Favor a simple modern light-first design with restrained typography, compact analysis surfaces,
   and minimal sidebar dependence over decorative hero-first layouts.
