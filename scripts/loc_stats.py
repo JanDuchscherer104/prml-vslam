@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import ast
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from rich.table import Table
 
@@ -21,21 +24,73 @@ ZERO_STATS = {
     "code": 0,
 }
 
-TODO_PATTERN = re.compile(r"#\s*TODO\b")
-FIXME_PATTERN = re.compile(r"#\s*FIXME\b")
+MARKER_PATTERNS = {
+    "todo": re.compile(r"\bTODO\b[:\s-]*(?P<text>.*)", re.IGNORECASE),
+    "fixme": re.compile(r"\bFIXME\b[:\s-]*(?P<text>.*)", re.IGNORECASE),
+}
 
 
-def count_stats(root: str) -> dict[str, int]:
+@dataclass(frozen=True)
+class MarkerEntry:
+    """Single TODO/FIXME marker found in a Python source file."""
+
+    kind: Literal["todo", "fixme"]
+    path: Path
+    line_number: int
+    text: str
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse CLI flags for optional marker detail output."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--todo",
+        action="store_true",
+        help="Show a detailed table of TODO markers.",
+    )
+    parser.add_argument(
+        "--fixme",
+        action="store_true",
+        help="Show a detailed table of FIXME markers.",
+    )
+    return parser.parse_args()
+
+
+def extract_markers(path: Path, lines: list[str]) -> list[MarkerEntry]:
+    """Extract TODO/FIXME comment markers from file lines."""
+
+    markers: list[MarkerEntry] = []
+    for line_number, line in enumerate(lines, start=1):
+        comment_index = line.find("#")
+        if comment_index < 0:
+            continue
+        comment_text = line[comment_index + 1 :].strip()
+        for kind, pattern in MARKER_PATTERNS.items():
+            match = pattern.search(comment_text)
+            if match is None:
+                continue
+            markers.append(
+                MarkerEntry(
+                    kind=kind,
+                    path=path,
+                    line_number=line_number,
+                    text=match.group("text").strip() or "-",
+                )
+            )
+    return markers
+
+
+def count_stats(root: str) -> tuple[dict[str, int], list[MarkerEntry]]:
     """Count high-level line statistics for Python files under root."""
 
     root_path = Path(root)
-    files = list(root_path.rglob("*.py"))
+    files = sorted(root_path.rglob("*.py"))
     total_lines = 0
     non_empty_lines = 0
     comment_lines = 0
     docstring_lines = 0
-    todo_lines = 0
-    fixme_lines = 0
+    markers: list[MarkerEntry] = []
 
     for file in files:
         source = file.read_text(encoding="utf-8", errors="replace")
@@ -43,8 +98,8 @@ def count_stats(root: str) -> dict[str, int]:
         total_lines += len(lines)
         non_empty_lines += sum(1 for line in lines if line.strip())
         comment_lines += sum(1 for line in lines if line.lstrip().startswith("#"))
-        todo_lines += sum(1 for line in lines if TODO_PATTERN.search(line))
-        fixme_lines += sum(1 for line in lines if FIXME_PATTERN.search(line))
+        file_markers = extract_markers(file, lines)
+        markers.extend(file_markers)
 
         try:
             tree = ast.parse(source)
@@ -77,22 +132,41 @@ def count_stats(root: str) -> dict[str, int]:
         "non_empty": non_empty_lines,
         "comments": comment_lines,
         "docstrings": docstring_lines,
-        "todo": todo_lines,
-        "fixme": fixme_lines,
+        "todo": sum(1 for marker in markers if marker.kind == "todo"),
+        "fixme": sum(1 for marker in markers if marker.kind == "fixme"),
         "code": max(0, non_empty_lines - comment_lines - docstring_lines),
-    }
+    }, markers
+
+
+def render_marker_table(console: Console, title: str, markers: list[MarkerEntry]) -> None:
+    """Render a detailed Rich table for one marker kind."""
+
+    if not markers:
+        console.print(f"[dim]{title}: none found.[/dim]")
+        return
+
+    table = Table(title=title, header_style="bold blue")
+    table.add_column("file", style="bold")
+    table.add_column("line", justify="right")
+    table.add_column("text")
+    for marker in markers:
+        table.add_row(marker.path.as_posix(), str(marker.line_number), marker.text)
+    console.print(table)
 
 
 def main() -> None:
     """Print LOC statistics for src/ and tests/."""
 
+    args = parse_args()
     console = Console("scripts.loc_stats")
     targets = ("src", "tests")
-    stats = {target: count_stats(target) if Path(target).exists() else ZERO_STATS.copy() for target in targets}
+    stats = {target: count_stats(target) if Path(target).exists() else (ZERO_STATS.copy(), []) for target in targets}
     total = ZERO_STATS.copy()
-    for current in stats.values():
+    all_markers: list[MarkerEntry] = []
+    for current, markers in stats.values():
         for key in total:
             total[key] += current[key]
+        all_markers.extend(markers)
 
     table = Table(title="Python LOC Summary", header_style="bold blue")
     table.add_column("scope", style="bold")
@@ -106,7 +180,7 @@ def main() -> None:
     table.add_column("code", justify="right", style="green")
 
     for name in (*targets, "total"):
-        current = total if name == "total" else stats[name]
+        current = total if name == "total" else stats[name][0]
         table.add_row(
             name,
             str(current["files"]),
@@ -120,6 +194,19 @@ def main() -> None:
         )
 
     console.print(table)
+
+    if args.todo:
+        render_marker_table(
+            console,
+            "TODO Markers",
+            [marker for marker in all_markers if marker.kind == "todo"],
+        )
+    if args.fixme:
+        render_marker_table(
+            console,
+            "FIXME Markers",
+            [marker for marker in all_markers if marker.kind == "fixme"],
+        )
 
 
 if __name__ == "__main__":
