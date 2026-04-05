@@ -523,6 +523,37 @@ resolved_on = "2026-04-06"
 resolution_note = "ADVIO archive and calibration retrieval now flow through a shared DatasetFetchHelper backed by pooch instead of bespoke HTTP and checksum glue in the download manager."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0013"
+title = "Source-of-truth docs still contain stale packet names, broken links, and placeholder TODO text"
+status = "resolved"
+priority = "low"
+category = "documentation"
+summary = "Several repo docs still drift from the current code surface: `Record3DFramePacket` remains in Record3D docs, `app/AGENTS.md` still has a quoted markdown target, and `docs/Questions.md` still contains an unresolved ARCore placeholder TODO."
+files = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+]
+notes = [
+    "The shared runtime packet contract is `FramePacket`, not `Record3DFramePacket`.",
+    "The quoted markdown target in `app/AGENTS.md` renders as a broken link on GitHub.",
+    "The Q&A document is one of the repo sources of truth, so leaving placeholder TODO text there increases requirements drift.",
+]
+sources = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3036947625",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245891",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Source-of-truth docs now use FramePacket, the app plotting link resolves correctly, and the placeholder ARCore/Nerfstudio text has been replaced with concrete wording."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -939,4 +970,39 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "ADVIO download now delegates cache validation and retrieval to DatasetFetchHelper, and tests cover refreshing a corrupted cached archive."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0013"
+title = "Clean up stale Record3D docs references and source-of-truth placeholders"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0013",
+]
+loc_min = 6
+loc_expected = 18
+loc_max = 45
+files = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+]
+acceptance = [
+    "Record3D docs use the current `FramePacket` contract name instead of `Record3DFramePacket`.",
+    "The markdown link in `app/AGENTS.md` resolves correctly on GitHub.",
+    "The ARCore placeholder TODO in `docs/Questions.md` is replaced with actual wording or removed.",
+]
+sources = [
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/app/README.qmd",
+    "src/prml_vslam/app/AGENTS.md",
+    "docs/Questions.md",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3036947625",
+    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245891",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "The stale Record3D packet references, broken local markdown link, and placeholder questions text are now replaced with current repo terminology and concrete wording."
 source_collection = "todos"

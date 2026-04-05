@@ -7,37 +7,6 @@ active_collection = "todos"
 loc_unit = "lines"
 
 [[todos]]
-id = "TODO-0013"
-title = "Clean up stale Record3D docs references and source-of-truth placeholders"
-status = "pending"
-priority = "low"
-issue_ids = [
-    "ISSUE-0013",
-]
-loc_min = 6
-loc_expected = 18
-loc_max = 45
-files = [
-    "src/prml_vslam/io/README.md",
-    "src/prml_vslam/app/README.qmd",
-    "src/prml_vslam/app/AGENTS.md",
-    "docs/Questions.md",
-]
-acceptance = [
-    "Record3D docs use the current `FramePacket` contract name instead of `Record3DFramePacket`.",
-    "The markdown link in `app/AGENTS.md` resolves correctly on GitHub.",
-    "The ARCore placeholder TODO in `docs/Questions.md` is replaced with actual wording or removed.",
-]
-sources = [
-    "src/prml_vslam/io/README.md",
-    "src/prml_vslam/app/README.qmd",
-    "src/prml_vslam/app/AGENTS.md",
-    "docs/Questions.md",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3036947625",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245891",
-]
-
-[[todos]]
 id = "TODO-0014"
 title = "Narrow the Record3D Wi-Fi/WebRTC path behind an explicit optional boundary"
 status = "pending"
