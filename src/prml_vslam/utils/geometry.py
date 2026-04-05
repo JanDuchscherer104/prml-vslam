@@ -8,6 +8,8 @@ from typing import Self
 
 import numpy as np
 import open3d as o3d
+from evo.core.trajectory import PoseTrajectory3D
+from evo.tools import file_interface
 from pydantic import ConfigDict
 
 from prml_vslam.interfaces import CameraIntrinsics, SE3Pose, TimedPoseTrajectory
@@ -63,7 +65,6 @@ def write_tum_trajectory(
         trajectory_path.write_text("", encoding="utf-8")
         return trajectory_path.resolve()
 
-    file_interface, pose_trajectory_type = _require_evo_tum_backend()
     pose_array = np.asarray([pose.to_tum_fields() for pose in poses], dtype=np.float64)
     quaternions_xyzw = pose_array[:, 3:]
     quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
@@ -72,7 +73,7 @@ def write_tum_trajectory(
 
     file_interface.write_tum_trajectory_file(
         trajectory_path,
-        pose_trajectory_type(
+        PoseTrajectory3D(
             positions_xyz=pose_array[:, :3],
             orientations_quat_wxyz=np.roll(quaternions_xyzw / quaternion_norms, 1, axis=1),
             timestamps=np.asarray(timestamps, dtype=np.float64),
@@ -90,7 +91,6 @@ def load_tum_trajectory(path: Path) -> TimedPoseTrajectory:
             quaternions_xyzw=np.empty((0, 4), dtype=np.float64),
         )
 
-    file_interface, _ = _require_evo_tum_backend()
     trajectory = file_interface.read_tum_trajectory_file(path)
     quaternions_xyzw = np.roll(np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64), -1, axis=1)
     quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
@@ -180,17 +180,6 @@ def pointmap_from_depth(
         ],
         axis=-1,
     ).astype(np.float32)
-
-
-# TODO:make imports mandatory, remove this function and import at the top of the file instead
-def _require_evo_tum_backend() -> tuple[object, type[object]]:
-    """Return evo's TUM file adapter and pose-trajectory type or fail clearly."""
-    try:
-        from evo.core.trajectory import PoseTrajectory3D
-        from evo.tools import file_interface
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("TUM trajectory I/O requires the `evo` package to be installed.") from exc
-    return file_interface, PoseTrajectory3D
 
 
 __all__ = [

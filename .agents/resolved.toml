@@ -679,6 +679,30 @@ resolved_on = "2026-04-06"
 resolution_note = "Replaced the duplicate Record3D and ADVIO preview-state enums with one shared PreviewStreamState across the app layer."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0018"
+title = "Geometry TUM helpers still pretend evo is optional"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The shared geometry module still routes TUM trajectory I/O through a local lazy-import helper even though `evo` is a declared runtime dependency for the repository."
+files = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+notes = [
+    "The helper adds extra indirection and error wrapping without protecting a genuinely optional dependency.",
+    "Repo policy prefers thin, explicit ownership boundaries and early failure when a required dependency is missing.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Removed the redundant lazy evo import helper and imported the TUM backend directly in geometry.py."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1273,4 +1297,32 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 02 after reducing LOC while preserving app controller and page behavior under tests/test_app.py."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0018"
+title = "Inline evo TUM imports in geometry"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0018",
+]
+loc_min = 5
+loc_expected = 12
+loc_max = 25
+files = [
+    "src/prml_vslam/utils/geometry.py",
+]
+acceptance = [
+    "The geometry module imports the evo TUM file adapter directly at module load instead of routing through a local helper.",
+    "TUM trajectory read/write behavior stays unchanged under the existing geometry and method tests.",
+    "The simplification reduces source LOC or keeps it flat while removing indirection.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 03 after reducing LOC and preserving TUM trajectory behavior under geometry, method, pipeline, and app tests."
 source_collection = "todos"
