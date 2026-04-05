@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from prml_vslam.methods.contracts import MethodId
-from prml_vslam.pipeline.contracts import ArtifactRef, SlamArtifacts
 from prml_vslam.utils import BaseConfig
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.contracts import ArtifactRef, SlamArtifacts
 
 _MOCK_TRAJECTORY = """# timestamp tx ty tz qx qy qz qw
 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 1.000000
@@ -38,6 +41,8 @@ class MockMethodRuntime:
 
     def infer(self, input_path: Path, artifact_root: Path, *, execute: bool = True) -> SlamArtifacts:
         """Materialize deterministic mock artifacts on the pipeline-owned surface."""
+        from prml_vslam.pipeline.contracts import SlamArtifacts
+
         source_path = input_path.expanduser().resolve()
         if not source_path.exists():
             raise FileNotFoundError(f"Input path '{source_path}' does not exist.")
@@ -70,4 +75,6 @@ class MockMethodRuntime:
 
 
 def _artifact_ref(path: Path, *, kind: str, fingerprint: str) -> ArtifactRef:
+    from prml_vslam.pipeline.contracts import ArtifactRef
+
     return ArtifactRef(path=path, kind=kind, fingerprint=fingerprint)
