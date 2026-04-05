@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from prml_vslam.io.record3d import Record3DStreamSnapshot, Record3DTransportId
+from prml_vslam.io.record3d import Record3DTransportId
+
+from .models import Record3DStreamSnapshot
 
 
 def build_record3d_frame_details(snapshot: Record3DStreamSnapshot, packet: Any) -> dict[str, object]:

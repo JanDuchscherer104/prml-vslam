@@ -35,7 +35,7 @@ from ..live_session import (
     render_live_packet_tabs,
     render_live_session_shell,
 )
-from ..services import AdvioPreviewSnapshot, AdvioPreviewStreamState
+from ..models import AdvioPreviewSnapshot, AdvioPreviewStreamState
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
