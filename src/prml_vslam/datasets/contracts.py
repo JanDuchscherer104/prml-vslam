@@ -22,7 +22,7 @@ class DatasetId(StrEnum):
         """Return local sequence slugs available for this dataset."""
         match self:
             case DatasetId.ADVIO:
-                from .advio_layout import list_local_sequence_ids
+                from .advio.advio_layout import list_local_sequence_ids
 
                 return [f"{self.value}-{sequence_id:02d}" for sequence_id in list_local_sequence_ids(dataset_root)]
 
@@ -30,7 +30,7 @@ class DatasetId(StrEnum):
         """Return existing reference trajectory path for one dataset sequence."""
         match self:
             case DatasetId.ADVIO:
-                from .advio_layout import resolve_existing_reference_tum
+                from .advio.advio_layout import resolve_existing_reference_tum
 
                 return resolve_existing_reference_tum(dataset_root, sequence_slug)
 
