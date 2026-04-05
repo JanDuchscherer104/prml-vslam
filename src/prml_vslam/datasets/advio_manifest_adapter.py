@@ -9,9 +9,11 @@ from prml_vslam.pipeline.contracts import SequenceManifest
 if TYPE_CHECKING:
     from .advio_sequence import AdvioSequence
 
+# TODO: Don't do redundant type aliasing here!
 SequenceManifestType = SequenceManifest
 
 
+# TODO: THis should be a method of AdvioSequence
 def build_advio_sequence_manifest(sequence: AdvioSequence, *, output_dir: Path | None = None) -> SequenceManifest:
     sample = sequence.load_offline_sample()
     evaluation_dir = sample.paths.sequence_dir / "evaluation" if output_dir is None else output_dir

@@ -32,6 +32,7 @@ off-device monocular VSLAM benchmark on smartphone video with unknown intrinsics
   unless the user explicitly asks for it.
 - Use conventional commits with concise, focused messages. Split larger changes into multiple
   logical commits when appropriate.
+- After editing a file, run `ruff format` on touched Python files before finishing the task.
 - Do not use destructive git commands unless explicitly requested. This includes `git restore`,
   `git reset --hard`, and similar commands.
 - Never disable the formatter with inline pragmas; refactor code to satisfy structure and
