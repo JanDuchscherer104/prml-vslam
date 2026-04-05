@@ -8,8 +8,8 @@ from pathlib import Path
 from pydantic import Field
 
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
-from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.eval.interfaces import EvaluationControls
+from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.eval.contracts import EvaluationControls
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline.contracts import PipelineMode
@@ -118,9 +118,6 @@ class PipelinePageState(BaseData):
 
     respect_video_rotation: bool = False
     """Whether the replay should honor video rotation metadata when available."""
-
-    is_running: bool = False
-    """Whether the current browser session expects a pipeline demo to be active."""
 
 
 class AppState(BaseData):

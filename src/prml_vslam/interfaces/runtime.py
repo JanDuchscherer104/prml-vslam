@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -24,22 +24,11 @@ class FramePacket(BaseData):
     arrival_timestamp_s: float | None = None
     rgb: NDArray[np.uint8] | None = None
     depth: NDArray[np.float32] | None = None
+    pointmap: NDArray[np.float32] | None = None
+    """Optional HxWx3 dense point cloud in camera coordinates."""
     uncertainty: NDArray[np.float32] | None = None
     intrinsics: CameraIntrinsics | None = None
     pose: SE3Pose | None = None
     image_path: Path | None = None
     jpeg_bytes: bytes | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class FramePacketStream(Protocol):
-    """Common blocking packet-stream interface for replay or live sources."""
-
-    def connect(self) -> Any:
-        """Connect to the source and prepare for frame delivery."""
-
-    def disconnect(self) -> None:
-        """Disconnect or release the source."""
-
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
-        """Wait for and return the next frame packet."""

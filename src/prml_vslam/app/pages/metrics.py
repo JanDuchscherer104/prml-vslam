@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.eval.interfaces import (
+from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.eval.contracts import (
     EvaluationArtifact,
     EvaluationControls,
     EvaluationSelection,

@@ -1,39 +1,26 @@
 """Pipeline orchestration contracts re-exported for package users."""
 
 from .contracts import (
-    BenchmarkEvaluationConfig,
-    CloudMetrics,
-    DatasetSourceSpec,
-    DenseArtifacts,
-    DenseConfig,
-    EfficiencyMetrics,
-    LiveSourceSpec,
     PipelineMode,
-    ReferenceArtifacts,
-    ReferenceConfig,
     RunPlan,
     RunRequest,
-    StageManifest,
-    TrackingConfig,
-    TrajectoryMetrics,
-    VideoSourceSpec,
+    RunSummary,
+    SequenceManifest,
+    TrackingArtifacts,
 )
+from .protocols import OfflineTrackerBackend, StreamingTrackerBackend
+from .session import PipelineSessionService, PipelineSessionSnapshot, PipelineSessionState
 
 __all__ = [
-    "BenchmarkEvaluationConfig",
-    "CloudMetrics",
-    "DatasetSourceSpec",
-    "DenseArtifacts",
-    "DenseConfig",
-    "EfficiencyMetrics",
-    "LiveSourceSpec",
+    "OfflineTrackerBackend",
     "PipelineMode",
-    "ReferenceArtifacts",
-    "ReferenceConfig",
+    "PipelineSessionService",
+    "PipelineSessionSnapshot",
+    "PipelineSessionState",
     "RunPlan",
     "RunRequest",
-    "StageManifest",
-    "TrackingConfig",
-    "TrajectoryMetrics",
-    "VideoSourceSpec",
+    "SequenceManifest",
+    "RunSummary",
+    "StreamingTrackerBackend",
+    "TrackingArtifacts",
 ]

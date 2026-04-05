@@ -263,8 +263,8 @@ The requirements document is valid only if it satisfies all of the following:
 
 - It clearly separates current implementation findings from target architecture
   requirements.
-- It does not claim that future modules like `datasets/`, `messages.py`,
-  `interfaces.py`, `runners.py`, `workspace.py`, or `cache.py` already exist.
+- It does not claim that future modules like `messages.py`, `runners.py`, or
+  `cache.py` already exist.
 - It stays consistent with the current top-level package layout in this repo.
 - It reconciles the repo's artifact-first benchmark focus with the confirmed
   requirement that live streaming is still a supported pipeline mode.

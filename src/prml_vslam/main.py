@@ -11,11 +11,11 @@ from prml_vslam.datasets import AdvioDatasetService
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioDownloadRequest, AdvioModality
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import (
+from prml_vslam.pipeline import RunRequest
+from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DenseConfig,
     ReferenceConfig,
-    RunRequest,
     TrackingConfig,
     VideoSourceSpec,
 )

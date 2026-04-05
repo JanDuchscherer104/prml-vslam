@@ -1,15 +1,12 @@
-"""Small protocol surface for pipeline backends and runners."""
+"""Small protocol surface for pipeline backends, sources, and runners."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Protocol
 
-import numpy as np
-from numpy.typing import NDArray
-
-from prml_vslam.interfaces import FramePacket, SE3Pose
-from prml_vslam.methods.interfaces import MethodId
+from prml_vslam.interfaces import FramePacket
+from prml_vslam.methods.contracts import MethodId
 from prml_vslam.pipeline.contracts import (
     CloudMetrics,
     DenseArtifacts,
@@ -19,34 +16,22 @@ from prml_vslam.pipeline.contracts import (
     SequenceManifest,
     TrackingArtifacts,
     TrackingConfig,
+    TrackingUpdate,
     TrajectoryMetrics,
 )
-from prml_vslam.utils import BaseData
+from prml_vslam.protocols import FramePacketStream
 
 
-class TrackingUpdate(BaseData):
-    """Incremental tracking update emitted by streaming-capable backends."""
+class StreamingSequenceSource(Protocol):
+    """Protocol for replay or live sources used by streaming pipeline sessions."""
 
-    seq: int
-    """Frame sequence number associated with the update."""
+    label: str
 
-    timestamp_ns: int
-    """Timestamp in nanoseconds."""
+    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+        """Materialize or resolve the normalized sequence boundary for one run."""
 
-    pose: SE3Pose | None = None
-    """Optional canonical pose estimate."""
-
-    num_map_points: int = 0
-    """Current sparse map size when the backend exposes it."""
-
-    num_dense_points: int = 0
-    """Current cumulative dense-point count when the backend exposes reconstruction output."""
-
-    pointmap: NDArray[np.float32] | None = None
-    """Optional HxWx3 pointmap in camera coordinates for the current frame."""
-
-    uncertainty: NDArray[np.float32] | None = None
-    """Optional HxW uncertainty map for the current frame, aligned with the pointmap if present."""
+    def open_stream(self, *, loop: bool) -> FramePacketStream:
+        """Open the frame stream consumed by the tracking session."""
 
 
 class OfflineTrackerBackend(Protocol):
@@ -126,7 +111,7 @@ __all__ = [
     "DenseBackend",
     "OfflineTrackerBackend",
     "ReferenceBuilder",
+    "StreamingSequenceSource",
     "StreamingTrackerBackend",
-    "TrackingUpdate",
     "TrajectoryEvaluator",
 ]

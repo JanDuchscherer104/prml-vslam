@@ -10,7 +10,8 @@ import cv2
 import numpy as np
 from pydantic import Field
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketStream, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseConfig
 
 
@@ -45,6 +46,9 @@ class Cv2ProducerConfig(BaseConfig):
     poses_by_frame: list[SE3Pose | None] | None = None
     """Optional per-frame camera poses aligned to source frame indices."""
 
+    fps: float = 60.0
+    """Target frames per second."""
+
     static_metadata: dict[str, object] = Field(default_factory=dict)
     """Metadata copied into each emitted packet."""
 
@@ -59,7 +63,7 @@ class Cv2FrameProducer:
         self._loop_index = 0
         self._stream_start_monotonic: float | None = None
         self._stream_start_timestamp_ns: int | None = None
-        self._fps = 30.0
+        self._fps = self.config.fps
 
     def connect(self) -> Path:
         """Open the configured video file and prepare playback state."""

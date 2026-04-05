@@ -3,28 +3,67 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import streamlit as st
 
 from prml_vslam.datasets.advio import AdvioPoseSource
+from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunPlan, StageManifest
+from prml_vslam.pipeline import (
+    PipelineMode,
+    PipelineSessionSnapshot,
+    PipelineSessionState,
+    RunPlan,
+    RunRequest,
+)
+from prml_vslam.pipeline.contracts import (
+    BenchmarkEvaluationConfig,
+    DatasetSourceSpec,
+    DenseConfig,
+    ReferenceConfig,
+    StageManifest,
+    TrackingConfig,
+)
+from prml_vslam.plotting import build_live_trajectory_figure
+from prml_vslam.utils import BaseData
 
 from ..camera_display import format_camera_intrinsics_latex
 from ..image_utils import normalize_grayscale_image
-from ..pipeline_controller import (
-    PipelineDemoFormData,
-    handle_pipeline_demo_action,
-    sync_pipeline_demo_state,
-)
-from ..pipeline_runtime import PipelineDemoSnapshot, PipelineDemoState
-from ..plotting import build_live_trajectory_figure
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
+
+
+_ACTIVE_SESSION_STATES = frozenset({PipelineSessionState.CONNECTING, PipelineSessionState.RUNNING})
+
+
+class PipelinePageAction(BaseData):
+    """Typed action payload for the pipeline page form and buttons."""
+
+    sequence_id: int
+    """Selected ADVIO sequence id."""
+
+    mode: PipelineMode
+    """Selected pipeline mode."""
+
+    method: MethodId
+    """Selected mock tracking backend label."""
+
+    pose_source: AdvioPoseSource
+    """Selected pose source for the ADVIO replay stream."""
+
+    respect_video_rotation: bool = False
+    """Whether the replay should honor video rotation metadata."""
+
+    start_requested: bool = False
+    """Whether the user requested a new run."""
+
+    stop_requested: bool = False
+    """Whether the user requested the current run to stop."""
 
 
 def render(context: AppContext) -> None:
@@ -37,9 +76,10 @@ def render(context: AppContext) -> None:
             "and monitor frames, trajectory, planned stages, and written artifacts."
         ),
     )
-    sync_pipeline_demo_state(context)
     statuses = context.advio_service.local_scene_statuses()
     previewable_ids = [status.scene.sequence_id for status in statuses if status.replay_ready]
+    snapshot = context.pipeline_runtime.snapshot()
+    is_active = _is_pipeline_active(snapshot)
     with st.container(border=True):
         st.subheader("ADVIO Replay Demo")
         st.caption(
@@ -87,14 +127,14 @@ def render(context: AppContext) -> None:
                     value=page_state.respect_video_rotation,
                 )
             start_requested = st.form_submit_button(
-                "Start run" if not page_state.is_running else "Restart run",
+                "Start run" if not is_active else "Restart run",
                 type="primary",
                 use_container_width=True,
             )
-        stop_requested = st.button("Stop run", disabled=not page_state.is_running, use_container_width=True)
-        error_message = handle_pipeline_demo_action(
-            context,
-            PipelineDemoFormData(
+        stop_requested = st.button("Stop run", disabled=not is_active, use_container_width=True)
+        error_message = _handle_pipeline_page_action(
+            context=context,
+            action=PipelinePageAction(
                 sequence_id=selected_sequence_id,
                 mode=mode,
                 method=method,
@@ -104,21 +144,22 @@ def render(context: AppContext) -> None:
                 stop_requested=stop_requested,
             ),
         )
+        snapshot = context.pipeline_runtime.snapshot()
         if error_message:
             st.error(error_message)
 
-        @st.fragment(run_every=0.2 if context.state.pipeline.is_running else None)
+        @st.fragment(run_every=0.2 if _is_pipeline_active(snapshot) else None)
         def _render_fragment() -> None:
-            _render_pipeline_demo_snapshot(sync_pipeline_demo_state(context))
+            _render_pipeline_snapshot(context.pipeline_runtime.snapshot())
 
         _render_fragment()
 
 
-def _render_pipeline_demo_snapshot(snapshot: PipelineDemoSnapshot) -> None:
-    _render_pipeline_demo_notice(snapshot)
+def _render_pipeline_snapshot(snapshot: PipelineSessionSnapshot) -> None:
+    _render_pipeline_notice(snapshot)
     metrics = (
         ("Status", snapshot.state.value.upper()),
-        ("Mode", "Idle" if snapshot.mode is None else _pipeline_mode_label(snapshot.mode)),
+        ("Mode", "Idle" if snapshot.plan is None else _pipeline_mode_label(snapshot.plan.mode)),
         ("Received Frames", str(snapshot.received_frames)),
         ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
         ("Map Points", str(snapshot.num_map_points)),
@@ -225,20 +266,94 @@ def _render_pipeline_demo_snapshot(snapshot: PipelineDemoSnapshot) -> None:
                     st.code(_json_dump(snapshot.tracking.model_dump(mode="json")), language="json")
 
 
-def _render_pipeline_demo_notice(snapshot: PipelineDemoSnapshot) -> None:
+def _render_pipeline_notice(snapshot: PipelineSessionSnapshot) -> None:
     match snapshot.state:
-        case PipelineDemoState.IDLE:
+        case PipelineSessionState.IDLE:
             st.info("Select a replay-ready ADVIO scene and start the pipeline demo.")
-        case PipelineDemoState.CONNECTING:
+        case PipelineSessionState.CONNECTING:
             st.info("Preparing the sequence manifest and starting the mock tracking runtime.")
-        case PipelineDemoState.RUNNING:
+        case PipelineSessionState.RUNNING:
             st.success("Processing ADVIO frames through the mock tracking runtime.")
-        case PipelineDemoState.COMPLETED:
+        case PipelineSessionState.COMPLETED:
             st.success("The offline demo finished and wrote mock tracking artifacts.")
-        case PipelineDemoState.STOPPED:
+        case PipelineSessionState.STOPPED:
             st.warning("The demo stopped. The last frame, trajectory, and written artifacts remain visible below.")
-        case PipelineDemoState.FAILED:
+        case PipelineSessionState.FAILED:
             st.error(snapshot.error_message or "The pipeline demo failed.")
+
+
+def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction) -> str | None:
+    """Apply one pipeline-page action and return a surfaced error when one occurs."""
+    _save_page_state(
+        context,
+        sequence_id=action.sequence_id,
+        mode=action.mode,
+        method=action.method,
+        pose_source=action.pose_source,
+        respect_video_rotation=action.respect_video_rotation,
+    )
+    if action.stop_requested:
+        context.pipeline_runtime.stop()
+        return None
+    if not action.start_requested:
+        return None
+
+    try:
+        scene = context.advio_service.scene(action.sequence_id)
+        request = _build_demo_request(
+            output_dir=context.path_config.artifacts_dir,
+            sequence_slug=scene.sequence_slug,
+            mode=action.mode,
+            method=action.method,
+        )
+        source = context.advio_service.build_streaming_source(
+            sequence_id=action.sequence_id,
+            pose_source=action.pose_source,
+            respect_video_rotation=action.respect_video_rotation,
+        )
+        context.pipeline_runtime.start(request=request, source=source)
+        return None
+    except Exception as exc:
+        return str(exc)
+
+
+def _build_demo_request(
+    *,
+    output_dir: Path,
+    sequence_slug: str,
+    mode: PipelineMode,
+    method: MethodId,
+) -> RunRequest:
+    """Build the bounded run request used by the current pipeline page."""
+    return RunRequest(
+        experiment_name=f"advio-{mode.value}-{sequence_slug}-{method.value}",
+        mode=mode,
+        output_dir=output_dir,
+        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug),
+        tracking=TrackingConfig(method=method),
+        dense=DenseConfig(enabled=True),
+        reference=ReferenceConfig(enabled=False),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=False,
+            evaluate_cloud=False,
+            evaluate_efficiency=False,
+        ),
+    )
+
+
+def _save_page_state(context: AppContext, **updates: object) -> None:
+    """Persist selector-only pipeline page state when it changes."""
+    page_state = context.state.pipeline
+    if all(getattr(page_state, key) == value for key, value in updates.items()):
+        return
+    for key, value in updates.items():
+        setattr(page_state, key, value)
+    context.store.save(context.state)
+
+
+def _is_pipeline_active(snapshot: PipelineSessionSnapshot) -> bool:
+    """Return whether the pipeline session is currently active."""
+    return snapshot.state in _ACTIVE_SESSION_STATES
 
 
 def _pipeline_mode_label(mode: PipelineMode) -> str:
