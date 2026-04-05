@@ -23,11 +23,11 @@ reference sheet. This document carries the full rationale and migration model.
 - `src/prml_vslam/pipeline/protocols.py` now owns the currently implemented
   pipeline behavior seams, while `src/prml_vslam/pipeline/contracts.py` owns
   the planner surface, artifact bundles, stage manifests, and
-  `TrackingUpdate`.
+  `SlamUpdate`.
 - Method-local DTOs still overlap conceptually with the pipeline-owned artifact
   boundary. `MethodRunResult` still describes normalized trajectory and
   point-cloud outputs even though downstream execution already centers on
-  `SequenceManifest`, `TrackingArtifacts`, and `RunSummary`.
+  `SequenceManifest`, `SlamArtifacts`, and `RunSummary`.
 - The repo scan found overlapping contract-reference guidance across the
   compact agent reference, enforcement-oriented agent instructions, and
   package-level documentation. That overlap made it too easy for current-state
@@ -62,10 +62,10 @@ the restructuring.
 - Shared datamodels:
   `CameraIntrinsics`, `SE3Pose`, `TimedPoseTrajectory`, `FramePacket`
 - Pipeline data:
-  `RunRequest`, `RunPlan`, `SequenceManifest`, `TrackingArtifacts`,
+  `RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`,
   `RunSummary`
 - Behavior seams:
-  `OfflineTrackerBackend`, `StreamingTrackerBackend`
+  `SlamBackend`, `SlamSession`
 - Method selector:
   `MethodId`
 

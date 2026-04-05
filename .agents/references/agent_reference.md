@@ -49,8 +49,11 @@
 - `services.py` modules own implementations only.
 - Minimal public surface to preserve:
   `CameraIntrinsics`, `SE3Pose`, `TimedPoseTrajectory`, `FramePacket`,
-  `RunRequest`, `RunPlan`, `SequenceManifest`, `TrackingArtifacts`,
-  `RunSummary`, `OfflineTrackerBackend`, `StreamingTrackerBackend`, `MethodId`
+  `RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`,
+  `RunSummary`, `SlamBackend`, `SlamSession`, `MethodId`
 - ViSTA-SLAM and MASt3R-SLAM wrappers should normalize into pipeline-owned
   artifacts instead of exposing upstream-native result layouts or live modes as
   repo-wide contracts.
+- The pipeline owns one SLAM-stage config and one SLAM artifact bundle per
+  backend; dense output is a capability of the SLAM stage, not a separate
+  backend contract.

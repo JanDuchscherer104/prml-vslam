@@ -11,6 +11,7 @@ from prml_vslam.io.record3d import (
     Record3DStreamSnapshot,
     Record3DStreamState,
     Record3DTransportId,
+    list_record3d_usb_devices,
 )
 
 from ..image_utils import normalize_grayscale_image
@@ -61,7 +62,7 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
         usb_error_message = ""
         if transport is Record3DTransportId.USB:
             try:
-                usb_devices = context.record3d_service.list_usb_devices()
+                usb_devices = list_record3d_usb_devices()
             except Exception as exc:
                 usb_error_message = str(exc)
         selected_usb_index = page_state.usb_device_index

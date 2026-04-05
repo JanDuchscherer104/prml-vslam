@@ -111,7 +111,7 @@ class PipelinePageState(BaseData):
     """Whether the demo should run one pass or keep looping."""
 
     method: MethodId = MethodId.VISTA
-    """Selected mock tracking backend label."""
+    """Selected mock SLAM backend label."""
 
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected pose source injected into the ADVIO replay packets."""

@@ -143,7 +143,6 @@ sequenceDiagram
 
 - [services.py](services.py)
   - Record3D-only app glue.
-  - `Record3DAppService` handles transport discovery for the UI.
   - `Record3DStreamRuntimeController` owns the live stream worker thread and
     maintains the latest `Record3DStreamSnapshot`.
 

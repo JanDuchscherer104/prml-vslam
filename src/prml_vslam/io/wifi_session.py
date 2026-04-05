@@ -134,3 +134,16 @@ class Record3DWiFiStreamSession:
         self._failure_message = message
         self._failure_event.set()
         self.console.error(message)
+
+
+def open_record3d_wifi_stream(*, device_address: str, frame_timeout_seconds: float) -> Record3DWiFiStreamSession:
+    """Build one shared Record3D Wi-Fi stream session with explicit validation."""
+    stream = Record3DWiFiStreamConfig(
+        device_address=device_address,
+        frame_timeout_seconds=max(1.0, frame_timeout_seconds),
+        signaling_timeout_seconds=10.0,
+        setup_timeout_seconds=12.0,
+    ).setup_target()
+    if stream is None:
+        raise RuntimeError("Failed to initialize the Record3D Wi-Fi stream.")
+    return stream

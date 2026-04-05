@@ -13,7 +13,8 @@ from prml_vslam.io.record3d import (
     Record3DDeviceType,
     Record3DStreamConfig,
     Record3DTransportId,
-    Record3DUSBPacketStreamConfig,
+    list_record3d_usb_devices,
+    open_record3d_usb_packet_stream,
     record3d_frame_to_packet,
 )
 
@@ -100,6 +101,9 @@ def test_record3d_stream_lists_connected_devices(monkeypatch: pytest.MonkeyPatch
 
     assert [device.product_id for device in devices] == [101, 202]
     assert [device.udid for device in devices] == ["device-101", "device-202"]
+    helper_devices = list_record3d_usb_devices()
+    assert [device.product_id for device in helper_devices] == [101, 202]
+    assert [device.udid for device in helper_devices] == ["device-101", "device-202"]
 
 
 def test_record3d_stream_wait_for_frame_returns_typed_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -148,9 +152,7 @@ def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: 
     fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
     monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
 
-    stream = Record3DUSBPacketStreamConfig(
-        stream=Record3DStreamConfig(device_index=1, frame_timeout_seconds=0.1)
-    ).setup_target()
+    stream = open_record3d_usb_packet_stream(device_index=1, frame_timeout_seconds=0.1)
 
     assert stream is not None
     device = stream.connect()

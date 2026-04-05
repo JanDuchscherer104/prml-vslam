@@ -22,10 +22,9 @@ from prml_vslam.pipeline import (
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DatasetSourceSpec,
-    DenseConfig,
     ReferenceConfig,
+    SlamConfig,
     StageManifest,
-    TrackingConfig,
 )
 from prml_vslam.utils import BaseData
 
@@ -56,7 +55,7 @@ class PipelinePageAction(BaseData):
     """Selected pipeline mode."""
 
     method: MethodId
-    """Selected mock tracking backend label."""
+    """Selected mock SLAM backend label."""
 
     pose_source: AdvioPoseSource
     """Selected pose source for the ADVIO replay stream."""
@@ -77,7 +76,7 @@ def render(context: AppContext) -> None:
         eyebrow="Streaming Surface",
         title="Pipeline Demo",
         body=(
-            "Run the bounded ADVIO replay demo through the repository-local mock tracker "
+            "Run the bounded ADVIO replay demo through the repository-local mock SLAM backend "
             "and monitor frames, trajectory, planned stages, and written artifacts."
         ),
     )
@@ -174,7 +173,7 @@ def _pipeline_metrics(snapshot: PipelineSessionSnapshot) -> tuple[LiveMetric, ..
         ("Mode", "Idle" if snapshot.plan is None else _pipeline_mode_label(snapshot.plan.mode)),
         ("Received Frames", str(snapshot.received_frames)),
         ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
-        ("Map Points", str(snapshot.num_map_points)),
+        ("Sparse Points", str(snapshot.num_sparse_points)),
         ("Dense Points", str(snapshot.num_dense_points)),
     )
 
@@ -195,7 +194,7 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
         if packet is None:
             st.info("No frame has been processed yet.")
         else:
-            pointmap = snapshot.latest_update.pointmap if snapshot.latest_update is not None else None
+            pointmap = snapshot.latest_slam_update.pointmap if snapshot.latest_slam_update is not None else None
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
                 st.markdown("**RGB Frame**")
@@ -208,13 +207,13 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
                     st.image(_pointmap_depth_preview(pointmap), clamp=True, width="stretch")
             details_left, details_right = st.columns((1.0, 1.0), gap="large")
             with details_left:
-                st.markdown("**Tracking Update**")
-                if snapshot.latest_update is None:
-                    st.info("No tracking update is available yet.")
+                st.markdown("**SLAM Update**")
+                if snapshot.latest_slam_update is None:
+                    st.info("No SLAM update is available yet.")
                 else:
                     st.json(
                         {
-                            **snapshot.latest_update.model_dump(mode="json", exclude={"pointmap"}),
+                            **snapshot.latest_slam_update.model_dump(mode="json", exclude={"pointmap"}),
                             "pointmap_shape": None if pointmap is None else list(pointmap.shape),
                         },
                         expanded=False,
@@ -238,7 +237,7 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
         render_live_trajectory(
             positions_xyz=snapshot.trajectory_positions_xyz,
             timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
-            empty_message="The mock tracker has not produced any trajectory points yet.",
+            empty_message="The mock SLAM backend has not produced any trajectory points yet.",
         )
     with tabs[2]:
         if snapshot.plan is None:
@@ -255,8 +254,8 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
                 else:
                     st.info("Stage manifests will appear once the run starts writing outputs.")
     with tabs[3]:
-        if snapshot.sequence_manifest is None and snapshot.tracking is None and snapshot.summary is None:
-            st.info("Run the demo to inspect the materialized manifest, tracking artifacts, and run summary.")
+        if snapshot.sequence_manifest is None and snapshot.slam is None and snapshot.summary is None:
+            st.info("Run the demo to inspect the materialized manifest, SLAM artifacts, and run summary.")
         else:
             left, right = st.columns(2, gap="large")
             with left:
@@ -267,9 +266,9 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
                     st.markdown("**Run Summary**")
                     st.code(_json_dump(snapshot.summary.model_dump(mode="json")), language="json")
             with right:
-                if snapshot.tracking is not None:
-                    st.markdown("**Tracking Artifacts**")
-                    st.code(_json_dump(snapshot.tracking.model_dump(mode="json")), language="json")
+                if snapshot.slam is not None:
+                    st.markdown("**SLAM Artifacts**")
+                    st.code(_json_dump(snapshot.slam.model_dump(mode="json")), language="json")
 
 
 def _render_pipeline_notice(snapshot: PipelineSessionSnapshot) -> None:
@@ -277,11 +276,11 @@ def _render_pipeline_notice(snapshot: PipelineSessionSnapshot) -> None:
         case PipelineSessionState.IDLE:
             st.info("Select a replay-ready ADVIO scene and start the pipeline demo.")
         case PipelineSessionState.CONNECTING:
-            st.info("Preparing the sequence manifest and starting the mock tracking runtime.")
+            st.info("Preparing the sequence manifest and starting the mock SLAM backend.")
         case PipelineSessionState.RUNNING:
-            st.success("Processing ADVIO frames through the mock tracking runtime.")
+            st.success("Processing ADVIO frames through the mock SLAM backend.")
         case PipelineSessionState.COMPLETED:
-            st.success("The offline demo finished and wrote mock tracking artifacts.")
+            st.success("The offline demo finished and wrote mock SLAM artifacts.")
         case PipelineSessionState.STOPPED:
             st.warning("The demo stopped. The last frame, trajectory, and written artifacts remain visible below.")
         case PipelineSessionState.FAILED:
@@ -336,8 +335,7 @@ def _build_demo_request(
         mode=mode,
         output_dir=output_dir,
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug),
-        tracking=TrackingConfig(method=method),
-        dense=DenseConfig(enabled=True),
+        slam=SlamConfig(method=method, emit_dense_points=True),
         reference=ReferenceConfig(enabled=False),
         evaluation=BenchmarkEvaluationConfig(
             compare_to_arcore=False,
