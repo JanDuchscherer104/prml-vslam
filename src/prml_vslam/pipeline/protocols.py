@@ -1,4 +1,4 @@
-"""Small protocol surface for pipeline backends, sources, and runners."""
+"""Current protocol seams for the pipeline streaming and tracking runtime."""
 
 from __future__ import annotations
 
@@ -8,16 +8,10 @@ from typing import Protocol
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.pipeline.contracts import (
-    CloudMetrics,
-    DenseArtifacts,
-    DenseConfig,
-    ReferenceArtifacts,
-    ReferenceConfig,
     SequenceManifest,
     TrackingArtifacts,
     TrackingConfig,
     TrackingUpdate,
-    TrajectoryMetrics,
 )
 from prml_vslam.protocols import FramePacketStream
 
@@ -63,55 +57,8 @@ class StreamingTrackerBackend(Protocol):
         """Finalize the backend and return the persisted tracking artifacts."""
 
 
-class DenseBackend(Protocol):
-    """Protocol for dense-reconstruction stages."""
-
-    def run(self, track: TrackingArtifacts, cfg: DenseConfig, artifact_root: Path) -> DenseArtifacts:
-        """Run dense reconstruction from tracking artifacts."""
-
-
-class ReferenceBuilder(Protocol):
-    """Protocol for reference-reconstruction stages."""
-
-    def run(
-        self,
-        sequence: SequenceManifest,
-        cfg: ReferenceConfig,
-        artifact_root: Path,
-    ) -> ReferenceArtifacts:
-        """Build a reference reconstruction for the normalized sequence."""
-
-
-class TrajectoryEvaluator(Protocol):
-    """Protocol for trajectory-evaluation stages."""
-
-    def run(
-        self,
-        track: TrackingArtifacts,
-        sequence: SequenceManifest,
-        artifact_root: Path,
-    ) -> TrajectoryMetrics:
-        """Evaluate the estimated trajectory against the normalized sequence."""
-
-
-class CloudEvaluator(Protocol):
-    """Protocol for dense-cloud evaluation stages."""
-
-    def run(
-        self,
-        dense: DenseArtifacts,
-        reference: ReferenceArtifacts,
-        artifact_root: Path,
-    ) -> CloudMetrics:
-        """Evaluate the reconstructed dense cloud against the reference."""
-
-
 __all__ = [
-    "CloudEvaluator",
-    "DenseBackend",
     "OfflineTrackerBackend",
-    "ReferenceBuilder",
     "StreamingSequenceSource",
     "StreamingTrackerBackend",
-    "TrajectoryEvaluator",
 ]

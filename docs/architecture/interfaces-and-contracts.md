@@ -20,9 +20,10 @@ reference sheet. This document carries the full rationale and migration model.
   `src/prml_vslam/datasets/contracts.py`,
   `src/prml_vslam/eval/contracts.py`, and
   `src/prml_vslam/pipeline/contracts.py`.
-- `src/prml_vslam/pipeline/protocols.py` now owns the pipeline behavior seams,
-  while `src/prml_vslam/pipeline/contracts.py` owns the planner surface,
-  artifact bundles, stage manifests, and `TrackingUpdate`.
+- `src/prml_vslam/pipeline/protocols.py` now owns the currently implemented
+  pipeline behavior seams, while `src/prml_vslam/pipeline/contracts.py` owns
+  the planner surface, artifact bundles, stage manifests, and
+  `TrackingUpdate`.
 - Method-local DTOs still overlap conceptually with the pipeline-owned artifact
   boundary. `MethodRunResult` still describes normalized trajectory and
   point-cloud outputs even though downstream execution already centers on

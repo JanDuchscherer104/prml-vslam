@@ -1,4 +1,4 @@
-"""Typed contracts for artifact-first pipeline planning and execution."""
+"""Typed contracts for the current pipeline planner and streaming session."""
 
 from __future__ import annotations
 
@@ -70,18 +70,14 @@ class TrackingConfig(BaseConfig):
     """Optional explicit backend config path."""
 
 
-class StageToggleConfig(BaseConfig):
-    """Boolean toggle used by optional one-off pipeline stages."""
-
-    enabled: bool = True
-    """Whether the run should include the corresponding stage."""
-
-
-class DenseConfig(StageToggleConfig):
+class DenseConfig(BaseConfig):
     """Boolean toggle used by the optional dense-mapping stage."""
 
+    enabled: bool = True
+    """Whether the run should include the dense-mapping stage."""
 
-class ReferenceConfig(StageToggleConfig):
+
+class ReferenceConfig(BaseConfig):
     """Boolean toggle used by the optional reference-reconstruction stage."""
 
     enabled: bool = False
@@ -238,6 +234,13 @@ class TrackingUpdate(BaseData):
     """Optional HxW uncertainty map for the current frame, aligned with the pointmap if present."""
 
 
+class DenseArtifacts(BaseData):
+    """Materialized outputs produced by the dense-mapping stage."""
+
+    dense_points_ply: ArtifactRef
+    """Normalized dense point cloud artifact."""
+
+
 class TrackingArtifacts(BaseData):
     """Materialized outputs produced by the tracking stage."""
 
@@ -249,42 +252,6 @@ class TrackingArtifacts(BaseData):
     """Optional preview/event log produced during live tracking."""
     dense: DenseArtifacts | None = None
     """Optional dense geometry produced directly by a joint tracking-reconstruction backend."""
-
-
-class DenseArtifacts(BaseData):
-    """Materialized outputs produced by the dense-mapping stage."""
-
-    dense_points_ply: ArtifactRef
-    """Normalized dense point cloud artifact."""
-
-
-TrackingArtifacts.model_rebuild()
-
-
-class ReferenceArtifacts(BaseData):
-    """Materialized outputs produced by the reference-reconstruction stage."""
-
-    reference_cloud_ply: ArtifactRef
-    """Normalized reference cloud artifact."""
-
-
-class MetricsBundle(BaseData):
-    """Persisted metric-artifact bundle."""
-
-    metrics_json: ArtifactRef
-    """Serialized metric results."""
-
-
-class TrajectoryMetrics(MetricsBundle):
-    """Persisted trajectory-metric artifact bundle."""
-
-
-class CloudMetrics(MetricsBundle):
-    """Persisted dense-cloud metric artifact bundle."""
-
-
-class EfficiencyMetrics(MetricsBundle):
-    """Persisted efficiency-metric artifact bundle."""
 
 
 class StageExecutionStatus(StrEnum):
@@ -324,14 +291,11 @@ class RunSummary(BaseData):
 __all__ = [
     "ArtifactRef",
     "BenchmarkEvaluationConfig",
-    "CloudMetrics",
     "DatasetSourceSpec",
     "DenseArtifacts",
     "DenseConfig",
-    "EfficiencyMetrics",
     "LiveSourceSpec",
     "PipelineMode",
-    "ReferenceArtifacts",
     "ReferenceConfig",
     "RunPlan",
     "RunPlanStage",
@@ -344,6 +308,5 @@ __all__ = [
     "TrackingArtifacts",
     "TrackingConfig",
     "TrackingUpdate",
-    "TrajectoryMetrics",
     "VideoSourceSpec",
 ]
