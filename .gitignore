@@ -226,6 +226,7 @@ docs/slides/**/*.svgz
 # Agent scratch space
 .agents/tmp/
 .agents/work/
+.agents/skills/repo-context-explorer/
 
 # Local pipeline/demo outputs
 artifacts/

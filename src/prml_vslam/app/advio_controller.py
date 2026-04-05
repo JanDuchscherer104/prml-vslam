@@ -56,6 +56,7 @@ def build_advio_page_data(context: AppContext, form: AdvioDownloadFormData) -> A
 
 
 def sync_advio_download_state(context: AppContext, request: AdvioDownloadRequest) -> None:
+    """Persist the current ADVIO download-form state."""
     _save_page_state(
         context,
         selected_sequence_ids=request.sequence_ids,
@@ -68,6 +69,7 @@ def sync_advio_download_state(context: AppContext, request: AdvioDownloadRequest
 def load_advio_explorer_sample(
     context: AppContext, *, sequence_id: int
 ) -> tuple[AdvioOfflineSample | None, str | None]:
+    """Persist the current explorer selection and load its offline sample."""
     _save_page_state(context, explorer_sequence_id=sequence_id)
     try:
         return context.advio_service.load_local_sample(sequence_id), None
@@ -76,6 +78,7 @@ def load_advio_explorer_sample(
 
 
 def sync_advio_preview_state(context: AppContext, snapshot: AdvioPreviewSnapshot | None = None) -> AdvioPreviewSnapshot:
+    """Keep persisted preview state aligned with the runtime snapshot."""
     snapshot = context.advio_runtime.snapshot() if snapshot is None else snapshot
     if context.state.advio.preview_is_running and snapshot.state not in _ACTIVE_PREVIEW_STATES:
         context.state.advio.preview_is_running = False
@@ -84,6 +87,7 @@ def sync_advio_preview_state(context: AppContext, snapshot: AdvioPreviewSnapshot
 
 
 def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData) -> str | None:
+    """Apply one preview-form action and return an error message when it fails."""
     _save_page_state(
         context,
         preview_sequence_id=form.sequence_id,
@@ -119,6 +123,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
 
 
 def _save_page_state(context: AppContext, **updates: object) -> None:
+    """Persist ADVIO page-state changes only when values actually changed."""
     page_state = context.state.advio
     if all(getattr(page_state, key) == value for key, value in updates.items()):
         return

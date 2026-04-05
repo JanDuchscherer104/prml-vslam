@@ -13,13 +13,7 @@ from .base_data import BaseData
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
-    "artifacts_dir",
-    "captures_dir",
-    "data_dir",
-    "logs_dir",
-    "method_repos_dir",
-    "method_envs_dir",
-    "checkpoints_dir",
+    "artifacts_dir captures_dir data_dir logs_dir method_repos_dir method_envs_dir checkpoints_dir".split()
 )
 
 
@@ -120,8 +114,7 @@ class PathConfig(BaseConfig):
     @staticmethod
     def _resolve_path(path: str | Path, *, root: Path) -> Path:
         """Resolve a path relative to the configured repository root."""
-        candidate = Path(path)
-        return (candidate if candidate.is_absolute() else root / candidate).expanduser().resolve()
+        return (path if isinstance(path, Path) and path.is_absolute() else root / path).expanduser().resolve()
 
     @staticmethod
     def _resolve_dir(path: Path, *parts: str | Path, create: bool = False) -> Path:
@@ -147,8 +140,7 @@ class PathConfig(BaseConfig):
 
     def resolve_output_dir(self, path: str | Path | None = None, *, create: bool = False) -> Path:
         """Resolve an output directory, defaulting to the configured artifacts root."""
-        resolved = self.artifacts_dir if path is None else self.resolve_repo_path(path)
-        return self._resolve_dir(resolved, create=create)
+        return self._resolve_dir(self.artifacts_dir if path is None else self.resolve_repo_path(path), create=create)
 
     def resolve_data_dir(self, *, create: bool = False) -> Path:
         """Resolve the repo-owned dataset root directory."""
@@ -174,13 +166,7 @@ class PathConfig(BaseConfig):
         """Resolve one shared checkpoint directory for an external backend."""
         return self._resolve_dir(self.checkpoints_dir, method_slug, create=create)
 
-    def resolve_toml_path(
-        self,
-        path: str | Path,
-        *,
-        must_exist: bool = False,
-        create_parent: bool = False,
-    ) -> Path:
+    def resolve_toml_path(self, path: str | Path, *, must_exist: bool = False, create_parent: bool = False) -> Path:
         """Resolve a TOML file path relative to the repository root."""
         resolved = self.resolve_repo_path(path)
         if resolved.suffix != ".toml":
@@ -197,17 +183,12 @@ class PathConfig(BaseConfig):
         return slug.strip("-") or "experiment"
 
     def plan_run_paths(
-        self,
-        *,
-        experiment_name: str,
-        method_slug: str,
-        output_dir: str | Path | None = None,
+        self, *, experiment_name: str, method_slug: str, output_dir: str | Path | None = None
     ) -> RunArtifactPaths:
         """Build the canonical artifact layout for one benchmark run."""
-        artifact_root = (
+        return RunArtifactPaths.build(
             self.resolve_output_dir(output_dir) / self.slugify_experiment_name(experiment_name) / method_slug
         )
-        return RunArtifactPaths.build(artifact_root)
 
 
 @lru_cache(maxsize=1)
@@ -216,9 +197,4 @@ def get_path_config() -> PathConfig:
     return PathConfig()
 
 
-__all__ = [
-    "PROJECT_ROOT",
-    "PathConfig",
-    "RunArtifactPaths",
-    "get_path_config",
-]
+__all__ = ["PROJECT_ROOT", "PathConfig", "RunArtifactPaths", "get_path_config"]

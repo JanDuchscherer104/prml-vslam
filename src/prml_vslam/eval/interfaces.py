@@ -9,6 +9,7 @@ import numpy as np
 from jaxtyping import Float
 from pydantic import Field
 
+from prml_vslam.datasets.interfaces import DatasetId
 from prml_vslam.methods.interfaces import MethodId
 from prml_vslam.utils import BaseConfig, BaseData
 
@@ -153,11 +154,37 @@ class SelectionSnapshot(BaseData):
     """Selected artifact run."""
 
 
+class EvaluationSelection(BaseData):
+    """Resolved dataset and run choices exposed to the metrics page."""
+
+    dataset: DatasetId
+    """Dataset currently selected in the UI."""
+
+    dataset_root: Path
+    """Resolved local root for the selected dataset."""
+
+    artifacts_root: Path
+    """Configured artifacts root used for run discovery."""
+
+    sequence_slugs: list[str] = Field(default_factory=list)
+    """Local sequence slugs currently available under `dataset_root`."""
+
+    sequence_slug: str | None = None
+    """Resolved sequence slug after applying user preferences."""
+
+    runs: list[DiscoveredRun] = Field(default_factory=list)
+    """Discovered runs matching the resolved sequence."""
+
+    selection: SelectionSnapshot | None = None
+    """Resolved selection snapshot when both a sequence and run are available."""
+
+
 __all__ = [
     "DiscoveredRun",
     "ErrorSeries",
     "EvaluationArtifact",
     "EvaluationControls",
+    "EvaluationSelection",
     "MetricStats",
     "PoseRelationId",
     "SelectionSnapshot",

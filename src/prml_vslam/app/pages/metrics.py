@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from prml_vslam.datasets.interfaces import DatasetId
-from prml_vslam.eval.interfaces import EvaluationArtifact, EvaluationControls, PoseRelationId, SelectionSnapshot
+from prml_vslam.eval.interfaces import (
+    EvaluationArtifact,
+    EvaluationControls,
+    EvaluationSelection,
+    PoseRelationId,
+    SelectionSnapshot,
+)
 
 from ..plotting.metrics import build_error_figure, build_trajectory_figure
 from ..ui import render_page_intro
@@ -24,7 +30,6 @@ def render(context: AppContext) -> None:
         "and artifact slice. Controls stay explicit so evaluation never runs as a side effect.",
     )
     metrics = context.state.metrics
-    service = context.evaluation_service
     selectors_col, controls_col = st.columns((1.6, 1.0), gap="large")
     with selectors_col:
         with st.container(border=True):
@@ -33,24 +38,39 @@ def render(context: AppContext) -> None:
             dataset = st.selectbox(
                 "Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label
             )
-            dataset_root = context.path_config.resolve_dataset_dir(dataset.value)
-            sequences = dataset.list_sequence_slugs(dataset_root)
-            if not sequences:
+            selection_state = _resolve_selection(
+                context,
+                dataset=dataset,
+                preferred_sequence_slug=metrics.sequence_slug,
+                preferred_run_root=metrics.run_root,
+            )
+            if not selection_state.sequence_slugs:
                 _save_state(context, dataset=dataset)
-                st.warning(f"No local {dataset.label} sequences were found under `{dataset_root}`.")
+                st.warning(f"No local {dataset.label} sequences were found under `{selection_state.dataset_root}`.")
                 return
-            sequence_index = sequences.index(metrics.sequence_slug) if metrics.sequence_slug in sequences else 0
-            sequence_slug = st.selectbox("Sequence", options=sequences, index=sequence_index)
-            runs = service.discover_runs(sequence_slug)
-            if not runs:
+            sequence_slug = st.selectbox(
+                "Sequence",
+                options=selection_state.sequence_slugs,
+                index=selection_state.sequence_slugs.index(_selected_sequence_slug(selection_state)),
+            )
+            selection_state = _resolve_selection(
+                context,
+                dataset=dataset,
+                preferred_sequence_slug=sequence_slug,
+                preferred_run_root=metrics.run_root,
+            )
+            if not selection_state.runs or selection_state.selection is None:
                 _save_state(context, dataset=dataset, sequence_slug=sequence_slug)
                 st.info(
-                    f"No benchmark runs with `slam/trajectory.tum` were found under `{context.path_config.artifacts_dir}`."
+                    f"No benchmark runs with `slam/trajectory.tum` were found under `{selection_state.artifacts_root}`."
                 )
                 return
-            run_paths = [run.artifact_root for run in runs]
-            run_index = run_paths.index(metrics.run_root) if metrics.run_root in run_paths else 0
-            run = st.selectbox("Run", options=runs, index=run_index, format_func=lambda item: item.label)
+            run = st.selectbox(
+                "Run",
+                options=selection_state.runs,
+                index=selection_state.runs.index(selection_state.selection.run),
+                format_func=lambda item: item.label,
+            )
     with controls_col:
         with st.container(border=True):
             st.subheader("Evaluation Controls")
@@ -58,24 +78,37 @@ def render(context: AppContext) -> None:
             st.caption(
                 "Evaluation never runs on selector changes. Only the primary action below writes or refreshes persisted metric results."
             )
+    selection_state = _resolve_selection(
+        context,
+        dataset=dataset,
+        preferred_sequence_slug=sequence_slug,
+        preferred_run_root=run.artifact_root,
+    )
+    selection = selection_state.selection
+    if selection is None:
+        st.error("Could not resolve the selected benchmark slice.")
+        return
     _save_state(
         context,
         dataset=dataset,
         sequence_slug=sequence_slug,
-        run_root=run.artifact_root,
+        run_root=selection.run.artifact_root,
         controls=controls,
-        result_path=metrics.result_path,
-    )
-    selection = SelectionSnapshot(
-        sequence_slug=sequence_slug,
-        reference_path=dataset.resolve_reference_path(dataset_root, sequence_slug),
-        run=run,
+        result_path=None,
     )
     try:
-        evaluation = service.load_evaluation(selection=selection, controls=controls)
+        evaluation = context.evaluation_service.load_evaluation(selection=selection, controls=controls)
     except EVALUATION_ERRORS as exc:
         st.error(str(exc))
         return
+    _save_state(
+        context,
+        dataset=dataset,
+        sequence_slug=selection.sequence_slug,
+        run_root=selection.run.artifact_root,
+        controls=controls,
+        result_path=None if evaluation is None else evaluation.path,
+    )
 
     can_compute = selection.reference_path is not None and selection.run.estimate_path.exists()
     with st.container(border=True):
@@ -92,11 +125,18 @@ def render(context: AppContext) -> None:
     if compute:
         with st.spinner("Computing trajectory metrics..."):
             try:
-                evaluation = service.compute_evaluation(selection=selection, controls=controls)
+                evaluation = context.evaluation_service.compute_evaluation(selection=selection, controls=controls)
             except EVALUATION_ERRORS as exc:
                 st.error(str(exc))
                 return
-        _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=run.artifact_root, controls=controls, result_path=evaluation.path)
+        _save_state(
+            context,
+            dataset=dataset,
+            sequence_slug=selection.sequence_slug,
+            run_root=selection.run.artifact_root,
+            controls=controls,
+            result_path=evaluation.path,
+        )
         st.success(f"Persisted fresh metric result to `{evaluation.path}`.")
     if evaluation is None:
         _render_provenance(dataset=dataset, selection=selection, evaluation=None)
@@ -121,10 +161,24 @@ def render(context: AppContext) -> None:
         _render_provenance(dataset=dataset, selection=selection, evaluation=evaluation)
 
 
-def _save_state(context: AppContext, *, dataset: DatasetId, sequence_slug: str | None = None, run_root: Path | None = None, controls: EvaluationControls | None = None, result_path: Path | None = None) -> None:
+def _save_state(
+    context: AppContext,
+    *,
+    dataset: DatasetId,
+    sequence_slug: str | None = None,
+    run_root: Path | None = None,
+    controls: EvaluationControls | None = None,
+    result_path: Path | None = None,
+) -> None:
     metrics = context.state.metrics
     next_controls = controls or EvaluationControls()
-    if metrics.dataset == dataset and metrics.sequence_slug == sequence_slug and metrics.run_root == run_root and metrics.evaluation == next_controls and metrics.result_path == result_path:
+    if (
+        metrics.dataset == dataset
+        and metrics.sequence_slug == sequence_slug
+        and metrics.run_root == run_root
+        and metrics.evaluation == next_controls
+        and metrics.result_path == result_path
+    ):
         return
     metrics.dataset = dataset
     metrics.sequence_slug = sequence_slug
@@ -132,6 +186,28 @@ def _save_state(context: AppContext, *, dataset: DatasetId, sequence_slug: str |
     metrics.evaluation = next_controls
     metrics.result_path = result_path
     context.store.save(context.state)
+
+
+def _resolve_selection(
+    context: AppContext,
+    *,
+    dataset: DatasetId,
+    preferred_sequence_slug: str | None,
+    preferred_run_root: Path | None,
+) -> EvaluationSelection:
+    """Resolve dataset discovery and run selection through the evaluation service."""
+    return context.evaluation_service.resolve_selection(
+        dataset=dataset,
+        preferred_sequence_slug=preferred_sequence_slug,
+        preferred_run_root=preferred_run_root,
+    )
+
+
+def _selected_sequence_slug(selection_state: EvaluationSelection) -> str:
+    """Return the current sequence selection or the first available sequence."""
+    if selection_state.sequence_slug is not None:
+        return selection_state.sequence_slug
+    return selection_state.sequence_slugs[0]
 
 
 def _render_controls(current: EvaluationControls) -> EvaluationControls:
