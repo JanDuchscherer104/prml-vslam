@@ -234,6 +234,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             fps_window_size=self.fps_window_size,
             trajectory_window_size=self.trajectory_window_size,
         )
+        source_label = source_descriptor
 
         def _consume_packet(active_stream: FramePacketStream) -> None:
             try:
@@ -252,23 +253,26 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             self.update_fields(
                 transport=transport,
                 state=Record3DStreamState.STREAMING,
-                source_label=source_label_holder["source_label"],
+                source_label=source_label,
                 latest_packet=packet,
                 error_message="",
                 **metrics.snapshot_fields(),
             )
 
-        source_label_holder = {"source_label": source_descriptor}
-
         try:
             stream = stream_factory()
             self.register_stream(stop_event=stop_event, stream=stream)
-            _set_record3d_connected_state(
-                runtime=self,
+            connected_target = stream.connect()
+            source_label = self._format_source_label(
                 transport=transport,
                 source_descriptor=source_descriptor,
-                connected_target=stream.connect(),
-                source_label_holder=source_label_holder,
+                connected_target=connected_target,
+            )
+            self.update_fields(
+                transport=transport,
+                state=Record3DStreamState.STREAMING,
+                source_label=source_label,
+                error_message="",
             )
             while not stop_event.is_set():
                 _consume_packet(stream)
@@ -313,29 +317,6 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         if hasattr(connected_target, "device_address"):
             return str(connected_target.device_address)
         return source_descriptor
-
-
-def _set_record3d_connected_state(
-    *,
-    runtime: PacketSessionRuntime[Record3DStreamSnapshot],
-    transport: Record3DTransportId,
-    source_descriptor: str,
-    connected_target: object,
-    source_label_holder: dict[str, str],
-) -> None:
-    """Update the app snapshot when a Record3D stream connects."""
-    source_label = Record3DStreamRuntimeController._format_source_label(
-        transport=transport,
-        source_descriptor=source_descriptor,
-        connected_target=connected_target,
-    )
-    source_label_holder["source_label"] = source_label
-    runtime.update_fields(
-        transport=transport,
-        state=Record3DStreamState.STREAMING,
-        source_label=source_label,
-        error_message="",
-    )
 
 
 __all__ = [

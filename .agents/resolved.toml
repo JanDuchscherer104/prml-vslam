@@ -622,6 +622,30 @@ resolved_on = "2026-04-06"
 resolution_note = "Trajectory plotting now shares internal XY/3D trace and layout helpers across the metrics, live Record3D, and pipeline figures instead of repeating the scaffolding per module."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0016"
+title = "Preview session utilities still carry removable boilerplate"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The shared packet-session snapshot defaults still rely on dedicated empty-array wrapper functions, and the Record3D runtime still threads its connected source label through a mutable holder plus helper even though local worker state is sufficient."
+files = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+notes = [
+    "The empty-array factories in `packet_session.py` are only there to satisfy `Field(default_factory=...)` and can be replaced with copy-based defaults.",
+    "The Record3D worker currently mutates a `source_label_holder` dict and calls `_set_record3d_connected_state()` even though `_run_stream_worker()` already owns the connected-target lifetime.",
+]
+sources = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Removed empty-array wrapper helpers from packet_session and inlined Record3D source-label updates into the worker."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1148,4 +1172,33 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Shared internal trajectory helpers now own the repeated Plotly trace and layout assembly, and plotting tests cover the consolidated behavior."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0016"
+title = "Remove packet-session and Record3D preview boilerplate"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0016",
+]
+loc_min = 10
+loc_expected = 25
+loc_max = 45
+files = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+acceptance = [
+    "Packet-session snapshot defaults no longer depend on standalone empty-array wrapper functions.",
+    "The Record3D worker no longer needs a mutable holder dict or an extra helper function just to publish its connected source label.",
+    "Record3D and ADVIO runtime behavior remains unchanged under the existing app and packet-stream tests.",
+]
+sources = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 01 after reducing LOC while preserving app and packet-stream behavior under the frozen harness."
 source_collection = "todos"
