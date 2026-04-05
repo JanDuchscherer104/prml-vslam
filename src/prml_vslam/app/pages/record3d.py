@@ -12,10 +12,14 @@ from prml_vslam.io.record3d import (
     Record3DStreamState,
     Record3DTransportId,
 )
-from prml_vslam.plotting import build_live_trajectory_figure
 
-from ..camera_display import format_camera_intrinsics_latex
 from ..image_utils import normalize_grayscale_image
+from ..live_session import (
+    LiveMetric,
+    render_live_fragment,
+    render_live_packet_tabs,
+    render_live_session_shell,
+)
 from ..record3d_controller import Record3DPageAction, handle_record3d_page_action, sync_record3d_running_state
 from ..record3d_view_utils import build_record3d_frame_details, record3d_stream_hint
 from ..ui import render_page_intro
@@ -98,11 +102,10 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
 
 
 def _render_live_snapshot(context: AppContext) -> None:
-    @st.fragment(run_every=0.5 if context.state.record3d.is_running else None)
-    def _render_fragment() -> None:
-        _render_snapshot(sync_record3d_running_state(context))
-
-    _render_fragment()
+    render_live_fragment(
+        run_every=0.5 if context.state.record3d.is_running else None,
+        render_body=lambda: _render_snapshot(sync_record3d_running_state(context)),
+    )
 
 
 def _render_usb_selector(*, current_index: int, devices: list[Record3DDevice]) -> int:
@@ -120,61 +123,47 @@ def _render_usb_selector(*, current_index: int, devices: list[Record3DDevice]) -
 
 
 def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
-    st.subheader("Live Session")
-    _render_status_notice(snapshot)
-    metric_columns = st.columns(4, gap="small")
-    metric_columns[0].metric("Status", snapshot.state.value.upper())
-    metric_columns[1].metric("Received Frames", str(snapshot.received_frames))
-    metric_columns[2].metric("Frame Rate", f"{snapshot.measured_fps:.2f} fps")
-    metric_columns[3].metric("Transport", snapshot.transport.label if snapshot.transport is not None else "Idle")
-    if snapshot.source_label:
-        st.caption(f"Source: {snapshot.source_label}")
-    packet = snapshot.latest_packet
-    if packet is None:
-        return
-    preview_tab, trajectory_tab, camera_tab = st.tabs(["Frames", "Trajectory", "Camera"])
-    with preview_tab:
-        frame_columns = st.columns(2, gap="large")
-        with frame_columns[0]:
-            st.markdown("**RGB Frame**")
-            st.image(packet.rgb, channels="RGB", clamp=True)
-        with frame_columns[1]:
-            st.markdown("**Depth Frame**")
-            st.image(normalize_grayscale_image(packet.depth), clamp=True)
-        st.markdown("**Uncertainty / Confidence**")
-        if packet.uncertainty is None:
-            st.info("Uncertainty / confidence is not available for this transport.")
-        else:
-            st.image(normalize_grayscale_image(packet.uncertainty), clamp=True)
-    with trajectory_tab:
-        if len(snapshot.trajectory_positions_xyz) == 0:
-            st.info("Live ego trajectory is not available for the current transport yet.")
-        else:
-            st.plotly_chart(
-                build_live_trajectory_figure(
-                    snapshot.trajectory_positions_xyz,
-                    snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
-                ),
-                width="stretch",
-            )
-    with camera_tab:
-        intrinsics_col, details_col = st.columns((1.0, 1.1), gap="large")
-        with intrinsics_col:
-            st.markdown("**Camera Intrinsics**")
-            if packet.intrinsics is None:
-                st.info("Camera intrinsics are not available for the current packet.")
-            else:
-                st.latex(
-                    format_camera_intrinsics_latex(
-                        fx=packet.intrinsics.fx,
-                        fy=packet.intrinsics.fy,
-                        cx=packet.intrinsics.cx,
-                        cy=packet.intrinsics.cy,
-                    )
-                )
-        with details_col:
-            st.markdown("**Frame Details**")
-            st.json(build_record3d_frame_details(snapshot, packet), expanded=False)
+    render_live_session_shell(
+        title="Live Session",
+        status_renderer=lambda: _render_status_notice(snapshot),
+        metrics=_snapshot_metrics(snapshot),
+        caption=None if not snapshot.source_label else f"Source: {snapshot.source_label}",
+        body_renderer=lambda: render_live_packet_tabs(
+            packet=snapshot.latest_packet,
+            preview_renderer=_render_frame_preview,
+            positions_xyz=snapshot.trajectory_positions_xyz,
+            timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
+            trajectory_empty_message="Live ego trajectory is not available for the current transport yet.",
+            details_payload={}
+            if snapshot.latest_packet is None
+            else build_record3d_frame_details(snapshot, snapshot.latest_packet),
+            intrinsics_missing_message="Camera intrinsics are not available for the current packet.",
+        ),
+    )
+
+
+def _snapshot_metrics(snapshot: Record3DStreamSnapshot) -> tuple[LiveMetric, ...]:
+    return (
+        ("Status", snapshot.state.value.upper()),
+        ("Received Frames", str(snapshot.received_frames)),
+        ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
+        ("Transport", snapshot.transport.label if snapshot.transport is not None else "Idle"),
+    )
+
+
+def _render_frame_preview(packet) -> None:
+    frame_columns = st.columns(2, gap="large")
+    with frame_columns[0]:
+        st.markdown("**RGB Frame**")
+        st.image(packet.rgb, channels="RGB", clamp=True)
+    with frame_columns[1]:
+        st.markdown("**Depth Frame**")
+        st.image(normalize_grayscale_image(packet.depth), clamp=True)
+    st.markdown("**Uncertainty / Confidence**")
+    if packet.uncertainty is None:
+        st.info("Uncertainty / confidence is not available for this transport.")
+    else:
+        st.image(normalize_grayscale_image(packet.uncertainty), clamp=True)
 
 
 def _start_disabled(

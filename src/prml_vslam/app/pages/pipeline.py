@@ -27,11 +27,16 @@ from prml_vslam.pipeline.contracts import (
     StageManifest,
     TrackingConfig,
 )
-from prml_vslam.plotting import build_live_trajectory_figure
 from prml_vslam.utils import BaseData
 
-from ..camera_display import format_camera_intrinsics_latex
 from ..image_utils import normalize_grayscale_image
+from ..live_session import (
+    LiveMetric,
+    render_camera_intrinsics,
+    render_live_fragment,
+    render_live_session_shell,
+    render_live_trajectory,
+)
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -147,17 +152,24 @@ def render(context: AppContext) -> None:
         snapshot = context.pipeline_runtime.snapshot()
         if error_message:
             st.error(error_message)
-
-        @st.fragment(run_every=0.2 if _is_pipeline_active(snapshot) else None)
-        def _render_fragment() -> None:
-            _render_pipeline_snapshot(context.pipeline_runtime.snapshot())
-
-        _render_fragment()
+        render_live_fragment(
+            run_every=0.2 if _is_pipeline_active(snapshot) else None,
+            render_body=lambda: _render_pipeline_snapshot(context.pipeline_runtime.snapshot()),
+        )
 
 
 def _render_pipeline_snapshot(snapshot: PipelineSessionSnapshot) -> None:
-    _render_pipeline_notice(snapshot)
-    metrics = (
+    render_live_session_shell(
+        title=None,
+        status_renderer=lambda: _render_pipeline_notice(snapshot),
+        metrics=_pipeline_metrics(snapshot),
+        caption=_pipeline_caption(snapshot),
+        body_renderer=lambda: _render_pipeline_tabs(snapshot),
+    )
+
+
+def _pipeline_metrics(snapshot: PipelineSessionSnapshot) -> tuple[LiveMetric, ...]:
+    return (
         ("Status", snapshot.state.value.upper()),
         ("Mode", "Idle" if snapshot.plan is None else _pipeline_mode_label(snapshot.plan.mode)),
         ("Received Frames", str(snapshot.received_frames)),
@@ -165,12 +177,18 @@ def _render_pipeline_snapshot(snapshot: PipelineSessionSnapshot) -> None:
         ("Map Points", str(snapshot.num_map_points)),
         ("Dense Points", str(snapshot.num_dense_points)),
     )
-    for column, (label, value) in zip(st.columns(6, gap="small"), metrics, strict=True):
-        column.metric(label, value)
-    if snapshot.plan is not None:
-        st.caption(
-            f"Run Id: `{snapshot.plan.run_id}` · Artifact Root: `{snapshot.plan.artifact_root}` · Method: {snapshot.plan.method.display_name}"
-        )
+
+
+def _pipeline_caption(snapshot: PipelineSessionSnapshot) -> str | None:
+    if snapshot.plan is None:
+        return None
+    return (
+        f"Run Id: `{snapshot.plan.run_id}` · Artifact Root: `{snapshot.plan.artifact_root}`"
+        f" · Method: {snapshot.plan.method.display_name}"
+    )
+
+
+def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
     packet = snapshot.latest_packet
     tabs = st.tabs(["Frames", "Trajectory", "Plan", "Artifacts"])
     with tabs[0]:
@@ -212,28 +230,16 @@ def _render_pipeline_snapshot(snapshot: PipelineSessionSnapshot) -> None:
                     expanded=False,
                 )
                 st.markdown("**Camera Intrinsics**")
-                if packet.intrinsics is None:
-                    st.info("Camera intrinsics are not available for the current packet.")
-                else:
-                    st.latex(
-                        format_camera_intrinsics_latex(
-                            fx=packet.intrinsics.fx,
-                            fy=packet.intrinsics.fy,
-                            cx=packet.intrinsics.cx,
-                            cy=packet.intrinsics.cy,
-                        )
-                    )
+                render_camera_intrinsics(
+                    intrinsics=packet.intrinsics,
+                    missing_message="Camera intrinsics are not available for the current packet.",
+                )
     with tabs[1]:
-        if len(snapshot.trajectory_positions_xyz) == 0:
-            st.info("The mock tracker has not produced any trajectory points yet.")
-        else:
-            st.plotly_chart(
-                build_live_trajectory_figure(
-                    snapshot.trajectory_positions_xyz,
-                    snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
-                ),
-                width="stretch",
-            )
+        render_live_trajectory(
+            positions_xyz=snapshot.trajectory_positions_xyz,
+            timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
+            empty_message="The mock tracker has not produced any trajectory points yet.",
+        )
     with tabs[2]:
         if snapshot.plan is None:
             st.info("Start a run to inspect the generated plan and execution records.")
