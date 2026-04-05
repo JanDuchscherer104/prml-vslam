@@ -5,10 +5,15 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
+from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import EvaluationArtifact, EvaluationSelection, SelectionSnapshot
+from prml_vslam.methods import MethodId
+from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.session import PipelineSessionState
 from prml_vslam.plotting import build_error_figure, build_trajectory_figure
 
+from ..pipeline_demo import start_advio_demo_run
 from ..state import save_model_updates
 from ..ui import render_page_intro
 
@@ -57,6 +62,7 @@ def render(context: AppContext) -> None:
             st.info(
                 f"No benchmark runs with `slam/trajectory.tum` were found under `{selection_state.artifacts_root}`."
             )
+            _render_benchmark_run_launcher(context, dataset=dataset, sequence_slug=sequence_slug)
             return
         run = st.selectbox(
             "Run",
@@ -209,3 +215,84 @@ def _render_provenance(
     with st.container(border=True):
         st.subheader("Provenance")
         st.markdown("\n".join(lines))
+
+
+def _render_benchmark_run_launcher(
+    context: AppContext,
+    *,
+    dataset: DatasetId,
+    sequence_slug: str,
+) -> None:
+    if dataset is not DatasetId.ADVIO:
+        st.caption("Run launch from this page currently supports ADVIO slices only.")
+        return
+
+    runtime_snapshot = context.pipeline_runtime.snapshot()
+    run_active = runtime_snapshot.state in {PipelineSessionState.CONNECTING, PipelineSessionState.RUNNING}
+    if run_active:
+        run_id = None if runtime_snapshot.plan is None else runtime_snapshot.plan.run_id
+        st.info(
+            "A pipeline run is currently active"
+            if run_id is None
+            else f"A pipeline run is currently active (`{run_id}`)."
+        )
+
+    with st.form("metrics_start_benchmark_run_form", border=False):
+        st.caption("Start a bounded offline benchmark demo run now to generate `slam/trajectory.tum` artifacts.")
+        method = st.selectbox(
+            "Method",
+            options=list(MethodId),
+            index=list(MethodId).index(context.state.pipeline.method),
+            format_func=lambda item: item.display_name,
+        )
+        pose_source = st.selectbox(
+            "Pose Source",
+            options=list(AdvioPoseSource),
+            index=list(AdvioPoseSource).index(context.state.pipeline.pose_source),
+            format_func=lambda item: item.value.replace("_", " ").title(),
+        )
+        respect_video_rotation = st.toggle(
+            "Respect video rotation metadata",
+            value=context.state.pipeline.respect_video_rotation,
+        )
+        start_requested = st.form_submit_button(
+            "Start benchmark run",
+            type="primary",
+            use_container_width=True,
+            disabled=run_active,
+        )
+
+    if not start_requested:
+        return
+
+    try:
+        sequence_id = _resolve_advio_sequence_id(context, sequence_slug)
+        start_advio_demo_run(
+            context,
+            sequence_id=sequence_id,
+            mode=PipelineMode.OFFLINE,
+            method=method,
+            pose_source=pose_source,
+            respect_video_rotation=respect_video_rotation,
+        )
+        save_model_updates(
+            context.store,
+            context.state,
+            context.state.pipeline,
+            sequence_id=sequence_id,
+            mode=PipelineMode.OFFLINE,
+            method=method,
+            pose_source=pose_source,
+            respect_video_rotation=respect_video_rotation,
+        )
+    except Exception as exc:
+        st.error(str(exc))
+        return
+    st.success("Benchmark run started. Wait for completion, then rerun this page to pick up the new artifact slice.")
+
+
+def _resolve_advio_sequence_id(context: AppContext, sequence_slug: str) -> int:
+    for scene in context.advio_service.list_scenes():
+        if scene.sequence_slug == sequence_slug:
+            return scene.sequence_id
+    raise ValueError(f"Could not resolve an ADVIO sequence id for slug '{sequence_slug}'.")
