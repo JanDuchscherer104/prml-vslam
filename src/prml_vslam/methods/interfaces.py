@@ -32,15 +32,6 @@ class MethodId(StrEnum):
                 return "MASt3R-SLAM"
 
 
-class ViewerId(StrEnum):
-    """Supported visualization surfaces for normalized SLAM results."""
-
-    NONE = "none"
-    PLOTLY = "plotly"
-    OPEN3D = "open3d"
-    NATIVE = "native"
-
-
 class MethodCommand(BaseData):
     """One explicit external command invocation."""
 
@@ -73,10 +64,7 @@ class MethodArtifacts(BaseData):
     """Method-native point-cloud artifact path before normalization."""
 
     view_graph_path: Path | None = None
-    """Optional graph artifact path used by some native viewers."""
-
-    plotly_html_path: Path | None = None
-    """Repository-owned Plotly HTML visualization path."""
+    """Optional graph artifact path used by some upstream tooling."""
 
 
 class MethodRunRequest(BaseData):
@@ -90,15 +78,6 @@ class MethodRunRequest(BaseData):
 
     frame_stride: int = 1
     """Stride used when materializing frames for methods that need images."""
-
-    viewer: ViewerId = ViewerId.PLOTLY
-    """Visualization surface to prepare or launch after inference."""
-
-    launch_viewer: bool = False
-    """Whether the selected viewer should be launched immediately."""
-
-    max_plotly_points: int = 50_000
-    """Maximum number of points shown in the repository-owned Plotly scene."""
 
 
 class MethodRunResult(BaseData):
@@ -132,5 +111,4 @@ __all__ = [
     "MethodId",
     "MethodRunRequest",
     "MethodRunResult",
-    "ViewerId",
 ]
