@@ -720,7 +720,7 @@ def test_pipeline_demo_runtime_completes_offline_run_and_writes_outputs(tmp_path
         output_dir=path_config.artifacts_dir,
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
         tracking=TrackingConfig(method=MethodId.VISTA),
-        dense=DenseConfig(enabled=False),
+        dense=DenseConfig(enabled=True),
         reference=ReferenceConfig(enabled=False),
         evaluation=BenchmarkEvaluationConfig(
             compare_to_arcore=False,
@@ -739,12 +739,14 @@ def test_pipeline_demo_runtime_completes_offline_run_and_writes_outputs(tmp_path
                 seq=0,
                 timestamp_ns=1_000_000_000,
                 rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+                intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
                 pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
             ),
             FramePacket(
                 seq=1,
                 timestamp_ns=2_000_000_000,
                 rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+                intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
                 pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
             ),
         ]
@@ -769,10 +771,15 @@ def test_pipeline_demo_runtime_completes_offline_run_and_writes_outputs(tmp_path
 
     assert snapshot.state is PipelineDemoState.COMPLETED
     assert snapshot.tracking is not None
+    assert snapshot.latest_update is not None
+    assert snapshot.latest_update.pointmap is not None
     assert snapshot.summary is not None
     assert snapshot.tracking.trajectory_tum.path.exists()
+    assert snapshot.tracking.dense is not None
+    assert snapshot.tracking.dense.dense_points_ply.path.exists()
     assert snapshot.summary.artifact_root == plan.artifact_root
     assert any(manifest.stage_id.value == "slam" for manifest in snapshot.stage_manifests)
+    assert any(manifest.stage_id.value == "dense_mapping" for manifest in snapshot.stage_manifests)
 
 
 def test_record3d_page_renders_usb_controls_and_frames() -> None:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.interfaces import FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.methods import MethodId, MethodRunRequest, MSTRMethodConfig, VISTAMethodConfig
 from prml_vslam.methods.mock_tracking import MockTrackingRuntimeConfig
 from prml_vslam.pipeline.contracts import SequenceManifest, TrackingConfig
@@ -93,6 +93,7 @@ def test_mock_tracking_runtime_steps_frames_and_writes_tracking_artifacts(tmp_pa
             seq=0,
             timestamp_ns=1_000_000_000,
             rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
             pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
         )
     )
@@ -101,11 +102,15 @@ def test_mock_tracking_runtime_steps_frames_and_writes_tracking_artifacts(tmp_pa
     assert update.pose is not None
     assert update.pose.tx == 1.0
     assert update.num_map_points == 12
+    assert update.pointmap is not None
+    assert update.num_dense_points > 0
     assert artifacts.trajectory_tum.path.exists()
     assert artifacts.sparse_points_ply is not None
     assert artifacts.sparse_points_ply.path.exists()
     assert artifacts.preview_log_jsonl is not None
     assert artifacts.preview_log_jsonl.path.exists()
+    assert artifacts.dense is not None
+    assert artifacts.dense.dense_points_ply.path.exists()
 
 
 def test_mock_tracking_runtime_runs_sequence_manifest_offline(tmp_path: Path) -> None:
@@ -137,3 +142,5 @@ def test_mock_tracking_runtime_runs_sequence_manifest_offline(tmp_path: Path) ->
     assert artifacts.sparse_points_ply.path.exists()
     assert artifacts.preview_log_jsonl is not None
     assert artifacts.preview_log_jsonl.path.exists()
+    assert artifacts.dense is not None
+    assert artifacts.dense.dense_points_ply.path.exists()
