@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from prml_vslam.interfaces import SE3Pose
-from prml_vslam.methods import MethodId, MethodRunRequest, MSTRMethodConfig, ViewerId, VISTAMethodConfig
-from prml_vslam.methods.io import write_tum_trajectory
-from prml_vslam.methods.visualization import write_plotly_scene_html
+from prml_vslam.methods import MethodId, MethodRunRequest, MSTRMethodConfig, VISTAMethodConfig
+from prml_vslam.utils.geometry import write_tum_trajectory
 
 
 def test_method_id_is_str_enum() -> None:
@@ -29,7 +28,6 @@ def test_vista_mock_plan_returns_typed_paths(tmp_path: Path) -> None:
         MethodRunRequest(
             input_path=input_path,
             artifact_root=tmp_path / "artifacts" / "demo" / "vista",
-            viewer=ViewerId.NONE,
         ),
         execute=False,
     )
@@ -57,7 +55,6 @@ def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> N
         MethodRunRequest(
             input_path=input_dir,
             artifact_root=tmp_path / "artifacts" / "demo" / "mstr",
-            viewer=ViewerId.PLOTLY,
         ),
         execute=True,
     )
@@ -65,9 +62,6 @@ def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> N
     assert result.executed is True
     assert result.artifacts.normalized_trajectory_path.exists()
     assert result.artifacts.normalized_point_cloud_path.exists()
-    assert result.artifacts.plotly_html_path is not None
-    assert result.artifacts.plotly_html_path.exists()
-    assert "Mock Method Scene" in result.artifacts.plotly_html_path.read_text(encoding="utf-8")
 
 
 def test_write_tum_trajectory_consumes_se3_pose_objects(tmp_path: Path) -> None:
@@ -83,20 +77,3 @@ def test_write_tum_trajectory_consumes_se3_pose_objects(tmp_path: Path) -> None:
         "0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 1.000000",
         "1.000000 1.000000 2.000000 3.000000 0.000000 0.000000 0.000000 1.000000",
     ]
-
-
-def test_write_plotly_scene_html_generates_mock_html(tmp_path: Path) -> None:
-    point_cloud_path = tmp_path / "dense_points.ply"
-    trajectory_path = tmp_path / "trajectory.tum"
-    html_path = tmp_path / "scene.html"
-    point_cloud_path.write_text("ply\n", encoding="utf-8")
-    trajectory_path.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
-
-    output_path = write_plotly_scene_html(
-        output_path=html_path,
-        point_cloud_path=point_cloud_path,
-        trajectory_path=trajectory_path,
-    )
-
-    assert output_path.exists()
-    assert "Mock Method Scene" in output_path.read_text(encoding="utf-8")

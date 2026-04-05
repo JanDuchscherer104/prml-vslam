@@ -23,7 +23,7 @@ switch between these backends through one typed selector.
   repository `BaseConfig` factory pattern.
 - Each backend runtime must expose one shared inference surface.
 - Shared inference inputs must be repository-friendly and method-agnostic:
-  source capture path, artifact root, frame stride, and display mode.
+  source capture path, artifact root, and frame stride.
 - Shared inference outputs must normalize method-specific artifacts into the
   same downstream paths for trajectory and reconstructed geometry.
 
@@ -59,25 +59,11 @@ switch between these backends through one typed selector.
 - The shared trajectory artifact must be a TUM-style text file.
 - The shared dense geometry artifact must be a PLY point cloud.
 - Method-specific raw outputs should remain available under a native output
-  folder for debugging and for launching the upstream viewer when possible.
+  folder for debugging.
 - ViSTA-SLAM trajectory exports must be converted from upstream `trajectory.npy`
   into TUM text using capture timestamps when they are available.
 - MASt3R-SLAM trajectory exports should be copied from the upstream text format
   into the normalized trajectory path.
-
-## Visualization Requirements
-
-- The package must provide one repository-owned visualization path that works
-  across both methods.
-- Plotly is the default repository-owned visualization surface for normalized
-  results.
-- Open3D should be available for an idiomatic local 3D scene viewer.
-- When an upstream repository already provides a native viewer, the wrapper
-  must expose that capability through notes or a native viewer command instead
-  of searching for a third-party replacement.
-- A Nerfstudio integration is out of scope for this package unless a later task
-  explicitly asks for scene-representation integration beyond SLAM output
-  inspection.
 
 ## Non-Goals
 

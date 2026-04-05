@@ -10,9 +10,7 @@ from prml_vslam.methods.interfaces import (
     MethodId,
     MethodRunRequest,
     MethodRunResult,
-    ViewerId,
 )
-from prml_vslam.methods.visualization import show_open3d_scene, write_plotly_scene_html
 from prml_vslam.pipeline.workspace import PreparedInput
 from prml_vslam.utils import BaseConfig
 
@@ -76,7 +74,6 @@ class MockMethodRuntime:
                 normalized_point_cloud_path=artifact_root / "dense" / "dense_points.ply",
                 raw_trajectory_path=native_output_dir / "trajectory.tum",
                 raw_point_cloud_path=native_output_dir / "dense_points.ply",
-                plotly_html_path=artifact_root / "visualization" / f"{method_slug}_scene.html",
             ),
             notes=[f"{method_id.display_name} is a mock interface in this repository."],
         )
@@ -85,7 +82,6 @@ class MockMethodRuntime:
         result = self.plan(request)
         if execute:
             self._materialize_outputs(result)
-            self._handle_viewer_action(request, result)
             result.executed = True
         return result
 
@@ -96,20 +92,6 @@ class MockMethodRuntime:
         for path in (result.artifacts.normalized_point_cloud_path, result.artifacts.raw_point_cloud_path):
             if path is not None:
                 self._write_mock_artifact(path, _MOCK_POINT_CLOUD)
-
-    def _handle_viewer_action(self, request: MethodRunRequest, result: MethodRunResult) -> None:
-        match request.viewer:
-            case ViewerId.PLOTLY if result.artifacts.plotly_html_path is not None:
-                result.artifacts.plotly_html_path = write_plotly_scene_html(
-                    output_path=result.artifacts.plotly_html_path,
-                    point_cloud_path=result.artifacts.normalized_point_cloud_path,
-                    trajectory_path=result.artifacts.normalized_trajectory_path,
-                )
-            case ViewerId.OPEN3D if request.launch_viewer:
-                show_open3d_scene(
-                    point_cloud_path=result.artifacts.normalized_point_cloud_path,
-                    trajectory_path=result.artifacts.normalized_trajectory_path,
-                )
 
     @staticmethod
     def _write_mock_artifact(path: Path, content: str) -> Path:
