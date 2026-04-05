@@ -32,10 +32,10 @@ prerequisites from the official project README:
 - The receiver negotiates the Record3D WebRTC session through `/metadata`,
   `/getOffer`, and `/answer` or `/sendAnswer`.
 - Wi-Fi frames are decoded in Python from the composite RGBD video into shared
-  `Record3DFramePacket` objects.
+  `FramePacket` objects.
 - The Wi-Fi path exposes RGB, depth, and intrinsics when available.
-- The current Wi-Fi transport does not expose a separate uncertainty or
-  confidence image, so packet `uncertainty` stays empty on that path.
+- The current Wi-Fi transport does not expose a separate depth-confidence
+  image, so packet `confidence` stays empty on that path.
 - Manual device-address entry is the default. Enter the address shown in the
   Record3D iPhone app, such as `myiPhone.local` or a LAN IP.
 - Record3D allows only one Wi-Fi receiver at a time.
@@ -48,7 +48,7 @@ uv run streamlit run streamlit_app.py
 
 ## Remaining Work
 
-- Feed the shared typed `Record3DFramePacket` stream into the benchmark pipeline
+- Feed the shared typed `FramePacket` stream into the benchmark pipeline
   once the separate pipeline workspace is ready to consume live frames.
 - Decide how much Wi-Fi-derived depth fidelity is sufficient for downstream
   consumers beyond visualization and diagnostics.
