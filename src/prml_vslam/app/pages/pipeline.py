@@ -132,7 +132,7 @@ def render(context: AppContext) -> None:
                     "Pose Source",
                     options=list(AdvioPoseSource),
                     index=list(AdvioPoseSource).index(page_state.pose_source),
-                    format_func=_pose_source_label,
+                    format_func=lambda item: item.label,
                 )
                 respect_video_rotation = st.toggle(
                     "Respect video rotation metadata",
@@ -365,15 +365,6 @@ def _pipeline_mode_label(mode: PipelineMode) -> str:
         PipelineMode.OFFLINE: "Offline (single pass)",
         PipelineMode.STREAMING: "Streaming (looped replay)",
     }[mode]
-
-
-def _pose_source_label(pose_source: AdvioPoseSource) -> str:
-    return {
-        AdvioPoseSource.GROUND_TRUTH: "Ground Truth",
-        AdvioPoseSource.ARCORE: "ARCore",
-        AdvioPoseSource.ARKIT: "ARKit",
-        AdvioPoseSource.NONE: "No Pose Overlay",
-    }[pose_source]
 
 
 def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:

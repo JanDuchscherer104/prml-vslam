@@ -18,6 +18,15 @@ class AdvioPoseSource(StrEnum):
     ARKIT = "arkit"
     NONE = "none"
 
+    @property
+    def label(self) -> str:
+        return {
+            self.GROUND_TRUTH: "Ground Truth",
+            self.ARCORE: "ARCore",
+            self.ARKIT: "ARKit",
+            self.NONE: "No Pose Overlay",
+        }[self]
+
 
 class AdvioEnvironment(StrEnum):
     """Environment labels committed from the official ADVIO scene table."""

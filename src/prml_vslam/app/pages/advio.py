@@ -257,7 +257,7 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
                 "Pose Source",
                 options=list(AdvioPoseSource),
                 index=list(AdvioPoseSource).index(pose_source),
-                format_func=_pose_source_label,
+                format_func=lambda item: item.label,
             )
             respect_video_rotation = st.toggle(
                 "Respect video rotation metadata", value=page_state.preview_respect_video_rotation
@@ -320,9 +320,7 @@ def _preview_metrics(snapshot: AdvioPreviewSnapshot) -> tuple[LiveMetric, ...]:
 def _preview_caption(snapshot: AdvioPreviewSnapshot) -> str | None:
     if not snapshot.sequence_label:
         return None
-    pose_label = (
-        "No pose overlay" if snapshot.pose_source is AdvioPoseSource.NONE else _pose_source_label(snapshot.pose_source)
-    )
+    pose_label = "No pose overlay" if snapshot.pose_source is AdvioPoseSource.NONE else snapshot.pose_source.label
     return f"Sequence: {snapshot.sequence_label} · Pose Source: {pose_label}"
 
 
@@ -344,16 +342,6 @@ def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
         case PreviewStreamState.STREAMING:
             if snapshot.error_message:
                 st.warning(snapshot.error_message)
-
-
-def _pose_source_label(pose_source: AdvioPoseSource | None) -> str:
-    return {
-        AdvioPoseSource.GROUND_TRUTH: "Ground Truth",
-        AdvioPoseSource.ARCORE: "ARCore",
-        AdvioPoseSource.ARKIT: "ARKit",
-        AdvioPoseSource.NONE: "No Pose Overlay",
-        None: "No Pose Overlay",
-    }[pose_source]
 
 
 def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: FramePacket) -> dict[str, object]:

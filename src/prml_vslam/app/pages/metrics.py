@@ -249,7 +249,7 @@ def _render_benchmark_run_launcher(
             "Pose Source",
             options=list(AdvioPoseSource),
             index=list(AdvioPoseSource).index(context.state.pipeline.pose_source),
-            format_func=lambda item: item.value.replace("_", " ").title(),
+            format_func=lambda item: item.label,
         )
         respect_video_rotation = st.toggle(
             "Respect video rotation metadata",

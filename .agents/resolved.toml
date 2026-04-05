@@ -1605,3 +1605,64 @@ previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Kept trial 08 after reducing LOC and preserving bootstrap navigation behavior under focused app tests plus full make ci."
 source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0024"
+title = "ADVIO pose-source display labels are duplicated across app pages"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The ADVIO app pages and metrics launcher still each own their own pose-source display mapping even though `AdvioPoseSource` is the canonical contract and can own that label directly."
+files = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+notes = [
+    "The duplicated label tables create avoidable app-side drift for one repo-owned enum.",
+    "The metrics launcher was already formatting the same enum by munging the raw value string instead of using a contract-owned label.",
+]
+sources = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Moved the display label onto AdvioPoseSource and deleted the duplicated page-local mappings."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0024"
+title = "Move pose-source labels onto AdvioPoseSource"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0024",
+]
+loc_min = 6
+loc_expected = 12
+loc_max = 20
+files = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+acceptance = [
+    "AdvioPoseSource owns the user-facing label used by the app.",
+    "The ADVIO page, pipeline page, and metrics launcher stop duplicating or deriving pose-source display labels locally.",
+    "The focused ADVIO/app tests and full make ci continue to pass while Python LOC decreases.",
+]
+sources = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 10 after reducing LOC and preserving ADVIO/app behavior under the frozen harness plus full make ci."
+source_collection = "todos"
