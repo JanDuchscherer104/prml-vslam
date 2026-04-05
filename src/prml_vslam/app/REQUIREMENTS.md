@@ -78,7 +78,7 @@ The app now exposes four top-level pages:
 
 - A user switches to `Pipeline`.
 - The app shows example pipeline shapes, the direct `RunRequest(...)` workflow with nested stage configs, one generated `RunPlan` table, and one mock executed run.
-- The page may also run the minimal ADVIO replay plus mock-tracking demo and render frames, trajectory, artifacts, and stage status for that bounded session.
+- The page may also run the minimal ADVIO replay plus mock SLAM demo and render frames, trajectory, artifacts, and stage status for that bounded session.
 
 ### Explicit Evaluation
 

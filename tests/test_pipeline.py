@@ -23,11 +23,10 @@ from prml_vslam.pipeline import (
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DatasetSourceSpec,
-    DenseConfig,
     ReferenceConfig,
     RunPlanStageId,
+    SlamConfig,
     StageExecutionStatus,
-    TrackingConfig,
     VideoSourceSpec,
 )
 from prml_vslam.utils import PathConfig
@@ -39,8 +38,7 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
         experiment_name="Lobby Sweep 01",
         output_dir=Path("artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/lobby.mp4"), frame_stride=2),
-        tracking=TrackingConfig(method=MethodId.VISTA),
-        dense=DenseConfig(enabled=True),
+        slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=True, emit_sparse_points=True),
         reference=ReferenceConfig(enabled=True),
         evaluation=BenchmarkEvaluationConfig(
             compare_to_arcore=True,
@@ -51,7 +49,7 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
     plan = request.build(path_config)
     run_paths = path_config.plan_run_paths(
         experiment_name=request.experiment_name,
-        method_slug=request.tracking.method.artifact_slug,
+        method_slug=request.slam.method.artifact_slug,
         output_dir=request.output_dir,
     )
 
@@ -59,7 +57,6 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
     assert [stage.id for stage in plan.stages] == [
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
-        RunPlanStageId.DENSE_MAPPING,
         RunPlanStageId.REFERENCE_RECONSTRUCTION,
         RunPlanStageId.TRAJECTORY_EVALUATION,
         RunPlanStageId.CLOUD_EVALUATION,
@@ -67,7 +64,11 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
         RunPlanStageId.SUMMARY,
     ]
     assert plan.stages[0].outputs == [run_paths.sequence_manifest_path]
-    assert plan.stages[1].outputs == [run_paths.trajectory_path, run_paths.sparse_points_path]
+    assert plan.stages[1].outputs == [
+        run_paths.trajectory_path,
+        run_paths.sparse_points_path,
+        run_paths.dense_points_path,
+    ]
     assert plan.stages[-1].outputs == [run_paths.summary_path, run_paths.stage_manifests_path]
     assert request.model_dump()["evaluation"] == {
         "compare_to_arcore": True,
@@ -81,7 +82,7 @@ def test_run_request_build_keeps_legacy_default_stage_selection() -> None:
         experiment_name="Default Check",
         output_dir=Path("artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/default-check.mp4")),
-        tracking=TrackingConfig(method=MethodId.MSTR),
+        slam=SlamConfig(method=MethodId.MSTR),
     )
 
     plan = request.build()
@@ -89,7 +90,6 @@ def test_run_request_build_keeps_legacy_default_stage_selection() -> None:
     assert [stage.id for stage in plan.stages] == [
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
-        RunPlanStageId.DENSE_MAPPING,
         RunPlanStageId.TRAJECTORY_EVALUATION,
         RunPlanStageId.EFFICIENCY_EVALUATION,
         RunPlanStageId.SUMMARY,
@@ -101,8 +101,7 @@ def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
         experiment_name="Quick Check",
         output_dir=Path("artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/quick-check.mp4")),
-        tracking=TrackingConfig(method=MethodId.MSTR),
-        dense=DenseConfig(enabled=False),
+        slam=SlamConfig(method=MethodId.MSTR, emit_dense_points=False, emit_sparse_points=False),
         reference=ReferenceConfig(enabled=False),
     )
     request.evaluation.compare_to_arcore = False
@@ -118,12 +117,25 @@ def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
     ]
 
 
-def test_run_request_requires_tracking_config() -> None:
+def test_run_request_build_rejects_cloud_evaluation_without_dense_points() -> None:
+    request = RunRequest(
+        experiment_name="No Dense Cloud Eval",
+        output_dir=Path("artifacts"),
+        source=VideoSourceSpec(video_path=Path("captures/no-dense-cloud.mp4")),
+        slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=False),
+        evaluation=BenchmarkEvaluationConfig(evaluate_cloud=True),
+    )
+
+    with pytest.raises(ValueError, match="slam.emit_dense_points=True"):
+        request.build()
+
+
+def test_run_request_requires_slam_config() -> None:
     with pytest.raises(ValidationError):
         RunRequest(
-            experiment_name="Missing Tracking",
+            experiment_name="Missing SLAM",
             output_dir=Path("artifacts"),
-            source=VideoSourceSpec(video_path=Path("captures/missing-tracking.mp4")),
+            source=VideoSourceSpec(video_path=Path("captures/missing-slam.mp4")),
         )
 
 
@@ -180,7 +192,7 @@ class StopAwarePacketStream:
 
 
 class ExplodingPacketStream:
-    """Packet stream that fails during tracking."""
+    """Packet stream that fails during SLAM processing."""
 
     def __init__(self, message: str) -> None:
         self._message = message
@@ -243,8 +255,7 @@ def _build_streaming_request(
         mode=mode,
         output_dir=path_config.artifacts_dir,
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        tracking=TrackingConfig(method=MethodId.VISTA),
-        dense=DenseConfig(enabled=True),
+        slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=True),
         reference=ReferenceConfig(enabled=False),
         evaluation=BenchmarkEvaluationConfig(
             compare_to_arcore=compare_to_arcore,
@@ -272,7 +283,7 @@ def test_pipeline_session_service_completes_supported_run_and_persists_outputs(t
     request = _build_streaming_request(path_config)
     run_paths = path_config.plan_run_paths(
         experiment_name=request.experiment_name,
-        method_slug=request.tracking.method.artifact_slug,
+        method_slug=request.slam.method.artifact_slug,
         output_dir=request.output_dir,
     )
     source = FakeStreamingSource(
@@ -296,27 +307,25 @@ def test_pipeline_session_service_completes_supported_run_and_persists_outputs(t
     assert source.open_calls == [False]
     assert source.last_output_dir == run_paths.sequence_manifest_path.parent
     assert snapshot.sequence_manifest is not None
-    assert snapshot.tracking is not None
+    assert snapshot.slam is not None
     assert snapshot.summary is not None
     assert snapshot.summary.stage_status == {
         RunPlanStageId.INGEST: StageExecutionStatus.RAN,
         RunPlanStageId.SLAM: StageExecutionStatus.RAN,
-        RunPlanStageId.DENSE_MAPPING: StageExecutionStatus.RAN,
         RunPlanStageId.SUMMARY: StageExecutionStatus.RAN,
     }
     assert [manifest.stage_id for manifest in snapshot.stage_manifests] == [
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
-        RunPlanStageId.DENSE_MAPPING,
         RunPlanStageId.SUMMARY,
     ]
     assert all(manifest.status is not StageExecutionStatus.HIT for manifest in snapshot.stage_manifests)
     assert run_paths.sequence_manifest_path.exists()
     assert run_paths.summary_path.exists()
     assert run_paths.stage_manifests_path.exists()
-    assert snapshot.tracking.trajectory_tum.path.exists()
-    assert snapshot.tracking.dense is not None
-    assert snapshot.tracking.dense.dense_points_ply.path.exists()
+    assert snapshot.slam.trajectory_tum.path.exists()
+    assert snapshot.slam.dense_points_ply is not None
+    assert snapshot.slam.dense_points_ply.path.exists()
 
 
 def test_pipeline_session_service_stop_finishes_cleanly(tmp_path: Path) -> None:
@@ -387,7 +396,6 @@ def test_pipeline_session_service_reports_failed_runtime_errors(tmp_path: Path) 
     assert snapshot.summary.stage_status == {
         RunPlanStageId.INGEST: StageExecutionStatus.RAN,
         RunPlanStageId.SLAM: StageExecutionStatus.FAILED,
-        RunPlanStageId.DENSE_MAPPING: StageExecutionStatus.FAILED,
         RunPlanStageId.SUMMARY: StageExecutionStatus.RAN,
     }
     assert all(manifest.status is not StageExecutionStatus.HIT for manifest in snapshot.stage_manifests)

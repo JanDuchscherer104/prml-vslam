@@ -14,6 +14,7 @@ from pydantic import Field
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.utils import BaseConfig, BaseData, Console
+from prml_vslam.utils.packet_session import PacketSessionSnapshot
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -83,7 +84,7 @@ class Record3DFrame(BaseData):
     """Source camera type used for the stream."""
 
 
-class Record3DStreamSnapshot(BaseData):
+class Record3DStreamSnapshot(PacketSessionSnapshot):
     """Latest live-stream snapshot shared between IO and app layers."""
 
     transport: Record3DTransportId | None = None
@@ -94,24 +95,6 @@ class Record3DStreamSnapshot(BaseData):
 
     source_label: str = ""
     """Human-readable source descriptor such as a UDID or Wi-Fi address."""
-
-    received_frames: int = 0
-    """Number of frame packets consumed since the current run started."""
-
-    measured_fps: float = 0.0
-    """Rolling transport frame rate measured at the packet sink."""
-
-    latest_packet: FramePacket | None = None
-    """Most recent frame packet, if any."""
-
-    trajectory_positions_xyz: NDArray[np.float64] = Field(default_factory=lambda: np.empty((0, 3), dtype=np.float64))
-    """Bounded live ego-trajectory history in world coordinates."""
-
-    trajectory_timestamps_s: NDArray[np.float64] = Field(default_factory=lambda: np.empty((0,), dtype=np.float64))
-    """Arrival timestamps associated with `trajectory_positions_xyz`."""
-
-    error_message: str = ""
-    """Last surfaced error message."""
 
 
 def record3d_frame_to_packet(
@@ -360,7 +343,30 @@ class Record3DUSBPacketStream:
             yield self.wait_for_packet()
 
 
+def list_record3d_usb_devices() -> list[Record3DDevice]:
+    """List currently connected Record3D USB devices through the canonical IO owner."""
+    stream = Record3DUSBPacketStreamConfig().setup_target()
+    if stream is None:
+        raise RuntimeError("Failed to initialize the USB Record3D packet stream.")
+    return stream.list_devices()
+
+
+def open_record3d_usb_packet_stream(*, device_index: int, frame_timeout_seconds: float) -> Record3DUSBPacketStream:
+    """Build one shared USB packet stream with explicit runtime validation."""
+    stream = Record3DUSBPacketStreamConfig(
+        stream=Record3DStreamConfig(
+            device_index=device_index,
+            frame_timeout_seconds=frame_timeout_seconds,
+        )
+    ).setup_target()
+    if stream is None:
+        raise RuntimeError("Failed to initialize the USB Record3D packet stream.")
+    return stream
+
+
 __all__ = [
+    "list_record3d_usb_devices",
+    "open_record3d_usb_packet_stream",
     "Record3DDevice",
     "Record3DDeviceType",
     "Record3DFrame",

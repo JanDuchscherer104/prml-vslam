@@ -59,8 +59,8 @@ class LiveSourceSpec(BaseConfig):
 SourceSpec = VideoSourceSpec | DatasetSourceSpec | LiveSourceSpec
 
 
-class TrackingConfig(BaseConfig):
-    """Tracking-stage configuration shared by the planner and runners."""
+class SlamConfig(BaseConfig):
+    """SLAM-stage configuration shared by the planner and runners."""
 
     method: MethodId
     """External monocular VSLAM backend to use for the run."""
@@ -68,13 +68,10 @@ class TrackingConfig(BaseConfig):
     """Optional frame cap used for debugging or short smoke runs."""
     config_path: Path | None = None
     """Optional explicit backend config path."""
-
-
-class DenseConfig(BaseConfig):
-    """Boolean toggle used by the optional dense-mapping stage."""
-
-    enabled: bool = True
-    """Whether the run should include the dense-mapping stage."""
+    emit_dense_points: bool = True
+    """Whether the SLAM stage should materialize a dense point cloud artifact."""
+    emit_sparse_points: bool = True
+    """Whether the SLAM stage should materialize sparse geometry artifacts."""
 
 
 class ReferenceConfig(BaseConfig):
@@ -111,10 +108,8 @@ class RunRequest(BaseConfig):
     """Root directory where planned artifacts should be written."""
     source: SourceSpec = Field(discriminator="kind")
     """Source specification normalized before the main benchmark stages run."""
-    tracking: TrackingConfig
-    """Tracking-stage configuration."""
-    dense: DenseConfig = Field(default_factory=DenseConfig)
-    """Dense-mapping configuration."""
+    slam: SlamConfig
+    """SLAM-stage configuration."""
     reference: ReferenceConfig = Field(default_factory=ReferenceConfig)
     """Reference-reconstruction configuration."""
     evaluation: BenchmarkEvaluationConfig = Field(default_factory=BenchmarkEvaluationConfig)
@@ -141,7 +136,6 @@ class RunPlanStageId(StrEnum):
 
     INGEST = "ingest"
     SLAM = "slam"
-    DENSE_MAPPING = "dense_mapping"
     REFERENCE_RECONSTRUCTION = "reference_reconstruction"
     TRAJECTORY_EVALUATION = "trajectory_evaluation"
     CLOUD_EVALUATION = "cloud_evaluation"
@@ -209,8 +203,8 @@ class SequenceManifest(BaseData):
     """Normalized ARCore baseline trajectory in TUM format when available."""
 
 
-class TrackingUpdate(BaseData):
-    """Incremental tracking update emitted by streaming-capable backends."""
+class SlamUpdate(BaseData):
+    """Incremental SLAM update emitted by streaming-capable backends."""
 
     seq: int
     """Frame sequence number associated with the update."""
@@ -221,8 +215,8 @@ class TrackingUpdate(BaseData):
     pose: SE3Pose | None = None
     """Optional canonical pose estimate."""
 
-    num_map_points: int = 0
-    """Current sparse map size when the backend exposes it."""
+    num_sparse_points: int = 0
+    """Current sparse point count when the backend exposes it."""
 
     num_dense_points: int = 0
     """Current cumulative dense-point count when the backend exposes reconstruction output."""
@@ -234,24 +228,17 @@ class TrackingUpdate(BaseData):
     """Optional HxW uncertainty map for the current frame, aligned with the pointmap if present."""
 
 
-class DenseArtifacts(BaseData):
-    """Materialized outputs produced by the dense-mapping stage."""
-
-    dense_points_ply: ArtifactRef
-    """Normalized dense point cloud artifact."""
-
-
-class TrackingArtifacts(BaseData):
-    """Materialized outputs produced by the tracking stage."""
+class SlamArtifacts(BaseData):
+    """Materialized outputs produced by the SLAM stage."""
 
     trajectory_tum: ArtifactRef
     """Normalized TUM trajectory artifact."""
     sparse_points_ply: ArtifactRef | None = None
     """Optional sparse point cloud artifact."""
+    dense_points_ply: ArtifactRef | None = None
+    """Optional dense point cloud artifact."""
     preview_log_jsonl: ArtifactRef | None = None
-    """Optional preview/event log produced during live tracking."""
-    dense: DenseArtifacts | None = None
-    """Optional dense geometry produced directly by a joint tracking-reconstruction backend."""
+    """Optional preview/event log produced during live SLAM."""
 
 
 class StageExecutionStatus(StrEnum):
@@ -292,8 +279,6 @@ __all__ = [
     "ArtifactRef",
     "BenchmarkEvaluationConfig",
     "DatasetSourceSpec",
-    "DenseArtifacts",
-    "DenseConfig",
     "LiveSourceSpec",
     "PipelineMode",
     "ReferenceConfig",
@@ -303,10 +288,10 @@ __all__ = [
     "RunRequest",
     "RunSummary",
     "SequenceManifest",
+    "SlamArtifacts",
+    "SlamConfig",
+    "SlamUpdate",
     "StageExecutionStatus",
     "StageManifest",
-    "TrackingArtifacts",
-    "TrackingConfig",
-    "TrackingUpdate",
     "VideoSourceSpec",
 ]

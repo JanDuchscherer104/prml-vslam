@@ -1,7 +1,7 @@
 # PRML VSLAM Pipeline Guide
 
 This package owns the typed planning contracts, the currently implemented
-tracking/runtime protocols, and the artifact-boundary definitions for the
+SLAM/runtime protocols, and the artifact-boundary definitions for the
 repository pipeline.
 
 ## Current State
@@ -12,7 +12,7 @@ Today `prml_vslam.pipeline` is primarily a typed planning surface:
   streaming-update DTOs
 - `services.py` turns a `RunRequest` into an ordered `RunPlan`
 - `protocols.py` defines the currently implemented streaming-source and
-  tracking-backend seams
+  SLAM-backend seams
 - `workspace.py` defines the capture-manifest helper models used while
   materializing sequences
 
@@ -24,7 +24,7 @@ There is one executable demo today:
 
 - the Streamlit `Pipeline` page builds a real `RunRequest`, materializes a real
   `SequenceManifest`, replays ADVIO frames, and feeds them into the repository
-  local `MockTrackingRuntime`
+  local `MockSlamBackend`
 
 That demo lives in `prml_vslam.app`, not in `prml_vslam.pipeline`, because it
 is a bounded monitoring surface rather than the final reusable runner API.
@@ -47,8 +47,8 @@ The current runnable streaming demo is split across the following files.
 - [`../app/models.py`](../app/models.py)
   - defines the persisted `PipelinePageState` used by the page controls
 - [`../methods/mock_vslam.py`](../methods/mock_vslam.py)
-  - implements the repository-local `MockTrackingRuntime` used by both the
-    streaming demo loop and the offline mock path
+  - implements the repository-local `MockSlamBackend` and `MockSlamSession`
+    used by both the streaming demo loop and the offline mock path
 - [`../datasets/advio_service.py`](../datasets/advio_service.py)
   - exposes ADVIO helpers that build a pipeline-facing replay source plus the
     normalized `SequenceManifest`
@@ -63,20 +63,19 @@ The current runnable streaming demo is split across the following files.
     demo
 - [`../interfaces/runtime.py`](../interfaces/runtime.py)
   - defines `FramePacket`, the shared live-frame datamodel used by replay and
-    streaming tracking
+    streaming SLAM
 - [`../protocols/runtime.py`](../protocols/runtime.py)
   - defines `FramePacketStream`, the shared frame-stream protocol used by
-    replay and streaming tracking
+    replay and streaming SLAM
 - [`../app/plotting/record3d.py`](../app/plotting/record3d.py)
   - builds the live trajectory figure shown on the Pipeline page
 - [`contracts.py`](./contracts.py)
   - defines `RunRequest`, `RunPlan`, `SequenceManifest`, `StageManifest`,
-    `RunSummary`, `TrackingUpdate`, and the typed artifact bundles that the
+    `RunSummary`, `SlamUpdate`, and the typed artifact bundles that the
     demo exercises
 - [`protocols.py`](./protocols.py)
-  - defines `StreamingSequenceSource`, `OfflineTrackerBackend`, and
-    `StreamingTrackerBackend`, the only currently implemented package-local
-    behavior seams
+  - defines `StreamingSequenceSource`, `SlamBackend`, and `SlamSession`, the
+    only currently implemented package-local behavior seams
 - [`services.py`](./services.py)
   - defines `RunPlannerService`, which turns the page-built `RunRequest` into
     the ordered `RunPlan`
@@ -110,13 +109,13 @@ Use `PipelineMode.STREAMING` when the input arrives incrementally:
 
 Streaming mode still uses the same stage vocabulary, but its hot path is
 frame-driven. The shared runtime unit is `FramePacket`, and the streaming-capable
-tracking backend consumes packets one at a time via `open(...)`, `step(...)`,
-and `close()`.
+SLAM session consumes packets one at a time via `start_session(...)`,
+`step(...)`, and `close()`.
 
 The intended long-term flow is:
 
 1. live ingress produces `FramePacket`
-2. streaming tracking produces `TrackingUpdate`
+2. streaming SLAM produces `SlamUpdate`
 3. capture or replay is materialized into `SequenceManifest`
 4. downstream artifact stages consume materialized outputs, not live frames
 
@@ -126,8 +125,7 @@ The intended long-term flow is:
 
 - `RunRequest`
   - the config-defined entry point for both offline and streaming pipelines
-  - owns `mode`, `source`, `tracking`, optional `dense`, optional `reference`,
-    and `evaluation`
+  - owns `mode`, `source`, `slam`, optional `reference`, and `evaluation`
 
 ### Source Contracts
 
@@ -144,8 +142,7 @@ The intended long-term flow is:
   - ordered list of `RunPlanStage`
   - owns `run_id`, `artifact_root`, `method`, `mode`, and selected `source`
 - `RunPlanStageId`
-  - canonical stage ids such as `ingest`, `slam`, `dense_mapping`, and
-    `summary`
+  - canonical stage ids such as `ingest`, `slam`, and `summary`
 
 ### Shared Normalization Boundary
 
@@ -157,8 +154,7 @@ The intended long-term flow is:
 
 ### Stage Outputs
 
-- `TrackingArtifacts`
-- `DenseArtifacts`
+- `SlamArtifacts`
 
 Large outputs must cross stage boundaries as artifact references, not large
 in-memory payloads.
@@ -181,26 +177,22 @@ them.
 `protocols.py` defines the behavior seams that are actually consumed by the
 current planner and streaming session.
 
-### Tracking
+### SLAM
 
-- `OfflineTrackerBackend`
-  - `run_sequence(sequence, cfg, artifact_root) -> TrackingArtifacts`
-  - used when tracking consumes a fully materialized `SequenceManifest`
-- `StreamingTrackerBackend`
-  - `open(cfg, artifact_root) -> None`
-  - `step(frame) -> TrackingUpdate`
-  - `close() -> TrackingArtifacts`
-  - used when tracking consumes `FramePacket` incrementally
+- `SlamBackend`
+  - `run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`
+  - `start_session(cfg, artifact_root) -> SlamSession`
+  - used when one backend supports both materialized-sequence and incremental execution
+- `SlamSession`
+  - `step(frame) -> SlamUpdate`
+  - `close() -> SlamArtifacts`
+  - used when SLAM consumes `FramePacket` incrementally
 
 The important boundary rule is simple:
 
 - streaming logic may consume `FramePacket`
 - downstream stages should consume typed artifact bundles or
   `SequenceManifest`, not live packets
-
-Future dense, reference, and evaluation stages can introduce additional
-protocols later, but those seams should be added only when a concrete runtime
-or service needs them.
 
 ## Artifact Layout
 
@@ -223,7 +215,7 @@ stage-local layouts.
 ## Defining An Offline Pipeline
 
 The smallest offline pipeline is a `RunRequest` with an offline source and a
-tracking config.
+SLAM config.
 
 ```python
 from pathlib import Path
@@ -232,9 +224,8 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
-    DenseConfig,
     ReferenceConfig,
-    TrackingConfig,
+    SlamConfig,
     VideoSourceSpec,
 )
 from prml_vslam.utils import PathConfig
@@ -244,8 +235,7 @@ request = RunRequest(
     mode=PipelineMode.OFFLINE,
     output_dir=Path("artifacts"),
     source=VideoSourceSpec(video_path=Path("captures/office.mp4"), frame_stride=2),
-    tracking=TrackingConfig(method=MethodId.VISTA),
-    dense=DenseConfig(enabled=False),
+    slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=False),
     reference=ReferenceConfig(enabled=False),
     evaluation=BenchmarkEvaluationConfig(
         compare_to_arcore=False,
@@ -266,13 +256,13 @@ from pathlib import Path
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import RunRequest
-from prml_vslam.pipeline.contracts import DatasetSourceSpec, TrackingConfig
+from prml_vslam.pipeline.contracts import DatasetSourceSpec, SlamConfig
 
 request = RunRequest(
     experiment_name="advio-office-vista",
     output_dir=Path("artifacts"),
     source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-    tracking=TrackingConfig(method=MethodId.VISTA),
+    slam=SlamConfig(method=MethodId.VISTA),
 )
 ```
 
@@ -285,14 +275,14 @@ from pathlib import Path
 
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts import LiveSourceSpec, TrackingConfig
+from prml_vslam.pipeline.contracts import LiveSourceSpec, SlamConfig
 
 request = RunRequest(
     experiment_name="record3d-live-vista",
     mode=PipelineMode.STREAMING,
     output_dir=Path("artifacts"),
     source=LiveSourceSpec(source_id="record3d_usb", persist_capture=True),
-    tracking=TrackingConfig(method=MethodId.VISTA),
+    slam=SlamConfig(method=MethodId.VISTA),
 )
 ```
 
@@ -315,13 +305,13 @@ bounded way:
 2. build a `RunPlan`
 3. materialize an ADVIO-backed `SequenceManifest`
 4. open an ADVIO replay stream
-5. run the repository-local `MockTrackingRuntime`
+5. run the repository-local `MockSlamBackend`
 6. display frames, trajectory, stage manifests, artifacts, and summary
 
 This demo supports:
 
 - `offline` as one replay pass
-- `streaming` as looped replay with the same incremental tracking interface
+- `streaming` as looped replay with the same incremental SLAM interface
 
 ## How To Add A Stage
 
@@ -346,7 +336,7 @@ second.
 9. Add tests for planning, artifact-path layout, and execution behavior.
 
 If the new stage needs live `FramePacket` access, challenge that decision
-first. In this repository, only ingress and streaming tracking should normally
+first. In this repository, only ingress and streaming SLAM should normally
 operate on live packets. Most later stages should run on materialized
 artifacts.
 
@@ -356,8 +346,8 @@ Use the following decision rule:
 
 - if a capability consumes a full materialized sequence, model it as an
   offline stage
-- if a capability must react frame by frame, model it as streaming tracking or
-  as observability around streaming tracking
+- if a capability must react frame by frame, model it as streaming SLAM or as
+  observability around streaming SLAM
 - if a capability produces reusable geometry or metrics, materialize it as a
   typed artifact bundle
 
