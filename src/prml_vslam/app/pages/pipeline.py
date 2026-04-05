@@ -14,18 +14,11 @@ from evo.core import sync as evo_sync
 from evo.core.trajectory import PoseTrajectory3D
 
 from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
 from prml_vslam.interfaces import TimedPoseTrajectory
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunPlan, RunRequest
-from prml_vslam.pipeline.contracts import (
-    BenchmarkEvaluationConfig,
-    DatasetSourceSpec,
-    ReferenceConfig,
-    SlamConfig,
-    StageManifest,
-)
+from prml_vslam.pipeline import PipelineMode, RunPlan
+from prml_vslam.pipeline.contracts import StageManifest
 from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.plotting import build_evo_ape_colormap_figure
 from prml_vslam.utils import BaseData
@@ -39,6 +32,7 @@ from ..live_session import (
     render_live_session_shell,
     render_live_trajectory,
 )
+from ..pipeline_demo import start_advio_demo_run
 from ..state import save_model_updates
 from ..ui import render_page_intro
 
@@ -346,45 +340,17 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
         return None
 
     try:
-        scene = context.advio_service.scene(action.sequence_id)
-        request = _build_demo_request(
-            output_dir=context.path_config.artifacts_dir,
-            sequence_slug=scene.sequence_slug,
+        start_advio_demo_run(
+            context,
+            sequence_id=action.sequence_id,
             mode=action.mode,
             method=action.method,
-        )
-        source = context.advio_service.build_streaming_source(
-            sequence_id=action.sequence_id,
             pose_source=action.pose_source,
             respect_video_rotation=action.respect_video_rotation,
         )
-        context.pipeline_runtime.start(request=request, source=source)
         return None
     except Exception as exc:
         return str(exc)
-
-
-def _build_demo_request(
-    *,
-    output_dir: Path,
-    sequence_slug: str,
-    mode: PipelineMode,
-    method: MethodId,
-) -> RunRequest:
-    """Build the bounded run request used by the current pipeline page."""
-    return RunRequest(
-        experiment_name=f"advio-{mode.value}-{sequence_slug}-{method.value}",
-        mode=mode,
-        output_dir=output_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug),
-        slam=SlamConfig(method=method, emit_dense_points=True),
-        reference=ReferenceConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=False,
-        ),
-    )
 
 
 def _save_page_state(context: AppContext, **updates: object) -> None:
