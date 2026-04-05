@@ -8,7 +8,7 @@ Right now the main implementation target is ADVIO.
 - typed dataset metadata and status models in `advio_models.py`
 - local path resolution and catalog lookups in `advio_layout.py` and `advio_sequence.py`
 - typed file loading for timestamps, calibration, and trajectories in `advio_loading.py`
-- archive download and extraction flows in `advio_download.py`
+- dataset fetch/cache mechanics in `fetch.py` and archive extraction flows in `advio_download.py`
 - a high-level app- and pipeline-facing service in `advio_service.py`
 - ADVIO replay stream assembly in `advio_replay_adapter.py`
 

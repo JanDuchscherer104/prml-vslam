@@ -424,6 +424,25 @@ def test_advio_dataset_service_offline_preset_downloads_evaluation_ready_bundle(
     assert status.offline_ready is True
 
 
+def test_advio_dataset_service_refreshes_corrupted_cached_archive(tmp_path: Path) -> None:
+    catalog = _build_fake_catalog(tmp_path)
+    service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
+    request = AdvioDownloadRequest(
+        sequence_ids=[15],
+        modalities=[AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO],
+    )
+
+    service.download(request)
+    archive_path = tmp_path / "data" / "advio" / ".archives" / "advio-15.zip"
+    archive_path.write_bytes(b"corrupted")
+
+    result = service.download(request)
+
+    assert result.downloaded_archive_count == 1
+    assert result.reused_archive_count == 0
+    assert archive_path.stat().st_size == catalog.scenes[0].archive_size_bytes
+
+
 def test_advio_dataset_service_summarize_reuses_precomputed_statuses(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)

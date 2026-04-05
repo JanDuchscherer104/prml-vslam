@@ -6,34 +6,6 @@ source = "Validated review findings plus follow-up repository policy notes, the 
 active_collection = "issues"
 
 [[issues]]
-id = "ISSUE-0011"
-title = "ADVIO download flow still owns bespoke cache and fetch mechanics"
-status = "open"
-priority = "medium"
-category = "maintainability"
-summary = "The ADVIO download manager still owns low-level HTTP download, temp-file replacement, checksum validation, and ZIP extraction logic directly instead of delegating archive retrieval and cache handling to a dedicated dataset helper."
-files = [
-    "src/prml_vslam/datasets/README.md",
-    "src/prml_vslam/datasets/advio/advio_download.py",
-    "pyproject.toml",
-]
-notes = [
-    "The current implementation manually combines `urllib.request`, `tempfile`, `hashlib`, and `zipfile` for archive retrieval and caching.",
-    "The archive-cache correctness bug has been fixed locally, but the surrounding retrieval and cache-management path is still bespoke.",
-    "ADVIO upstream already publishes per-sequence ZIP files on Zenodo, which fits a registry-based data fetcher well.",
-    "A library such as Pooch would let the repo keep its typed catalog and local-readiness logic while shrinking the bespoke download path.",
-]
-sources = [
-    "src/prml_vslam/datasets/README.md",
-    "src/prml_vslam/datasets/advio/advio_download.py",
-    "pyproject.toml",
-    "https://github.com/AaltoVision/ADVIO",
-    "https://zenodo.org/record/1320824",
-    "https://www.fatiando.org/pooch/latest/",
-    "https://github.com/JanDuchscherer104/prml-vslam/pull/15#discussion_r3037245887",
-]
-
-[[issues]]
 id = "ISSUE-0013"
 title = "Source-of-truth docs still contain stale packet names, broken links, and placeholder TODO text"
 status = "open"
