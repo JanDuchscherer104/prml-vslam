@@ -35,7 +35,7 @@ from ..live_session import (
     render_live_packet_tabs,
     render_live_session_shell,
 )
-from ..models import AdvioPreviewSnapshot, AdvioPreviewStreamState
+from ..models import AdvioPreviewSnapshot, PreviewStreamState
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -257,7 +257,7 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
                 "Pose Source",
                 options=list(AdvioPoseSource),
                 index=list(AdvioPoseSource).index(pose_source),
-                format_func=_pose_source_label,
+                format_func=lambda item: item.label,
             )
             respect_video_rotation = st.toggle(
                 "Respect video rotation metadata", value=page_state.preview_respect_video_rotation
@@ -320,9 +320,7 @@ def _preview_metrics(snapshot: AdvioPreviewSnapshot) -> tuple[LiveMetric, ...]:
 def _preview_caption(snapshot: AdvioPreviewSnapshot) -> str | None:
     if not snapshot.sequence_label:
         return None
-    pose_label = (
-        "No pose overlay" if snapshot.pose_source is AdvioPoseSource.NONE else _pose_source_label(snapshot.pose_source)
-    )
+    pose_label = "No pose overlay" if snapshot.pose_source is AdvioPoseSource.NONE else snapshot.pose_source.label
     return f"Sequence: {snapshot.sequence_label} · Pose Source: {pose_label}"
 
 
@@ -333,27 +331,17 @@ def _render_preview_frame(packet: FramePacket) -> None:
 
 def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
     match snapshot.state:
-        case AdvioPreviewStreamState.IDLE:
+        case PreviewStreamState.IDLE:
             st.info("Start a replay-ready scene to inspect looped ADVIO frames in-place.")
-        case AdvioPreviewStreamState.CONNECTING:
+        case PreviewStreamState.CONNECTING:
             st.info("Starting ADVIO loop preview...")
-        case AdvioPreviewStreamState.FAILED:
+        case PreviewStreamState.FAILED:
             st.error(snapshot.error_message or "The ADVIO preview failed.")
-        case AdvioPreviewStreamState.DISCONNECTED:
+        case PreviewStreamState.DISCONNECTED:
             st.warning(snapshot.error_message or "The ADVIO preview ended.")
-        case AdvioPreviewStreamState.STREAMING:
+        case PreviewStreamState.STREAMING:
             if snapshot.error_message:
                 st.warning(snapshot.error_message)
-
-
-def _pose_source_label(pose_source: AdvioPoseSource | None) -> str:
-    return {
-        AdvioPoseSource.GROUND_TRUTH: "Ground Truth",
-        AdvioPoseSource.ARCORE: "ARCore",
-        AdvioPoseSource.ARKIT: "ARKit",
-        AdvioPoseSource.NONE: "No Pose Overlay",
-        None: "No Pose Overlay",
-    }[pose_source]
 
 
 def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: FramePacket) -> dict[str, object]:

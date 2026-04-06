@@ -16,18 +16,8 @@ from prml_vslam.protocols import FramePacketStream
 from .base_data import BaseData
 
 SnapshotT = TypeVar("SnapshotT", bound=BaseData)
-
-
-# TODO: inline behaviour, rm function
-def empty_positions_xyz() -> np.ndarray:
-    """Return an empty trajectory-position array with stable shape."""
-    return np.empty((0, 3), dtype=np.float64)
-
-
-# TODO: inline behaviour, rm function
-def empty_timestamps_s() -> np.ndarray:
-    """Return an empty trajectory-timestamp array."""
-    return np.empty((0,), dtype=np.float64)
+_EMPTY_TRAJECTORY_POSITIONS_XYZ = np.empty((0, 3), dtype=np.float64)
+_EMPTY_TRAJECTORY_TIMESTAMPS_S = np.empty((0,), dtype=np.float64)
 
 
 class PacketSessionSnapshot(BaseData):
@@ -42,10 +32,10 @@ class PacketSessionSnapshot(BaseData):
     measured_fps: float = 0.0
     """Rolling measured packet rate."""
 
-    trajectory_positions_xyz: np.ndarray = Field(default_factory=empty_positions_xyz)
+    trajectory_positions_xyz: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_POSITIONS_XYZ.copy)
     """Bounded trajectory history in world coordinates."""
 
-    trajectory_timestamps_s: np.ndarray = Field(default_factory=empty_timestamps_s)
+    trajectory_timestamps_s: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_TIMESTAMPS_S.copy)
     """Timestamps associated with `trajectory_positions_xyz`."""
 
     error_message: str = ""
@@ -102,7 +92,11 @@ class PacketSessionMetrics:
 
     @staticmethod
     def _positions_to_array(positions: deque[np.ndarray]) -> np.ndarray:
-        return np.vstack(tuple(positions)).astype(np.float64, copy=False) if positions else empty_positions_xyz()
+        return (
+            np.vstack(tuple(positions)).astype(np.float64, copy=False)
+            if positions
+            else _EMPTY_TRAJECTORY_POSITIONS_XYZ.copy()
+        )
 
 
 class PacketSessionRuntime(Generic[SnapshotT]):
@@ -205,7 +199,5 @@ __all__ = [
     "PacketSessionMetrics",
     "PacketSessionRuntime",
     "PacketSessionSnapshot",
-    "empty_positions_xyz",
-    "empty_timestamps_s",
     "extract_pose_position",
 ]

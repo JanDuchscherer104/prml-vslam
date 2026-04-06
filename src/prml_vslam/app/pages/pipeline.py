@@ -91,7 +91,7 @@ def render(context: AppContext) -> None:
     statuses = context.advio_service.local_scene_statuses()
     previewable_ids = [status.scene.sequence_id for status in statuses if status.replay_ready]
     snapshot = context.pipeline_runtime.snapshot()
-    is_active = _is_pipeline_active(snapshot)
+    is_active = snapshot.state in _ACTIVE_SESSION_STATES
     with st.container(border=True):
         st.subheader("ADVIO Replay Demo")
         st.caption(
@@ -119,7 +119,7 @@ def render(context: AppContext) -> None:
                     "Mode",
                     options=list(PipelineMode),
                     index=list(PipelineMode).index(page_state.mode),
-                    format_func=_pipeline_mode_label,
+                    format_func=lambda item: item.label,
                 )
                 method = st.selectbox(
                     "Mock Method",
@@ -132,7 +132,7 @@ def render(context: AppContext) -> None:
                     "Pose Source",
                     options=list(AdvioPoseSource),
                     index=list(AdvioPoseSource).index(page_state.pose_source),
-                    format_func=_pose_source_label,
+                    format_func=lambda item: item.label,
                 )
                 respect_video_rotation = st.toggle(
                     "Respect video rotation metadata",
@@ -160,7 +160,7 @@ def render(context: AppContext) -> None:
         if error_message:
             st.error(error_message)
         render_live_fragment(
-            run_every=0.2 if _is_pipeline_active(snapshot) else None,
+            run_every=0.2 if snapshot.state in _ACTIVE_SESSION_STATES else None,
             render_body=lambda: _render_pipeline_snapshot(context.pipeline_runtime.snapshot()),
         )
 
@@ -178,7 +178,7 @@ def _render_pipeline_snapshot(snapshot: PipelineSessionSnapshot) -> None:
 def _pipeline_metrics(snapshot: PipelineSessionSnapshot) -> tuple[LiveMetric, ...]:
     return (
         ("Status", snapshot.state.value.upper()),
-        ("Mode", "Idle" if snapshot.plan is None else _pipeline_mode_label(snapshot.plan.mode)),
+        ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.label),
         ("Received Frames", str(snapshot.received_frames)),
         ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
         ("Sparse Points", str(snapshot.num_sparse_points)),
@@ -353,27 +353,6 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
         return None
     except Exception as exc:
         return str(exc)
-
-
-def _is_pipeline_active(snapshot: PipelineSessionSnapshot) -> bool:
-    """Return whether the pipeline session is currently active."""
-    return snapshot.state in _ACTIVE_SESSION_STATES
-
-
-def _pipeline_mode_label(mode: PipelineMode) -> str:
-    return {
-        PipelineMode.OFFLINE: "Offline (single pass)",
-        PipelineMode.STREAMING: "Streaming (looped replay)",
-    }[mode]
-
-
-def _pose_source_label(pose_source: AdvioPoseSource) -> str:
-    return {
-        AdvioPoseSource.GROUND_TRUTH: "Ground Truth",
-        AdvioPoseSource.ARCORE: "ARCore",
-        AdvioPoseSource.ARKIT: "ARKit",
-        AdvioPoseSource.NONE: "No Pose Overlay",
-    }[pose_source]
 
 
 def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:

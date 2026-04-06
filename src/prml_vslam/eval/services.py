@@ -196,10 +196,10 @@ def _discover_run(*, trajectory_path: Path, artifacts_dir: Path, sequence_slug: 
         return None
 
     method = next(
-        (method for part in reversed(relative_parts) for method in MethodId if part == method.artifact_slug),
+        (method for part in reversed(relative_parts) for method in MethodId if part == method.value),
         None,
     )
-    hidden_tokens = {sequence_slug, "slam"} | ({method.artifact_slug} if method is not None else set())
+    hidden_tokens = {sequence_slug, "slam"} | ({method.value} if method is not None else set())
     visible_parts = [part for part in relative_parts if part not in hidden_tokens]
     label = method.display_name if method is not None else relative_parts[-1]
     return DiscoveredRun(

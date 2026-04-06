@@ -622,6 +622,191 @@ resolved_on = "2026-04-06"
 resolution_note = "Trajectory plotting now shares internal XY/3D trace and layout helpers across the metrics, live Record3D, and pipeline figures instead of repeating the scaffolding per module."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0016"
+title = "Preview session utilities still carry removable boilerplate"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The shared packet-session snapshot defaults still rely on dedicated empty-array wrapper functions, and the Record3D runtime still threads its connected source label through a mutable holder plus helper even though local worker state is sufficient."
+files = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+notes = [
+    "The empty-array factories in `packet_session.py` are only there to satisfy `Field(default_factory=...)` and can be replaced with copy-based defaults.",
+    "The Record3D worker currently mutates a `source_label_holder` dict and calls `_set_record3d_connected_state()` even though `_run_stream_worker()` already owns the connected-target lifetime.",
+]
+sources = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Removed empty-array wrapper helpers from packet_session and inlined Record3D source-label updates into the worker."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0017"
+title = "App preview state ownership is split across duplicate enums"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The app models still define separate `Record3DStreamState` and `AdvioPreviewStreamState` enums even though both surfaces expose the same lifecycle values and transitions."
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+]
+notes = [
+    "The duplicated enums force page, controller, and test code to carry two names for one lifecycle contract.",
+    "The current app requirements describe both surfaces as preview-oriented monitoring flows, so one shared app-owned preview state is sufficient.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "src/prml_vslam/app/REQUIREMENTS.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Replaced the duplicate Record3D and ADVIO preview-state enums with one shared PreviewStreamState across the app layer."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0018"
+title = "Geometry TUM helpers still pretend evo is optional"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The shared geometry module still routes TUM trajectory I/O through a local lazy-import helper even though `evo` is a declared runtime dependency for the repository."
+files = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+notes = [
+    "The helper adds extra indirection and error wrapping without protecting a genuinely optional dependency.",
+    "Repo policy prefers thin, explicit ownership boundaries and early failure when a required dependency is missing.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Removed the redundant lazy evo import helper and imported the TUM backend directly in geometry.py."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0019"
+title = "World-frame point transforms still reimplement pytransform3d primitives"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The shared geometry helper still hand-builds homogeneous points for `transform_points_world_camera()` even though `pytransform3d` is already a declared dependency and exposes the same transform primitive."
+files = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+notes = [
+    "The current implementation duplicates library behavior with local homogeneous-coordinate scaffolding.",
+    "Using the repo's existing transform helper should narrow local ownership to validation plus repo-specific typing.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Delegated world-frame point transforms to pytransform3d instead of rebuilding homogeneous coordinates locally."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0020"
+title = "App preview snapshot ownership still repeats shared state fields"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The app models still repeat the same `state` field across both preview snapshot types, and both controllers still repeat the same active-state set."
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+notes = [
+    "The shared preview lifecycle already has one enum; the snapshot base and active-state constant can follow the same ownership model.",
+    "This is local app boilerplate rather than user-facing behavior, so it is a good simplification target for the bounded app test harness.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Centralized the shared preview state field and active-state set under the app models module."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0021"
+title = "Remaining geometry TODO markers are stale against current dependency usage"
+status = "resolved"
+priority = "low"
+category = "repo-hygiene"
+summary = "The last two TODO markers in `geometry.py` no longer describe live debt: point-cloud writing already delegates to Open3D except for the required empty-cloud fallback, and dense depth unprojection has no matching helper in the current pytransform3d camera API."
+files = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+notes = [
+    "Open3D fails to materialize empty point clouds, so the repo-owned zero-vertex fallback is intentional rather than a missed delegation.",
+    "The current pytransform3d camera module exposes projection helpers such as `cam2sensor` and `sensor2img`, but not a dense inverse-unprojection helper that would replace `pointmap_from_depth()`.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Retired the remaining stale geometry TODO markers after validating the current Open3D and pytransform3d surfaces."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0022"
+title = "Methods package still splits mock configs across per-backend wrapper modules"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The methods package still exports `MSTRMethodConfig` and `VISTAMethodConfig` as separate one-line subclasses in dedicated modules even though the repo only needs one typed mock config plus `MethodId` to build the deterministic placeholder runtime."
+files = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "src/prml_vslam/methods/mstr.py",
+    "src/prml_vslam/methods/vista.py",
+    "tests/test_methods.py",
+]
+notes = [
+    "The wrapper modules add public surface and file count without adding behavior beyond binding one enum value.",
+    "The only in-repo consumer is the mock-method test, so the extra subclasses are local boilerplate rather than a required compatibility seam.",
+]
+sources = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "src/prml_vslam/methods/mstr.py",
+    "src/prml_vslam/methods/vista.py",
+    "tests/test_methods.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Collapsed the methods mock config surface into one typed MockMethodConfig and removed the one-line per-backend wrapper modules."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1148,4 +1333,556 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "Shared internal trajectory helpers now own the repeated Plotly trace and layout assembly, and plotting tests cover the consolidated behavior."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0016"
+title = "Remove packet-session and Record3D preview boilerplate"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0016",
+]
+loc_min = 10
+loc_expected = 25
+loc_max = 45
+files = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+acceptance = [
+    "Packet-session snapshot defaults no longer depend on standalone empty-array wrapper functions.",
+    "The Record3D worker no longer needs a mutable holder dict or an extra helper function just to publish its connected source label.",
+    "Record3D and ADVIO runtime behavior remains unchanged under the existing app and packet-stream tests.",
+]
+sources = [
+    "src/prml_vslam/utils/packet_session.py",
+    "src/prml_vslam/app/services.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 01 after reducing LOC while preserving app and packet-stream behavior under the frozen harness."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0017"
+title = "Unify app preview lifecycle states under one enum"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0017",
+]
+loc_min = 15
+loc_expected = 30
+loc_max = 60
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "One app-owned enum defines the preview lifecycle shared by the ADVIO and Record3D runtime snapshots.",
+    "Controllers, services, pages, and tests stop importing parallel enum names for the same state machine.",
+    "The existing app tests continue to pass without changing runtime behavior.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "tests/test_app.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 02 after reducing LOC while preserving app controller and page behavior under tests/test_app.py."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0018"
+title = "Inline evo TUM imports in geometry"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0018",
+]
+loc_min = 5
+loc_expected = 12
+loc_max = 25
+files = [
+    "src/prml_vslam/utils/geometry.py",
+]
+acceptance = [
+    "The geometry module imports the evo TUM file adapter directly at module load instead of routing through a local helper.",
+    "TUM trajectory read/write behavior stays unchanged under the existing geometry and method tests.",
+    "The simplification reduces source LOC or keeps it flat while removing indirection.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 03 after reducing LOC and preserving TUM trajectory behavior under geometry, method, pipeline, and app tests."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0019"
+title = "Delegate point transforms to pytransform3d"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0019",
+]
+loc_min = 4
+loc_expected = 10
+loc_max = 20
+files = [
+    "src/prml_vslam/utils/geometry.py",
+]
+acceptance = [
+    "The world-frame point-transform helper uses the existing pytransform3d transform primitive instead of manually building homogeneous points.",
+    "Geometry and mock-method tests continue to pass.",
+    "The change reduces or keeps flat the Python LOC baseline while simplifying the helper.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 04 after holding code LOC flat, reducing total LOC, and preserving geometry/method behavior."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0020"
+title = "Centralize shared app preview snapshot state"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0020",
+]
+loc_min = 6
+loc_expected = 14
+loc_max = 25
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+acceptance = [
+    "One app-owned preview snapshot base defines the shared `state` field.",
+    "One app-owned constant defines the active preview states used by both controllers.",
+    "The app test harness continues to pass without changing preview behavior.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/advio_controller.py",
+    "src/prml_vslam/app/record3d_controller.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 05 after reducing LOC and preserving app behavior under tests/test_app.py."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0021"
+title = "Retire stale geometry TODO markers"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0021",
+]
+loc_min = 2
+loc_expected = 4
+loc_max = 8
+files = [
+    "src/prml_vslam/utils/geometry.py",
+]
+acceptance = [
+    "The remaining geometry TODO markers are removed once their underlying debt has been validated as stale.",
+    "Geometry and mock-method tests continue to pass.",
+    "The TODO-marker count reported by `make loc LOC_ARGS=\"--todo\"` decreases.",
+]
+sources = [
+    "src/prml_vslam/utils/geometry.py",
+    "pyproject.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 06 after reducing total LOC, reducing TODO markers to zero, and preserving geometry/method behavior."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0022"
+title = "Collapse mock method configs into one typed config"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0022",
+]
+loc_min = 20
+loc_expected = 30
+loc_max = 45
+files = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+acceptance = [
+    "The methods package exposes one typed mock config plus `MethodId` instead of one-line per-backend config subclasses.",
+    "Mock method setup still works through `BaseConfig.setup_target()` under the existing method and config tests.",
+    "The change reduces Python LOC while preserving the current deterministic mock-artifact behavior.",
+]
+sources = [
+    "src/prml_vslam/methods/__init__.py",
+    "src/prml_vslam/methods/base.py",
+    "tests/test_methods.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 07 after reducing LOC and preserving mock-method behavior under the frozen harness plus full make ci."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0023"
+title = "App bootstrap still hard-codes page entry wrappers and a dead style hook"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The app bootstrap still carries four page-specific entry wrappers plus a no-op `inject_styles()` hook even though page registration can be expressed as one small registry and one generic entry helper."
+files = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+notes = [
+    "The page-entry wrappers differ only by page id and renderer function.",
+    "The style injection hook does nothing and only adds an import and call path to the bootstrap flow.",
+]
+sources = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Replaced the page-specific bootstrap entry wrappers with one page registry and generic entry helper, and removed the dead inject_styles hook."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0023"
+title = "Data-drive app page registration and retire inject_styles"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0023",
+]
+loc_min = 15
+loc_expected = 24
+loc_max = 40
+files = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "App page registration uses one small registry plus one generic entry helper instead of four page-specific wrappers.",
+    "The dead `inject_styles()` seam is removed from the bootstrap path.",
+    "The focused app-entry tests and full `make ci` continue to pass while Python LOC decreases.",
+]
+sources = [
+    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/app/ui.py",
+    "tests/test_app.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 08 after reducing LOC and preserving bootstrap navigation behavior under focused app tests plus full make ci."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0024"
+title = "ADVIO pose-source display labels are duplicated across app pages"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The ADVIO app pages and metrics launcher still each own their own pose-source display mapping even though `AdvioPoseSource` is the canonical contract and can own that label directly."
+files = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+notes = [
+    "The duplicated label tables create avoidable app-side drift for one repo-owned enum.",
+    "The metrics launcher was already formatting the same enum by munging the raw value string instead of using a contract-owned label.",
+]
+sources = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Moved the display label onto AdvioPoseSource and deleted the duplicated page-local mappings."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0024"
+title = "Move pose-source labels onto AdvioPoseSource"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0024",
+]
+loc_min = 6
+loc_expected = 12
+loc_max = 20
+files = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+acceptance = [
+    "AdvioPoseSource owns the user-facing label used by the app.",
+    "The ADVIO page, pipeline page, and metrics launcher stop duplicating or deriving pose-source display labels locally.",
+    "The focused ADVIO/app tests and full make ci continue to pass while Python LOC decreases.",
+]
+sources = [
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/metrics.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 10 after reducing LOC and preserving ADVIO/app behavior under the frozen harness plus full make ci."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0025"
+title = "Pipeline mode display text still lives in a page-local helper"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The pipeline page still owned the user-facing display text for `PipelineMode` even though `PipelineMode` is the canonical contract and other app-facing enums already own their labels directly."
+files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+notes = [
+    "The local `_pipeline_mode_label()` helper was only restating enum-owned semantics in page code.",
+    "The page also carried a one-line `_is_pipeline_active()` wrapper that did not add ownership value beyond the active-state constant.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Moved the display label onto PipelineMode and inlined the one-line activity helper in the pipeline page."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0025"
+title = "Move pipeline mode labels onto PipelineMode"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0025",
+]
+loc_min = 4
+loc_expected = 8
+loc_max = 16
+files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+acceptance = [
+    "PipelineMode owns its user-facing label instead of relying on a page-local helper.",
+    "The pipeline page drops the local mode-label helper and any similarly trivial one-line wrapper that no longer buys clarity.",
+    "Focused pipeline/app tests and full make ci continue to pass while Python LOC decreases.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 11 after reducing LOC and preserving pipeline page behavior under the frozen harness plus full make ci."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0026"
+title = "DatasetId still carries single-case ADVIO dispatch boilerplate"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The repo is now ADVIO-only on the dataset surface, but `DatasetId` still kept one-entry dispatch helpers for labels, local sequence listing, and reference path resolution."
+files = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+notes = [
+    "The enum-backed label helper duplicated the raw enum value for the only supported dataset.",
+    "Single-case dispatch in DatasetId helpers adds structure without buying extensibility on the current evaluation surface.",
+]
+sources = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Collapsed the one-case label and ADVIO dispatch helpers into direct enum/value-backed behavior."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0026"
+title = "Simplify ADVIO-only DatasetId helpers"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0026",
+]
+loc_min = 4
+loc_expected = 8
+loc_max = 16
+files = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+acceptance = [
+    "DatasetId no longer uses single-case dispatch for label, local sequence listing, or reference-path resolution.",
+    "The ADVIO dataset contract behavior remains unchanged under the frozen dataset/pipeline-focused test harness.",
+    "Focused tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
+]
+sources = [
+    "src/prml_vslam/datasets/contracts.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 12 after reducing LOC and preserving dataset-facing behavior under the frozen harness plus full make ci."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0027"
+title = "Several enum label helpers still restate trivially derivable values"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "A few app and dataset enums still own full mapping tables even though most labels are already a direct capitalization or uppercasing of the enum value."
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+notes = [
+    "Full enum-to-label tables add boilerplate when only one or two entries are true special cases.",
+    "Keeping the special cases explicit while deriving the default shape from the enum value preserves the contract with less code.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Collapsed mostly-derived enum label mappings into value-based formatting while preserving the explicit special cases."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0027"
+title = "Collapse mostly-derived enum label mappings"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0027",
+]
+loc_min = 6
+loc_expected = 10
+loc_max = 18
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+acceptance = [
+    "AppPageId, AdvioDownloadPreset, and Record3DTransportId stop using full mapping tables where only a small special case remains.",
+    "The user-facing labels shown in the app and CLI remain unchanged.",
+    "Focused tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
+]
+sources = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/datasets/advio/advio_models.py",
+    "src/prml_vslam/io/record3d.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 13 after reducing LOC and preserving app-facing enum labels under the frozen harness plus full make ci."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0028"
+title = "MethodId still exposes an identity artifact_slug wrapper"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The planner and run-discovery code still went through `MethodId.artifact_slug` even though the method enum value already is the artifact slug used in artifact paths."
+files = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+notes = [
+    "The wrapper added an extra contract surface without any transformation logic.",
+    "Switching call sites to `MethodId.value` keeps artifact layout behavior unchanged while shrinking the enum API.",
+]
+sources = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-06"
+resolution_note = "Removed the identity wrapper and updated planning and run-discovery code to use the enum value directly."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0028"
+title = "Remove MethodId.artifact_slug"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0028",
+]
+loc_min = 4
+loc_expected = 8
+loc_max = 14
+files = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "MethodId no longer exposes an identity artifact-slug helper.",
+    "Pipeline planning and evaluation run discovery use the enum value directly without changing artifact layout behavior.",
+    "Focused planner/metrics tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
+]
+sources = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_pipeline.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-06"
+resolution_note = "Kept trial 14 after reducing LOC and preserving planner and run-discovery behavior under the frozen harness plus full make ci."
 source_collection = "todos"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 
@@ -19,7 +20,6 @@ from .pages.pipeline import render as render_pipeline_page
 from .pages.record3d import render as render_record3d_page
 from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
 from .state import SessionStateStore
-from .ui import inject_styles
 
 
 @dataclass(slots=True)
@@ -34,6 +34,14 @@ class AppContext:
     pipeline_runtime: PipelineSessionService
     store: SessionStateStore
     state: AppState
+
+
+_PAGE_SPECS = (
+    (AppPageId.RECORD3D, ":material/videocam:", render_record3d_page, True),
+    (AppPageId.ADVIO, ":material/download:", render_advio_page, False),
+    (AppPageId.PIPELINE, ":material/account_tree:", render_pipeline_page, False),
+    (AppPageId.METRICS, ":material/show_chart:", render_metrics_page, False),
+)
 
 
 def build_context() -> AppContext:
@@ -60,7 +68,6 @@ def run_app() -> None:
         layout="wide",
         initial_sidebar_state="expanded",
     )
-    inject_styles()
     context = build_context()
     _render_sidebar_brand()
     page = st.navigation(_build_pages(context), position="sidebar", expanded=True)
@@ -77,64 +84,37 @@ def _render_sidebar_brand() -> None:
 def _build_pages(context: AppContext) -> list[st.Page]:
     return [
         st.Page(
-            partial(_render_record3d_page_entry, context),
-            title=AppPageId.RECORD3D.label,
-            icon=":material/videocam:",
-            url_path=AppPageId.RECORD3D.value,
-            default=True,
-        ),
-        st.Page(
-            partial(_render_advio_page_entry, context),
-            title=AppPageId.ADVIO.label,
-            icon=":material/download:",
-            url_path=AppPageId.ADVIO.value,
-            default=False,
-        ),
-        st.Page(
-            partial(_render_pipeline_page_entry, context),
-            title=AppPageId.PIPELINE.label,
-            icon=":material/account_tree:",
-            url_path=AppPageId.PIPELINE.value,
-            default=False,
-        ),
-        st.Page(
-            partial(_render_metrics_page_entry, context),
-            title=AppPageId.METRICS.label,
-            icon=":material/show_chart:",
-            url_path=AppPageId.METRICS.value,
-            default=False,
-        ),
+            partial(_render_page_entry, context, page_id, render_page),
+            title=page_id.label,
+            icon=icon,
+            url_path=page_id.value,
+            default=default,
+        )
+        for page_id, icon, render_page, default in _PAGE_SPECS
     ]
 
 
-def _render_record3d_page_entry(context: AppContext) -> None:
-    _enter_page(context, AppPageId.RECORD3D)
-    render_record3d_page(context)
-
-
-def _render_metrics_page_entry(context: AppContext) -> None:
-    _enter_page(context, AppPageId.METRICS)
-    render_metrics_page(context)
-
-
-def _render_pipeline_page_entry(context: AppContext) -> None:
-    _enter_page(context, AppPageId.PIPELINE)
-    render_pipeline_page(context)
-
-
-def _render_advio_page_entry(context: AppContext) -> None:
-    _enter_page(context, AppPageId.ADVIO)
-    render_advio_page(context)
+def _render_page_entry(
+    context: AppContext,
+    page_id: AppPageId,
+    render_page: Callable[[AppContext], None],
+) -> None:
+    _enter_page(context, page_id)
+    render_page(context)
 
 
 def _enter_page(context: AppContext, page_id: AppPageId) -> None:
-    if page_id is not AppPageId.RECORD3D and context.state.record3d.is_running:
-        context.record3d_runtime.stop()
-        context.state.record3d.is_running = False
-        context.store.save(context.state)
-    if page_id is not AppPageId.ADVIO and context.state.advio.preview_is_running:
-        context.advio_runtime.stop()
-        context.state.advio.preview_is_running = False
+    state_changed = False
+    for active_page_id, runtime, page_state, field_name in (
+        (AppPageId.RECORD3D, context.record3d_runtime, context.state.record3d, "is_running"),
+        (AppPageId.ADVIO, context.advio_runtime, context.state.advio, "preview_is_running"),
+    ):
+        if page_id is active_page_id or not getattr(page_state, field_name):
+            continue
+        runtime.stop()
+        setattr(page_state, field_name, False)
+        state_changed = True
+    if state_changed:
         context.store.save(context.state)
     if page_id not in {AppPageId.PIPELINE, AppPageId.METRICS} and context.pipeline_runtime.snapshot().state in {
         PipelineSessionState.CONNECTING,

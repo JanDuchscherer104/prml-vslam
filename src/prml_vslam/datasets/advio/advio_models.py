@@ -18,6 +18,15 @@ class AdvioPoseSource(StrEnum):
     ARKIT = "arkit"
     NONE = "none"
 
+    @property
+    def label(self) -> str:
+        return {
+            self.GROUND_TRUTH: "Ground Truth",
+            self.ARCORE: "ARCore",
+            self.ARKIT: "ARKit",
+            self.NONE: "No Pose Overlay",
+        }[self]
+
 
 class AdvioEnvironment(StrEnum):
     """Environment labels committed from the official ADVIO scene table."""
@@ -76,11 +85,7 @@ class AdvioDownloadPreset(StrEnum):
 
     @property
     def label(self) -> str:
-        return {
-            self.STREAMING: "Streaming",
-            self.OFFLINE: "Offline",
-            self.FULL: "Full",
-        }[self]
+        return self.value.capitalize()
 
     @property
     def modalities(self) -> tuple[AdvioModality, ...]:
