@@ -42,7 +42,7 @@ from pathlib import Path
 from prml_vslam.datasets.advio import AdvioSequence, AdvioSequenceConfig
 
 sequence = AdvioSequence(
-    config=AdvioSequenceConfig(dataset_root=Path("data/advio"), sequence_id=15)
+    config=AdvioSequenceConfig(dataset_root=Path(".data/advio"), sequence_id=15)
 )
 sample = sequence.load_offline_sample()
 
@@ -60,7 +60,7 @@ from prml_vslam.datasets.advio import AdvioPoseSource, AdvioSequence, AdvioSeque
 from prml_vslam.io import Cv2ReplayMode
 
 sequence = AdvioSequence(
-    config=AdvioSequenceConfig(dataset_root=Path("data/advio"), sequence_id=15)
+    config=AdvioSequenceConfig(dataset_root=Path(".data/advio"), sequence_id=15)
 )
 stream = sequence.open_stream(
     pose_source=AdvioPoseSource.GROUND_TRUTH,

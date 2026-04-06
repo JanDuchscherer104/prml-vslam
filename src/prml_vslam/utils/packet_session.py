@@ -154,7 +154,12 @@ class PacketSessionRuntime(Generic[SnapshotT]):
         with self._lock:
             self._snapshot = snapshot
 
-    def stop(self, *, snapshot_update: Callable[[SnapshotT], SnapshotT] | None = None) -> None:
+    def stop(
+        self,
+        *,
+        snapshot_update: Callable[[SnapshotT], SnapshotT] | None = None,
+        join_timeout_seconds: float = 2.0,
+    ) -> None:
         """Stop the worker, disconnect the stream, and update the terminal snapshot."""
         snapshot_update = snapshot_update or (lambda _snapshot: self._empty_snapshot())
         with self._lock:
@@ -167,7 +172,7 @@ class PacketSessionRuntime(Generic[SnapshotT]):
         if stream is not None:
             stream.disconnect()
         if worker is not None:
-            worker.join(timeout=2.0)
+            worker.join(timeout=join_timeout_seconds)
             if worker.is_alive():
                 raise RuntimeError(self._stop_timeout_message)
         with self._lock:

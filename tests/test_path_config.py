@@ -13,9 +13,9 @@ from prml_vslam.utils import PathConfig
 def test_path_config_resolves_root_relative_defaults(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
 
-    assert path_config.artifacts_dir == (tmp_path / "artifacts").resolve()
+    assert path_config.artifacts_dir == (tmp_path / ".artifacts").resolve()
     assert path_config.captures_dir == (tmp_path / "captures").resolve()
-    assert path_config.data_dir == (tmp_path / "data").resolve()
+    assert path_config.data_dir == (tmp_path / ".data").resolve()
     assert path_config.logs_dir == (tmp_path / ".logs").resolve()
     assert path_config.method_repos_dir == (tmp_path / ".logs" / "repos").resolve()
     assert path_config.method_envs_dir == (tmp_path / ".logs" / "venvs").resolve()
@@ -35,10 +35,10 @@ def test_path_config_builds_canonical_run_layout(tmp_path: Path) -> None:
     run_paths = path_config.plan_run_paths(
         experiment_name="Lobby Sweep 01",
         method_slug="vista",
-        output_dir="artifacts",
+        output_dir=".artifacts",
     )
 
-    expected_root = (tmp_path / "artifacts" / "lobby-sweep-01" / "vista").resolve()
+    expected_root = (tmp_path / ".artifacts" / "lobby-sweep-01" / "vista").resolve()
     assert run_paths.artifact_root == expected_root
     assert run_paths.capture_manifest_path == expected_root / "input" / "capture_manifest.json"
     assert run_paths.sequence_manifest_path == expected_root / "input" / "sequence_manifest.json"
@@ -72,14 +72,14 @@ def test_path_config_builds_dataset_paths(tmp_path: Path) -> None:
 
     dataset_dir = path_config.resolve_dataset_dir("advio")
 
-    assert dataset_dir == (tmp_path / "data" / "advio").resolve()
+    assert dataset_dir == (tmp_path / ".data" / "advio").resolve()
 
 
 def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
 
     created_dirs = [
-        path_config.resolve_output_dir("artifacts/custom", create=True),
+        path_config.resolve_output_dir(".artifacts/custom", create=True),
         path_config.resolve_data_dir(create=True),
         path_config.resolve_dataset_dir("advio", create=True),
         path_config.resolve_logs_dir(create=True),

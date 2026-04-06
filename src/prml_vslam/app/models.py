@@ -129,7 +129,7 @@ class Record3DPageState(BaseData):
     usb_device_index: int = 0
     """Zero-based USB device index selected in the app."""
 
-    wifi_device_address: str = ""
+    wifi_device_address: str = "192.168.159.24"
     """User-supplied Wi-Fi device address."""
 
     is_running: bool = False

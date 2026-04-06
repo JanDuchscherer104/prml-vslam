@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import cv2
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
@@ -110,26 +111,9 @@ def decode_record3d_wifi_depth(
     depth_max_meters: float,
 ) -> NDArray[np.float32]:
     """Decode the HSV-encoded Record3D Wi-Fi depth half into a depth map."""
-    normalized = depth_rgb.astype(np.float32) / 255.0
-    red = normalized[..., 0]
-    green = normalized[..., 1]
-    blue = normalized[..., 2]
-
-    maximum = np.max(normalized, axis=2)
-    minimum = np.min(normalized, axis=2)
-    delta = maximum - minimum
-
-    hue = np.zeros_like(maximum, dtype=np.float32)
-    has_delta = delta > 0.0
-    red_max = has_delta & (maximum == red)
-    green_max = has_delta & (maximum == green)
-    blue_max = has_delta & (maximum == blue)
-
-    hue[red_max] = np.mod((green[red_max] - blue[red_max]) / delta[red_max], 6.0) / 6.0
-    hue[green_max] = (((blue[green_max] - red[green_max]) / delta[green_max]) + 2.0) / 6.0
-    hue[blue_max] = (((red[blue_max] - green[blue_max]) / delta[blue_max]) + 4.0) / 6.0
+    hue = cv2.cvtColor(depth_rgb, cv2.COLOR_RGB2HSV)[..., 0].astype(np.float32) / 180.0
     depth = np.where(hue <= 1e-6, depth_max_meters, depth_max_meters * hue)
-    return depth.astype(np.float32)
+    return depth.astype(np.float32, copy=False)
 
 
 def record3d_wifi_packet_from_video_frame(

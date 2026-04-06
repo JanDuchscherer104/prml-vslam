@@ -4,18 +4,15 @@ from __future__ import annotations
 
 import importlib
 import time
+from collections.abc import Iterator
 from enum import IntEnum, StrEnum
 from threading import Event
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.utils import BaseConfig, BaseData, Console
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 
 class Record3DTransportId(StrEnum):
@@ -28,6 +25,23 @@ class Record3DTransportId(StrEnum):
     def label(self) -> str:
         """Return the user-facing transport label."""
         return "Wi-Fi Preview" if self is Record3DTransportId.WIFI else self.value.upper()
+
+    def stream_hint(self) -> str:
+        """Return the short transport-specific helper text."""
+        match self:
+            case Record3DTransportId.USB:
+                return (
+                    "USB capture uses the native `record3d` Python bindings and is the canonical programmatic ingress "
+                    "for Record3D in this repo. It can expose RGB, depth, intrinsics, pose, and confidence."
+                )
+            case Record3DTransportId.WIFI:
+                return (
+                    "Wi-Fi Preview uses a Python-side WebRTC receiver. It is an optional lower-fidelity preview path "
+                    "for the app, not the canonical ingestion boundary. Enter the device address shown in the iPhone "
+                    "app."
+                )
+            case _:
+                raise ValueError(f"Unsupported Record3D transport: {self}")
 
 
 class Record3DDeviceType(IntEnum):
@@ -45,65 +59,6 @@ class Record3DDevice(BaseData):
 
     udid: str
     """Unique device identifier reported by the bindings."""
-
-
-class Record3DFrame(BaseData):
-    """One RGBD frame sampled from the USB Record3D stream."""
-
-    rgb: NDArray[np.uint8]
-    """RGB image in HxWx3 layout."""
-
-    depth: NDArray[np.float32]
-    """Depth image in meters."""
-
-    confidence: NDArray[np.uint8]
-    """Per-pixel confidence map aligned with the depth image."""
-
-    intrinsics: CameraIntrinsics
-    """Camera intrinsics associated with the RGB frame."""
-
-    pose: SE3Pose
-    """Camera pose associated with the current frame."""
-
-    device_type: Record3DDeviceType
-    """Source camera type used for the stream."""
-
-
-def record3d_frame_to_packet(
-    frame: Record3DFrame,
-    *,
-    seq: int,
-    timestamp_ns: int | None = None,
-    arrival_timestamp_s: float | None = None,
-) -> FramePacket:
-    """Adapt a USB `Record3DFrame` into the shared packet contract.
-
-    Args:
-        frame: Low-level USB Record3D frame emitted by the native bindings.
-        arrival_timestamp_s: Optional wall-clock timestamp override.
-
-    Returns:
-        Shared packet payload that can be consumed uniformly by the app.
-    """
-    if timestamp_ns is None:
-        timestamp_ns = time.time_ns()
-    if arrival_timestamp_s is None:
-        arrival_timestamp_s = timestamp_ns / 1e9
-
-    return FramePacket(
-        seq=seq,
-        timestamp_ns=timestamp_ns,
-        arrival_timestamp_s=arrival_timestamp_s,
-        rgb=frame.rgb,
-        depth=frame.depth,
-        intrinsics=frame.intrinsics,
-        pose=frame.pose,
-        confidence=frame.confidence.astype(np.float32) if frame.confidence.size else None,
-        metadata={
-            "transport": Record3DTransportId.USB.value,
-            "device_type": frame.device_type.value,
-        },
-    )
 
 
 def _import_record3d_module() -> Any:
@@ -128,29 +83,13 @@ class Record3DStreamConfig(BaseConfig):
     """Maximum time to wait for the next frame before failing."""
 
     @property
-    def target_type(self) -> type[Record3DStreamSession]:
-        """Runtime type used to manage one Record3D stream."""
-        return Record3DStreamSession
-
-
-class Record3DUSBPacketStreamConfig(Record3DStreamConfig):
-    """Configuration for the USB packet adapter used by the Streamlit app."""
-
-    @property
     def target_type(self) -> type[Record3DUSBPacketStream]:
         """Runtime type that exposes shared packet objects."""
         return Record3DUSBPacketStream
 
-    def stream_config(self) -> Record3DStreamConfig:
-        """Return the low-level USB stream configuration used by the packet adapter."""
-        return Record3DStreamConfig(
-            device_index=self.device_index,
-            frame_timeout_seconds=self.frame_timeout_seconds,
-        )
 
-
-class Record3DStreamSession:
-    """Manage one USB-connected Record3D session."""
+class Record3DUSBPacketStream:
+    """Thin packet-stream adapter around the upstream `record3d.Record3DStream`."""
 
     def __init__(self, config: Record3DStreamConfig) -> None:
         self.config = config
@@ -159,41 +98,45 @@ class Record3DStreamSession:
         self._event = Event()
         self._stream: Any | None = None
         self._stream_stopped = False
+        self._packet_seq = 0
 
     def list_devices(self) -> list[Record3DDevice]:
-        """Return the currently connected Record3D devices."""
+        """List the currently connected USB Record3D devices."""
         return [self._device_from_binding(device) for device in self._get_connected_devices()]
 
     def connect(self) -> Record3DDevice:
-        """Connect to the configured Record3D device and start streaming."""
+        """Connect to the configured USB device."""
         devices = self._get_connected_devices()
         if not devices:
             raise RuntimeError(
                 "No Record3D devices detected. Connect the iPhone via USB, open the Record3D app, "
                 "and enable USB Streaming mode."
             )
-
         if self.config.device_index >= len(devices):
             raise RuntimeError(
                 f"Configured device index {self.config.device_index} is out of range for {len(devices)} connected device(s)."
             )
 
+        if self._stream is not None:
+            self.disconnect()
+
         target_device = devices[self.config.device_index]
         stream = self._record3d.Record3DStream()
         stream.on_new_frame = self._on_new_frame
         stream.on_stream_stopped = self._on_stream_stopped
-
+        self._event.clear()
         if not stream.connect(target_device):
             raise RuntimeError(f"Failed to connect to Record3D device at index {self.config.device_index}.")
 
         self._stream = stream
         self._stream_stopped = False
+        self._packet_seq = 0
         device = self._device_from_binding(target_device)
         self.console.info("Connected to Record3D device %s (%s).", device.udid, device.product_id)
         return device
 
     def disconnect(self) -> None:
-        """Disconnect the active Record3D stream if present."""
+        """Disconnect the current USB device if one is active."""
         if self._stream is None:
             return
 
@@ -201,44 +144,63 @@ class Record3DStreamSession:
         self._stream = None
         self._stream_stopped = True
         self._event.clear()
+        self._packet_seq = 0
 
-    def wait_for_frame(self, timeout_seconds: float | None = None) -> Record3DFrame:
-        """Wait for the next frame and return it as a typed container.
-
-        Args:
-            timeout_seconds: Optional timeout override. Defaults to the config value.
-
-        Returns:
-            The latest RGBD frame emitted by the device.
-        """
-        if self._stream is None:
-            raise RuntimeError("No active Record3D stream. Call `connect()` first.")
-
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
+        """Wait for the next shared packet emitted by the USB device."""
+        stream = self._require_stream()
         timeout = self.config.frame_timeout_seconds if timeout_seconds is None else timeout_seconds
         if not self._event.wait(timeout=timeout):
             raise RuntimeError(f"Timed out waiting {timeout:.2f}s for a Record3D frame.")
-
         if self._stream_stopped:
             raise RuntimeError("The Record3D stream stopped before a frame could be consumed.")
 
-        frame = Record3DFrame(
-            rgb=np.asarray(self._stream.get_rgb_frame(), dtype=np.uint8),
-            depth=np.asarray(self._stream.get_depth_frame(), dtype=np.float32),
-            confidence=np.asarray(self._stream.get_confidence_frame(), dtype=np.uint8),
-            intrinsics=self._intrinsics_from_binding(self._stream.get_intrinsic_mat()),
-            pose=self._camera_pose_from_binding(self._stream.get_camera_pose()),
-            device_type=Record3DDeviceType(self._stream.get_device_type()),
+        timestamp_ns = time.time_ns()
+        packet = self._packet_from_stream(
+            stream,
+            seq=self._packet_seq,
+            timestamp_ns=timestamp_ns,
         )
         self._event.clear()
-        return frame
+        self._packet_seq += 1
+        return packet
 
-    def iter_frames(self) -> Iterator[Record3DFrame]:
-        """Yield frames indefinitely until the caller stops consuming them."""
+    def iter_packets(self) -> Iterator[FramePacket]:
+        """Yield shared packets indefinitely until the caller stops consuming them."""
         while True:
-            yield self.wait_for_frame()
+            yield self.wait_for_packet()
+
+    def _require_stream(self) -> Any:
+        if self._stream is None:
+            raise RuntimeError("No active Record3D stream. Call `connect()` first.")
+        return self._stream
 
     def _get_connected_devices(self) -> list[Any]:
         return list(self._record3d.Record3DStream.get_connected_devices())
+
+    def _packet_from_stream(
+        self,
+        stream: Any,
+        *,
+        seq: int,
+        timestamp_ns: int,
+    ) -> FramePacket:
+        device_type = Record3DDeviceType(stream.get_device_type())
+        confidence = np.asarray(stream.get_confidence_frame(), dtype=np.uint8)
+        return FramePacket(
+            seq=seq,
+            timestamp_ns=timestamp_ns,
+            arrival_timestamp_s=timestamp_ns / 1e9,
+            rgb=np.asarray(stream.get_rgb_frame(), dtype=np.uint8),
+            depth=np.asarray(stream.get_depth_frame(), dtype=np.float32),
+            intrinsics=self._intrinsics_from_binding(stream.get_intrinsic_mat()),
+            pose=self._camera_pose_from_binding(stream.get_camera_pose()),
+            confidence=confidence.astype(np.float32) if confidence.size else None,
+            metadata={
+                "transport": Record3DTransportId.USB.value,
+                "device_type": device_type.value,
+            },
+        )
 
     def _on_new_frame(self) -> None:
         self._event.set()
@@ -273,55 +235,9 @@ class Record3DStreamSession:
         )
 
 
-class Record3DUSBPacketStream:
-    """Adapt the blocking USB stream session into shared packet objects."""
-
-    def __init__(self, config: Record3DUSBPacketStreamConfig) -> None:
-        self.config = config
-        self.session = config.stream_config().setup_target()
-        self._packet_seq = 0
-
-    def _require_session(self) -> Record3DStreamSession:
-        if self.session is None:
-            raise RuntimeError("Failed to initialize the USB Record3D stream session.")
-        return self.session
-
-    def list_devices(self) -> list[Record3DDevice]:
-        """List the currently connected USB Record3D devices."""
-        return self._require_session().list_devices()
-
-    def connect(self) -> Record3DDevice:
-        """Connect to the configured USB device."""
-        self._packet_seq = 0
-        return self._require_session().connect()
-
-    def disconnect(self) -> None:
-        """Disconnect the current USB device if one is active."""
-        if self.session is not None:
-            self.session.disconnect()
-        self._packet_seq = 0
-
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
-        """Wait for the next shared packet emitted by the USB device."""
-        timestamp_ns = time.time_ns()
-        packet = record3d_frame_to_packet(
-            self._require_session().wait_for_frame(timeout_seconds=timeout_seconds),
-            seq=self._packet_seq,
-            timestamp_ns=timestamp_ns,
-            arrival_timestamp_s=timestamp_ns / 1e9,
-        )
-        self._packet_seq += 1
-        return packet
-
-    def iter_packets(self) -> Iterator[FramePacket]:
-        """Yield shared packets indefinitely until the caller stops consuming them."""
-        while True:
-            yield self.wait_for_packet()
-
-
 def list_record3d_usb_devices() -> list[Record3DDevice]:
     """List currently connected Record3D USB devices through the canonical IO owner."""
-    stream = Record3DUSBPacketStreamConfig().setup_target()
+    stream = Record3DStreamConfig().setup_target()
     if stream is None:
         raise RuntimeError("Failed to initialize the USB Record3D packet stream.")
     return stream.list_devices()
@@ -329,7 +245,7 @@ def list_record3d_usb_devices() -> list[Record3DDevice]:
 
 def open_record3d_usb_packet_stream(*, device_index: int, frame_timeout_seconds: float) -> Record3DUSBPacketStream:
     """Build one shared USB packet stream with explicit runtime validation."""
-    stream = Record3DUSBPacketStreamConfig(
+    stream = Record3DStreamConfig(
         device_index=device_index,
         frame_timeout_seconds=frame_timeout_seconds,
     ).setup_target()
@@ -343,11 +259,7 @@ __all__ = [
     "open_record3d_usb_packet_stream",
     "Record3DDevice",
     "Record3DDeviceType",
-    "Record3DFrame",
     "Record3DStreamConfig",
-    "Record3DStreamSession",
     "Record3DTransportId",
     "Record3DUSBPacketStream",
-    "Record3DUSBPacketStreamConfig",
-    "record3d_frame_to_packet",
 ]

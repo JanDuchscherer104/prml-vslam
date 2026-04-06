@@ -10,6 +10,8 @@ implementation needed by the app and tests:
 - resolve reference and estimate paths
 - run explicit `evo` APE trajectory evaluation
 - persist and reload the resulting trajectory metrics
+- define package-local evaluation protocols for trajectory, dense-cloud, and
+  efficiency stages
 
 Use `BaseConfig` only for actual evaluation controls and `BaseData` for
 persisted results, discovery payloads, and plotting contracts.

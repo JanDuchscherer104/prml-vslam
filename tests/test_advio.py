@@ -191,7 +191,7 @@ def test_load_advio_sequence_returns_offline_sample(tmp_path: Path) -> None:
 
 
 def test_advio_sequence_uses_catalog_calibration_metadata(tmp_path: Path) -> None:
-    dataset_root = tmp_path / "data" / "advio"
+    dataset_root = tmp_path / ".data" / "advio"
     _write_advio_sequence(dataset_root)
     _write_calibration(dataset_root / "calibration" / "iphone-custom.yaml")
     catalog = _build_fake_catalog(tmp_path)
@@ -199,7 +199,7 @@ def test_advio_sequence_uses_catalog_calibration_metadata(tmp_path: Path) -> Non
 
     sample = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog).load_local_sample(15)
 
-    assert sample.paths.calibration_path == tmp_path / "data" / "advio" / "calibration" / "iphone-custom.yaml"
+    assert sample.paths.calibration_path == tmp_path / ".data" / "advio" / "calibration" / "iphone-custom.yaml"
 
 
 def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path) -> None:
@@ -357,7 +357,7 @@ def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> 
 
 
 def test_resolve_existing_advio_reference_tum_only_uses_existing_tum(tmp_path: Path) -> None:
-    dataset_root = tmp_path / "data" / "advio"
+    dataset_root = tmp_path / ".data" / "advio"
     _write_advio_sequence(dataset_root, sequence_id=15)
     reference_path = resolve_existing_reference_tum(dataset_root, "advio-15")
 
@@ -365,7 +365,7 @@ def test_resolve_existing_advio_reference_tum_only_uses_existing_tum(tmp_path: P
 
 
 def test_resolve_existing_advio_reference_tum_finds_ground_truth(tmp_path: Path) -> None:
-    dataset_root = tmp_path / "data" / "advio"
+    dataset_root = tmp_path / ".data" / "advio"
     sequence_dir = _write_advio_sequence(dataset_root, sequence_id=15)
     reference_path = sequence_dir / "ground-truth" / "ground_truth.tum"
     reference_path.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
@@ -383,7 +383,7 @@ def test_advio_dataset_service_downloads_selected_modalities_from_cached_archive
     first_result = service.download(request)
     second_result = service.download(request)
 
-    dataset_root = tmp_path / "data" / "advio"
+    dataset_root = tmp_path / ".data" / "advio"
     archive_path = dataset_root / ".archives" / "advio-15.zip"
     assert first_result.downloaded_archive_count == 1
     assert first_result.reused_archive_count == 0
@@ -433,7 +433,7 @@ def test_advio_dataset_service_refreshes_corrupted_cached_archive(tmp_path: Path
     )
 
     service.download(request)
-    archive_path = tmp_path / "data" / "advio" / ".archives" / "advio-15.zip"
+    archive_path = tmp_path / ".data" / "advio" / ".archives" / "advio-15.zip"
     archive_path.write_bytes(b"corrupted")
 
     result = service.download(request)
@@ -510,7 +510,7 @@ def test_advio_dataset_service_handles_official_archive_layout(tmp_path: Path) -
 
 
 def test_advio_dataset_service_lists_and_loads_local_sequences(tmp_path: Path) -> None:
-    dataset_root = tmp_path / "data" / "advio"
+    dataset_root = tmp_path / ".data" / "advio"
     _write_advio_sequence(dataset_root, sequence_id=15)
     service = AdvioDatasetService(PathConfig(root=tmp_path))
 

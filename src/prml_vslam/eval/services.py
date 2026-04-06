@@ -16,6 +16,7 @@ from prml_vslam.eval.contracts import (
     SelectionSnapshot,
     TrajectorySeries,
 )
+from prml_vslam.eval.protocols import TrajectoryEvaluator
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.path_config import PathConfig
@@ -25,7 +26,7 @@ __all__ = ["TrajectoryEvaluationService"]
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 
 
-class TrajectoryEvaluationService:
+class TrajectoryEvaluationService(TrajectoryEvaluator):
     """Discover runs and persist explicit `evo` trajectory metrics."""
 
     def __init__(self, path_config: PathConfig) -> None:

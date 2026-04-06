@@ -8,12 +8,10 @@ import time
 from enum import StrEnum
 from pathlib import Path
 from threading import Event
-from typing import TYPE_CHECKING
 
 from pydantic import Field
 
-from prml_vslam.methods.contracts import MethodId
-from prml_vslam.methods.mock_vslam import MockSlamBackendConfig
+from prml_vslam.methods.protocols import SlamSession, StreamingSlamBackend
 from prml_vslam.pipeline.contracts import (
     PipelineMode,
     RunPlan,
@@ -26,9 +24,9 @@ from prml_vslam.pipeline.contracts import (
     StageExecutionStatus,
     StageManifest,
 )
-from prml_vslam.pipeline.protocols import SlamBackend, SlamSession, StreamingSequenceSource
 from prml_vslam.protocols import FramePacketStream
-from prml_vslam.utils import BaseConfig, Console, PathConfig, RunArtifactPaths
+from prml_vslam.protocols.source import StreamingSequenceSource
+from prml_vslam.utils import BaseConfig, Console, RunArtifactPaths
 from prml_vslam.utils.packet_session import (
     PacketSessionMetrics,
     PacketSessionRuntime,
@@ -36,18 +34,8 @@ from prml_vslam.utils.packet_session import (
     extract_pose_position,
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-
 _ACTIVE_SESSION_STATES = frozenset({"connecting", "running"})
-_SUPPORTED_STAGE_IDS = frozenset(
-    {
-        RunPlanStageId.INGEST,
-        RunPlanStageId.SLAM,
-        RunPlanStageId.SUMMARY,
-    }
-)
+_STOP_JOIN_TIMEOUT_SECONDS = 10.0
 
 
 class PipelineSessionState(StrEnum):
@@ -98,44 +86,29 @@ class PipelineSessionService:
     def __init__(
         self,
         *,
-        path_config: PathConfig | None = None,
         frame_timeout_seconds: float = 0.5,
         fps_window_size: int = 30,
         trajectory_window_size: int = 1024,
-        slam_backend_factory: Callable[[MethodId], SlamBackend] | None = None,
     ) -> None:
-        self.path_config = PathConfig() if path_config is None else path_config
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
         self.trajectory_window_size = trajectory_window_size
-        self._slam_backend_factory = (
-            _default_slam_backend_factory if slam_backend_factory is None else slam_backend_factory
-        )
         self._console = Console(__name__).child(self.__class__.__name__)
         self._runtime = PacketSessionRuntime(
             empty_snapshot=PipelineSessionSnapshot,
             stop_timeout_message="Timed out stopping the pipeline session worker thread.",
         )
 
-    def start(self, *, request: RunRequest, source: StreamingSequenceSource) -> None:
-        """Start a new pipeline session for one run request and replay source."""
+    def start(
+        self,
+        *,
+        request: RunRequest,
+        plan: RunPlan,
+        source: StreamingSequenceSource,
+        slam_backend: StreamingSlamBackend,
+    ) -> None:
+        """Start a new pipeline session for one already-planned run."""
         self.stop()
-        plan = request.build(self.path_config)
-        unsupported_stage_ids = [stage.id for stage in plan.stages if stage.id not in _SUPPORTED_STAGE_IDS]
-        if unsupported_stage_ids:
-            error_message = "Unsupported stages for the current streaming slice: " + ", ".join(
-                stage_id.value for stage_id in unsupported_stage_ids
-            )
-            self._console.error(error_message)
-            self._runtime.replace_snapshot(
-                PipelineSessionSnapshot(
-                    state=PipelineSessionState.FAILED,
-                    plan=plan,
-                    error_message=error_message,
-                )
-            )
-            raise RuntimeError(error_message)
-
         self._runtime.launch(
             connecting_snapshot=PipelineSessionSnapshot(
                 state=PipelineSessionState.CONNECTING,
@@ -146,17 +119,32 @@ class PipelineSessionService:
                 request=request,
                 plan=plan,
                 source=source,
+                slam_backend=slam_backend,
                 stop_event=stop_event,
             ),
         )
 
     def stop(self) -> None:
         """Stop the active session and preserve the last rendered snapshot."""
-        self._runtime.stop(snapshot_update=self._to_stopped_snapshot)
+        self._runtime.stop(
+            snapshot_update=self._to_stopped_snapshot,
+            join_timeout_seconds=_STOP_JOIN_TIMEOUT_SECONDS,
+        )
 
     def snapshot(self) -> PipelineSessionSnapshot:
         """Return a deep copy of the latest session snapshot."""
         return self._runtime.snapshot()
+
+    def set_failed_start(self, *, plan: RunPlan, error_message: str) -> None:
+        """Persist a pre-launch failure without starting a worker."""
+        self.stop()
+        self._runtime.replace_snapshot(
+            PipelineSessionSnapshot(
+                state=PipelineSessionState.FAILED,
+                plan=plan,
+                error_message=error_message,
+            )
+        )
 
     def _run_worker(
         self,
@@ -164,6 +152,7 @@ class PipelineSessionService:
         request: RunRequest,
         plan: RunPlan,
         source: StreamingSequenceSource,
+        slam_backend: StreamingSlamBackend,
         stop_event: Event,
     ) -> None:
         run_paths = RunArtifactPaths.build(plan.artifact_root)
@@ -171,7 +160,6 @@ class PipelineSessionService:
             fps_window_size=self.fps_window_size,
             trajectory_window_size=self.trajectory_window_size,
         )
-        slam_backend: SlamBackend | None = None
         slam_session: SlamSession | None = None
         sequence_manifest: SequenceManifest | None = None
         slam_artifacts: SlamArtifacts | None = None
@@ -254,8 +242,6 @@ class PipelineSessionService:
                 sequence_manifest=sequence_manifest,
                 error_message="",
             )
-
-            slam_backend = self._slam_backend_factory(request.slam.method)
 
             def _start_streaming_slam(_connected_target: object) -> None:
                 nonlocal slam_started, slam_session
@@ -466,14 +452,6 @@ class PipelineSessionService:
         if snapshot.state.value not in _ACTIVE_SESSION_STATES:
             return snapshot
         return snapshot.model_copy(update={"state": PipelineSessionState.STOPPED})
-
-
-def _default_slam_backend_factory(method_id: MethodId) -> SlamBackend:
-    """Build the mock SLAM backend for one method id."""
-    backend = MockSlamBackendConfig().setup_target()
-    if backend is None:
-        raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
-    return backend
 
 
 def _stable_hash(payload: object) -> str:

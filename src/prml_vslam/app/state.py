@@ -7,7 +7,7 @@ from typing import Any, TypeVar, cast
 
 import streamlit as st
 
-from prml_vslam.pipeline.session import PipelineSessionService
+from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.utils import PathConfig
 
 from .models import AppState
@@ -25,12 +25,12 @@ class SessionStateStore:
         state_key: str = "_prml_vslam_app_state",
         record3d_runtime_key: str = "_prml_vslam_record3d_runtime",
         advio_runtime_key: str = "_prml_vslam_advio_runtime",
-        pipeline_runtime_key: str = "_prml_vslam_pipeline_runtime",
+        run_service_key: str = "_prml_vslam_pipeline_runtime",
     ) -> None:
         self.state_key = state_key
         self.record3d_runtime_key = record3d_runtime_key
         self.advio_runtime_key = advio_runtime_key
-        self.pipeline_runtime_key = pipeline_runtime_key
+        self.run_service_key = run_service_key
 
     def load(self) -> AppState:
         """Load the current typed app state from Streamlit session storage."""
@@ -67,13 +67,13 @@ class SessionStateStore:
             factory=AdvioPreviewRuntimeController,
         )
 
-    def load_pipeline_runtime(self, *, path_config: PathConfig | None = None) -> PipelineSessionService:
-        """Load or create the opaque pipeline session service for this session."""
+    def load_run_service(self, *, path_config: PathConfig | None = None) -> RunService:
+        """Load or create the opaque pipeline run facade for this session."""
         return self._load_runtime(
-            session_key=self.pipeline_runtime_key,
-            runtime_type=PipelineSessionService,
-            required_methods=("snapshot", "stop", "start"),
-            factory=lambda: PipelineSessionService(path_config=path_config),
+            session_key=self.run_service_key,
+            runtime_type=RunService,
+            required_methods=("snapshot", "stop_run", "start_run"),
+            factory=lambda: RunService(path_config=path_config),
         )
 
     def _load_runtime(
@@ -107,7 +107,9 @@ class SessionStateStore:
 
     @staticmethod
     def _shutdown_stale_runtime(runtime: Any) -> None:
-        stop = getattr(runtime, "stop", None)
+        stop = getattr(runtime, "stop_run", None)
+        if not callable(stop):
+            stop = getattr(runtime, "stop", None)
         if not callable(stop):
             return
         try:

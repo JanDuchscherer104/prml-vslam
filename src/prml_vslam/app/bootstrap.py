@@ -10,14 +10,12 @@ import streamlit as st
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.eval import TrajectoryEvaluationService
-from prml_vslam.pipeline.session import PipelineSessionService, PipelineSessionState
+from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.session import PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState
-from .pages.advio import render as render_advio_page
-from .pages.metrics import render as render_metrics_page
-from .pages.pipeline import render as render_pipeline_page
-from .pages.record3d import render as render_record3d_page
+from .pages import render_advio_page, render_metrics_page, render_pipeline_page, render_record3d_page
 from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
 from .state import SessionStateStore
 
@@ -31,7 +29,7 @@ class AppContext:
     evaluation_service: TrajectoryEvaluationService
     record3d_runtime: Record3DStreamRuntimeController
     advio_runtime: AdvioPreviewRuntimeController
-    pipeline_runtime: PipelineSessionService
+    run_service: RunService
     store: SessionStateStore
     state: AppState
 
@@ -54,7 +52,7 @@ def build_context() -> AppContext:
         evaluation_service=TrajectoryEvaluationService(path_config),
         record3d_runtime=store.load_record3d_runtime(),
         advio_runtime=store.load_advio_runtime(),
-        pipeline_runtime=store.load_pipeline_runtime(path_config=path_config),
+        run_service=store.load_run_service(path_config=path_config),
         store=store,
         state=store.load(),
     )
@@ -116,11 +114,11 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
         state_changed = True
     if state_changed:
         context.store.save(context.state)
-    if page_id not in {AppPageId.PIPELINE, AppPageId.METRICS} and context.pipeline_runtime.snapshot().state in {
+    if page_id not in {AppPageId.PIPELINE, AppPageId.METRICS} and context.run_service.snapshot().state in {
         PipelineSessionState.CONNECTING,
         PipelineSessionState.RUNNING,
     }:
-        context.pipeline_runtime.stop()
+        context.run_service.stop_run()
 
 
 __all__ = ["AppContext", "build_context", "run_app"]

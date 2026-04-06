@@ -9,7 +9,9 @@ from urllib.error import HTTPError
 import numpy as np
 
 from prml_vslam.interfaces import FramePacket
+from prml_vslam.io import wifi_session as wifi_session_module
 from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.io.wifi_packets import (
     Record3DWiFiMetadata,
     decode_record3d_wifi_depth,
@@ -25,6 +27,7 @@ from prml_vslam.io.wifi_signaling import (
     build_record3d_answer_request_payload,
     normalize_record3d_device_address,
 )
+from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 
 
 def _build_runtime(
@@ -261,3 +264,27 @@ def test_record3d_wifi_metadata_failure_is_non_fatal() -> None:
 
     assert warnings == ["Could not retrieve Record3D Wi-Fi metadata: slow"]
     assert runtime.metadata.device_address == "http://myiPhone.local"
+
+
+def test_record3d_wifi_streaming_source_satisfies_shared_source_protocol(monkeypatch, tmp_path) -> None:
+    sentinel_stream = object()
+    monkeypatch.setattr(
+        wifi_session_module,
+        "open_record3d_wifi_preview_stream",
+        lambda *, device_address, frame_timeout_seconds: (
+            sentinel_stream if (device_address, frame_timeout_seconds) == ("myiPhone.local", 0.5) else None
+        ),
+    )
+
+    source = Record3DStreamingSourceConfig(
+        transport=Record3DTransportId.WIFI,
+        device_address="myiPhone.local",
+        frame_timeout_seconds=0.5,
+    ).setup_target()
+
+    assert source is not None
+    assert isinstance(source, OfflineSequenceSource)
+    assert isinstance(source, StreamingSequenceSource)
+    assert source.label == "Record3D Wi-Fi Preview (myiPhone.local)"
+    assert source.prepare_sequence_manifest(tmp_path).sequence_id == "record3d-wifi-myiphone-local"
+    assert source.open_stream(loop=False) is sentinel_stream

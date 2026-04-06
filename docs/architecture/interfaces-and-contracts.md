@@ -15,15 +15,18 @@ reference sheet. This document carries the full rationale and migration model.
 - `prml_vslam.protocols.runtime` now owns the shared `FramePacketStream`
   protocol, so repo-wide datamodel ownership and shared protocol ownership are
   separated in code.
+- `prml_vslam.protocols.source` now owns the shared
+  `OfflineSequenceSource` and `StreamingSequenceSource` seams used across
+  dataset adapters and pipeline orchestration.
 - Package DTO, enum, config, manifest, request, and result ownership now lives
   in `src/prml_vslam/methods/contracts.py`,
   `src/prml_vslam/datasets/contracts.py`,
   `src/prml_vslam/eval/contracts.py`, and
   `src/prml_vslam/pipeline/contracts.py`.
-- `src/prml_vslam/pipeline/protocols.py` now owns the currently implemented
-  pipeline behavior seams, while `src/prml_vslam/pipeline/contracts.py` owns
-  the planner surface, artifact bundles, stage manifests, and
-  `SlamUpdate`.
+- `src/prml_vslam/methods/protocols.py` now owns the currently implemented
+  SLAM backend and session seams, while
+  `src/prml_vslam/pipeline/contracts.py` owns the planner surface, artifact
+  bundles, stage manifests, and `SlamUpdate`.
 - Method-local mocks now emit pipeline-owned `SlamArtifacts` directly, so the
   normalized trajectory and point-cloud boundary stays owned by the pipeline
   instead of a parallel method-local result type.
@@ -41,10 +44,14 @@ in code, while others remain conventions for future work.
 
 - `prml_vslam.interfaces.*` owns repo-wide canonical shared datamodels only.
 - `prml_vslam.protocols.*` owns repo-wide shared protocols only.
+  - `prml_vslam.protocols.runtime` owns `FramePacketStream`
+  - `prml_vslam.protocols.source` owns shared source-provider seams such as
+    `OfflineSequenceSource` and `StreamingSequenceSource`
 - `<package>/contracts.py` owns package DTOs, enums, configs, manifests,
   requests, and results.
 - `<package>/protocols.py` is the preferred module for package-local
   `Protocol` seams when a package needs them.
+  - `prml_vslam.methods.protocols` owns `SlamBackend` and `SlamSession`
 - `prml_vslam.app.models` owns Streamlit-only UI and session state.
 - `services.py` modules own implementations only. They do not own public
   contract types.

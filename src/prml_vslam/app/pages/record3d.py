@@ -6,22 +6,26 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.io.record3d import (
     Record3DDevice,
     Record3DTransportId,
     list_record3d_usb_devices,
 )
+from prml_vslam.utils.image_utils import normalize_grayscale_image
 
-from ..image_utils import normalize_grayscale_image
 from ..live_session import (
     LiveMetric,
+    live_poll_interval,
+    render_live_action_slot,
     render_live_fragment,
     render_live_packet_tabs,
     render_live_session_shell,
+    rerun_after_action,
 )
 from ..models import PreviewStreamState, Record3DStreamSnapshot
 from ..record3d_controller import Record3DPageAction, handle_record3d_page_action, sync_record3d_running_state
-from ..record3d_view_utils import build_record3d_frame_details, record3d_stream_hint
+from ..record3d_view_utils import build_record3d_frame_details
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -39,7 +43,10 @@ def render(context: AppContext) -> None:
             "programmatic path, while the preview panel refreshes independently."
         ),
     )
-    handle_record3d_page_action(context, _render_sidebar_controls(context))
+    action = _render_sidebar_controls(context)
+    handle_record3d_page_action(context, action)
+    if rerun_after_action(action_requested=action.start_requested or action.stop_requested):
+        return
     _render_live_snapshot(context)
 
 
@@ -67,28 +74,26 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
                 usb_error_message = str(exc)
         selected_usb_index = page_state.usb_device_index
         wifi_device_address = page_state.wifi_device_address
-        with st.form("record3d_connection_form", border=False):
-            if transport is Record3DTransportId.USB:
-                selected_usb_index = _render_usb_selector(
-                    current_index=page_state.usb_device_index, devices=usb_devices
-                )
-            else:
-                wifi_device_address = st.text_input(
-                    "Wi-Fi Preview Device Address",
-                    value=page_state.wifi_device_address,
-                    placeholder="myiPhone.local or 192.168.1.100",
-                ).strip()
-            start_requested = st.form_submit_button(
-                "Start stream" if not page_state.is_running else "Restart stream",
-                type="primary",
-                disabled=_start_disabled(
-                    transport=transport, usb_devices=usb_devices, wifi_device_address=wifi_device_address
-                ),
-                use_container_width=True,
-            )
-        stop_requested = st.button("Stop stream", disabled=not page_state.is_running, use_container_width=True)
+        if transport is Record3DTransportId.USB:
+            selected_usb_index = _render_usb_selector(current_index=page_state.usb_device_index, devices=usb_devices)
+        else:
+            wifi_device_address = st.text_input(
+                "Wi-Fi Preview Device Address",
+                value=page_state.wifi_device_address,
+                placeholder="myiPhone.local or 192.168.1.100",
+            ).strip()
+        start_requested, stop_requested = render_live_action_slot(
+            is_active=page_state.is_running,
+            start_label="Start stream",
+            stop_label="Stop stream",
+            start_disabled=_start_disabled(
+                transport=transport,
+                usb_devices=usb_devices,
+                wifi_device_address=wifi_device_address,
+            ),
+        )
         with st.expander("Transport details", expanded=bool(usb_error_message)):
-            st.write(record3d_stream_hint(transport))
+            st.write(transport.stream_hint())
             if usb_error_message:
                 st.warning(usb_error_message)
             elif transport is Record3DTransportId.USB and not usb_devices:
@@ -106,7 +111,7 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
 
 def _render_live_snapshot(context: AppContext) -> None:
     render_live_fragment(
-        run_every=0.5 if context.state.record3d.is_running else None,
+        run_every=live_poll_interval(is_active=context.state.record3d.is_running, interval_seconds=0.5),
         render_body=lambda: _render_snapshot(sync_record3d_running_state(context)),
     )
 
@@ -154,7 +159,7 @@ def _snapshot_metrics(snapshot: Record3DStreamSnapshot) -> tuple[LiveMetric, ...
     )
 
 
-def _render_frame_preview(packet) -> None:
+def _render_frame_preview(packet: FramePacket) -> None:
     frame_columns = st.columns(2, gap="large")
     with frame_columns[0]:
         st.markdown("**RGB Frame**")

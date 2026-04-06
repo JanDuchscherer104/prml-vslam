@@ -93,6 +93,58 @@ class EvaluationArtifact(BaseData):
         )
 
 
+class DenseCloudEvaluationSelection(BaseData):
+    """Resolved inputs for one dense-cloud evaluation run."""
+
+    artifact_root: Path
+    """Artifact root that owns the compared dense outputs."""
+
+    reference_cloud_path: Path
+    """Reference dense geometry path."""
+
+    estimate_cloud_path: Path
+    """Estimated dense geometry path."""
+
+
+class DenseCloudEvaluationArtifact(BaseData):
+    """Persisted dense-cloud evaluation result."""
+
+    path: Path
+    """Path to the persisted result payload."""
+
+    title: str
+    """Short title shown to downstream consumers."""
+
+    reference_cloud_path: Path
+    """Reference dense geometry path."""
+
+    estimate_cloud_path: Path
+    """Estimated dense geometry path."""
+
+    metrics: dict[str, float] = Field(default_factory=dict)
+    """Scalar dense-cloud metrics keyed by metric name."""
+
+
+class EfficiencyEvaluationSelection(BaseData):
+    """Resolved inputs for one runtime-efficiency evaluation run."""
+
+    artifact_root: Path
+    """Artifact root that owns the run-level runtime outputs."""
+
+
+class EfficiencyEvaluationArtifact(BaseData):
+    """Persisted runtime-efficiency evaluation result."""
+
+    path: Path
+    """Path to the persisted result payload."""
+
+    title: str
+    """Short title shown to downstream consumers."""
+
+    metrics: dict[str, float] = Field(default_factory=dict)
+    """Scalar runtime-efficiency metrics keyed by metric name."""
+
+
 class DiscoveredRun(BaseData):
     """One benchmark run discovered under the configured artifacts root."""
 
@@ -148,10 +200,14 @@ class EvaluationSelection(BaseData):
 
 
 __all__ = [
+    "DenseCloudEvaluationArtifact",
+    "DenseCloudEvaluationSelection",
     "DiscoveredRun",
     "ErrorSeries",
     "EvaluationArtifact",
     "EvaluationSelection",
+    "EfficiencyEvaluationArtifact",
+    "EfficiencyEvaluationSelection",
     "MetricStats",
     "SelectionSnapshot",
     "TrajectorySeries",

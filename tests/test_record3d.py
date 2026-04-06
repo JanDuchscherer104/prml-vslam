@@ -7,16 +7,17 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from prml_vslam.interfaces import FramePacket
 from prml_vslam.io import record3d as record3d_module
+from prml_vslam.io import record3d_source as record3d_source_module
 from prml_vslam.io.record3d import (
     Record3DDeviceType,
     Record3DStreamConfig,
     Record3DTransportId,
     list_record3d_usb_devices,
     open_record3d_usb_packet_stream,
-    record3d_frame_to_packet,
 )
+from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
+from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 
 
 class FakeRecord3DStream:
@@ -106,39 +107,21 @@ def test_record3d_stream_lists_connected_devices(monkeypatch: pytest.MonkeyPatch
     assert [device.udid for device in helper_devices] == ["device-101", "device-202"]
 
 
-def test_record3d_stream_wait_for_frame_returns_typed_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_record3d_stream_wait_for_packet_returns_shared_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
     monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
 
-    session = Record3DStreamConfig(device_index=1, frame_timeout_seconds=0.1).setup_target()
+    stream = Record3DStreamConfig(device_index=1, frame_timeout_seconds=0.1).setup_target()
 
-    assert session is not None
-    connected = session.connect()
-    frame = session.wait_for_frame()
+    assert stream is not None
+    connected = stream.connect()
+    packet = stream.wait_for_packet()
 
     assert connected.product_id == 202
-    assert frame.device_type is Record3DDeviceType.LIDAR
-    assert frame.rgb.shape == (2, 2, 3)
-    assert frame.depth.shape == (2, 2)
-    assert frame.confidence.shape == (2, 2)
-    assert frame.intrinsics.as_matrix()[0, 0] == 100.0
-    assert frame.pose.tz == 3.0
-
-
-def test_record3d_frame_to_packet_preserves_intrinsics_and_confidence(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
-    monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
-
-    session = Record3DStreamConfig(frame_timeout_seconds=0.1).setup_target()
-    assert session is not None
-    session.connect()
-    frame = session.wait_for_frame()
-
-    packet = record3d_frame_to_packet(frame, seq=0, arrival_timestamp_s=42.0, timestamp_ns=42_000_000_000)
-
-    assert isinstance(packet, FramePacket)
     assert packet.metadata["transport"] == Record3DTransportId.USB.value
-    assert packet.arrival_timestamp_s == 42.0
+    assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
+    assert packet.rgb.shape == (2, 2, 3)
+    assert packet.depth.shape == (2, 2)
     assert packet.intrinsics is not None
     assert packet.intrinsics.fx == 100.0
     assert packet.pose is not None
@@ -164,3 +147,40 @@ def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: 
     assert packet.depth.shape == (2, 2)
     assert packet.intrinsics is not None
     assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
+
+
+def test_usb_packet_stream_disconnect_stops_active_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
+    monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
+
+    stream = open_record3d_usb_packet_stream(device_index=0, frame_timeout_seconds=0.1)
+    stream.connect()
+
+    active_binding = FakeRecord3DStream.instances[-1]
+    stream.disconnect()
+
+    assert active_binding.disconnected is True
+
+
+def test_record3d_usb_streaming_source_satisfies_shared_source_protocol(monkeypatch, tmp_path) -> None:
+    sentinel_stream = object()
+    monkeypatch.setattr(
+        record3d_source_module,
+        "open_record3d_usb_packet_stream",
+        lambda *, device_index, frame_timeout_seconds: (
+            sentinel_stream if (device_index, frame_timeout_seconds) == (1, 0.25) else None
+        ),
+    )
+
+    source = Record3DStreamingSourceConfig(
+        transport=Record3DTransportId.USB,
+        device_index=1,
+        frame_timeout_seconds=0.25,
+    ).setup_target()
+
+    assert source is not None
+    assert isinstance(source, OfflineSequenceSource)
+    assert isinstance(source, StreamingSequenceSource)
+    assert source.label == "Record3D USB device #1"
+    assert source.prepare_sequence_manifest(tmp_path).sequence_id == "record3d-usb-1"
+    assert source.open_stream(loop=True) is sentinel_stream

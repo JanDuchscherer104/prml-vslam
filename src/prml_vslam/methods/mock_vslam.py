@@ -10,6 +10,8 @@ from numpy.typing import NDArray
 
 from prml_vslam.datasets.advio import load_advio_calibration
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.pipeline.contracts import ArtifactRef, SequenceManifest, SlamArtifacts, SlamConfig, SlamUpdate
 from prml_vslam.utils import BaseConfig
 from prml_vslam.utils.geometry import (
@@ -29,17 +31,21 @@ _POINTMAP_DEPTH_SPAN_M = 1.0
 class MockSlamBackendConfig(BaseConfig):
     """Config that builds the repository-local mock SLAM backend."""
 
+    method_id: MethodId = MethodId.VISTA
+    """Selected mock backend label."""
+
     @property
     def target_type(self) -> type[MockSlamBackend]:
         """Return the mock backend type used for the pipeline demo."""
         return MockSlamBackend
 
 
-class MockSlamBackend:
+class MockSlamBackend(SlamBackend):
     """Mock SLAM backend that supports both batch and streaming execution."""
 
     def __init__(self, config: MockSlamBackendConfig) -> None:
         self.config = config
+        self.method_id = config.method_id
 
     def start_session(self, cfg: SlamConfig, artifact_root: Path) -> MockSlamSession:
         """Prepare one streaming-capable session."""
@@ -77,7 +83,7 @@ class MockSlamBackend:
         return session.close()
 
 
-class MockSlamSession:
+class MockSlamSession(SlamSession):
     """Stateful mock SLAM session shared by offline and streaming execution."""
 
     def __init__(self, *, config: SlamConfig, artifact_root: Path) -> None:

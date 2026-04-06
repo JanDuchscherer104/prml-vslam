@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -105,7 +106,7 @@ def test_plan_run_config_command_loads_toml_request(tmp_path: Path, monkeypatch)
         """
 experiment_name = "Advio Office Offline Vista"
 mode = "offline"
-output_dir = "artifacts"
+output_dir = ".artifacts"
 
 [source]
 video_path = "captures/office-03.mp4"
@@ -138,6 +139,80 @@ evaluate_efficiency = true
     assert payload["run_id"] == "advio-office-offline-vista"
     assert payload["method"] == "vista"
     assert payload["source"]["video_path"] == "captures/office-03.mp4"
+
+
+def test_root_cli_defaults_to_offline_pipeline_demo(monkeypatch) -> None:
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+
+    def fake_pipeline_demo() -> None:
+        captured["called"] = True
+
+    monkeypatch.setattr(main, "pipeline_demo", fake_pipeline_demo)
+
+    result = runner.invoke(main.app, [])
+
+    assert result.exit_code == 0
+    assert captured == {"called": True}
+
+
+def test_pipeline_demo_command_reuses_shared_demo_request(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+
+    class FakeService:
+        def __init__(self, path_config: PathConfig) -> None:
+            captured["path_config"] = path_config
+
+        def local_scene_statuses(self) -> list[object]:
+            return [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+
+        def scene(self, sequence_id: int) -> object:
+            captured["sequence_id"] = sequence_id
+            return SimpleNamespace(sequence_slug="advio-15", display_name="ADVIO 15")
+
+        def build_streaming_source(
+            self,
+            *,
+            sequence_id: int,
+            pose_source,
+            respect_video_rotation: bool,
+        ) -> object:
+            captured["source_args"] = {
+                "sequence_id": sequence_id,
+                "pose_source": pose_source,
+                "respect_video_rotation": respect_video_rotation,
+            }
+            return "streaming-source"
+
+    class FakeRunService:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            captured["run_service_path_config"] = path_config
+
+        def start_run(self, *, request, source) -> None:
+            captured["request"] = request
+            captured["source"] = source
+
+        def snapshot(self):
+            return main.PipelineSessionSnapshot(state=main.PipelineSessionState.COMPLETED)
+
+        def stop_run(self) -> None:
+            captured["stopped"] = True
+
+    monkeypatch.setattr(main, "AdvioDatasetService", FakeService)
+    monkeypatch.setattr(main, "RunService", FakeRunService)
+    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
+
+    result = runner.invoke(main.app, ["pipeline-demo"])
+
+    assert result.exit_code == 0
+    request = captured["request"]
+    assert request.experiment_name == "advio-offline-advio-15-vista"
+    assert request.mode is main.PipelineMode.OFFLINE
+    assert request.slam.method is main.MethodId.VISTA
+    assert request.source.sequence_id == "advio-15"
+    assert captured["source"] == "streaming-source"
+    assert captured["source_args"]["sequence_id"] == 15
 
 
 def test_runtime_dependencies_include_pyyaml() -> None:
