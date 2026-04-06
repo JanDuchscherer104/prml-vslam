@@ -17,7 +17,7 @@ from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
 from prml_vslam.interfaces import TimedPoseTrajectory
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunPlan
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts import (
     StageManifest,
 )
@@ -291,11 +291,11 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
             left, right = st.columns(2, gap="large")
             with left:
                 st.markdown("**Planned Stages**")
-                st.dataframe(_stage_rows(snapshot.plan), hide_index=True, width="stretch")
+                st.dataframe(snapshot.plan.stage_rows(), hide_index=True, width="stretch")
             with right:
                 st.markdown("**Stage Manifests**")
                 if snapshot.stage_manifests:
-                    st.dataframe(_stage_manifest_rows(snapshot.stage_manifests), hide_index=True, width="stretch")
+                    st.dataframe(StageManifest.table_rows(snapshot.stage_manifests), hide_index=True, width="stretch")
                 else:
                     st.info("Stage manifests will appear once the run starts writing outputs.")
     with tabs[3]:
@@ -306,14 +306,23 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
             with left:
                 if snapshot.sequence_manifest is not None:
                     st.markdown("**Sequence Manifest**")
-                    st.code(_json_dump(snapshot.sequence_manifest.model_dump(mode="json")), language="json")
+                    st.code(
+                        json.dumps(snapshot.sequence_manifest.model_dump(mode="json"), indent=2, sort_keys=True),
+                        language="json",
+                    )
                 if snapshot.summary is not None:
                     st.markdown("**Run Summary**")
-                    st.code(_json_dump(snapshot.summary.model_dump(mode="json")), language="json")
+                    st.code(
+                        json.dumps(snapshot.summary.model_dump(mode="json"), indent=2, sort_keys=True),
+                        language="json",
+                    )
             with right:
                 if snapshot.slam is not None:
                     st.markdown("**SLAM Artifacts**")
-                    st.code(_json_dump(snapshot.slam.model_dump(mode="json")), language="json")
+                    st.code(
+                        json.dumps(snapshot.slam.model_dump(mode="json"), indent=2, sort_keys=True),
+                        language="json",
+                    )
 
 
 def _render_pipeline_notice(snapshot: PipelineSessionSnapshot) -> None:
@@ -390,33 +399,6 @@ def _start_advio_demo_run(
 
 def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:
     return normalize_grayscale_image(np.asarray(pointmap[..., 2], dtype=np.float32))
-
-
-def _stage_rows(plan: RunPlan) -> list[dict[str, str]]:
-    return [
-        {
-            "Stage": stage.title,
-            "Id": stage.id.value,
-            "Outputs": ", ".join(path.name for path in stage.outputs),
-        }
-        for stage in plan.stages
-    ]
-
-
-def _stage_manifest_rows(stage_manifests: list[StageManifest]) -> list[dict[str, str]]:
-    return [
-        {
-            "Stage": manifest.stage_id.value,
-            "Status": manifest.status.value,
-            "Config Hash": manifest.config_hash,
-            "Outputs": ", ".join(path.name for path in manifest.output_paths.values()),
-        }
-        for manifest in stage_manifests
-    ]
-
-
-def _json_dump(payload: object) -> str:
-    return json.dumps(payload, indent=2, sort_keys=True)
 
 
 def _resolve_evo_preview(snapshot: PipelineSessionSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:

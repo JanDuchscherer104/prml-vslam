@@ -16,9 +16,9 @@ GRAY = "#6b7280"
 DEFAULT_COLORS = np.asarray((BLUE, ORANGE, GREEN, RED), dtype=object)
 AXIS_COLORS = {"x": RED, "y": GREEN, "z": BLUE}
 STANDARD_MARGIN = {"l": 24, "r": 16, "t": 72, "b": 24}
-LEGEND_MARGIN = {"l": 24, "r": 16, "t": 96, "b": 24}
+LEGEND_MARGIN = {"l": 24, "r": 16, "t": 120, "b": 24}
 COMPACT_3D_MARGIN = {"l": 0, "r": 0, "t": 72, "b": 0}
-HORIZONTAL_LEGEND = {"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0}
+HORIZONTAL_LEGEND = {"orientation": "h", "yanchor": "bottom", "y": 1.08, "x": 0}
 
 
 def apply_standard_xy_layout(

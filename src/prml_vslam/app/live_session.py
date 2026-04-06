@@ -10,8 +10,6 @@ import streamlit as st
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket
 
-from .camera_display import format_camera_intrinsics_latex
-
 LiveMetric: TypeAlias = tuple[str, str]
 
 
@@ -117,14 +115,7 @@ def render_camera_intrinsics(
     if intrinsics is None:
         st.info(missing_message)
         return
-    st.latex(
-        format_camera_intrinsics_latex(
-            fx=intrinsics.fx,
-            fy=intrinsics.fy,
-            cx=intrinsics.cx,
-            cy=intrinsics.cy,
-        )
-    )
+    st.latex(intrinsics.to_latex())
 
 
 def render_live_packet_tabs(

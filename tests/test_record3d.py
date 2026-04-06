@@ -13,6 +13,7 @@ from prml_vslam.io.record3d import (
     Record3DDeviceType,
     Record3DStreamConfig,
     Record3DTransportId,
+    build_record3d_frame_details,
     list_record3d_usb_devices,
     open_record3d_usb_packet_stream,
 )
@@ -184,3 +185,19 @@ def test_record3d_usb_streaming_source_satisfies_shared_source_protocol(monkeypa
     assert source.label == "Record3D USB device #1"
     assert source.prepare_sequence_manifest(tmp_path).sequence_id == "record3d-usb-1"
     assert source.open_stream(loop=True) is sentinel_stream
+
+
+def test_build_record3d_frame_details_falls_back_to_packet_timestamp() -> None:
+    packet = record3d_module.FramePacket(
+        seq=0,
+        timestamp_ns=2_000_000_000,
+        arrival_timestamp_s=None,
+        metadata={"original_size": [960, 720]},
+    )
+
+    assert build_record3d_frame_details(packet, source_label="USB device #1") == {
+        "arrival_timestamp_s": 2.0,
+        "source": "USB device #1",
+        "original_size": [960, 720],
+        "metadata": {"original_size": [960, 720]},
+    }
