@@ -25,9 +25,10 @@ prerequisites from the official project README:
   controls and previews.
 - The page can start the official USB packet source or an optional Python-side
   Wi-Fi preview receiver.
-- `io.record3d_source` also exposes a `Record3DStreamingSource` wrapper that
-  satisfies the shared `StreamingSequenceSource` protocol for pipeline-owned
-  live sessions.
+- [`io.record3d_source`](./record3d_source.py) also exposes
+  [`Record3DStreamingSource`](./record3d_source.py), which satisfies the shared
+  [`StreamingSequenceSource`](../protocols/source.py) protocol for
+  pipeline-owned live sessions.
 
 ### Wi-Fi Python Preview Receiver
 
@@ -36,7 +37,7 @@ prerequisites from the official project README:
 - The receiver negotiates the Record3D WebRTC session through `/metadata`,
   `/getOffer`, and `/answer` or `/sendAnswer`.
 - Wi-Fi frames are decoded in Python from the composite RGBD video into shared
-  `FramePacket` objects.
+  [`FramePacket`](../interfaces/runtime.py) objects.
 - The Wi-Fi path exposes RGB, depth, and intrinsics when available.
 - The current Wi-Fi transport does not expose a separate depth-confidence
   image, so packet `confidence` stays empty on that path.
@@ -53,8 +54,8 @@ uv run prml-vslam-app
 
 ## Remaining Work
 
-- Integrate `LiveSourceSpec` resolution so pipeline orchestration can build the
-  appropriate Record3D streaming source directly from typed live-source
-  config.
+- Integrate [`LiveSourceSpec`](../pipeline/contracts.py) resolution so pipeline
+  orchestration can build the appropriate Record3D streaming source directly
+  from typed live-source config.
 - Decide how much Wi-Fi-derived depth fidelity is sufficient for downstream
   consumers beyond visualization and diagnostics.

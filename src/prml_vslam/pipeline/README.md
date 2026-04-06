@@ -2,154 +2,131 @@
 
 This package owns the typed planning contracts and artifact-boundary
 definitions for the repository pipeline. Shared source-provider protocols live
-under `prml_vslam.protocols.*`, and SLAM backend/session protocols live under
-`prml_vslam.methods.protocols`.
+in [`prml_vslam.protocols.source`](../protocols/source.py) and
+[`prml_vslam.protocols.runtime`](../protocols/runtime.py), while SLAM
+backend/session protocols live in
+[`prml_vslam.methods.protocols`](../methods/protocols.py).
 
 ## Current State
 
 Today `prml_vslam.pipeline` is primarily a typed planning surface:
+[`contracts.py`](./contracts.py) defines public contracts such as
+[`RunRequest`](./contracts.py), [`RunPlan`](./contracts.py),
+[`SequenceManifest`](./contracts.py), [`StageManifest`](./contracts.py), and
+[`RunSummary`](./contracts.py); [`services.py`](./services.py) turns
+[`RunRequest`](./contracts.py) into an ordered
+[`RunPlan`](./contracts.py); and [`workspace.py`](./workspace.py) defines the
+capture-manifest helper models used while materializing sequences.
 
-- `contracts.py` defines the public request, plan, manifest, artifact, and
-  streaming-update DTOs
-- `services.py` turns a `RunRequest` into an ordered `RunPlan`
-- `workspace.py` defines the capture-manifest helper models used while
-  materializing sequences
-
-The generic `OfflineRunner` and `StreamingRunner` described in
+The generic offline and streaming runners described in
 [`REQUIREMENTS.md`](./REQUIREMENTS.md) are target architecture, not implemented
 package surfaces yet.
 
-There is one executable demo today:
-
-- the Streamlit `Pipeline` page builds a real `RunRequest`, materializes a real
-  `SequenceManifest`, replays ADVIO frames, and feeds them into the repository
-  local `MockSlamBackend`
-
-That demo lives in `prml_vslam.app`, not in `prml_vslam.pipeline`, because it
-is a bounded monitoring surface rather than the final reusable runner API.
-
-The current executable `RunService` slice only supports the `ingest`, `slam`,
-and `summary` stages. The planner can still describe reference and evaluation
-stages, but the bounded runtime rejects those stage ids until explicit runtime
-support is added.
+There is one executable demo today: the Streamlit
+[`Pipeline` page](../app/pages/pipeline.py) builds a real
+[`RunRequest`](./contracts.py), materializes a real
+[`SequenceManifest`](./contracts.py), replays ADVIO frames, and feeds them
+into the repository-local
+[`MockSlamBackend`](../methods/mock_vslam.py). That demo lives in
+[`prml_vslam.app`](../app/bootstrap.py), not in `prml_vslam.pipeline`, because
+it is a bounded monitoring surface rather than the final reusable runner API.
+The current executable [`RunService`](./run_service.py) slice only supports the
+`ingest`, `slam`, and `summary` stages. The planner can still describe
+reference and evaluation stages, but the bounded runtime rejects those stage
+ids until explicit runtime support is added.
 
 ## Current Streaming Demo Implementation
 
-The current runnable streaming demo is split across the following files.
-
-- [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
-  - renders the `Pipeline` page, persists selector-only UI state, and drives
-    the pipeline-owned session service
-- [`session.py`](./session.py)
-  - owns the background worker, runtime snapshot, stage-manifest updates, and
-    final `RunSummary`
-- [`../app/bootstrap.py`](../app/bootstrap.py)
-  - wires the pipeline page and `PipelineSessionService` into the packaged
-    Streamlit app
-- [`../app/state.py`](../app/state.py)
-  - persists the opaque pipeline session service in Streamlit session state
-- [`../app/models.py`](../app/models.py)
-  - defines the persisted `PipelinePageState` used by the page controls
-- [`../methods/mock_vslam.py`](../methods/mock_vslam.py)
-  - implements the repository-local `MockSlamBackend` and `MockSlamSession`
-    used by both the streaming demo loop and the offline mock path
-- [`../datasets/advio_service.py`](../datasets/advio_service.py)
-  - exposes ADVIO helpers that build a pipeline-facing replay source plus the
-    normalized `SequenceManifest`
-- [`../datasets/advio_sequence.py`](../datasets/advio_sequence.py)
-  - materializes ADVIO scenes into `SequenceManifest` and forwards replay
-    requests into the adapter layer
-- [`../datasets/advio_replay_adapter.py`](../datasets/advio_replay_adapter.py)
-  - converts ADVIO video, timestamps, calibration, and optional reference
-    poses into a `FramePacketStream`
-- [`../io/cv2_producer.py`](../io/cv2_producer.py)
-  - provides the replay-capable OpenCV `FramePacketStream` used by the ADVIO
-    demo
-- [`../interfaces/runtime.py`](../interfaces/runtime.py)
-  - defines `FramePacket`, the shared live-frame datamodel used by replay and
-    streaming SLAM
-- [`../protocols/runtime.py`](../protocols/runtime.py)
-  - defines `FramePacketStream`, the shared frame-stream protocol used by
-    replay and streaming SLAM
-- [`../protocols/source.py`](../protocols/source.py)
-  - defines `OfflineSequenceSource` and `StreamingSequenceSource`, the shared
-    source-provider seams consumed by pipeline orchestration
-- [`../methods/protocols.py`](../methods/protocols.py)
-  - defines `OfflineSlamBackend`, `StreamingSlamBackend`, `SlamBackend`, and
-    `SlamSession`, the SLAM behavior seams consumed by the pipeline
-- [`../app/plotting/record3d.py`](../app/plotting/record3d.py)
-  - builds the live trajectory figure shown on the Pipeline page
-- [`contracts.py`](./contracts.py)
-  - defines `RunRequest`, `RunPlan`, `SequenceManifest`, `StageManifest`,
-    `RunSummary`, `SlamUpdate`, and the typed artifact bundles that the
-    demo exercises
-- [`services.py`](./services.py)
-  - defines `RunPlannerService`, which turns the page-built `RunRequest` into
-    the ordered `RunPlan`
-- [`../utils/path_config.py`](../utils/path_config.py)
-  - defines `PathConfig.plan_run_paths(...)`, the canonical artifact layout
-    used by the demo controller and runtime
+The current runnable streaming demo is split across a small set of cooperating
+files. The UI surface in [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
+renders the page, persists selector-only UI state through
+[`PipelinePageState`](../app/models.py), and drives the pipeline-owned
+[`PipelineSessionService`](./session.py), which is wired into the packaged app
+from [`../app/bootstrap.py`](../app/bootstrap.py) and stored opaquely via
+[`../app/state.py`](../app/state.py). The runtime path uses the
+repository-local [`MockSlamBackend`](../methods/mock_vslam.py) and
+[`MockSlamSession`](../methods/mock_vslam.py), the ADVIO source helpers in
+[`../datasets/advio_service.py`](../datasets/advio_service.py),
+[`../datasets/advio_sequence.py`](../datasets/advio_sequence.py), and
+[`../datasets/advio_replay_adapter.py`](../datasets/advio_replay_adapter.py),
+the replay-capable [`FramePacketStream`](../protocols/runtime.py) provided by
+[`../io/cv2_producer.py`](../io/cv2_producer.py), the shared
+[`FramePacket`](../interfaces/runtime.py) runtime model, the source seams
+[`OfflineSequenceSource`](../protocols/source.py) and
+[`StreamingSequenceSource`](../protocols/source.py), the SLAM seams
+[`OfflineSlamBackend`](../methods/protocols.py),
+[`StreamingSlamBackend`](../methods/protocols.py),
+[`SlamBackend`](../methods/protocols.py), and
+[`SlamSession`](../methods/protocols.py), the live plotting helpers in
+[`../app/plotting/record3d.py`](../app/plotting/record3d.py), the planner
+contracts in [`contracts.py`](./contracts.py), the
+[`RunPlannerService`](./services.py), and the canonical artifact layout exposed
+through [`PathConfig.plan_run_paths(...)`](../utils/path_config.py).
 
 ## Two Pipeline Modes
 
-The pipeline supports two top-level modes through `PipelineMode`.
+The pipeline supports two top-level modes through
+[`PipelineMode`](./contracts.py).
 
 ### Offline
 
-Use `PipelineMode.OFFLINE` when the input is already bounded and replayable:
+Use [`PipelineMode.OFFLINE`](./contracts.py) when the input is already bounded
+and replayable:
 
 - a raw video file
 - a dataset sequence such as ADVIO
 - a previously captured live session that has already been materialized
 
-Offline runs are artifact-first. The caller defines a `RunRequest`, builds a
-`RunPlan`, materializes or resolves a `SequenceManifest`, and then executes the
-enabled stages in order.
+Offline runs are artifact-first. The caller defines a
+[`RunRequest`](./contracts.py), builds a [`RunPlan`](./contracts.py),
+materializes or resolves a [`SequenceManifest`](./contracts.py), and then
+executes the enabled stages in order.
 
 ### Streaming
 
-Use `PipelineMode.STREAMING` when the input arrives incrementally:
+Use [`PipelineMode.STREAMING`](./contracts.py) when the input arrives
+incrementally:
 
 - a live camera feed
 - a device stream such as Record3D USB or Wi-Fi
 - an offline replay that should behave like a stream for monitoring purposes
 
 Streaming mode still uses the same stage vocabulary, but its hot path is
-frame-driven. The shared runtime unit is `FramePacket`, and the streaming-capable
-SLAM session consumes packets one at a time via `start_session(...)`,
-`step(...)`, and `close()`.
+frame-driven. The shared runtime unit is
+[`FramePacket`](../interfaces/runtime.py), and the streaming-capable SLAM
+session consumes packets one at a time via
+[`start_session(...)`](../methods/protocols.py),
+[`step(...)`](../methods/protocols.py), and
+[`close()`](../methods/protocols.py).
 
 The intended long-term flow is:
 
-1. live ingress produces `FramePacket`
-2. streaming SLAM produces `SlamUpdate`
-3. capture or replay is materialized into `SequenceManifest`
+1. live ingress produces [`FramePacket`](../interfaces/runtime.py)
+2. streaming SLAM produces [`SlamUpdate`](./contracts.py)
+3. capture or replay is materialized into [`SequenceManifest`](./contracts.py)
 4. downstream artifact stages consume materialized outputs, not live frames
 
 ## Core Contracts
 
 ### Entry Contract
 
-- `RunRequest`
-  - the config-defined entry point for both offline and streaming pipelines
-  - owns `mode`, `source`, `slam`, optional `reference`, and `evaluation`
+The entry contract is [`RunRequest`](./contracts.py), which is the
+config-defined entry point for both offline and streaming pipelines and owns
+`mode`, `source`, `slam`, optional `reference`, and `evaluation`.
 
 ### Source Contracts
 
-- `VideoSourceSpec`
-  - offline video input
-- `DatasetSourceSpec`
-  - offline dataset-backed input
-- `LiveSourceSpec`
-  - streaming input with explicit capture persistence semantics
+Source selection is expressed through
+[`VideoSourceSpec`](./contracts.py),
+[`DatasetSourceSpec`](./contracts.py), and
+[`LiveSourceSpec`](./contracts.py).
 
 ### Planned Execution
 
-- `RunPlan`
-  - ordered list of `RunPlanStage`
-  - owns `run_id`, `artifact_root`, `method`, `mode`, and selected `source`
-- `RunPlanStageId`
-  - canonical stage ids such as `ingest`, `slam`, and `summary`
+Planning yields a [`RunPlan`](./contracts.py) with an ordered list of
+[`RunPlanStage`](./contracts.py) values, plus stable
+[`RunPlanStageId`](./contracts.py) identifiers such as `ingest`, `slam`, and
+`summary`.
 
 ### Shared Normalization Boundary
 
@@ -180,14 +157,17 @@ artifact root and stage-status map.
 The source-provider seams live in
 [`prml_vslam.protocols.source`](../protocols/source.py), where offline sources
 must expose a human-readable `label` plus
-`prepare_sequence_manifest(output_dir) -> SequenceManifest`, and streaming
-sources add `open_stream(*, loop: bool) -> FramePacketStream`. The SLAM seams
-live in [`prml_vslam.methods.protocols`](../methods/protocols.py), where a
-backend exposes `method_id`, offline execution implements
-`run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`, streaming
-execution implements `start_session(cfg, artifact_root) -> SlamSession`, and a
-[`SlamSession`](../methods/protocols.py) itself must provide `step(frame) ->
-SlamUpdate` and `close() -> SlamArtifacts`. Within
+[`prepare_sequence_manifest(output_dir) -> SequenceManifest`](../protocols/source.py),
+and streaming sources add
+[`open_stream(*, loop: bool) -> FramePacketStream`](../protocols/source.py).
+The SLAM seams live in [`prml_vslam.methods.protocols`](../methods/protocols.py),
+where a backend exposes `method_id`, offline execution implements
+[`run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`](../methods/protocols.py),
+streaming execution implements
+[`start_session(cfg, artifact_root) -> SlamSession`](../methods/protocols.py),
+and a [`SlamSession`](../methods/protocols.py) itself must provide
+[`step(frame) -> SlamUpdate`](../methods/protocols.py) and
+[`close() -> SlamArtifacts`](../methods/protocols.py). Within
 [`SlamArtifacts`](./contracts.py), `trajectory_tum` is mandatory, while
 `sparse_points_ply`, `dense_points_ply`, and `preview_log_jsonl` remain
 optional because not every backend or run mode materializes them.
@@ -201,14 +181,17 @@ protocols from `prml_vslam.protocols.source` and SLAM behavior seams from
 ### SLAM
 
 [`OfflineSlamBackend`](../methods/protocols.py) covers materialized-sequence
-execution through `run_sequence(sequence, cfg, artifact_root) ->
-SlamArtifacts`, while [`StreamingSlamBackend`](../methods/protocols.py) covers
-incremental execution through `start_session(cfg, artifact_root) ->
-SlamSession`. [`SlamBackend`](../methods/protocols.py) is the convenience
+execution through
+[`run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`](../methods/protocols.py),
+while [`StreamingSlamBackend`](../methods/protocols.py) covers incremental
+execution through
+[`start_session(cfg, artifact_root) -> SlamSession`](../methods/protocols.py).
+[`SlamBackend`](../methods/protocols.py) is the convenience
 combined protocol for backends that support both modes, and
 [`SlamSession`](../methods/protocols.py) is the incremental interface that
-consumes [`FramePacket`](../interfaces/runtime.py) through `step(frame) ->
-SlamUpdate` and finishes with `close() -> SlamArtifacts`.
+consumes [`FramePacket`](../interfaces/runtime.py) through
+[`step(frame) -> SlamUpdate`](../methods/protocols.py) and finishes with
+[`close() -> SlamArtifacts`](../methods/protocols.py).
 
 The important boundary rule is that streaming logic may consume
 [`FramePacket`](../interfaces/runtime.py), but downstream stages should consume
@@ -227,8 +210,8 @@ practice that means stages should write to stable locations such as
 
 ## Defining An Offline Pipeline
 
-The smallest offline pipeline is a `RunRequest` with an offline source and a
-SLAM config.
+The smallest offline pipeline is a [`RunRequest`](./contracts.py) with an
+offline source and a [`SlamConfig`](./contracts.py).
 
 ```python
 from pathlib import Path
@@ -260,8 +243,9 @@ request = RunRequest(
 plan = request.build(PathConfig())
 ```
 
-A dataset-backed offline request uses `DatasetSourceSpec` instead of
-`VideoSourceSpec`.
+A dataset-backed offline request uses
+[`DatasetSourceSpec`](./contracts.py) instead of
+[`VideoSourceSpec`](./contracts.py).
 
 ```python
 from pathlib import Path
@@ -281,7 +265,8 @@ request = RunRequest(
 
 ## Defining A Streaming Pipeline
 
-A streaming plan uses `PipelineMode.STREAMING` together with `LiveSourceSpec`.
+A streaming plan uses [`PipelineMode.STREAMING`](./contracts.py) together with
+[`LiveSourceSpec`](./contracts.py).
 
 ```python
 from pathlib import Path
@@ -306,8 +291,9 @@ intended topology, stage set, and artifact root for a future runner.
 
 ### CLI Planning
 
-`prml_vslam.main.plan_run` constructs a `RunRequest` from CLI arguments and
-prints the resulting `RunPlan`. This is the current offline planning entrypoint.
+[`prml_vslam.main.plan_run`](../main.py) constructs a
+[`RunRequest`](./contracts.py) from CLI arguments and prints the resulting
+[`RunPlan`](./contracts.py). This is the current offline planning entrypoint.
 
 ### TOML Configs
 
@@ -334,6 +320,19 @@ ADVIO replay stream, runs the repository-local
 trajectories, stage manifests, artifacts, and the final summary. The page
 supports `offline` as a single replay pass and `streaming` as looped replay
 over the same incremental SLAM interface.
+
+## Request Lifecycle
+
+The sequence below summarizes how one persisted
+[`RunRequest`](./contracts.py) moves from
+[`load_run_request_toml`](./demo.py) through
+[`RunPlannerService`](./services.py), [`RunService`](./run_service.py), and
+[`PipelineSessionService`](./session.py) before the bounded demo runtime hands
+packets to a [`StreamingSequenceSource`](../protocols/source.py) and a
+[`MockSlamBackend`](../methods/mock_vslam.py). The Mermaid source lives in
+[`docs/figures/mermaid_pipeline_request_flow.mmd`](../../../docs/figures/mermaid_pipeline_request_flow.mmd).
+
+![Persisted request lifecycle](../../../docs/figures/mermaid_pipeline_request_flow.svg)
 
 ## Persisting A Pipeline Config
 

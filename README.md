@@ -27,7 +27,8 @@ make test PYTEST_ARGS="-n auto"
 ```
 
 Repo-owned datasets and generated benchmark outputs resolve under `.data/` and
-`.artifacts/` by default via `PathConfig`.
+`.artifacts/` by default via
+[`PathConfig`](src/prml_vslam/utils/path_config.py).
 
 ### Streamlit Workbench
 
@@ -41,9 +42,10 @@ The app supports:
 
 - a `Record3D` live-capture page for official USB capture plus optional Wi-Fi preview inside the workbench
 - an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
-- a `Pipeline` page for run planning, a minimal ADVIO mock pipeline demo, and artifact monitoring
+- a `Pipeline` page for TOML-backed request editing, ADVIO or Record3D source selection, bounded mock execution, and artifact monitoring
 - a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
-- `PathConfig`-driven dataset and artifact discovery without app-local path defaults
+- [`PathConfig`](src/prml_vslam/utils/path_config.py)-driven dataset and
+  artifact discovery without app-local path defaults
 
 USB remains the canonical Record3D programmatic integration in this repo. The Wi-Fi path is kept as an optional
 preview-only fallback for the Streamlit workbench and does not expose the same pose or confidence surfaces.
@@ -53,8 +55,10 @@ Pipeline contract and extension guidance lives in
 
 ### TOML-First Run Planning
 
-For durable/reproducible planning, store a `RunRequest` as TOML under
-`.configs/pipelines/` and resolve it through the CLI:
+For durable and reproducible planning, store a
+[`RunRequest`](src/prml_vslam/pipeline/contracts.py) as TOML under
+`.configs/pipelines/` and resolve it through the
+[`plan-run-config`](src/prml_vslam/main.py) CLI command:
 
 ```toml
 experiment_name = "advio-office-offline-vista"
@@ -83,13 +87,15 @@ evaluate_efficiency = true
 uv run prml-vslam plan-run-config advio-office-vista.toml
 ```
 
-The TOML shape mirrors the nested [`RunRequest`](src/prml_vslam/pipeline/contracts.py)
-model: top-level fields configure the run itself, while `[source]`, `[slam]`,
-`[reference]`, and `[evaluation]` map directly onto the nested config objects
-owned by [`contracts.py`](src/prml_vslam/pipeline/contracts.py). That is why an
+The TOML shape mirrors the nested
+[`RunRequest`](src/prml_vslam/pipeline/contracts.py) model: top-level fields
+configure the run itself, while `[source]`, `[slam]`, `[reference]`, and
+`[evaluation]` map directly onto the nested config objects owned by
+[`contracts.py`](src/prml_vslam/pipeline/contracts.py). That is why an
 optional method-specific backend config path lives in `[slam]` as
-`config_path = "..."`, because the field is owned by `SlamConfig` rather than
-by the top-level request.
+`config_path = "..."`, because the field is owned by
+[`SlamConfig`](src/prml_vslam/pipeline/contracts.py) rather than by the
+top-level request.
 
 [`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through
 the repo-owned helpers described in
