@@ -22,15 +22,15 @@ The generic offline and streaming runners described in
 [`REQUIREMENTS.md`](./REQUIREMENTS.md) are target architecture, not implemented
 package surfaces yet.
 
-There is one executable demo today: the Streamlit
-[`Pipeline` page](../app/pages/pipeline.py) builds a real
-[`RunRequest`](./contracts.py), materializes a real
-[`SequenceManifest`](./contracts.py), replays ADVIO frames, and feeds them
-into the repository-local
-[`MockSlamBackend`](../methods/mock_vslam.py). That demo lives in
-[`prml_vslam.app`](../app/bootstrap.py), not in `prml_vslam.pipeline`, because
-it is a bounded monitoring surface rather than the final reusable runner API.
-The current executable [`RunService`](./run_service.py) slice only supports the
+There is one executable bounded demo today. The shared request-template helpers
+live in [`demo.py`](./demo.py), where the repository can build or load demo
+[`RunRequest`](./contracts.py) values, while the actual runtime is owned by
+[`RunService`](./run_service.py) and
+[`PipelineSessionService`](./session.py). The Streamlit
+[`Pipeline` page](../app/pages/pipeline.py) and the CLI
+[`pipeline-demo`](../main.py) command are user-facing launch surfaces: they
+configure or load a request, resolve a source, and then hand both into the
+pipeline-owned runtime. The current executable slice only supports the
 `ingest`, `slam`, and `summary` stages. The planner can still describe
 reference and evaluation stages, but the bounded runtime rejects those stage
 ids until explicit runtime support is added.
@@ -38,13 +38,17 @@ ids until explicit runtime support is added.
 ## Current Streaming Demo Implementation
 
 The current runnable streaming demo is split across a small set of cooperating
-files. The UI surface in [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
-renders the page, persists selector-only UI state through
-[`PipelinePageState`](../app/models.py), and drives the pipeline-owned
-[`PipelineSessionService`](./session.py), which is wired into the packaged app
-from [`../app/bootstrap.py`](../app/bootstrap.py) and stored opaquely via
-[`../app/state.py`](../app/state.py). The runtime path uses the
-repository-local [`MockSlamBackend`](../methods/mock_vslam.py) and
+files. [`demo.py`](./demo.py) owns shared request-template helpers only; it is
+not the runner. The UI surface in
+[`../app/pages/pipeline.py`](../app/pages/pipeline.py) renders the page,
+persists selector-only UI state through
+[`PipelinePageState`](../app/models.py), and eventually calls
+[`RunService.start_run(...)`](./run_service.py). The packaged app wiring in
+[`../app/bootstrap.py`](../app/bootstrap.py) and
+[`../app/state.py`](../app/state.py) makes that service available to the page.
+The runtime path itself lives in [`RunService`](./run_service.py) and
+[`PipelineSessionService`](./session.py), and uses the repository-local
+[`MockSlamBackend`](../methods/mock_vslam.py) and
 [`MockSlamSession`](../methods/mock_vslam.py), the ADVIO source helpers in
 [`../datasets/advio_service.py`](../datasets/advio_service.py),
 [`../datasets/advio_sequence.py`](../datasets/advio_sequence.py), and
@@ -197,6 +201,91 @@ The important boundary rule is that streaming logic may consume
 [`FramePacket`](../interfaces/runtime.py), but downstream stages should consume
 typed artifact bundles or [`SequenceManifest`](./contracts.py), not live
 packets.
+
+## Supported Stage Types
+
+The planner can describe more stages through
+[`RunPlanStageId`](./contracts.py), but the current executable slice in
+[`RunService`](./run_service.py) only accepts `ingest`, `slam`, and `summary`.
+Those stage ids are enforced by [`_SUPPORTED_STAGE_IDS`](./run_service.py),
+which is why reference and evaluation stages can already appear in a
+[`RunPlan`](./contracts.py) without yet being runnable in the bounded runtime.
+
+The `ingest` stage is the normalization stage. In planning, it is emitted by
+[`RunPlannerService._build_stages(...)`](./services.py) with the canonical
+output [`RunArtifactPaths.sequence_manifest_path`](../utils/path_config.py). At
+runtime, it is implemented through the source seam rather than through a
+pipeline-local stage object: the source must satisfy
+[`OfflineSequenceSource`](../protocols/source.py) or
+[`StreamingSequenceSource`](../protocols/source.py), and the actual work is the
+call to
+[`prepare_sequence_manifest(output_dir) -> SequenceManifest`](../protocols/source.py)
+inside [`PipelineSessionService._run_worker(...)`](./session.py). In offline
+mode, `ingest` prepares a replayable [`SequenceManifest`](./contracts.py) and
+the subsequent stream is opened with `loop=False`; in streaming mode, `ingest`
+still prepares the manifest first, but the later stream is opened with
+`loop=True` for replay-backed streaming or backed by a live source. In the
+current bounded demo, both modes still pass through the
+[`StreamingSequenceSource`](../protocols/source.py) seam, so “offline” here
+means single-pass replay rather than a completely separate offline runner.
+
+The `slam` stage is the execution stage. In planning, it is emitted by
+[`RunPlannerService._build_stages(...)`](./services.py) with trajectory output
+always enabled and sparse or dense outputs added according to
+[`SlamConfig`](./contracts.py). Its interfaces live in
+[`prml_vslam.methods.protocols`](../methods/protocols.py):
+[`OfflineSlamBackend`](../methods/protocols.py),
+[`StreamingSlamBackend`](../methods/protocols.py),
+[`SlamBackend`](../methods/protocols.py), and
+[`SlamSession`](../methods/protocols.py). The current bounded runtime uses only
+the streaming path: [`PipelineSessionService._run_worker(...)`](./session.py)
+calls
+[`StreamingSlamBackend.start_session(...)`](../methods/protocols.py), then
+feeds each [`FramePacket`](../interfaces/runtime.py) into
+[`SlamSession.step(...)`](../methods/protocols.py), receives
+[`SlamUpdate`](./contracts.py) values for live progress, and finally closes the
+session to obtain [`SlamArtifacts`](./contracts.py). In other words, offline
+mode in the current demo still executes `slam` through the streaming session
+interface, just against a bounded replay source, while the true
+[`OfflineSlamBackend.run_sequence(...)`](../methods/protocols.py) seam exists as
+the intended offline interface for a fuller future runner.
+
+The `summary` stage is the provenance and terminalization stage. In planning,
+it is emitted with the canonical outputs
+[`RunArtifactPaths.summary_path`](../utils/path_config.py) and
+[`RunArtifactPaths.stage_manifests_path`](../utils/path_config.py). Unlike
+`ingest` and `slam`, it does not currently have an external protocol seam.
+Instead, it is owned by the internal finalization logic in
+[`PipelineSessionService._finalize_outputs(...)`](./session.py),
+[`PipelineSessionService._build_stage_status(...)`](./session.py),
+[`PipelineSessionService._build_stage_manifests(...)`](./session.py), and
+[`PipelineSessionService._build_summary_manifest(...)`](./session.py). In both
+offline and streaming modes, `summary` runs only once the session reaches a
+terminal outcome. The difference is how that terminal state is reached: offline
+single-pass replay usually ends through `EOFError`, while streaming mode may
+end through EOF, an explicit stop request, or a runtime failure. The summary
+logic is the same in all of those cases: persist
+[`StageManifest`](./contracts.py) records and the final
+[`RunSummary`](./contracts.py) even when the run stopped early or failed.
+
+New stage types need both planning support and runtime support. Planning support
+means adding a new [`RunPlanStageId`](./contracts.py), extending
+[`RunRequest`](./contracts.py) if the stage is config-gated, adding canonical
+output ownership to [`RunArtifactPaths`](../utils/path_config.py), and wiring
+the stage into [`RunPlannerService._build_stages(...)`](./services.py). Runtime
+support means extending the executable slice in [`RunService`](./run_service.py)
+and the terminal accounting in [`PipelineSessionService`](./session.py), plus
+introducing a reusable protocol in the owning module when the new stage needs a
+real execution seam. In practice, if the stage behaves like source
+normalization it probably belongs behind [`prml_vslam.protocols.source`](../protocols/source.py);
+if it behaves like backend execution it probably belongs behind
+[`prml_vslam.methods.protocols`](../methods/protocols.py); and if it is
+strictly run-finalization logic it may remain internal to
+[`prml_vslam.pipeline.session`](./session.py). The existing
+[`How To Add A Stage`](#how-to-add-a-stage) section below is still the
+step-by-step checklist, but the key design rule is simple: a new stage type is
+not real in this repository until both the planner and the bounded runtime know
+how to represent and finalize it.
 
 ## Artifact Layout
 
