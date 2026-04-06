@@ -334,6 +334,78 @@ packets to a [`StreamingSequenceSource`](../protocols/source.py) and a
 
 ![Persisted request lifecycle](../../../docs/figures/mermaid_pipeline_request_flow.svg)
 
+## Run And Session Lifetime
+
+The bounded demo has two related lifetimes. A pipeline run starts when
+[`RunService.start_run(...)`](./run_service.py) receives a
+[`RunRequest`](./contracts.py) together with a
+[`StreamingSequenceSource`](../protocols/source.py). At that moment
+[`RunPlannerService`](./services.py) resolves the request into a concrete
+[`RunPlan`](./contracts.py), checks that every planned stage belongs to the
+currently supported slice, and either launches a session or records a
+pre-launch failure through
+[`PipelineSessionService.set_failed_start(...)`](./session.py). In other words,
+the run lifetime begins with a typed request and a typed source, but only
+becomes executable after planning has already succeeded.
+
+The session lifetime begins when
+[`PipelineSessionService.start(...)`](./session.py) stops any existing worker,
+creates a connecting snapshot, and launches a new background thread. Inside
+that worker, the first durable boundary is the
+[`SequenceManifest`](./contracts.py): the source materializes it through
+[`prepare_sequence_manifest(...)`](../protocols/source.py), and the session
+writes it into the canonical
+[`RunArtifactPaths.sequence_manifest_path`](../utils/path_config.py). Only
+after that manifest exists does the session open a
+[`FramePacketStream`](../protocols/runtime.py), call
+[`StreamingSlamBackend.start_session(...)`](../methods/protocols.py), and
+transition the visible
+[`PipelineSessionSnapshot`](./session.py) into the running state.
+
+While the session is running, each arriving
+[`FramePacket`](../interfaces/runtime.py) is consumed by
+[`SlamSession.step(...)`](../methods/protocols.py), which produces a
+[`SlamUpdate`](./contracts.py). The session does not treat those updates as a
+new artifact boundary. Instead, it uses them to refresh the in-memory snapshot
+with the latest pose estimate, point counts, frame-level preview state, and
+runtime metrics. This is why the hot path remains frame-driven and lightweight,
+while the durable boundaries stay anchored at the manifest, the final
+[`SlamArtifacts`](./contracts.py), and the summary outputs.
+
+Terminal handling is centralized in
+[`PipelineSessionService._run_worker(...)`](./session.py) and
+[`PipelineSessionService._finalize_outputs(...)`](./session.py). An
+end-of-stream condition leads to
+[`PipelineSessionState`](./session.py) `completed`, an explicit stop request
+leads to `stopped`, and an uncaught runtime error leads to `failed`. In every
+terminal path the service attempts to close the active
+[`SlamSession`](../methods/protocols.py), derive truthful
+[`StageExecutionStatus`](./contracts.py) values for the executed stages,
+persist [`StageManifest`](./contracts.py) records, and write the final
+[`RunSummary`](./contracts.py). The important operational detail is that even a
+failed or manually stopped session still tries to finalize outputs so the user
+sees a stable terminal snapshot instead of losing provenance.
+
+The snapshot lifetime is intentionally longer than the worker lifetime.
+[`PipelineSessionService.snapshot()`](./session.py) always returns the latest
+deep-copied [`PipelineSessionSnapshot`](./session.py), including the most
+recent plan, manifest, SLAM artifacts, summary, manifests, and any terminal
+error message. That lets the app keep rendering the outcome after the worker
+has already exited, which is why a stopped, completed, or failed run remains
+inspectable until a later session replaces it.
+
+The following state diagram summarizes the visible session-state transitions.
+The Mermaid source lives in
+[`docs/figures/mermaid_pipeline_session_state.mmd`](../../../docs/figures/mermaid_pipeline_session_state.mmd).
+
+![Pipeline session state lifecycle](../../../docs/figures/mermaid_pipeline_session_state.svg)
+
+The next diagram summarizes the durable data boundaries that matter during one
+run. The Mermaid source lives in
+[`docs/figures/mermaid_pipeline_boundaries.mmd`](../../../docs/figures/mermaid_pipeline_boundaries.mmd).
+
+![Pipeline artifact and runtime boundaries](../../../docs/figures/mermaid_pipeline_boundaries.svg)
+
 ## Persisting A Pipeline Config
 
 The repo-owned way to persist a durable pipeline request is:

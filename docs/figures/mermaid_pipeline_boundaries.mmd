@@ -1,0 +1,46 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "22px",
+    "actorFontSize": "22px",
+    "actorTextColor": "#1f2937",
+    "messageFontSize": "20px",
+    "messageTextColor": "#1f2937",
+    "noteFontSize": "20px",
+    "noteTextColor": "#1f2937",
+    "primaryColor": "#e8f1ff",
+    "primaryTextColor": "#1f2937",
+    "primaryBorderColor": "#3b82f6",
+    "lineColor": "#6b7280"
+  }
+}}%%
+flowchart LR
+    Request["RunRequest\ncontracts.py"] --> Plan["RunPlan\ncontracts.py"]
+    Plan --> Paths["RunArtifactPaths\npath_config.py"]
+
+    Request --> SourceCfg["SourceSpec\nVideoSourceSpec | DatasetSourceSpec | LiveSourceSpec"]
+    SourceCfg --> Source["StreamingSequenceSource\nprotocols/source.py"]
+    Source --> Manifest["SequenceManifest\ncontracts.py"]
+    Source --> Stream["FramePacketStream\nprotocols/runtime.py"]
+
+    Request --> SlamCfg["SlamConfig\ncontracts.py"]
+    SlamCfg --> Backend["StreamingSlamBackend\nmethods/protocols.py"]
+    Backend --> Session["SlamSession\nmethods/protocols.py"]
+    Stream --> Packet["FramePacket\ninterfaces/runtime.py"]
+    Packet --> Session
+    Session --> Update["SlamUpdate\ncontracts.py"]
+    Session --> SlamArtifacts["SlamArtifacts\ncontracts.py"]
+
+    Manifest --> StageManifest["StageManifest\ncontracts.py"]
+    SlamArtifacts --> StageManifest
+    Paths --> StageManifest
+    StageManifest --> Summary["RunSummary\ncontracts.py"]
+    Paths --> Summary
+
+    classDef durable fill:#eefbf3,stroke:#2f855a,color:#1f2937,stroke-width:2px;
+    classDef runtime fill:#fff6e8,stroke:#d97706,color:#1f2937,stroke-width:2px;
+    classDef orchestration fill:#eef4ff,stroke:#2563eb,color:#1f2937,stroke-width:2px;
+
+    class Request,Plan,Paths,SourceCfg,SlamCfg orchestration;
+    class Manifest,SlamArtifacts,StageManifest,Summary durable;
+    class Source,Stream,Backend,Session,Packet,Update runtime;

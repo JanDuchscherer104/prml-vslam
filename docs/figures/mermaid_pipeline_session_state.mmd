@@ -1,0 +1,49 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "22px",
+    "actorFontSize": "22px",
+    "actorTextColor": "#1f2937",
+    "messageFontSize": "20px",
+    "messageTextColor": "#1f2937",
+    "noteFontSize": "20px",
+    "noteTextColor": "#1f2937",
+    "stateFontSize": "22px",
+    "stateTextColor": "#1f2937",
+    "sequenceNumberFontSize": "18px"
+  }
+}}%%
+stateDiagram-v2
+    [*] --> Idle : snapshot idle
+
+    Idle --> Connecting : start run
+    Connecting --> Running : manifest ready and session opened
+    Connecting --> Failed : pre-launch failure
+
+    Running --> Completed : eof
+    Running --> Stopped : explicit stop
+    Running --> Failed : runtime exception
+
+    Completed --> Idle : next start replaces snapshot
+    Stopped --> Idle : next start replaces snapshot
+    Failed --> Idle : next start replaces snapshot
+
+    note right of Connecting
+      PipelineSessionService.start(...)
+      plan: RunPlan
+      sequence_manifest: SequenceManifest?
+    end note
+
+    note right of Running
+      StreamingSlamBackend.start_session(...)
+      latest_packet: FramePacket
+      latest_slam_update: SlamUpdate
+      num_sparse_points / num_dense_points
+    end note
+
+    note right of Completed
+      SlamSession.close() -> SlamArtifacts
+      slam: SlamArtifacts
+      summary: RunSummary
+      stage_manifests: StageManifest[]
+    end note
