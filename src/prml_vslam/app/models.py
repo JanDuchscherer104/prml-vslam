@@ -27,16 +27,11 @@ class AppPageId(StrEnum):
     @property
     def label(self) -> str:
         """Return the user-facing page label."""
-        return {
-            AppPageId.RECORD3D: "Record3D",
-            AppPageId.ADVIO: "ADVIO",
-            AppPageId.PIPELINE: "Pipeline",
-            AppPageId.METRICS: "Metrics",
-        }[self]
+        return {AppPageId.RECORD3D: "Record3D", AppPageId.ADVIO: "ADVIO"}.get(self, self.value.capitalize())
 
 
-class Record3DStreamState(StrEnum):
-    """Lifecycle states rendered by the Record3D app page."""
+class PreviewStreamState(StrEnum):
+    """Lifecycle states shared by app-owned preview surfaces."""
 
     IDLE = "idle"
     CONNECTING = "connecting"
@@ -45,34 +40,28 @@ class Record3DStreamState(StrEnum):
     FAILED = "failed"
 
 
-class Record3DStreamSnapshot(PacketSessionSnapshot):
+ACTIVE_PREVIEW_STREAM_STATES = frozenset({PreviewStreamState.CONNECTING, PreviewStreamState.STREAMING})
+
+
+class PreviewSessionSnapshot(PacketSessionSnapshot):
+    """Common snapshot state shared by app-owned preview runtimes."""
+
+    state: PreviewStreamState = PreviewStreamState.IDLE
+    """Current lifecycle state of the preview."""
+
+
+class Record3DStreamSnapshot(PreviewSessionSnapshot):
     """Latest Record3D preview snapshot shared inside the app layer."""
 
     transport: Record3DTransportId | None = None
     """Transport currently backing the snapshot, when active."""
 
-    state: Record3DStreamState = Record3DStreamState.IDLE
-    """Current lifecycle state of the live transport."""
-
     source_label: str = ""
     """Human-readable source descriptor such as a UDID or Wi-Fi address."""
 
 
-class AdvioPreviewStreamState(StrEnum):
-    """Lifecycle states rendered by the ADVIO preview section."""
-
-    IDLE = "idle"
-    CONNECTING = "connecting"
-    STREAMING = "streaming"
-    DISCONNECTED = "disconnected"
-    FAILED = "failed"
-
-
-class AdvioPreviewSnapshot(PacketSessionSnapshot):
+class AdvioPreviewSnapshot(PreviewSessionSnapshot):
     """Latest ADVIO loop-preview snapshot shared inside the app layer."""
-
-    state: AdvioPreviewStreamState = AdvioPreviewStreamState.IDLE
-    """Current lifecycle state of the loop preview."""
 
     sequence_id: int | None = None
     """Active ADVIO sequence identifier when a preview is selected."""
@@ -187,10 +176,9 @@ __all__ = [
     "AppState",
     "AdvioPageState",
     "AdvioPreviewSnapshot",
-    "AdvioPreviewStreamState",
     "MetricsPageState",
     "PipelinePageState",
+    "PreviewStreamState",
     "Record3DPageState",
     "Record3DStreamSnapshot",
-    "Record3DStreamState",
 ]

@@ -19,7 +19,7 @@ from ..live_session import (
     render_live_packet_tabs,
     render_live_session_shell,
 )
-from ..models import Record3DStreamSnapshot, Record3DStreamState
+from ..models import PreviewStreamState, Record3DStreamSnapshot
 from ..record3d_controller import Record3DPageAction, handle_record3d_page_action, sync_record3d_running_state
 from ..record3d_view_utils import build_record3d_frame_details, record3d_stream_hint
 from ..ui import render_page_intro
@@ -185,13 +185,13 @@ def _render_status_notice(snapshot: Record3DStreamSnapshot) -> None:
         st.error(snapshot.error_message)
         return
     notice, message = {
-        Record3DStreamState.IDLE: (st.info, "Choose a source and start a stream to preview live Record3D data."),
-        Record3DStreamState.CONNECTING: (st.info, "Connecting to Record3D and waiting for the first frame."),
-        Record3DStreamState.STREAMING: (st.success, "Streaming live packets into the workbench."),
-        Record3DStreamState.DISCONNECTED: (
+        PreviewStreamState.IDLE: (st.info, "Choose a source and start a stream to preview live Record3D data."),
+        PreviewStreamState.CONNECTING: (st.info, "Connecting to Record3D and waiting for the first frame."),
+        PreviewStreamState.STREAMING: (st.success, "Streaming live packets into the workbench."),
+        PreviewStreamState.DISCONNECTED: (
             st.warning,
             "The Record3D stream disconnected before a new frame could be displayed.",
         ),
-        Record3DStreamState.FAILED: (st.warning, "The stream ended unexpectedly."),
+        PreviewStreamState.FAILED: (st.warning, "The stream ended unexpectedly."),
     }[snapshot.state]
     notice(message)

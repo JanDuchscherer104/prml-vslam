@@ -8,7 +8,7 @@ here. The package only owns the smallest local surface needed by the rest of
 the codebase:
 
 - typed method selection enums
-- config objects that still build runtimes via `setup_target()`
+- one typed mock config that still builds runtimes via `setup_target()`
 - deterministic mock runtimes that materialize placeholder pipeline artifacts
 - local path bookkeeping for mock installs
 

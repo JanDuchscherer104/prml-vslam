@@ -12,11 +12,6 @@ class MethodId(StrEnum):
     MSTR = "mstr"
 
     @property
-    def artifact_slug(self) -> str:
-        """Return the filesystem token used for method-owned artifact roots."""
-        return self.value
-
-    @property
     def display_name(self) -> str:
         """Return the upstream method name shown to users."""
         match self:

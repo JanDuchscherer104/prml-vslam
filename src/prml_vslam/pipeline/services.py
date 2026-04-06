@@ -41,7 +41,7 @@ class RunPlannerService:
         config = path_config or PathConfig()
         run_paths = config.plan_run_paths(
             experiment_name=request.experiment_name,
-            method_slug=request.slam.method.artifact_slug,
+            method_slug=request.slam.method.value,
             output_dir=request.output_dir,
         )
         return RunPlan(

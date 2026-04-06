@@ -27,10 +27,7 @@ class Record3DTransportId(StrEnum):
     @property
     def label(self) -> str:
         """Return the user-facing transport label."""
-        return {
-            Record3DTransportId.USB: "USB",
-            Record3DTransportId.WIFI: "Wi-Fi Preview",
-        }[self]
+        return "Wi-Fi Preview" if self is Record3DTransportId.WIFI else self.value.upper()
 
 
 class Record3DDeviceType(IntEnum):

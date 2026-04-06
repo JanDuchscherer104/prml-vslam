@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
-from prml_vslam.methods import MethodId, MSTRMethodConfig
+from prml_vslam.methods import MethodId, MockMethodConfig
 from prml_vslam.methods.mock_vslam import MockSlamBackendConfig
 from prml_vslam.pipeline.contracts import SequenceManifest, SlamConfig
 from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
@@ -43,7 +43,7 @@ def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> N
     input_dir = tmp_path / "sequence"
     input_dir.mkdir()
 
-    runtime = MSTRMethodConfig().setup_target()
+    runtime = MockMethodConfig(method_id=MethodId.MSTR).setup_target()
     assert runtime is not None
 
     result = runtime.infer(
