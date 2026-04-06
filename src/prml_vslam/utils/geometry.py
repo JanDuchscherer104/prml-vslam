@@ -13,7 +13,7 @@ from evo.tools import file_interface
 from pydantic import ConfigDict
 from pytransform3d.transformations import transform, vectors_to_points
 
-from prml_vslam.interfaces import CameraIntrinsics, SE3Pose, TimedPoseTrajectory
+from prml_vslam.interfaces import CameraIntrinsics, SE3Pose
 
 from .base_data import BaseData
 
@@ -83,25 +83,16 @@ def write_tum_trajectory(
     return trajectory_path.resolve()
 
 
-def load_tum_trajectory(path: Path) -> TimedPoseTrajectory:
-    """Load a TUM trajectory file into the canonical timed trajectory model."""
+def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
+    """Load a TUM trajectory file into an `evo` pose trajectory."""
     if path.stat().st_size == 0:
-        return TimedPoseTrajectory(
-            timestamps_s=np.empty((0,), dtype=np.float64),
-            positions_xyz=np.empty((0, 3), dtype=np.float64),
-            quaternions_xyzw=np.empty((0, 4), dtype=np.float64),
-        )
+        raise ValueError(f"TUM trajectory file '{path}' is empty.")
 
     trajectory = file_interface.read_tum_trajectory_file(path)
-    quaternions_xyzw = np.roll(np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64), -1, axis=1)
-    quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
-    if np.any(quaternion_norms == 0.0):
-        raise ValueError("TUM quaternions must be non-zero.")
-    return TimedPoseTrajectory(
-        timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
-        positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
-        quaternions_xyzw=quaternions_xyzw / quaternion_norms,
-    )
+    valid, details = trajectory.check()
+    if not valid:
+        raise ValueError(f"Invalid TUM trajectory '{path}': {details}")
+    return trajectory
 
 
 def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:

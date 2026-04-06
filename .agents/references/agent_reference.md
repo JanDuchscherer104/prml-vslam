@@ -57,7 +57,7 @@
 - `prml_vslam.app.models` owns Streamlit-only state.
 - `services.py` modules own implementations only.
 - Minimal public surface to preserve:
-  `CameraIntrinsics`, `SE3Pose`, `TimedPoseTrajectory`, `FramePacket`,
+  `CameraIntrinsics`, `SE3Pose`, `FramePacket`,
   `RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`,
   `RunSummary`, `SlamBackend`, `SlamSession`, `MethodId`
 - ViSTA-SLAM and MASt3R-SLAM wrappers should normalize into pipeline-owned

@@ -179,14 +179,10 @@ def _load_trajectory_input(path: Path, name: str) -> tuple[TrajectorySeries, Pos
     return (
         TrajectorySeries(
             name=name,
-            timestamps_s=trajectory.timestamps_s,
+            timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
             positions_xyz=trajectory.positions_xyz,
         ),
-        PoseTrajectory3D(
-            positions_xyz=trajectory.positions_xyz,
-            orientations_quat_wxyz=np.roll(trajectory.quaternions_xyzw, 1, axis=1),
-            timestamps=trajectory.timestamps_s,
-        ),
+        trajectory,
     )
 
 

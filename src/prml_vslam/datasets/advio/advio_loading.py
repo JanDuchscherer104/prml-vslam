@@ -6,11 +6,12 @@ from typing import Any
 
 import numpy as np
 import yaml
+from evo.core.trajectory import PoseTrajectory3D
+from evo.tools import file_interface
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CameraIntrinsics, SE3Pose, TimedPoseTrajectory
+from prml_vslam.interfaces import CameraIntrinsics
 from prml_vslam.utils import BaseData
-from prml_vslam.utils.geometry import write_tum_trajectory
 
 _CSV_FLOAT_PATTERN = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 _NUMERIC_CSV_ROW_PATTERN = re.compile(
@@ -33,17 +34,21 @@ def load_advio_frame_timestamps_ns(path: Path) -> NDArray[np.int64]:
     return np.rint(rows[:, 0] * 1e9).astype(np.int64, copy=False)
 
 
-def load_advio_trajectory(path: Path) -> TimedPoseTrajectory:
-    """Load an ADVIO trajectory CSV into dense NumPy arrays."""
+def load_advio_trajectory(path: Path) -> PoseTrajectory3D:
+    """Load an ADVIO trajectory CSV into an `evo` pose trajectory."""
     rows = _read_numeric_csv(path, min_columns=8)
     if rows.ndim != 2 or rows.shape[1] < 8:
         msg = f"Expected at least 8 columns in ADVIO pose CSV: {path}"
         raise ValueError(msg)
-    return TimedPoseTrajectory(
-        timestamps_s=rows[:, 0].astype(np.float64, copy=True),
+    trajectory = PoseTrajectory3D(
         positions_xyz=rows[:, 1:4].astype(np.float64, copy=True),
-        quaternions_xyzw=rows[:, [5, 6, 7, 4]].astype(np.float64, copy=True),
+        orientations_quat_wxyz=rows[:, 4:8].astype(np.float64, copy=True),
+        timestamps=rows[:, 0].astype(np.float64, copy=True),
     )
+    valid, details = trajectory.check()
+    if not valid:
+        raise ValueError(f"Invalid ADVIO trajectory '{path}': {details}")
+    return trajectory
 
 
 def load_advio_calibration(path: Path) -> AdvioCalibration:
@@ -74,19 +79,9 @@ def load_advio_calibration(path: Path) -> AdvioCalibration:
 def write_advio_pose_tum(source_path: Path, target_path: Path) -> Path:
     """Convert an ADVIO pose CSV into a TUM trajectory file."""
     trajectory = load_advio_trajectory(source_path)
-    poses = [
-        SE3Pose.from_quaternion_translation(quaternion, position)
-        for position, quaternion in zip(
-            trajectory.positions_xyz,
-            trajectory.quaternions_xyzw,
-            strict=True,
-        )
-    ]
-    return write_tum_trajectory(
-        target_path,
-        poses,
-        trajectory.timestamps_s.tolist(),
-    )
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    file_interface.write_tum_trajectory_file(target_path, trajectory)
+    return target_path.resolve()
 
 
 def _read_numeric_csv(path: Path, *, min_columns: int) -> NDArray[np.float64]:

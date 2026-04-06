@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.interfaces import TimedPoseTrajectory
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
@@ -74,9 +74,9 @@ class AdvioOfflineSample(BaseData):
     paths: AdvioSequencePaths
     frame_timestamps_ns: NDArray[np.int64]
     calibration: advio_loading.AdvioCalibration
-    ground_truth: TimedPoseTrajectory
-    arcore: TimedPoseTrajectory
-    arkit: TimedPoseTrajectory | None = None
+    ground_truth: PoseTrajectory3D
+    arcore: PoseTrajectory3D
+    arkit: PoseTrajectory3D | None = None
 
     @property
     def duration_s(self) -> float:

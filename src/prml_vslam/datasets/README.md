@@ -48,7 +48,7 @@ sample = sequence.load_offline_sample()
 
 print(sample.sequence_name)
 print(sample.calibration.intrinsics)
-print(sample.ground_truth.timestamps_s.shape)
+print(sample.ground_truth.timestamps.shape)
 ```
 
 Open a replay stream:
