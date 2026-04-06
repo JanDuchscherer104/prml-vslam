@@ -2,12 +2,12 @@
 
 from importlib import import_module
 
-__all__ = ["run_app"]
+__all__ = ["launch_app", "run_app"]
 
 
 def __getattr__(name: str) -> object:
-    if name == "run_app":
-        return import_module(".bootstrap", __name__).run_app
+    if name in {"launch_app", "run_app"}:
+        return getattr(import_module(".bootstrap", __name__), name)
     if name in {"bootstrap", "plotting"}:
         return import_module(f".{name}", __name__)
 

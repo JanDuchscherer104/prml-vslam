@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -72,6 +74,25 @@ def run_app() -> None:
     page.run()
 
 
+def launch_app() -> None:
+    """Launch the Streamlit workbench via the Streamlit CLI runner.
+
+    This is the console-script entrypoint for ``prml-vslam-app``. It locates
+    ``streamlit_app.py`` at the repository root and delegates to the Streamlit
+    server the same way ``uv run streamlit run streamlit_app.py`` does.
+    """
+    from prml_vslam.utils.path_config import PROJECT_ROOT
+
+    app_script = PROJECT_ROOT / "streamlit_app.py"
+    if not app_script.exists():
+        raise FileNotFoundError(
+            f"streamlit_app.py not found at {app_script!r}. "
+            "Run `uv run streamlit run streamlit_app.py` from the repository root instead."
+        )
+    result = subprocess.run([sys.executable, "-m", "streamlit", "run", str(app_script)], check=False)
+    sys.exit(result.returncode)
+
+
 def _render_sidebar_brand() -> None:
     with st.sidebar:
         st.caption("PRML VSLAM")
@@ -121,4 +142,4 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
         context.run_service.stop_run()
 
 
-__all__ = ["AppContext", "build_context", "run_app"]
+__all__ = ["AppContext", "build_context", "launch_app", "run_app"]
