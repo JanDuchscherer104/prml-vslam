@@ -11,12 +11,27 @@ on:
     #   - "src/**/*.jsx"
 
 jobs:
+  detect-workflow-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      workflow_files: ${{ steps.filter.outputs.workflow_files }}
+    steps:
+      - name: Detect workflow file changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            workflow_files:
+              - '.github/workflows/**'
+
   claude-review:
+    needs: detect-workflow-changes
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
     #   github.event.pull_request.user.login == 'new-developer' ||
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    if: needs.detect-workflow-changes.outputs.workflow_files != 'true'
 
     runs-on: ubuntu-latest
     permissions:
@@ -41,4 +56,3 @@ jobs:
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
-
