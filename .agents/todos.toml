@@ -1,0 +1,158 @@
+[[todos]]
+id = "TODO-0031"
+title = "Split trajectory-evaluation enablement from baseline selection"
+status = "pending"
+priority = "high"
+issue_ids = [
+    "ISSUE-0030",
+]
+loc_min = 35
+loc_expected = 85
+loc_max = 170
+files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/main.py",
+    "README.md",
+    "tests/test_pipeline.py",
+    "tests/test_main.py",
+]
+acceptance = [
+    "The public pipeline config no longer uses `compare_to_arcore` as the switch for whether trajectory evaluation exists.",
+    "The planner stage names, CLI flags, and README examples describe the same semantics as the code.",
+    "ARCore remains an optional baseline choice instead of the meaning of trajectory evaluation itself.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/main.py",
+    "README.md",
+    "docs/Questions.md",
+]
+
+[[todos]]
+id = "TODO-0032"
+title = "Extend the evo adapter with explicit alignment and drift evaluation"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0030",
+]
+loc_min = 45
+loc_expected = 115
+loc_max = 240
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/app/pages/metrics.py",
+    "src/prml_vslam/eval/README.md",
+]
+acceptance = [
+    "Persisted trajectory metrics include explicit evaluation semantics such as alignment mode and metric type.",
+    "The repo can compute drift-oriented RPE alongside or instead of translation-only APE through the existing thin evo seam.",
+    "The metrics page continues to keep evaluation explicit and can render the richer persisted result shape.",
+]
+sources = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/app/pages/metrics.py",
+    "README.md",
+]
+
+[[todos]]
+id = "TODO-0033"
+title = "Replace generic packet metadata and free-string live-source ids with typed provenance"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0031",
+]
+loc_min = 40
+loc_expected = 95
+loc_max = 190
+files = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "tests/test_app.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "`FramePacket` no longer exposes a generic provenance `metadata` dict on the shared hot path.",
+    "Replay, dataset, rotation, and transport provenance remain available through typed fields or dedicated runtime-event data.",
+    "`LiveSourceSpec` stops depending on a free-form source string for identifiers that already have a typed enum or source contract.",
+]
+sources = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts.py",
+]
+
+[[todos]]
+id = "TODO-0034"
+title = "Quarantine the Record3D Wi-Fi preview stack behind an experimental boundary"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0032",
+]
+loc_min = 25
+loc_expected = 65
+loc_max = 140
+files = [
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/io/wifi_packets.py",
+    "src/prml_vslam/io/README.md",
+    "README.md",
+]
+acceptance = [
+    "The optional Wi-Fi preview code is documented and structured as experimental or preview-only rather than a first-class ingestion surface.",
+    "Core pipeline and app contracts do not depend on Wi-Fi-specific transport behavior beyond an optional factory boundary.",
+    "The README and package docs make the reduced support level and intended scope unambiguous.",
+]
+sources = [
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/io/wifi_packets.py",
+    "src/prml_vslam/io/README.md",
+    "README.md",
+]
+
+[[todos]]
+id = "TODO-0035"
+title = "Re-triage partially addressed resolved records against the current code"
+status = "pending"
+priority = "low"
+issue_ids = [
+    "ISSUE-0033",
+]
+loc_min = 10
+loc_expected = 25
+loc_max = 60
+files = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+acceptance = [
+    "Resolved archive entries that are only partially addressed are either amended with narrower resolution notes or reopened as active issues.",
+    "The active backlog and resolved archive no longer imply that today’s still-open findings are fully closed.",
+    "`make agents-db` reflects the intended active work after the re-triage pass.",
+]
+sources = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+
+[meta]
+schema_version = 2
+repo = "prml-vslam"
+updated_on = "2026-04-06"
+source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review, a later narrative-review relevance triage, and the 2026-04-06 merged re-review of the surviving PR15 findings."
+active_collection = "todos"
+loc_unit = "lines"
