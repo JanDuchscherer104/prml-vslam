@@ -10,8 +10,6 @@ from pydantic import Field
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.methods import MethodId
-from prml_vslam.pipeline.contracts import PipelineMode
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.packet_session import PacketSessionSnapshot
 
@@ -139,14 +137,8 @@ class Record3DPageState(BaseData):
 class PipelinePageState(BaseData):
     """Persisted selector state for the interactive Pipeline demo."""
 
-    sequence_id: int | None = None
-    """Selected ADVIO sequence shown in the demo runner."""
-
-    mode: PipelineMode = PipelineMode.OFFLINE
-    """Whether the demo should run one pass or keep looping."""
-
-    method: MethodId = MethodId.VISTA
-    """Selected mock SLAM backend label."""
+    config_path: Path | None = None
+    """Selected pipeline request TOML used to instantiate the demo run."""
 
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected pose source injected into the ADVIO replay packets."""

@@ -24,7 +24,7 @@ from prml_vslam.pipeline.contracts import (
     SlamConfig,
     VideoSourceSpec,
 )
-from prml_vslam.pipeline.demo import build_advio_demo_request
+from prml_vslam.pipeline.demo import build_advio_demo_request, load_run_request_toml, persist_advio_demo_request
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.console import Console
@@ -125,13 +125,67 @@ def plan_run_config(
     """Build a typed benchmark run plan from a TOML config file."""
     path_config = get_path_config()
     try:
-        resolved_config_path = path_config.resolve_toml_path(config_path, must_exist=True)
-        request = RunRequest.from_toml(resolved_config_path)
+        request = load_run_request_toml(path_config=path_config, config_path=config_path)
         plan = request.build(path_config)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
     console.plog(plan.model_dump(mode="json"))
+
+
+@app.command("write-demo-config")
+def write_demo_config(
+    sequence_id: Annotated[
+        int | None,
+        typer.Option(
+            "--sequence",
+            help="ADVIO sequence id to use. Defaults to the first replay-ready local scene.",
+        ),
+    ] = None,
+    mode: Annotated[
+        PipelineMode,
+        typer.Option(
+            "--mode",
+            help="Persist an offline or streaming ADVIO demo request.",
+            case_sensitive=False,
+        ),
+    ] = PipelineMode.OFFLINE,
+    method: Annotated[
+        MethodId,
+        typer.Option(
+            "--method",
+            help="Method id stored in the persisted demo request.",
+            case_sensitive=False,
+        ),
+    ] = MethodId.VISTA,
+    config_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--config-path",
+            help="Optional output TOML path. Bare filenames resolve under .configs/pipelines/.",
+        ),
+    ] = None,
+) -> None:
+    """Persist the canonical ADVIO demo request as TOML."""
+    path_config = get_path_config()
+    advio_service = AdvioDatasetService(path_config)
+    resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
+    scene = advio_service.scene(resolved_sequence_id)
+    resolved_config_path = persist_advio_demo_request(
+        path_config=path_config,
+        sequence_id=scene.sequence_slug,
+        mode=mode,
+        method=method,
+        config_path=config_path,
+    )
+    console.plog(
+        {
+            "config_path": str(resolved_config_path),
+            "sequence_id": scene.sequence_slug,
+            "mode": mode.value,
+            "method": method.value,
+        }
+    )
 
 
 @app.command("record3d-devices")
