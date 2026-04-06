@@ -7,8 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
-from prml_vslam.methods import MethodId, MockMethodConfig
-from prml_vslam.methods.mock_vslam import MockSlamBackendConfig
+from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.pipeline.contracts import SequenceManifest, SlamConfig
 from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
 
@@ -39,17 +38,14 @@ cameras:
     )
 
 
-def test_method_mock_infer_materializes_placeholder_outputs(tmp_path: Path) -> None:
-    input_dir = tmp_path / "sequence"
-    input_dir.mkdir()
+def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tmp_path: Path) -> None:
+    backend = MockSlamBackendConfig(method_id=MethodId.MSTR).setup_target()
+    assert backend is not None
 
-    runtime = MockMethodConfig(method_id=MethodId.MSTR).setup_target()
-    assert runtime is not None
-
-    result = runtime.infer(
-        input_path=input_dir,
-        artifact_root=tmp_path / "artifacts" / "demo" / "mstr",
-        execute=True,
+    result = backend.run_sequence(
+        SequenceManifest(sequence_id="demo-sequence"),
+        SlamConfig(method=MethodId.MSTR),
+        tmp_path / "artifacts" / "demo" / "mstr",
     )
 
     assert result.trajectory_tum.path.exists()

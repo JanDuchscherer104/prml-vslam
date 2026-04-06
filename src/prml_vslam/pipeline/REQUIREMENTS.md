@@ -44,6 +44,8 @@ not own pipeline semantics or architecture decisions.
   Streamlit `Pipeline` page uses ADVIO replay plus `MockSlamBackend` to
   exercise the shared contracts. That demo is intentionally not the final
   reusable runner API for `prml_vslam.pipeline`.
+- Shared source-provider seams live in `prml_vslam.protocols.source`, and SLAM
+  backend/session seams live in `prml_vslam.methods.protocols`.
 - The repo already has stable top-level seams for `app`, `io`, `methods`,
   `eval`, `pipeline`, and `utils`. The target pipeline architecture must stay
   close to that package layout.
@@ -61,11 +63,8 @@ not own pipeline semantics or architecture decisions.
   not a general graph engine.
 - Stage selection must be driven by typed config and ordered plans, not by a
   stateful graph core.
+- All stages must satisfy explicit typed data contracts and implement stage-specific interfaces.
 - The architecture must explicitly reject:
-  - Dagster
-  - Burr
-  - a generic stateful graph core
-  - an async-first core
   - a generic untyped envelope carrying `dict[str, Any]`
 - The architecture must explicitly require:
   - typed Pydantic contracts at stage boundaries
@@ -84,7 +83,8 @@ not own pipeline semantics or architecture decisions.
 - `pipeline/` owns orchestration only.
 - `io/` owns capture, import, readers, live ingress adapters, and input
   normalization helpers.
-- `methods/` owns backend wrappers and method-specific integrations.
+- `methods/` owns backend wrappers, method-specific integrations, and SLAM
+  backend/session protocol definitions.
 - `eval/` owns trajectory, cloud, and efficiency evaluation logic.
 - `app/` owns Streamlit UI, page state, and rendering only.
 - `utils/` owns shared infrastructure such as config patterns, logging, and

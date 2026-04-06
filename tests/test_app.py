@@ -34,6 +34,7 @@ from prml_vslam.eval.contracts import SelectionSnapshot
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.methods import MethodId
+from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig
 
@@ -47,8 +48,8 @@ def _write_tum(path: Path, rows: list[tuple[float, float, float, float]]) -> Non
 
 
 def _build_path_config(tmp_path: Path) -> PathConfig:
-    sequence_root = tmp_path / "data" / "advio" / "advio-15" / "ground-truth"
-    run_root = tmp_path / "artifacts" / "advio-15" / "vista" / "slam"
+    sequence_root = tmp_path / ".data" / "advio" / "advio-15" / "ground-truth"
+    run_root = tmp_path / ".artifacts" / "advio-15" / "vista" / "slam"
     _write_tum(
         sequence_root / "ground_truth.tum",
         [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0), (0.2, 2.0, 1.0, 0.0)],
@@ -59,7 +60,7 @@ def _build_path_config(tmp_path: Path) -> PathConfig:
     )
     return PathConfig(
         root=tmp_path,
-        artifacts_dir=tmp_path / "artifacts",
+        artifacts_dir=tmp_path / ".artifacts",
         captures_dir=tmp_path / "captures",
     )
 
@@ -185,8 +186,8 @@ class FakeAdvioRuntime:
         )
 
 
-class FakePipelineRuntime:
-    """Minimal pipeline runtime stand-in for direct page-render and navigation tests."""
+class FakeRunService:
+    """Minimal run-service stand-in for direct page-render and navigation tests."""
 
     def __init__(self, snapshot: PipelineSessionSnapshot | None = None) -> None:
         self._snapshot = snapshot or PipelineSessionSnapshot()
@@ -196,11 +197,11 @@ class FakePipelineRuntime:
     def snapshot(self) -> PipelineSessionSnapshot:
         return self._snapshot
 
-    def stop(self) -> None:
+    def stop_run(self) -> None:
         self.stop_calls += 1
         self._snapshot = PipelineSessionSnapshot(state=PipelineSessionState.STOPPED)
 
-    def start(self, **kwargs: object) -> None:
+    def start_run(self, **kwargs: object) -> None:
         self.start_calls.append(kwargs)
         self._snapshot = PipelineSessionSnapshot(state=PipelineSessionState.CONNECTING)
 
@@ -340,14 +341,14 @@ def test_metrics_service_discovers_and_persists_evo_results(tmp_path: Path) -> N
 
 
 def test_metrics_service_fails_when_timestamps_do_not_match(tmp_path: Path) -> None:
-    reference_path = tmp_path / "data" / "advio" / "advio-15" / "ground-truth" / "ground_truth.tum"
-    estimate_path = tmp_path / "artifacts" / "advio-15" / "vista" / "slam" / "trajectory.tum"
+    reference_path = tmp_path / ".data" / "advio" / "advio-15" / "ground-truth" / "ground_truth.tum"
+    estimate_path = tmp_path / ".artifacts" / "advio-15" / "vista" / "slam" / "trajectory.tum"
     _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0)])
     _write_tum(estimate_path, [(10.0, 0.0, 0.0, 0.0), (10.1, 1.0, 0.0, 0.0)])
 
     path_config = PathConfig(
         root=tmp_path,
-        artifacts_dir=tmp_path / "artifacts",
+        artifacts_dir=tmp_path / ".artifacts",
         captures_dir=tmp_path / "captures",
     )
     service = TrajectoryEvaluationService(path_config)
@@ -430,11 +431,13 @@ def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_
         def build_sequence_manifest(self, **_: object) -> object:
             raise AssertionError("Pipeline page should not materialize the sequence manifest directly.")
 
-    runtime = FakePipelineRuntime()
+    runtime = FakeRunService()
     context = SimpleNamespace(
-        path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts", captures_dir=tmp_path / "captures"),
+        path_config=PathConfig(
+            root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures"
+        ),
         advio_service=AdvioServiceSpy(),
-        pipeline_runtime=runtime,
+        run_service=runtime,
         state=AppState(),
         store=FakeStore(),
     )
@@ -461,6 +464,113 @@ def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_
     assert request.evaluation.compare_to_arcore is False
     assert request.evaluation.evaluate_cloud is False
     assert request.evaluation.evaluate_efficiency is False
+
+
+def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    class AdvioServiceSpy:
+        def local_scene_statuses(self) -> list[SimpleNamespace]:
+            return [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+
+        def scene(self, sequence_id: int) -> SimpleNamespace:
+            return SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Mall 01")
+
+    seen_labels: list[str] = []
+    context = SimpleNamespace(
+        advio_service=AdvioServiceSpy(),
+        run_service=FakeRunService(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING)),
+        state=AppState(),
+        store=FakeStore(),
+    )
+
+    def fake_selectbox(label: str, *args, **kwargs):
+        return {
+            "ADVIO Scene": 15,
+            "Mode": pipeline_page.PipelineMode.OFFLINE,
+            "Mock Method": MethodId.VISTA,
+            "Pose Source": AdvioPoseSource.GROUND_TRUTH,
+        }[label]
+
+    def fake_button(label: str, *args, **kwargs) -> bool:
+        seen_labels.append(label)
+        return False
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page, "render_page_intro", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "container", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(pipeline_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "selectbox", fake_selectbox)
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "button", fake_button)
+    monkeypatch.setattr(pipeline_page, "_handle_pipeline_page_action", lambda **kwargs: None)
+    monkeypatch.setattr(pipeline_page, "render_live_fragment", lambda *args, **kwargs: None)
+
+    pipeline_page.render(context)
+    monkeypatch.undo()
+
+    assert seen_labels == ["Stop run"]
+
+
+def test_pipeline_page_reruns_after_successful_start_action() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    rerun_calls: list[bool] = []
+    context = SimpleNamespace(
+        advio_service=SimpleNamespace(
+            local_scene_statuses=lambda: [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+        ),
+        run_service=FakeRunService(),
+        state=AppState(),
+        store=FakeStore(),
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page, "render_page_intro", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "container", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(pipeline_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline_page.st,
+        "selectbox",
+        lambda label, *args, **kwargs: {
+            "ADVIO Scene": 15,
+            "Mode": pipeline_page.PipelineMode.OFFLINE,
+            "Mock Method": MethodId.VISTA,
+            "Pose Source": AdvioPoseSource.GROUND_TRUTH,
+        }[label],
+    )
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        pipeline_page.st,
+        "button",
+        lambda label, *args, **kwargs: label == "Start run",
+    )
+    monkeypatch.setattr(pipeline_page, "_handle_pipeline_page_action", lambda **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "rerun", lambda: rerun_calls.append(True))
+    monkeypatch.setattr(pipeline_page, "render_live_fragment", lambda *args, **kwargs: None)
+
+    pipeline_page.render(context)
+    monkeypatch.undo()
+
+    assert rerun_calls == [True]
 
 
 def test_advio_download_form_returns_typed_request_model(
@@ -626,8 +736,103 @@ def test_advio_controller_handles_preview_start_and_stop() -> None:
     assert runtime.stop_calls == 1
 
 
+def test_advio_loop_preview_shows_only_stop_button_while_preview_is_running() -> None:
+    from prml_vslam.app.pages import advio as advio_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    seen_labels: list[str] = []
+    context = SimpleNamespace(
+        state=AppState(advio=AdvioPageState(preview_is_running=True)),
+        store=FakeStore(),
+        advio_service=SimpleNamespace(
+            scene=lambda sequence_id: SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Mall 01")
+        ),
+        advio_runtime=FakeAdvioRuntime(),
+    )
+    statuses = [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+
+    def fake_selectbox(label: str, *args, **kwargs):
+        return {
+            "Preview Scene": 15,
+            "Pose Source": AdvioPoseSource.GROUND_TRUTH,
+        }[label]
+
+    def fake_button(label: str, *args, **kwargs) -> bool:
+        seen_labels.append(label)
+        return False
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(advio_page.st, "container", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(advio_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "selectbox", fake_selectbox)
+    monkeypatch.setattr(advio_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(advio_page.st, "button", fake_button)
+    monkeypatch.setattr(advio_page, "handle_advio_preview_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page, "render_live_fragment", lambda *args, **kwargs: None)
+
+    advio_page._render_loop_preview(context, statuses)
+    monkeypatch.undo()
+
+    assert seen_labels == ["Stop preview"]
+
+
+def test_advio_loop_preview_reruns_after_successful_start_action() -> None:
+    from prml_vslam.app.pages import advio as advio_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    rerun_calls: list[bool] = []
+    context = SimpleNamespace(
+        state=AppState(),
+        store=FakeStore(),
+        advio_service=SimpleNamespace(
+            scene=lambda sequence_id: SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Mall 01")
+        ),
+        advio_runtime=FakeAdvioRuntime(),
+    )
+    statuses = [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+
+    def fake_selectbox(label: str, *args, **kwargs):
+        return {
+            "Preview Scene": 15,
+            "Pose Source": AdvioPoseSource.GROUND_TRUTH,
+        }[label]
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(advio_page.st, "container", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(advio_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "selectbox", fake_selectbox)
+    monkeypatch.setattr(advio_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        advio_page.st,
+        "button",
+        lambda label, *args, **kwargs: label == "Start preview",
+    )
+    monkeypatch.setattr(advio_page, "handle_advio_preview_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr(advio_page.st, "rerun", lambda: rerun_calls.append(True))
+    monkeypatch.setattr(advio_page, "render_live_fragment", lambda *args, **kwargs: None)
+
+    advio_page._render_loop_preview(context, statuses)
+    monkeypatch.undo()
+
+    assert rerun_calls == [True]
+
+
 def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) -> None:
-    dataset_root = tmp_path / "data" / "advio"
+    dataset_root = tmp_path / ".data" / "advio"
     sequence_dir = dataset_root / "advio-15" / "iphone"
     sequence_dir.mkdir(parents=True, exist_ok=True)
     (sequence_dir / "frames.mov").write_bytes(b"")
@@ -720,9 +925,7 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
     monkeypatch.setattr(record3d_page.st, "subheader", lambda *args, **kwargs: None)
     monkeypatch.setattr(record3d_page.st, "caption", lambda *args, **kwargs: None)
     monkeypatch.setattr(record3d_page.st, "segmented_control", lambda *args, **kwargs: Record3DTransportId.WIFI)
-    monkeypatch.setattr(record3d_page.st, "form", lambda *args, **kwargs: DummyContext())
     monkeypatch.setattr(record3d_page.st, "text_input", lambda *args, **kwargs: "192.168.159.24")
-    monkeypatch.setattr(record3d_page.st, "form_submit_button", lambda *args, **kwargs: False)
     monkeypatch.setattr(record3d_page.st, "button", lambda *args, **kwargs: False)
     monkeypatch.setattr(record3d_page.st, "expander", lambda *args, **kwargs: DummyContext())
     monkeypatch.setattr(record3d_page.st, "write", lambda *args, **kwargs: None)
@@ -734,7 +937,7 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
 
     assert runtime.start_usb_calls == 0
     assert runtime.start_wifi_preview_calls == 0
-    assert context.state.record3d.wifi_device_address == ""
+    assert context.state.record3d.wifi_device_address == "192.168.159.24"
     assert action.transport is Record3DTransportId.WIFI
     assert action.start_requested is False
     assert action.stop_requested is False
@@ -745,6 +948,132 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
     assert runtime.start_usb_calls == 0
     assert runtime.start_wifi_preview_calls == 0
     assert context.state.record3d.transport is Record3DTransportId.WIFI
+
+
+def test_record3d_wifi_start_button_enables_when_user_enters_address() -> None:
+    from prml_vslam.app.pages import record3d as record3d_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    captured_start_disabled: list[bool] = []
+    context = SimpleNamespace(
+        state=AppState(record3d=Record3DPageState(transport=Record3DTransportId.WIFI, is_running=False)),
+        store=FakeStore(),
+        record3d_runtime=FakeRecord3DRuntime(),
+    )
+
+    def fake_button(label: str, *args, **kwargs) -> bool:
+        if label == "Start stream":
+            captured_start_disabled.append(bool(kwargs.get("disabled", False)))
+        return False
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(record3d_page.st, "sidebar", DummyContext())
+    monkeypatch.setattr(record3d_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "segmented_control", lambda *args, **kwargs: Record3DTransportId.WIFI)
+    monkeypatch.setattr(record3d_page.st, "text_input", lambda *args, **kwargs: "192.168.159.24")
+    monkeypatch.setattr(record3d_page.st, "button", fake_button)
+    monkeypatch.setattr(record3d_page.st, "expander", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(record3d_page.st, "write", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "info", lambda *args, **kwargs: None)
+
+    action = record3d_page._render_sidebar_controls(context)
+    monkeypatch.undo()
+
+    assert captured_start_disabled == [False]
+    assert action.wifi_device_address == "192.168.159.24"
+    assert action.start_requested is False
+
+
+def test_record3d_sidebar_shows_only_stop_button_while_stream_is_running() -> None:
+    from prml_vslam.app.pages import record3d as record3d_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    seen_labels: list[str] = []
+    context = SimpleNamespace(
+        state=AppState(record3d=Record3DPageState(is_running=True)),
+        store=FakeStore(),
+        record3d_runtime=FakeRecord3DRuntime(),
+    )
+
+    def fake_button(label: str, *args, **kwargs) -> bool:
+        seen_labels.append(label)
+        return False
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        record3d_page,
+        "list_record3d_usb_devices",
+        lambda: [Record3DDevice(product_id=101, udid="device-101")],
+    )
+    monkeypatch.setattr(record3d_page.st, "sidebar", DummyContext())
+    monkeypatch.setattr(record3d_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "segmented_control", lambda *args, **kwargs: Record3DTransportId.USB)
+    monkeypatch.setattr(
+        record3d_page.st, "selectbox", lambda *args, **kwargs: Record3DDevice(product_id=101, udid="device-101")
+    )
+    monkeypatch.setattr(record3d_page.st, "button", fake_button)
+    monkeypatch.setattr(record3d_page.st, "expander", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(record3d_page.st, "write", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(record3d_page.st, "info", lambda *args, **kwargs: None)
+
+    action = record3d_page._render_sidebar_controls(context)
+    monkeypatch.undo()
+
+    assert seen_labels == ["Stop stream"]
+    assert action.start_requested is False
+    assert action.stop_requested is False
+
+
+def test_record3d_page_reruns_after_start_action() -> None:
+    from prml_vslam.app.pages import record3d as record3d_page
+    from prml_vslam.app.record3d_controller import Record3DPageAction
+
+    rerun_calls: list[bool] = []
+    context = SimpleNamespace(
+        state=AppState(record3d=Record3DPageState(is_running=False)),
+        store=FakeStore(),
+        record3d_runtime=FakeRecord3DRuntime(),
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        record3d_page,
+        "render_page_intro",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        record3d_page,
+        "_render_sidebar_controls",
+        lambda _context: Record3DPageAction(
+            transport=Record3DTransportId.USB,
+            start_requested=True,
+            usb_device_index=0,
+        ),
+    )
+    monkeypatch.setattr(record3d_page, "_render_live_snapshot", lambda _context: None)
+    monkeypatch.setattr(record3d_page.st, "rerun", lambda: rerun_calls.append(True))
+
+    record3d_page.render(context)
+    monkeypatch.undo()
+
+    assert rerun_calls == [True]
+    assert context.state.record3d.is_running is True
 
 
 def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector() -> None:
@@ -948,7 +1277,7 @@ def test_metrics_page_entry_stops_record3d_runtime_when_switching(monkeypatch: p
         store=FakeStore(),
         record3d_runtime=runtime,
         advio_runtime=FakeAdvioRuntime(),
-        pipeline_runtime=FakePipelineRuntime(),
+        run_service=FakeRunService(),
     )
     bootstrap._render_page_entry(context, AppPageId.METRICS, lambda ctx: None)
 
@@ -970,33 +1299,34 @@ def test_pipeline_page_entry_stops_advio_runtime_when_switching(monkeypatch: pyt
     assert runtime.stop_calls == 1
 
 
-def test_metrics_page_entry_keeps_pipeline_runtime_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
-    runtime = FakePipelineRuntime(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING))
+def test_metrics_page_entry_keeps_run_service_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = FakeRunService(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING))
     context = SimpleNamespace(
         state=AppState(),
         store=FakeStore(),
         record3d_runtime=FakeRecord3DRuntime(),
         advio_runtime=FakeAdvioRuntime(),
-        pipeline_runtime=runtime,
+        run_service=runtime,
     )
     bootstrap._render_page_entry(context, AppPageId.METRICS, lambda ctx: None)
 
     assert runtime.stop_calls == 0
 
 
-def test_session_state_store_round_trips_pipeline_session_service(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_session_state_store_round_trips_run_service(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_session_state: dict[str, object] = {}
     monkeypatch.setattr("prml_vslam.app.state.st.session_state", fake_session_state)
     store = SessionStateStore()
 
-    runtime = store.load_pipeline_runtime()
+    runtime = store.load_run_service()
 
     assert fake_session_state["_prml_vslam_pipeline_runtime"] is runtime
-    assert store.load_pipeline_runtime() is runtime
+    assert store.load_run_service() is runtime
+    assert isinstance(runtime, RunService)
 
 
 def test_normalize_grayscale_ignores_non_finite_depth_values() -> None:
-    from prml_vslam.app.image_utils import normalize_grayscale_image
+    from prml_vslam.utils.image_utils import normalize_grayscale_image
 
     image = np.array([[np.nan, 1.0], [np.inf, 3.0]], dtype=np.float32)
 

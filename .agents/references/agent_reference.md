@@ -46,10 +46,14 @@
 - Repo-wide shared datamodels live in `prml_vslam.interfaces.*`.
 - Repo-wide shared protocols live in `prml_vslam.protocols.*`.
   - `FramePacketStream` is owned by `prml_vslam.protocols.runtime`.
+  - shared source-provider seams such as `OfflineSequenceSource` and
+    `StreamingSequenceSource` are owned by `prml_vslam.protocols.source`.
 - Package DTOs, enums, configs, manifests, requests, and results belong in
   `<package>/contracts.py`.
 - Package-local `Protocol` seams belong in `<package>/protocols.py` when a
   package needs them.
+  - `prml_vslam.methods.protocols` owns SLAM behavior seams such as
+    `SlamBackend` and `SlamSession`.
 - `prml_vslam.app.models` owns Streamlit-only state.
 - `services.py` modules own implementations only.
 - Minimal public surface to preserve:

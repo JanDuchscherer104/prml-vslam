@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
+from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig
 
 from .advio_download import AdvioDownloadManager
@@ -23,10 +24,9 @@ from .advio_sequence import AdvioOfflineSample, AdvioSequence
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts import SequenceManifest
-    from prml_vslam.pipeline.protocols import StreamingSequenceSource
 
 
-class AdvioStreamingSequenceSource:
+class AdvioStreamingSequenceSource(StreamingSequenceSource):
     """ADVIO-backed streaming source used by pipeline-owned replay sessions."""
 
     def __init__(

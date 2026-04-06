@@ -25,6 +25,9 @@ prerequisites from the official project README:
   controls and previews.
 - The page can start the official USB packet source or an optional Python-side
   Wi-Fi preview receiver.
+- `io.record3d_source` also exposes a `Record3DStreamingSource` wrapper that
+  satisfies the shared `StreamingSequenceSource` protocol for pipeline-owned
+  live sessions.
 
 ### Wi-Fi Python Preview Receiver
 
@@ -50,7 +53,8 @@ uv run streamlit run streamlit_app.py
 
 ## Remaining Work
 
-- Feed the shared typed `FramePacket` stream into the benchmark pipeline
-  once the separate pipeline workspace is ready to consume live frames.
+- Integrate `LiveSourceSpec` resolution so pipeline orchestration can build the
+  appropriate Record3D streaming source directly from typed live-source
+  config.
 - Decide how much Wi-Fi-derived depth fidelity is sufficient for downstream
   consumers beyond visualization and diagnostics.

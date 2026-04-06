@@ -35,6 +35,41 @@ def render_live_fragment(*, run_every: float | None, render_body: Callable[[], N
     _render_fragment()
 
 
+def live_poll_interval(*, is_active: bool, interval_seconds: float) -> float | None:
+    """Return the fragment refresh interval only while the session is active."""
+    return interval_seconds if is_active else None
+
+
+def render_live_action_slot(
+    *,
+    is_active: bool,
+    start_label: str,
+    stop_label: str,
+    start_disabled: bool = False,
+    use_container_width: bool = True,
+) -> tuple[bool, bool]:
+    """Render one explicit start-or-stop button slot and return the requested action flags."""
+    if is_active:
+        return False, st.button(stop_label, use_container_width=use_container_width)
+    return (
+        st.button(
+            start_label,
+            type="primary",
+            disabled=start_disabled,
+            use_container_width=use_container_width,
+        ),
+        False,
+    )
+
+
+def rerun_after_action(*, action_requested: bool, error_message: str | None = None) -> bool:
+    """Trigger an immediate full-page rerun after a successful explicit action."""
+    if error_message is not None or not action_requested:
+        return False
+    st.rerun()
+    return True
+
+
 def render_live_session_shell(
     *,
     title: str | None,
@@ -130,10 +165,13 @@ def render_live_packet_tabs(
 
 __all__ = [
     "LiveMetric",
+    "live_poll_interval",
     "render_camera_intrinsics",
+    "render_live_action_slot",
     "render_live_fragment",
     "render_live_packet_tabs",
     "render_live_session_shell",
     "render_live_trajectory",
     "render_metric_row",
+    "rerun_after_action",
 ]

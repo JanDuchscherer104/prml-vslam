@@ -41,14 +41,16 @@ For each frame, the upstream Python bindings expose:
 
 ### Repo mapping
 
-In this repo, USB frames are normalized into `Record3DFrame` in [record3d.py](record3d.py):
+In this repo, the thin [record3d.py](record3d.py) adapter waits for the upstream
+callbacks and normalizes each frame directly into the shared `FramePacket`
+contract with:
 
 - `rgb`
 - `depth`
 - `confidence`
-- `intrinsic_matrix: CameraIntrinsics`
-- `camera_pose: SE3Pose`
-- `device_type`
+- `intrinsics: CameraIntrinsics`
+- `pose: SE3Pose`
+- `metadata["device_type"]`
 
 ### Implication
 
@@ -97,7 +99,7 @@ In the current official Wi-Fi/browser flow used by this repo, we do **not** have
 - IMU samples
 - confidence map
 - separate `inv_dist_std`
-- Python-side raw `Record3DFrame` objects
+- a richer USB-style Python bindings surface
 
 Our current viewer therefore:
 

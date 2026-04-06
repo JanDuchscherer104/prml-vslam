@@ -140,8 +140,11 @@ def compute_rri(
   - Use this namespace only for shared geometry, pose, trajectory, calibration, and live-frame datamodels that are imported across top-level packages.
 - Repo-wide shared protocols live in `prml_vslam.protocols.*`.
   - `FramePacketStream` is owned by `prml_vslam.protocols.runtime`.
+  - shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource`
+    are owned by `prml_vslam.protocols.source`.
 - Package-boundary DTOs, enums, config objects, manifests, requests, and results belong in `<package>/contracts.py`.
 - Package-local `Protocol` definitions belong in `<package>/protocols.py` when a package needs local behavior seams.
+  - `prml_vslam.methods.protocols` owns SLAM behavior seams such as `SlamBackend` and `SlamSession`.
 - Do not reintroduce mixed `interfaces.py` owner modules.
 - Streamlit-only state belongs in `prml_vslam.app.models`.
   - App models must not leak into `pipeline`, `datasets`, `methods`, `eval`, or `io`.
@@ -211,7 +214,7 @@ def compute_rri(
   - owns run planning, artifact layout, manifests, and repository-level execution contracts
   - does not own backend-specific method logic or benchmark metric definitions
 - `methods`
-  - owns only typed method interfaces and repository-local mock setups needed by the app and tests
+  - owns typed SLAM backend/session interfaces and repository-local mock setups needed by the app and tests
   - does not own real upstream orchestration, installation, or heavy visualization logic
 - `eval`
   - owns only typed evaluation interfaces and repository-local mock metric flows needed by the app and tests

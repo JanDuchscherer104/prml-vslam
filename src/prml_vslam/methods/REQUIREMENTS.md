@@ -19,13 +19,17 @@ switch between these backends through one typed selector.
 ## Core Requirements
 
 - Backend selection must use a shared `StrEnum`.
-- Each backend must be represented by a typed config object that follows the
-  repository `BaseConfig` factory pattern.
-- Each backend runtime must expose one shared inference surface.
-- Shared inference inputs must be repository-friendly and method-agnostic:
-  source capture path, artifact root, and frame stride.
-- Shared inference outputs must normalize method-specific artifacts into the
-  same downstream paths for trajectory and reconstructed geometry.
+- Shared SLAM behavior seams must live in `methods/protocols.py`.
+- Offline-capable backends must expose
+  `run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`.
+- Streaming-capable backends must expose
+  `start_session(cfg, artifact_root) -> SlamSession`.
+- Shared method inputs must be repository-friendly and method-agnostic:
+  `SequenceManifest`, `SlamConfig`, and `artifact_root`.
+- Shared outputs must normalize method-specific artifacts into the same
+  downstream paths for trajectory and reconstructed geometry.
+- Repository-local mock coverage should converge on one mock SLAM backend
+  surface, not parallel generic mock runtimes.
 
 ## Upstream Integration Requirements
 

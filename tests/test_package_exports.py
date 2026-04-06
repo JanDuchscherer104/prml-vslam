@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import prml_vslam.io as io_package
+import prml_vslam.methods as methods_package
 import prml_vslam.pipeline as pipeline_package
 
 
@@ -31,3 +32,11 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
     ]
     assert not hasattr(pipeline_package, "PipelineSessionService")
     assert not hasattr(pipeline_package, "PipelineSessionSnapshot")
+
+
+def test_methods_package_exports_only_mock_slam_surface() -> None:
+    assert methods_package.__all__ == [
+        "MethodId",
+        "MockSlamBackendConfig",
+    ]
+    assert not hasattr(methods_package, "MockMethodConfig")

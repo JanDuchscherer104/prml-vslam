@@ -1,8 +1,9 @@
 # PRML VSLAM Pipeline Guide
 
-This package owns the typed planning contracts, the currently implemented
-SLAM/runtime protocols, and the artifact-boundary definitions for the
-repository pipeline.
+This package owns the typed planning contracts and artifact-boundary
+definitions for the repository pipeline. Shared source-provider protocols live
+under `prml_vslam.protocols.*`, and SLAM backend/session protocols live under
+`prml_vslam.methods.protocols`.
 
 ## Current State
 
@@ -11,8 +12,6 @@ Today `prml_vslam.pipeline` is primarily a typed planning surface:
 - `contracts.py` defines the public request, plan, manifest, artifact, and
   streaming-update DTOs
 - `services.py` turns a `RunRequest` into an ordered `RunPlan`
-- `protocols.py` defines the currently implemented streaming-source and
-  SLAM-backend seams
 - `workspace.py` defines the capture-manifest helper models used while
   materializing sequences
 
@@ -67,15 +66,18 @@ The current runnable streaming demo is split across the following files.
 - [`../protocols/runtime.py`](../protocols/runtime.py)
   - defines `FramePacketStream`, the shared frame-stream protocol used by
     replay and streaming SLAM
+- [`../protocols/source.py`](../protocols/source.py)
+  - defines `OfflineSequenceSource` and `StreamingSequenceSource`, the shared
+    source-provider seams consumed by pipeline orchestration
+- [`../methods/protocols.py`](../methods/protocols.py)
+  - defines `OfflineSlamBackend`, `StreamingSlamBackend`, `SlamBackend`, and
+    `SlamSession`, the SLAM behavior seams consumed by the pipeline
 - [`../app/plotting/record3d.py`](../app/plotting/record3d.py)
   - builds the live trajectory figure shown on the Pipeline page
 - [`contracts.py`](./contracts.py)
   - defines `RunRequest`, `RunPlan`, `SequenceManifest`, `StageManifest`,
     `RunSummary`, `SlamUpdate`, and the typed artifact bundles that the
     demo exercises
-- [`protocols.py`](./protocols.py)
-  - defines `StreamingSequenceSource`, `SlamBackend`, and `SlamSession`, the
-    only currently implemented package-local behavior seams
 - [`services.py`](./services.py)
   - defines `RunPlannerService`, which turns the page-built `RunRequest` into
     the ordered `RunPlan`
@@ -174,15 +176,20 @@ them.
 
 ## Runtime Interfaces
 
-`protocols.py` defines the behavior seams that are actually consumed by the
-current planner and streaming session.
+The current planner and streaming session consume shared source-provider
+protocols from `prml_vslam.protocols.source` and SLAM behavior seams from
+`prml_vslam.methods.protocols`.
 
 ### SLAM
 
-- `SlamBackend`
+- `OfflineSlamBackend`
   - `run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`
+  - used for materialized-sequence execution
+- `StreamingSlamBackend`
   - `start_session(cfg, artifact_root) -> SlamSession`
-  - used when one backend supports both materialized-sequence and incremental execution
+  - used for incremental frame-driven execution
+- `SlamBackend`
+  - convenience combined protocol for backends that implement both execution modes
 - `SlamSession`
   - `step(frame) -> SlamUpdate`
   - `close() -> SlamArtifacts`
@@ -233,7 +240,7 @@ from prml_vslam.utils import PathConfig
 request = RunRequest(
     experiment_name="office-offline-vista",
     mode=PipelineMode.OFFLINE,
-    output_dir=Path("artifacts"),
+    output_dir=Path(".artifacts"),
     source=VideoSourceSpec(video_path=Path("captures/office.mp4"), frame_stride=2),
     slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=False),
     reference=ReferenceConfig(enabled=False),
@@ -260,7 +267,7 @@ from prml_vslam.pipeline.contracts import DatasetSourceSpec, SlamConfig
 
 request = RunRequest(
     experiment_name="advio-office-vista",
-    output_dir=Path("artifacts"),
+    output_dir=Path(".artifacts"),
     source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
     slam=SlamConfig(method=MethodId.VISTA),
 )
@@ -280,7 +287,7 @@ from prml_vslam.pipeline.contracts import LiveSourceSpec, SlamConfig
 request = RunRequest(
     experiment_name="record3d-live-vista",
     mode=PipelineMode.STREAMING,
-    output_dir=Path("artifacts"),
+    output_dir=Path(".artifacts"),
     source=LiveSourceSpec(source_id="record3d_usb", persist_capture=True),
     slam=SlamConfig(method=MethodId.VISTA),
 )

@@ -30,10 +30,13 @@ from ..advio_controller import (
 )
 from ..live_session import (
     LiveMetric,
+    live_poll_interval,
     render_camera_intrinsics,
+    render_live_action_slot,
     render_live_fragment,
     render_live_packet_tabs,
     render_live_session_shell,
+    rerun_after_action,
 )
 from ..models import AdvioPreviewSnapshot, PreviewStreamState
 from ..ui import render_page_intro
@@ -246,28 +249,26 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
             page_state.preview_sequence_id if page_state.preview_sequence_id in previewable_ids else previewable_ids[0]
         )
         pose_source = page_state.preview_pose_source
-        with st.form("advio_preview_form", border=False):
-            selected_id = st.selectbox(
-                "Preview Scene",
-                options=previewable_ids,
-                index=previewable_ids.index(selected_id),
-                format_func=lambda sequence_id: service.scene(sequence_id).display_name,
-            )
-            pose_source = st.selectbox(
-                "Pose Source",
-                options=list(AdvioPoseSource),
-                index=list(AdvioPoseSource).index(pose_source),
-                format_func=lambda item: item.label,
-            )
-            respect_video_rotation = st.toggle(
-                "Respect video rotation metadata", value=page_state.preview_respect_video_rotation
-            )
-            start_requested = st.form_submit_button(
-                "Start preview" if not page_state.preview_is_running else "Restart preview",
-                type="primary",
-                use_container_width=True,
-            )
-        stop_requested = st.button("Stop preview", disabled=not page_state.preview_is_running, use_container_width=True)
+        selected_id = st.selectbox(
+            "Preview Scene",
+            options=previewable_ids,
+            index=previewable_ids.index(selected_id),
+            format_func=lambda sequence_id: service.scene(sequence_id).display_name,
+        )
+        pose_source = st.selectbox(
+            "Pose Source",
+            options=list(AdvioPoseSource),
+            index=list(AdvioPoseSource).index(pose_source),
+            format_func=lambda item: item.label,
+        )
+        respect_video_rotation = st.toggle(
+            "Respect video rotation metadata", value=page_state.preview_respect_video_rotation
+        )
+        start_requested, stop_requested = render_live_action_slot(
+            is_active=page_state.preview_is_running,
+            start_label="Start preview",
+            stop_label="Stop preview",
+        )
         error_message = handle_advio_preview_action(
             context,
             AdvioPreviewFormData(
@@ -278,10 +279,15 @@ def _render_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStat
                 stop_requested=stop_requested,
             ),
         )
+        if rerun_after_action(
+            action_requested=start_requested or stop_requested,
+            error_message=error_message,
+        ):
+            return
         if error_message:
             st.error(error_message)
         render_live_fragment(
-            run_every=0.2 if context.state.advio.preview_is_running else None,
+            run_every=live_poll_interval(is_active=context.state.advio.preview_is_running, interval_seconds=0.2),
             render_body=lambda: _render_preview_snapshot(sync_advio_preview_state(context)),
         )
 

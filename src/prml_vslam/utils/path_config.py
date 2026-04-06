@@ -84,11 +84,11 @@ class PathConfig(BaseConfig):
 
     root: Path = Field(default_factory=lambda: PROJECT_ROOT)
     """Repository root used to anchor relative paths."""
-    artifacts_dir: Path = Field(default_factory=lambda: Path("artifacts"))
+    artifacts_dir: Path = Field(default_factory=lambda: Path(".artifacts"))
     """Default root directory for generated benchmark artifacts."""
     captures_dir: Path = Field(default_factory=lambda: Path("captures"))
     """Default root directory for input capture videos."""
-    data_dir: Path = Field(default_factory=lambda: Path("data"))
+    data_dir: Path = Field(default_factory=lambda: Path(".data"))
     """Root directory for repo-owned benchmark datasets."""
     logs_dir: Path = Field(default_factory=lambda: Path(".logs"))
     """Root directory for shared runtime state such as cloned upstream repos and checkpoints."""

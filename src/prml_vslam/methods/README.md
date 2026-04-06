@@ -8,8 +8,11 @@ here. The package only owns the smallest local surface needed by the rest of
 the codebase:
 
 - typed method selection enums
-- one typed mock config that still builds runtimes via `setup_target()`
-- deterministic mock runtimes that materialize placeholder pipeline artifacts
+- SLAM backend and session protocols in `methods/protocols.py`
+- one typed mock SLAM backend config that builds the repository-local runtime
+  via `setup_target()`
+- deterministic offline and streaming mock runtimes that materialize
+  pipeline-owned artifacts
 - local path bookkeeping for mock installs
 
 Use `BaseConfig` only for runtime setup/configuration objects. Prefer

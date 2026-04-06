@@ -218,7 +218,7 @@ class AdvioDatasetSummary(BaseData):
 class AdvioSequenceConfig(BaseConfig):
     """Config describing one local ADVIO sequence."""
 
-    dataset_root: Path = Path("data/advio")
+    dataset_root: Path = Path(".data/advio")
     """Directory that stores extracted ADVIO sequences and calibration files."""
 
     sequence_id: int = Field(ge=1, le=ADVIO_SEQUENCE_COUNT)

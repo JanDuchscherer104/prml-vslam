@@ -26,6 +26,9 @@ uv run --extra dev pytest -n auto
 make test PYTEST_ARGS="-n auto"
 ```
 
+Repo-owned datasets and generated benchmark outputs resolve under `.data/` and
+`.artifacts/` by default via `PathConfig`.
+
 ### Streamlit Workbench
 
 ```bash
@@ -56,7 +59,7 @@ through the CLI:
 ```toml
 experiment_name = "advio-office-offline-vista"
 mode = "offline"
-output_dir = "artifacts"
+output_dir = ".artifacts"
 
 [source]
 video_path = "captures/office-03.mp4"

@@ -18,21 +18,26 @@ from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
 from prml_vslam.interfaces import TimedPoseTrajectory
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunPlan
-from prml_vslam.pipeline.contracts import StageManifest
+from prml_vslam.pipeline.contracts import (
+    StageManifest,
+)
+from prml_vslam.pipeline.demo import build_advio_demo_request
 from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.plotting import build_evo_ape_colormap_figure
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import load_tum_trajectory
+from prml_vslam.utils.image_utils import normalize_grayscale_image
 
-from ..image_utils import normalize_grayscale_image
 from ..live_session import (
     LiveMetric,
+    live_poll_interval,
     render_camera_intrinsics,
+    render_live_action_slot,
     render_live_fragment,
     render_live_session_shell,
     render_live_trajectory,
+    rerun_after_action,
 )
-from ..pipeline_demo import start_advio_demo_run
 from ..state import save_model_updates
 from ..ui import render_page_intro
 
@@ -45,7 +50,7 @@ _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 
 
 class PipelinePageAction(BaseData):
-    """Typed action payload for the pipeline page form and buttons."""
+    """Typed action payload for the pipeline page controls."""
 
     sequence_id: int
     """Selected ADVIO sequence id."""
@@ -90,7 +95,7 @@ def render(context: AppContext) -> None:
     )
     statuses = context.advio_service.local_scene_statuses()
     previewable_ids = [status.scene.sequence_id for status in statuses if status.replay_ready]
-    snapshot = context.pipeline_runtime.snapshot()
+    snapshot = context.run_service.snapshot()
     is_active = snapshot.state in _ACTIVE_SESSION_STATES
     with st.container(border=True):
         st.subheader("ADVIO Replay Demo")
@@ -106,62 +111,66 @@ def render(context: AppContext) -> None:
         selected_sequence_id = (
             page_state.sequence_id if page_state.sequence_id in previewable_ids else previewable_ids[0]
         )
-        with st.form("pipeline_demo_form", border=False):
-            selected_sequence_id = st.selectbox(
-                "ADVIO Scene",
-                options=previewable_ids,
-                index=previewable_ids.index(selected_sequence_id),
-                format_func=lambda sequence_id: context.advio_service.scene(sequence_id).display_name,
+        selected_sequence_id = st.selectbox(
+            "ADVIO Scene",
+            options=previewable_ids,
+            index=previewable_ids.index(selected_sequence_id),
+            format_func=lambda sequence_id: context.advio_service.scene(sequence_id).display_name,
+        )
+        left, right = st.columns(2, gap="large")
+        with left:
+            mode = st.selectbox(
+                "Mode",
+                options=list(PipelineMode),
+                index=list(PipelineMode).index(page_state.mode),
+                format_func=lambda item: item.label,
             )
-            left, right = st.columns(2, gap="large")
-            with left:
-                mode = st.selectbox(
-                    "Mode",
-                    options=list(PipelineMode),
-                    index=list(PipelineMode).index(page_state.mode),
-                    format_func=lambda item: item.label,
-                )
-                method = st.selectbox(
-                    "Mock Method",
-                    options=list(MethodId),
-                    index=list(MethodId).index(page_state.method),
-                    format_func=lambda item: item.display_name,
-                )
-            with right:
-                pose_source = st.selectbox(
-                    "Pose Source",
-                    options=list(AdvioPoseSource),
-                    index=list(AdvioPoseSource).index(page_state.pose_source),
-                    format_func=lambda item: item.label,
-                )
-                respect_video_rotation = st.toggle(
-                    "Respect video rotation metadata",
-                    value=page_state.respect_video_rotation,
-                )
-            start_requested = st.form_submit_button(
-                "Start run" if not is_active else "Restart run",
-                type="primary",
-                use_container_width=True,
+            method = st.selectbox(
+                "Mock Method",
+                options=list(MethodId),
+                index=list(MethodId).index(page_state.method),
+                format_func=lambda item: item.display_name,
             )
-        stop_requested = st.button("Stop run", disabled=not is_active, use_container_width=True)
+        with right:
+            pose_source = st.selectbox(
+                "Pose Source",
+                options=list(AdvioPoseSource),
+                index=list(AdvioPoseSource).index(page_state.pose_source),
+                format_func=lambda item: item.label,
+            )
+            respect_video_rotation = st.toggle(
+                "Respect video rotation metadata",
+                value=page_state.respect_video_rotation,
+            )
+        start_requested, stop_requested = render_live_action_slot(
+            is_active=is_active,
+            start_label="Start run",
+            stop_label="Stop run",
+        )
+        action = PipelinePageAction(
+            sequence_id=selected_sequence_id,
+            mode=mode,
+            method=method,
+            pose_source=pose_source,
+            respect_video_rotation=respect_video_rotation,
+            start_requested=start_requested,
+            stop_requested=stop_requested,
+        )
         error_message = _handle_pipeline_page_action(
             context=context,
-            action=PipelinePageAction(
-                sequence_id=selected_sequence_id,
-                mode=mode,
-                method=method,
-                pose_source=pose_source,
-                respect_video_rotation=respect_video_rotation,
-                start_requested=start_requested,
-                stop_requested=stop_requested,
-            ),
+            action=action,
         )
-        snapshot = context.pipeline_runtime.snapshot()
+        if rerun_after_action(
+            action_requested=action.start_requested or action.stop_requested,
+            error_message=error_message,
+        ):
+            return
+        snapshot = context.run_service.snapshot()
         if error_message:
             st.error(error_message)
         render_live_fragment(
-            run_every=0.2 if snapshot.state in _ACTIVE_SESSION_STATES else None,
-            render_body=lambda: _render_pipeline_snapshot(context.pipeline_runtime.snapshot()),
+            run_every=live_poll_interval(is_active=snapshot.state in _ACTIVE_SESSION_STATES, interval_seconds=0.2),
+            render_body=lambda: _render_pipeline_snapshot(context.run_service.snapshot()),
         )
 
 
@@ -335,14 +344,13 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
         pose_source=action.pose_source,
         respect_video_rotation=action.respect_video_rotation,
     )
-    if action.stop_requested:
-        context.pipeline_runtime.stop()
-        return None
-    if not action.start_requested:
-        return None
-
     try:
-        start_advio_demo_run(
+        if action.stop_requested:
+            context.run_service.stop_run()
+            return None
+        if not action.start_requested:
+            return None
+        _start_advio_demo_run(
             context,
             sequence_id=action.sequence_id,
             mode=action.mode,
@@ -353,6 +361,31 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
         return None
     except Exception as exc:
         return str(exc)
+
+
+def _start_advio_demo_run(
+    context: AppContext,
+    *,
+    sequence_id: int,
+    mode: PipelineMode,
+    method: MethodId,
+    pose_source: AdvioPoseSource,
+    respect_video_rotation: bool,
+) -> None:
+    """Start one bounded ADVIO demo run through the shared run facade."""
+    scene = context.advio_service.scene(sequence_id)
+    request = build_advio_demo_request(
+        path_config=context.path_config,
+        sequence_id=scene.sequence_slug,
+        mode=mode,
+        method=method,
+    )
+    source = context.advio_service.build_streaming_source(
+        sequence_id=sequence_id,
+        pose_source=pose_source,
+        respect_video_rotation=respect_video_rotation,
+    )
+    context.run_service.start_run(request=request, source=source)
 
 
 def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import string
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,7 +13,8 @@ from pydantic import ValidationError
 
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
-from prml_vslam.methods import MethodId
+from prml_vslam.methods import MethodId, MockSlamBackendConfig
+from prml_vslam.methods.protocols import OfflineSlamBackend, SlamBackend, SlamSession, StreamingSlamBackend
 from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
@@ -23,7 +25,9 @@ from prml_vslam.pipeline.contracts import (
     StageExecutionStatus,
     VideoSourceSpec,
 )
-from prml_vslam.pipeline.session import PipelineSessionService, PipelineSessionState
+from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.session import PipelineSessionService, PipelineSessionSnapshot, PipelineSessionState
+from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import PathConfig
 
 
@@ -31,7 +35,7 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
     path_config = PathConfig()
     request = RunRequest(
         experiment_name="Lobby Sweep 01",
-        output_dir=Path("artifacts"),
+        output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/lobby.mp4"), frame_stride=2),
         slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=True, emit_sparse_points=True),
         reference=ReferenceConfig(enabled=True),
@@ -75,7 +79,7 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
 def test_run_request_build_keeps_legacy_default_stage_selection() -> None:
     request = RunRequest(
         experiment_name="Default Check",
-        output_dir=Path("artifacts"),
+        output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/default-check.mp4")),
         slam=SlamConfig(method=MethodId.MSTR),
     )
@@ -94,7 +98,7 @@ def test_run_request_build_keeps_legacy_default_stage_selection() -> None:
 def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
     request = RunRequest(
         experiment_name="Quick Check",
-        output_dir=Path("artifacts"),
+        output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/quick-check.mp4")),
         slam=SlamConfig(method=MethodId.MSTR, emit_dense_points=False, emit_sparse_points=False),
         reference=ReferenceConfig(enabled=False),
@@ -115,7 +119,7 @@ def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
 def test_run_request_build_rejects_cloud_evaluation_without_dense_points() -> None:
     request = RunRequest(
         experiment_name="No Dense Cloud Eval",
-        output_dir=Path("artifacts"),
+        output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/no-dense-cloud.mp4")),
         slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=False),
         evaluation=BenchmarkEvaluationConfig(evaluate_cloud=True),
@@ -129,9 +133,31 @@ def test_run_request_requires_slam_config() -> None:
     with pytest.raises(ValidationError):
         RunRequest(
             experiment_name="Missing SLAM",
-            output_dir=Path("artifacts"),
+            output_dir=Path(".artifacts"),
             source=VideoSourceSpec(video_path=Path("captures/missing-slam.mp4")),
         )
+
+
+def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: Path) -> None:
+    sequence_manifest = SequenceManifest(sequence_id="advio-15")
+    source = FakeStreamingSource(
+        sequence_manifest=sequence_manifest,
+        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=0, tx=0.0)]),
+    )
+    backend = MockSlamBackendConfig(method_id=MethodId.MSTR).setup_target()
+    assert backend is not None
+    session = backend.start_session(
+        SlamConfig(method=MethodId.MSTR),
+        tmp_path / "streaming-artifacts",
+    )
+
+    assert isinstance(source, OfflineSequenceSource)
+    assert isinstance(source, StreamingSequenceSource)
+    assert isinstance(backend, OfflineSlamBackend)
+    assert isinstance(backend, StreamingSlamBackend)
+    assert isinstance(backend, SlamBackend)
+    assert isinstance(session, SlamSession)
+    assert backend.method_id is MethodId.MSTR
 
 
 class FinitePacketStream:
@@ -184,6 +210,34 @@ class StopAwarePacketStream:
         )
         self.wait_calls += 1
         return packet
+
+
+class SlowClosingMockSlamBackend:
+    """Mock backend wrapper whose session close exceeds the generic worker-stop timeout."""
+
+    def __init__(self, *, close_sleep_seconds: float) -> None:
+        backend = MockSlamBackendConfig().setup_target()
+        assert backend is not None
+        self._backend = backend
+        self._close_sleep_seconds = close_sleep_seconds
+        self.method_id = backend.method_id
+
+    def start_session(self, cfg: SlamConfig, artifact_root: Path):
+        session = self._backend.start_session(cfg, artifact_root)
+        close_sleep_seconds = self._close_sleep_seconds
+
+        class _SlowClosingSession:
+            def step(self, frame: FramePacket) -> object:
+                return session.step(frame)
+
+            def close(self):
+                time.sleep(close_sleep_seconds)
+                return session.close()
+
+        return _SlowClosingSession()
+
+    def run_sequence(self, sequence: SequenceManifest, cfg: SlamConfig, artifact_root: Path):
+        return self._backend.run_sequence(sequence, cfg, artifact_root)
 
 
 class ExplodingPacketStream:
@@ -261,7 +315,7 @@ def _build_streaming_request(
 
 
 def _wait_for_terminal_snapshot(
-    service: PipelineSessionService,
+    service,
     *,
     timeout_seconds: float = 2.0,
 ):
@@ -274,8 +328,9 @@ def _wait_for_terminal_snapshot(
 
 
 def test_pipeline_session_service_completes_supported_run_and_persists_outputs(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts", captures_dir=tmp_path / "captures")
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_streaming_request(path_config)
+    plan = request.build(path_config)
     run_paths = path_config.plan_run_paths(
         experiment_name=request.experiment_name,
         method_slug=request.slam.method.value,
@@ -283,7 +338,7 @@ def test_pipeline_session_service_completes_supported_run_and_persists_outputs(t
     )
     source = FakeStreamingSource(
         sequence_manifest=SequenceManifest(
-            sequence_id="advio-15", video_path=tmp_path / "data" / "advio" / "frames.mov"
+            sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov"
         ),
         stream=FinitePacketStream(
             [
@@ -292,9 +347,11 @@ def test_pipeline_session_service_completes_supported_run_and_persists_outputs(t
             ]
         ),
     )
-    service = PipelineSessionService(path_config=path_config, frame_timeout_seconds=0.01)
+    backend = MockSlamBackendConfig().setup_target()
+    assert backend is not None
+    service = PipelineSessionService(frame_timeout_seconds=0.01)
 
-    service.start(request=request, source=source)
+    service.start(request=request, plan=plan, source=source, slam_backend=backend)
     snapshot = _wait_for_terminal_snapshot(service)
 
     assert snapshot.state is PipelineSessionState.COMPLETED
@@ -324,17 +381,20 @@ def test_pipeline_session_service_completes_supported_run_and_persists_outputs(t
 
 
 def test_pipeline_session_service_stop_finishes_cleanly(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts", captures_dir=tmp_path / "captures")
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_streaming_request(path_config, mode=PipelineMode.STREAMING)
+    plan = request.build(path_config)
     source = FakeStreamingSource(
         sequence_manifest=SequenceManifest(
-            sequence_id="advio-15", video_path=tmp_path / "data" / "advio" / "frames.mov"
+            sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov"
         ),
         stream=StopAwarePacketStream(_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)),
     )
-    service = PipelineSessionService(path_config=path_config, frame_timeout_seconds=0.01)
+    backend = MockSlamBackendConfig().setup_target()
+    assert backend is not None
+    service = PipelineSessionService(frame_timeout_seconds=0.01)
 
-    service.start(request=request, source=source)
+    service.start(request=request, plan=plan, source=source, slam_backend=backend)
     deadline = time.time() + 2.0
     while service.snapshot().state is PipelineSessionState.CONNECTING and time.time() < deadline:
         time.sleep(0.01)
@@ -348,19 +408,45 @@ def test_pipeline_session_service_stop_finishes_cleanly(tmp_path: Path) -> None:
     assert snapshot.summary.stage_status[RunPlanStageId.SUMMARY] is StageExecutionStatus.RAN
 
 
-def test_pipeline_session_service_rejects_unsupported_stages_before_start(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts", captures_dir=tmp_path / "captures")
+def test_pipeline_session_service_stop_allows_longer_backend_shutdown(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_streaming_request(path_config, mode=PipelineMode.STREAMING)
+    plan = request.build(path_config)
+    source = FakeStreamingSource(
+        sequence_manifest=SequenceManifest(
+            sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov"
+        ),
+        stream=StopAwarePacketStream(_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)),
+    )
+    backend = SlowClosingMockSlamBackend(close_sleep_seconds=2.2)
+    service = PipelineSessionService(frame_timeout_seconds=0.01)
+
+    service.start(request=request, plan=plan, source=source, slam_backend=backend)
+    deadline = time.time() + 2.0
+    while service.snapshot().state is PipelineSessionState.CONNECTING and time.time() < deadline:
+        time.sleep(0.01)
+
+    service.stop()
+    snapshot = service.snapshot()
+
+    assert snapshot.state is PipelineSessionState.STOPPED
+    assert snapshot.summary is not None
+    assert snapshot.summary.stage_status[RunPlanStageId.SUMMARY] is StageExecutionStatus.RAN
+
+
+def test_run_service_rejects_unsupported_stages_before_start(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_streaming_request(path_config, compare_to_arcore=True)
     source = FakeStreamingSource(
         sequence_manifest=SequenceManifest(
-            sequence_id="advio-15", video_path=tmp_path / "data" / "advio" / "frames.mov"
+            sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov"
         ),
         stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
     )
-    service = PipelineSessionService(path_config=path_config)
+    service = RunService(path_config=path_config)
 
     with pytest.raises(RuntimeError, match="Unsupported stages"):
-        service.start(request=request, source=source)
+        service.start_run(request=request, source=source)
 
     snapshot = service.snapshot()
 
@@ -372,17 +458,20 @@ def test_pipeline_session_service_rejects_unsupported_stages_before_start(tmp_pa
 
 
 def test_pipeline_session_service_reports_failed_runtime_errors(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts", captures_dir=tmp_path / "captures")
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_streaming_request(path_config)
+    plan = request.build(path_config)
     source = FakeStreamingSource(
         sequence_manifest=SequenceManifest(
-            sequence_id="advio-15", video_path=tmp_path / "data" / "advio" / "frames.mov"
+            sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov"
         ),
         stream=ExplodingPacketStream("synthetic tracker failure"),
     )
-    service = PipelineSessionService(path_config=path_config, frame_timeout_seconds=0.01)
+    backend = MockSlamBackendConfig().setup_target()
+    assert backend is not None
+    service = PipelineSessionService(frame_timeout_seconds=0.01)
 
-    service.start(request=request, source=source)
+    service.start(request=request, plan=plan, source=source, slam_backend=backend)
     snapshot = _wait_for_terminal_snapshot(service)
 
     assert snapshot.state is PipelineSessionState.FAILED
@@ -397,15 +486,18 @@ def test_pipeline_session_service_reports_failed_runtime_errors(tmp_path: Path) 
 
 
 def test_pipeline_session_service_uses_stable_non_synthetic_provenance_hashes(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts", captures_dir=tmp_path / "captures")
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_streaming_request(path_config)
+    plan = request.build(path_config)
+    backend = MockSlamBackendConfig().setup_target()
+    assert backend is not None
 
     def _run_once() -> dict[RunPlanStageId, tuple[str, str]]:
         source = FakeStreamingSource(
             sequence_manifest=SequenceManifest(
                 sequence_id="advio-15",
-                video_path=tmp_path / "data" / "advio" / "frames.mov",
-                reference_tum_path=tmp_path / "data" / "advio" / "advio-15" / "ground-truth" / "ground_truth.tum",
+                video_path=tmp_path / ".data" / "advio" / "frames.mov",
+                reference_tum_path=tmp_path / ".data" / "advio" / "advio-15" / "ground-truth" / "ground_truth.tum",
             ),
             stream=FinitePacketStream(
                 [
@@ -414,8 +506,8 @@ def test_pipeline_session_service_uses_stable_non_synthetic_provenance_hashes(tm
                 ]
             ),
         )
-        service = PipelineSessionService(path_config=path_config, frame_timeout_seconds=0.01)
-        service.start(request=request, source=source)
+        service = PipelineSessionService(frame_timeout_seconds=0.01)
+        service.start(request=request, plan=plan, source=source, slam_backend=backend)
         snapshot = _wait_for_terminal_snapshot(service)
         assert snapshot.state is PipelineSessionState.COMPLETED
         assert all(manifest.status is not StageExecutionStatus.HIT for manifest in snapshot.stage_manifests)
@@ -433,3 +525,66 @@ def test_pipeline_session_service_uses_stable_non_synthetic_provenance_hashes(tm
         assert len(input_fingerprint) == 64
         assert set(config_hash) <= set(string.hexdigits.lower())
         assert set(input_fingerprint) <= set(string.hexdigits.lower())
+
+
+class SessionServiceSpy:
+    """Small session-service double for RunService tests."""
+
+    def __init__(self) -> None:
+        self.start_calls: list[dict[str, object]] = []
+        self.failed_start_calls: list[dict[str, object]] = []
+        self.stop_calls = 0
+        self._snapshot = PipelineSessionSnapshot()
+
+    def start(self, **kwargs: object) -> None:
+        self.start_calls.append(kwargs)
+        self._snapshot = PipelineSessionSnapshot(state=PipelineSessionState.CONNECTING, plan=kwargs["plan"])
+
+    def stop(self) -> None:
+        self.stop_calls += 1
+
+    def snapshot(self) -> PipelineSessionSnapshot:
+        return self._snapshot
+
+    def set_failed_start(self, *, plan, error_message: str) -> None:
+        self.failed_start_calls.append({"plan": plan, "error_message": error_message})
+        self._snapshot = PipelineSessionSnapshot(
+            state=PipelineSessionState.FAILED,
+            plan=plan,
+            error_message=error_message,
+        )
+
+
+def test_run_service_builds_plan_and_passes_resolved_dependencies_to_session(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_streaming_request(path_config)
+    source = SimpleNamespace(label="advio-demo-source")
+    session_service = SessionServiceSpy()
+    backend = object()
+    service = RunService(
+        path_config=path_config,
+        session_service=session_service,
+        slam_backend_factory=lambda method_id: backend,
+    )
+
+    service.start_run(request=request, source=source)
+
+    assert len(session_service.start_calls) == 1
+    start_call = session_service.start_calls[0]
+    assert start_call["request"] is request
+    assert start_call["source"] is source
+    assert start_call["slam_backend"] is backend
+    assert start_call["plan"].artifact_root == request.build(path_config).artifact_root
+
+
+def test_run_service_stop_and_snapshot_delegate_to_session_service() -> None:
+    session_service = SessionServiceSpy()
+    expected_snapshot = PipelineSessionSnapshot(state=PipelineSessionState.RUNNING)
+    session_service._snapshot = expected_snapshot
+    service = RunService(session_service=session_service)
+
+    assert service.snapshot() is expected_snapshot
+
+    service.stop_run()
+
+    assert session_service.stop_calls == 1
