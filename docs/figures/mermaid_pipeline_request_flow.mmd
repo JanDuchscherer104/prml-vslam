@@ -1,43 +1,57 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "22px",
+    "actorFontSize": "22px",
+    "actorTextColor": "#1f2937",
+    "messageFontSize": "20px",
+    "messageTextColor": "#1f2937",
+    "noteFontSize": "20px",
+    "noteTextColor": "#1f2937",
+    "sequenceNumberFontSize": "18px"
+  }
+}}%%
 sequenceDiagram
     autonumber
     actor User
     participant Surface as CLI or Pipeline page
     participant Demo as pipeline.demo
     participant Paths as PathConfig
-    participant Request as RunRequest
     participant Planner as RunPlannerService
     participant RunSvc as RunService
     participant Session as PipelineSessionService
-    participant Source as StreamingSequenceSource
-    participant Backend as MockSlamBackend
+    participant Source as source: StreamingSequenceSource
+    participant Backend as backend: StreamingSlamBackend
+    participant SlamSess as slam: SlamSession
 
     User->>Surface: Choose persisted pipeline request TOML
     Surface->>Demo: load_run_request_toml(config_path)
-    Demo->>Paths: resolve_pipeline_config_path(...)
-    Demo->>Request: RunRequest.from_toml(...)
-    Demo-->>Surface: RunRequest
-    Surface->>Planner: build_run_plan(request)
-    Planner->>Paths: plan_run_paths(...)
-    Planner-->>Surface: RunPlan
+    Demo->>Paths: resolve_pipeline_config_path(config_path)
+    Demo-->>Surface: request: RunRequest
+    Surface->>Planner: build_run_plan(request: RunRequest)
+    Planner->>Paths: plan_run_paths(experiment_name, method_slug)
+    Planner-->>Surface: plan: RunPlan
 
     alt Planning only
-        Surface-->>User: Render or print RunPlan
+        Surface-->>User: Render or print plan: RunPlan
     else Bounded demo execution
-        Surface->>RunSvc: start_run(request, source)
-        RunSvc->>Planner: build_run_plan(request)
-        Planner-->>RunSvc: RunPlan
-        RunSvc->>Session: start(request, plan, source, slam_backend)
-        Session->>Source: prepare_sequence_manifest(...)
-        Source-->>Session: SequenceManifest
-        Session->>Source: open_stream(loop=...)
-        Session->>Backend: start_session(request.slam, artifact_root)
+        Surface->>RunSvc: start_run(request: RunRequest,<br/>source: StreamingSequenceSource)
+        RunSvc->>Planner: build_run_plan(request: RunRequest)
+        Planner-->>RunSvc: plan: RunPlan
+        RunSvc->>Session: start(request: RunRequest,<br/>plan: RunPlan,<br/>source: StreamingSequenceSource,<br/>slam_backend: StreamingSlamBackend)
+        Session->>Source: prepare_sequence_manifest(output_dir)
+        Source-->>Session: sequence: SequenceManifest
+        Session->>Source: open_stream(loop: bool)
+        Source-->>Session: stream: FramePacketStream
+        Session->>Backend: start_session(cfg: SlamConfig,<br/>artifact_root: Path)
+        Backend-->>Session: slam: SlamSession
         loop For each frame
-            Source-->>Session: FramePacket
-            Session->>Backend: step(frame)
-            Backend-->>Session: SlamUpdate
+            Source-->>Session: frame: FramePacket
+            Session->>SlamSess: step(frame: FramePacket)
+            SlamSess-->>Session: update: SlamUpdate
         end
-        Session->>Backend: close()
-        Backend-->>Session: SlamArtifacts
-        Session-->>Surface: RunSummary + StageManifest[]
+        Session->>SlamSess: close()
+        SlamSess-->>Session: slam: SlamArtifacts
+        Session-->>Surface: summary: RunSummary<br/>manifests: StageManifest[]
         Surface-->>User: Monitor artifacts and summary
     end
