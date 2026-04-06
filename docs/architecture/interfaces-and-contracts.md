@@ -11,7 +11,9 @@ reference sheet. This document carries the full rationale and migration model.
 ## Current State
 
 - `prml_vslam.interfaces` already owns the canonical shared data models:
-  `CameraIntrinsics`, `SE3Pose`, `TimedPoseTrajectory`, and `FramePacket`.
+  `CameraIntrinsics`, `SE3Pose`, and `FramePacket`.
+- Trajectory objects now use `PoseTrajectory3D` from `evo.core.trajectory`
+  directly instead of a repository-owned trajectory wrapper.
 - `prml_vslam.protocols.runtime` now owns the shared `FramePacketStream`
   protocol, so repo-wide datamodel ownership and shared protocol ownership are
   separated in code.
@@ -66,7 +68,7 @@ The repo should preserve a deliberately small public surface during and after
 the restructuring.
 
 - Shared datamodels:
-  `CameraIntrinsics`, `SE3Pose`, `TimedPoseTrajectory`, `FramePacket`
+  `CameraIntrinsics`, `SE3Pose`, `FramePacket`
 - Pipeline data:
   `RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`,
   `RunSummary`

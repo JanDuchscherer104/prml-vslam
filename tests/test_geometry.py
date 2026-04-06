@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from prml_vslam.interfaces import CameraIntrinsics, SE3Pose
 from prml_vslam.utils.geometry import (
@@ -68,7 +69,7 @@ def test_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> Non
     write_tum_trajectory(path, poses, [0.0, 1.0])
     trajectory = load_tum_trajectory(path)
 
-    assert np.allclose(trajectory.timestamps_s, np.array([0.0, 1.0], dtype=np.float64))
+    assert np.allclose(trajectory.timestamps, np.array([0.0, 1.0], dtype=np.float64))
     assert np.allclose(trajectory.positions_xyz, np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float64))
 
 
@@ -76,11 +77,8 @@ def test_empty_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) 
     path = tmp_path / "trajectory.tum"
 
     write_tum_trajectory(path, [], [])
-    trajectory = load_tum_trajectory(path)
-
-    assert trajectory.timestamps_s.shape == (0,)
-    assert trajectory.positions_xyz.shape == (0, 3)
-    assert trajectory.quaternions_xyzw.shape == (0, 4)
+    with pytest.raises(ValueError, match="empty"):
+        load_tum_trajectory(path)
 
 
 def test_pointmap_from_depth_uses_intrinsics_and_stride() -> None:

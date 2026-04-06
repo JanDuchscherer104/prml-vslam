@@ -11,11 +11,9 @@ import numpy as np
 import streamlit as st
 from evo.core import metrics as evo_metrics
 from evo.core import sync as evo_sync
-from evo.core.trajectory import PoseTrajectory3D
 
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
-from prml_vslam.interfaces import TimedPoseTrajectory
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts import (
@@ -437,8 +435,8 @@ def _compute_evo_preview(
     estimate_trajectory = load_tum_trajectory(estimate_path)
     try:
         associated_reference, associated_estimate = evo_sync.associate_trajectories(
-            _to_evo_trajectory(reference_trajectory),
-            _to_evo_trajectory(estimate_trajectory),
+            reference_trajectory,
+            estimate_trajectory,
             max_diff=_EVO_ASSOCIATION_MAX_DIFF_S,
         )
     except evo_sync.SyncException as exc:
@@ -468,14 +466,6 @@ def _compute_evo_preview(
             values=error_values,
         ),
         stats=MetricStats.from_error_values(error_values),
-    )
-
-
-def _to_evo_trajectory(trajectory: TimedPoseTrajectory) -> PoseTrajectory3D:
-    return PoseTrajectory3D(
-        positions_xyz=trajectory.positions_xyz,
-        orientations_quat_wxyz=np.roll(trajectory.quaternions_xyzw, 1, axis=1),
-        timestamps=trajectory.timestamps_s,
     )
 
 

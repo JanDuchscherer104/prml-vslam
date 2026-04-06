@@ -64,11 +64,11 @@ class MockSlamBackend(SlamBackend):
         if reference_path is not None and reference_path.exists():
             trajectory = load_tum_trajectory(reference_path)
             pointmap = session.build_pointmap(intrinsics=intrinsics)
-            for seq, timestamp_s in enumerate(trajectory.timestamps_s.tolist()):
+            for seq, timestamp_s in enumerate(np.asarray(trajectory.timestamps, dtype=np.float64).tolist()):
                 session.record_pose_sample(
                     seq=seq,
                     timestamp_ns=int(round(timestamp_s * 1e9)),
-                    pose=trajectory.pose_at(seq),
+                    pose=SE3Pose.from_matrix(np.asarray(trajectory.poses_se3[seq], dtype=np.float64)),
                     used_source_pose=True,
                     pointmap=pointmap,
                 )

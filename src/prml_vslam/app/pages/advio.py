@@ -187,12 +187,12 @@ def _render_sequence_details(sample: AdvioOfflineSample) -> None:
     trajectories = [("Ground Truth", sample.ground_truth), ("ARCore", sample.arcore)]
     timing = [
         ("Video Frames", sample.frame_timestamps_ns.astype(np.float64) / 1e9),
-        ("Ground Truth", sample.ground_truth.timestamps_s),
-        ("ARCore", sample.arcore.timestamps_s),
+        ("Ground Truth", np.asarray(sample.ground_truth.timestamps, dtype=np.float64)),
+        ("ARCore", np.asarray(sample.arcore.timestamps, dtype=np.float64)),
     ]
     if sample.arkit is not None:
         trajectories.append(("ARKit", sample.arkit))
-        timing.append(("ARKit", sample.arkit.timestamps_s))
+        timing.append(("ARKit", np.asarray(sample.arkit.timestamps, dtype=np.float64)))
     tabs = st.tabs(["Trajectories", "Motion", "Timing", "Camera"])
     figure_rows = (
         (

@@ -84,7 +84,7 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
         artifacts.dense_points_ply.path.read_text(encoding="utf-8").splitlines() if artifacts.dense_points_ply else []
     )
 
-    assert trajectory.timestamps_s.shape == (2,)
+    assert trajectory.timestamps.shape == (2,)
     assert np.allclose(trajectory.positions_xyz[0], np.array([0.0, 0.0, 0.0], dtype=np.float64))
     assert np.allclose(trajectory.positions_xyz[1], np.array([1.0, 0.5, 0.0], dtype=np.float64))
     assert artifacts.sparse_points_ply is not None

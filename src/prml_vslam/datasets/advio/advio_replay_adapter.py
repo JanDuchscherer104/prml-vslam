@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose, TimedPoseTrajectory
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.cv2_producer import Cv2ProducerConfig, Cv2ReplayMode, open_cv2_replay_stream
 from prml_vslam.protocols import FramePacketStream
 
@@ -59,7 +60,7 @@ def _load_pose_trajectory(
     paths: AdvioSequencePaths,
     scene: AdvioSceneMetadata,
     pose_source: AdvioPoseSource,
-) -> TimedPoseTrajectory | None:
+) -> PoseTrajectory3D | None:
     match pose_source:
         case AdvioPoseSource.GROUND_TRUTH:
             return load_advio_trajectory(paths.ground_truth_csv_path)
@@ -77,12 +78,12 @@ def _load_pose_trajectory(
 
 def _poses_for_frame_timestamps(
     frame_timestamps_ns: NDArray[np.int64],
-    trajectory: TimedPoseTrajectory | None,
+    trajectory: PoseTrajectory3D | None,
 ) -> list[SE3Pose | None]:
     if trajectory is None or frame_timestamps_ns.size == 0:
         return [None] * int(frame_timestamps_ns.size)
     target_timestamps_s = frame_timestamps_ns.astype(np.float64) / 1e9
-    source_timestamps_s = trajectory.timestamps_s
+    source_timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
     interpolated_positions = np.column_stack(
         [np.interp(target_timestamps_s, source_timestamps_s, trajectory.positions_xyz[:, axis]) for axis in range(3)]
     )
@@ -95,7 +96,18 @@ def _poses_for_frame_timestamps(
     nearest_indices = np.where(pick_previous, previous_indices, nearest_indices)
     poses: list[SE3Pose] = []
     for position, nearest_index in zip(interpolated_positions, nearest_indices, strict=True):
-        poses.append(SE3Pose.from_quaternion_translation(trajectory.quaternions_xyzw[int(nearest_index)], position))
+        nearest_pose = SE3Pose.from_matrix(np.asarray(trajectory.poses_se3[int(nearest_index)], dtype=np.float64))
+        poses.append(
+            SE3Pose(
+                qx=nearest_pose.qx,
+                qy=nearest_pose.qy,
+                qz=nearest_pose.qz,
+                qw=nearest_pose.qw,
+                tx=float(position[0]),
+                ty=float(position[1]),
+                tz=float(position[2]),
+            )
+        )
     return poses
 
 

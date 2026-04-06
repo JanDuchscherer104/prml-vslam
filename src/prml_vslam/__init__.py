@@ -1,12 +1,11 @@
 """Project package for the PRML VSLAM benchmark scaffold."""
 
-from .interfaces import CameraIntrinsics, FramePacket, SE3Pose, TimedPoseTrajectory
+from .interfaces import CameraIntrinsics, FramePacket, SE3Pose
 
 __all__ = [
     "CameraIntrinsics",
     "FramePacket",
     "SE3Pose",
-    "TimedPoseTrajectory",
     "__version__",
 ]
 

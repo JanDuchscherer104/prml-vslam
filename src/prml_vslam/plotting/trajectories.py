@@ -7,14 +7,15 @@ from typing import Literal
 
 import numpy as np
 import plotly.graph_objects as go
+from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.interfaces import SE3Pose, TimedPoseTrajectory
+from prml_vslam.interfaces import SE3Pose
 
 from .theme import AXIS_COLORS, DEFAULT_COLORS, apply_standard_3d_layout, apply_standard_xy_layout
 
 
 def build_bev_trajectory_figure(
-    trajectories: Sequence[tuple[str, TimedPoseTrajectory]],
+    trajectories: Sequence[tuple[str, PoseTrajectory3D]],
     *,
     title: str = "BEV Trajectory Overlay",
 ) -> go.Figure:
@@ -26,7 +27,7 @@ def build_bev_trajectory_figure(
 
 
 def build_3d_trajectory_figure(
-    trajectories: Sequence[tuple[str, TimedPoseTrajectory]],
+    trajectories: Sequence[tuple[str, PoseTrajectory3D]],
     *,
     title: str = "3D Trajectory Overlay",
     pose_axes_name: str | None = None,
@@ -43,7 +44,7 @@ def build_3d_trajectory_figure(
 
 
 def build_speed_profile_figure(
-    trajectories: Sequence[tuple[str, TimedPoseTrajectory]],
+    trajectories: Sequence[tuple[str, PoseTrajectory3D]],
     *,
     title: str = "Translational Speed",
 ) -> go.Figure:
@@ -69,16 +70,17 @@ def build_speed_profile_figure(
 
 
 def build_height_profile_figure(
-    trajectories: Sequence[tuple[str, TimedPoseTrajectory]],
+    trajectories: Sequence[tuple[str, PoseTrajectory3D]],
     *,
     title: str = "Height Profile",
 ) -> go.Figure:
     """Build a Z-over-time profile for one or more trajectories."""
     figure = go.Figure()
     for index, (name, trajectory) in enumerate(trajectories):
+        timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
         figure.add_trace(
             go.Scattergl(
-                x=trajectory.timestamps_s,
+                x=timestamps_s,
                 y=trajectory.positions_xyz[:, 2],
                 mode="lines",
                 name=name,
@@ -117,7 +119,7 @@ def build_sample_interval_figure(
     return figure
 
 
-def trajectory_length_m(trajectory: TimedPoseTrajectory) -> float:
+def trajectory_length_m(trajectory: PoseTrajectory3D) -> float:
     """Return the total path length in metres."""
     if len(trajectory.positions_xyz) < 2:
         return 0.0
@@ -271,7 +273,7 @@ class TrajectoryPlotBuilder:
 
     def add_trajectory(
         self,
-        trajectory: TimedPoseTrajectory,
+        trajectory: PoseTrajectory3D,
         *,
         name: str,
         color: str,
@@ -308,7 +310,7 @@ class TrajectoryPlotBuilder:
 
     def add_pose_axes(
         self,
-        trajectory: TimedPoseTrajectory,
+        trajectory: PoseTrajectory3D,
         *,
         stride: int,
         axis_length_m: float,
@@ -329,15 +331,7 @@ class TrajectoryPlotBuilder:
         }
 
         for index in indices.tolist():
-            pose = SE3Pose(
-                qx=float(trajectory.quaternions_xyzw[index, 0]),
-                qy=float(trajectory.quaternions_xyzw[index, 1]),
-                qz=float(trajectory.quaternions_xyzw[index, 2]),
-                qw=float(trajectory.quaternions_xyzw[index, 3]),
-                tx=float(trajectory.positions_xyz[index, 0]),
-                ty=float(trajectory.positions_xyz[index, 1]),
-                tz=float(trajectory.positions_xyz[index, 2]),
-            )
+            pose = SE3Pose.from_matrix(np.asarray(trajectory.poses_se3[index], dtype=np.float64))
             transform = pose.as_matrix()
             origin = transform[:3, 3]
             rotation = transform[:3, :3]
@@ -372,18 +366,17 @@ class TrajectoryPlotBuilder:
         return self.figure
 
 
-def _trajectory_speed_profile(trajectory: TimedPoseTrajectory) -> tuple[np.ndarray, np.ndarray]:
-    if len(trajectory.timestamps_s) < 2:
+def _trajectory_speed_profile(trajectory: PoseTrajectory3D) -> tuple[np.ndarray, np.ndarray]:
+    timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
+    if len(timestamps_s) < 2:
         return np.empty(0, dtype=np.float64), np.empty(0, dtype=np.float64)
 
-    delta_t_s = np.diff(trajectory.timestamps_s)
+    delta_t_s = np.diff(timestamps_s)
     finite_mask = delta_t_s > 0.0
     if not np.any(finite_mask):
         return np.empty(0, dtype=np.float64), np.empty(0, dtype=np.float64)
     delta_position_m = np.linalg.norm(np.diff(trajectory.positions_xyz, axis=0), axis=1)
-    timestamps_s = trajectory.timestamps_s[1:][finite_mask]
-    speeds_mps = delta_position_m[finite_mask] / delta_t_s[finite_mask]
-    return timestamps_s, speeds_mps
+    return timestamps_s[1:][finite_mask], delta_position_m[finite_mask] / delta_t_s[finite_mask]
 
 
 def _sample_intervals_ms(timestamps_s: np.ndarray) -> np.ndarray:

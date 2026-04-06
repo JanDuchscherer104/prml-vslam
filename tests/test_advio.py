@@ -185,7 +185,7 @@ def test_load_advio_sequence_returns_offline_sample(tmp_path: Path) -> None:
     assert sample.calibration.intrinsics.width_px == 64
     assert sample.calibration.intrinsics.height_px == 48
     assert sample.ground_truth.positions_xyz.shape == (3, 3)
-    assert sample.ground_truth.quaternions_xyzw[0].tolist() == [0.0, 0.0, 0.0, 1.0]
+    assert sample.ground_truth.orientations_quat_wxyz[0].tolist() == [1.0, 0.0, 0.0, 0.0]
     assert sample.arcore.positions_xyz[2].tolist() == [2.0, 3.0, 4.0]
     assert sample.duration_s == 0.2
 
