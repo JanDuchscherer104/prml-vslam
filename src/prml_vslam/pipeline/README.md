@@ -67,6 +67,57 @@ contracts in [`contracts.py`](./contracts.py), the
 [`RunPlannerService`](./services.py), and the canonical artifact layout exposed
 through [`PathConfig.plan_run_paths(...)`](../utils/path_config.py).
 
+## Design Rationale
+
+The architectural center of this repository is not “streaming” and it is not a
+generic workflow engine. The center is an offline, artifact-first benchmark
+pipeline, as described in [`REQUIREMENTS.md`](./REQUIREMENTS.md), with
+streaming retained as a smaller bounded runtime surface that can monitor live
+state and eventually hand a session back into the offline core. That design is
+why the current package favors typed contracts, stable artifact locations, and
+explicit final summaries over generalized graph execution or in-memory
+envelopes.
+
+The most important design choice is the shared
+[`SequenceManifest`](./contracts.py) boundary. Inputs can come from different
+worlds such as a raw video file, an ADVIO sequence, or a live
+[`Record3D`](../io/record3d.py) stream, but they should all be normalized into
+the same manifest before the benchmark stages run. Upstream of that boundary,
+the system is allowed to care about dataset quirks, replay metadata, transport
+details, or capture semantics. Downstream of that boundary, the system should
+care about benchmark execution, artifact production, provenance, and
+evaluation, not about the original source identity.
+
+The split between shared data contracts, shared behavior seams, and concrete
+implementations is also deliberate. Shared runtime models such as
+[`FramePacket`](../interfaces/runtime.py) live in
+[`interfaces`](../interfaces/runtime.py), behavior seams such as
+[`StreamingSequenceSource`](../protocols/source.py) and
+[`SlamSession`](../methods/protocols.py) live in
+[`protocols`](../protocols/source.py) and
+[`methods/protocols.py`](../methods/protocols.py), and concrete dataset, I/O,
+and backend implementations stay in their owning packages. That separation
+keeps source adaptation, packet streaming, backend execution, evaluation, and
+visualization from collapsing into one hard-to-reason-about runtime.
+
+The app stays intentionally thin for the same reason. The Streamlit workbench
+in [`prml_vslam.app`](../app/bootstrap.py) is supposed to configure, launch,
+monitor, and visualize, but not redefine what the pipeline means. The bounded
+runtime belongs to [`RunService`](./run_service.py) and
+[`PipelineSessionService`](./session.py), while the app and CLI are launch
+surfaces that consume those services. This keeps orchestration semantics in the
+backend package and prevents page code from becoming a second pipeline
+implementation.
+
+Finally, the package favors a “push variability to the edges, keep the center
+boring” philosophy. The edges are where sources differ, methods differ, and
+live transports differ. The center should stay comparatively calm:
+[`RunRequest`](./contracts.py), [`RunPlan`](./contracts.py),
+[`RunArtifactPaths`](../utils/path_config.py), [`StageManifest`](./contracts.py),
+and [`RunSummary`](./contracts.py) should remain method-agnostic and
+source-agnostic as much as possible. That is the main simplification strategy
+already encoded in the current design.
+
 ## Two Pipeline Modes
 
 The pipeline supports two top-level modes through
@@ -286,6 +337,59 @@ strictly run-finalization logic it may remain internal to
 step-by-step checklist, but the key design rule is simple: a new stage type is
 not real in this repository until both the planner and the bounded runtime know
 how to represent and finalize it.
+
+## Potential Improvements And Simplifications
+
+The current scaffold already has the right seams, so the next step is not a
+fresh redesign. The main improvement is to finish the real runner layer that is
+still described as target architecture in [`REQUIREMENTS.md`](./REQUIREMENTS.md):
+introduce a true `OfflineRunner` and a true `StreamingRunner`, keep
+[`RunService`](./run_service.py) as the single façade for the app and CLI, and
+let those runners consume the existing contracts instead of inventing a second
+execution vocabulary.
+
+Another simplification is to introduce a real source resolver from
+[`SourceSpec`](./contracts.py) into either
+[`OfflineSequenceSource`](../protocols/source.py) or
+[`StreamingSequenceSource`](../protocols/source.py). That would move the
+remaining source branching out of launch surfaces and make it easier to add new
+datasets or live transports without teaching the rest of the system about their
+construction details.
+
+Method execution should stay thin and wrapper-oriented. The repo already points
+in that direction through [`SlamConfig`](./contracts.py),
+[`OfflineSlamBackend`](../methods/protocols.py), and
+[`StreamingSlamBackend`](../methods/protocols.py). The natural next step is to
+replace the mock-only execution path with real wrappers around upstream
+implementations such as [`ViSTA-SLAM`](https://arxiv.org/abs/2509.01584) and
+[`MASt3R-SLAM`](https://github.com/rmurai0610/MASt3R-SLAM), normalizing their
+native outputs back into the shared repo-owned artifacts rather than
+re-implementing their internals locally.
+
+Live-source persistence is another major gap and simplification opportunity.
+The current [`Record3DStreamingSource`](../io/record3d_source.py) already fits
+the shared source protocol, but the longer-term architecture becomes much
+cleaner once live sessions can always materialize a durable capture boundary
+and hand off into the same offline-core postprocessing path that dataset and
+video runs use.
+
+Evaluation should remain explicit and separate from app previews. The
+repository already has a thin [`eval`](../eval/README.md) layer and already
+uses [`evo`](https://github.com/MichaelGrupp/evo) for trajectory work. The app
+can keep local previews, but benchmark policy should remain in explicit
+evaluation stages rather than being re-embedded in page helpers. The same
+general principle applies to support tooling such as
+[`pooch`](https://www.fatiando.org/pooch/latest/) for dataset fetching and
+[`Open3D`](https://www.open3d.org/) or
+[`CloudCompare`](https://www.cloudcompare.org/) for geometry inspection: use
+existing tools where they already solve the non-research part of the problem.
+
+The final simplification principle is negative rather than additive: do not
+turn this into a generic workflow framework. The current docs are already right
+to reject generic envelopes, graph-core abstractions, and inter-stage queues
+beyond live ingress. The existing typed, linear, artifact-first structure is a
+better fit for a benchmark instrument than a more abstract orchestration layer
+would be.
 
 ## Artifact Layout
 
