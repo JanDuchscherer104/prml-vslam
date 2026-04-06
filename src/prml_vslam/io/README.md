@@ -20,7 +20,7 @@ prerequisites from the official project README:
 
 ### Streamlit Record3D Page
 
-- `uv run streamlit run streamlit_app.py` opens the packaged Streamlit app.
+- `uv run prml-vslam-app` opens the packaged Streamlit app.
 - The app exposes a dedicated `Record3D` page that renders pure Streamlit
   controls and previews.
 - The page can start the official USB packet source or an optional Python-side
@@ -48,7 +48,7 @@ prerequisites from the official project README:
 
 ```bash
 uv sync --extra streaming
-uv run streamlit run streamlit_app.py
+uv run prml-vslam-app
 ```
 
 ## Remaining Work

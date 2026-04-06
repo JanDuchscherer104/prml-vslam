@@ -34,7 +34,7 @@ Repo-owned datasets and generated benchmark outputs resolve under `.data/` and
 ```bash
 uv sync
 # add `--extra streaming` to enable Record3D USB plus optional Wi-Fi preview support
-uv run streamlit run streamlit_app.py
+uv run prml-vslam-app
 ```
 
 The app supports:
@@ -83,23 +83,21 @@ evaluate_efficiency = true
 uv run prml-vslam plan-run-config advio-office-vista.toml
 ```
 
-The TOML shape mirrors the nested `RunRequest` model:
+The TOML shape mirrors the nested [`RunRequest`](src/prml_vslam/pipeline/contracts.py)
+model: top-level fields configure the run itself, while `[source]`, `[slam]`,
+`[reference]`, and `[evaluation]` map directly onto the nested config objects
+owned by [`contracts.py`](src/prml_vslam/pipeline/contracts.py). That is why an
+optional method-specific backend config path lives in `[slam]` as
+`config_path = "..."`, because the field is owned by `SlamConfig` rather than
+by the top-level request.
 
-- top-level fields configure the run itself: `experiment_name`, `mode`, `output_dir`
-- `[source]` configures the ingest boundary
-- `[slam]` configures the SLAM stage
-- `[reference]` configures the reference-reconstruction stage toggle
-- `[evaluation]` configures benchmark evaluation toggles
-
-Current stage-specific TOML configuration is therefore done by nesting the
-stage config tables directly under the request. For example, the optional
-method-specific backend config path belongs in `[slam]` as `config_path = "..."`
-because it is owned by `SlamConfig`.
-
-`plan-run-config` resolves the TOML file path itself relative to the
-repository. Nested TOML paths are then hydrated as written; resolve those
-explicitly through `PathConfig` in runtime code when repo-relative behavior is
-required.
+[`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through
+the repo-owned helpers described in
+[`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md). The
+config file itself is resolved through
+[`PathConfig`](src/prml_vslam/utils/path_config.py), while nested TOML paths
+are hydrated as written and should be normalized explicitly in runtime code
+when repo-relative behavior is required.
 
 ## Challenge
 

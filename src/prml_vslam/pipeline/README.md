@@ -153,52 +153,44 @@ The intended long-term flow is:
 
 ### Shared Normalization Boundary
 
-- `SequenceManifest`
-  - the single normalized boundary between source-specific ingestion and the
-    main benchmark stages
-  - points to materialized or resolved inputs such as video, frames,
-    timestamps, intrinsics, and optional reference trajectories
-  - must always provide a stable `sequence_id`; populate the optional artifact
-    paths whenever the source knows them
+[`SequenceManifest`](./contracts.py) is the single normalized boundary between
+source-specific ingestion and the main benchmark stages. Every manifest must
+provide a stable `sequence_id`, and sources should populate the optional paths
+for video, timestamps, intrinsics, reference trajectories, and ARCore
+baselines whenever those artifacts are already known at the ingestion boundary.
 
 ### Stage Outputs
 
-- `SlamArtifacts`
-
-Large outputs must cross stage boundaries as artifact references, not large
-in-memory payloads.
-
-Reference-stage and evaluation-stage artifact bundles are still target-state
-concepts described in [`REQUIREMENTS.md`](./REQUIREMENTS.md). They should only
-be added to `contracts.py` once a real pipeline stage consumes or produces
-them.
+[`SlamArtifacts`](./contracts.py) is the current concrete stage-output bundle.
+Large outputs should cross stage boundaries as artifact references rather than
+large in-memory payloads. Reference-stage and evaluation-stage bundles are
+still target-state concepts described in [`REQUIREMENTS.md`](./REQUIREMENTS.md)
+and should only be added to [`contracts.py`](./contracts.py) once a real stage
+consumes or produces them.
 
 ### Provenance And Summary
 
-- `StageManifest`
-  - one record per stage containing config hash, input fingerprint, output
-    paths, and execution status
-- `RunSummary`
-  - final top-level summary containing the artifact root and stage status map
+[`StageManifest`](./contracts.py) records per-stage provenance through a config
+hash, an input fingerprint, named output paths, and an execution status, while
+[`RunSummary`](./contracts.py) provides the final run-level view of the
+artifact root and stage-status map.
 
 ### Minimum Structural Requirements
 
-- source adapters
-  - offline sources must provide `label` and
-    `prepare_sequence_manifest(output_dir) -> SequenceManifest`
-  - streaming sources must additionally provide
-    `open_stream(*, loop: bool) -> FramePacketStream`
-- SLAM backends
-  - offline backends must expose `method_id` and
-    `run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`
-  - streaming backends must expose `method_id` and
-    `start_session(cfg, artifact_root) -> SlamSession`
-- SLAM sessions
-  - must implement `step(frame) -> SlamUpdate` and `close() -> SlamArtifacts`
-- SLAM artifacts
-  - must always include `trajectory_tum`
-  - `sparse_points_ply`, `dense_points_ply`, and `preview_log_jsonl` remain
-    optional
+The source-provider seams live in
+[`prml_vslam.protocols.source`](../protocols/source.py), where offline sources
+must expose a human-readable `label` plus
+`prepare_sequence_manifest(output_dir) -> SequenceManifest`, and streaming
+sources add `open_stream(*, loop: bool) -> FramePacketStream`. The SLAM seams
+live in [`prml_vslam.methods.protocols`](../methods/protocols.py), where a
+backend exposes `method_id`, offline execution implements
+`run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`, streaming
+execution implements `start_session(cfg, artifact_root) -> SlamSession`, and a
+[`SlamSession`](../methods/protocols.py) itself must provide `step(frame) ->
+SlamUpdate` and `close() -> SlamArtifacts`. Within
+[`SlamArtifacts`](./contracts.py), `trajectory_tum` is mandatory, while
+`sparse_points_ply`, `dense_points_ply`, and `preview_log_jsonl` remain
+optional because not every backend or run mode materializes them.
 
 ## Runtime Interfaces
 
@@ -208,42 +200,30 @@ protocols from `prml_vslam.protocols.source` and SLAM behavior seams from
 
 ### SLAM
 
-- `OfflineSlamBackend`
-  - `run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`
-  - used for materialized-sequence execution
-- `StreamingSlamBackend`
-  - `start_session(cfg, artifact_root) -> SlamSession`
-  - used for incremental frame-driven execution
-- `SlamBackend`
-  - convenience combined protocol for backends that implement both execution modes
-- `SlamSession`
-  - `step(frame) -> SlamUpdate`
-  - `close() -> SlamArtifacts`
-  - used when SLAM consumes `FramePacket` incrementally
+[`OfflineSlamBackend`](../methods/protocols.py) covers materialized-sequence
+execution through `run_sequence(sequence, cfg, artifact_root) ->
+SlamArtifacts`, while [`StreamingSlamBackend`](../methods/protocols.py) covers
+incremental execution through `start_session(cfg, artifact_root) ->
+SlamSession`. [`SlamBackend`](../methods/protocols.py) is the convenience
+combined protocol for backends that support both modes, and
+[`SlamSession`](../methods/protocols.py) is the incremental interface that
+consumes [`FramePacket`](../interfaces/runtime.py) through `step(frame) ->
+SlamUpdate` and finishes with `close() -> SlamArtifacts`.
 
-The important boundary rule is simple:
-
-- streaming logic may consume `FramePacket`
-- downstream stages should consume typed artifact bundles or
-  `SequenceManifest`, not live packets
+The important boundary rule is that streaming logic may consume
+[`FramePacket`](../interfaces/runtime.py), but downstream stages should consume
+typed artifact bundles or [`SequenceManifest`](./contracts.py), not live
+packets.
 
 ## Artifact Layout
 
-`PathConfig.plan_run_paths(...)` returns the canonical artifact layout for one
-run through `RunArtifactPaths`.
-
-Important paths include:
-
-- `input/sequence_manifest.json`
-- `slam/trajectory.tum`
-- `slam/sparse_points.ply`
-- `dense/dense_points.ply`
-- `reference/reference_cloud.ply`
-- `evaluation/*.json`
-- `summary/run_summary.json`
-
-Stages should write into these canonical locations instead of inventing
-stage-local layouts.
+[`PathConfig.plan_run_paths(...)`](../utils/path_config.py) returns the
+canonical [`RunArtifactPaths`](../utils/path_config.py) layout for one run. In
+practice that means stages should write to stable locations such as
+`input/sequence_manifest.json`, `slam/trajectory.tum`,
+`slam/sparse_points.ply`, `dense/dense_points.ply`,
+`reference/reference_cloud.ply`, `evaluation/*.json`, and
+`summary/run_summary.json` instead of inventing stage-local layouts.
 
 ## Defining An Offline Pipeline
 
@@ -331,35 +311,29 @@ prints the resulting `RunPlan`. This is the current offline planning entrypoint.
 
 ### TOML Configs
 
-`prml_vslam.main.plan_run_config` resolves the TOML file itself through
-`PathConfig.resolve_toml_path(...)`, then hydrates `RunRequest` via
-`RunRequest.from_toml(...)`.
-
-Important nuance: only the TOML file path is repo-resolved automatically.
-Nested TOML paths such as `source.video_path` and `slam.config_path` are
-validated as written. If a caller wants repo-relative behavior for those inner
-paths, resolve them explicitly through `PathConfig`.
-
-`prml_vslam.main.plan_run_config` loads a persisted `RunRequest` TOML from
-`.configs/pipelines/*.toml` by default. Bare filenames resolve into that repo
-config directory through `PathConfig.resolve_pipeline_config_path(...)`.
+[`prml_vslam.main.plan_run_config`](../main.py) now loads persisted requests
+through [`load_run_request_toml`](./demo.py), which in turn uses
+[`PathConfig.resolve_pipeline_config_path(...)`](../utils/path_config.py) to
+find the TOML file and [`RunRequest.from_toml(...)`](../utils/base_config.py)
+to hydrate the model. The important nuance is that only the config file itself
+is repo-resolved automatically. Nested TOML paths such as `source.video_path`,
+`slam.config_path`, or `output_dir` are hydrated exactly as written, so runtime
+code should resolve them explicitly through
+[`PathConfig`](../utils/path_config.py) whenever repo-relative behavior is
+required. Bare filenames now resolve under `.configs/pipelines/`, while
+explicit relative and absolute paths keep their original anchoring.
 
 ### Streamlit Monitoring Demo
 
-The `Pipeline` page demonstrates the same contracts in an executable but
-bounded way:
-
-1. build a `RunRequest`
-2. build a `RunPlan`
-3. materialize an ADVIO-backed `SequenceManifest`
-4. open an ADVIO replay stream
-5. run the repository-local `MockSlamBackend`
-6. display frames, trajectory, stage manifests, artifacts, and summary
-
-This demo supports:
-
-- `offline` as one replay pass
-- `streaming` as looped replay with the same incremental SLAM interface
+The [`Pipeline` page](../app/pages/pipeline.py) demonstrates the same
+contracts in an executable but bounded way. It loads a persisted
+[`RunRequest`](./contracts.py), builds a [`RunPlan`](./contracts.py),
+materializes an ADVIO-backed [`SequenceManifest`](./contracts.py), opens an
+ADVIO replay stream, runs the repository-local
+[`MockSlamBackend`](../methods/mock_vslam.py), and displays frames,
+trajectories, stage manifests, artifacts, and the final summary. The page
+supports `offline` as a single replay pass and `streaming` as looped replay
+over the same incremental SLAM interface.
 
 ## Persisting A Pipeline Config
 
@@ -378,14 +352,18 @@ config_path = save_run_request_toml(
 )
 ```
 
-When `config_path` is a bare filename, it is written to
-`.configs/pipelines/<name>.toml`. Explicit relative paths keep their repo-root
-anchoring.
+This helper lives in [`pipeline/demo.py`](./demo.py) so the app, CLI, and
+examples all share one persisted-request path. When `config_path` is a bare
+filename, it is written to `.configs/pipelines/<name>.toml` through
+[`PathConfig.resolve_pipeline_config_path(...)`](../utils/path_config.py).
+Explicit relative paths keep their repo-root anchoring, which is useful when a
+team wants to keep example configs in a subdirectory that is still owned by the
+repository.
 
 ## Configuring Stages Via TOML
 
-`RunRequest` owns stage-specific config as nested config models, so the TOML
-uses one table per nested config:
+[`RunRequest`](./contracts.py) owns stage-specific config as nested config
+models, so the TOML mirrors the model tree directly:
 
 ```toml
 experiment_name = "advio-office-offline-vista"
@@ -412,205 +390,146 @@ evaluate_cloud = false
 evaluate_efficiency = true
 ```
 
-The rule is simple:
-
-- fields on `RunRequest` stay top-level
-- fields on `SlamConfig` go under `[slam]`
-- fields on `ReferenceConfig` go under `[reference]`
-- fields on `BenchmarkEvaluationConfig` go under `[evaluation]`
-
-`[source]` is a tagged-by-shape union. Choose exactly one source shape:
-
-- video source: `video_path`, optional `frame_stride`
-- dataset source: `dataset_id`, `sequence_id`
-- live source: `source_id`, optional `persist_capture`
+Fields that belong to [`RunRequest`](./contracts.py) stay top-level, while
+fields owned by [`SlamConfig`](./contracts.py),
+[`ReferenceConfig`](./contracts.py), and
+[`BenchmarkEvaluationConfig`](./contracts.py) live under `[slam]`,
+`[reference]`, and `[evaluation]`. The `[source]` table is a tagged-by-shape
+union: a video request uses `video_path` with an optional `frame_stride`, a
+dataset request uses `dataset_id` and `sequence_id`, and a live request uses
+`source_id` with an optional `persist_capture`.
 
 ## Common Questions
 
 ### Which Stages Actually Execute Today?
 
-The planner can describe:
-
-- `ingest`
-- `slam`
-- `reference_reconstruction`
-- `trajectory_evaluation`
-- `cloud_evaluation`
-- `efficiency_evaluation`
-- `summary`
-
-The current bounded `RunService` runtime only executes:
-
-- `ingest`
-- `slam`
-- `summary`
-
-Reference and evaluation stages are still planned architecture in this package.
+[`RunPlanStageId`](./contracts.py) can already describe `ingest`, `slam`,
+`reference_reconstruction`, `trajectory_evaluation`, `cloud_evaluation`,
+`efficiency_evaluation`, and `summary`, and the planner in
+[`services.py`](./services.py) can emit those stages when the request enables
+them. The current bounded runtime in [`run_service.py`](./run_service.py) and
+[`session.py`](./session.py) only executes `ingest`, `slam`, and `summary`,
+which is why reference and evaluation stages are still described as planned
+architecture in this package rather than as part of the runnable slice.
 
 ### Which Modules Own Which Boundaries?
 
-- `pipeline/contracts.py`
-  - stage DTOs, plan DTOs, manifests, summaries, and artifact bundles
-- `pipeline/services.py`
-  - planner wiring and stage selection
-- `pipeline/run_service.py`
-  - app-facing facade for the current runnable slice
-- `pipeline/session.py`
-  - current bounded runtime execution and manifest finalization
-- `protocols/source.py`
-  - source-provider behavior seams
-- `methods/protocols.py`
-  - SLAM backend and session behavior seams
-- `utils/path_config.py`
-  - canonical artifact layout and repo-owned config-path resolution
+Boundary ownership is deliberately split: [`pipeline/contracts.py`](./contracts.py)
+owns stage DTOs, plans, manifests, summaries, and artifact bundles;
+[`pipeline/services.py`](./services.py) owns planner wiring and stage
+selection; [`pipeline/run_service.py`](./run_service.py) is the app-facing
+facade for the current runnable slice; [`pipeline/session.py`](./session.py)
+owns the bounded runtime and manifest finalization;
+[`protocols/source.py`](../protocols/source.py) owns source-provider seams;
+[`methods/protocols.py`](../methods/protocols.py) owns SLAM backend and session
+seams; and [`utils/path_config.py`](../utils/path_config.py) owns the canonical
+artifact layout together with repo-owned config-path resolution.
 
 ### What Happens If I Omit Optional Stage Config?
 
-`ReferenceConfig.enabled` defaults to `false`.
-
-`BenchmarkEvaluationConfig` defaults to:
-
-- `compare_to_arcore = true`
-- `evaluate_cloud = false`
-- `evaluate_efficiency = true`
-
-`SlamConfig` defaults to:
-
-- `emit_dense_points = true`
-- `emit_sparse_points = true`
-
-So a minimal `RunRequest` with only `source` and `slam` plans:
-
-- `ingest`
-- `slam`
-- `trajectory_evaluation`
-- `efficiency_evaluation`
-- `summary`
+If a caller omits optional stage config, the defaults in
+[`contracts.py`](./contracts.py) apply: `ReferenceConfig.enabled` defaults to
+`false`, `BenchmarkEvaluationConfig` defaults to `compare_to_arcore = true`,
+`evaluate_cloud = false`, and `evaluate_efficiency = true`, and `SlamConfig`
+defaults to both dense and sparse export enabled. In practice, a minimal
+[`RunRequest`](./contracts.py) with only `source` and `slam` therefore plans
+`ingest`, `slam`, `trajectory_evaluation`, `efficiency_evaluation`, and
+`summary`, as you can confirm from the planner behavior documented in
+[`tests/test_pipeline.py`](../../../tests/test_pipeline.py).
 
 ### Which TOML Paths Are Auto-Resolved?
 
-- the TOML file passed to `plan-run-config`
-- bare filenames passed through the repo-owned pipeline-config helpers
-
-Nested fields inside the TOML are not rewritten automatically. Paths such as:
-
-- `source.video_path`
-- `slam.config_path`
-- `output_dir`
-
-are hydrated exactly as written and should be resolved explicitly through
-`PathConfig` when a runtime wants repo-relative behavior.
+The auto-resolved paths are the TOML file passed to
+[`plan-run-config`](../main.py) and the bare filenames passed through the
+repo-owned helpers in [`pipeline/demo.py`](./demo.py). Nested fields inside the
+TOML are not rewritten automatically, so values such as `source.video_path`,
+`slam.config_path`, and `output_dir` are hydrated exactly as written and should
+be normalized explicitly through [`PathConfig`](../utils/path_config.py) when a
+runtime wants repo-relative behavior.
 
 ### What Is The Minimum Valid `SequenceManifest`?
 
-Structurally, `SequenceManifest` only requires `sequence_id`.
-
-Recommended population by source kind:
-
-- video-backed sources
-  - `sequence_id`, `video_path`
-  - add `timestamps_path` and `intrinsics_path` when known
-- dataset-backed sources
-  - `sequence_id`
-  - populate dataset-derived `video_path`, `timestamps_path`,
-    `intrinsics_path`, `reference_tum_path`, and `arcore_tum_path` whenever
-    available
-- live or replay captures
-  - `sequence_id`
-  - include whichever persisted capture artifacts are already materialized for
-    downstream stages
+Structurally, [`SequenceManifest`](./contracts.py) only requires
+`sequence_id`. In practice, video-backed sources should also provide
+`video_path` and attach `timestamps_path` or `intrinsics_path` when known;
+dataset-backed sources should populate the dataset-derived `video_path`,
+`timestamps_path`, `intrinsics_path`, `reference_tum_path`, and
+`arcore_tum_path` whenever those artifacts are already available; and live or
+replay captures should include whichever persisted capture artifacts have
+already been materialized for downstream stages. The ADVIO implementation in
+[`advio_sequence.py`](../datasets/advio/advio_sequence.py) is the best current
+reference for a fully populated dataset-backed manifest.
 
 ### Which Artifacts Are Mandatory Vs Optional?
 
-- ingest
-  - required: `input/sequence_manifest.json`
-- slam
-  - required: `slam/trajectory.tum`
-  - optional: `slam/sparse_points.ply`
-  - optional: `dense/dense_points.ply`
-  - optional: live preview/event log artifact
-- summary
-  - required: `summary/run_summary.json`
-  - required: `summary/stage_manifests.json`
-
-Reference and evaluation artifact bundles should only become mandatory after
-those stages gain real runtime support.
+In the current runnable slice, ingest must write
+`input/sequence_manifest.json`, SLAM must write `slam/trajectory.tum`, and the
+summary stage must write both `summary/run_summary.json` and
+`summary/stage_manifests.json` through the canonical layout in
+[`RunArtifactPaths`](../utils/path_config.py). The SLAM stage may additionally
+write `slam/sparse_points.ply`, `dense/dense_points.ply`, and a live
+preview/event log when the backend and run mode support them. Reference and
+evaluation artifact bundles should only become mandatory after those stages
+gain real runtime support.
 
 ### Which Files Usually Change When Adding A Runnable Stage?
 
-At minimum, expect to touch:
-
-- `pipeline/contracts.py`
-- `pipeline/services.py`
-- `utils/path_config.py`
-- `pipeline/run_service.py`
-- `pipeline/session.py`
-- the owning protocol module when a new reusable execution seam is introduced
-- `tests/test_pipeline.py`
-- path or CLI tests when config/layout behavior changes
+For a new runnable stage, the minimum change set usually spans
+[`pipeline/contracts.py`](./contracts.py), [`pipeline/services.py`](./services.py),
+[`utils/path_config.py`](../utils/path_config.py),
+[`pipeline/run_service.py`](./run_service.py), and
+[`pipeline/session.py`](./session.py), plus the owning protocol module if the
+stage introduces a new reusable execution seam. Tests typically start in
+[`tests/test_pipeline.py`](../../../tests/test_pipeline.py) and expand into the
+path or CLI suites when config loading or artifact layout changes.
 
 ## How To Add A Stage
 
 When adding a stage, change the typed contracts first and the runner wiring
-second.
+second. In practice that means deciding whether the new capability introduces a
+major artifact boundary and, if it does, adding or extending the relevant typed
+artifact bundle in [`contracts.py`](./contracts.py). Then add the enabling
+config to [`RunRequest`](./contracts.py), add the new
+[`RunPlanStageId`](./contracts.py), extend the canonical outputs in
+[`RunArtifactPaths`](../utils/path_config.py), and insert the stage into
+[`RunPlannerService._build_stages(...)`](./services.py). If the stage
+introduces a reusable behavior seam, put that seam in the true owning protocol
+module, which usually means [`prml_vslam.protocols.source`](../protocols/source.py)
+for source behavior or [`prml_vslam.methods.protocols`](../methods/protocols.py)
+for SLAM behavior rather than inventing a pipeline-local protocol file.
 
-1. Decide whether the new stage is a major artifact boundary.
-   - If yes, define or extend a typed artifact bundle in `contracts.py`.
-2. Add or extend the enabling config in `RunRequest`.
-   - Optional stages should be config-gated, not implied by side effects.
-3. Add a new `RunPlanStageId` value in `contracts.py`.
-4. Add canonical output path ownership in `RunArtifactPaths`.
-   - The path layout belongs to `PathConfig`, not to the app or backend.
-5. Insert the stage into `RunPlannerService._build_stages(...)`.
-   - Give it a stable title, summary, and explicit outputs.
-6. Define the execution protocol in the owning package protocol module if the
-   stage introduces a new reusable execution seam.
-   - source-provider seams live in `prml_vslam.protocols.source`
-   - SLAM backend/session seams live in `prml_vslam.methods.protocols`
-   - add a new `<package>/protocols.py` only when that package truly owns a
-     new reusable behavior boundary
-7. Wire the executor surface.
-   - For the current demo this means `prml_vslam.pipeline.session`.
-   - Keep the Streamlit page as a thin client over the pipeline-owned service.
-8. Persist `StageManifest` and update `RunSummary`.
-9. Add tests for planning, artifact-path layout, and execution behavior.
-
-For the current runnable slice, extending the planner is not enough. If the
-new stage must execute in the bounded demo, also extend the stage support in
-`RunService` and the finalization logic in `PipelineSessionService`.
-
-If the new stage needs live `FramePacket` access, challenge that decision
-first. In this repository, only ingress and streaming SLAM should normally
-operate on live packets. Most later stages should run on materialized
-artifacts.
+For the current runnable slice, planner changes are not sufficient on their
+own. A stage that must execute in the bounded demo also needs runtime support
+in [`RunService`](./run_service.py) and finalization support in
+[`PipelineSessionService`](./session.py), plus tests for planning, artifact
+layout, and execution behavior. If the stage appears to need direct live
+[`FramePacket`](../interfaces/runtime.py) access, challenge that design first:
+in this repository only ingress and streaming SLAM should normally operate on
+live packets, while later stages should run on materialized artifacts.
 
 ## Recommended Extension Pattern
 
-Use the following decision rule:
-
-- if a capability consumes a full materialized sequence, model it as an
-  offline stage
-- if a capability must react frame by frame, model it as streaming SLAM or as
-  observability around streaming SLAM
-- if a capability produces reusable geometry or metrics, materialize it as a
-  typed artifact bundle
+The extension rule is simple: if a capability consumes a fully materialized
+sequence, model it as an offline stage; if it must react frame by frame, model
+it as streaming SLAM or as observability around streaming SLAM; and if it
+produces reusable geometry or metrics, materialize it as a typed artifact
+bundle.
 
 ## Related Files
 
-- [`contracts.py`](./contracts.py)
-- [`session.py`](./session.py)
-- [`run_service.py`](./run_service.py)
-- [`services.py`](./services.py)
-- [`workspace.py`](./workspace.py)
-- [`../methods/protocols.py`](../methods/protocols.py)
-- [`../protocols/source.py`](../protocols/source.py)
-- [`../app/pages/pipeline.py`](../app/pages/pipeline.py)
-- [`../methods/mock_vslam.py`](../methods/mock_vslam.py)
-- [`../datasets/advio_service.py`](../datasets/advio_service.py)
-- [`../datasets/advio_sequence.py`](../datasets/advio_sequence.py)
-- [`../datasets/advio_replay_adapter.py`](../datasets/advio_replay_adapter.py)
-- [`../io/cv2_producer.py`](../io/cv2_producer.py)
-- [`../interfaces/runtime.py`](../interfaces/runtime.py)
-- [`../protocols/runtime.py`](../protocols/runtime.py)
-- [`../utils/path_config.py`](../utils/path_config.py)
-- [`REQUIREMENTS.md`](./REQUIREMENTS.md)
+For the current implementation, the most important follow-on references are
+[`contracts.py`](./contracts.py), [`services.py`](./services.py),
+[`run_service.py`](./run_service.py), [`session.py`](./session.py), and
+[`workspace.py`](./workspace.py) inside this package; the shared protocol seams
+in [`../methods/protocols.py`](../methods/protocols.py),
+[`../protocols/source.py`](../protocols/source.py), and
+[`../protocols/runtime.py`](../protocols/runtime.py); the current runtime and
+demo surfaces in [`../app/pages/pipeline.py`](../app/pages/pipeline.py),
+[`../methods/mock_vslam.py`](../methods/mock_vslam.py),
+[`../datasets/advio_service.py`](../datasets/advio_service.py),
+[`../datasets/advio_sequence.py`](../datasets/advio_sequence.py),
+[`../datasets/advio_replay_adapter.py`](../datasets/advio_replay_adapter.py),
+and [`../io/cv2_producer.py`](../io/cv2_producer.py); the shared runtime data
+model in [`../interfaces/runtime.py`](../interfaces/runtime.py); the canonical
+path layout in [`../utils/path_config.py`](../utils/path_config.py); and the
+target-state architecture in [`REQUIREMENTS.md`](./REQUIREMENTS.md).

@@ -250,3 +250,11 @@ def test_runtime_dependencies_include_pyyaml() -> None:
     dependencies = pyproject["project"]["dependencies"]
 
     assert any(dependency.lower().startswith("pyyaml") for dependency in dependencies)
+
+
+def test_pyproject_exposes_streamlit_app_console_script() -> None:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    scripts = pyproject["project"]["scripts"]
+
+    assert scripts["prml-vslam-app"] == "prml_vslam.app:run_app"
