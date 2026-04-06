@@ -254,7 +254,23 @@ def open_record3d_usb_packet_stream(*, device_index: int, frame_timeout_seconds:
     return stream
 
 
+def build_record3d_frame_details(packet: FramePacket, *, source_label: str = "") -> dict[str, object]:
+    """Build the compact frame-details payload shown by Record3D consumers."""
+    arrival_timestamp_s = packet.arrival_timestamp_s
+    if arrival_timestamp_s is None:
+        arrival_timestamp_s = packet.timestamp_ns / 1e9
+    details: dict[str, object] = {"arrival_timestamp_s": round(arrival_timestamp_s, 3)}
+    if source_label:
+        details["source"] = source_label
+    if "original_size" in packet.metadata:
+        details["original_size"] = packet.metadata["original_size"]
+    if packet.metadata:
+        details["metadata"] = packet.metadata
+    return details
+
+
 __all__ = [
+    "build_record3d_frame_details",
     "list_record3d_usb_devices",
     "open_record3d_usb_packet_stream",
     "Record3DDevice",

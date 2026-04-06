@@ -172,6 +172,17 @@ class RunPlan(BaseData):
     stages: list[RunPlanStage] = Field(default_factory=list)
     """Ordered execution stages for the benchmark run."""
 
+    def stage_rows(self) -> list[dict[str, str]]:
+        """Return compact tabular rows for plan summaries."""
+        return [
+            {
+                "Stage": stage.title,
+                "Id": stage.id.value,
+                "Outputs": ", ".join(path.name for path in stage.outputs),
+            }
+            for stage in self.stages
+        ]
+
 
 class ArtifactRef(BaseData):
     """Reference to one materialized artifact owned by the repository."""
@@ -259,6 +270,19 @@ class StageManifest(BaseData):
     """Named materialized outputs produced or reused by the stage."""
     status: StageExecutionStatus
     """Whether the stage was reused, executed, or failed."""
+
+    @staticmethod
+    def table_rows(stage_manifests: list[StageManifest]) -> list[dict[str, str]]:
+        """Return compact tabular rows for manifest summaries."""
+        return [
+            {
+                "Stage": manifest.stage_id.value,
+                "Status": manifest.status.value,
+                "Config Hash": manifest.config_hash,
+                "Outputs": ", ".join(path.name for path in manifest.output_paths.values()),
+            }
+            for manifest in stage_manifests
+        ]
 
 
 class RunSummary(BaseData):

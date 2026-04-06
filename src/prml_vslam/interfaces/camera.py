@@ -39,6 +39,16 @@ class CameraIntrinsics(BaseData):
             dtype=np.float64,
         )
 
+    def to_latex(self) -> str:
+        """Return the canonical LaTeX camera-intrinsics matrix display."""
+        return (
+            "K = \\begin{bmatrix}"
+            f"{self.fx:.3f} & 0.000 & {self.cx:.3f} \\\\ "
+            f"0.000 & {self.fy:.3f} & {self.cy:.3f} \\\\ "
+            "0.000 & 0.000 & 1.000"
+            "\\end{bmatrix}"
+        )
+
     @classmethod
     def from_matrix(
         cls,

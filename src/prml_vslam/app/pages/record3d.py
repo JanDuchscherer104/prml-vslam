@@ -10,6 +10,7 @@ from prml_vslam.interfaces import FramePacket
 from prml_vslam.io.record3d import (
     Record3DDevice,
     Record3DTransportId,
+    build_record3d_frame_details,
     list_record3d_usb_devices,
 )
 from prml_vslam.utils.image_utils import normalize_grayscale_image
@@ -25,7 +26,6 @@ from ..live_session import (
 )
 from ..models import PreviewStreamState, Record3DStreamSnapshot
 from ..record3d_controller import Record3DPageAction, handle_record3d_page_action, sync_record3d_running_state
-from ..record3d_view_utils import build_record3d_frame_details
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -144,7 +144,7 @@ def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
             trajectory_empty_message="Live ego trajectory is not available for the current transport yet.",
             details_payload={}
             if snapshot.latest_packet is None
-            else build_record3d_frame_details(snapshot, snapshot.latest_packet),
+            else build_record3d_frame_details(snapshot.latest_packet, source_label=snapshot.source_label),
             intrinsics_missing_message="Camera intrinsics are not available for the current packet.",
         ),
     )

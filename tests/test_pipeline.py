@@ -20,9 +20,12 @@ from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DatasetSourceSpec,
     ReferenceConfig,
+    RunPlan,
+    RunPlanStage,
     RunPlanStageId,
     SlamConfig,
     StageExecutionStatus,
+    StageManifest,
     VideoSourceSpec,
 )
 from prml_vslam.pipeline.run_service import RunService
@@ -136,6 +139,53 @@ def test_run_request_requires_slam_config() -> None:
             output_dir=Path(".artifacts"),
             source=VideoSourceSpec(video_path=Path("captures/missing-slam.mp4")),
         )
+
+
+def test_run_plan_stage_rows_are_owned_by_contract() -> None:
+    plan = RunPlan(
+        run_id="demo",
+        mode=PipelineMode.OFFLINE,
+        method=MethodId.VISTA,
+        artifact_root=Path("/tmp/demo"),
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        stages=[
+            RunPlanStage(
+                id=RunPlanStageId.SLAM,
+                title="Run SLAM",
+                summary="demo",
+                outputs=[Path("/tmp/demo/slam/trajectory.tum")],
+            )
+        ],
+    )
+
+    assert plan.stage_rows() == [
+        {
+            "Stage": "Run SLAM",
+            "Id": "slam",
+            "Outputs": "trajectory.tum",
+        }
+    ]
+
+
+def test_stage_manifest_table_rows_are_owned_by_contract() -> None:
+    manifests = [
+        StageManifest(
+            stage_id=RunPlanStageId.SLAM,
+            config_hash="abc",
+            input_fingerprint="def",
+            output_paths={"trajectory": Path("/tmp/demo/slam/trajectory.tum")},
+            status=StageExecutionStatus.RAN,
+        )
+    ]
+
+    assert StageManifest.table_rows(manifests) == [
+        {
+            "Stage": "slam",
+            "Status": "ran",
+            "Config Hash": "abc",
+            "Outputs": "trajectory.tum",
+        }
+    ]
 
 
 def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: Path) -> None:

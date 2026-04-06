@@ -24,6 +24,7 @@ def test_camera_intrinsics_roundtrip_from_matrix() -> None:
 
     assert intrinsics == CameraIntrinsics(fx=525.0, fy=530.0, cx=320.0, cy=240.0)
     assert np.allclose(intrinsics.as_matrix(), np.asarray(matrix, dtype=np.float64))
+    assert "K = \\begin{bmatrix}" in intrinsics.to_latex()
 
 
 def test_camera_intrinsics_from_column_major_flat_k() -> None:
