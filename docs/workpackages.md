@@ -12,7 +12,7 @@ Assignee: Valentin Bumeder
 ### WP 1.1: ADVIO Dataset
 Assignee: Jan Duchscherer
 Output: Dataset containing RGB Video Stream & baseline log data
-- review and prepare data from ADVIO dataset for benachmarking of VSLAM Pipeline
+- review and prepare data from ADVIO dataset for benchmarking of VSLAM Pipeline
 
 ### WP 1.2: Mobile Client (Record 3D)
 Assignee: Jan Duchscherer
@@ -41,14 +41,14 @@ Assignee(s): Open
 Assignees: Lukas Röß, Jan Duchscherer
 input: RGB Video Stream
 output: incrementally updating Pointcloud & Trajectory
-- defined input / ouput interface for VSLAM algorithms
+- defined input / output interface for VSLAM algorithms
 - setup real-time capable ViSTA-SLAM algorithm
 
 ### WP 2.3: MASt3R-SLAM
 Assignee: Christopher Kirschner
 input: RGB Video Stream
 output: incrementally updating Pointcloud & Trajectory
-- defined input / ouput interface for VSLAM algorithms
+- defined input / output interface for VSLAM algorithms
 - setup real-time capable MASt3R-SLAM algorithm
 
 ## WP 3: Incremental Streaming (3DGS)
@@ -58,10 +58,10 @@ output: 2D/3D visualization of VSLAM output
 - implemented service that renders the VSLAM output in 2D / 3D
 
 
-## WP 4: Metrics - Component Througput
+## WP 4: Metrics - Component Throughput
 Assignee: Florian Beck
 input: services in pipeline
-output: performance metrics (througput per component)
+output: performance metrics (throughput per component)
 - setup throughput metric that can be reused over the all components of the pipeline
 
 ## WP 5: Metrics - Point Cloud Comparison
@@ -83,10 +83,10 @@ output: comparison metric
 ## WP 7: Metrics - Output Images (Quality)
 Assignee: Christopher Kirschner
 input: VSLAM image output
-- created quality metricts based on VSLAM image output (PSNR or other Standard Reconstruction Metrics)
+- created quality metrics based on VSLAM image output (PSNR or other Standard Reconstruction Metrics)
 
 ## WP 8: (Optional) Ground Truth Creation -> Grab if you're bored! 
 Assignee(s): Open
 
-## WP 9: (Optional) AR Core - Grab if you're bored! 
+## WP 9: (Optional) ARCore - Grab if you're bored! 
 Assignee(s): Open
