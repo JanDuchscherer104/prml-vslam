@@ -129,8 +129,10 @@ def render(context: AppContext) -> None:
         if template_request is None:
             st.warning(template_error or "Failed to load the selected pipeline config.")
             action = _action_from_page_state(page_state, selected_config_path)
+            identity_input_error = None
+            source_input_error = _source_input_error(action)
         else:
-            action = _render_request_editor(
+            action, identity_input_error, source_input_error = _render_request_editor(
                 context=context,
                 page_state=page_state,
                 selected_config_path=selected_config_path,
@@ -146,8 +148,7 @@ def render(context: AppContext) -> None:
             plan=preview_plan,
             previewable_statuses=previewable_statuses,
         )
-        source_input_error = _source_input_error(action)
-        start_error = support_error or source_input_error
+        start_error = support_error or identity_input_error or source_input_error
 
         preview_left, preview_right = st.columns(2, gap="large")
         with preview_left:
@@ -196,7 +197,7 @@ def _render_request_editor(
     page_state: PipelinePageState,
     selected_config_path: Path,
     previewable_statuses: list[object],
-) -> PipelinePageAction:
+) -> tuple[PipelinePageAction, str | None, str | None]:
     source_options = [PipelineSourceId.ADVIO, PipelineSourceId.RECORD3D]
     source_kind = st.segmented_control(
         "Source",
@@ -208,7 +209,14 @@ def _render_request_editor(
         key="pipeline_source_selector",
     )
     resolved_source_kind = page_state.source_kind if source_kind is None else source_kind
-    experiment_name, mode, method, slam_max_frames, slam_config_path = _render_request_identity_controls(
+    (
+        experiment_name,
+        mode,
+        method,
+        slam_max_frames,
+        slam_config_path,
+        identity_input_error,
+    ) = _render_request_identity_controls(
         page_state=page_state,
         path_config=context.path_config,
         source_kind=resolved_source_kind,
@@ -221,6 +229,7 @@ def _render_request_editor(
         record3d_persist_capture,
         pose_source,
         respect_video_rotation,
+        source_input_error,
     ) = _render_source_settings(
         context=context,
         page_state=page_state,
@@ -235,30 +244,34 @@ def _render_request_editor(
         evaluate_cloud,
         evaluate_efficiency,
     ) = _render_stage_settings(page_state)
-    return PipelinePageAction.model_validate(
-        page_state.model_dump(mode="python")
-        | {
-            "config_path": selected_config_path,
-            "experiment_name": experiment_name,
-            "source_kind": resolved_source_kind,
-            "advio_sequence_id": advio_sequence_id,
-            "mode": mode,
-            "method": method,
-            "slam_max_frames": slam_max_frames,
-            "slam_config_path": slam_config_path,
-            "emit_dense_points": emit_dense_points,
-            "emit_sparse_points": emit_sparse_points,
-            "reference_enabled": reference_enabled,
-            "compare_to_arcore": compare_to_arcore,
-            "evaluate_cloud": evaluate_cloud,
-            "evaluate_efficiency": evaluate_efficiency,
-            "record3d_transport": record3d_transport,
-            "record3d_usb_device_index": record3d_usb_device_index,
-            "record3d_wifi_device_address": record3d_wifi_device_address,
-            "record3d_persist_capture": record3d_persist_capture,
-            "pose_source": pose_source,
-            "respect_video_rotation": respect_video_rotation,
-        }
+    return (
+        PipelinePageAction.model_validate(
+            page_state.model_dump(mode="python")
+            | {
+                "config_path": selected_config_path,
+                "experiment_name": experiment_name,
+                "source_kind": resolved_source_kind,
+                "advio_sequence_id": advio_sequence_id,
+                "mode": mode,
+                "method": method,
+                "slam_max_frames": slam_max_frames,
+                "slam_config_path": slam_config_path,
+                "emit_dense_points": emit_dense_points,
+                "emit_sparse_points": emit_sparse_points,
+                "reference_enabled": reference_enabled,
+                "compare_to_arcore": compare_to_arcore,
+                "evaluate_cloud": evaluate_cloud,
+                "evaluate_efficiency": evaluate_efficiency,
+                "record3d_transport": record3d_transport,
+                "record3d_usb_device_index": record3d_usb_device_index,
+                "record3d_wifi_device_address": record3d_wifi_device_address,
+                "record3d_persist_capture": record3d_persist_capture,
+                "pose_source": pose_source,
+                "respect_video_rotation": respect_video_rotation,
+            }
+        ),
+        identity_input_error,
+        source_input_error,
     )
 
 
@@ -271,7 +284,7 @@ def _render_request_identity_controls(
     page_state: PipelinePageState,
     path_config: PathConfig,
     source_kind: PipelineSourceId,
-) -> tuple[str, PipelineMode, MethodId, int | None, Path | None]:
+) -> tuple[str, PipelineMode, MethodId, int | None, Path | None, str | None]:
     left, _ = st.columns(2, gap="large")
     with left:
         experiment_name = st.text_input("Experiment Name", value=page_state.experiment_name).strip()
@@ -289,12 +302,14 @@ def _render_request_identity_controls(
             index=list(MethodId).index(page_state.method),
             format_func=lambda item: item.display_name,
         )
-        slam_max_frames = _parse_optional_int(
-            st.text_input(
-                "SLAM Max Frames",
-                value="" if page_state.slam_max_frames is None else str(page_state.slam_max_frames),
-                placeholder="blank for no limit",
-            ).strip()
+        slam_max_frames_raw = st.text_input(
+            "SLAM Max Frames",
+            value="" if page_state.slam_max_frames is None else str(page_state.slam_max_frames),
+            placeholder="blank for no limit",
+        ).strip()
+        slam_max_frames, slam_max_frames_error = _parse_optional_int(
+            raw_value=slam_max_frames_raw,
+            field_label="SLAM Max Frames",
         )
         slam_config_path = _parse_optional_repo_path(
             path_config,
@@ -304,7 +319,7 @@ def _render_request_identity_controls(
                 placeholder=".configs/methods/vista/demo.toml",
             ).strip(),
         )
-    return experiment_name, mode, method, slam_max_frames, slam_config_path
+    return experiment_name, mode, method, slam_max_frames, slam_config_path, slam_max_frames_error
 
 
 def _render_source_settings(
@@ -313,7 +328,7 @@ def _render_source_settings(
     page_state: PipelinePageState,
     source_kind: PipelineSourceId,
     previewable_statuses: list[object],
-) -> tuple[int | None, Record3DTransportId, int, str, bool, AdvioPoseSource, bool]:
+) -> tuple[int | None, Record3DTransportId, int, str, bool, AdvioPoseSource, bool, str | None]:
     _, right = st.columns(2, gap="large")
     with right:
         advio_sequence_id = page_state.advio_sequence_id
@@ -323,18 +338,21 @@ def _render_source_settings(
         record3d_persist_capture = page_state.record3d_persist_capture
         pose_source = page_state.pose_source
         respect_video_rotation = page_state.respect_video_rotation
+        source_input_error = None
         if source_kind is PipelineSourceId.ADVIO:
             advio_sequence_id, pose_source, respect_video_rotation = _render_advio_source_settings(
                 context=context,
                 page_state=page_state,
                 previewable_statuses=previewable_statuses,
             )
+            source_input_error = None if advio_sequence_id is not None else "Select a replay-ready ADVIO scene."
         else:
             (
                 record3d_transport,
                 record3d_usb_device_index,
                 record3d_wifi_device_address,
                 record3d_persist_capture,
+                source_input_error,
             ) = _render_record3d_source_settings(page_state=page_state)
     return (
         advio_sequence_id,
@@ -344,6 +362,7 @@ def _render_source_settings(
         record3d_persist_capture,
         pose_source,
         respect_video_rotation,
+        source_input_error,
     )
 
 
@@ -383,7 +402,7 @@ def _render_advio_source_settings(
 def _render_record3d_source_settings(
     *,
     page_state: PipelinePageState,
-) -> tuple[Record3DTransportId, int, str, bool]:
+) -> tuple[Record3DTransportId, int, str, bool, str | None]:
     selection = render_record3d_transport_controls(
         transport=page_state.record3d_transport,
         usb_device_index=page_state.record3d_usb_device_index,
@@ -400,6 +419,7 @@ def _render_record3d_source_settings(
         selection.usb_device_index,
         selection.wifi_device_address,
         record3d_persist_capture,
+        selection.input_error,
     )
 
 
@@ -846,6 +866,12 @@ def _build_streaming_source_from_action(context: AppContext, action: PipelinePag
             pose_source=action.pose_source,
             respect_video_rotation=action.respect_video_rotation,
         )
+    transport_input_error = record3d_transport_input_error(
+        transport=action.record3d_transport,
+        wifi_device_address=action.record3d_wifi_device_address,
+    )
+    if transport_input_error is not None:
+        raise ValueError(transport_input_error)
     record3d_source = _record3d_source_spec_from_action(action)
     source = Record3DStreamingSourceConfig(
         transport=record3d_source.transport,
@@ -875,8 +901,13 @@ def _resolve_advio_sequence_id(*, sequence_slug: str, statuses: list[object]) ->
     return sequence_id, None
 
 
-def _parse_optional_int(raw_value: str) -> int | None:
-    return None if raw_value == "" else int(raw_value)
+def _parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None, str | None]:
+    if raw_value == "":
+        return None, None
+    try:
+        return int(raw_value), None
+    except ValueError:
+        return None, f"Enter a whole number for `{field_label}` or leave the field blank."
 
 
 def _parse_optional_repo_path(path_config: PathConfig, raw_value: str) -> Path | None:
