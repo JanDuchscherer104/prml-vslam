@@ -41,9 +41,7 @@ For each frame, the upstream Python bindings expose:
 
 ### Repo mapping
 
-In this repo, the thin [record3d.py](record3d.py) adapter waits for the upstream
-callbacks and normalizes each frame directly into the shared `FramePacket`
-contract with:
+In this repo, the thin [record3d.py](record3d.py) adapter waits for the upstream callbacks and normalizes each frame directly into the shared `FramePacket` contract with:
 
 - `rgb`
 - `depth`
@@ -157,11 +155,7 @@ So in this repo:
 
 ## Sources
 
-- Official Record3D README:
-  [record3d README](https://github.com/marek-simonik/record3d/blob/master/README.md)
-- Official Python bindings:
-  [PythonBindings.cpp](https://github.com/marek-simonik/record3d/blob/master/python-bindings/src/PythonBindings.cpp)
-- Official Wi-Fi signaling / metadata demo:
-  [SignalingClient.js](https://github.com/marek-simonik/record3d-wifi-streaming-and-rgbd-mp4-3d-video-demo/blob/master/js/app/video-sources/SignalingClient.js)
-- Official Wi-Fi RGBD video handling:
-  [WiFiStreamedVideoSource.js](https://github.com/marek-simonik/record3d-wifi-streaming-and-rgbd-mp4-3d-video-demo/blob/master/js/app/video-sources/WiFiStreamedVideoSource.js)
+- Official Record3D README: [record3d README](https://github.com/marek-simonik/record3d/blob/master/README.md)
+- Official Python bindings: [PythonBindings.cpp](https://github.com/marek-simonik/record3d/blob/master/python-bindings/src/PythonBindings.cpp)
+- Official Wi-Fi signaling / metadata demo: [SignalingClient.js](https://github.com/marek-simonik/record3d-wifi-streaming-and-rgbd-mp4-3d-video-demo/blob/master/js/app/video-sources/SignalingClient.js)
+- Official Wi-Fi RGBD video handling: [WiFiStreamedVideoSource.js](https://github.com/marek-simonik/record3d-wifi-streaming-and-rgbd-mp4-3d-video-demo/blob/master/js/app/video-sources/WiFiStreamedVideoSource.js)

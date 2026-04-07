@@ -1,0 +1,208 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 803.954 2381.2000000000003" width="803.954" height="2381.2000000000003" style="--bg:#eff1f5;--fg:#4c4f69;--line:#9ca0b0;--accent:#8839ef;--muted:#9ca0b0;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<g class="subgraph" data-id="planning" data-label="Planning phase">
+  <rect x="178.08775" y="352.40000000000003" width="256.23599999999993" height="726.3" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="178.08775" y="352.40000000000003" width="256.23599999999993" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="190.08775" y="366.40000000000003" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Planning phase</text>
+</g>
+<g class="subgraph" data-id="launch" data-label="Launch and normalization">
+  <rect x="186.27299999999997" y="1183" width="577.6809999999999" height="351.6" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="186.27299999999997" y="1183" width="577.6809999999999" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="198.27299999999997" y="1197" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Launch and normalization</text>
+</g>
+<g class="subgraph" data-id="hotpath" data-label="Streaming SLAM hot path">
+  <rect x="377.006" y="1662.9" width="272.53799999999995" height="351.6" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="377.006" y="1662.9" width="272.53799999999995" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="389.006" y="1676.9" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Streaming SLAM hot path</text>
+</g>
+<g class="subgraph" data-id="finalize" data-label="Finalization">
+  <rect x="383.54575" y="2074.5" width="275.74325" height="266.70000000000005" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="383.54575" y="2074.5" width="275.74325" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="395.54575" y="2088.5" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Finalization</text>
+</g>
+<polyline class="edge" data-from="user" data-to="surface" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="choose request" points="306.20574999999997,76.9 306.20574999999997,193.2" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="surface" data-to="toml" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="load template" points="306.20574999999997,230.10000000000002 306.20574999999997,396.40000000000003" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="plan" data-to="preview" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="preview only" points="290.81608333333327,1062.7 290.81608333333327,1096.7000000000003 99.13649999999998,1096.7000000000003 99.13649999999998,1177.0000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="plan" data-to="runsvc" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="bounded execution" points="321.5954166666666,1062.7 321.5954166666666,1096.7 513.2749999999999,1096.7 513.2749999999999,1227" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="stream" data-to="frame" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="for each packet" points="513.2749999999999,1518.6 513.2749999999999,1706.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="slam_session" data-to="close" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="terminal close" points="682.5189999999999,1518.6 682.5189999999999,1576.6000000000001 671.0314999999999,1576.6000000000001 671.0314999999999,2056.5 583.7819999999999,2056.5 583.7819999999999,2118.5000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="manifest" data-to="summary" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="312.16799999999995,1518.6000000000001 312.16799999999995,2264.3 518.70325,2264.3 518.70325,2288.3" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="snapshot" data-to="summary" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.275,1998.5000000000002 513.275,2264.3 518.70325,2264.3 518.70325,2288.3" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="toml" data-to="paths" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="resolve repo path" points="306.20574999999997,433.30000000000007 306.20574999999997,549.6" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="paths" data-to="load" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="hydrate request" points="306.20574999999997,586.5 306.20574999999997,702.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="load" data-to="request" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="306.20574999999997,739.7 306.20574999999997,787.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="request" data-to="planner" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="plan run" points="306.20574999999997,824.5999999999999 306.20574999999997,940.9000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="planner" data-to="plan" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="306.20574999999997,977.8 306.20574999999997,1025.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="runsvc" data-to="session" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.2749999999999,1263.9 513.2749999999999,1311.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="session" data-to="prep" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.2749999999999,1348.8000000000002 513.2749999999999,1372.8000000000002 312.16799999999995,1372.8000000000002 312.16799999999995,1396.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="prep" data-to="manifest" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="312.16799999999995,1433.7 312.16799999999995,1481.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="session" data-to="open" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.2749999999999,1348.8000000000002 513.2749999999999,1372.8000000000002 513.2749999999999,1372.8000000000002 513.2749999999999,1396.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="open" data-to="stream" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.2749999999999,1433.7 513.2749999999999,1481.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="session" data-to="start" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.2749999999999,1348.8000000000002 513.2749999999999,1372.8000000000002 682.5189999999998,1372.8000000000002 682.5189999999998,1396.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="start" data-to="slam_session" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="682.5189999999999,1433.7 682.5189999999999,1481.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="frame" data-to="step" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.275,1743.8000000000002 513.275,1791.8000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="step" data-to="update" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.275,1828.7 513.275,1876.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="update" data-to="snapshot" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="513.275,1913.6000000000001 513.275,1961.6000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="close" data-to="artifacts" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="583.7819999999999,2155.4 583.7819999999999,2203.4" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="artifacts" data-to="summary" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="583.7819999999999,2240.3 583.7819999999999,2264.3 518.70325,2264.3 518.70325,2288.3" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="user" data-to="surface" data-label="choose request">
+  <rect x="260.20574999999997" y="119.9" width="91.9" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="306.15574999999995" y="135.05" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">choose request</text>
+</g>
+<g class="edge-label" data-from="surface" data-to="toml" data-label="load template">
+  <rect x="267.20574999999997" y="273.1" width="77.644" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="306.02774999999997" y="288.25" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">load template</text>
+</g>
+<g class="edge-label" data-from="plan" data-to="preview" data-label="preview only">
+  <rect x="60.136499999999984" y="1103.7000000000003" width="77.644" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="98.95849999999999" y="1118.8500000000004" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">preview only</text>
+</g>
+<g class="edge-label" data-from="plan" data-to="runsvc" data-label="bounded execution">
+  <rect x="459.27499999999986" y="1103.7" width="107.34400000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="512.9469999999999" y="1118.8500000000001" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">bounded execution</text>
+</g>
+<g class="edge-label" data-from="stream" data-to="frame" data-label="for each packet">
+  <rect x="467.7749999999999" y="1583.6000000000001" width="90.11800000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="512.834" y="1598.7500000000002" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">for each packet</text>
+</g>
+<g class="edge-label" data-from="slam_session" data-to="close" data-label="terminal close">
+  <rect x="629.5314999999998" y="1583.6000000000001" width="82.39600000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="670.7294999999998" y="1598.7500000000002" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">terminal close</text>
+</g>
+<g class="edge-label" data-from="toml" data-to="paths" data-label="resolve repo path">
+  <rect x="255.7057499999999" y="476.30000000000007" width="100.81000000000003" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="306.11074999999994" y="491.45000000000005" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">resolve repo path</text>
+</g>
+<g class="edge-label" data-from="paths" data-to="load" data-label="hydrate request">
+  <rect x="259.20574999999997" y="629.5000000000001" width="93.08800000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="305.74974999999995" y="644.6500000000001" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">hydrate request</text>
+</g>
+<g class="edge-label" data-from="request" data-to="planner" data-label="plan run">
+  <rect x="277.70574999999997" y="867.6" width="56.26" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="305.83574999999996" y="882.75" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">plan run</text>
+</g>
+<g class="node" data-id="user" data-label="User" data-shape="stadium">
+  <rect x="270.41075" y="40" width="71.59" height="36.900000000000006" rx="18.450000000000003" ry="18.450000000000003" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20575" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">User</text>
+</g>
+<g class="node" data-id="surface" data-label="CLI or Pipeline page" data-shape="rectangle">
+  <rect x="226.32124999999996" y="193.2" width="159.769" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20574999999997" y="211.64999999999998" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">CLI or Pipeline page</text>
+</g>
+<g class="node" data-id="preview" data-label="Plan preview" data-shape="rectangle">
+  <rect x="40.000000000000014" y="1177.0000000000002" width="118.27299999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="99.13650000000001" y="1195.4500000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Plan preview</text>
+</g>
+<g class="node" data-id="toml" data-label="Persisted pipeline TOML" data-shape="subroutine">
+  <rect x="212.24224999999996" y="396.40000000000003" width="187.927" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <line x1="220.24224999999996" y1="396.40000000000003" x2="220.24224999999996" y2="433.30000000000007" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <line x1="392.1692499999999" y1="396.40000000000003" x2="392.1692499999999" y2="433.30000000000007" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20574999999997" y="414.85" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Persisted pipeline TOML</text>
+</g>
+<g class="node" data-id="load" data-label="load_run_request_toml()" data-shape="rectangle">
+  <rect x="213.35375" y="702.8" width="185.70399999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20574999999997" y="721.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">load_run_request_toml()</text>
+</g>
+<g class="node" data-id="request" data-label="RunRequest" data-shape="rectangle">
+  <rect x="248.92174999999997" y="787.7" width="114.568" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20574999999997" y="806.1500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunRequest</text>
+</g>
+<g class="node" data-id="paths" data-label="resolve_pipeline_config_path()" data-shape="rectangle">
+  <rect x="194.08775" y="549.6" width="224.23599999999993" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20574999999997" y="568.0500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">resolve_pipeline_config_path()</text>
+</g>
+<g class="node" data-id="planner" data-label="build_run_plan()" data-shape="rectangle">
+  <rect x="237.06574999999998" y="940.9000000000001" width="138.28" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20574999999997" y="959.3500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">build_run_plan()</text>
+</g>
+<g class="node" data-id="plan" data-label="RunPlan" data-shape="rectangle">
+  <rect x="260.03675" y="1025.8" width="92.338" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="306.20574999999997" y="1044.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunPlan</text>
+</g>
+<g class="node" data-id="runsvc" data-label="RunService.start_run()" data-shape="rectangle">
+  <rect x="424.1279999999999" y="1227" width="178.294" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.2749999999999" y="1245.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunService.start_run()</text>
+</g>
+<g class="node" data-id="session" data-label="PipelineSessionService.start()" data-shape="rectangle">
+  <rect x="401.8979999999999" y="1311.9" width="222.75399999999993" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.2749999999999" y="1330.3500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">PipelineSessionService.start()</text>
+</g>
+<g class="node" data-id="prep" data-label="prepare_sequence_manifest()" data-shape="rectangle">
+  <rect x="202.27299999999997" y="1396.8" width="219.78999999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="312.16799999999995" y="1415.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">prepare_sequence_manifest()</text>
+</g>
+<g class="node" data-id="manifest" data-label="SequenceManifest" data-shape="rectangle">
+  <rect x="235.98849999999993" y="1481.7" width="152.359" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="312.16799999999995" y="1500.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SequenceManifest</text>
+</g>
+<g class="node" data-id="open" data-label="open_stream()" data-shape="rectangle">
+  <rect x="450.0629999999999" y="1396.8" width="126.42399999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.2749999999999" y="1415.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">open_stream()</text>
+</g>
+<g class="node" data-id="stream" data-label="FramePacketStream" data-shape="rectangle">
+  <rect x="431.5379999999999" y="1481.7" width="163.474" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.2749999999999" y="1500.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">FramePacketStream</text>
+</g>
+<g class="node" data-id="start" data-label="start_session()" data-shape="rectangle">
+  <rect x="617.0839999999998" y="1396.8" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="682.5189999999998" y="1415.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">start_session()</text>
+</g>
+<g class="node" data-id="slam_session" data-label="SlamSession" data-shape="rectangle">
+  <rect x="623.012" y="1481.7" width="119.01400000000001" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="682.519" y="1500.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SlamSession</text>
+</g>
+<g class="node" data-id="frame" data-label="FramePacket" data-shape="rectangle">
+  <rect x="452.28599999999994" y="1706.9" width="121.978" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.275" y="1725.3500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">FramePacket</text>
+</g>
+<g class="node" data-id="step" data-label="SlamSession.step()" data-shape="rectangle">
+  <rect x="435.9839999999999" y="1791.8000000000002" width="154.582" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.2749999999999" y="1810.2500000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SlamSession.step()</text>
+</g>
+<g class="node" data-id="update" data-label="SlamUpdate" data-shape="rectangle">
+  <rect x="457.47299999999996" y="1876.7" width="111.604" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.275" y="1895.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SlamUpdate</text>
+</g>
+<g class="node" data-id="snapshot" data-label="Live snapshot and runtime metrics" data-shape="rectangle">
+  <rect x="393.006" y="1961.6000000000001" width="240.53799999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="513.275" y="1980.0500000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Live snapshot and runtime metrics</text>
+</g>
+<g class="node" data-id="close" data-label="close()" data-shape="rectangle">
+  <rect x="542.8" y="2118.5" width="81.964" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="583.7819999999999" y="2136.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">close()</text>
+</g>
+<g class="node" data-id="artifacts" data-label="SlamArtifacts" data-shape="rectangle">
+  <rect x="524.275" y="2203.4" width="119.01400000000001" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="583.7819999999999" y="2221.85" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SlamArtifacts</text>
+</g>
+<g class="node" data-id="summary" data-label="&quot;RunSummary and StageManifest[" data-shape="rectangle">
+  <rect x="399.54575" y="2288.3" width="238.31499999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="518.70325" y="2306.75" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">&quot;RunSummary and StageManifest[</text>
+</g>
+</svg>

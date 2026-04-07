@@ -1,78 +1,50 @@
 # Utils Requirements
 
-This document defines the intended responsibilities and design constraints for
-`prml_vslam.utils` during the early scaffold stage of the project.
+## Purpose
 
-## Scope
+This document is the concise source of truth for the shared utility package in `src/prml_vslam/utils/`.
 
-The `utils` package provides shared low-level infrastructure that is reused by
-the CLI, Streamlit workbench, pipeline planner, and future runtime components.
+## Current State
 
-It currently includes:
+- `prml_vslam.utils` currently provides the shared low-level infrastructure used by the CLI, Streamlit workbench, pipeline planner, and runtime helpers.
+- The package currently includes `BaseConfig`, `PathConfig`, and `Console` as the most important repo-owned shared surfaces.
+- The package is already used as the common home for deterministic TOML IO, repo-owned path handling, and structured logging helpers.
 
-- `BaseConfig`: typed config model, TOML serialization, and config-as-factory helpers
-- `PathConfig`: repository and workspace path resolution
-- `Console`: structured logging helpers
+## Target State
 
-The package must stay small, predictable, and free of hidden side effects.
+- Keep the package small, predictable, and free of hidden side effects.
+- Keep repo-owned config, path, and logging helpers centralized here instead of reimplemented elsewhere.
+- Keep the utilities reusable across CLI, tests, notebooks, and UI surfaces.
 
-## General Requirements
+## Responsibilities
 
-- Utilities must expose explicit, typed interfaces.
+- The package owns shared low-level infrastructure such as config-as-factory helpers, TOML serialization, path-resolution helpers, logging utilities, and other stable generic runtime helpers.
+- The package does not own package-specific workflow policy, benchmark logic, or orchestration semantics.
+
+## Non-Negotiable Requirements
+
+- Utility interfaces must remain explicit and typed.
 - Utilities must not silently change process-wide behavior.
-- Utilities must remain reusable across CLI, tests, notebooks, and UI surfaces.
-- Utilities must not encode feature-specific workflow logic that belongs in
-  `pipeline`, `io`, or method-specific modules.
-
-## BaseConfig Requirements
-
-- `BaseConfig` must remain the common base class for typed config objects.
-- Runtime object construction must follow the config-as-factory pattern via
-  `target_type` and `setup_target()`.
-- `BaseConfig` must not own repository-specific or workspace-specific path
-  resolution policy.
-- TOML serialization and deserialization must be deterministic.
-- File-based TOML IO must use explicit path context rather than hidden global
-  state.
-- `BaseConfig` must support pure text and bytes TOML parsing without requiring a
-  repository checkout.
-
-## PathConfig Requirements
-
-- `PathConfig` is the single owner of repo-owned path semantics.
-- Relative repository paths must resolve against one explicit root.
-- Path resolution rules must be deterministic and easy to test with `tmp_path`.
-- `PathConfig` instances should be treated as immutable value objects after
-  construction.
-- Derived directories such as `artifacts_dir` and `captures_dir` must never
-  drift out of sync with the configured root.
-- Path helpers must not create directories unless the caller opts in via an
-  explicit flag.
-- `plan_run_paths()` must return the canonical artifact layout for one planned
-  run and must not perform writes.
-- Domain-specific path rules are allowed only when they are stable and shared,
-  such as resolving bare capture filenames into `captures/`.
-
-## Integration Requirements
-
+- `BaseConfig` must remain the common base for typed config objects and support deterministic TOML serialization and deserialization.
+- Runtime object construction must continue to follow the config-as-factory pattern through `target_type` and `setup_target()`.
+- `BaseConfig` must not own repository-specific path-resolution policy.
+- `PathConfig` remains the single owner of repo-owned path semantics.
+- Path resolution rules must remain deterministic and easy to test.
+- Path helpers must not create directories unless the caller opts in explicitly.
 - Services that depend on path semantics must accept an injected `PathConfig`.
-- Long-lived module globals must not capture path configuration at import time.
-- CLI commands should construct path-aware services per invocation unless there
-  is a proven need for cached process-wide state.
-- Tests should prefer explicit `PathConfig(root=tmp_path)` injection over
-  monkeypatching global helpers.
+- Logging helpers must remain structured and readable for both humans and tests.
+- Utilities must never fail silently.
 
-## Console Requirements
-
-- Logging helpers must provide structured, readable output for both humans and
-  tests.
-- Utilities must never fail silently; unexpected states should raise or log a
-  clear error.
-
-## Non-Goals
+## Explicit Non-Goals
 
 - `utils` is not a workspace manager.
-- `utils` is not a persistence layer for experiment metadata beyond generic TOML
-  helpers.
-- `utils` should not introduce global registries or hidden caches unless there
-  is a concrete performance need and the cache does not affect correctness.
+- `utils` is not a persistence layer for experiment metadata beyond generic TOML helpers.
+- `utils` should not introduce global registries or hidden caches unless there is a concrete performance need and correctness is unaffected.
+- `utils` should not absorb feature-specific workflow logic that belongs in `pipeline`, `io`, `datasets`, `methods`, or `eval`.
+
+## Validation
+
+- `BaseConfig`, `PathConfig`, and `Console` remain the primary shared surfaces.
+- Path-aware code continues to accept injected `PathConfig` instances instead of capturing path globals at import time.
+- The package stays small and generic instead of absorbing package-specific policy.
+- The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.

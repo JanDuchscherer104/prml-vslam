@@ -1,0 +1,57 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "28px",
+    "actorFontSize": "28px",
+    "messageFontSize": "24px",
+    "noteFontSize": "22px",
+    "sequenceNumberFontSize": "22px"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    actor User as User
+
+    box rgb(232, 241, 255) Planning and launch surfaces
+        participant Surface as app.pages.pipeline<br/>or prml_vslam.main
+        participant Demo as pipeline.demo
+        participant Planner as pipeline.services<br/>RunPlannerService
+    end
+
+    box rgb(255, 244, 229) Pipeline runtime
+        participant Runtime as pipeline.run_service<br/>RunService
+        participant Session as pipeline.session<br/>PipelineSessionService
+        participant Source as protocols.source<br/>StreamingSequenceSource<br/>and FramePacketStream
+        participant Slam as methods.protocols<br/>StreamingSlamBackend<br/>and SlamSession
+    end
+
+    User->>Surface: choose request
+    Surface->>Demo: load_run_request_toml(config_path)
+    Demo-->>Surface: request: RunRequest
+    Surface->>Planner: build_run_plan(request)
+    Planner-->>Surface: plan: RunPlan
+
+    alt preview only
+        Surface-->>User: show RunPlan
+    else bounded execution
+        Surface->>Runtime: start_run(request, source)
+        Runtime->>Planner: build_run_plan(request)
+        Planner-->>Runtime: plan: RunPlan
+        Runtime->>Session: start(request, plan, source, slam_backend)
+        Session->>Source: prepare_sequence_manifest(output_dir)
+        Source-->>Session: sequence: SequenceManifest
+        Session->>Source: open_stream(loop)
+        Source-->>Session: stream ready
+        Session->>Slam: start_session(cfg, artifact_root)
+        Slam-->>Session: slam session ready
+        loop each packet
+            Source-->>Session: frame: FramePacket
+            Session->>Slam: step(frame)
+            Slam-->>Session: update: SlamUpdate
+        end
+        Session->>Slam: close()
+        Slam-->>Session: slam: SlamArtifacts
+        Session-->>Surface: summary: RunSummary + StageManifest[]
+        Surface-->>User: inspect artifacts and summary
+    end

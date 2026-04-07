@@ -1,0 +1,17 @@
+flowchart TD
+    request["RunRequest"]
+    validate["RunPlannerService.validate_request()"]
+    paths["PathConfig.plan_run_paths()"]
+    stages["Select enabled RunPlanStageId values"]
+    outputs["Assign canonical stage outputs"]
+    plan["RunPlan"]
+    preview["Preview in app or CLI"]
+    runtime["Executable runtime slice"]
+
+    request -->|"typed config input"| validate
+    validate -->|"compatible request"| paths
+    paths --> stages
+    stages --> outputs
+    outputs --> plan
+    plan -->|"preview before execution"| preview
+    plan -->|"hand off to RunService"| runtime

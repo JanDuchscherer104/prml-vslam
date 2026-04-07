@@ -1,0 +1,28 @@
+stateDiagram-v2
+    [*] --> Idle
+
+    Idle: No active worker
+    Idle: Last terminal snapshot stays visible until the next run replaces it
+
+    Connecting: Plan is attached to the snapshot
+    Connecting: Manifest creation and stream or session setup are in progress
+
+    Running: Live FramePacket to SlamUpdate flow is active
+    Running: Metrics and preview state refresh in memory
+
+    Completed: Bounded replay reached EOF
+    Completed: SlamArtifacts, StageManifest, and RunSummary are persisted
+
+    Stopped: User or caller requested stop
+    Stopped: The terminal snapshot is preserved
+
+    Failed: Pre-launch or runtime error occurred
+    Failed: The terminal snapshot is preserved with an error message
+
+    Idle --> Connecting: start(request, plan, source, slam_backend)
+    Connecting --> Running: manifest written and session opened
+    Connecting --> Failed: pre-launch or setup error
+
+    Running --> Completed: eof on bounded replay
+    Running --> Stopped: explicit stop_run()
+    Running --> Failed: runtime exception

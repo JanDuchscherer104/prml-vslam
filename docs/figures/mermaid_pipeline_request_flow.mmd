@@ -1,0 +1,66 @@
+flowchart TD
+    user(["User"])
+    surface["CLI or Pipeline page"]
+    preview["Plan preview"]
+
+    subgraph planning["Planning phase"]
+        toml[["Persisted pipeline TOML"]]
+        load["load_run_request_toml()"]
+        request["RunRequest"]
+        paths["resolve_pipeline_config_path()"]
+        planner["build_run_plan()"]
+        plan["RunPlan"]
+    end
+
+    subgraph launch["Launch and normalization"]
+        runsvc["RunService.start_run()"]
+        session["PipelineSessionService.start()"]
+        prep["prepare_sequence_manifest()"]
+        manifest["SequenceManifest"]
+        open["open_stream()"]
+        stream["FramePacketStream"]
+        start["start_session()"]
+        slam_session["SlamSession"]
+    end
+
+    subgraph hotpath["Streaming SLAM hot path"]
+        frame["FramePacket"]
+        step["SlamSession.step()"]
+        update["SlamUpdate"]
+        snapshot["Live snapshot and runtime metrics"]
+    end
+
+    subgraph finalize["Finalization"]
+        close["close()"]
+        artifacts["SlamArtifacts"]
+        summary["RunSummary and StageManifest[]"]
+    end
+
+    user -->|"choose request"| surface
+    surface -->|"load template"| toml
+    toml -->|"resolve repo path"| paths
+    paths -->|"hydrate request"| load
+    load --> request
+    request -->|"plan run"| planner
+    planner --> plan
+    plan -->|"preview only"| preview
+    plan -->|"bounded execution"| runsvc
+
+    runsvc --> session
+    session --> prep
+    prep --> manifest
+    session --> open
+    open --> stream
+    session --> start
+    start --> slam_session
+
+    stream -->|"for each packet"| frame
+    frame --> step
+    step --> update
+    update --> snapshot
+
+    slam_session -->|"terminal close"| close
+    close --> artifacts
+    manifest --> summary
+    artifacts --> summary
+    snapshot --> summary

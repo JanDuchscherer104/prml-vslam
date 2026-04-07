@@ -1,95 +1,64 @@
 # PRML VSLAM App Requirements
 
-## Summary
+## Purpose
 
-This document is the source of truth for the packaged Streamlit app in
-`src/prml_vslam/app/`.
+This document is the concise source of truth for the packaged Streamlit app in `src/prml_vslam/app/`.
 
-The app now exposes four top-level pages:
+Use this file for current app behavior, target app constraints, and package-local ownership. Use the package README files and code for deeper implementation detail.
 
-- `Record3D`
-- `ADVIO`
-- `Pipeline`
-- `Metrics`
+## Current State
 
-`Record3D` is the default landing page. `Metrics` remains the trajectory-evaluation surface for persisted `evo` results.
+- The app currently exposes four top-level pages: `Record3D`, `ADVIO`, `Pipeline`, and `Metrics`.
+- `Record3D` is the default landing page.
+- `Metrics` remains reachable as the persisted trajectory-evaluation surface.
+- The `Record3D` page supports both the canonical `USB` transport and the optional `Wi-Fi Preview` transport through one selector.
+- The `Pipeline` page can show example request shapes, a generated `RunPlan`, one mock executed run, and the bounded demo pipeline surface.
+- The `Pipeline` page may run the bounded ADVIO replay plus mock-SLAM demo and bounded Record3D live flows through pipeline-owned services.
+- The `Pipeline` page currently renders an explicit `evo` APE preview when both reference and estimate TUM trajectories are available for the bounded demo result.
+- The `Metrics` page keeps evaluation explicit and renders persisted `evo` trajectory results.
 
-## Functional Requirements
+## Target State
 
-- The app must default to the `Record3D` page on first load.
-- The app must keep the `Metrics` page reachable without removing any existing trajectory-evaluation functionality.
-- The app must expose a `Pipeline` page that explains the typed run-planning surface, the direct request pattern, and concrete usage examples.
-- The `Pipeline` page must also show one mock completed run with stage status, artifact contracts, and serialized output examples so users can inspect what the planner hands to downstream execution surfaces.
-- The `Pipeline` page may execute a minimal repository-local demo pipeline for monitoring purposes when the input and backend are explicitly bounded by the app.
-- The `Pipeline` page should render an explicit `evo` APE trajectory visualization for completed demo runs when both reference and estimate TUM trajectories are available.
-- The `Record3D` page must support the canonical `USB` transport and the optional `Wi-Fi Preview` transport through one transport selector.
-- The `Record3D` page must show:
-  - transport status
-  - received frames
-  - measured frame rate
-  - camera intrinsics
-  - RGB preview
-  - depth preview
-  - confidence preview when available
-- The `Metrics` page must keep explicit `evo` computation semantics: never compute on selector changes or reruns.
+- Keep the app as a thin launch, inspection, and monitoring surface.
+- Keep both Record3D transports available while making their capability differences explicit to users.
+- Keep app state typed and session-safe.
+- Keep evaluation execution explicit rather than page-load-driven.
 
-## Architecture Requirements
+## Responsibilities
 
-- The implementation target remains `src/prml_vslam/app/`.
+- The app owns Streamlit pages, packaged bootstrap code, typed page state, app-local controllers, and UI composition.
+- The app owns rendering and user-facing interaction flow for the Record3D, ADVIO, Pipeline, and Metrics pages.
+- The app does not own transport decoding, dataset normalization, pipeline semantics, backend orchestration, or benchmark-policy logic.
+
+## Non-Negotiable Requirements
+
 - `streamlit_app.py` must stay thin and delegate into packaged bootstrap code.
-- The app must use small typed modules rather than one monolithic file.
-- The app must render only with Streamlit-native primitives.
-- The app must not embed raw HTML, CSS, or JavaScript custom components for the Record3D flow.
-- `PathConfig` must remain the authoritative source of repo paths and defaults.
+- App modules must stay small and typed instead of collapsing back into one monolithic file.
+- The app must render only with Streamlit-native primitives; it must not embed raw HTML, CSS, or JavaScript custom components for Record3D.
+- One adapter must remain the only app code that touches raw `st.session_state`.
+- App-facing state must remain Pydantic-backed and JSON-friendly across reruns.
+- The same session-state adapter must continue to own the opaque Record3D runtime controller for the current browser session.
+- `PathConfig` remains the authoritative source of repo paths and defaults.
 - Heavy capture and decoding work must stay in `prml_vslam.io`.
-- The app may orchestrate background runtime objects, but those runtime objects must still consume typed `io` contracts rather than transport-specific browser state.
-- The app is not responsible for pipeline orchestration or any domain-specific logic.
+- Runtime objects launched by the app must still consume typed repo-owned contracts rather than transport-specific browser state.
+- Important actions such as `Start`, `Stop`, and `Compute evo metrics` must remain explicit.
+- `Start` and `Stop` actions on live pages must remain mutually exclusive and share the same action slot.
+- Camera intrinsics should remain rendered as LaTeX instead of plain JSON.
+- Switching Record3D transports or leaving the Record3D page must stop the active live stream and clear the live snapshot.
 
-## State And Typing Requirements
-
-- All app-facing interfaces must be typed.
-- App state must be modeled with Pydantic.
-- One adapter must be the only app code that touches raw `st.session_state`.
-- Persisted state must stay JSON-friendly so reruns restore cleanly.
-- The same session-state adapter must also own the opaque Record3D runtime controller for the current browser session.
-
-## UX Requirements
-
-- The UI must stay simple, modern, and light-first.
-- The layout must prioritize compact analysis and monitoring surfaces over decorative sections.
-- Important actions such as `Start`, `Stop`, and `Compute evo metrics` must be explicit and clearly labeled.
-- `Start` and `Stop` actions must be mutually exclusive and share the same button slot.
-- Camera intrinsics should be rendered as LaTeX rather than plain JSON.
-- When the selected transport changes, or when the user leaves the Record3D page, the current live stream must stop and the live snapshot must be cleared.
-
-## Acceptance Scenarios
-
-### Record3D Preview
-
-- A user opens the app and lands on `Record3D`.
-- They select `USB` or `Wi-Fi Preview`.
-- Starting the stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and confidence when available.
-
-### Metrics Review
-
-- A user switches to `Metrics`.
-- If a matching persisted `evo` result exists, the app renders it without recomputing anything.
-
-### Pipeline Guide
-
-- A user switches to `Pipeline`.
-- The app shows example pipeline shapes, the direct `RunRequest(...)` workflow with nested stage configs, one generated `RunPlan` table, and one mock executed run.
-- The page may also run the minimal ADVIO replay plus mock SLAM demo and render frames, trajectory, artifacts, and stage status for that bounded session.
-
-### Explicit Evaluation
-
-- A user selects a dataset slice with both reference and estimate TUM trajectories present.
-- The app exposes a clear compute action.
-- Triggering that action runs `evo`, persists the result, and renders it.
-
-## Out Of Scope
+## Explicit Non-Goals
 
 - Browser-owned Record3D widgets or browser-side frame decoding.
-- Implicit metric computation on load or selector changes.
-- General-purpose pipeline orchestration or unrelated dataset tooling from the app layer.
+- Implicit metric computation on load, selector changes, or reruns.
+- General-purpose pipeline orchestration from the app layer.
 - Replacing `evo` with an app-local trajectory-metrics implementation.
+- Duplicating dataset, pipeline, method, or evaluation policy in page code.
+
+## Validation
+
+- Opening the app lands on the `Record3D` page.
+- Selecting `USB` or `Wi-Fi Preview` and starting a stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and confidence when available.
+- Switching to `Metrics` renders a matching persisted `evo` result without recomputing it.
+- Switching to `Pipeline` shows the direct `RunRequest(...)` workflow, a generated `RunPlan` preview, one mock executed run, and an `evo` APE preview when the required trajectories are available.
+- On live pages, only one of `Start` or `Stop` is visible in the shared action slot at a time.
+- The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.

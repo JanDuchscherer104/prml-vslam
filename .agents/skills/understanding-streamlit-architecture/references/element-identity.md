@@ -86,12 +86,9 @@ State is lost when the component is actually remounted or the old state is clean
 
 Common causes:
 
-1. **Delta path changes**
-   A delta-path change can cause a remount, but not always. If the element has a stable `element.id` and React still sees it as the same keyed child under the same rendered parent list, it can be preserved. If there is no stable `id`, or an ancestor block changes/replaces, it remounts.
-2. **Element ID changes**
-   If identity inputs change, Streamlit treats the result as a new logical element.
-3. **Element not rendered in a rerun**
-   After a successful run, missing IDs are treated as inactive and their old state is removed.
+1. **Delta path changes** A delta-path change can cause a remount, but not always. If the element has a stable `element.id` and React still sees it as the same keyed child under the same rendered parent list, it can be preserved. If there is no stable `id`, or an ancestor block changes/replaces, it remounts.
+2. **Element ID changes** If identity inputs change, Streamlit treats the result as a new logical element.
+3. **Element not rendered in a rerun** After a successful run, missing IDs are treated as inactive and their old state is removed.
 
 ## Frontend cleanup
 

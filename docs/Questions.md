@@ -26,7 +26,12 @@
 
 - Priority of the eval spaces (i.e. Trajectory > PC > Dense recon > 3DGS recon)
 
-
 - What Role does 3DGS and hence maybe Nerfstudio play for our project?
 
-    > As, described eaerlier, a great endproduct would be a system where the uncalibrated RGB stream feeds the creation of a 3DGS scene representation, so that the Operator can assume  _couterfactual_ SE(3) poses to get a better scene understanding so that they can give spatial guidance to the caller.
+    > As, described eaerlier, a great endproduct would be a system where the uncalibrated RGB stream feeds the creation of a 3DGS scene representation, so that the Operator can assume _couterfactual_ SE(3) poses to get a better scene understanding so that they can give spatial guidance to the caller.
+
+- Do we need to evaluate on 7-Scenes and TUM-RGBD as well? Should we prioritize one of them?
+
+## Team
+
+- Should all configs be de-serialized from a single pipeline specific `*.toml`?
