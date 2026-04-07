@@ -1,80 +1,92 @@
 # Work Packages
 
-This breakdown is intended to be copied into issues with minimal restructuring.
+## WP 0: Project Organisation - Issues
+Assignee: Valentin Bumeder
+- Create issues for tracking progress of work packages
+- Assign Tasks
+- Communicate handling of issues to team
 
-## WP1: Repository and Environment Scaffolding
+## WP 1: Video Source
+**Goal:** Capture datasets as input for VSLAM Pipeline.
 
-- Purpose: keep the repo installable, testable, and easy to onboard into.
-- Inputs: challenge brief, package requirements, CI expectations.
-- Outputs: `uv` environment, package skeleton, tests, CI, contributor guidance.
-- Dependencies: none.
-- Suggested issue split:
-  - maintain `pyproject.toml` and editable install
-  - keep lint/test CI green
-  - maintain README, AGENTS, and repo hygiene rules
+### WP 1.1: ADVIO Dataset
+Assignee: Jan Duchscherer
+Output: Dataset containing RGB Video Stream & baseline log data
+- review and prepare data from ADVIO dataset for benachmarking of VSLAM Pipeline
 
-## WP2: Data Capture and Logging App
+### WP 1.2: Mobile Client (Record 3D)
+Assignee: Jan Duchscherer
+Output: RGB Video Stream
+- Setup Workflow for creating sample video data stream incl. baseline logs
+- Setup Live Streaming Client for live processing pipeline (Video only)
 
-- Purpose: record raw monocular video together with ARCore baseline logs for custom evaluation data.
-- Inputs: smartphone capture requirements, ARCore logging needs, target export schema.
-- Outputs: recording workflow or app, sample sessions, capture documentation.
-- Dependencies: WP1.
-- Suggested issue split:
-  - define capture format and file naming
-  - implement or select the logging app path
-  - validate export completeness and timestamp alignment
+### WP 1.3: Acquisition of own Dataset
+Assignee: Lukas Röß
+Output: Dataset containing RGB Video Stream & baseline log data
+- record raw monocular video together with baseline logs (ARCore or similar) for custom evaluation data
+- provided sample data in reusable format for further usage in pipeline
+- format is aligned with ADVIO Dataset format
 
-## WP3: Method Integration
 
-- Purpose: integrate at least two external monocular VSLAM methods into a common benchmark workflow.
-- Inputs: external method repos, input/output conventions, custom dataset recordings.
-- Outputs: reproducible method wrappers, run configs, documented assumptions.
-- Dependencies: WP1, WP2.
-- Suggested issue split:
-  - integrate candidate method A
-  - integrate candidate method B
-  - normalize outputs to shared trajectory and point-cloud formats
 
-## WP4: Trajectory Evaluation
+## WP 2: Uncalibrated Monocular VSLAM Pipeline
+**Goal:** Setup livestream-capable uncalibrated monocular VSLAM pipeline with two different VSLAM Algorithms.
 
-- Purpose: evaluate global and local camera trajectory quality.
-- Inputs: method trajectories, ARCore baselines, ADVIO data, custom recordings.
-- Outputs: trajectory metrics, comparison plots, evaluation scripts based on `evo`.
-- Dependencies: WP2, WP3.
-- Suggested issue split:
-  - define metric suite and reference alignment policy
-  - benchmark on ADVIO
-  - benchmark on the custom dataset against ARCore
+### WP 2.1: Pipeline Framework
+Assignee(s): Open
+- integrate singular services into configurable pipeline workflow
+- defined & implemented clear interfaces between services
 
-## WP5: Dense Reconstruction Evaluation
+### WP 2.2: ViSTA-SLAM
+Assignees: Lukas Röß, Jan Duchscherer
+input: RGB Video Stream
+output: incrementally updating Pointcloud & Trajectory
+- defined input / ouput interface for VSLAM algorithms
+- setup real-time capable ViSTA-SLAM algorithm
 
-- Purpose: compare dense point-cloud quality across methods and against ARCore mapping.
-- Inputs: dense outputs, ARCore maps, comparison tooling.
-- Outputs: point-cloud quality metrics, qualitative views, reproducible comparison scripts.
-- Dependencies: WP2, WP3.
-- Suggested issue split:
-  - define point-cloud alignment and filtering pipeline
-  - quantitative comparison with Open3D or CloudCompare metrics
-  - qualitative visualization and failure-case review
+### WP 2.3: MASt3R-SLAM
+Assignee: Christopher Kirschner
+input: RGB Video Stream
+output: incrementally updating Pointcloud & Trajectory
+- defined input / ouput interface for VSLAM algorithms
+- setup real-time capable MASt3R-SLAM algorithm
 
-## WP6: Ground-Truth or Reference Reconstruction Pipeline
+## WP 3: Incremental Streaming (3DGS)
+Assignee: Florian Beck
+input: VSLAM Pointcloud & Trajectory 
+output: 2D/3D visualization of VSLAM output
+- implemented service that renders the VSLAM output in 2D / 3D
 
-- Purpose: create high-quality reference reconstructions for custom recordings.
-- Inputs: raw capture data, reconstruction tools such as COLMAP, Meshroom, or 3DGS.
-- Outputs: reference point clouds or meshes used for comparison.
-- Dependencies: WP2.
-- Suggested issue split:
-  - select the reconstruction toolchain
-  - document calibration and export assumptions
-  - generate reference artifacts for benchmark sequences
 
-## WP7: Benchmarking, Analysis, and Reporting
+## WP 4: Metrics - Component Througput
+Assignee: Florian Beck
+input: services in pipeline
+output: performance metrics (througput per component)
+- setup throughput metric that can be reused over the all components of the pipeline
 
-- Purpose: consolidate results into update meetings, the final presentation, and the final report.
-- Inputs: outputs from WP3 to WP6.
-- Outputs: weekly deck updates, final report, final recommendation.
-- Dependencies: WP1, WP3, WP4, WP5, WP6.
-- Suggested issue split:
-  - maintain weekly meeting summaries
-  - keep the report structure aligned with experiments
-  - write the final recommendation with method tradeoffs
+## WP 5: Metrics - Point Cloud Comparison
+Assignees: Valentin Bumeder, Jan Duchscherer, Florian Beck
+input: VSLAM point cloud, ground truth point cloud
+output: comparison metric
+- setup service to create point cloud comparison metrics
+- defined input interface
+
+
+## WP 6: Metrics - Trajectory Comparison
+Assignees: Lukas Röß, Valentin Bumeder
+input: VSLAM trajectory, ground truth trajectory
+output: comparison metric
+- setup service to create trajectory comparison metrics
+- defined input interface
+
+
+## WP 7: Metrics - Output Images (Quality)
+Assignee: Christopher Kirschner
+input: VSLAM image output
+- created quality metricts based on VSLAM image output (PSNR or other Standard Reconstruction Metrics)
+
+## WP 8: (Optional) Ground Truth Creation -> Grab if you're bored! 
+Assignee(s): Open
+
+## WP 9: (Optional) AR Core - Grab if you're bored! 
+Assignee(s): Open
