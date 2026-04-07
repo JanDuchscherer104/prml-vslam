@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.pipeline.contracts import (
     DatasetSourceSpec,
     LiveSourceSpec,
+    Record3DLiveSourceSpec,
     RunPlan,
     RunPlanStage,
     RunPlanStageId,
@@ -148,6 +150,22 @@ class RunPlannerService:
                 return f"Decode '{video_path}' at stride {frame_stride} and materialize a normalized sequence manifest."
             case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
                 return f"Normalize dataset sequence '{dataset_id.value}:{sequence_id}' into a shared sequence manifest."
+            case Record3DLiveSourceSpec(
+                transport=transport,
+                persist_capture=persist_capture,
+                device_index=device_index,
+                device_address=device_address,
+            ):
+                persistence = "with persistence" if persist_capture else "without persistence"
+                source_descriptor = (
+                    f"USB device #{device_index}"
+                    if transport is Record3DTransportId.USB and device_index is not None
+                    else device_address or "Wi-Fi preview"
+                )
+                return (
+                    f"Capture the Record3D {transport.label.lower()} source '{source_descriptor}' {persistence} "
+                    "into a replayable sequence manifest."
+                )
             case LiveSourceSpec(source_id=source_id, persist_capture=persist_capture):
                 persistence = "with persistence" if persist_capture else "without persistence"
                 return f"Capture the live source '{source_id}' {persistence} into a replayable sequence manifest."
