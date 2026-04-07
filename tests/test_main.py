@@ -100,7 +100,7 @@ def test_advio_download_command_builds_explicit_request(tmp_path: Path, monkeypa
 def test_plan_run_config_command_loads_toml_request(tmp_path: Path, monkeypatch) -> None:
     runner = CliRunner()
     captured: dict[str, object] = {}
-    config_path = tmp_path / "configs" / "advio-vista.toml"
+    config_path = tmp_path / ".configs" / "pipelines" / "advio-vista.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         """
@@ -131,7 +131,7 @@ evaluate_efficiency = true
     monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
     monkeypatch.setattr(main.console, "plog", lambda payload: captured.setdefault("payload", payload))
 
-    result = runner.invoke(main.app, ["plan-run-config", "configs/advio-vista.toml"])
+    result = runner.invoke(main.app, ["plan-run-config", "advio-vista.toml"])
 
     assert result.exit_code == 0
     payload = captured["payload"]
@@ -139,6 +139,35 @@ evaluate_efficiency = true
     assert payload["run_id"] == "advio-office-offline-vista"
     assert payload["method"] == "vista"
     assert payload["source"]["video_path"] == "captures/office-03.mp4"
+
+
+def test_write_demo_config_command_persists_under_pipeline_config_dir(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+
+    class FakeService:
+        def __init__(self, path_config: PathConfig) -> None:
+            captured["path_config"] = path_config
+
+        def local_scene_statuses(self) -> list[object]:
+            return [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+
+        def scene(self, sequence_id: int) -> object:
+            captured["sequence_id"] = sequence_id
+            return SimpleNamespace(sequence_slug="advio-15", display_name="ADVIO 15")
+
+    monkeypatch.setattr(main, "AdvioDatasetService", FakeService)
+    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
+    monkeypatch.setattr(main.console, "plog", lambda payload: captured.setdefault("payload", payload))
+
+    result = runner.invoke(main.app, ["write-demo-config"])
+
+    assert result.exit_code == 0
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    config_path = Path(payload["config_path"])
+    assert config_path == (tmp_path / ".configs" / "pipelines" / "advio-offline-advio-15-vista.toml").resolve()
+    assert config_path.exists()
 
 
 def test_root_cli_defaults_to_offline_pipeline_demo(monkeypatch) -> None:
