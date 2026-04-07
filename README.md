@@ -53,8 +53,8 @@ Pipeline contract and extension guidance lives in
 
 ### TOML-First Run Planning
 
-For durable/reproducible planning, store a `RunRequest` as TOML and resolve it
-through the CLI:
+For durable/reproducible planning, store a `RunRequest` as TOML under
+`.configs/pipelines/` and resolve it through the CLI:
 
 ```toml
 experiment_name = "advio-office-offline-vista"
@@ -80,8 +80,26 @@ evaluate_efficiency = true
 ```
 
 ```bash
-uv run prml-vslam plan-run-config configs/advio-office-vista.toml
+uv run prml-vslam plan-run-config advio-office-vista.toml
 ```
+
+The TOML shape mirrors the nested `RunRequest` model:
+
+- top-level fields configure the run itself: `experiment_name`, `mode`, `output_dir`
+- `[source]` configures the ingest boundary
+- `[slam]` configures the SLAM stage
+- `[reference]` configures the reference-reconstruction stage toggle
+- `[evaluation]` configures benchmark evaluation toggles
+
+Current stage-specific TOML configuration is therefore done by nesting the
+stage config tables directly under the request. For example, the optional
+method-specific backend config path belongs in `[slam]` as `config_path = "..."`
+because it is owned by `SlamConfig`.
+
+`plan-run-config` resolves the TOML file path itself relative to the
+repository. Nested TOML paths are then hydrated as written; resolve those
+explicitly through `PathConfig` in runtime code when repo-relative behavior is
+required.
 
 ## Challenge
 
