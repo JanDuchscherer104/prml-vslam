@@ -13,7 +13,7 @@ from .base_data import BaseData
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
-    "artifacts_dir captures_dir data_dir logs_dir method_repos_dir method_envs_dir checkpoints_dir".split()
+    "artifacts_dir captures_dir data_dir logs_dir configs_dir method_repos_dir method_envs_dir checkpoints_dir".split()
 )
 
 
@@ -92,6 +92,8 @@ class PathConfig(BaseConfig):
     """Root directory for repo-owned benchmark datasets."""
     logs_dir: Path = Field(default_factory=lambda: Path(".logs"))
     """Root directory for shared runtime state such as cloned upstream repos and checkpoints."""
+    configs_dir: Path = Field(default_factory=lambda: Path(".configs"))
+    """Root directory for repo-owned durable TOML configuration."""
     method_repos_dir: Path = Field(default_factory=lambda: Path(".logs/repos"))
     """Directory containing checked-out upstream method repositories."""
     method_envs_dir: Path = Field(default_factory=lambda: Path(".logs/venvs"))
@@ -157,6 +159,14 @@ class PathConfig(BaseConfig):
         """Resolve the shared runtime logs directory."""
         return self._resolve_dir(self.logs_dir, create=create)
 
+    def resolve_configs_dir(self, *, create: bool = False) -> Path:
+        """Resolve the shared repo-owned config directory."""
+        return self._resolve_dir(self.configs_dir, create=create)
+
+    def resolve_pipeline_configs_dir(self, *, create: bool = False) -> Path:
+        """Resolve the shared pipeline config directory under the repo config root."""
+        return self._resolve_dir(self.configs_dir, "pipelines", create=create)
+
     def resolve_method_repo_dir(self, method_repo_name: str, *, create: bool = False) -> Path:
         """Resolve one upstream method checkout path under the shared logs directory."""
         return self._resolve_dir(self.method_repos_dir, method_repo_name, create=create)
@@ -169,9 +179,16 @@ class PathConfig(BaseConfig):
         """Resolve one shared checkpoint directory for an external backend."""
         return self._resolve_dir(self.checkpoints_dir, method_slug, create=create)
 
-    def resolve_toml_path(self, path: str | Path, *, must_exist: bool = False, create_parent: bool = False) -> Path:
+    def resolve_toml_path(
+        self,
+        path: str | Path,
+        *,
+        base_dir: str | Path | None = None,
+        must_exist: bool = False,
+        create_parent: bool = False,
+    ) -> Path:
         """Resolve a TOML file path relative to the repository root."""
-        resolved = self.resolve_repo_path(path)
+        resolved = self.resolve_repo_path(path, base_dir=base_dir)
         if resolved.suffix != ".toml":
             raise ValueError(f"Config path must be a .toml file, got {resolved}")
         if create_parent:
@@ -179,6 +196,29 @@ class PathConfig(BaseConfig):
         if must_exist and not resolved.exists():
             raise FileNotFoundError(f"Config file not found: {resolved}")
         return resolved
+
+    def resolve_pipeline_config_path(
+        self,
+        path: str | Path,
+        *,
+        must_exist: bool = False,
+        create_parent: bool = False,
+    ) -> Path:
+        """Resolve a pipeline config TOML path.
+
+        Bare filenames are placed under `.configs/pipelines/`. Explicit relative
+        or absolute paths keep their original anchoring.
+        """
+        candidate = Path(path)
+        base_dir = (
+            self.resolve_pipeline_configs_dir() if not candidate.is_absolute() and candidate.parent == Path() else None
+        )
+        return self.resolve_toml_path(
+            candidate,
+            base_dir=base_dir,
+            must_exist=must_exist,
+            create_parent=create_parent,
+        )
 
     def slugify_experiment_name(self, experiment_name: str) -> str:
         """Convert a human-readable experiment name into a filesystem-safe slug."""

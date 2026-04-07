@@ -17,6 +17,7 @@ def test_path_config_resolves_root_relative_defaults(tmp_path: Path) -> None:
     assert path_config.captures_dir == (tmp_path / "captures").resolve()
     assert path_config.data_dir == (tmp_path / ".data").resolve()
     assert path_config.logs_dir == (tmp_path / ".logs").resolve()
+    assert path_config.configs_dir == (tmp_path / ".configs").resolve()
     assert path_config.method_repos_dir == (tmp_path / ".logs" / "repos").resolve()
     assert path_config.method_envs_dir == (tmp_path / ".logs" / "venvs").resolve()
     assert path_config.checkpoints_dir == (tmp_path / ".logs" / "ckpts").resolve()
@@ -81,6 +82,8 @@ def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path
     created_dirs = [
         path_config.resolve_output_dir(".artifacts/custom", create=True),
         path_config.resolve_data_dir(create=True),
+        path_config.resolve_configs_dir(create=True),
+        path_config.resolve_pipeline_configs_dir(create=True),
         path_config.resolve_dataset_dir("advio", create=True),
         path_config.resolve_logs_dir(create=True),
         path_config.resolve_method_repo_dir("vista-slam", create=True),
@@ -96,6 +99,24 @@ def test_path_config_rejects_non_toml_config_paths(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=".toml"):
         path_config.resolve_toml_path("configs/run-config")
+
+
+def test_path_config_routes_bare_pipeline_configs_into_repo_config_dir(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path)
+
+    assert (
+        path_config.resolve_pipeline_config_path("advio-demo.toml")
+        == (tmp_path / ".configs" / "pipelines" / "advio-demo.toml").resolve()
+    )
+
+
+def test_path_config_keeps_explicit_pipeline_config_paths_root_relative(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path)
+
+    assert (
+        path_config.resolve_pipeline_config_path(".configs/pipelines/custom/advio-demo.toml")
+        == (tmp_path / ".configs" / "pipelines" / "custom" / "advio-demo.toml").resolve()
+    )
 
 
 def test_path_config_is_immutable_after_construction(tmp_path: Path) -> None:
