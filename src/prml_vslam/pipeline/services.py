@@ -160,6 +160,8 @@ class RunPlannerService:
                 source_descriptor = (
                     f"USB device #{device_index}"
                     if transport is Record3DTransportId.USB and device_index is not None
+                    else "default USB device"
+                    if transport is Record3DTransportId.USB
                     else device_address or "Wi-Fi preview"
                 )
                 return (

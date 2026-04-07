@@ -665,6 +665,27 @@ def test_pipeline_streaming_source_supports_record3d_wifi() -> None:
     assert source.config.device_address == "myiPhone.local"
 
 
+def test_pipeline_streaming_source_requires_wifi_device_address() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace()
+
+    with pytest.raises(ValueError, match="Enter a Record3D Wi-Fi preview device address."):
+        pipeline_page._build_streaming_source_from_action(
+            context,
+            pipeline_page.PipelinePageAction(**_record3d_pipeline_action(transport=Record3DTransportId.WIFI)),
+        )
+
+
+def test_parse_optional_int_rejects_invalid_input() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    value, error_message = pipeline_page._parse_optional_int(raw_value="not-a-number", field_label="SLAM Max Frames")
+
+    assert value is None
+    assert error_message == "Enter a whole number for `SLAM Max Frames` or leave the field blank."
+
+
 def test_pipeline_page_state_sync_hydrates_record3d_usb_template(tmp_path: Path) -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
 
@@ -791,13 +812,17 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
     monkeypatch.setattr(
         pipeline_page,
         "_render_request_editor",
-        lambda **kwargs: pipeline_page.PipelinePageAction(
-            config_path=config_path,
-            source_kind=PipelineSourceId.ADVIO,
-            advio_sequence_id=15,
-            mode=PipelineMode.OFFLINE,
-            method=MethodId.VISTA,
-            pose_source=AdvioPoseSource.GROUND_TRUTH,
+        lambda **kwargs: (
+            pipeline_page.PipelinePageAction(
+                config_path=config_path,
+                source_kind=PipelineSourceId.ADVIO,
+                advio_sequence_id=15,
+                mode=PipelineMode.OFFLINE,
+                method=MethodId.VISTA,
+                pose_source=AdvioPoseSource.GROUND_TRUTH,
+            ),
+            None,
+            None,
         ),
     )
     monkeypatch.setattr(
@@ -866,13 +891,17 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
     monkeypatch.setattr(
         pipeline_page,
         "_render_request_editor",
-        lambda **kwargs: pipeline_page.PipelinePageAction(
-            config_path=config_path,
-            source_kind=PipelineSourceId.ADVIO,
-            advio_sequence_id=15,
-            mode=PipelineMode.OFFLINE,
-            method=MethodId.VISTA,
-            pose_source=AdvioPoseSource.GROUND_TRUTH,
+        lambda **kwargs: (
+            pipeline_page.PipelinePageAction(
+                config_path=config_path,
+                source_kind=PipelineSourceId.ADVIO,
+                advio_sequence_id=15,
+                mode=PipelineMode.OFFLINE,
+                method=MethodId.VISTA,
+                pose_source=AdvioPoseSource.GROUND_TRUTH,
+            ),
+            None,
+            None,
         ),
     )
     monkeypatch.setattr(
