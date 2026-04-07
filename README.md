@@ -56,7 +56,7 @@ Repo-owned datasets and generated benchmark outputs resolve under `.data/` and `
 ```bash
 uv sync
 # add `--extra streaming` to enable Record3D USB and Wi-Fi Preview support
-uv run prml-vslam-app
+uv run streamlit run streamlit_app.py
 ```
 
 The app currently supports:

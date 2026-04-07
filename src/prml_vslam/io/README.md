@@ -19,7 +19,7 @@ Use [RECORD3D_PROTOCOL.md](./RECORD3D_PROTOCOL.md) for the detailed transport br
 
 - `prml-vslam record3d-devices`
   - lists USB-connected Record3D devices exposed by the upstream bindings
-- `prml-vslam-app`
+- `uv run streamlit run streamlit_app.py`
   - exposes a dedicated `Record3D` page for USB and Wi-Fi Preview
 - `Record3DStreamingSource`
   - satisfies the shared `StreamingSequenceSource` protocol for pipeline-owned live sessions and currently supports both Record3D transports
@@ -46,7 +46,7 @@ The upstream `record3d` package currently requires the native Record3D prerequis
 
 ```bash
 uv sync --extra streaming
-uv run prml-vslam-app
+uv run streamlit run streamlit_app.py
 ```
 
 ## Current Limitations

@@ -67,7 +67,7 @@ sequenceDiagram
         Page->>Store: Persist selector updates
         Page->>Browser: Render sidebar controls
         User->>Page: Submit Start/Restart form
-        Page->>Runtime: start_usb(...)
+        Page->>Runtime: start_usb(...) or start_wifi_preview(...)
         Runtime->>IO: Create Record3D packet stream
         IO-->>Runtime: Blocking packet stream
         loop Background worker thread
@@ -183,7 +183,7 @@ sequenceDiagram
 ## Boundaries To Other Packages
 
 - `prml_vslam.io`
-  - Owns Record3D capture, frame decoding, typed packet/snapshot contracts, and the official USB transport integration.
+  - Owns Record3D capture, frame decoding, typed packet/snapshot contracts, and the official USB plus Wi-Fi Preview transport integrations.
   - The app consumes shared typed IO contracts; it does not implement transport protocols itself.
 
 - `prml_vslam.datasets`
