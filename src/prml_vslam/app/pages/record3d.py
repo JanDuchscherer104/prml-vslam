@@ -7,12 +7,7 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.io.record3d import (
-    Record3DDevice,
-    Record3DTransportId,
-    build_record3d_frame_details,
-    list_record3d_usb_devices,
-)
+from prml_vslam.io.record3d import build_record3d_frame_details
 from prml_vslam.utils.image_utils import normalize_grayscale_image
 
 from ..live_session import (
@@ -26,6 +21,7 @@ from ..live_session import (
 )
 from ..models import PreviewStreamState, Record3DStreamSnapshot
 from ..record3d_controller import Record3DPageAction, handle_record3d_page_action, sync_record3d_running_state
+from ..record3d_controls import render_record3d_transport_controls, render_record3d_transport_details
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -55,55 +51,23 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
     with st.sidebar:
         st.subheader("Stream Controls")
         st.caption("Choose a source, then start or restart the active stream. USB is the recommended capture path.")
-        selected_transport = st.segmented_control(
-            "Transport",
-            options=list(Record3DTransportId),
-            default=page_state.transport,
-            format_func=lambda item: item.label,
-            selection_mode="single",
-            key="record3d_transport_selector",
-            width="stretch",
+        selection = render_record3d_transport_controls(
+            transport=page_state.transport,
+            usb_device_index=page_state.usb_device_index,
+            wifi_device_address=page_state.wifi_device_address,
+            widget_key_prefix="record3d",
         )
-        transport = selected_transport or page_state.transport
-        usb_devices: list[Record3DDevice] = []
-        usb_error_message = ""
-        if transport is Record3DTransportId.USB:
-            try:
-                usb_devices = list_record3d_usb_devices()
-            except Exception as exc:
-                usb_error_message = str(exc)
-        selected_usb_index = page_state.usb_device_index
-        wifi_device_address = page_state.wifi_device_address
-        if transport is Record3DTransportId.USB:
-            selected_usb_index = _render_usb_selector(current_index=page_state.usb_device_index, devices=usb_devices)
-        else:
-            wifi_device_address = st.text_input(
-                "Wi-Fi Preview Device Address",
-                value=page_state.wifi_device_address,
-                placeholder="myiPhone.local or 192.168.1.100",
-            ).strip()
         start_requested, stop_requested = render_live_action_slot(
             is_active=page_state.is_running,
             start_label="Start stream",
             stop_label="Stop stream",
-            start_disabled=_start_disabled(
-                transport=transport,
-                usb_devices=usb_devices,
-                wifi_device_address=wifi_device_address,
-            ),
+            start_disabled=selection.input_error is not None,
         )
-        with st.expander("Transport details", expanded=bool(usb_error_message)):
-            st.write(transport.stream_hint())
-            if usb_error_message:
-                st.warning(usb_error_message)
-            elif transport is Record3DTransportId.USB and not usb_devices:
-                st.info("No USB Record3D devices are currently connected.")
-            elif transport is Record3DTransportId.WIFI:
-                st.info("Wi-Fi Preview is optional and lower fidelity than the official USB integration.")
+        render_record3d_transport_details(selection)
     return Record3DPageAction(
-        transport=transport,
-        usb_device_index=selected_usb_index,
-        wifi_device_address=wifi_device_address,
+        transport=selection.transport,
+        usb_device_index=selection.usb_device_index,
+        wifi_device_address=selection.wifi_device_address,
         start_requested=start_requested,
         stop_requested=stop_requested,
     )
@@ -114,20 +78,6 @@ def _render_live_snapshot(context: AppContext) -> None:
         run_every=live_poll_interval(is_active=context.state.record3d.is_running, interval_seconds=0.5),
         render_body=lambda: _render_snapshot(sync_record3d_running_state(context)),
     )
-
-
-def _render_usb_selector(*, current_index: int, devices: list[Record3DDevice]) -> int:
-    if not devices:
-        st.selectbox("USB Device", options=["No USB device available"], index=0, disabled=True)
-        return 0
-    selected_index = current_index if 0 <= current_index < len(devices) else 0
-    selected_device = st.selectbox(
-        "USB Device",
-        options=devices,
-        index=selected_index,
-        format_func=lambda item: f"{item.udid} ({item.product_id})",
-    )
-    return devices.index(selected_device)
 
 
 def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
@@ -172,17 +122,6 @@ def _render_frame_preview(packet: FramePacket) -> None:
         st.info("Depth confidence is not available for this transport.")
     else:
         st.image(normalize_grayscale_image(packet.confidence), clamp=True)
-
-
-def _start_disabled(
-    *,
-    transport: Record3DTransportId,
-    usb_devices: list[Record3DDevice],
-    wifi_device_address: str,
-) -> bool:
-    return (transport is Record3DTransportId.USB and not usb_devices) or (
-        transport is Record3DTransportId.WIFI and wifi_device_address == ""
-    )
 
 
 def _render_status_notice(snapshot: Record3DStreamSnapshot) -> None:

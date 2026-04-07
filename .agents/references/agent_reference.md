@@ -32,6 +32,7 @@
 - evo plot helpers (`traj_colormap`, trajectory plotting internals): <https://github.com/MichaelGrupp/evo/blob/master/evo/tools/plot.py>
 - Nerfstudio docs: <https://docs.nerf.studio/>
 - Nerfstudio data conventions: <https://docs.nerf.studio/quickstart/data_conventions.html>
+- ViSTA-SLAM GH pages: <https://ganlinzhang.xyz/vista-slam/>
 - ViSTA-SLAM paper: <https://arxiv.org/abs/2509.01584>
 - ViSTA-SLAM repo: <https://github.com/zhangganlin/vista-slam>
 - MASt3R-SLAM paper: <https://arxiv.org/abs/2412.12392>
@@ -66,3 +67,6 @@
 - The pipeline owns one SLAM-stage config and one SLAM artifact bundle per
   backend; dense output is a capability of the SLAM stage, not a separate
   backend contract.
+- Record3D live pipeline requests should use a transport-aware typed source
+  contract instead of encoding USB or Wi-Fi details into ad hoc `source_id`
+  strings alone.
