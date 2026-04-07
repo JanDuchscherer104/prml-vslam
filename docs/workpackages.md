@@ -12,11 +12,7 @@ Assignee: Valentin Bumeder
 ### WP 1.1: ADVIO Dataset
 Assignee: Jan Duchscherer
 Output: Dataset containing RGB Video Stream & baseline log data
-<<<<<<< HEAD
 - review and prepare data from ADVIO dataset for benchmarking of VSLAM Pipeline
-=======
-- review and prepare data from ADVIO dataset for benachmarking of VSLAM Pipeline
->>>>>>> 12c158c (docs: documented initially aligned workpackages)
 
 ### WP 1.2: Mobile Client (Record 3D)
 Assignee: Jan Duchscherer
@@ -45,22 +41,14 @@ Assignee(s): Open
 Assignees: Lukas Röß, Jan Duchscherer
 input: RGB Video Stream
 output: incrementally updating Pointcloud & Trajectory
-<<<<<<< HEAD
 - defined input / output interface for VSLAM algorithms
-=======
-- defined input / ouput interface for VSLAM algorithms
->>>>>>> 12c158c (docs: documented initially aligned workpackages)
 - setup real-time capable ViSTA-SLAM algorithm
 
 ### WP 2.3: MASt3R-SLAM
 Assignee: Christopher Kirschner
 input: RGB Video Stream
 output: incrementally updating Pointcloud & Trajectory
-<<<<<<< HEAD
 - defined input / output interface for VSLAM algorithms
-=======
-- defined input / ouput interface for VSLAM algorithms
->>>>>>> 12c158c (docs: documented initially aligned workpackages)
 - setup real-time capable MASt3R-SLAM algorithm
 
 ## WP 3: Incremental Streaming (3DGS)
@@ -70,6 +58,7 @@ output: 2D/3D visualization of VSLAM output
 - implemented service that renders the VSLAM output in 2D / 3D
 
 
+## WP 4: Metrics - Component Throughput
 ## WP 4: Metrics - Component Throughput
 Assignee: Florian Beck
 input: services in pipeline
@@ -95,18 +84,10 @@ output: comparison metric
 ## WP 7: Metrics - Output Images (Quality)
 Assignee: Christopher Kirschner
 input: VSLAM image output
-<<<<<<< HEAD
 - created quality metrics based on VSLAM image output (PSNR or other Standard Reconstruction Metrics)
-=======
-- created quality metricts based on VSLAM image output (PSNR or other Standard Reconstruction Metrics)
->>>>>>> 12c158c (docs: documented initially aligned workpackages)
 
 ## WP 8: (Optional) Ground Truth Creation -> Grab if you're bored! 
 Assignee(s): Open
 
-<<<<<<< HEAD
 ## WP 9: (Optional) ARCore - Grab if you're bored! 
-=======
-## WP 9: (Optional) AR Core - Grab if you're bored! 
->>>>>>> 12c158c (docs: documented initially aligned workpackages)
 Assignee(s): Open
