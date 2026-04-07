@@ -109,7 +109,7 @@ def _render_download_form(context: AppContext) -> AdvioDownloadFormData:
     with st.form("advio_download_form", border=False):
         sequence_ids = st.multiselect(
             "Scenes",
-            options=[scene.sequence_id for scene in service.list_scenes()],
+            options=[scene.sequence_id for scene in service.catalog.scenes],
             default=page_state.selected_sequence_ids,
             format_func=lambda sequence_id: service.scene(sequence_id).display_name,
             placeholder="Leave empty to download every scene, or choose a subset",
