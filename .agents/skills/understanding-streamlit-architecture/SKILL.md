@@ -5,8 +5,7 @@ description: Explains Streamlit's internal architecture including backend runtim
 
 # Understanding Streamlit architecture
 
-Streamlit is a client-server application with bidirectional WebSocket communication using Protocol Buffers.
-Use this file as a quick mental model and navigation index; use `references/backend.md`, `references/frontend.md`, and `references/communication.md` for implementation details.
+Streamlit is a client-server application with bidirectional WebSocket communication using Protocol Buffers. Use this file as a quick mental model and navigation index; use `references/backend.md`, `references/frontend.md`, and `references/communication.md` for implementation details.
 
 ## Concepts glossary
 

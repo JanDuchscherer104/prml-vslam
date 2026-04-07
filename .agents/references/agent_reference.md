@@ -40,33 +40,18 @@
 
 ## Contract Lookup
 
-- Full restructuring rationale, current-state findings, target ownership rules,
-  minimal public surface, and migration guidance live in
-  `docs/architecture/interfaces-and-contracts.md`.
+- Full restructuring rationale, current-state findings, target ownership rules, minimal public surface, and migration guidance live in `docs/architecture/interfaces-and-contracts.md`.
 - One semantic concept should have one owner in the repo.
 - Repo-wide shared datamodels live in `prml_vslam.interfaces.*`.
 - Repo-wide shared protocols live in `prml_vslam.protocols.*`.
   - `FramePacketStream` is owned by `prml_vslam.protocols.runtime`.
-  - shared source-provider seams such as `OfflineSequenceSource` and
-    `StreamingSequenceSource` are owned by `prml_vslam.protocols.source`.
-- Package DTOs, enums, configs, manifests, requests, and results belong in
-  `<package>/contracts.py`.
-- Package-local `Protocol` seams belong in `<package>/protocols.py` when a
-  package needs them.
-  - `prml_vslam.methods.protocols` owns SLAM behavior seams such as
-    `SlamBackend` and `SlamSession`.
+  - shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource` are owned by `prml_vslam.protocols.source`.
+- Package DTOs, enums, configs, manifests, requests, and results belong in `<package>/contracts.py`.
+- Package-local `Protocol` seams belong in `<package>/protocols.py` when a package needs them.
+  - `prml_vslam.methods.protocols` owns SLAM behavior seams such as `SlamBackend` and `SlamSession`.
 - `prml_vslam.app.models` owns Streamlit-only state.
 - `services.py` modules own implementations only.
-- Minimal public surface to preserve:
-  `CameraIntrinsics`, `SE3Pose`, `FramePacket`,
-  `RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`,
-  `RunSummary`, `SlamBackend`, `SlamSession`, `MethodId`
-- ViSTA-SLAM and MASt3R-SLAM wrappers should normalize into pipeline-owned
-  artifacts instead of exposing upstream-native result layouts or live modes as
-  repo-wide contracts.
-- The pipeline owns one SLAM-stage config and one SLAM artifact bundle per
-  backend; dense output is a capability of the SLAM stage, not a separate
-  backend contract.
-- Record3D live pipeline requests should use a transport-aware typed source
-  contract instead of encoding USB or Wi-Fi details into ad hoc `source_id`
-  strings alone.
+- Minimal public surface to preserve: `CameraIntrinsics`, `SE3Pose`, `FramePacket`, `RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`, `RunSummary`, `SlamBackend`, `SlamSession`, `MethodId`
+- ViSTA-SLAM and MASt3R-SLAM wrappers should normalize into pipeline-owned artifacts instead of exposing upstream-native result layouts or live modes as repo-wide contracts.
+- The pipeline owns one SLAM-stage config and one SLAM artifact bundle per backend; dense output is a capability of the SLAM stage, not a separate backend contract.
+- Record3D live pipeline requests should use a transport-aware typed source contract instead of encoding USB or Wi-Fi details into ad hoc `source_id` strings alone.

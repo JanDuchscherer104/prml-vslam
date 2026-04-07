@@ -1,15 +1,17 @@
 # Challenge 5: Uncalibrated Monocular VSLAM
 
-This repository addresses an off-device monocular VSLAM pipeline for smartphone videos-streams with unknown intrinsics. The goal is to recover a high-precision ego-trajectory and a dense 3D point cloud from raw video, and to benchmark the result against ARCore and other state-of-the-art methods.
+This repository owns the configuration, artifact layout, bounded runtime, evaluation scaffold, and reporting layers for an off-device monocular VSLAM benchmark on smartphone video or streams with unknown intrinsics.
 
-The rendered [final report](docs/report/main.typ) and [update-meeting slides](docs/slides/update-meetings/) are available on the [GitHub Pages](https://janduchscherer104.github.io/prml-vslam/).
+The project goal is to recover a high-precision ego trajectory and dense 3D geometry from raw smartphone video, compare candidate methods against explicit references or optional ARCore baselines, and document the tradeoffs clearly. The current repository scope is narrower than that long-term goal: it already has typed planning contracts, a bounded executable slice, explicit `evo` trajectory evaluation, and reporting assets, while real method wrappers and the full offline or streaming runner surfaces remain target-state work.
+
+The rendered [final report](docs/report/main.typ) and [update-meeting slides](docs/slides/update-meetings/) are available on [GitHub Pages](https://janduchscherer104.github.io/prml-vslam/).
 
 ## Setup
 
 ### Requirements
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
-- [typst](https://typst.app/open-source/#download) for slides & report
+- [typst](https://typst.app/open-source/#download) for slides and report builds
 
 ### Bootstrap
 
@@ -26,35 +28,52 @@ uv run --extra dev pytest -n auto
 make test PYTEST_ARGS="-n auto"
 ```
 
-Repo-owned datasets and generated benchmark outputs resolve under `.data/` and
-`.artifacts/` by default via `PathConfig`.
+Repo-owned datasets and generated benchmark outputs resolve under `.data/` and `.artifacts/` by default via [`PathConfig`](src/prml_vslam/utils/path_config.py).
 
-### Streamlit Workbench
+## Documentation Map
+
+- `README.md`
+  - onboarding, setup, repo workflow, and high-level project framing
+- `src/prml_vslam/**/README.md`
+  - current implementation guidance and code-oriented extension notes
+- `src/prml_vslam/**/REQUIREMENTS.md`
+  - concise package contracts, current-state boundaries, and target-state rules
+- `AGENTS.md` and nested `AGENTS.md`
+  - repo policy and agent-facing workflow guidance
+- `docs/Questions.md`
+  - human-maintained clarification log for challenge scope and intent
+- `docs/architecture/interfaces-and-contracts.md`
+  - human-facing ownership and contract rationale
+
+## Markdown Style
+
+- Write Markdown and Quarto prose with semantic wrapping only.
+- Do not hard-wrap ordinary paragraphs to a line-length limit.
+- Use line breaks only for real structure such as headings, bullets, tables, block quotes, and code fences.
+
+## Streamlit Workbench
 
 ```bash
 uv sync
-# add `--extra streaming` to enable Record3D USB plus optional Wi-Fi preview support
-uv run streamlit run streamlit_app.py
+# add `--extra streaming` to enable Record3D USB and Wi-Fi Preview support
+uv run prml-vslam-app
 ```
 
-The app supports:
+The app currently supports:
 
-- a `Record3D` live-capture page for official USB capture plus optional Wi-Fi preview inside the workbench
+- a `Record3D` live-capture page for `USB` and `Wi-Fi Preview`
 - an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
-- a `Pipeline` page for run planning, a minimal ADVIO mock pipeline demo, and artifact monitoring
+- a `Pipeline` page for TOML-backed request editing, ADVIO or Record3D source selection, bounded mock execution, and artifact monitoring
 - a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
-- `PathConfig`-driven dataset and artifact discovery without app-local path defaults
+- [`PathConfig`](src/prml_vslam/utils/path_config.py)-driven dataset and artifact discovery without app-local path defaults
 
-USB remains the canonical Record3D programmatic integration in this repo. The Wi-Fi path is kept as an optional
-preview-only fallback for the Streamlit workbench and does not expose the same pose or confidence surfaces.
+Both Record3D transports are implemented in the app and the bounded live-source flows. `USB` remains the richer and canonical programmatic ingress: it exposes RGB, depth, confidence, intrinsics, and pose through the native Python bindings. `Wi-Fi Preview` is implemented in Python through the repo-owned WebRTC receiver, but it is lower fidelity and currently lacks pose and confidence parity with `USB`.
 
-Pipeline contract and extension guidance lives in
-[`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).
+Pipeline contract and extension guidance lives in [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).
 
-### TOML-First Run Planning
+## TOML-First Run Planning
 
-For durable/reproducible planning, store a `RunRequest` as TOML under
-`.configs/pipelines/` and resolve it through the CLI:
+For durable and reproducible planning, store a [`RunRequest`](src/prml_vslam/pipeline/contracts.py) as TOML under `.configs/pipelines/` and resolve it through the [`plan-run-config`](src/prml_vslam/main.py) CLI command:
 
 ```toml
 experiment_name = "advio-office-offline-vista"
@@ -83,47 +102,37 @@ evaluate_efficiency = true
 uv run prml-vslam plan-run-config advio-office-vista.toml
 ```
 
-The TOML shape mirrors the nested `RunRequest` model:
+The TOML shape mirrors the nested [`RunRequest`](src/prml_vslam/pipeline/contracts.py) model: top-level fields configure the run itself, while `[source]`, `[slam]`, `[reference]`, and `[evaluation]` map directly onto the nested config objects owned by [`contracts.py`](src/prml_vslam/pipeline/contracts.py). That is why an optional method-specific backend config path lives in `[slam]` as `config_path = "..."`, because the field is owned by [`SlamConfig`](src/prml_vslam/pipeline/contracts.py) rather than by the top-level request.
 
-- top-level fields configure the run itself: `experiment_name`, `mode`, `output_dir`
-- `[source]` configures the ingest boundary
-- `[slam]` configures the SLAM stage
-- `[reference]` configures the reference-reconstruction stage toggle
-- `[evaluation]` configures benchmark evaluation toggles
+[`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through the repo-owned helpers described in [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md). The config file itself is resolved through [`PathConfig`](src/prml_vslam/utils/path_config.py), while nested TOML paths are hydrated as written and should be normalized explicitly in runtime code when repo-relative behavior is required.
 
-Current stage-specific TOML configuration is therefore done by nesting the
-stage config tables directly under the request. For example, the optional
-method-specific backend config path belongs in `[slam]` as `config_path = "..."`
-because it is owned by `SlamConfig`.
+`compare_to_arcore` is documented here in its current code shape. Today it is the overloaded planner flag that reserves the trajectory-evaluation stage for ARCore comparison; a later refactor can separate “trajectory evaluation enabled” from “baseline selection,” but this README describes the current behavior as implemented.
 
-`plan-run-config` resolves the TOML file path itself relative to the
-repository. Nested TOML paths are then hydrated as written; resolve those
-explicitly through `PathConfig` in runtime code when repo-relative behavior is
-required.
+## Challenge Context
 
-## Challenge
+Professional SLAM systems usually require rigid factory calibration. Consumer frameworks such as ARCore are stable because of real-time sensor fusion, but they often fail when raw video is processed retrospectively. In particular, they struggle with global metric consistency and high-fidelity dense mapping when camera intrinsics are unknown.
 
-Professional SLAM systems usually require rigid factory calibration. Consumer frameworks like ARCore are stable due to real-time sensor fusion, but often fail when processing raw video retrospectively. In particular, they struggle with global metric consistency and high-fidelity dense mapping when camera intrinsics are unknown.
+The long-term system should build on existing monocular dense VSLAM methods such as [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584) or [MASt3R-SLAM](https://arxiv.org/abs/2412.12392), take a smartphone monocular video stream as input, autonomously handle unknown intrinsics, and output a high-precision trajectory together with dense 3D geometry.
 
-The system should build on existing monocular dense VSLAM methods such as [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584) or [MASt3R-SLAM](https://arxiv.org/abs/2412.12392), take a smartphone monocular video stream as input, autonomously handle unknown intrinsics, and output a high-precision trajectory together with a dense 3D point cloud.
+ARCore is treated as an optional external baseline when it helps with comparison or bootstrapping, not as a required part of the primary monocular VSLAM pipeline.
 
-## Evaluation
+## Evaluation Goals
 
-- Dataset: [ADVIO: An Authentic Dataset for Visual-Inertial Odometry](https://github.com/AaltoVision/ADVIO), plus a custom self-recorded dataset with raw video and odometry logs.
-- Identify suitable metrics for pose drift and reconstruction fidelity.
-- Evaluate at least two state-of-the-art VSLAM methods.
-- Measure trajectory quality, including comparison against ARCore, on the ADVIO dataset and on a custom dataset.
-- Measure 3D point cloud quality, including comparison against ARCore mapping, on a self-recorded test dataset.
-- Develop a custom app or logging workflow for recording raw video and baseline ARCore logs.
-- Measure efficiency in terms of latency and memory consumption.
+- use [ADVIO](https://github.com/AaltoVision/ADVIO) plus custom self-recorded data
+- identify suitable metrics for pose drift and reconstruction fidelity
+- evaluate at least two state-of-the-art VSLAM methods
+- compare trajectories against available references and optional ARCore baselines
+- compare dense geometry against reference reconstructions and optional ARCore maps when those baselines exist
+- develop a custom capture or logging workflow for raw video and optional baseline data
+- measure efficiency in terms of latency and memory consumption
 
 ## Deliverables
 
-- A reproducible off-device monocular VSLAM pipeline for raw smartphone video with unknown intrinsics.
-- Benchmark results for at least two methods, including trajectory and dense reconstruction quality.
-- A custom dataset capture workflow or app with raw video and ARCore baseline logs.
-- An evaluation report covering accuracy, reconstruction quality, latency, and memory consumption.
-- A final recommendation for the most suitable pipeline in this challenge setting.
+- a reproducible off-device monocular VSLAM pipeline for raw smartphone video with unknown intrinsics
+- benchmark results for at least two methods, including trajectory and dense reconstruction quality
+- a custom dataset capture workflow or app with raw video and optional baseline logs
+- an evaluation report covering accuracy, reconstruction quality, latency, and memory consumption
+- a final recommendation for the most suitable pipeline in this challenge setting
 
 ## Starting Points
 

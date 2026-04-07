@@ -1,53 +1,47 @@
 # Eval Requirements
 
-This document defines the intended responsibilities and boundaries for
-`prml_vslam.eval`.
+## Purpose
 
-## Summary
+This document is the concise source of truth for the repository-local evaluation package in `src/prml_vslam/eval/`.
 
-The `eval` package owns the repository-local evaluation surface used by the app
-and tests. Its current scope is intentionally small: discover available runs,
-resolve reference and estimate trajectory artifacts, compute and persist a
-deterministic `evo` APE trajectory result, and expose typed evaluation
-contracts to downstream consumers.
+## Current State
 
-The package does not own full benchmark-policy implementation or a complete
-metrics framework.
+- `prml_vslam.eval` is intentionally a thin local evaluation surface for the app and tests.
+- The implemented end-to-end flow today is explicit `evo` APE trajectory evaluation over persisted run artifacts.
+- The package already owns typed controls, discovery payloads, persisted results, and plotting-facing contracts for that local flow.
+- Dense-cloud and efficiency evaluation concepts exist as typed seams, but they are not yet a complete benchmark-policy implementation.
 
-## Necessary Requirements
+## Target State
 
-- The package must own typed evaluation controls, result payloads, discovery
-  DTOs, and plotting-facing data contracts.
-- The package must discover repository-local runs from normalized artifact
-  layouts rather than from app-local path heuristics.
-- The package must resolve reference and estimate trajectories explicitly and
-  fail clearly when required artifacts are missing.
-- The package must persist evaluation results in a deterministic, reloadable
-  repository-owned format.
-- The package must keep evaluation execution explicit. App consumers must call
-  evaluation services intentionally rather than triggering evaluation as an
-  implicit side effect of selection changes.
-- The package must evaluate trajectories through a thin explicit `evo` adapter
-  (translation APE) rather than a custom local metric implementation.
-- The package must keep evaluation logic separate from method wrappers,
-  dataset adapters, and pipeline orchestration.
+- Keep evaluation execution explicit and separate from app interaction flow.
+- Add typed dense-cloud and efficiency surfaces only once the upstream artifact contracts stabilize elsewhere in the repo.
+- Keep the package thin even if more evaluation surfaces are added later.
 
-## Nice To Have
+## Responsibilities
 
-- Additional typed evaluation surfaces for dense-cloud and efficiency metrics
-  once those artifact contracts stabilize elsewhere in the repo.
-- Provenance metadata that records how an evaluation result was produced,
-  including alignment flags, scale-correction settings, and source artifact
-  paths.
-- Small helper utilities for comparing persisted evaluation results across runs
-  without pushing selection logic into the app layer.
+- The package owns typed evaluation controls, result payloads, run discovery, trajectory artifact resolution, explicit trajectory evaluation execution, and persisted evaluation results.
+- The package does not own benchmark policy, dataset normalization, method execution, app state, or pipeline-stage planning.
 
-## Non-Goals
+## Non-Negotiable Requirements
+
+- The package must discover repository-local runs from normalized artifact layouts rather than app-local path heuristics.
+- Required reference and estimate trajectories must be resolved explicitly and fail clearly when missing.
+- Persisted evaluation results must stay deterministic and reloadable.
+- App consumers must call evaluation services intentionally rather than triggering evaluation as an implicit side effect.
+- Trajectory evaluation must remain a thin explicit `evo` adapter rather than a custom local metric implementation.
+- Evaluation logic must remain separate from method wrappers, dataset adapters, and pipeline orchestration.
+
+## Explicit Non-Goals
 
 - Defining benchmark policy for the full project.
-- Reimplementing `evo` or a complete SLAM-metrics framework inside this
-  package.
+- Reimplementing `evo` or a full SLAM-metrics framework inside this package.
 - Owning app state, Streamlit rendering, or page-local selection widgets.
 - Owning dataset normalization, method execution, or pipeline-stage planning.
-- Hiding missing references, malformed trajectories, or unsupported evaluation
-  cases behind silent fallbacks.
+- Hiding missing references, malformed trajectories, or unsupported evaluation cases behind silent fallbacks.
+
+## Validation
+
+- A persisted run with matching reference and estimate TUM trajectories can be discovered, evaluated explicitly, and reloaded deterministically.
+- Selection changes in the app do not trigger evaluation implicitly.
+- The README and requirements stay honest about the current thin local scope.
+- The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.

@@ -1,14 +1,19 @@
 # Datasets
 
-This package owns repository-local dataset adapters and dataset-facing contracts.
-Right now the main implementation target is ADVIO.
+This README is the implementation guide for the current dataset package in `prml_vslam.datasets`.
 
-## What It Implements
+Use [../REQUIREMENTS.md](../REQUIREMENTS.md) for top-level ownership rules. Use this file for the current code surfaces and typical usage patterns.
+
+## Current Implementation
+
+This package owns repository-local dataset adapters and dataset-facing contracts. The main implemented target today is ADVIO.
+
+The current ADVIO stack includes:
 
 - typed dataset metadata and status models in `advio_models.py`
 - local path resolution and catalog lookups in `advio_layout.py` and `advio_sequence.py`
 - typed file loading for timestamps, calibration, and trajectories in `advio_loading.py`
-- dataset fetch/cache mechanics in `fetch.py` and archive extraction flows in `advio_download.py`
+- dataset fetch and cache mechanics in `fetch.py` plus archive extraction flows in `advio_download.py`
 - a high-level app- and pipeline-facing service in `advio_service.py`
 - ADVIO replay stream assembly in `advio_replay_adapter.py`
 
@@ -16,7 +21,7 @@ The replay path is layered on purpose:
 
 - `prml_vslam.io.cv2_producer` owns generic video replay and pacing
 - `advio_replay_adapter.py` adds ADVIO-specific timestamps, calibration, poses, and optional video-rotation handling
-- `advio_sequence.py` exposes the sequence-level entrypoints used by the app and tests
+- `advio_sequence.py` exposes the sequence-level entry points used by the app and tests
 
 ## Main Entry Points
 
@@ -24,13 +29,13 @@ The replay path is layered on purpose:
   - summarize the local dataset state
   - inspect scenes
   - download selected modalities
-  - open a replay stream for the app
+  - open a replay stream for the app or pipeline surfaces
 - `AdvioSequence`
   - load one offline sample
   - open one replay stream
   - export ground-truth and baseline trajectories to TUM
 - `load_advio_sequence(...)`
-  - convenience entrypoint for one fully loaded local sample
+  - convenience entry point for one fully loaded local sample
 
 ## Typical Usage
 
@@ -84,8 +89,8 @@ summary = service.summarize()
 statuses = service.local_scene_statuses()
 ```
 
-## Notes
+## Boundaries
 
 - This package owns dataset normalization and replay preparation, not evaluation policy.
 - Generic replay mechanics stay in `prml_vslam.io`.
-- App pages should prefer `AdvioDatasetService` over rebuilding ADVIO path or replay logic directly.
+- App pages and pipeline surfaces should prefer `AdvioDatasetService` or `AdvioSequence` over rebuilding ADVIO path or replay logic directly.

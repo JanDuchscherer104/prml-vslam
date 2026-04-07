@@ -7,8 +7,7 @@ description: Adapt Karpathy's autoresearch loop to PRML VSLAM. Use when the user
 
 ## Summary
 
-This skill adapts the core `autoresearch` idea from
-[karpathy/autoresearch](https://github.com/karpathy/autoresearch):
+This skill adapts the core `autoresearch` idea from [karpathy/autoresearch](https://github.com/karpathy/autoresearch):
 
 - define a narrow research question
 - freeze an evaluation harness
@@ -16,30 +15,23 @@ This skill adapts the core `autoresearch` idea from
 - keep only winning changes
 - log the outcome of every trial
 
-The adaptation for this repository is intentionally stricter than the
-upstream loop:
+The adaptation for this repository is intentionally stricter than the upstream loop:
 
 - research loops are **bounded**, not infinite
 - destructive git flows such as `git reset --hard` are **not allowed**
-- the repo has multiple valid evaluation surfaces, so each run must declare
-  its own frozen harness
-- accepted changes must still respect repo rules such as `make lint`,
-  focused tests during iteration, and `make ci` before a final commit
+- the repo has multiple valid evaluation surfaces, so each run must declare its own frozen harness
+- accepted changes must still respect repo rules such as `make lint`, focused tests during iteration, and `make ci` before a final commit
 
-Read [references/upstream-autoresearch.md](references/upstream-autoresearch.md)
-for the upstream mechanics and the exact adaptation notes.
+Read [references/upstream-autoresearch.md](references/upstream-autoresearch.md) for the upstream mechanics and the exact adaptation notes.
 
 ## When To Use
 
-Use this skill when the user wants Codex to act like an autonomous researcher
-inside this repo, for example:
+Use this skill when the user wants Codex to act like an autonomous researcher inside this repo, for example:
 
 - iterating on one benchmark or evaluation surface with a clear success metric
 - trying several alternative implementations and keeping only the winner
-- running a small series of method-wrapper, pipeline, dataset, or app
-  experiments with a shared log
-- exploring simplification work where `make loc` is part of the keep/discard
-  decision
+- running a small series of method-wrapper, pipeline, dataset, or app experiments with a shared log
+- exploring simplification work where `make loc` is part of the keep/discard decision
 
 Do not use this skill for:
 
@@ -64,8 +56,7 @@ Before starting a loop:
    - mutable surface
    - immutable surface
    - max experiment count or time budget
-3. Create a dedicated branch, for example
-   `codex/autoresearch-2026-04-06-evo-harness`.
+3. Create a dedicated branch, for example `codex/autoresearch-2026-04-06-evo-harness`.
 4. Initialize the run log:
 
 ```bash
@@ -130,9 +121,7 @@ Keep the editable surface small. Prefer one module cluster such as:
 
 ### Immutable Surface
 
-At minimum, freeze the evaluation harness and unrelated source-of-truth docs.
-Like upstream `prepare.py`, these are not edited during the run unless the
-research question explicitly targets them.
+At minimum, freeze the evaluation harness and unrelated source-of-truth docs. Like upstream `prepare.py`, these are not edited during the run unless the research question explicitly targets them.
 
 ## Safe Git Flow
 
@@ -141,8 +130,7 @@ Do **not** use `git reset --hard`.
 Use a winner branch plus ephemeral trial branches:
 
 1. Keep the current best state on `codex/autoresearch-<tag>`.
-2. For each experiment, create a short-lived branch from that winner, for
-   example `codex/autoresearch-<tag>-trial-03`.
+2. For each experiment, create a short-lived branch from that winner, for example `codex/autoresearch-<tag>-trial-03`.
 3. Make one focused change and commit it.
 4. Run the frozen evaluation harness.
 5. If the experiment wins:
@@ -153,9 +141,7 @@ Use a winner branch plus ephemeral trial branches:
    - log `discard` or `crash`
    - abandon the trial branch
 
-If the worktree is already dirty with unrelated user changes, stop and isolate
-the work before starting a loop. Do not let a research loop trample unrelated
-local edits.
+If the worktree is already dirty with unrelated user changes, stop and isolate the work before starting a loop. Do not let a research loop trample unrelated local edits.
 
 ## Experiment Loop
 
@@ -166,9 +152,7 @@ Repeat until the declared budget is exhausted:
 3. Edit only the mutable surface.
 4. Run `make lint`.
 5. Run the frozen evaluation command(s).
-6. If the idea changes config contracts, artifact formats, or benchmark
-   assumptions, update `.agents/references/agent_reference.md` in the same
-   winning change.
+6. If the idea changes config contracts, artifact formats, or benchmark assumptions, update `.agents/references/agent_reference.md` in the same winning change.
 7. Decide:
    - `keep` if the primary metric improves
    - `keep` if the primary metric is equal and the result is materially simpler
@@ -243,15 +227,11 @@ Choose one and freeze it in the brief:
 
 ## Repo-Specific Differences From Upstream
 
-The upstream autoresearch loop edits one file, runs one fixed training script,
-and can safely discard experiments with destructive resets. This repo is
-different:
+The upstream autoresearch loop edits one file, runs one fixed training script, and can safely discard experiments with destructive resets. This repo is different:
 
 - multiple subsystems are in play
 - `make ci` is much heavier than one 5-minute train run
 - destructive rollback is disallowed
-- repo memory lives in `.agents/issues.toml`, `.agents/todos.toml`, and
-  `.agents/resolved.toml`
+- repo memory lives in `.agents/issues.toml`, `.agents/todos.toml`, and `.agents/resolved.toml`
 
-That means this skill favors short, explicit, reproducible loops over the
-upstream "never stop" autonomy model.
+That means this skill favors short, explicit, reproducible loops over the upstream "never stop" autonomy model.

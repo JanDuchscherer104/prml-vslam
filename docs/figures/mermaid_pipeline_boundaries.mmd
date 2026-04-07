@@ -1,0 +1,45 @@
+flowchart TD
+    subgraph request["Request and planning contracts"]
+        Request["RunRequest"]
+        SourceCfg["SourceSpec"]
+        SlamCfg["SlamConfig"]
+        Plan["RunPlan"]
+        Paths["RunArtifactPaths"]
+        Request --> SourceCfg
+        Request --> SlamCfg
+        Request --> Plan
+        Plan --> Paths
+    end
+
+    subgraph ingress["Ingress and source normalization"]
+        Source["StreamingSequenceSource"]
+        Manifest["SequenceManifest"]
+        Stream["FramePacketStream"]
+        SourceCfg --> Source
+        Source -->|"materialize once"| Manifest
+        Source -->|"open runtime stream"| Stream
+    end
+
+    subgraph execution["SLAM execution path"]
+        Backend["StreamingSlamBackend"]
+        Session["SlamSession"]
+        Packet["FramePacket"]
+        Update["SlamUpdate"]
+        Artifacts["SlamArtifacts"]
+        SlamCfg --> Backend
+        Backend -->|"start_session()"| Session
+        Stream --> Packet
+        Packet -->|"step()"| Session
+        Session -->|"live output"| Update
+        Session -->|"close()"| Artifacts
+    end
+
+    subgraph durable["Durable artifact boundaries"]
+        StageManifest["StageManifest"]
+        Summary["RunSummary"]
+        Manifest --> StageManifest
+        Artifacts --> StageManifest
+        Paths --> StageManifest
+        StageManifest --> Summary
+        Paths --> Summary
+    end

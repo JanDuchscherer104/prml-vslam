@@ -2,10 +2,7 @@
 
 This package contains the packaged Streamlit workbench for PRML VSLAM.
 
-The app is intentionally small and typed. It is not the owner of capture,
-benchmark execution, or artifact formats. Instead, it is a thin interactive
-surface over repo-owned services in `prml_vslam.io`, `prml_vslam.eval`,
-`prml_vslam.pipeline`, and `prml_vslam.utils`.
+The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.eval`, `prml_vslam.pipeline`, and `prml_vslam.utils`.
 
 Use this document together with:
 
@@ -15,28 +12,21 @@ Use this document together with:
 ## Design Goals
 
 - Keep `streamlit_app.py` as a thin entrypoint that delegates into the package.
-- Keep Streamlit-specific orchestration in this package, but keep domain logic
-  outside it.
+- Keep Streamlit-specific orchestration in this package, but keep domain logic outside it.
 - Model app-facing state with typed Pydantic models.
 - Let exactly one adapter touch raw `st.session_state`.
-- Use idiomatic Streamlit primitives such as forms, tabs, metrics, and
-  fragment-scoped reruns instead of custom browser components.
-- Make expensive actions explicit. In particular, the metrics page must not run
-  `evo` implicitly on selector changes.
+- Use idiomatic Streamlit primitives such as forms, tabs, metrics, and fragment-scoped reruns instead of custom browser components.
+- Make expensive actions explicit. In particular, the metrics page must not run `evo` implicitly on selector changes.
 
 ## Mental Model
 
 The app follows a small layered pattern:
 
 1. `bootstrap.py` constructs typed context for one rerun.
-2. `state.py` restores persisted app state and the opaque live Record3D runtime
-   from `st.session_state`.
-3. `bootstrap.py` registers native Streamlit pages through `st.navigation()`
-   and enters the selected page.
-4. Page modules in `pages/` render the current view and translate user actions
-   into service calls.
-5. `services.py` owns Record3D-specific app glue and long-lived preview side
-   effects.
+2. `state.py` restores persisted app state and the opaque live Record3D runtime from `st.session_state`.
+3. `bootstrap.py` registers native Streamlit pages through `st.navigation()` and enters the selected page.
+4. Page modules in `pages/` render the current view and translate user actions into service calls.
+5. `services.py` owns Record3D-specific app glue and long-lived preview side effects.
 6. `plotting/` builds Plotly figures, keeping page modules focused on layout.
 
 This maps well onto Streamlit's rerun model:
@@ -44,14 +34,12 @@ This maps well onto Streamlit's rerun model:
 - local variables are rebuilt on every rerun
 - persisted app state lives in `SessionStateStore`
 - long-lived live-stream behavior is handled by `Record3DStreamRuntimeController`
-- live preview refresh uses `@st.fragment` so the Record3D page can update
-  without forcing full app rebuild semantics for every frame
+- live preview refresh uses `@st.fragment` so the Record3D page can update without forcing full app rebuild semantics for every frame
 - forms batch widget changes for explicit submit-driven actions
 
 ## Sequence Diagram
 
-The following sequence chart shows the main architecture flow for one browser
-session, including both ordinary Streamlit reruns and the live Record3D path.
+The following sequence chart shows the main architecture flow for one browser session, including both ordinary Streamlit reruns and the live Record3D path.
 
 ```{mermaid}
 sequenceDiagram
@@ -76,10 +64,10 @@ sequenceDiagram
     Bootstrap->>Page: Render selected page with AppContext
 
     alt Record3D page
-        Page->>Store: Persist transport and selector updates
+        Page->>Store: Persist selector updates
         Page->>Browser: Render sidebar controls
         User->>Page: Submit Start/Restart form
-        Page->>Runtime: start_usb(...) or start_wifi_preview(...)
+        Page->>Runtime: start_usb(...)
         Runtime->>IO: Create Record3D packet stream
         IO-->>Runtime: Blocking packet stream
         loop Background worker thread
@@ -143,8 +131,7 @@ sequenceDiagram
 
 - [services.py](services.py)
   - Record3D-only app glue.
-  - `Record3DStreamRuntimeController` owns the live stream worker thread and
-    maintains the latest `Record3DStreamSnapshot`.
+  - `Record3DStreamRuntimeController` owns the live stream worker thread and maintains the latest `Record3DStreamSnapshot`.
 
 - [ui.py](ui.py)
   - Shared app UI helpers only.
@@ -154,19 +141,16 @@ sequenceDiagram
   - Metrics page renderer.
   - Reads current selectors and controls from app state.
   - Uses explicit actions for `evo` execution.
-  - Delegates data access to `TrajectoryEvaluationService` and figure creation to
-    `plotting.metrics`.
+  - Delegates data access to `TrajectoryEvaluationService` and figure creation to `plotting.metrics`.
 
 - [pages/advio.py](pages/advio.py)
   - ADVIO dataset-management page renderer.
-  - Renders committed upstream metadata, local dataset coverage, and explicit
-    download controls.
+  - Renders committed upstream metadata, local dataset coverage, and explicit download controls.
   - Delegates dataset discovery and downloads to `AdvioDatasetService`.
 
 - [pages/record3d.py](pages/record3d.py)
   - Record3D page renderer.
-  - Owns Streamlit layout only: sidebar controls, tabs, status panels, image
-    rendering, LaTeX intrinsics, and Plotly trajectory display.
+  - Owns Streamlit layout only: sidebar controls, tabs, status panels, image rendering, LaTeX intrinsics, and Plotly trajectory display.
   - Does not decode frames or speak WebRTC directly.
   - Uses a fragment-scoped renderer for live snapshot refresh.
 
@@ -190,27 +174,21 @@ sequenceDiagram
 
 - `pages/`
   - Page-level render functions only.
-  - Pages compose layout and call services; they should not become miniature
-    service layers.
+  - Pages compose layout and call services; they should not become miniature service layers.
 
 - `plotting/`
   - Pure figure-building helpers.
-  - This keeps Plotly configuration reusable and avoids large inline chart code
-    inside page modules.
+  - This keeps Plotly configuration reusable and avoids large inline chart code inside page modules.
 
 ## Boundaries To Other Packages
 
 - `prml_vslam.io`
-  - Owns Record3D capture, frame decoding, typed packet/snapshot contracts, and
-    official USB plus optional Wi-Fi-preview transport integration.
-  - The app consumes shared typed IO contracts; it does not implement transport
-    protocols itself.
+  - Owns Record3D capture, frame decoding, typed packet/snapshot contracts, and the official USB transport integration.
+  - The app consumes shared typed IO contracts; it does not implement transport protocols itself.
 
 - `prml_vslam.datasets`
-  - Owns ADVIO metadata, local dataset normalization, and selective download
-    semantics.
-  - The app renders dataset summaries and forwards explicit user actions into
-    dataset-owned services.
+  - Owns ADVIO metadata, local dataset normalization, and selective download semantics.
+  - The app renders dataset summaries and forwards explicit user actions into dataset-owned services.
 
 - `prml_vslam.utils`
   - Owns shared utilities such as `PathConfig`, `BaseConfig`, and `Console`.
@@ -218,14 +196,11 @@ sequenceDiagram
 
 - `prml_vslam.pipeline`
   - Owns benchmark planning/orchestration concepts.
-  - The Streamlit app may expose pipeline-facing controls, but it should not
-    define pipeline semantics itself.
+  - The Streamlit app may expose pipeline-facing controls, but it should not define pipeline semantics itself.
 
 - `prml_vslam.eval`
-  - Owns evaluation logic, artifact semantics, and benchmark-run discovery for
-    the metrics surface.
-  - The app presents persisted evaluation outputs rather than inventing app-only
-    evaluation formats.
+  - Owns evaluation logic, artifact semantics, and benchmark-run discovery for the metrics surface.
+  - The app presents persisted evaluation outputs rather than inventing app-only evaluation formats.
 
 ## State Pattern
 
@@ -244,8 +219,7 @@ The app uses two kinds of state:
 This separation is deliberate:
 
 - UI state should be easy to restore on rerun
-- long-lived runtime objects should not be reconstructed from ad hoc widget
-  values every time the script reruns
+- long-lived runtime objects should not be reconstructed from ad hoc widget values every time the script reruns
 
 ## Page Pattern
 
@@ -275,8 +249,7 @@ The Record3D page uses an explicit runtime-controller pattern:
 - the worker continuously updates one shared `Record3DStreamSnapshot`
 - the page reads that snapshot during fragment reruns and renders it
 
-This keeps the live path compatible with Streamlit's rerun model while avoiding
-transport logic in the UI.
+This keeps the live path compatible with Streamlit's rerun model while avoiding transport logic in the UI.
 
 ## Metrics Pattern
 
@@ -300,11 +273,9 @@ This package layout is intentionally conservative:
 - strongly typed at the app boundary
 - aligned with Streamlit's rerun architecture
 - easy to test with `AppTest`
-- easy to extend with another page or another plotting module without turning
-  the package into a monolith
+- easy to extend with another page or another plotting module without turning the package into a monolith
 
-When adding features, prefer extending the existing pattern rather than adding
-new architectural layers:
+When adding features, prefer extending the existing pattern rather than adding new architectural layers:
 
 - new page -> `pages/<name>.py`
 - new chart -> `plotting/<name>.py`

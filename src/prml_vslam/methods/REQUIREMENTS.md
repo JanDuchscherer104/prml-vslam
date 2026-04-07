@@ -1,79 +1,48 @@
 # Methods Requirements
 
-This document defines the intended responsibilities and boundaries for
-`prml_vslam.methods`.
+## Purpose
 
-## Scope
+This document is the concise source of truth for the `prml_vslam.methods` package.
 
-The `methods` package integrates external monocular VSLAM systems into this
-repository without reimplementing the underlying SLAM algorithms.
+## Current State
 
-The current scope covers two upstream backends:
+- `prml_vslam.methods` is currently a mock interface layer used by the app and tests.
+- The package already owns typed method selection enums, shared SLAM behavior seams in `methods/protocols.py`, one repository-local mock backend config, deterministic mock offline and streaming runtimes, and local path bookkeeping for mock installs.
+- The package does not yet ship real ViSTA-SLAM or MASt3R-SLAM orchestration in the current codebase.
 
-- ViSTA-SLAM
-- MASt3R-SLAM
+## Target State
 
-The package owns the shared interface layer that lets the rest of this project
-switch between these backends through one typed selector.
+- Keep method integration thin and wrapper-oriented rather than reimplementing upstream SLAM systems locally.
+- The first real wrapper targets should remain ViSTA-SLAM and MASt3R-SLAM.
+- Real wrappers should consume repo-owned inputs, call upstream entry points, validate native outputs, and normalize them into pipeline-owned artifacts.
 
-## Core Requirements
+## Responsibilities
 
-- Backend selection must use a shared `StrEnum`.
+- The package owns method selection, SLAM backend and session seams, thin method-wrapper integration, and repository-local mock execution surfaces.
+- The package does not own benchmark policy, dataset normalization, app state, or pipeline-stage planning.
+
+## Non-Negotiable Requirements
+
+- Backend selection must use a shared typed enum.
 - Shared SLAM behavior seams must live in `methods/protocols.py`.
-- Offline-capable backends must expose
-  `run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`.
-- Streaming-capable backends must expose
-  `start_session(cfg, artifact_root) -> SlamSession`.
-- Shared method inputs must be repository-friendly and method-agnostic:
-  `SequenceManifest`, `SlamConfig`, and `artifact_root`.
-- Shared outputs must normalize method-specific artifacts into the same
-  downstream paths for trajectory and reconstructed geometry.
-- Repository-local mock coverage should converge on one mock SLAM backend
-  surface, not parallel generic mock runtimes.
+- Offline-capable backends must expose `run_sequence(sequence, cfg, artifact_root) -> SlamArtifacts`.
+- Streaming-capable backends must expose `start_session(cfg, artifact_root) -> SlamSession`.
+- Shared method inputs must stay repository-friendly and method-agnostic: `SequenceManifest`, `SlamConfig`, and `artifact_root`.
+- Shared outputs must normalize method-specific artifacts into the same downstream trajectory and geometry paths.
+- Real wrappers must call upstream repositories through their native entry points instead of vendoring or rewriting them.
+- Shared upstream state should live under `.logs/` for checkouts, checkpoints, and dedicated method environments.
+- Missing repositories, configs, checkpoints, or expected native outputs must fail clearly.
 
-## Upstream Integration Requirements
-
-- The package must call the upstream repositories through their native entry
-  points instead of vendoring or rewriting them.
-- Shared upstream state must live under `.logs/`:
-  - `.logs/repos/<repo-name>` for upstream checkouts
-  - `.logs/ckpts/<method>` for shared checkpoints and weights
-  - `.logs/venvs/<method>` for dedicated backend environments synced from this
-    repository's `pyproject.toml`
-- The package must make the upstream command, working directory, and expected
-  output paths explicit.
-- Integration must raise clear errors when the upstream repository, config, or
-  expected output artifacts are missing.
-- Method wrappers must document method-specific prerequisites such as
-  checkpoints or vocabulary files in returned notes.
-- Backend dependency sets may be encoded as conflicting `uv` extras when the
-  upstream stacks cannot coexist in one Python environment.
-
-## Input Normalization Requirements
-
-- ViSTA-SLAM must be able to consume project-owned video captures by decoding
-  them into an image sequence, because the upstream interface expects image
-  globs.
-- The package must persist a capture manifest whenever it materializes an image
-  sequence for downstream timestamp lookup and debugging.
-- MASt3R-SLAM must support its native video or image-folder dataset interface.
-
-## Output Normalization Requirements
-
-- The shared trajectory artifact must be a TUM-style text file.
-- The shared dense geometry artifact must be a PLY point cloud.
-- Method-specific raw outputs should remain available under a native output
-  folder for debugging.
-- ViSTA-SLAM trajectory exports must be converted from upstream `trajectory.npy`
-  into TUM text using capture timestamps when they are available.
-- MASt3R-SLAM trajectory exports should be copied from the upstream text format
-  into the normalized trajectory path.
-
-## Non-Goals
+## Explicit Non-Goals
 
 - Reimplementing ViSTA-SLAM or MASt3R-SLAM internals.
 - Hiding upstream installation complexity behind silent fallbacks.
-- Guaranteeing CPU-only execution when the upstream methods are designed and
-  documented around GPU inference.
-- Defining evaluation metrics or benchmark policy; those belong in `eval` and
-  higher-level pipeline orchestration.
+- Guaranteeing CPU-only execution when the upstream methods are built around GPU inference.
+- Defining evaluation metrics or benchmark policy inside this package.
+
+## Validation
+
+- The README and requirements stay explicit that the current implementation is mock-only.
+- New method work continues to normalize outputs into pipeline-owned artifacts instead of inventing parallel public result types.
+- Real wrapper requirements stay future-facing until code for them actually lands.
+- The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.
