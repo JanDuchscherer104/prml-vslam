@@ -1,8 +1,32 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-06"
+updated_on = "2026-04-07"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
+
+[[resolved_issues]]
+id = "ISSUE-0034"
+title = "Claude PR review workflow fails on workflow-maintenance pull requests"
+status = "resolved"
+priority = "medium"
+category = "ci"
+summary = "Anthropic's GitHub App rejects pull_request review runs when `.github/workflows/claude-code-review.yml` differs from the default branch version, which turned workflow-maintenance PRs red even though the review setup itself was otherwise valid."
+files = [
+    ".github/workflows/claude-code-review.yml",
+]
+notes = [
+    "Validated from the failing `Claude Code Review` runs on 2026-04-07 and Anthropic's matching public issue guidance for the same workflow-validation error.",
+    "The workflow now compares its own file against the default branch and exits early with a notice instead of invoking the action in that unsupported case.",
+    "The workflow token permissions were also widened so buffered review comments can be posted when the action does run.",
+]
+sources = [
+    ".github/workflows/claude-code-review.yml",
+    "https://github.com/anthropics/claude-code-action/issues/522",
+]
+previous_status = "open"
+resolved_on = "2026-04-07"
+resolution_note = "Added a default-branch workflow guard for self-edits and corrected the Claude review workflow token permissions."
+source_collection = "maintenance"
 
 [[resolved_issues]]
 id = "ISSUE-PR15-0001"
