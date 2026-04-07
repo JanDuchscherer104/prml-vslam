@@ -16,7 +16,8 @@ The layout system is still under development and some elements may still use an 
 
 All Streamlit elements have a width parameter that allows users developing layouts to configure its width.
 
-Elements support a subset of the modes or all of them. There are three modes:
+Elements support a subset of the modes or all of them.
+There are three modes:
 
 1. Stretch
 
@@ -68,7 +69,8 @@ When an integer width is provided, the element will be that width in pixels.
 
 All Streamlit elements have a height parameter that allows users developing layouts to configure its height.
 
-Elements support a subset of the available modes or all of them. The modes are:
+Elements support a subset of the available modes or all of them.
+The modes are:
 
 1. Stretch
 
@@ -142,15 +144,14 @@ Example:
  ) -> DeltaGenerator:
 ```
 
-The width and height are validated using common utility functions, then a `LayoutConfig` object is created and provided to the `_enqueue` method on the `DeltaGenerator`.
+The width and height are validated using common utility functions, then a LayoutConfig object is
+created and provided to the `_enqueue` method on the Delta Generator.
 
-```python
-validate_height(height, allow_content=True)
-validate_width(width, allow_content=True)
-layout_config = LayoutConfig(width=width, height=height)
+        validate_height(height, allow_content=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width, height=height)
 
-return self.dg._enqueue("metric", metric_proto, layout_config=layout_config)
-```
+        return self.dg._enqueue("metric", metric_proto, layout_config=layout_config)
 
 In `_enqueue`, the layout config is converted to proto messages:
 
