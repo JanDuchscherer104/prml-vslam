@@ -10,6 +10,8 @@ from pydantic import Field
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.methods import MethodId
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.packet_session import PacketSessionSnapshot
 
@@ -134,11 +136,74 @@ class Record3DPageState(BaseData):
     """Whether the current browser session expects a live stream to be active."""
 
 
+class PipelineSourceId(StrEnum):
+    """Input-source families supported by the bounded pipeline app surface."""
+
+    ADVIO = "advio"
+    RECORD3D = "record3d"
+
+    @property
+    def label(self) -> str:
+        """Return the user-facing source label."""
+        return "Record3D" if self is PipelineSourceId.RECORD3D else "ADVIO"
+
+
 class PipelinePageState(BaseData):
     """Persisted selector state for the interactive Pipeline demo."""
 
     config_path: Path | None = None
     """Selected pipeline request TOML used to instantiate the demo run."""
+
+    experiment_name: str = ""
+    """Editable experiment name for the in-app request preview."""
+
+    source_kind: PipelineSourceId = PipelineSourceId.ADVIO
+    """Selected source family for the bounded pipeline surface."""
+
+    advio_sequence_id: int | None = None
+    """Selected ADVIO sequence id when the source family is `ADVIO`."""
+
+    mode: PipelineMode = PipelineMode.OFFLINE
+    """Selected pipeline mode."""
+
+    method: MethodId = MethodId.VISTA
+    """Selected mock SLAM backend label."""
+
+    slam_max_frames: int | None = None
+    """Optional frame cap for the current request."""
+
+    slam_config_path: Path | None = None
+    """Optional backend config path for the current request."""
+
+    emit_dense_points: bool = True
+    """Whether dense geometry artifacts should be emitted."""
+
+    emit_sparse_points: bool = True
+    """Whether sparse geometry artifacts should be emitted."""
+
+    reference_enabled: bool = False
+    """Whether the reference-reconstruction stage should be planned."""
+
+    compare_to_arcore: bool = False
+    """Whether trajectory evaluation against ARCore should be planned."""
+
+    evaluate_cloud: bool = False
+    """Whether dense-cloud evaluation should be planned."""
+
+    evaluate_efficiency: bool = False
+    """Whether efficiency evaluation should be planned."""
+
+    record3d_usb_device_index: int = 0
+    """Zero-based USB device index used by the bounded pipeline page."""
+
+    record3d_transport: Record3DTransportId = Record3DTransportId.USB
+    """Selected Record3D transport used by the bounded pipeline page."""
+
+    record3d_wifi_device_address: str = "192.168.159.24"
+    """User-supplied Record3D Wi-Fi preview device address for the pipeline page."""
+
+    record3d_persist_capture: bool = True
+    """Whether live Record3D capture should be marked for persistence."""
 
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected pose source injected into the ADVIO replay packets."""
@@ -170,6 +235,7 @@ __all__ = [
     "AdvioPreviewSnapshot",
     "MetricsPageState",
     "PipelinePageState",
+    "PipelineSourceId",
     "PreviewStreamState",
     "Record3DPageState",
     "Record3DStreamSnapshot",
