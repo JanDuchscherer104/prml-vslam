@@ -13,12 +13,14 @@ from pydantic import ValidationError
 
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.methods.protocols import OfflineSlamBackend, SlamBackend, SlamSession, StreamingSlamBackend
 from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
 from prml_vslam.pipeline.contracts import (
     BenchmarkEvaluationConfig,
     DatasetSourceSpec,
+    Record3DLiveSourceSpec,
     ReferenceConfig,
     RunPlan,
     RunPlanStage,
@@ -96,6 +98,25 @@ def test_run_request_build_keeps_legacy_default_stage_selection() -> None:
         RunPlanStageId.EFFICIENCY_EVALUATION,
         RunPlanStageId.SUMMARY,
     ]
+
+
+def test_run_request_build_uses_default_usb_descriptor_when_index_missing() -> None:
+    request = RunRequest(
+        experiment_name="Record3D Default USB",
+        mode=PipelineMode.STREAMING,
+        output_dir=Path(".artifacts"),
+        source=Record3DLiveSourceSpec(
+            transport=Record3DTransportId.USB,
+            device_index=None,
+        ),
+        slam=SlamConfig(method=MethodId.VISTA),
+    )
+
+    plan = request.build()
+
+    assert plan.stages[0].summary == (
+        "Capture the Record3D usb source 'default USB device' with persistence into a replayable sequence manifest."
+    )
 
 
 def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
