@@ -22,6 +22,8 @@ git submodule update --init --recursive
 
 # 2. Sync Python dependencies (includes torch, xformers, rerun-sdk and all ViSTA-SLAM deps)
 uv sync --all-extras
+#    Then install torch/torchvision/xformers for CUDA 12.6 (avoids CUDA version mismatch):
+uv pip install torch torchvision xformers --index-url https://download.pytorch.org/whl/cu126
 
 # 3. Install C build tools into the project venv (run from repo root)
 uv pip install setuptools wheel cmake
@@ -35,14 +37,21 @@ cmake -S external/vista-slam/DBoW3Py -B external/vista-slam/DBoW3Py/cmake_build 
   -DCMAKE_BUILD_TYPE=Release
 make -C external/vista-slam/DBoW3Py/cmake_build -j$(nproc)
 
-# 5. Download ViSTA-SLAM pretrained weights into external/vista-slam/pretrains/
+# 5. (Optional) Build the CUDA-accelerated RoPE2D positional encoding.
+#    Requires CUDA 12.6 torch. Without this step the
+#    PyTorch fallback is used — correct but slower.
+cd external/vista-slam/vista_slam/sta_model/pos_embed/curope
+uv run python setup.py build_ext --inplace
+cd -
+
+# 6. Download ViSTA-SLAM pretrained weights into external/vista-slam/pretrains/
 #    (one-time step, not git tracked)
 wget -O external/vista-slam/pretrains/frontend_sta_weights.pth \
   "https://huggingface.co/zhangganlin/vista_slam/resolve/main/frontend_sta_weights.pth?download=true"
 wget -O external/vista-slam/pretrains/ORBvoc.txt \
   "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?download=true"
 
-# 6. Install pre-commit hooks and run CI checks
+# 7. Install pre-commit hooks and run CI checks
 uv run pre-commit install
 make ci
 ```
