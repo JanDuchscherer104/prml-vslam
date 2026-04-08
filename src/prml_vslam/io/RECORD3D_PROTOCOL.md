@@ -1,161 +1,127 @@
 # Record3D Transport Protocol
 
-This note defines the Record3D data surfaces currently used in this repository.
+This note catalogs the upstream Record3D surfaces followed by the repo-owned adapters. It intentionally includes the full method inventory exposed by the referenced USB bindings and official Wi-Fi demos so capability and modality questions can be answered from one page.
 
-## Summary
+For repo-owned entry points and higher-level transport guidance, see [README.md](./README.md).
 
-- USB streaming uses the upstream Python bindings from the `record3d` package.
-- Wi-Fi streaming uses the browser/WebRTC path from Record3D's official demos.
-- The two transports do **not** expose the same payload.
+## Version And Transport Scope
 
-## USB Streaming
+- The repo uses two upstream-facing Record3D surfaces:
+  - USB via the native `record3d` Python bindings
+  - Wi-Fi Preview via the official HTTP plus WebRTC browser demos
+- The two transports are not payload-equivalent and should not be treated as interchangeable ingestion contracts.
 
-USB is the richer transport and is the only one that currently exposes typed per-frame pose data in this repo.
+## USB Binding Surface
 
-### Session discovery and lifecycle
+### Exposed Python Types
 
-- Enumerate devices with `Record3DStream.get_connected_devices()`.
-- Connect with `Record3DStream.connect(device)`.
-- Receive lifecycle callbacks through:
-  - `on_new_frame`
-  - `on_stream_stopped`
+| Type | Exposed fields | Meaning | Repo use |
+| --- | --- | --- | --- |
+| `DeviceInfo` | `product_id`, `udid`, `_handle` | connected iOS device identity and native handle | `product_id` and `udid` are normalized into `Record3DDevice`; `_handle` is not used |
+| `IntrinsicMatrixCoeffs` | `fx`, `fy`, `tx`, `ty` | upstream intrinsic coefficients | normalized into `CameraIntrinsics(fx, fy, cx=tx, cy=ty)` |
+| `CameraPose` | `qx`, `qy`, `qz`, `qw`, `tx`, `ty`, `tz` | per-frame camera pose from Record3D / ARKit | normalized into `SE3Pose` |
 
-### Per-frame payload
+### Exposed `Record3DStream` Methods And Callbacks
 
-For each frame, the upstream Python bindings expose:
+| Member | Kind | Functionality / payload | Repo use |
+| --- | --- | --- | --- |
+| `Record3DStream()` | constructor | create one stream object | used directly |
+| `get_connected_devices()` | static method | enumerate currently connected USB devices | used directly |
+| `connect(device)` | method | connect to one paired iOS device and begin streaming | used directly |
+| `disconnect()` | method | stop streaming and tear down the current USB connection | used directly |
+| `get_depth_frame()` | method | current depth frame | used directly |
+| `get_rgb_frame()` | method | current RGB frame | used directly |
+| `get_confidence_frame()` | method | confidence image aligned to the current depth frame | used directly |
+| `get_misc_data()` | method | reserved misc-data buffer | currently ignored |
+| `get_intrinsic_mat()` | method | current-frame intrinsic coefficients | used directly |
+| `get_camera_pose()` | method | current-frame camera pose | used directly |
+| `get_device_type()` | method | device type enum: `TRUEDEPTH = 0`, `LIDAR = 1` | used directly |
+| `on_new_frame` | callback field | invoked when a new frame arrives | used directly |
+| `on_stream_stopped` | callback field | invoked when the stream stops | used directly |
 
-- `get_rgb_frame()`
-  - RGB image
-- `get_depth_frame()`
-  - depth image
-- `get_confidence_frame()`
-  - confidence image aligned to depth
-- `get_intrinsic_mat()`
-  - intrinsic coefficients `fx, fy, tx, ty`
-- `get_camera_pose()`
-  - camera pose `(qx, qy, qz, qw, tx, ty, tz)`
-- `get_device_type()`
-  - `TRUEDEPTH` or `LIDAR`
-- `get_misc_data()`
-  - reserved upstream buffer; currently unused in this repo
+### USB Modalities
 
-### Repo mapping
+| Modality | Upstream USB support | Repo normalization |
+| --- | --- | --- |
+| RGB | yes | `FramePacket.rgb` |
+| Depth | yes | `FramePacket.depth` |
+| Confidence | yes | `FramePacket.confidence` |
+| Intrinsics | yes | `FramePacket.intrinsics` |
+| Camera pose | yes | `FramePacket.pose` |
+| Device type | yes | `FramePacket.metadata["device_type"]` |
+| Reserved misc buffer | yes | not currently surfaced |
 
-In this repo, the thin [record3d.py](record3d.py) adapter waits for the upstream callbacks and normalizes each frame directly into the shared `FramePacket` contract with:
+USB is therefore the canonical Record3D ingress in this repo and the only transport that currently carries typed per-frame pose and confidence.
 
-- `rgb`
-- `depth`
-- `confidence`
-- `intrinsics: CameraIntrinsics`
-- `pose: SE3Pose`
-- `metadata["device_type"]`
+## Wi-Fi Preview Demo Surface
 
-### Implication
+### Official Signaling And Metadata Endpoints
 
-Yes: USB gives us ego pose already.
+| Surface | Kind | Functionality / payload | Repo handling |
+| --- | --- | --- | --- |
+| `GET /getOffer` | HTTP endpoint | fetch the device WebRTC offer; upstream README notes HTTP `403` when another peer is already connected | used directly |
+| `POST /sendAnswer` | HTTP endpoint | send the local WebRTC answer back to the device | supported for compatibility |
+| `POST /answer` | HTTP endpoint | send the local WebRTC answer back to the device; used by the Three.js demo | supported for compatibility |
+| `GET /metadata` | HTTP endpoint | fetch stream metadata such as `K` and optional original size | used directly |
 
-More precisely, it gives the upstream Record3D/ARKit camera pose attached to the current frame. In the codebase this is exposed as `SE3Pose` with explicit camera-to-world semantics.
+### Official Demo Client Methods
 
-## Wi-Fi Streaming
+#### `SignalingClient.js`
 
-Wi-Fi uses Record3D's browser/WebRTC signaling flow.
+| Member | Kind | Functionality / payload | Repo parity |
+| --- | --- | --- | --- |
+| `Record3DSignalingClient(serverURL)` | constructor | store the device base URL | mirrored by `Record3DWiFiSignalingClient` |
+| `retrieveOffer()` | method | fetch `/getOffer` and decode JSON | mirrored by `get_offer()` |
+| `sendAnswer(answer)` | method | POST answer JSON to `/answer` | mirrored by `send_answer()` with `/answer` and `/sendAnswer` fallback |
+| `getMetadata(serverURL)` | function | fetch `/metadata` and decode JSON | mirrored by `get_metadata()` |
 
-### Signaling endpoints
+#### `WiFiStreamedVideoSource.js`
 
-The current official Wi-Fi demos use:
+| Member | Kind | Functionality / payload | Repo parity |
+| --- | --- | --- | --- |
+| `WiFiStreamedVideoSource(deviceAddress)` | constructor | initialize one Wi-Fi video source, state, and hidden HTML video tag | mirrored structurally in the repo runtime |
+| `connect()` | method | establish `RTCPeerConnection`, pull the remote offer, create the local answer, and attach the incoming media track | mirrored |
+| `updateVideoResolution()` | method | refresh metadata when the incoming video size changes | mirrored in repo metadata refresh behavior |
+| `getVideoSize()` | method | return logical RGB frame size as half of the composite width | mirrored implicitly during composite split |
+| `toggle()` | method | pause or resume the HTML video element | demo-only UI behavior |
+| `toggleAudio()` | method | mute or unmute the HTML video element | demo-only UI behavior |
+| `updateIntrinsicMatrix(intrMat)` | method | replace the stored intrinsic matrix | demo-local helper; repo computes typed intrinsics instead |
+| `processIntrMat(origIntrMatElements, origVideoSize)` | method | build a display-space intrinsic matrix from metadata and current video resolution | repo parses typed intrinsics and retains metadata separately |
+| `processMetadata(metadata)` | method | parse `originalSize`, compute intrinsics from `K`, and notify listeners | mirrored by `Record3DWiFiMetadata.from_api_payload()` |
 
-- `GET /getOffer`
-  - fetch the remote WebRTC offer
-- `POST /answer`
-  - send the local WebRTC answer
-- `GET /metadata`
-  - fetch side metadata for the current stream
+### Wi-Fi Modalities And Format
 
-### Stream payload
+| Modality / protocol detail | Official Wi-Fi demo surface | Repo normalization |
+| --- | --- | --- |
+| RGB | yes, in the right half of the composite frame | `FramePacket.rgb` |
+| Depth | yes, HSV-encoded in the left half of the composite frame | decoded into `FramePacket.depth` |
+| Intrinsics | yes, via metadata key `K` | `FramePacket.intrinsics` when parsing succeeds |
+| Original source size | yes, via metadata key `originalSize` | preserved in metadata-derived fields |
+| Depth range | yes, documented by the Wi-Fi README as `0` to `3` meters | `depth_max_meters`, default `3.0` when no override key is present |
+| Camera pose | no public Wi-Fi demo surface | unavailable |
+| Confidence | no public Wi-Fi demo surface | unavailable |
+| IMU | no public Wi-Fi demo surface | unavailable |
+| Audio in live stream | no, per the Wi-Fi README | ignored |
+| Single-receiver limit | yes, one Wi-Fi peer at a time | surfaced as a connection error |
 
-The Wi-Fi track is a **composite video**:
+The official Wi-Fi README also documents the following operational constraints:
 
-- left half: depth encoded into color
-- right half: RGB image
+- the phone and receiver must be on the same Wi-Fi network
+- the stream quality and resolution degrade with bandwidth
+- Wi-Fi is lower fidelity than USB and is not recommended when accurate depth is required
+- Wi-Fi Streaming and RGBD mp4 export use the same composite RGBD format
 
-The official Wi-Fi RGBD demo treats the video width as `2 * frame_width` and decodes depth from the left half in shader/browser code.
+## Repo Mapping
 
-### Metadata payload
-
-The official Wi-Fi demos currently consume:
-
-- `metadata["K"]`
-  - flat intrinsic matrix payload
-- `metadata["originalSize"]`
-  - original source resolution when present
-
-### What Wi-Fi does not expose here
-
-In the current official Wi-Fi/browser flow used by this repo, we do **not** have a separate transport for:
-
-- per-frame camera pose / ego pose
-- IMU samples
-- confidence map
-- separate `inv_dist_std`
-- a richer USB-style Python bindings surface
-
-Our current viewer therefore:
-
-- renders RGB from the right half of the composite frame
-- decodes depth from the left half
-- shows `confidence` as unavailable on Wi-Fi
-- renders intrinsics from `/metadata`
-
-### Implication
-
-No: the current Wi-Fi path in this repo does not provide ego pose.
-
-If pose is required for evaluation or ingestion, the current practical path is USB, or a future custom Wi-Fi bridge if Record3D exposes a richer browser-side API later.
-
-## Current Repo Contract
-
-### USB path
-
-- transport: native Python bindings
-- consumer: [record3d.py](record3d.py)
-- output:
-  - RGB
-  - depth
-  - confidence
-  - intrinsics
-  - camera pose
-  - device type
-
-### Wi-Fi path
-
-- transport: browser WebRTC + HTTP metadata
-- consumer: [wifi_session.py](wifi_session.py), [wifi_signaling.py](wifi_signaling.py), and [wifi_packets.py](wifi_packets.py)
-- output:
-  - composite RGBD video preview
-  - decoded RGB preview
-  - decoded depth preview
-  - typed `/metadata` model with:
-    - `intrinsics: CameraIntrinsics | None`
-    - `original_size: ImageSize | None`
-    - `extra_metadata: dict[str, JsonValue]`
-  - no pose
-
-## Confidence vs `inv_dist_std`
-
-These should not be treated as interchangeable by default.
-
-- USB exposes a concrete `confidence` image through `get_confidence_frame()`.
-- The current Wi-Fi/WebRTC path used by the official browser demos does not expose a separate confidence image.
-- The official Wi-Fi demos also do not expose a separate `inv_dist_std` image.
-
-So in this repo:
-
-- USB has a real confidence modality.
-- Wi-Fi does not currently expose either confidence or `inv_dist_std` as a separate image transport.
+| Transport | Repo adapter | Normalized frame surface | Current gaps |
+| --- | --- | --- | --- |
+| USB | [record3d.py](./record3d.py) | `rgb`, `depth`, `confidence`, `intrinsics`, `pose`, `metadata["device_type"]` | reserved misc buffer not surfaced |
+| Wi-Fi Preview | [wifi_signaling.py](./wifi_signaling.py), [wifi_receiver.py](./wifi_receiver.py), and [wifi_packets.py](./wifi_packets.py) | `rgb`, decoded `depth`, optional `intrinsics`, raw metadata | no pose, no confidence, no IMU |
 
 ## Sources
 
-- Official Record3D README: [record3d README](https://github.com/marek-simonik/record3d/blob/master/README.md)
+- Official Record3D USB library README: [record3d README](https://github.com/marek-simonik/record3d/blob/master/README.md)
 - Official Python bindings: [PythonBindings.cpp](https://github.com/marek-simonik/record3d/blob/master/python-bindings/src/PythonBindings.cpp)
+- Official simple Wi-Fi demo README: [record3d-simple-wifi-streaming-demo](https://github.com/marek-simonik/record3d-simple-wifi-streaming-demo)
 - Official Wi-Fi signaling / metadata demo: [SignalingClient.js](https://github.com/marek-simonik/record3d-wifi-streaming-and-rgbd-mp4-3d-video-demo/blob/master/js/app/video-sources/SignalingClient.js)
-- Official Wi-Fi RGBD video handling: [WiFiStreamedVideoSource.js](https://github.com/marek-simonik/record3d-wifi-streaming-and-rgbd-mp4-3d-video-demo/blob/master/js/app/video-sources/WiFiStreamedVideoSource.js)
+- Official Wi-Fi RGBD video handling demo: [WiFiStreamedVideoSource.js](https://github.com/marek-simonik/record3d-wifi-streaming-and-rgbd-mp4-3d-video-demo/blob/master/js/app/video-sources/WiFiStreamedVideoSource.js)
