@@ -1,98 +1,170 @@
-"""Reusable pipeline services shared by the CLI and UI."""
+"""Pipeline planning services."""
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
+from prml_vslam.pipeline.contracts import (
+    DatasetSourceSpec,
+    LiveSourceSpec,
+    RunPlan,
+    RunPlanStage,
+    RunPlanStageId,
+    RunRequest,
+    SlamConfig,
+    SourceSpec,
+    VideoSourceSpec,
+)
+from prml_vslam.utils import PathConfig, RunArtifactPaths
 
-from prml_vslam.pipeline.contracts import MethodId, RunPlan, RunPlanRequest, RunPlanStage, RunPlanStageId
 
+class RunPlannerService:
+    """Canonical planner for the linear pipeline contract.
 
-class PipelinePlannerService:
-    """Build a lightweight typed execution plan for a benchmark run."""
+    Typical usage constructs a fully specified :class:`RunRequest` and then
+    calls either :meth:`build_run_plan` directly or ``RunRequest.build()`` to
+    obtain the ordered :class:`RunPlan` consumed by the CLI and app surfaces.
+    """
 
-    def build_plan(self, request: RunPlanRequest) -> RunPlan:
-        """Build an ordered run plan from a typed planning request.
+    def build_run_plan(self, request: RunRequest, path_config: PathConfig | None = None) -> RunPlan:
+        """Build the canonical run plan for one fully specified request.
 
         Args:
-            request: Planning inputs describing the dataset, method, and optional stages.
+            request: Complete pipeline request containing the source, SLAM
+                config, optional stage toggles, and evaluation toggles.
+            path_config: Optional path helper that owns canonical repository
+                artifact layout.
 
         Returns:
-            Typed run plan with ordered stages and expected artifact paths.
+            Run plan with stable stage ids, current planner ordering, and
+            canonical artifact paths for each enabled stage.
         """
-        artifact_root = request.output_dir / self._slugify(request.experiment_name) / request.method.value
-        stages = self._build_stages(request=request, artifact_root=artifact_root)
-        return RunPlan(
+        self._validate_request(request)
+        config = path_config or PathConfig()
+        run_paths = config.plan_run_paths(
             experiment_name=request.experiment_name,
-            method=request.method,
-            input_video=request.video_path,
-            artifact_root=artifact_root,
-            stages=stages,
+            method_slug=request.slam.method.value,
+            output_dir=request.output_dir,
+        )
+        return RunPlan(
+            run_id=config.slugify_experiment_name(request.experiment_name),
+            mode=request.mode,
+            method=request.slam.method,
+            artifact_root=run_paths.artifact_root,
+            source=request.source,
+            stages=self._build_stages(request, run_paths),
         )
 
-    def _build_stages(self, *, request: RunPlanRequest, artifact_root: Path) -> list[RunPlanStage]:
-        stages = [
-            RunPlanStage(
-                id=RunPlanStageId.INGEST,
-                title="Ingest Video",
-                summary=f"Decode frames at stride {request.frame_stride} and normalize benchmark metadata.",
-                outputs=[
-                    artifact_root / "input" / "frames",
-                    artifact_root / "input" / "capture_manifest.json",
-                ],
+    def _build_stages(self, request: RunRequest, run_paths: RunArtifactPaths) -> list[RunPlanStage]:
+        slam_output_names = ["trajectory_path"]
+        if request.slam.emit_sparse_points:
+            slam_output_names.append("sparse_points_path")
+        if request.slam.emit_dense_points:
+            slam_output_names.append("dense_points_path")
+        optional_stages = (
+            (
+                request.reference.enabled,
+                (
+                    RunPlanStageId.REFERENCE_RECONSTRUCTION,
+                    "Build Reference Reconstruction",
+                    "Reserve the offline reconstruction step used as a dense geometry reference.",
+                    ("reference_cloud_path",),
+                ),
             ),
-            RunPlanStage(
-                id=RunPlanStageId.SLAM,
-                title="Run SLAM Backend",
-                summary=self._method_summary(request.method),
-                outputs=[
-                    artifact_root / "slam" / "trajectory.tum",
-                    artifact_root / "slam" / "sparse_points.ply",
-                ],
+            (
+                request.evaluation.compare_to_arcore,
+                (
+                    RunPlanStageId.TRAJECTORY_EVALUATION,
+                    "Evaluate Trajectory",
+                    "Align the trajectory against the available reference and persist trajectory metrics.",
+                    ("trajectory_metrics_path",),
+                ),
+            ),
+            (
+                request.evaluation.evaluate_cloud,
+                (
+                    RunPlanStageId.CLOUD_EVALUATION,
+                    "Evaluate Dense Cloud",
+                    "Compare reconstructed dense geometry against the reference cloud.",
+                    ("cloud_metrics_path",),
+                ),
+            ),
+            (
+                request.evaluation.evaluate_efficiency,
+                (
+                    RunPlanStageId.EFFICIENCY_EVALUATION,
+                    "Measure Efficiency",
+                    "Persist runtime and resource-usage metrics for the run.",
+                    ("efficiency_metrics_path",),
+                ),
+            ),
+        )
+        return [
+            self._stage_from_spec(
+                run_paths,
+                (
+                    RunPlanStageId.INGEST,
+                    "Normalize Input Sequence",
+                    self._ingest_summary(request.source),
+                    ("sequence_manifest_path",),
+                ),
+            ),
+            self._stage_from_spec(
+                run_paths,
+                (
+                    RunPlanStageId.SLAM,
+                    "Run SLAM Backend",
+                    self._method_summary(request.slam),
+                    tuple(slam_output_names),
+                ),
+            ),
+            *(self._stage_from_spec(run_paths, spec) for enabled, spec in optional_stages if enabled),
+            self._stage_from_spec(
+                run_paths,
+                (
+                    RunPlanStageId.SUMMARY,
+                    "Write Run Summary",
+                    "Persist the stage status and top-level artifact summary for the run.",
+                    ("summary_path", "stage_manifests_path"),
+                ),
             ),
         ]
 
-        if request.enable_dense_mapping:
-            stages.append(
-                RunPlanStage(
-                    id=RunPlanStageId.DENSE_MAPPING,
-                    title="Export Dense Mapping",
-                    summary="Generate dense geometry artifacts suitable for downstream quality evaluation.",
-                    outputs=[artifact_root / "dense" / "dense_points.ply"],
-                )
-            )
-
-        if request.compare_to_arcore:
-            stages.append(
-                RunPlanStage(
-                    id=RunPlanStageId.ARCORE_COMPARISON,
-                    title="Compare Against ARCore",
-                    summary="Align the trajectory against ARCore outputs and compute comparison-ready artifacts.",
-                    outputs=[artifact_root / "evaluation" / "arcore_alignment.json"],
-                )
-            )
-
-        if request.build_ground_truth_cloud:
-            stages.append(
-                RunPlanStage(
-                    id=RunPlanStageId.REFERENCE_RECONSTRUCTION,
-                    title="Build Reference Reconstruction",
-                    summary="Reserve the offline reconstruction step used as a dense geometry reference.",
-                    outputs=[artifact_root / "reference" / "reference_cloud.ply"],
-                )
-            )
-
-        return stages
+    @staticmethod
+    def _stage_from_spec(
+        run_paths: RunArtifactPaths,
+        spec: tuple[RunPlanStageId, str, str, tuple[str, ...]],
+    ) -> RunPlanStage:
+        stage_id, title, summary, output_names = spec
+        return RunPlanStage(
+            id=stage_id,
+            title=title,
+            summary=summary,
+            outputs=[getattr(run_paths, output_name) for output_name in output_names],
+        )
 
     @staticmethod
-    def _method_summary(method: MethodId) -> str:
-        match method:
-            case MethodId.VISTA_SLAM:
-                return "Plan the ViSTA-SLAM wrapper and export trajectory plus sparse geometry artifacts."
-            case MethodId.MAST3R_SLAM:
-                return "Plan the MASt3R-SLAM wrapper and export trajectory plus sparse geometry artifacts."
+    def _ingest_summary(source: SourceSpec) -> str:
+        match source:
+            case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
+                return f"Decode '{video_path}' at stride {frame_stride} and materialize a normalized sequence manifest."
+            case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
+                return f"Normalize dataset sequence '{dataset_id.value}:{sequence_id}' into a shared sequence manifest."
+            case LiveSourceSpec(source_id=source_id, persist_capture=persist_capture):
+                persistence = "with persistence" if persist_capture else "without persistence"
+                return f"Capture the live source '{source_id}' {persistence} into a replayable sequence manifest."
 
     @staticmethod
-    def _slugify(experiment_name: str) -> str:
-        slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.strip().lower())
-        return slug.strip("-") or "experiment"
+    def _method_summary(config: SlamConfig) -> str:
+        artifact_names = ["trajectory"]
+        if config.emit_sparse_points:
+            artifact_names.append("sparse geometry")
+        if config.emit_dense_points:
+            artifact_names.append("dense geometry")
+        return f"Plan the {config.method.display_name} wrapper and export {', '.join(artifact_names)} artifacts."
+
+    @staticmethod
+    def _validate_request(request: RunRequest) -> None:
+        if request.evaluation.evaluate_cloud and not request.slam.emit_dense_points:
+            raise ValueError("Cloud evaluation requires `slam.emit_dense_points=True`.")
+
+
+__all__ = ["RunPlannerService"]

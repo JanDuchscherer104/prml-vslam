@@ -210,6 +210,7 @@ __marimo__/
 .typst/
 docs/.quarto/
 docs/_site/
+_site/
 docs/report/build/
 docs/report/*.pdf
 docs/report/*.png
@@ -219,4 +220,20 @@ docs/slides/**/*.png
 docs/slides/**/*.svgz
 
 # Codex workspace state
-.codex/
+.codex/*
+!.codex/config.toml
+
+# Agent scratch space
+.agents/tmp/
+.agents/work/
+.agents/skills/repo-context-explorer/
+
+# Local pipeline/demo outputs
+.artifacts/
+.data/
+.logs/
+
+# Generated local documentation exports
+README_files/
+src/prml_vslam/app/README.html
+docs/literature/ViSTA-SLAM.qmd

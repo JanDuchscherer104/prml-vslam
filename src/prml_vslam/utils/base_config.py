@@ -1,30 +1,47 @@
-"""Shared Pydantic config helpers for the PRML VSLAM project."""
+"""Shared Pydantic model helpers for the PRML VSLAM project."""
 
 from __future__ import annotations
 
 import tomllib
 from enum import Enum
 from pathlib import Path
-from typing import Any, ForwardRef, Self
+from typing import Any, Literal, Self
 
 import numpy as np
 import tomli_w
-from pydantic import BaseModel, ConfigDict
-from rich.text import Text
-from rich.tree import Tree
 
+from .base_data import BaseData
 from .console import Console
 
 
-class BaseConfig(BaseModel):
-    """Lightweight config model with TOML IO and config-as-factory helpers."""
+def _normalize_value(value: Any, *, mode: Literal["json", "toml"]) -> Any:
+    if isinstance(value, BaseData):
+        dump_kwargs: dict[str, Any] = {"exclude_none": mode == "toml"}
+        if mode == "json":
+            dump_kwargs["mode"] = "python"
+        return _normalize_value(value.model_dump(**dump_kwargs), mode=mode)
+    if isinstance(value, dict):
+        return {str(key): _normalize_value(item, mode=mode) for key, item in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_normalize_value(item, mode=mode) for item in value]
 
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True,
-        validate_assignment=True,
-        validate_default=True,
-        protected_namespaces=(),
-    )
+    match value:
+        case Path():
+            return value.as_posix() if mode == "json" else str(value)
+        case Enum():
+            return value.value if hasattr(value, "value") else str(value)
+        case np.ndarray():
+            return value.tolist()
+        case np.generic():
+            return value.item()
+        case _ if mode == "json" and isinstance(value, type):
+            return value.__name__
+        case _:
+            return value
+
+
+class BaseConfig(BaseData):
+    """Validated config model with TOML IO and config-as-factory helpers."""
 
     @property
     def target_type(self) -> type[Any] | None:
@@ -51,41 +68,24 @@ class BaseConfig(BaseModel):
 
     def model_dump_jsonable(self, **kwargs: Any) -> dict[str, Any]:
         """Return a JSON-serializable view of the config."""
-        return self.to_jsonable(self.model_dump(**kwargs))
+        return _normalize_value(self.model_dump(**kwargs), mode="json")
 
     @classmethod
     def to_jsonable(cls, value: Any) -> Any:
         """Convert nested values into JSON-friendly primitives."""
-        if isinstance(value, BaseConfig):
-            return value.model_dump_jsonable()
-        if isinstance(value, dict):
-            return {str(key): cls.to_jsonable(item) for key, item in value.items()}
-        if isinstance(value, list | tuple | set):
-            return [cls.to_jsonable(item) for item in value]
-        if isinstance(value, Path):
-            return value.as_posix()
-        if isinstance(value, Enum):
-            return value.value if hasattr(value, "value") else str(value)
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if isinstance(value, np.generic):
-            return value.item()
-        if isinstance(value, type):
-            return value.__name__
-        return value
+        return _normalize_value(value, mode="json")
 
     def to_toml(self, path: Path | str | None = None) -> str:
         """Serialize the config to TOML and optionally persist it."""
-        rendered = tomli_w.dumps(self._toml_normalize(self.model_dump(exclude_none=True)))
+        rendered = tomli_w.dumps(_normalize_value(self.model_dump(exclude_none=True), mode="toml"))
         if path is not None:
             Path(path).write_text(rendered, encoding="utf-8")
         return rendered
 
     def save_toml(self, path: Path | str) -> Path:
         """Persist the config to a TOML file and return the resolved path."""
-        target_path = Path(path)
-        self.to_toml(target_path)
-        return target_path
+        self.to_toml(path)
+        return Path(path)
 
     @classmethod
     def from_toml(cls: type[Self], source: str | Path | bytes) -> Self:
@@ -114,82 +114,3 @@ class BaseConfig(BaseModel):
             markup=True,
             emoji=False,
         )
-
-    def _build_tree(self, *, show_docs: bool = False) -> Tree:
-        tree = Tree(Text(self.__class__.__name__, style="config.name"))
-
-        if show_docs and self.__class__.__doc__:
-            tree.add(Text(self.__class__.__doc__, style="config.doc"))
-
-        for field_name, field in self.__class__.model_fields.items():
-            value = getattr(self, field_name)
-            field_text = Text()
-            field_text.append(f"{field_name}: ", style="config.field")
-
-            if isinstance(value, BaseConfig):
-                subtree = tree.add(field_text)
-                subtree.add(value._build_tree(show_docs=show_docs))
-                continue
-
-            if isinstance(value, list | tuple) and value and all(isinstance(item, BaseConfig) for item in value):
-                subtree = tree.add(field_text)
-                for index, item in enumerate(value):
-                    item_tree = item._build_tree(show_docs=show_docs)
-                    subtree.add(Text(f"[{index}]", style="config.field")).add(item_tree)
-                continue
-
-            field_text.append(self._format_value(value), style="config.value")
-            field_text.append(f" ({self._get_type_name(field.annotation)})", style="config.type")
-            node = tree.add(field_text)
-            if show_docs and field.description:
-                node.add(Text(field.description, style="config.doc"))
-
-        return tree
-
-    @classmethod
-    def _toml_normalize(cls, value: Any) -> Any:
-        if isinstance(value, BaseConfig):
-            return cls._toml_normalize(value.model_dump(exclude_none=True))
-        if isinstance(value, dict):
-            return {str(key): cls._toml_normalize(item) for key, item in value.items()}
-        if isinstance(value, list | tuple | set):
-            return [cls._toml_normalize(item) for item in value]
-        if isinstance(value, Path):
-            return str(value)
-        if isinstance(value, Enum):
-            return value.value if hasattr(value, "value") else str(value)
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if isinstance(value, np.generic):
-            return value.item()
-        return value
-
-    @staticmethod
-    def _format_value(value: Any) -> str:
-        if isinstance(value, str):
-            return f'"{value}"'
-        if value is None:
-            return "None"
-        if isinstance(value, Path):
-            return str(value)
-        if isinstance(value, Enum):
-            return str(value.value if hasattr(value, "value") else value)
-        return repr(value)
-
-    @staticmethod
-    def _get_type_name(annotation: Any) -> str:
-        try:
-            if hasattr(annotation, "__origin__"):
-                origin = annotation.__origin__.__name__
-                args: list[str] = []
-                for arg in annotation.__args__:
-                    if isinstance(arg, ForwardRef):
-                        args.append(arg.__forward_arg__)
-                    elif hasattr(arg, "__name__"):
-                        args.append(arg.__name__)
-                    else:
-                        args.append(str(arg))
-                return f"{origin}[{', '.join(args)}]"
-            return str(annotation).replace("typing.", "")
-        except Exception:
-            return "Any"
