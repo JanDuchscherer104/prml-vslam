@@ -1,0 +1,116 @@
+[[issues]]
+id = "ISSUE-0030"
+title = "Trajectory evaluation contracts still conflate ARCore selection with evaluation enablement"
+status = "open"
+priority = "high"
+category = "evaluation"
+summary = "The public pipeline config still uses `compare_to_arcore` to decide whether trajectory evaluation exists at all, while the evaluator always resolves the dataset reference path and computes translation-only APE."
+files = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/main.py",
+    "src/prml_vslam/datasets/contracts.py",
+    "README.md",
+    "docs/Questions.md",
+]
+notes = [
+    "`compare_to_arcore` still controls reservation of the `TRAJECTORY_EVALUATION` stage even though ARCore is optional in the project Q&A.",
+    "The current `TrajectoryEvaluationService` uses `DatasetId.resolve_reference_path(...)`, so the field name no longer matches the implemented behavior.",
+    "The evaluator persists only translation APE; explicit alignment and drift-oriented RPE remain missing even though trajectory quality is the top evaluation priority.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/main.py",
+    "src/prml_vslam/datasets/contracts.py",
+    "README.md",
+    "docs/Questions.md",
+]
+
+[[issues]]
+id = "ISSUE-0031"
+title = "Ingress and live-source contracts still rely on untyped provenance fields"
+status = "open"
+priority = "medium"
+category = "contracts"
+summary = "The repo removed the earlier `FramePacket` pointmap/uncertainty overlap, but the hot-path contracts still use generic metadata blobs and free-string live-source identifiers for provenance that should be typed."
+files = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+]
+notes = [
+    "`FramePacket.metadata` still carries replay, dataset, transport, device-address, and rotation provenance in a generic `dict[str, Any]` blob.",
+    "Replay and dataset adapters currently depend on `static_metadata` plumbing instead of a typed source/provenance contract.",
+    "`LiveSourceSpec.source_id` is still a free string, so the live-source boundary can drift away from typed Record3D transport identifiers and future source types.",
+]
+sources = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/pipeline/REQUIREMENTS.md",
+]
+
+[[issues]]
+id = "ISSUE-0032"
+title = "Record3D Wi-Fi preview remains a large repo-owned subsystem for a preview-only path"
+status = "open"
+priority = "medium"
+category = "maintainability"
+summary = "USB is documented as the canonical Record3D integration, but the repo still carries a bespoke Wi-Fi signaling, WebRTC receiver, packet-decoding, and session stack for the optional preview fallback."
+files = [
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/io/wifi_packets.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/README.md",
+    "README.md",
+]
+notes = [
+    "The current Wi-Fi implementation is intentionally preview-only, lower fidelity, and missing the full pose/confidence surfaces available on USB.",
+    "Even with that limited role, the path still owns custom signaling, worker, and decoding logic that materially increases the size of `io/`.",
+    "This remains a relevant LOC-reduction target from the older reviews, even though the current docs already scope it correctly.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/io/wifi_packets.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+]
+
+[[issues]]
+id = "ISSUE-0033"
+title = "The internal backlog archive overstates completion for some still-open review themes"
+status = "open"
+priority = "low"
+category = "process"
+summary = "The active issue and todo collections were empty before this update even though current code still exhibits several findings from the imported PR15 review, and some archived resolution notes now overstate how much of those themes is actually closed."
+files = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+notes = [
+    "The old `FramePacket` overlap issue was only partially resolved; the generic provenance problem remained open until this re-review.",
+    "The archive should keep resolved history, but it should not imply that the remaining open surface area is fully addressed when the code still disagrees.",
+    "A short re-triage pass will keep the agent database credible as working memory for later tasks.",
+]
+sources = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+
+[meta]
+schema_version = 2
+repo = "prml-vslam"
+updated_on = "2026-04-06"
+source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, a later narrative-review relevance triage, and the 2026-04-06 merged re-review of the surviving PR15 findings."
+active_collection = "issues"
