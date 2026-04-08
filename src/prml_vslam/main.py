@@ -113,6 +113,67 @@ def plan_run(
     console.plog(plan.model_dump(mode="json"))
 
 
+@app.command("run")
+def run_offline(
+    experiment_name: Annotated[str, typer.Argument(help="Human-readable experiment name.")],
+    video_path: Annotated[Path, typer.Argument(help="Path to the input video.")],
+    output_dir: Annotated[Path, typer.Option("--output-dir", help="Root directory for benchmark artifacts.")] = Path(
+        ".artifacts"
+    ),
+    frame_stride: Annotated[int, typer.Option(min=1, max=30, help="Frame subsampling stride.")] = 1,
+    dense_mapping: Annotated[
+        bool,
+        typer.Option("--dense/--no-dense", help="Whether to emit a dense point cloud artifact."),
+    ] = True,
+    max_frames: Annotated[
+        int | None,
+        typer.Option("--max-frames", help="Optional hard cap on the number of frames processed."),
+    ] = None,
+) -> None:
+    """Execute a full offline ViSTA-SLAM benchmark run end-to-end."""
+    from prml_vslam.methods.vista_slam.config import VistaSlamBackendConfig
+    from prml_vslam.methods.vista_slam.runner import VistaSlamBackend
+    from prml_vslam.pipeline.contracts import SequenceManifest
+
+    path_config = get_path_config()
+
+    slam_cfg = SlamConfig(
+        method=MethodId.VISTA,
+        max_frames=max_frames,
+        emit_dense_points=dense_mapping,
+        emit_sparse_points=True,
+    )
+    request = RunRequest(
+        experiment_name=experiment_name,
+        output_dir=output_dir,
+        source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
+        slam=slam_cfg,
+    )
+    plan = request.build(path_config)
+    artifact_root = plan.artifact_root
+    artifact_root.mkdir(parents=True, exist_ok=True)
+
+    console.info("Run plan built — artifact root: %s", artifact_root)
+    console.plog({"run_id": plan.run_id, "stages": [s.id.value for s in plan.stages]})
+
+    sequence = SequenceManifest(
+        sequence_id=plan.run_id,
+        video_path=path_config.resolve_video_path(video_path),
+    )
+
+    backend_cfg = VistaSlamBackendConfig()
+    backend = VistaSlamBackend(config=backend_cfg, path_config=path_config)
+
+    try:
+        artifacts = backend.run_sequence(sequence=sequence, cfg=slam_cfg, artifact_root=artifact_root)
+    except RuntimeError as exc:
+        console.error("ViSTA-SLAM run failed: %s", exc)
+        raise typer.Exit(code=1) from exc
+
+    console.info("Run complete.")
+    console.plog(artifacts.model_dump(mode="json"))
+
+
 @app.command("plan-run-config")
 def plan_run_config(
     config_path: Annotated[
