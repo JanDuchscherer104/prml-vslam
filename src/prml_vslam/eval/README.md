@@ -19,7 +19,7 @@ The package currently provides the smallest local implementation needed by the a
 ## Current Boundaries
 
 - The package does not own benchmark policy or a full metrics framework.
-- Evaluation remains explicit; app surfaces should call it intentionally rather than triggering it as a selection side effect.
+- Evaluation remains explicit; pipeline surfaces should call it intentionally rather than triggering it as a selection side effect.
 - Missing references, malformed trajectories, and unsupported cases should fail clearly.
 
 Use `BaseConfig` only for actual evaluation controls and `BaseData` for persisted results, discovery payloads, and plotting contracts.

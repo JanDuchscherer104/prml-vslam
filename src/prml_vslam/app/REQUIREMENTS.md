@@ -9,8 +9,6 @@ Use this file for current app behavior, target app constraints, and package-loca
 ## Current State
 
 - The app currently exposes four top-level pages: `Record3D`, `ADVIO`, `Pipeline`, and `Metrics`.
-- `Record3D` is the default landing page.
-- `Metrics` remains reachable as the persisted trajectory-evaluation surface.
 - The `Record3D` page supports both the canonical `USB` transport and the optional `Wi-Fi Preview` transport through one selector.
 - The `Pipeline` page can show example request shapes, a generated `RunPlan`, one mock executed run, and the bounded demo pipeline surface.
 - The `Pipeline` page may run the bounded ADVIO replay plus mock-SLAM demo and bounded Record3D live flows through pipeline-owned services.
@@ -32,31 +30,25 @@ Use this file for current app behavior, target app constraints, and package-loca
 
 ## Non-Negotiable Requirements
 
-- `streamlit_app.py` must stay thin and delegate into packaged bootstrap code.
 - App modules must stay small and typed instead of collapsing back into one monolithic file.
-- The app must render only with Streamlit-native primitives; it must not embed raw HTML, CSS, or JavaScript custom components for Record3D.
+- The app must render only with Streamlit-native primitives; it must not embed raw HTML, oe CSS components.
 - One adapter must remain the only app code that touches raw `st.session_state`.
 - App-facing state must remain Pydantic-backed and JSON-friendly across reruns.
-- The same session-state adapter must continue to own the opaque Record3D runtime controller for the current browser session.
+- The same session-state adapter must continue to own the opaque runtime controllers.
 - `PathConfig` remains the authoritative source of repo paths and defaults.
 - Heavy capture and decoding work must stay in `prml_vslam.io`.
 - Runtime objects launched by the app must still consume typed repo-owned contracts rather than transport-specific browser state.
-- Important actions such as `Start`, `Stop`, and `Compute evo metrics` must remain explicit.
 - `Start` and `Stop` actions on live pages must remain mutually exclusive and share the same action slot.
 - Camera intrinsics should remain rendered as LaTeX instead of plain JSON.
-- Switching Record3D transports or leaving the Record3D page must stop the active live stream and clear the live snapshot.
 
 ## Explicit Non-Goals
 
-- Browser-owned Record3D widgets or browser-side frame decoding.
 - Implicit metric computation on load, selector changes, or reruns.
 - General-purpose pipeline orchestration from the app layer.
-- Replacing `evo` with an app-local trajectory-metrics implementation.
-- Duplicating dataset, pipeline, method, or evaluation policy in page code.
+- Duplicating dataset, pipeline, method, utils, or evaluation policy in page code.
 
 ## Validation
 
-- Opening the app lands on the `Record3D` page.
 - Selecting `USB` or `Wi-Fi Preview` and starting a stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and confidence when available.
 - Switching to `Metrics` renders a matching persisted `evo` result without recomputing it.
 - Switching to `Pipeline` shows the direct `RunRequest(...)` workflow, a generated `RunPlan` preview, one mock executed run, and an `evo` APE preview when the required trajectories are available.

@@ -10,10 +10,14 @@ Use [RECORD3D_PROTOCOL.md](./RECORD3D_PROTOCOL.md) for the detailed transport br
 
 - `USB`
   - native `record3d` Python bindings
-  - canonical programmatic ingress in this repo
+  - device discovery through the upstream bindings
+  - RGB, depth, confidence, intrinsics, and pose in shared `FramePacket` objects
+  - richer capture surface and the canonical ingress path
 - `Wi-Fi Preview`
   - Python-side WebRTC receiver plus HTTP signaling and metadata
-  - implemented for the app and bounded live-source flows, but lower fidelity
+  - decoded RGB and depth plus intrinsics when metadata is available
+  - no pose or confidence data
+  - lower-fidelity preview path rather than the canonical ingestion surface
 
 ## Repo-Owned Entry Points
 
@@ -24,34 +28,6 @@ Use [RECORD3D_PROTOCOL.md](./RECORD3D_PROTOCOL.md) for the detailed transport br
 - `Record3DStreamingSource`
   - satisfies the shared `StreamingSequenceSource` protocol for pipeline-owned live sessions and currently supports both Record3D transports
 
-## Capability Split
-
-- `USB`
-  - device discovery through the upstream bindings
-  - RGB, depth, confidence, intrinsics, and pose in shared `FramePacket` objects
-  - richer capture surface and the canonical ingress path
-- `Wi-Fi Preview`
-  - manual device-address entry and Python-side WebRTC negotiation
-  - decoded RGB and depth plus intrinsics when metadata is available
-  - no pose or confidence parity with USB
-  - lower-fidelity preview path rather than the canonical ingestion surface
-
-## Setup
-
-The upstream `record3d` package currently requires the native Record3D prerequisites from the official project README:
-
-- CMake on all platforms
-- iTunes on macOS and Windows
-- `libusbmuxd` on Linux
-
-```bash
-uv sync --extra streaming
-uv run streamlit run streamlit_app.py
-```
-
 ## Current Limitations
 
-- Record3D allows only one Wi-Fi receiver at a time.
-- The Wi-Fi Preview path does not currently expose a separate depth-confidence image, so packet `confidence` stays empty there.
-- The Wi-Fi Preview path does not currently expose per-frame pose.
 - The bounded pipeline live path can plan both Record3D transports, but the live `SequenceManifest` boundary is still minimal today and does not yet capture the richer source metadata that the longer-term offline-core design wants.

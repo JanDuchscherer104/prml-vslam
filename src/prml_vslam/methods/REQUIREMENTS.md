@@ -19,7 +19,6 @@ This document is the concise source of truth for the `prml_vslam.methods` packag
 ## Responsibilities
 
 - The package owns method selection, SLAM backend and session seams, thin method-wrapper integration, and repository-local mock execution surfaces.
-- The package does not own benchmark policy, dataset normalization, app state, or pipeline-stage planning.
 
 ## Non-Negotiable Requirements
 
@@ -29,7 +28,6 @@ This document is the concise source of truth for the `prml_vslam.methods` packag
 - Streaming-capable backends must expose `start_session(cfg, artifact_root) -> SlamSession`.
 - Shared method inputs must stay repository-friendly and method-agnostic: `SequenceManifest`, `SlamConfig`, and `artifact_root`.
 - Shared outputs must normalize method-specific artifacts into the same downstream trajectory and geometry paths.
-- Real wrappers must call upstream repositories through their native entry points instead of vendoring or rewriting them.
 - Shared upstream state should live under `.logs/` for checkouts, checkpoints, and dedicated method environments.
 - Missing repositories, configs, checkpoints, or expected native outputs must fail clearly.
 
@@ -37,12 +35,9 @@ This document is the concise source of truth for the `prml_vslam.methods` packag
 
 - Reimplementing ViSTA-SLAM or MASt3R-SLAM internals.
 - Hiding upstream installation complexity behind silent fallbacks.
-- Guaranteeing CPU-only execution when the upstream methods are built around GPU inference.
 - Defining evaluation metrics or benchmark policy inside this package.
 
 ## Validation
 
-- The README and requirements stay explicit that the current implementation is mock-only.
 - New method work continues to normalize outputs into pipeline-owned artifacts instead of inventing parallel public result types.
-- Real wrapper requirements stay future-facing until code for them actually lands.
 - The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.
