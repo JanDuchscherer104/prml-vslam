@@ -4,14 +4,13 @@ This package contains the packaged Streamlit workbench for PRML VSLAM.
 
 The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.eval`, `prml_vslam.pipeline`, and `prml_vslam.utils`.
 
-Use this document together with:
+Use this document together with the other app-specific and repo-wide guidance:
 
 - [REQUIREMENTS.md](REQUIREMENTS.md)
 - [AGENTS.md](AGENTS.md)
 
 ## Design Goals
 
-- Keep `streamlit_app.py` as a thin entrypoint that delegates into the package.
 - Keep Streamlit-specific orchestration in this package, but keep domain logic outside it.
 - Model app-facing state with typed Pydantic models.
 - Let exactly one adapter touch raw `st.session_state`.
