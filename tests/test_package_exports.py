@@ -34,9 +34,11 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
     assert not hasattr(pipeline_package, "PipelineSessionSnapshot")
 
 
-def test_methods_package_exports_only_mock_slam_surface() -> None:
+def test_methods_package_exports_slam_surfaces() -> None:
     assert methods_package.__all__ == [
         "MethodId",
         "MockSlamBackendConfig",
+        "VistaSlamBackend",
+        "VistaSlamBackendConfig",
     ]
     assert not hasattr(methods_package, "MockMethodConfig")
