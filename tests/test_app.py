@@ -17,6 +17,7 @@ from prml_vslam.app.models import (
     AdvioPreviewSnapshot,
     AppPageId,
     AppState,
+    PipelineSourceId,
     PreviewStreamState,
     Record3DPageState,
     Record3DStreamSnapshot,
@@ -34,6 +35,14 @@ from prml_vslam.eval.contracts import SelectionSnapshot
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.methods import MethodId
+from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.contracts import (
+    BenchmarkEvaluationConfig,
+    DatasetSourceSpec,
+    Record3DLiveSourceSpec,
+    ReferenceConfig,
+    SlamConfig,
+)
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig
@@ -99,26 +108,70 @@ evaluate_efficiency = false
     return config_path
 
 
-def _load_pipeline_request_fixture() -> SimpleNamespace:
-    return SimpleNamespace(
+def _load_pipeline_request_fixture() -> RunRequest:
+    return RunRequest(
         experiment_name="advio-offline-advio-15-vista",
-        mode=SimpleNamespace(value="offline"),
+        mode=PipelineMode.OFFLINE,
         output_dir=Path(".artifacts"),
-        source=SimpleNamespace(model_dump=lambda mode="json": {"dataset_id": "advio", "sequence_id": "advio-15"}),
-        slam=SimpleNamespace(
-            method=SimpleNamespace(value="vista"),
+        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        slam=SlamConfig(
+            method=MethodId.VISTA,
             config_path=None,
             max_frames=None,
             emit_dense_points=True,
             emit_sparse_points=True,
         ),
-        reference=SimpleNamespace(model_dump=lambda mode="json": {"enabled": False}),
-        evaluation=SimpleNamespace(
-            model_dump=lambda mode="json": {
-                "compare_to_arcore": False,
-                "evaluate_cloud": False,
-                "evaluate_efficiency": False,
-            }
+        reference=ReferenceConfig(enabled=False),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=False,
+            evaluate_cloud=False,
+            evaluate_efficiency=False,
+        ),
+    )
+
+
+def _record3d_pipeline_action(
+    *,
+    transport: Record3DTransportId,
+    persist_capture: bool = True,
+    usb_device_index: int = 0,
+    wifi_device_address: str = "",
+) -> dict[str, object]:
+    return {
+        "source_kind": PipelineSourceId.RECORD3D,
+        "record3d_transport": transport,
+        "record3d_usb_device_index": usb_device_index,
+        "record3d_wifi_device_address": wifi_device_address,
+        "record3d_persist_capture": persist_capture,
+        "mode": PipelineMode.STREAMING,
+        "method": MethodId.VISTA,
+    }
+
+
+def _record3d_pipeline_request(
+    *,
+    transport: Record3DTransportId,
+    output_dir: Path,
+    persist_capture: bool = True,
+    device_index: int | None = None,
+    device_address: str = "",
+) -> RunRequest:
+    return RunRequest(
+        experiment_name=f"record3d-{transport.value}-demo",
+        mode=PipelineMode.STREAMING,
+        output_dir=output_dir,
+        source=Record3DLiveSourceSpec(
+            transport=transport,
+            persist_capture=persist_capture,
+            device_index=device_index,
+            device_address=device_address,
+        ),
+        slam=SlamConfig(method=MethodId.VISTA),
+        reference=ReferenceConfig(enabled=False),
+        evaluation=BenchmarkEvaluationConfig(
+            compare_to_arcore=False,
+            evaluate_cloud=False,
+            evaluate_efficiency=False,
         ),
     )
 
@@ -512,6 +565,10 @@ def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tm
         context,
         pipeline_page.PipelinePageAction(
             config_path=config_path,
+            source_kind=PipelineSourceId.ADVIO,
+            advio_sequence_id=15,
+            mode=PipelineMode.OFFLINE,
+            method=MethodId.VISTA,
             pose_source=AdvioPoseSource.GROUND_TRUTH,
             respect_video_rotation=True,
             start_requested=True,
@@ -529,6 +586,179 @@ def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tm
     assert request.evaluation.compare_to_arcore is False
     assert request.evaluation.evaluate_cloud is False
     assert request.evaluation.evaluate_efficiency is False
+
+
+def test_pipeline_request_builds_record3d_usb_source_from_action(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace(path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"))
+
+    request, error_message = pipeline_page._build_request_from_action(
+        context,
+        pipeline_page.PipelinePageAction(
+            **_record3d_pipeline_action(
+                transport=Record3DTransportId.USB,
+                usb_device_index=2,
+                persist_capture=False,
+            )
+        ),
+    )
+
+    assert error_message is None
+    assert request is not None
+    assert isinstance(request.source, Record3DLiveSourceSpec)
+    assert request.source.transport is Record3DTransportId.USB
+    assert request.source.device_index == 2
+    assert request.source.device_address == ""
+    assert request.source.persist_capture is False
+
+
+def test_pipeline_request_builds_record3d_wifi_source_from_action(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace(path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"))
+
+    request, error_message = pipeline_page._build_request_from_action(
+        context,
+        pipeline_page.PipelinePageAction(
+            **_record3d_pipeline_action(
+                transport=Record3DTransportId.WIFI,
+                wifi_device_address="myiPhone.local",
+            )
+        ),
+    )
+
+    assert error_message is None
+    assert request is not None
+    assert isinstance(request.source, Record3DLiveSourceSpec)
+    assert request.source.transport is Record3DTransportId.WIFI
+    assert request.source.device_index is None
+    assert request.source.device_address == "myiPhone.local"
+    assert request.source.persist_capture is True
+
+
+def test_pipeline_source_input_error_requires_wifi_device_address() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    error_message = pipeline_page._source_input_error(
+        pipeline_page.PipelinePageAction(**_record3d_pipeline_action(transport=Record3DTransportId.WIFI))
+    )
+
+    assert error_message == "Enter a Record3D Wi-Fi preview device address."
+
+
+def test_pipeline_streaming_source_supports_record3d_wifi() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace()
+    source = pipeline_page._build_streaming_source_from_action(
+        context,
+        pipeline_page.PipelinePageAction(
+            **_record3d_pipeline_action(
+                transport=Record3DTransportId.WIFI,
+                wifi_device_address="myiPhone.local",
+            )
+        ),
+    )
+
+    assert source.config.transport is Record3DTransportId.WIFI
+    assert source.config.device_address == "myiPhone.local"
+
+
+def test_pipeline_streaming_source_requires_wifi_device_address() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace()
+
+    with pytest.raises(ValueError, match="Enter a Record3D Wi-Fi preview device address."):
+        pipeline_page._build_streaming_source_from_action(
+            context,
+            pipeline_page.PipelinePageAction(**_record3d_pipeline_action(transport=Record3DTransportId.WIFI)),
+        )
+
+
+def test_parse_optional_int_rejects_invalid_input() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    value, error_message = pipeline_page._parse_optional_int(raw_value="not-a-number", field_label="SLAM Max Frames")
+
+    assert value is None
+    assert error_message == "Enter a whole number for `SLAM Max Frames` or leave the field blank."
+
+
+def test_pipeline_page_state_sync_hydrates_record3d_usb_template(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace(
+        state=AppState(),
+        store=FakeStore(),
+    )
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
+    request = _record3d_pipeline_request(
+        transport=Record3DTransportId.USB,
+        output_dir=path_config.artifacts_dir,
+        persist_capture=False,
+        device_index=3,
+    )
+
+    pipeline_page._sync_pipeline_page_state_from_template(
+        context=context,
+        config_path=tmp_path / "record3d-usb.toml",
+        request=request,
+        statuses=[],
+    )
+
+    assert context.state.pipeline.source_kind is PipelineSourceId.RECORD3D
+    assert context.state.pipeline.record3d_transport is Record3DTransportId.USB
+    assert context.state.pipeline.record3d_usb_device_index == 3
+    assert context.state.pipeline.record3d_persist_capture is False
+
+
+def test_pipeline_page_state_sync_hydrates_record3d_wifi_template(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace(
+        state=AppState(),
+        store=FakeStore(),
+    )
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
+    request = _record3d_pipeline_request(
+        transport=Record3DTransportId.WIFI,
+        output_dir=path_config.artifacts_dir,
+        device_address="myiPhone.local",
+    )
+
+    pipeline_page._sync_pipeline_page_state_from_template(
+        context=context,
+        config_path=tmp_path / "record3d-wifi.toml",
+        request=request,
+        statuses=[],
+    )
+
+    assert context.state.pipeline.source_kind is PipelineSourceId.RECORD3D
+    assert context.state.pipeline.record3d_transport is Record3DTransportId.WIFI
+    assert context.state.pipeline.record3d_wifi_device_address == "myiPhone.local"
+    assert context.state.pipeline.record3d_persist_capture is True
+
+
+def test_load_pipeline_request_toml_parses_record3d_wifi_source(tmp_path: Path) -> None:
+    from prml_vslam.pipeline.demo import load_run_request_toml
+
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
+    config_path = _write_pipeline_config(
+        path_config,
+        name="record3d-wifi.toml",
+        source_block=(
+            'source_id = "record3d"\ntransport = "wifi"\npersist_capture = false\ndevice_address = "myiPhone.local"'
+        ),
+    )
+
+    request = load_run_request_toml(path_config=path_config, config_path=config_path)
+
+    assert isinstance(request.source, Record3DLiveSourceSpec)
+    assert request.source.transport is Record3DTransportId.WIFI
+    assert request.source.persist_capture is False
+    assert request.source.device_address == "myiPhone.local"
 
 
 def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> None:
@@ -558,12 +788,6 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
         store=FakeStore(),
     )
 
-    def fake_selectbox(label: str, *args, **kwargs):
-        return {
-            "Pipeline Config": config_path,
-            "Pose Source": AdvioPoseSource.GROUND_TRUTH,
-        }[label]
-
     def fake_button(label: str, *args, **kwargs) -> bool:
         seen_labels.append(label)
         return False
@@ -573,19 +797,42 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
     monkeypatch.setattr(pipeline_page.st, "container", lambda *args, **kwargs: DummyContext())
     monkeypatch.setattr(pipeline_page.st, "subheader", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
-    monkeypatch.setattr(pipeline_page.st, "selectbox", fake_selectbox)
+    monkeypatch.setattr(pipeline_page.st, "selectbox", lambda *args, **kwargs: config_path)
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
-    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "dataframe", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page, "_discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
     monkeypatch.setattr(
         pipeline_page,
         "_load_pipeline_request",
         lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None),
     )
-    monkeypatch.setattr(pipeline_page, "_resolve_advio_sequence_id", lambda **kwargs: (15, None))
+    monkeypatch.setattr(
+        pipeline_page,
+        "_render_request_editor",
+        lambda **kwargs: (
+            pipeline_page.PipelinePageAction(
+                config_path=config_path,
+                source_kind=PipelineSourceId.ADVIO,
+                advio_sequence_id=15,
+                mode=PipelineMode.OFFLINE,
+                method=MethodId.VISTA,
+                pose_source=AdvioPoseSource.GROUND_TRUTH,
+            ),
+            None,
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_page, "_build_request_from_action", lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None)
+    )
+    monkeypatch.setattr(
+        pipeline_page,
+        "_build_preview_plan",
+        lambda *_args, **_kwargs: (SimpleNamespace(stages=[], stage_rows=lambda: []), None),
+    )
     monkeypatch.setattr(pipeline_page.st, "button", fake_button)
     monkeypatch.setattr(pipeline_page, "_handle_pipeline_page_action", lambda **kwargs: None)
     monkeypatch.setattr(pipeline_page, "render_live_fragment", lambda *args, **kwargs: None)
@@ -629,26 +876,42 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
     monkeypatch.setattr(pipeline_page.st, "container", lambda *args, **kwargs: DummyContext())
     monkeypatch.setattr(pipeline_page.st, "subheader", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        pipeline_page.st,
-        "selectbox",
-        lambda label, *args, **kwargs: {
-            "Pipeline Config": config_path,
-            "Pose Source": AdvioPoseSource.GROUND_TRUTH,
-        }[label],
-    )
+    monkeypatch.setattr(pipeline_page.st, "selectbox", lambda *args, **kwargs: config_path)
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
-    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "dataframe", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page, "_discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
     monkeypatch.setattr(
         pipeline_page,
         "_load_pipeline_request",
         lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None),
     )
-    monkeypatch.setattr(pipeline_page, "_resolve_advio_sequence_id", lambda **kwargs: (15, None))
+    monkeypatch.setattr(
+        pipeline_page,
+        "_render_request_editor",
+        lambda **kwargs: (
+            pipeline_page.PipelinePageAction(
+                config_path=config_path,
+                source_kind=PipelineSourceId.ADVIO,
+                advio_sequence_id=15,
+                mode=PipelineMode.OFFLINE,
+                method=MethodId.VISTA,
+                pose_source=AdvioPoseSource.GROUND_TRUTH,
+            ),
+            None,
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_page, "_build_request_from_action", lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None)
+    )
+    monkeypatch.setattr(
+        pipeline_page,
+        "_build_preview_plan",
+        lambda *_args, **_kwargs: (SimpleNamespace(stages=[], stage_rows=lambda: []), None),
+    )
     monkeypatch.setattr(
         pipeline_page.st,
         "button",
@@ -972,6 +1235,7 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
 
 
 def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
+    from prml_vslam.app import record3d_controls
     from prml_vslam.app.pages import record3d as record3d_page
     from prml_vslam.app.record3d_controller import handle_record3d_page_action
 
@@ -1008,7 +1272,7 @@ def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(
-        record3d_page,
+        record3d_controls,
         "list_record3d_usb_devices",
         lambda: [Record3DDevice(product_id=101, udid="device-101")],
     )
@@ -1084,6 +1348,7 @@ def test_record3d_wifi_start_button_enables_when_user_enters_address() -> None:
 
 
 def test_record3d_sidebar_shows_only_stop_button_while_stream_is_running() -> None:
+    from prml_vslam.app import record3d_controls
     from prml_vslam.app.pages import record3d as record3d_page
 
     class DummyContext:
@@ -1106,7 +1371,7 @@ def test_record3d_sidebar_shows_only_stop_button_while_stream_is_running() -> No
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(
-        record3d_page,
+        record3d_controls,
         "list_record3d_usb_devices",
         lambda: [Record3DDevice(product_id=101, udid="device-101")],
     )

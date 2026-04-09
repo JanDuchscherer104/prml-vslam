@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,6 +12,7 @@ from pydantic import Field
 
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import SE3Pose
+from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseConfig, BaseData, PathConfig
 
@@ -51,12 +53,31 @@ class LiveSourceSpec(BaseConfig):
     """Live source used for preview, capture, and optional persistence."""
 
     source_id: str
-    """Live source identifier such as `record3d_usb` or `record3d_wifi`."""
+    """Live source identifier such as `record3d_usb`."""
     persist_capture: bool = True
     """Whether to persist the captured session for downstream offline use."""
 
 
-SourceSpec = VideoSourceSpec | DatasetSourceSpec | LiveSourceSpec
+class Record3DLiveSourceSpec(BaseConfig):
+    """Typed Record3D live source used by the pipeline app and planner."""
+
+    source_id: Literal["record3d"] = "record3d"
+    """Stable live-source identifier for Record3D-backed runs."""
+
+    transport: Record3DTransportId = Record3DTransportId.USB
+    """Selected Record3D transport."""
+
+    persist_capture: bool = True
+    """Whether to persist the captured session for downstream offline use."""
+
+    device_index: int | None = None
+    """Selected USB device index when using the USB transport."""
+
+    device_address: str = ""
+    """Entered Wi-Fi preview device address when using the Wi-Fi transport."""
+
+
+SourceSpec = VideoSourceSpec | DatasetSourceSpec | Record3DLiveSourceSpec | LiveSourceSpec
 
 
 class SlamConfig(BaseConfig):
@@ -302,6 +323,7 @@ __all__ = [
     "DatasetSourceSpec",
     "LiveSourceSpec",
     "PipelineMode",
+    "Record3DLiveSourceSpec",
     "ReferenceConfig",
     "RunPlan",
     "RunPlanStage",
