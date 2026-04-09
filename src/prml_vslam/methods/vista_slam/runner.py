@@ -1,10 +1,11 @@
-"""Offline ViSTA-SLAM backend adapter.
+"""ViSTA-SLAM backend adapter (offline and streaming).
 
 Wraps the upstream ``OnlineSLAM`` class from the ``external/vista-slam``
-submodule and exposes it behind the repository's :class:`OfflineSlamBackend`
-protocol.  The submodule is injected into ``sys.path`` lazily at runtime so
-that the heavy torch/rerun imports are deferred until the backend is actually
-invoked.
+submodule and exposes it behind the repository's :class:`SlamBackend`
+protocol (both :class:`OfflineSlamBackend` and :class:`StreamingSlamBackend`).
+
+The submodule is injected into ``sys.path`` lazily at runtime so that the
+heavy torch/rerun imports are deferred until the backend is actually invoked.
 """
 
 from __future__ import annotations
@@ -16,24 +17,99 @@ import cv2
 import numpy as np
 import open3d as o3d
 
-from prml_vslam.interfaces import SE3Pose
+from prml_vslam.interfaces import FramePacket, SE3Pose
 from prml_vslam.methods.contracts import MethodId
-from prml_vslam.pipeline.contracts import ArtifactRef, SequenceManifest, SlamArtifacts, SlamConfig
+from prml_vslam.pipeline.contracts import ArtifactRef, SequenceManifest, SlamArtifacts, SlamConfig, SlamUpdate
 from prml_vslam.utils import Console
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 from prml_vslam.utils.path_config import PathConfig
 
 from .config import VistaSlamBackendConfig
 
+_VISTA_INPUT_RESOLUTION = (224, 224)
+
+
+# ------------------------------------------------------------------
+# Session
+# ------------------------------------------------------------------
+
+
+class VistaSlamSession:
+    """Live SLAM session that forwards frames to OnlineSLAM one at a time.
+
+    Satisfies the :class:`SlamSession` protocol.  Per-frame pose feedback is
+    not available from the upstream model so :meth:`step` returns updates with
+    ``pose=None``; the full trajectory is materialised in :meth:`close`.
+    """
+
+    def __init__(
+        self,
+        *,
+        slam: object,
+        cfg: SlamConfig,
+        artifact_root: Path,
+        console: Console,
+    ) -> None:
+        self._slam = slam
+        self._cfg = cfg
+        self._artifact_root = artifact_root
+        self._console = console
+        self._frame_count = 0
+
+    def step(self, frame: FramePacket) -> SlamUpdate:
+        """Feed one frame to OnlineSLAM and return a progress update."""
+        import torch  # noqa: PLC0415
+
+        rgb_uint8 = frame.rgb
+        if rgb_uint8 is None:
+            return SlamUpdate(seq=frame.seq, timestamp_ns=frame.timestamp_ns)
+
+        h, w = _VISTA_INPUT_RESOLUTION
+        resized = cv2.resize(rgb_uint8, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        # Build the input dict matching run.py / SLAM_image_only conventions:
+        #   rgb   – (1, C, H, W) float tensor on device
+        #   shape – (1, 2) tensor [H, W]
+        #   gray  – (H, W) uint8 numpy
+        #   view_name – str
+        rgb_float = torch.from_numpy(resized).permute(2, 0, 1).float() / 255.0
+        device = self._slam.device
+        value = {
+            "rgb": rgb_float.unsqueeze(0).to(device),
+            "shape": torch.tensor(rgb_float.shape[1:3]).unsqueeze(0),
+            "gray": cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY),
+            "view_name": f"frame_{self._frame_count:06d}",
+        }
+        self._slam.step(value)
+        self._frame_count += 1
+
+        return SlamUpdate(seq=frame.seq, timestamp_ns=frame.timestamp_ns)
+
+    def close(self) -> SlamArtifacts:
+        """Save OnlineSLAM outputs and convert to canonical artifacts."""
+        raw_out = self._artifact_root / "slam" / "vista_raw"
+        raw_out.mkdir(parents=True, exist_ok=True)
+
+        self._slam.save_data_all(str(raw_out), save_images=False, save_depths=False)
+        self._console.info(
+            "ViSTA-SLAM session closed after %d frames; raw outputs in '%s'.",
+            self._frame_count,
+            raw_out,
+        )
+        return _build_artifacts(raw_out, self._artifact_root, self._cfg, self._console)
+
+
+# ------------------------------------------------------------------
+# Backend
+# ------------------------------------------------------------------
+
 
 class VistaSlamBackend:
-    """Offline ViSTA-SLAM backend satisfying the :class:`OfflineSlamBackend` protocol.
+    """ViSTA-SLAM backend satisfying the :class:`SlamBackend` protocol.
 
-    Invoked by calling :meth:`run_sequence` with a materialised
-    :class:`SequenceManifest`.  The backend injects the ``external/vista-slam``
-    submodule into ``sys.path`` and imports ``OnlineSLAM`` in-process so that
-    all heavy dependencies (torch, rerun, pypose …) live in the common
-    project environment.
+    Supports both offline batch execution via :meth:`run_sequence` and
+    incremental streaming via :meth:`start_session`, mirroring the
+    :class:`MockSlamBackend` pattern.
     """
 
     method_id: MethodId = MethodId.VISTA
@@ -51,6 +127,42 @@ class VistaSlamBackend:
         self._vocab = self._path_config.resolve_repo_path(config.vocab_path)
 
     # ------------------------------------------------------------------
+    # StreamingSlamBackend protocol
+    # ------------------------------------------------------------------
+
+    def start_session(self, cfg: SlamConfig, artifact_root: Path) -> VistaSlamSession:
+        """Load the OnlineSLAM model and return a ready-to-step session."""
+        self._validate_prerequisites()
+        self._inject_sys_path()
+
+        import torch  # noqa: PLC0415
+        from vista_slam.slam import OnlineSLAM  # noqa: PLC0415
+
+        torch.manual_seed(self._cfg.slam.random_seed)
+
+        slam = OnlineSLAM(
+            ckpt_path=str(self._ckpt),
+            vocab_path=str(self._vocab),
+            max_view_num=self._cfg.slam.max_view_num,
+            neighbor_edge_num=self._cfg.slam.neighbor_edge_num,
+            loop_edge_num=self._cfg.slam.loop_edge_num,
+            loop_dist_min=self._cfg.slam.loop_dist_min,
+            loop_nms=self._cfg.slam.loop_nms,
+            loop_cand_thresh_neighbor=self._cfg.slam.loop_cand_thresh_neighbor,
+            conf_thres=self._cfg.slam.point_conf_thres,
+            rel_pose_thres=self._cfg.slam.rel_pose_thres,
+            flow_thres=self._cfg.slam.flow_thres,
+            pgo_every=self._cfg.slam.pgo_every,
+        )
+        self._console.info("OnlineSLAM model loaded; session ready.")
+        return VistaSlamSession(
+            slam=slam,
+            cfg=cfg,
+            artifact_root=artifact_root,
+            console=self._console,
+        )
+
+    # ------------------------------------------------------------------
     # OfflineSlamBackend protocol
     # ------------------------------------------------------------------
 
@@ -62,24 +174,21 @@ class VistaSlamBackend:
     ) -> SlamArtifacts:
         """Run ViSTA-SLAM over a materialised sequence and persist artifacts.
 
-        Args:
-            sequence: Normalised boundary between ingest and SLAM stages.
-            cfg: SLAM-stage configuration (dense/sparse toggles, frame cap).
-            artifact_root: Run-level artifact root directory.
-
-        Returns:
-            Materialised SLAM artifacts in the repository's canonical layout.
+        Delegates to :meth:`start_session` and feeds each extracted frame
+        through the session, mirroring the :class:`MockSlamBackend` pattern.
         """
-        self._validate_prerequisites()
-        self._inject_sys_path()
-
         frames_dir = self._resolve_frames(sequence, artifact_root, cfg)
-        raw_out = artifact_root / "slam" / "vista_raw"
-        raw_out.mkdir(parents=True, exist_ok=True)
+        session = self.start_session(cfg, artifact_root)
 
-        self._console.info("Running ViSTA-SLAM on %d frames …", len(list(frames_dir.glob("*.png"))))
-        self._run_online_slam(frames_dir, raw_out)
-        return self._build_artifacts(raw_out, artifact_root, cfg)
+        image_paths = sorted(frames_dir.glob("*.png"))
+        self._console.info("Running ViSTA-SLAM on %d frames …", len(image_paths))
+
+        for seq, img_path in enumerate(image_paths):
+            rgb = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
+            packet = FramePacket(seq=seq, timestamp_ns=seq, rgb=rgb)
+            session.step(packet)
+
+        return session.close()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -137,16 +246,7 @@ class VistaSlamBackend:
         out_dir: Path,
         cfg: SlamConfig,
     ) -> Path:
-        """Decode a video file to PNG frames using OpenCV.
-
-        Args:
-            video_path: Input video.
-            out_dir: Target directory for frame PNGs.
-            cfg: SLAM config — ``max_frames`` acts as an optional hard cap.
-
-        Returns:
-            Resolved directory containing the written PNG frames.
-        """
+        """Decode a video file to PNG frames using OpenCV."""
         out_dir.mkdir(parents=True, exist_ok=True)
         existing = sorted(out_dir.glob("*.png"))
         if existing:
@@ -158,7 +258,6 @@ class VistaSlamBackend:
             raise RuntimeError(f"OpenCV could not open video '{video_path}'.")
 
         written = 0
-        frame_idx = 0
         self._console.info("Extracting frames from '%s' …", video_path)
         while True:
             ok, frame = cap.read()
@@ -168,120 +267,58 @@ class VistaSlamBackend:
                 break
             cv2.imwrite(str(out_dir / f"frame_{written:06d}.png"), frame)
             written += 1
-            frame_idx += 1
 
         cap.release()
         self._console.info("Extracted %d frames to '%s'.", written, out_dir)
         return out_dir.resolve()
 
-    def _run_online_slam(self, frames_dir: Path, raw_out: Path) -> None:
-        """Import OnlineSLAM in-process and process all PNG frames in frames_dir."""
-        import torch  # noqa: PLC0415  (deferred heavy import)
-        from vista_slam.datasets.slam_images_only import SLAM_image_only  # noqa: PLC0415
-        from vista_slam.slam import OnlineSLAM  # noqa: PLC0415
 
-        torch.manual_seed(self._cfg.slam.random_seed)
-
-        slam = OnlineSLAM(
-            ckpt_path=str(self._ckpt),
-            vocab_path=str(self._vocab),
-            max_view_num=self._cfg.slam.max_view_num,
-            neighbor_edge_num=self._cfg.slam.neighbor_edge_num,
-            loop_edge_num=self._cfg.slam.loop_edge_num,
-            loop_dist_min=self._cfg.slam.loop_dist_min,
-            loop_nms=self._cfg.slam.loop_nms,
-            loop_cand_thresh_neighbor=self._cfg.slam.loop_cand_thresh_neighbor,
-            conf_thres=self._cfg.slam.point_conf_thres,
-            rel_pose_thres=self._cfg.slam.rel_pose_thres,
-            flow_thres=self._cfg.slam.flow_thres,
-            pgo_every=self._cfg.slam.pgo_every,
-        )
-
-        image_paths = [str(p) for p in sorted(frames_dir.glob("*.png"))]
-        if not image_paths:
-            raise RuntimeError(f"No PNG frames found in '{frames_dir}'.")
-
-        dataset = SLAM_image_only(image_paths, resolution=(224, 224))
-        device = slam.device
-        for data in dataset:
-            # Match run.py's input_value construction exactly:
-            # rgb: (1, C, H, W) float tensor on device
-            # shape: (1, 2) tensor with [H, W]
-            # gray: (H, W) uint8 numpy array
-            # view_name: str
-            img = data["rgb"].unsqueeze(0).to(device)
-            img_shape = torch.tensor(data["rgb"].shape[1:3]).unsqueeze(0)
-            img_gray = (data["gray"].squeeze(0).numpy() * 255).astype(np.uint8)
-            value = {
-                "rgb": img,
-                "shape": img_shape,
-                "gray": img_gray,
-                "view_name": data["img_name"],
-            }
-            slam.step(value)
-
-        slam.save_data_all(str(raw_out), save_images=False, save_depths=False)
-        self._console.info("ViSTA-SLAM completed; raw outputs in '%s'.", raw_out)
-
-    def _build_artifacts(
-        self,
-        raw_out: Path,
-        artifact_root: Path,
-        cfg: SlamConfig,
-    ) -> SlamArtifacts:
-        """Convert raw vista-slam outputs to the repository's canonical artifact layout."""
-        # --- trajectory -------------------------------------------------
-        traj_npy = raw_out / "trajectory.npy"
-        if not traj_npy.exists():
-            raise RuntimeError(f"Expected trajectory file not found: '{traj_npy}'")
-
-        poses_se3: np.ndarray = np.load(traj_npy)  # (N, 4, 4)
-        poses = [SE3Pose.from_matrix(T.astype(np.float64)) for T in poses_se3]
-        timestamps = [float(i) for i in range(len(poses))]
-
-        traj_path = write_tum_trajectory(
-            artifact_root / "slam" / "trajectory.tum",
-            poses,
-            timestamps,
-        )
-        trajectory_ref = ArtifactRef(
-            path=traj_path,
-            kind="tum",
-            fingerprint=f"vista-traj-{len(poses)}",
-        )
-
-        # --- point cloud ------------------------------------------------
-        ply_src = raw_out / "pointcloud.ply"
-        sparse_ref: ArtifactRef | None = None
-        dense_ref: ArtifactRef | None = None
-
-        if ply_src.exists() and (cfg.emit_sparse_points or cfg.emit_dense_points):
-            pcd = o3d.io.read_point_cloud(str(ply_src))
-            pts = np.asarray(pcd.points, dtype=np.float64)
-
-            if cfg.emit_sparse_points:
-                sp_path = write_point_cloud_ply(artifact_root / "slam" / "sparse_points.ply", pts)
-                sparse_ref = ArtifactRef(
-                    path=sp_path,
-                    kind="ply",
-                    fingerprint=f"vista-sparse-{len(pts)}",
-                )
-
-            if cfg.emit_dense_points:
-                dp_path = write_point_cloud_ply(artifact_root / "dense" / "dense_points.ply", pts)
-                dense_ref = ArtifactRef(
-                    path=dp_path,
-                    kind="ply",
-                    fingerprint=f"vista-dense-{len(pts)}",
-                )
-        else:
-            self._console.warning("No pointcloud.ply found at '%s'; skipping point cloud artifacts.", ply_src)
-
-        return SlamArtifacts(
-            trajectory_tum=trajectory_ref,
-            sparse_points_ply=sparse_ref,
-            dense_points_ply=dense_ref,
-        )
+# ------------------------------------------------------------------
+# Shared artifact builder
+# ------------------------------------------------------------------
 
 
-__all__ = ["VistaSlamBackend"]
+def _build_artifacts(
+    raw_out: Path,
+    artifact_root: Path,
+    cfg: SlamConfig,
+    console: Console,
+) -> SlamArtifacts:
+    """Convert raw vista-slam outputs to the repository's canonical artifact layout."""
+    traj_npy = raw_out / "trajectory.npy"
+    if not traj_npy.exists():
+        raise RuntimeError(f"Expected trajectory file not found: '{traj_npy}'")
+
+    poses_se3: np.ndarray = np.load(traj_npy)
+    poses = [SE3Pose.from_matrix(T.astype(np.float64)) for T in poses_se3]
+    timestamps = [float(i) for i in range(len(poses))]
+
+    traj_path = write_tum_trajectory(artifact_root / "slam" / "trajectory.tum", poses, timestamps)
+    trajectory_ref = ArtifactRef(path=traj_path, kind="tum", fingerprint=f"vista-traj-{len(poses)}")
+
+    sparse_ref: ArtifactRef | None = None
+    dense_ref: ArtifactRef | None = None
+    ply_src = raw_out / "pointcloud.ply"
+
+    if ply_src.exists() and (cfg.emit_sparse_points or cfg.emit_dense_points):
+        pcd = o3d.io.read_point_cloud(str(ply_src))
+        pts = np.asarray(pcd.points, dtype=np.float64)
+
+        if cfg.emit_sparse_points:
+            sp_path = write_point_cloud_ply(artifact_root / "slam" / "sparse_points.ply", pts)
+            sparse_ref = ArtifactRef(path=sp_path, kind="ply", fingerprint=f"vista-sparse-{len(pts)}")
+
+        if cfg.emit_dense_points:
+            dp_path = write_point_cloud_ply(artifact_root / "dense" / "dense_points.ply", pts)
+            dense_ref = ArtifactRef(path=dp_path, kind="ply", fingerprint=f"vista-dense-{len(pts)}")
+    else:
+        console.warning("No pointcloud.ply found at '%s'; skipping point cloud artifacts.", ply_src)
+
+    return SlamArtifacts(
+        trajectory_tum=trajectory_ref,
+        sparse_points_ply=sparse_ref,
+        dense_points_ply=dense_ref,
+    )
+
+
+__all__ = ["VistaSlamBackend", "VistaSlamSession"]
