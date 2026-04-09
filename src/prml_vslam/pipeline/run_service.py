@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from prml_vslam.methods import MockSlamBackendConfig
+from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.methods.protocols import StreamingSlamBackend
 from prml_vslam.pipeline.contracts import RunPlanStageId, RunRequest
@@ -74,10 +74,13 @@ class RunService:
 
 
 def _default_slam_backend_factory(method_id: MethodId) -> StreamingSlamBackend:
-    """Build the repository-local mock backend for one selected method."""
-    backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+    """Build a streaming SLAM backend for the selected method."""
+    if method_id is MethodId.VISTA:
+        backend = VistaSlamBackendConfig().setup_target()
+    else:
+        backend = MockSlamBackendConfig(method_id=method_id).setup_target()
     if backend is None:
-        raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
+        raise RuntimeError(f"Failed to initialize the SLAM backend for method '{method_id.value}'.")
     return backend
 
 
