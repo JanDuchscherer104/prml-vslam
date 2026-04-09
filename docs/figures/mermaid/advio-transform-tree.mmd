@@ -1,0 +1,58 @@
+flowchart LR
+  ICAM["iPhone RGB camera frame"]
+  PCAM["Pixel ARCore camera frame"]
+  TCAM["Tango fisheye / device frame"]
+
+  GTW["GT world"]
+  ARKW["ARKit world"]
+  ARCW["ARCore world"]
+  TRW["Tango raw world"]
+  TAW["Tango area-learning world"]
+
+  IRGB["iPhone RGB frames<br/>iphone/frames.mov + frames.csv"]
+  TRGB["Tango fisheye frames<br/>tango/frames.mov + frames.csv"]
+  TPC["Tango point clouds<br/>tango/point-cloud*.csv"]
+
+  IRGB --> ICAM
+  TRGB --> TCAM
+  TPC -->|"aligned to current Tango pose"| TCAM
+
+  ICAM -->|"dynamic SE(3)<br/>ground-truth/pose(s).csv"| GTW
+  ICAM -->|"dynamic SE(3)<br/>iphone/arkit.csv"| ARKW
+  PCAM -->|"dynamic SE(3)<br/>pixel/arcore.csv"| ARCW
+  TCAM -->|"dynamic SE(3)<br/>tango/raw.csv"| TRW
+  TCAM -->|"dynamic SE(3)<br/>tango/area-learning.csv"| TAW
+
+  ARKW -.->|"derived SE(3)"| GTW
+  ARCW -.-> GTW
+  TRW -.-> GTW
+  TAW -.-> GTW
+
+  style GTW fill:#e9fff3,stroke:#2f855a,color:#163d2a,stroke-width:1.8px
+  style ARKW fill:#eef2ff,stroke:#4c51bf,color:#27275b,stroke-width:1.4px
+  style ARCW fill:#eef2ff,stroke:#4c51bf,color:#27275b,stroke-width:1.4px
+  style TRW fill:#eef2ff,stroke:#4c51bf,color:#27275b,stroke-width:1.4px
+  style TAW fill:#eef2ff,stroke:#4c51bf,color:#27275b,stroke-width:1.4px
+
+  style ICAM fill:#edf7ff,stroke:#0369a1,color:#0f172a,stroke-width:1.4px
+  style PCAM fill:#edf7ff,stroke:#0369a1,color:#0f172a,stroke-width:1.4px
+  style TCAM fill:#edf7ff,stroke:#0369a1,color:#0f172a,stroke-width:1.4px
+
+  style IRGB fill:#f8fafc,stroke:#94a3b8,color:#334155
+  style TRGB fill:#f8fafc,stroke:#94a3b8,color:#334155
+  style TPC fill:#f8fafc,stroke:#94a3b8,color:#334155
+
+  linkStyle 0 stroke:#94a3b8,stroke-width:1.2px
+  linkStyle 1 stroke:#94a3b8,stroke-width:1.2px
+  linkStyle 2 stroke:#94a3b8,stroke-width:1.2px
+
+  linkStyle 3 stroke:#2563eb,stroke-width:1.5px
+  linkStyle 4 stroke:#2563eb,stroke-width:1.5px
+  linkStyle 5 stroke:#2563eb,stroke-width:1.5px
+  linkStyle 6 stroke:#2563eb,stroke-width:1.5px
+  linkStyle 7 stroke:#2563eb,stroke-width:1.5px
+
+  linkStyle 8 stroke:#d97706,stroke-width:1.6px,stroke-dasharray:6 4,color:#7c2d12
+  linkStyle 9 stroke:#d97706,stroke-width:1.6px,stroke-dasharray:6 4,color:#7c2d12
+  linkStyle 10 stroke:#d97706,stroke-width:1.6px,stroke-dasharray:6 4,color:#7c2d12
+  linkStyle 11 stroke:#d97706,stroke-width:1.6px,stroke-dasharray:6 4,color:#7c2d12

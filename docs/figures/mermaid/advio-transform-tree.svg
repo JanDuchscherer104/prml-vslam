@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1246.399 383.35" width="1246.399" height="383.35" style="--bg:#ffffff;--fg:#1f2328;--line:#d1d9e0;--accent:#0969da;--muted:#59636e;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-2394a3b8" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="#94a3b8" stroke="#94a3b8" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start-2394a3b8" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="#94a3b8" stroke="#94a3b8" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-232563eb" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="#2563eb" stroke="#2563eb" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start-232563eb" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="#2563eb" stroke="#2563eb" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-23d97706" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="#d97706" stroke="#d97706" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start-23d97706" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="#d97706" stroke="#d97706" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="IRGB" data-to="ICAM" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="419.9300000000002,90.02499999999998 464.54700000000014,90.02499999999998" fill="none" stroke="#94a3b8" stroke-width="1.2px" marker-end="url(#arrowhead-2394a3b8)" />
+<polyline class="edge" data-from="TRGB" data-to="TCAM" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="413.16400000000004,316.45 449.16400000000004,316.45 449.16400000000004,290 464.54700000000014,290" fill="none" stroke="#94a3b8" stroke-width="1.2px" marker-end="url(#arrowhead-2394a3b8)" />
+<polyline class="edge" data-from="TPC" data-to="TCAM" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="aligned to current Tango pose" points="215.32999999999998,251.25 449.16400000000004,251.25 449.16400000000004,277.7 464.54700000000014,277.7" fill="none" stroke="#94a3b8" stroke-width="1.2px" marker-end="url(#arrowhead-2394a3b8)" />
+<polyline class="edge" data-from="ICAM" data-to="GTW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
+ground-truth/pose(s).csv" points="658.402,83.87499999999997 948.576,83.87499999999997 948.576,57.99999999999997 1099.838,57.99999999999997 1099.838,174.2 1111.838,174.2" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
+<polyline class="edge" data-from="ICAM" data-to="ARKW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
+iphone/arkit.csv" points="658.402,96.17499999999995 697.7850000000001,96.17499999999995 697.7850000000001,122.04999999999995 844.061,122.04999999999995" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
+<polyline class="edge" data-from="PCAM" data-to="ARCW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
+pixel/arcore.csv" points="754.9849999999999,186.5 937.8565,186.5" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
+<polyline class="edge" data-from="TCAM" data-to="TRW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
+tango/raw.csv" points="673.2220000000002,277.7 799.304,277.7 799.304,251.39999999999998 937.8565,251.39999999999998" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
+<polyline class="edge" data-from="TCAM" data-to="TAW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
+tango/area-learning.csv" points="673.2220000000002,290 705.839,290 705.839,316.29999999999995 889.537,316.3" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
+<polyline class="edge" data-from="ARKW" data-to="GTW" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="derived SE(3)" points="953.442,122.04999999999995 1087.838,122.04999999999995 1087.838,180.34999999999997 1111.838,180.34999999999997" fill="none" stroke="#d97706" stroke-width="1.6px" stroke-dasharray="4 4" marker-end="url(#arrowhead-23d97706)" />
+<polyline class="edge" data-from="ARCW" data-to="GTW" data-style="dotted" data-arrow-start="false" data-arrow-end="true" points="1062.0575,186.5 1111.838,186.5" fill="none" stroke="#d97706" stroke-width="1.6px" stroke-dasharray="4 4" marker-end="url(#arrowhead-23d97706)" />
+<polyline class="edge" data-from="TRW" data-to="GTW" data-style="dotted" data-arrow-start="false" data-arrow-end="true" points="1077.6185,251.39999999999998 1087.838,251.39999999999998 1087.838,192.64999999999998 1111.838,192.64999999999998" fill="none" stroke="#d97706" stroke-width="1.6px" stroke-dasharray="4 4" marker-end="url(#arrowhead-23d97706)" />
+<polyline class="edge" data-from="TAW" data-to="GTW" data-style="dotted" data-arrow-start="false" data-arrow-end="true" points="1087.838,316.3 1099.838,316.3 1099.838,198.79999999999998 1111.838,198.79999999999998" fill="none" stroke="#d97706" stroke-width="1.6px" stroke-dasharray="4 4" marker-end="url(#arrowhead-23d97706)" />
+<g class="edge-label" data-from="TPC" data-to="TCAM" data-label="aligned to current Tango pose">
+  <rect x="259.33" y="235.25" width="157.83400000000006" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="338.247" y="250.4" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">aligned to current Tango pose</text>
+</g>
+<g class="edge-label" data-from="ICAM" data-to="GTW" data-label="dynamic SE(3)
+ground-truth/pose(s).csv">
+  <rect x="956.5760000000001" y="34.99999999999997" width="135.262" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="1024.207" y="57.29999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="1024.207" dy="-3.3000000000000007">dynamic SE(3)</tspan><tspan x="1024.207" dy="14.3">ground-truth/pose(s).csv</tspan></text>
+</g>
+<g class="edge-label" data-from="ICAM" data-to="ARKW" data-label="dynamic SE(3)
+iphone/arkit.csv">
+  <rect x="705.7850000000001" y="99.04999999999995" width="94.27600000000001" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="752.9230000000001" y="121.34999999999995" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="752.9230000000001" dy="-3.3000000000000007">dynamic SE(3)</tspan><tspan x="752.9230000000001" dy="14.3">iphone/arkit.csv</tspan></text>
+</g>
+<g class="edge-label" data-from="PCAM" data-to="ARCW" data-label="dynamic SE(3)
+pixel/arcore.csv">
+  <rect x="798.9849999999999" y="163.49999999999997" width="96.65200000000002" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="847.3109999999999" y="185.79999999999998" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="847.3109999999999" dy="-3.3000000000000007">dynamic SE(3)</tspan><tspan x="847.3109999999999" dy="14.3">pixel/arcore.csv</tspan></text>
+</g>
+<g class="edge-label" data-from="TCAM" data-to="TRW" data-label="dynamic SE(3)
+tango/raw.csv">
+  <rect x="807.304" y="228.39999999999998" width="84.77200000000002" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="849.6899999999999" y="250.7" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="849.6899999999999" dy="-3.3000000000000007">dynamic SE(3)</tspan><tspan x="849.6899999999999" dy="14.3">tango/raw.csv</tspan></text>
+</g>
+<g class="edge-label" data-from="TCAM" data-to="TAW" data-label="dynamic SE(3)
+tango/area-learning.csv">
+  <rect x="713.839" y="293.29999999999995" width="131.698" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="779.6880000000001" y="315.59999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="779.6880000000001" dy="-3.3000000000000007">dynamic SE(3)</tspan><tspan x="779.6880000000001" dy="14.3">tango/area-learning.csv</tspan></text>
+</g>
+<g class="edge-label" data-from="ARKW" data-to="GTW" data-label="derived SE(3)">
+  <rect x="997.4420000000001" y="106.04999999999995" width="82.396" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="1038.64" y="121.19999999999996" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">derived SE(3)</text>
+</g>
+<g class="node" data-id="ICAM" data-label="iPhone RGB camera frame" data-shape="rectangle">
+  <rect x="464.54700000000014" y="71.57499999999996" width="193.85499999999993" height="36.900000000000006" rx="0" ry="0" fill="#edf7ff" stroke="#0369a1" stroke-width="1.4px" />
+  <text x="561.4745000000001" y="90.02499999999996" text-anchor="middle" font-size="13" font-weight="500" fill="#0f172a" dy="4.55">iPhone RGB camera frame</text>
+</g>
+<g class="node" data-id="PCAM" data-label="Pixel ARCore camera frame" data-shape="rectangle">
+  <rect x="552.2379999999999" y="168.04999999999998" width="202.74699999999996" height="36.900000000000006" rx="0" ry="0" fill="#edf7ff" stroke="#0369a1" stroke-width="1.4px" />
+  <text x="653.6115" y="186.5" text-anchor="middle" font-size="13" font-weight="500" fill="#0f172a" dy="4.55">Pixel ARCore camera frame</text>
+</g>
+<g class="node" data-id="TCAM" data-label="Tango fisheye / device frame" data-shape="rectangle">
+  <rect x="464.54700000000014" y="265.4" width="208.675" height="36.900000000000006" rx="0" ry="0" fill="#edf7ff" stroke="#0369a1" stroke-width="1.4px" />
+  <text x="568.8845000000001" y="283.84999999999997" text-anchor="middle" font-size="13" font-weight="500" fill="#0f172a" dy="4.55">Tango fisheye / device frame</text>
+</g>
+<g class="node" data-id="GTW" data-label="GT world" data-shape="rectangle">
+  <rect x="1111.838" y="168.04999999999998" width="94.561" height="36.900000000000006" rx="0" ry="0" fill="#e9fff3" stroke="#2f855a" stroke-width="1.8px" />
+  <text x="1159.1185" y="186.5" text-anchor="middle" font-size="13" font-weight="500" fill="#163d2a" dy="4.55">GT world</text>
+</g>
+<g class="node" data-id="ARKW" data-label="ARKit world" data-shape="rectangle">
+  <rect x="844.061" y="103.59999999999997" width="109.381" height="36.900000000000006" rx="0" ry="0" fill="#eef2ff" stroke="#4c51bf" stroke-width="1.4px" />
+  <text x="898.7515000000001" y="122.04999999999997" text-anchor="middle" font-size="13" font-weight="500" fill="#27275b" dy="4.55">ARKit world</text>
+</g>
+<g class="node" data-id="ARCW" data-label="ARCore world" data-shape="rectangle">
+  <rect x="937.8565" y="168.04999999999998" width="124.20099999999998" height="36.900000000000006" rx="0" ry="0" fill="#eef2ff" stroke="#4c51bf" stroke-width="1.4px" />
+  <text x="999.957" y="186.5" text-anchor="middle" font-size="13" font-weight="500" fill="#27275b" dy="4.55">ARCore world</text>
+</g>
+<g class="node" data-id="TRW" data-label="Tango raw world" data-shape="rectangle">
+  <rect x="937.8565" y="232.95" width="139.762" height="36.900000000000006" rx="0" ry="0" fill="#eef2ff" stroke="#4c51bf" stroke-width="1.4px" />
+  <text x="1007.7375" y="251.39999999999998" text-anchor="middle" font-size="13" font-weight="500" fill="#27275b" dy="4.55">Tango raw world</text>
+</g>
+<g class="node" data-id="TAW" data-label="Tango area-learning world" data-shape="rectangle">
+  <rect x="889.537" y="297.84999999999997" width="198.301" height="36.900000000000006" rx="0" ry="0" fill="#eef2ff" stroke="#4c51bf" stroke-width="1.4px" />
+  <text x="988.6875" y="316.29999999999995" text-anchor="middle" font-size="13" font-weight="500" fill="#27275b" dy="4.55">Tango area-learning world</text>
+</g>
+<g class="node" data-id="IRGB" data-label="iPhone RGB frames
+iphone/frames.mov + frames.csv" data-shape="rectangle">
+  <rect x="190.50700000000018" y="63.12499999999997" width="229.423" height="53.800000000000004" rx="0" ry="0" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="305.2185000000002" y="90.02499999999998" text-anchor="middle" font-size="13" font-weight="500" fill="#334155"><tspan x="305.2185000000002" dy="-3.9000000000000012">iPhone RGB frames</tspan><tspan x="305.2185000000002" dy="16.900000000000002">iphone/frames.mov + frames.csv</tspan></text>
+</g>
+<g class="node" data-id="TRGB" data-label="Tango fisheye frames
+tango/frames.mov + frames.csv" data-shape="rectangle">
+  <rect x="191.15100000000004" y="289.55" width="222.013" height="53.800000000000004" rx="0" ry="0" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="302.1575" y="316.45" text-anchor="middle" font-size="13" font-weight="500" fill="#334155"><tspan x="302.1575" dy="-3.9000000000000012">Tango fisheye frames</tspan><tspan x="302.1575" dy="16.900000000000002">tango/frames.mov + frames.csv</tspan></text>
+</g>
+<g class="node" data-id="TPC" data-label="Tango point clouds
+tango/point-cloud*.csv" data-shape="rectangle">
+  <rect x="40" y="224.35" width="175.32999999999998" height="53.800000000000004" rx="0" ry="0" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="127.66499999999999" y="251.25" text-anchor="middle" font-size="13" font-weight="500" fill="#334155"><tspan x="127.66499999999999" dy="-3.9000000000000012">Tango point clouds</tspan><tspan x="127.66499999999999" dy="16.900000000000002">tango/point-cloud*.csv</tspan></text>
+</g>
+</svg>

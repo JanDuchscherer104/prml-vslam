@@ -1,0 +1,90 @@
+flowchart TB
+  A["ADVIO sequence<br/>advio-XX"]
+
+  subgraph REF["Benchmark reference"]
+    direction TB
+    GT["Ground truth"]
+    GTP["pose.csv or poses.csv<br/>reference trajectory<br/>6DoF, 100 Hz"]
+    GTF["fixpoints.csv<br/>manual metric location fixes"]
+    GT --> GTP
+    GT --> GTF
+  end
+
+  subgraph DEV["Device-specific modalities"]
+    direction LR
+
+    subgraph IPG["iPhone"]
+      direction TB
+      IP["Primary capture device"]
+      IPV["frames.mov + frames.csv<br/>RGB video timestamps<br/>1280x720 portrait, 60 Hz"]
+      IPA["arkit.csv<br/>ARKit 6DoF poses<br/>60 Hz"]
+      IPIMU["accelerometer.csv + gyroscope/gyro.csv<br/>+ magnetometer.csv<br/>raw IMU sensors, 100 Hz"]
+      IPB["barometer.csv<br/>pressure and relative altitude"]
+      IPL["platform-location.csv or platform-locations.csv<br/>lat/lon/alt/speed samples"]
+      IP --> IPV
+      IP --> IPA
+      IP --> IPIMU
+      IP --> IPB
+      IP --> IPL
+    end
+
+    subgraph PXG["Pixel"]
+      direction TB
+      PX["Secondary baseline device"]
+      PXA["arcore.csv<br/>ARCore 6DoF poses<br/>30 Hz"]
+      PX --> PXA
+    end
+
+    subgraph TGG["Tango"]
+      direction TB
+      TG["Legacy multi-sensor device"]
+      TGR["raw.csv<br/>raw odometry<br/>60 Hz"]
+      TGA["area-learning.csv<br/>loop-closing odometry<br/>60 Hz"]
+      TGV["frames.mov + frames.csv<br/>fisheye video"]
+      TGP["point-cloud.csv + point-cloud-*.csv<br/>point-cloud captures"]
+      TG --> TGR
+      TG --> TGA
+      TG --> TGV
+      TG --> TGP
+    end
+  end
+
+  subgraph AUX["Supporting inputs"]
+    direction LR
+    CAL["calibration/iphone-XX.yaml<br/>intrinsics, distortion, T_cam_imu"]
+    RV["External reference video<br/>used to mark fixpoints"]
+    FP["Floor plans / aerial maps<br/>used to place fixpoints"]
+  end
+
+  A --> GT
+  A --> IP
+  A --> PX
+  A --> TG
+
+  CAL -.-> IP
+  RV -.-> GTF
+  FP -.-> GTF
+
+  style A fill:#0b4f6c,stroke:#083b4c,color:#ffffff,stroke-width:2px
+
+  style GT fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
+  style IP fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
+  style PX fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
+  style TG fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
+
+  style GTP fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style GTF fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style IPV fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style IPA fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style IPIMU fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style IPB fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style IPL fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style PXA fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style TGR fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style TGA fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style TGV fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+  style TGP fill:#f8fbff,stroke:#94a3b8,color:#1f2937
+
+  style CAL fill:#fff7e8,stroke:#d97706,color:#7c2d12,stroke-width:1.5px,stroke-dasharray:5 3
+  style RV fill:#fff7e8,stroke:#d97706,color:#7c2d12,stroke-width:1.5px,stroke-dasharray:5 3
+  style FP fill:#fff7e8,stroke:#d97706,color:#7c2d12,stroke-width:1.5px,stroke-dasharray:5 3
