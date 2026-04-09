@@ -1,20 +1,23 @@
 #let goals_refined = [
-  // - Keep the initial repository lightweight, installable, and stable under `uv`.
-  // - Define a common output format for trajectories and dense point clouds across methods.
-  // - Build the benchmark around public and custom data from the start.
+  - ViSTA-SLAM already implements much of the benchmark and streaming pipeline we expected to build ourselves (webcam stream, benchmark pipeline)
+  - Use #link("https://arxiv.org/pdf/2509.01584")[ViSTA-SLAM] as upstream baseline and inspiration.
+  - Keep the repository centered on a reproducible benchmark scaffold with typed contracts, canonical artifact paths, and TOML-first run planning.
+  - Evaluate methods on #link("https://github.com/AaltoVision/ADVIO")[ADVIO], TUM-RGBD and our own custom dataset.
+  - Use Record3D as data source for custom offline dataset and streaming demo.
+  - Develop a more modular, streamlined evaluation and streaming framework inspired by ViSTA-SLAM's architecture.
+    + Strong artifact contracts.
+    + Modularity and configurability.
+    + CLI and Streamlit app surfaces.
+    + Multiprocessing and distributed execution support.
 ]
 
 #let non_goals_refined = [
-  // - Avoid locking the repo into one heavyweight external method stack.
-  // - Avoid custom one-off evaluation notebooks without reproducible scripts.
-  // - Avoid storing generated outputs in the repository.
+  - Do not start with 3DGS before Open3D-based TSDF reconstruction.
 ]
 
 #let reference_links = [
-  // - Candidate methods: #link("https://arxiv.org/pdf/2509.01584")[ViSTA-SLAM] and
-  //   #link("https://arxiv.org/abs/2412.12392")[MASt3R-SLAM].
-  // - Evaluation references: #link("https://github.com/AaltoVision/ADVIO")[ADVIO],
-  //   #link("https://github.com/MichaelGrupp/evo")[evo], and
-  //   #link("https://colmap.github.io/index.html")[COLMAP].
-  // - Geometry tooling: #link("https://www.open3d.org/")[Open3D] for inspection and metric support.
+  // - Planning sources: `docs/workpackages.md`, `docs/architecture/interfaces-and-contracts.md`, and `src/prml_vslam/pipeline/README.md`.
+  // - Upstream methods: #link("https://arxiv.org/pdf/2509.01584")[ViSTA-SLAM] as the primary baseline and #link("https://arxiv.org/abs/2412.12392")[MASt3R-SLAM] as the secondary comparison target.
+  // - Data and baselines: #link("https://github.com/AaltoVision/ADVIO")[ADVIO], #link("https://record3d.app/")[Record3D], and #link("https://developers.google.com/ar")[ARCore].
+  // - Evaluation and reconstruction tools: #link("https://github.com/MichaelGrupp/evo")[evo], #link("https://www.open3d.org/")[Open3D], #link("https://www.cloudcompare.org/")[CloudCompare], #link("https://colmap.github.io/index.html")[COLMAP], #link("https://meshroom.org/")[Meshroom], and #link("https://nerf.studio/")[Nerfstudio].
 ]
