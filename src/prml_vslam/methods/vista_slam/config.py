@@ -1,4 +1,4 @@
-"""Config classes for the ViSTA-SLAM offline backend."""
+"""Config classes for the ViSTA-SLAM backend."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class VistaSlamConfig(BaseConfig):
 
 
 class VistaSlamBackendConfig(BaseConfig):
-    """Factory config that builds the ViSTA-SLAM offline backend.
+    """Factory config that builds the ViSTA-SLAM backend.
 
     All ``Path`` fields default to repo-relative strings and are resolved to
     absolute paths at runtime inside :class:`VistaSlamBackend`.
