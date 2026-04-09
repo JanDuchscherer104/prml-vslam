@@ -27,45 +27,48 @@ Output: Dataset containing RGB Video Stream & baseline log data
 - provided sample data in reusable format for further usage in pipeline
 - format is aligned with ADVIO Dataset format
 
-
-
-## WP 2: Uncalibrated Monocular VSLAM Pipeline
-**Goal:** Setup livestream-capable uncalibrated monocular VSLAM pipeline with two different VSLAM Algorithms.
-
-### WP 2.1: Pipeline Framework
-Assignee(s): Open
+### WP 2: Pipeline Framework
+Assignee(s): Florian Beck, Jan Duchscherer
 - integrate singular services into configurable pipeline workflow
 - defined & implemented clear interfaces between services
 
-### WP 2.2: ViSTA-SLAM
+## WP 3: Uncalibrated Monocular VSLAM Methods
+**Goal:** Setup livestream-capable uncalibrated monocular VSLAM pipeline with two different VSLAM Algorithms.
+
+### WP 3.1: General Method Setup
+Assignee: Jan Duchscherer
+- define input / output interface and protocols for VSLAM algorithms
+- setup real-time and offline capable VSLAM mock
+
+### WP 3.2: ViSTA-SLAM
 Assignees: Lukas Röß, Jan Duchscherer
 input: RGB Video Stream
 output: incrementally updating Pointcloud & Trajectory
 - defined input / output interface for VSLAM algorithms
 - setup real-time capable ViSTA-SLAM algorithm
+- make it Apple Silicon compatible.
 
-### WP 2.3: MASt3R-SLAM
+### WP 3.3: MASt3R-SLAM
 Assignee: Christopher Kirschner
 input: RGB Video Stream
 output: incrementally updating Pointcloud & Trajectory
 - defined input / output interface for VSLAM algorithms
 - setup real-time capable MASt3R-SLAM algorithm
 
-## WP 3: Incremental Streaming (3DGS)
+## WP 4: Incremental Streaming (3DGS)
 Assignee: Florian Beck
-input: VSLAM Pointcloud & Trajectory 
+input: VSLAM Pointcloud & Trajectory
 output: 2D/3D visualization of VSLAM output
 - implemented service that renders the VSLAM output in 2D / 3D
 
 
-## WP 4: Metrics - Component Throughput
-## WP 4: Metrics - Component Throughput
+## WP 5: Metrics - Component Throughput
 Assignee: Florian Beck
 input: services in pipeline
 output: performance metrics (throughput per component)
 - setup throughput metric that can be reused over the all components of the pipeline
 
-## WP 5: Metrics - Point Cloud Comparison
+## WP 6: Metrics - Point Cloud Comparison
 Assignees: Valentin Bumeder, Jan Duchscherer, Florian Beck
 input: VSLAM point cloud, ground truth point cloud
 output: comparison metric
@@ -73,7 +76,7 @@ output: comparison metric
 - defined input interface
 
 
-## WP 6: Metrics - Trajectory Comparison
+## WP 7: Metrics - Trajectory Comparison
 Assignees: Lukas Röß, Valentin Bumeder
 input: VSLAM trajectory, ground truth trajectory
 output: comparison metric
@@ -81,13 +84,20 @@ output: comparison metric
 - defined input interface
 
 
-## WP 7: Metrics - Output Images (Quality)
+## WP 8: Metrics - Output Images (Quality)
 Assignee: Christopher Kirschner
 input: VSLAM image output
 - created quality metrics based on VSLAM image output (PSNR or other Standard Reconstruction Metrics)
 
-## WP 8: (Optional) Ground Truth Creation -> Grab if you're bored! 
+## WP 9: 3D Viewer
+- Integrate a 3D Viewer for visualizing scenes from offline artifacts or live stream
+- Display modalities like point clouds, trajectories, camera frusta, 3DGS reconstructions, etc.
+- Integrate it into the streamlit app.
+- Should integrate well with the yet to be chosen 3DGS library.
+- Potential candidates: [Viser](https://viser.studio/main/)
+
+## WP 10: (Optional) Ground Truth Creation -> Grab if you're bored!
 Assignee(s): Open
 
-## WP 9: (Optional) ARCore - Grab if you're bored! 
+## WP 11: (Optional) ARCore - Grab if you're bored!
 Assignee(s): Open
