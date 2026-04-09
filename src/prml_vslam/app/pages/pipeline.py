@@ -13,16 +13,17 @@ from evo.core import metrics as evo_metrics
 from evo.core import sync as evo_sync
 
 from prml_vslam.datasets.advio import AdvioPoseSource
+from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
-from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline import RunRequest
 from prml_vslam.pipeline.contracts import (
+    DatasetSourceSpec,
     StageManifest,
 )
-from prml_vslam.pipeline.demo import build_advio_demo_request
+from prml_vslam.pipeline.demo import load_run_request_toml
 from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.plotting import build_evo_ape_colormap_figure
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.image_utils import normalize_grayscale_image
 
@@ -50,14 +51,8 @@ _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 class PipelinePageAction(BaseData):
     """Typed action payload for the pipeline page controls."""
 
-    sequence_id: int
-    """Selected ADVIO sequence id."""
-
-    mode: PipelineMode
-    """Selected pipeline mode."""
-
-    method: MethodId
-    """Selected mock SLAM backend label."""
+    config_path: Path
+    """Selected pipeline request TOML."""
 
     pose_source: AdvioPoseSource
     """Selected pose source for the ADVIO replay stream."""
@@ -92,43 +87,40 @@ def render(context: AppContext) -> None:
         ),
     )
     statuses = context.advio_service.local_scene_statuses()
-    previewable_ids = [status.scene.sequence_id for status in statuses if status.replay_ready]
+    previewable_statuses = [status for status in statuses if status.replay_ready]
     snapshot = context.run_service.snapshot()
     is_active = snapshot.state in _ACTIVE_SESSION_STATES
     with st.container(border=True):
         st.subheader("ADVIO Replay Demo")
         st.caption(
-            "Use one replay-ready ADVIO scene as a bounded offline or looped streaming session for the current pipeline demo."
+            "Select a persisted ADVIO pipeline request TOML and run it as a bounded offline or looped streaming session."
         )
-        if not previewable_ids:
+        if not previewable_statuses:
             st.info(
                 "Download the ADVIO streaming bundle for at least one scene to unlock the interactive pipeline demo."
             )
             return
+        config_paths = _discover_pipeline_config_paths(context.path_config)
+        if not config_paths:
+            st.info("Persist at least one pipeline request TOML under `.configs/pipelines/` to unlock this demo.")
+            return
         page_state = context.state.pipeline
-        selected_sequence_id = (
-            page_state.sequence_id if page_state.sequence_id in previewable_ids else previewable_ids[0]
+        selected_config_path = page_state.config_path if page_state.config_path in config_paths else config_paths[0]
+        selected_config_path = st.selectbox(
+            "Pipeline Config",
+            options=config_paths,
+            index=config_paths.index(selected_config_path),
+            format_func=lambda config_path: _pipeline_config_label(context.path_config, config_path),
         )
-        selected_sequence_id = st.selectbox(
-            "ADVIO Scene",
-            options=previewable_ids,
-            index=previewable_ids.index(selected_sequence_id),
-            format_func=lambda sequence_id: context.advio_service.scene(sequence_id).display_name,
-        )
+        request, request_error = _load_pipeline_request(context.path_config, selected_config_path)
+        sequence_id, request_support_error = _resolve_advio_sequence_id(request=request, statuses=statuses)
         left, right = st.columns(2, gap="large")
         with left:
-            mode = st.selectbox(
-                "Mode",
-                options=list(PipelineMode),
-                index=list(PipelineMode).index(page_state.mode),
-                format_func=lambda item: item.label,
-            )
-            method = st.selectbox(
-                "Mock Method",
-                options=list(MethodId),
-                index=list(MethodId).index(page_state.method),
-                format_func=lambda item: item.display_name,
-            )
+            st.markdown("**Resolved Request**")
+            if request is None:
+                st.warning(request_error or "Failed to load the selected pipeline config.")
+            else:
+                st.json(_request_summary_payload(request), expanded=False)
         with right:
             pose_source = st.selectbox(
                 "Pose Source",
@@ -140,15 +132,18 @@ def render(context: AppContext) -> None:
                 "Respect video rotation metadata",
                 value=page_state.respect_video_rotation,
             )
+            if request_support_error is None and request is not None and sequence_id is not None:
+                st.caption(f"Resolved demo sequence: `{context.advio_service.scene(sequence_id).display_name}`")
+            elif request_support_error is not None:
+                st.warning(request_support_error)
         start_requested, stop_requested = render_live_action_slot(
             is_active=is_active,
             start_label="Start run",
             stop_label="Stop run",
+            start_disabled=request is None or request_support_error is not None,
         )
         action = PipelinePageAction(
-            sequence_id=selected_sequence_id,
-            mode=mode,
-            method=method,
+            config_path=selected_config_path,
             pose_source=pose_source,
             respect_video_rotation=respect_video_rotation,
             start_requested=start_requested,
@@ -345,9 +340,7 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
         context.store,
         context.state,
         context.state.pipeline,
-        sequence_id=action.sequence_id,
-        mode=action.mode,
-        method=action.method,
+        config_path=action.config_path,
         pose_source=action.pose_source,
         respect_video_rotation=action.respect_video_rotation,
     )
@@ -359,9 +352,7 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
             return None
         _start_advio_demo_run(
             context,
-            sequence_id=action.sequence_id,
-            mode=action.mode,
-            method=action.method,
+            config_path=action.config_path,
             pose_source=action.pose_source,
             respect_video_rotation=action.respect_video_rotation,
         )
@@ -373,26 +364,100 @@ def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction
 def _start_advio_demo_run(
     context: AppContext,
     *,
-    sequence_id: int,
-    mode: PipelineMode,
-    method: MethodId,
+    config_path: Path,
     pose_source: AdvioPoseSource,
     respect_video_rotation: bool,
 ) -> None:
     """Start one bounded ADVIO demo run through the shared run facade."""
-    scene = context.advio_service.scene(sequence_id)
-    request = build_advio_demo_request(
-        path_config=context.path_config,
-        sequence_id=scene.sequence_slug,
-        mode=mode,
-        method=method,
+    request = load_run_request_toml(path_config=context.path_config, config_path=config_path)
+    sequence_id, sequence_error = _resolve_advio_sequence_id(
+        request=request,
+        statuses=context.advio_service.local_scene_statuses(),
     )
+    if sequence_error is not None or sequence_id is None:
+        raise ValueError(sequence_error or "Failed to resolve an ADVIO scene for the selected pipeline config.")
     source = context.advio_service.build_streaming_source(
         sequence_id=sequence_id,
         pose_source=pose_source,
         respect_video_rotation=respect_video_rotation,
     )
     context.run_service.start_run(request=request, source=source)
+
+
+def _discover_pipeline_config_paths(path_config: PathConfig) -> list[Path]:
+    config_dir = path_config.resolve_pipeline_configs_dir()
+    if not config_dir.exists():
+        return []
+    return sorted(path.resolve() for path in config_dir.rglob("*.toml") if path.is_file())
+
+
+def _pipeline_config_label(path_config: PathConfig, config_path: Path) -> str:
+    config_root = path_config.resolve_pipeline_configs_dir()
+    try:
+        return str(config_path.relative_to(config_root))
+    except ValueError:
+        return (
+            str(config_path.relative_to(path_config.root))
+            if config_path.is_relative_to(path_config.root)
+            else str(config_path)
+        )
+
+
+def _load_pipeline_request(path_config: PathConfig, config_path: Path) -> tuple[RunRequest | None, str | None]:
+    try:
+        return load_run_request_toml(path_config=path_config, config_path=config_path), None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _resolve_advio_sequence_id(
+    *,
+    request: RunRequest | None,
+    statuses: list[object],
+) -> tuple[int | None, str | None]:
+    if request is None:
+        return None, None
+    match request.source:
+        case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
+            for status in statuses:
+                scene = getattr(status, "scene", None)
+                if scene is None or getattr(scene, "sequence_slug", None) != sequence_slug:
+                    continue
+                if bool(getattr(status, "replay_ready", False)):
+                    return int(scene.sequence_id), None
+                return None, f"ADVIO sequence '{sequence_slug}' is available locally but not replay-ready."
+            return None, f"ADVIO sequence '{sequence_slug}' is not available locally."
+        case DatasetSourceSpec(dataset_id=dataset_id):
+            return None, f"Dataset '{dataset_id.value}' is not supported by this demo page."
+        case _:
+            return None, "This demo page only supports dataset-backed ADVIO pipeline configs."
+
+
+def _request_summary_payload(request: RunRequest) -> dict[str, object]:
+    payload = {
+        "experiment_name": request.experiment_name,
+        "mode": request.mode.value,
+        "output_dir": request.output_dir.as_posix(),
+        "slam": {
+            "method": request.slam.method.value,
+            "config_path": None if request.slam.config_path is None else request.slam.config_path.as_posix(),
+            "max_frames": request.slam.max_frames,
+            "emit_dense_points": request.slam.emit_dense_points,
+            "emit_sparse_points": request.slam.emit_sparse_points,
+        },
+        "reference": request.reference.model_dump(mode="json"),
+        "evaluation": request.evaluation.model_dump(mode="json"),
+    }
+    match request.source:
+        case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
+            payload["source"] = {
+                "kind": "dataset",
+                "dataset_id": dataset_id.value,
+                "sequence_id": sequence_id,
+            }
+        case _:
+            payload["source"] = request.source.model_dump(mode="json")
+    return payload
 
 
 def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:

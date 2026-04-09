@@ -65,6 +65,64 @@ def _build_path_config(tmp_path: Path) -> PathConfig:
     )
 
 
+def _write_pipeline_config(
+    path_config: PathConfig,
+    *,
+    name: str = "advio-offline-advio-15-vista.toml",
+    source_block: str = 'dataset_id = "advio"\nsequence_id = "advio-15"',
+) -> Path:
+    config_path = path_config.resolve_pipeline_config_path(name, create_parent=True)
+    config_path.write_text(
+        f"""
+experiment_name = "advio-offline-advio-15-vista"
+mode = "offline"
+output_dir = ".artifacts"
+
+[source]
+{source_block}
+
+[slam]
+method = "vista"
+emit_dense_points = true
+emit_sparse_points = true
+
+[reference]
+enabled = false
+
+[evaluation]
+compare_to_arcore = false
+evaluate_cloud = false
+evaluate_efficiency = false
+""".strip(),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _load_pipeline_request_fixture() -> SimpleNamespace:
+    return SimpleNamespace(
+        experiment_name="advio-offline-advio-15-vista",
+        mode=SimpleNamespace(value="offline"),
+        output_dir=Path(".artifacts"),
+        source=SimpleNamespace(model_dump=lambda mode="json": {"dataset_id": "advio", "sequence_id": "advio-15"}),
+        slam=SimpleNamespace(
+            method=SimpleNamespace(value="vista"),
+            config_path=None,
+            max_frames=None,
+            emit_dense_points=True,
+            emit_sparse_points=True,
+        ),
+        reference=SimpleNamespace(model_dump=lambda mode="json": {"enabled": False}),
+        evaluation=SimpleNamespace(
+            model_dump=lambda mode="json": {
+                "compare_to_arcore": False,
+                "evaluate_cloud": False,
+                "evaluate_efficiency": False,
+            }
+        ),
+    )
+
+
 def _write_advio_local_sequence(dataset_root: Path, *, sequence_id: int = 15) -> Path:
     sequence_dir = dataset_root / f"advio-{sequence_id:02d}"
     (sequence_dir / "iphone").mkdir(parents=True, exist_ok=True)
@@ -406,14 +464,24 @@ def test_pipeline_page_evo_preview_fails_when_timestamps_do_not_match(tmp_path: 
         )
 
 
-def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_writes(tmp_path: Path) -> None:
+def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
 
     source = object()
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    config_path = _write_pipeline_config(path_config)
 
     class AdvioServiceSpy:
         def __init__(self) -> None:
             self.source_calls: list[tuple[int, AdvioPoseSource, bool]] = []
+
+        def local_scene_statuses(self) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    replay_ready=True,
+                    scene=SimpleNamespace(sequence_id=15, sequence_slug="advio-15", display_name="advio-15"),
+                )
+            ]
 
         def scene(self, sequence_id: int) -> SimpleNamespace:
             return SimpleNamespace(sequence_slug=f"advio-{sequence_id:02d}", display_name=f"advio-{sequence_id:02d}")
@@ -433,9 +501,7 @@ def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_
 
     runtime = FakeRunService()
     context = SimpleNamespace(
-        path_config=PathConfig(
-            root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures"
-        ),
+        path_config=path_config,
         advio_service=AdvioServiceSpy(),
         run_service=runtime,
         state=AppState(),
@@ -445,9 +511,7 @@ def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_
     error_message = pipeline_page._handle_pipeline_page_action(
         context,
         pipeline_page.PipelinePageAction(
-            sequence_id=15,
-            mode=pipeline_page.PipelineMode.OFFLINE,
-            method=MethodId.VISTA,
+            config_path=config_path,
             pose_source=AdvioPoseSource.GROUND_TRUTH,
             respect_video_rotation=True,
             start_requested=True,
@@ -456,6 +520,7 @@ def test_pipeline_page_action_starts_pipeline_session_once_without_app_manifest_
 
     assert error_message is None
     assert context.advio_service.source_calls == [(15, AdvioPoseSource.GROUND_TRUTH, True)]
+    assert context.state.pipeline.config_path == config_path
     assert len(runtime.start_calls) == 1
     assert runtime.start_calls[0]["source"] is source
     request = runtime.start_calls[0]["request"]
@@ -484,7 +549,9 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
             return SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Mall 01")
 
     seen_labels: list[str] = []
+    config_path = Path("/tmp/advio-offline-advio-15-vista.toml")
     context = SimpleNamespace(
+        path_config=SimpleNamespace(),
         advio_service=AdvioServiceSpy(),
         run_service=FakeRunService(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING)),
         state=AppState(),
@@ -493,9 +560,7 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
 
     def fake_selectbox(label: str, *args, **kwargs):
         return {
-            "ADVIO Scene": 15,
-            "Mode": pipeline_page.PipelineMode.OFFLINE,
-            "Mock Method": MethodId.VISTA,
+            "Pipeline Config": config_path,
             "Pose Source": AdvioPoseSource.GROUND_TRUTH,
         }[label]
 
@@ -511,6 +576,16 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
     monkeypatch.setattr(pipeline_page.st, "selectbox", fake_selectbox)
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page, "_discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
+    monkeypatch.setattr(
+        pipeline_page,
+        "_load_pipeline_request",
+        lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None),
+    )
+    monkeypatch.setattr(pipeline_page, "_resolve_advio_sequence_id", lambda **kwargs: (15, None))
     monkeypatch.setattr(pipeline_page.st, "button", fake_button)
     monkeypatch.setattr(pipeline_page, "_handle_pipeline_page_action", lambda **kwargs: None)
     monkeypatch.setattr(pipeline_page, "render_live_fragment", lambda *args, **kwargs: None)
@@ -532,9 +607,17 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
             return False
 
     rerun_calls: list[bool] = []
+    config_path = Path("/tmp/advio-offline-advio-15-vista.toml")
     context = SimpleNamespace(
+        path_config=SimpleNamespace(),
         advio_service=SimpleNamespace(
-            local_scene_statuses=lambda: [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+            local_scene_statuses=lambda: [
+                SimpleNamespace(
+                    replay_ready=True,
+                    scene=SimpleNamespace(sequence_id=15, sequence_slug="advio-15", display_name="advio-15"),
+                )
+            ],
+            scene=lambda sequence_id: SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Mall 01"),
         ),
         run_service=FakeRunService(),
         state=AppState(),
@@ -550,14 +633,22 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
         pipeline_page.st,
         "selectbox",
         lambda label, *args, **kwargs: {
-            "ADVIO Scene": 15,
-            "Mode": pipeline_page.PipelineMode.OFFLINE,
-            "Mock Method": MethodId.VISTA,
+            "Pipeline Config": config_path,
             "Pose Source": AdvioPoseSource.GROUND_TRUTH,
         }[label],
     )
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page, "_discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
+    monkeypatch.setattr(
+        pipeline_page,
+        "_load_pipeline_request",
+        lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None),
+    )
+    monkeypatch.setattr(pipeline_page, "_resolve_advio_sequence_id", lambda **kwargs: (15, None))
     monkeypatch.setattr(
         pipeline_page.st,
         "button",
