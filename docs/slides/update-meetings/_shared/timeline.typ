@@ -15,23 +15,19 @@
     [Proposal freeze],
     [Goals, work packages, ownership, interaces & mocks are fixed for parallel execution.],
 
-    [29 Apr 2026], [Benchmark baseline], [Planning, artifacts, ADVIO, first VSLAM integration, pipeline clean up.],
+    [29 Apr 2026],
+    [Benchmark baseline],
+    [Planning, artifacts, finalize ADVIO, first VSLAM integration, pipeline clean up.],
 
     [22 May 2026],
     [Method integration],
     [ViSTA, MASt3R are fully integrated. TSDF reconstuction & 3D viewer are ready.],
 
     [12 Jun 2026],
-    [First Comparison + Pipeline],
-    [ADVIO plus custom-data evidence, multiprocessing support, maybe mps integration.],
+    [Eval + Pipeline],
+    [ADVIO plus custom-data evidence, multiprocessing (& distributed) pipeline, 3DGS integration.],
 
-    [29 Jun 2026],
-    [Presentation freeze],
-    [Final narrative, methodology, results, future work, retrospective, and presentation breakdown are frozen.],
-
-    [30 Jun-2 Jul 2026],
-    [Final challenge delivery],
-    [Presentable demo, stable results, and the final slide deck are ready for presentation.],
+    [29 Jun 2026], [Freeze], [Final eval results, ],
 
     [3 Jul 2026],
     [Report and repo freeze],
