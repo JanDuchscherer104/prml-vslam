@@ -27,9 +27,7 @@
     [Eval + Pipeline],
     [ADVIO plus custom-data evidence, multiprocessing (& distributed) pipeline, 3DGS integration.],
 
-    [29 Jun 2026], [Freeze], [Final eval results, ],
-
-    [3 Jul 2026],
+    [29 Jun 2026],
     [Report and repo freeze],
     [Report, code, benchmark outputs, and the final repository state are frozen.],
 
