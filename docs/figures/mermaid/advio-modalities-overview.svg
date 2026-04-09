@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1427.4099999999999 1136.2" width="1427.4099999999999" height="1136.2" style="--bg:#ffffff;--fg:#1f2328;--line:#d1d9e0;--accent:#0969da;--muted:#59636e;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<g class="subgraph" data-id="REF" data-label="Benchmark reference">
+  <rect x="225.76337499999994" y="349.40000000000003" width="436.59499999999997" height="215.60000000000002" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="225.76337499999994" y="349.40000000000003" width="436.59499999999997" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="237.76337499999994" y="363.40000000000003" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Benchmark reference</text>
+</g>
+<g class="subgraph" data-id="DEV" data-label="Device-specific modalities">
+  <rect x="40" y="585" width="1319.4099999999999" height="511.20000000000005" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="40" y="585" width="1319.4099999999999" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="52" y="599" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Device-specific modalities</text>
+<g class="subgraph" data-id="IPG" data-label="iPhone">
+  <rect x="56" y="864.6" width="1287.4099999999999" height="215.60000000000002" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="56" y="864.6" width="1287.4099999999999" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="68" y="878.6" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">iPhone</text>
+</g>
+<g class="subgraph" data-id="PXG" data-label="Pixel">
+  <rect x="56" y="629" width="235.488" height="215.60000000000002" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="56" y="629" width="235.488" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="68" y="643" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Pixel</text>
+</g>
+<g class="subgraph" data-id="TGG" data-label="Tango">
+  <rect x="311.488" y="629" width="838.068" height="215.60000000000002" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="311.488" y="629" width="838.068" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="323.488" y="643" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Tango</text>
+</g>
+</g>
+<g class="subgraph" data-id="AUX" data-label="Supporting inputs">
+  <rect x="40" y="40" width="260.68199999999996" height="261.40000000000003" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="40" y="40" width="260.68199999999996" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="52" y="54" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Supporting inputs</text>
+</g>
+<polyline class="edge" data-from="A" data-to="GT" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="538.7342083333333,293.40000000000003 538.7342083333333,343.40000000000003 538.7342083333333,343.40000000000003 538.7342083333333,393.40000000000003" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="IP" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="538.7342083333333,293.40000000000003 538.7342083333333,343.40000000000003 782.697,343.40000000000003 782.697,908.6" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="PX" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="538.7342083333333,293.40000000000003 538.7342083333333,343.40000000000003 173.744,343.40000000000003 173.744,673" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="TG" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="538.7342083333333,293.40000000000003 538.7342083333333,343.40000000000003 768.6835,343.40000000000003 768.6835,673" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="CAL" data-to="IP" data-style="dotted" data-arrow-start="false" data-arrow-end="true" points="284.68199999999996,110.9 300.68199999999996,110.9 1379.4099999999999,110.9 1379.4099999999999,908.6 752.7343333333333,908.6" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="RV" data-to="GTF" data-style="dotted" data-arrow-start="false" data-arrow-end="true" points="150.334,211.60000000000002 150.334,385.85 341.65487499999995,385.85 341.65487499999995,478.30000000000007" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="FP" data-to="GTF" data-style="dotted" data-arrow-start="false" data-arrow-end="true" points="148.4815,293.40000000000003 148.4815,385.85 341.65487499999995,385.85 341.65487499999995,478.30000000000007" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="GT" data-to="GTP" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="538.7342083333333,430.30000000000007 538.7342083333333,454.30000000000007 557.952375,454.30000000000007 557.952375,478.30000000000007" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="GT" data-to="GTF" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="538.7342083333333,430.30000000000007 538.7342083333333,454.30000000000007 341.65487499999995,454.30000000000007 341.65487499999995,478.30000000000007" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="IP" data-to="IPV" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="782.697,945.5 782.697,969.5 1057.904,969.5 1057.904,993.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="IP" data-to="IPA" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="782.697,945.5 782.697,969.5 1253.0829999999999,969.5 1253.0829999999999,993.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="IP" data-to="IPIMU" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="782.697,945.5 782.697,969.5 215.6105,969.5 215.6105,993.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="IP" data-to="IPB" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="782.697,945.5 782.697,969.5 493.7815,969.5 493.7815,993.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="IP" data-to="IPL" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="782.697,945.5 782.697,969.5 782.6969999999999,969.5 782.6969999999999,993.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="PX" data-to="PXA" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="173.744,709.9 173.744,757.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="TG" data-to="TGR" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="768.6835,709.9 768.6835,733.9 874.0535,733.9 874.0535,757.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="TG" data-to="TGA" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="768.6835,709.9 768.6835,733.9 1048.114,733.9 1048.114,757.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="TG" data-to="TGV" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="768.6835,709.9 768.6835,733.9 420.34,733.9 420.34,757.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="TG" data-to="TGP" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="768.6835,709.9 768.6835,733.9 663.3135,733.9 663.3135,757.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="A" data-label="ADVIO sequence
+advio-XX" data-shape="rectangle">
+  <rect x="467.74170833333324" y="239.60000000000002" width="141.985" height="53.800000000000004" rx="0" ry="0" fill="#0b4f6c" stroke="#083b4c" stroke-width="2px" />
+  <text x="538.7342083333333" y="266.5" text-anchor="middle" font-size="13" font-weight="500" fill="#ffffff"><tspan x="538.7342083333333" dy="-3.9000000000000012">ADVIO sequence</tspan><tspan x="538.7342083333333" dy="16.900000000000002">advio-XX</tspan></text>
+</g>
+<g class="node" data-id="GT" data-label="Ground truth" data-shape="rectangle">
+  <rect x="481.07970833333326" y="393.40000000000003" width="115.30900000000001" height="36.900000000000006" rx="0" ry="0" fill="#e8f1ff" stroke="#2b6cb0" stroke-width="1.5px" />
+  <text x="538.7342083333333" y="411.85" text-anchor="middle" font-size="13" font-weight="500" fill="#15314b" dy="4.55">Ground truth</text>
+</g>
+<g class="node" data-id="GTP" data-label="pose.csv or poses.csv
+reference trajectory
+6DoF, 100 Hz" data-shape="rectangle">
+  <rect x="469.54637499999995" y="478.30000000000007" width="176.81199999999998" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="557.952375" y="513.6500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="557.952375" dy="-12.350000000000001">pose.csv or poses.csv</tspan><tspan x="557.952375" dy="16.900000000000002">reference trajectory</tspan><tspan x="557.952375" dy="16.900000000000002">6DoF, 100 Hz</tspan></text>
+</g>
+<g class="node" data-id="GTF" data-label="fixpoints.csv
+manual metric location fixes" data-shape="rectangle">
+  <rect x="241.76337499999994" y="478.30000000000007" width="199.783" height="53.800000000000004" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="341.65487499999995" y="505.20000000000005" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="341.65487499999995" dy="-3.9000000000000012">fixpoints.csv</tspan><tspan x="341.65487499999995" dy="16.900000000000002">manual metric location fixes</tspan></text>
+</g>
+<g class="node" data-id="IP" data-label="Primary capture device" data-shape="rectangle">
+  <rect x="692.809" y="908.6" width="179.77599999999998" height="36.900000000000006" rx="0" ry="0" fill="#e8f1ff" stroke="#2b6cb0" stroke-width="1.5px" />
+  <text x="782.697" y="927.0500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#15314b" dy="4.55">Primary capture device</text>
+</g>
+<g class="node" data-id="IPV" data-label="frames.mov + frames.csv
+RGB video timestamps
+1280x720 portrait, 60 Hz" data-shape="rectangle">
+  <rect x="965.0519999999999" y="993.5" width="185.70399999999998" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="1057.904" y="1028.85" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="1057.904" dy="-12.350000000000001">frames.mov + frames.csv</tspan><tspan x="1057.904" dy="16.900000000000002">RGB video timestamps</tspan><tspan x="1057.904" dy="16.900000000000002">1280x720 portrait, 60 Hz</tspan></text>
+</g>
+<g class="node" data-id="IPA" data-label="arkit.csv
+ARKit 6DoF poses
+60 Hz" data-shape="rectangle">
+  <rect x="1178.7559999999999" y="993.5" width="148.654" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="1253.0829999999999" y="1028.85" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="1253.0829999999999" dy="-12.350000000000001">arkit.csv</tspan><tspan x="1253.0829999999999" dy="16.900000000000002">ARKit 6DoF poses</tspan><tspan x="1253.0829999999999" dy="16.900000000000002">60 Hz</tspan></text>
+</g>
+<g class="node" data-id="IPIMU" data-label="accelerometer.csv + gyroscope/gyro.csv
++ magnetometer.csv
+raw IMU sensors, 100 Hz" data-shape="rectangle">
+  <rect x="72" y="993.5" width="287.221" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="215.6105" y="1028.85" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="215.6105" dy="-12.350000000000001">accelerometer.csv + gyroscope/gyro.csv</tspan><tspan x="215.6105" dy="16.900000000000002">+ magnetometer.csv</tspan><tspan x="215.6105" dy="16.900000000000002">raw IMU sensors, 100 Hz</tspan></text>
+</g>
+<g class="node" data-id="IPB" data-label="barometer.csv
+pressure and relative altitude" data-shape="rectangle">
+  <rect x="387.221" y="993.5" width="213.12099999999995" height="53.800000000000004" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="493.7815" y="1020.4" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="493.7815" dy="-3.9000000000000012">barometer.csv</tspan><tspan x="493.7815" dy="16.900000000000002">pressure and relative altitude</tspan></text>
+</g>
+<g class="node" data-id="IPL" data-label="platform-location.csv or platform-locations.csv
+lat/lon/alt/speed samples" data-shape="rectangle">
+  <rect x="628.342" y="993.5" width="308.7099999999999" height="53.800000000000004" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="782.6969999999999" y="1020.4" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="782.6969999999999" dy="-3.9000000000000012">platform-location.csv or platform-locations.csv</tspan><tspan x="782.6969999999999" dy="16.900000000000002">lat/lon/alt/speed samples</tspan></text>
+</g>
+<g class="node" data-id="PX" data-label="Secondary baseline device" data-shape="rectangle">
+  <rect x="72" y="673" width="203.488" height="36.900000000000006" rx="0" ry="0" fill="#e8f1ff" stroke="#2b6cb0" stroke-width="1.5px" />
+  <text x="173.744" y="691.45" text-anchor="middle" font-size="13" font-weight="500" fill="#15314b" dy="4.55">Secondary baseline device</text>
+</g>
+<g class="node" data-id="PXA" data-label="arcore.csv
+ARCore 6DoF poses
+30 Hz" data-shape="rectangle">
+  <rect x="92.007" y="757.9" width="163.474" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="173.744" y="793.25" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="173.744" dy="-12.350000000000001">arcore.csv</tspan><tspan x="173.744" dy="16.900000000000002">ARCore 6DoF poses</tspan><tspan x="173.744" dy="16.900000000000002">30 Hz</tspan></text>
+</g>
+<g class="node" data-id="TG" data-label="Legacy multi-sensor device" data-shape="rectangle">
+  <rect x="666.569" y="673" width="204.22899999999996" height="36.900000000000006" rx="0" ry="0" fill="#e8f1ff" stroke="#2b6cb0" stroke-width="1.5px" />
+  <text x="768.6835" y="691.45" text-anchor="middle" font-size="13" font-weight="500" fill="#15314b" dy="4.55">Legacy multi-sensor device</text>
+</g>
+<g class="node" data-id="TGR" data-label="raw.csv
+raw odometry
+60 Hz" data-shape="rectangle">
+  <rect x="813.435" y="757.9" width="121.23700000000001" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="874.0535" y="793.25" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="874.0535" dy="-12.350000000000001">raw.csv</tspan><tspan x="874.0535" dy="16.900000000000002">raw odometry</tspan><tspan x="874.0535" dy="16.900000000000002">60 Hz</tspan></text>
+</g>
+<g class="node" data-id="TGA" data-label="area-learning.csv
+loop-closing odometry
+60 Hz" data-shape="rectangle">
+  <rect x="962.672" y="757.9" width="170.884" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="1048.114" y="793.25" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="1048.114" dy="-12.350000000000001">area-learning.csv</tspan><tspan x="1048.114" dy="16.900000000000002">loop-closing odometry</tspan><tspan x="1048.114" dy="16.900000000000002">60 Hz</tspan></text>
+</g>
+<g class="node" data-id="TGV" data-label="frames.mov + frames.csv
+fisheye video" data-shape="rectangle">
+  <rect x="327.488" y="757.9" width="185.70399999999998" height="53.800000000000004" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="420.34" y="784.8" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="420.34" dy="-3.9000000000000012">frames.mov + frames.csv</tspan><tspan x="420.34" dy="16.900000000000002">fisheye video</tspan></text>
+</g>
+<g class="node" data-id="TGP" data-label="point-cloud.csv + point-cloud-*.csv
+point-cloud captures" data-shape="rectangle">
+  <rect x="541.192" y="757.9" width="244.24299999999997" height="53.800000000000004" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
+  <text x="663.3135" y="784.8" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="663.3135" dy="-3.9000000000000012">point-cloud.csv + point-cloud-*.csv</tspan><tspan x="663.3135" dy="16.900000000000002">point-cloud captures</tspan></text>
+</g>
+<g class="node" data-id="CAL" data-label="calibration/iphone-XX.yaml
+intrinsics, distortion, T_cam_imu" data-shape="rectangle">
+  <rect x="56" y="84" width="228.68199999999996" height="53.800000000000004" rx="0" ry="0" fill="#fff7e8" stroke="#d97706" stroke-width="1.5px" />
+  <text x="170.34099999999998" y="110.9" text-anchor="middle" font-size="13" font-weight="500" fill="#7c2d12"><tspan x="170.34099999999998" dy="-3.9000000000000012">calibration/iphone-XX.yaml</tspan><tspan x="170.34099999999998" dy="16.900000000000002">intrinsics, distortion, T_cam_imu</tspan></text>
+</g>
+<g class="node" data-id="RV" data-label="External reference video
+used to mark fixpoints" data-shape="rectangle">
+  <rect x="56" y="157.8" width="188.668" height="53.800000000000004" rx="0" ry="0" fill="#fff7e8" stroke="#d97706" stroke-width="1.5px" />
+  <text x="150.334" y="184.70000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="#7c2d12"><tspan x="150.334" dy="-3.9000000000000012">External reference video</tspan><tspan x="150.334" dy="16.900000000000002">used to mark fixpoints</tspan></text>
+</g>
+<g class="node" data-id="FP" data-label="Floor plans / aerial maps
+used to place fixpoints" data-shape="rectangle">
+  <rect x="56" y="239.60000000000002" width="184.96300000000002" height="53.800000000000004" rx="0" ry="0" fill="#fff7e8" stroke="#d97706" stroke-width="1.5px" />
+  <text x="148.4815" y="266.5" text-anchor="middle" font-size="13" font-weight="500" fill="#7c2d12"><tspan x="148.4815" dy="-3.9000000000000012">Floor plans / aerial maps</tspan><tspan x="148.4815" dy="16.900000000000002">used to place fixpoints</tspan></text>
+</g>
+</svg>
