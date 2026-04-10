@@ -55,8 +55,17 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 
 - Treat external SLAM systems, ARCore, and reference reconstructions as separate systems with explicit normalization boundaries.
 - Use explicit frame names in code and metadata.
+- Every interface, datamodel, artifact, and public method that carries poses, trajectories, point clouds, depth-derived geometry, calibration, or extrinsics must state its coordinate-frame semantics explicitly in names and docstrings.
+- Use `T_target_source` naming for explicit transforms and transform-like variables. Prefer names such as `T_world_camera`, `T_cam_imu`, and `points_xyz_camera` over ambiguous names such as `pose`, `transform`, or `points`.
+- The canonical repo pose convention for camera poses is world <- camera (`T_world_camera`). For pose datamodels, translation is the source-frame origin expressed in target coordinates, and rotation maps source-frame vectors into target coordinates.
+- `SE3Pose`, `FramePacket.pose`, normalized trajectory artifacts, and downstream pipeline-owned pose outputs must use the canonical repo pose convention unless a boundary adapter explicitly documents an upstream-native exception.
+- Camera-frame metric geometry must document its axis convention.
+- World frames must be named explicitly at boundaries. Do not assume that upstream `world` frames from different systems are interchangeable.
+- Cross-system alignment transforms are derived comparison artifacts, not raw source poses. Do not silently align or relabel upstream trajectories inside loaders or wrappers.
+- `PoseTrajectory3D` from `evo.core.trajectory` is the canonical in-memory trajectory representation.
+- If a file format cannot encode frame semantics, persist side metadata that records source frame, target frame, units, timestamp basis, and any applied alignment or normalization.
+- Do not hide frame semantics in free-form `metadata` when the value crosses a package boundary; promote them into typed fields or typed artifact metadata.
 - Normalized trajectory artifacts should use TUM format plus side metadata when extra provenance is required.
-
 - Normalized dense geometry artifacts should use PLY plus metadata when the format alone cannot carry the required benchmark information.
 - Keep evaluation and alignment logic separate from method-execution wrappers.
 
