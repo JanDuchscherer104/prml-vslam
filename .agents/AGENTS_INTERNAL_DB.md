@@ -1,24 +1,16 @@
 # AGENTS Internal Database
 
-Purpose: a compact, repository-local alignment database for stable project facts, workflow rules, configuration policy, and tracked technical debt.
+Purpose: a compact, repository-local alignment database for stable project facts, ownership boundaries, configuration policy, and current technical context. Add highly important facts here that are not discoverable or easily inferred from the current repo state, and that should be included in the canonical agent guidance as per [AGENTS.md](../AGENTS.md) and nested `AGENTS.md` files. This file is for operational memory, not for new policy or detailed implementation notes that should live in package `README.md` or `REQUIREMENTS.md` files.
 
-This file is operational memory, not a replacement for the full repo-wide policy in [../AGENTS.md](../AGENTS.md).
+This file is operational memory, not a replacement for the full repo-wide policy in [../AGENTS.md](../AGENTS.md) or the maintenance workflow in [skills/agents-db-and-simplification/SKILL.md](skills/agents-db-and-simplification/SKILL.md).
 
-## 0) Mission Snapshot
+## Mission Snapshot
 
 - Build the repository-owned scaffold for an off-device monocular VSLAM benchmark on smartphone video or streams with unknown intrinsics.
 - Keep artifact boundaries typed and explicit.
 - Treat the Streamlit workbench as an inspection and bounded-demo surface, not the owner of core pipeline semantics.
 
-## 1) Non-Negotiable Workflow
-
-- Read this file, `README.md`, `docs/Questions.md`, and the nearest `AGENTS.md` before substantial work.
-- Use `rg` and narrow file reads instead of bulk-loading the repository.
-- Run `make ci` before creating a commit.
-- Never use destructive git commands unless the user explicitly requests them.
-- Keep changes scoped to the requested task; record validated debts in `.agents/issues.toml` and `.agents/todos.toml` instead of opportunistically fixing unrelated areas.
-
-## 2) Configuration Policy
+## Configuration Policy
 
 - `BaseConfig` is the repo-owned config-as-factory base.
 - TOML is the preferred persisted configuration surface for repo-owned `BaseConfig` derivatives.
@@ -28,7 +20,7 @@ This file is operational memory, not a replacement for the full repo-wide policy
   - `PathConfig.resolve_toml_path()` for repo-relative TOML files
 - Inline construction of `BaseConfig` graphs is acceptable for focused tests, tiny examples, and short-lived local helpers, but durable CLI, app, and benchmark workflows should converge on TOML inputs.
 
-## 3) Stable Ownership Snapshot
+## Stable Ownership Snapshot
 
 - `prml_vslam.interfaces.*` owns canonical shared datamodels.
 - `prml_vslam.protocols.*` owns shared protocol seams such as `FramePacketStream`.
@@ -36,28 +28,7 @@ This file is operational memory, not a replacement for the full repo-wide policy
 - `io` owns transport and packet ingestion, not app session snapshots.
 - `pipeline` owns planning, normalized run contracts, and the bounded streaming session service.
 
-## 4) Internal Tracking Databases
-
-- `.agents/issues.toml`
-  - use for validated defects, integration gaps, and architectural debt
-  - keep only active issue records here
-- `.agents/todos.toml`
-  - use for actionable follow-up work linked to issue IDs
-  - keep only active todo records here
-  - every todo must define `loc_min`, `loc_expected`, and `loc_max`
-- `.agents/resolved.toml`
-  - use for issues and todos moved out of the active backlogs after they are resolved, completed, or intentionally retired
-
-## 5) Agent Backlog Script
-
-- Use `make agents-db` to print ranked active issues and todos.
-- Use `make agents-db AGENTS_ARGS='resolve issue ISSUE-XXXX --note "..."'` to move an issue into `.agents/resolved.toml`.
-- Use `make agents-db AGENTS_ARGS='resolve todo TODO-XXXX --note "..."'` to move a todo into `.agents/resolved.toml`.
-- Ranking rules:
-  - issues sort by priority first, then status, then ID
-  - todos sort by priority first, then status, then lower `loc_expected`, then ID
-
-## 6) Current Stable Facts
+## Current Stable Facts
 
 - `BaseConfig` already supports TOML IO in `src/prml_vslam/utils/base_config.py`.
 - `PathConfig.resolve_toml_path()` already exists and should anchor repo relative config resolution.
