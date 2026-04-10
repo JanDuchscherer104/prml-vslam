@@ -1,0 +1,4 @@
+interface:
+  display_name: "AGENTS DB And Simplification"
+  short_description: "Backlog-guided simplification, pruning, and LOC-aware maintenance"
+  default_prompt: "Use $agents-db-and-simplification to work with the repo's internal agent memory and to reduce redundancy, boilerplate, dead code, unused symbols, unused config fields, overcomplication, or Python LOC through backlog-guided simplification and refactoring."
