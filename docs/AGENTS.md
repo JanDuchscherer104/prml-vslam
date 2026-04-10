@@ -8,7 +8,6 @@ This file applies to work under `docs/` and is docs-only delta guidance on top o
 - Refer to *read-only* [Questions.md](./Questions.md) for challenge scope, clarified requirements, and product constraints.
 - Use package `README.md` and `REQUIREMENTS.md` files when a docs change needs current implementation or package-contract detail.
 - Use [.agents/references/agent_reference.md](../.agents/references/agent_reference.md) as lookup material for library IDs and primary sources referenced by docs work.
-- Get Typst-specific guidance via context7: `/websites/typst_app` and `$typst-authoring` skill.
 
 ## Scope
 
@@ -21,7 +20,6 @@ This file applies to work under `docs/` and is docs-only delta guidance on top o
 - Preserve the current document architecture instead of introducing a new layout system.
 - Keep factual claims source-backed and consistent with the current repo docs and code-backed package docs.
 - Mirror the layout, spacing, caption style, and structure of nearby `.typ` files before making stylistic changes.
-- For slide work, prefer editing the relevant fragment or shared partial rather than restructuring the whole deck.
 
 ## Typst Rules
 
@@ -32,13 +30,21 @@ This file applies to work under `docs/` and is docs-only delta guidance on top o
 - Prefer Typst symbols and shorthands over raw Unicode glyphs when writing math or special symbols.
 - For non-trivial Typst changes, use a compile-inspect-fix loop and rebuild the affected target.
 
-## Report And Slide Writing
+## Report Writing
 
 - Final manuscript text must stay in full paragraphs with flowing prose, not bullet lists.
 - Keep terminology consistent across report and slide surfaces.
+- Keep the report aligned with its current IMRAD-like flow: introduction, related work, scope, methods, datasets, metrics, experiments, discussion, conclusion.
+- Integrate citations into prose and prefer primary sources where possible.
+- Verify factual claims against the cited source before adding or revising them.
 - Write with clarity, precision, and a neutral scientific tone.
+- Define important terms and abbreviations at first use, and keep terminology consistent across sections.
 - Present results objectively; reserve interpretation, limitations, and broader implications for discussion and conclusion sections.
-- Slide fragments may use concise bullet lists when that improves scanability, but they should still stay aligned with the report and current repo contract.
+
+### Slide Writing
+
+- Slide fragments may use concise bullet lists when that improves scanability.
+- For slide work, prefer editing the relevant fragment or shared partial rather than restructuring the whole deck.
 
 ## Verification
 
