@@ -12,6 +12,7 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 
 ## Core Engineering Rules
 
+- Prefer existing external tools and libraries over local reimplementation when the repo already depends on them.
 - Config classes should inherit from `prml_vslam.utils.BaseConfig` where appropriate.
 - Runtime objects should be instantiated from config objects via `.setup_target()`, not from loose dicts or long argument lists.
 - All signatures must be typed; prefer modern builtins such as `list[str]` and `dict[str, Any]`.
@@ -29,6 +30,7 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Never let anything fail silently.
 - Do not write overly defensive workaround code for backwards compatibility or unlikely edge cases unless the task explicitly calls for it.
 - Do not populate `__init__.py` files with imports that are not strictly necessary for the package's public API.
+- Never disable the formatter with inline pragmas; restructure code to satisfy formatting constraints without turning formatting off for a file or block.
 
 ## Config And Contract Rules
 
@@ -53,8 +55,8 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 
 - Treat external SLAM systems, ARCore, and reference reconstructions as separate systems with explicit normalization boundaries.
 - Use explicit frame names in code and metadata.
-- Canonical metric units are meters for geometry and seconds for timestamps.
 - Normalized trajectory artifacts should use TUM format plus side metadata when extra provenance is required.
+
 - Normalized dense geometry artifacts should use PLY plus metadata when the format alone cannot carry the required benchmark information.
 - Keep evaluation and alignment logic separate from method-execution wrappers.
 
@@ -63,11 +65,15 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Treat upstream repos as explicit external systems with thin adapters.
 - Use official upstream entry points where practical.
 - Keep wrappers thin: prepare normalized inputs, invoke the upstream entry point, validate expected native outputs, and write normalized repo artifacts.
+- Fail early when an external dependency is unavailable or misconfigured.
+- Document unsupported cases explicitly.
+- Do not hide fallback behavior inside wrappers.
 - Do not adopt upstream live-camera modes as repository-wide streaming interfaces.
 - If an upstream method needs image files instead of video, materialize that through pipeline workspace helpers rather than inventing a method-specific input contract.
 
 ## Verification
 
+- After editing a file, run `ruff format` on touched Python files before finishing the task.
 - Run `make lint` during iteration for Python changes.
 - Run targeted tests with `uv run pytest <path>` when a focused surface changes.
 - Use `make test` when the change is broad enough to justify the full suite.
