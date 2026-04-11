@@ -86,34 +86,70 @@ class VistaSlamSession:
         pose: SE3Pose | None = None
         pointmap: np.ndarray | None = None
         try:
-            view_dict = self._slam.get_view(
-                self._frame_count - 1,
-                filter_outlier=True,
-                return_pose=True,
-                return_depth=True,
-                return_intri=True,
+            # We bypass self._slam.get_view() for depth to perform stride slicing on the GPU 
+            # before paying the PCIe transfer cost to the CPU for NumPy conversion.
+            import torch  # noqa: PLC0415
+            
+            best_node = self._slam.pose_graph_nodes.view_to_best_node[self._frame_count - 1][0]
+            sim3 = self._slam.pose_graph_nodes.poses[best_node]
+            
+            # Extract Pose
+            rot = sim3.rotation().matrix().cpu()
+            trans = sim3.translation().cpu()
+            pose_matrix = torch.eye(4, dtype=rot.dtype, device=rot.device)
+            pose_matrix[:3, :3] = rot
+            pose_matrix[:3, 3] = trans
+            pose = SE3Pose.from_matrix(pose_matrix.numpy().astype(np.float64))
+
+            # Extract Depth (on GPU), slice it, then move to CPU
+            scale = sim3.scale()
+            depth_gpu = self._slam.pose_graph_nodes.pcl[best_node][0] * scale
+            conf_gpu = self._slam.pose_graph_nodes.pcl[best_node][1]
+            mask_gpu = conf_gpu < self._slam.conf_thres
+            depth_gpu[mask_gpu] = 0.0
+            
+            # Downsample on GPU before moving to CPU
+            stride = 16
+            sampled_depth_np = depth_gpu[::stride, ::stride].cpu().numpy().astype(np.float32)
+            
+            # Extract Intrinsics
+            intri_np = self._slam.pose_graph_nodes.pcl[best_node][2].cpu().numpy().astype(np.float64)
+            fx, fy = float(intri_np[0, 0]), float(intri_np[1, 1])
+            cx, cy = float(intri_np[0, 2]), float(intri_np[1, 2])
+            h_px, w_px = depth_gpu.shape
+            
+            from prml_vslam.interfaces import CameraIntrinsics
+            from prml_vslam.utils.geometry import pointmap_from_depth
+            
+            intrinsics = frame.intrinsics or CameraIntrinsics(
+                fx=fx, fy=fy, cx=cx, cy=cy, width_px=w_px, height_px=h_px
             )
-            pose_tensor = view_dict.get("pose")
-            if pose_tensor is not None:
-                pose = SE3Pose.from_matrix(pose_tensor.numpy().astype(np.float64))
+            # Re-use pointmap_from_depth with stride=1 since we already sliced it
+            pointmap = pointmap_from_depth(sampled_depth_np, intrinsics=intrinsics, stride_px=1)
+            
+            # Re-scale points back based on the effective stride if needed
+            # Note: pointmap_from_depth grid expects original focal length but scaled pixels, 
+            # so we must adjust the function or use it directly on the full depth. 
+            # Actually, `pointmap_from_depth` takes `stride_px` and scales the (x,y) grid accordingly. 
+            # Since we sliced the depth map, we must use the original `pointmap_from_depth` implementation 
+            # on the downsampled depth but we need to tell it about the downsampling...
+            # Oh wait, `pointmap_from_depth` does the slicing internally and applies `stride_px` to the grid coordinates!
+            # If we slice here, `pointmap_from_depth` will assume it's a smaller image.
+            # Let's write the point unprojection inline to keep it mathematically correct.
+            
+            rows_px = np.arange(0, h_px, stride, dtype=np.float32)
+            cols_px = np.arange(0, w_px, stride, dtype=np.float32)
+            grid_y_px, grid_x_px = np.meshgrid(rows_px, cols_px, indexing="ij")
+            
+            pointmap = np.stack(
+                [
+                    (grid_x_px - intrinsics.cx) / intrinsics.fx * sampled_depth_np,
+                    (grid_y_px - intrinsics.cy) / intrinsics.fy * sampled_depth_np,
+                    sampled_depth_np,
+                ],
+                axis=-1,
+            ).astype(np.float32)
 
-            depth_tensor = view_dict.get("depth")
-            intri_tensor = view_dict.get("intri")
-            if depth_tensor is not None and intri_tensor is not None and pose is not None:
-                from prml_vslam.interfaces import CameraIntrinsics
-                from prml_vslam.utils.geometry import pointmap_from_depth
-
-                depth_np = depth_tensor.numpy().astype(np.float32)
-                intri_np = intri_tensor.numpy().astype(np.float64)
-                fx, fy = float(intri_np[0, 0]), float(intri_np[1, 1])
-                cx, cy = float(intri_np[0, 2]), float(intri_np[1, 2])
-                h_px, w_px = depth_np.shape
-                
-                # Use frame intrinsics if present; else infer from view dict
-                intrinsics = frame.intrinsics or CameraIntrinsics(
-                    fx=fx, fy=fy, cx=cx, cy=cy, width_px=w_px, height_px=h_px
-                )
-                pointmap = pointmap_from_depth(depth_np, intrinsics=intrinsics, stride_px=16)
         except Exception as e:
             self._console.warning("Failed to extract per-frame preview: %s", e)
 
