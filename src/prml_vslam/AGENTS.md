@@ -8,7 +8,7 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 
 - [REQUIREMENTS.md](./REQUIREMENTS.md) for top-level package ownership
 - the nearest package `README.md` and `REQUIREMENTS.md` for package-local behavior and constraints
-- [../../docs/architecture/interfaces-and-contracts.md](../../docs/architecture/interfaces-and-contracts.md) for human-facing ownership rationale
+- [../../docs/architecture/interfaces-and-contracts.md](../../docs/architecture/interfaces-and-contracts.md) for human-facing minimal public surface, wrapper normalization, and migration rationale
 
 ## Core Engineering Rules
 
@@ -87,4 +87,4 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Run targeted tests with `uv run pytest <path>` when a focused surface changes.
 - Use `make test` when the change is broad enough to justify the full suite.
 - Before creating a commit, run `make ci`.
-- When changing config contracts, artifact formats, or benchmark assumptions, update `.agents/references/agent_reference.md` in the same change.
+- When changing config contracts, artifact formats, or benchmark assumptions, update [`REQUIREMENTS.md`](./REQUIREMENTS.md) and/or [../../docs/architecture/interfaces-and-contracts.md](../../docs/architecture/interfaces-and-contracts.md) in the same change.
