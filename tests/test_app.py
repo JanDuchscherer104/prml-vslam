@@ -99,6 +99,7 @@ emit_sparse_points = true
 enabled = false
 
 [evaluation]
+evaluate_trajectory = true
 compare_to_arcore = false
 evaluate_cloud = false
 evaluate_efficiency = false

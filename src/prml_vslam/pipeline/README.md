@@ -741,7 +741,8 @@ emit_sparse_points = true
 enabled = false
 
 [evaluation]
-compare_to_arcore = true
+evaluate_trajectory = true
+compare_to_arcore = false
 evaluate_cloud = false
 evaluate_efficiency = true
 ```
@@ -777,9 +778,10 @@ and SLAM behavior seams stay in [`protocols`](../protocols/source.py) and
 
 If a caller omits optional stage config, the defaults in
 [`contracts.py`](./contracts.py) apply: `ReferenceConfig.enabled` defaults to
-`false`, `BenchmarkEvaluationConfig` defaults to `compare_to_arcore = true`,
-`evaluate_cloud = false`, and `evaluate_efficiency = true`, and `SlamConfig`
-defaults to both dense and sparse export enabled. In practice, a minimal
+`false`, `BenchmarkEvaluationConfig` defaults to `evaluate_trajectory = true`,
+`compare_to_arcore = false`, `evaluate_cloud = false`, and
+`evaluate_efficiency = true`, and `SlamConfig` defaults to both dense and sparse
+export enabled. In practice, a minimal
 [`RunRequest`](./contracts.py) with only `source` and `slam` therefore plans
 `ingest`, `slam`, `trajectory_evaluation`, `efficiency_evaluation`, and
 `summary`, as you can confirm from the planner behavior documented in

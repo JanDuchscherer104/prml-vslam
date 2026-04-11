@@ -240,6 +240,7 @@ def _render_request_editor(
         emit_sparse_points,
         emit_dense_points,
         reference_enabled,
+        evaluate_trajectory,
         compare_to_arcore,
         evaluate_cloud,
         evaluate_efficiency,
@@ -259,6 +260,7 @@ def _render_request_editor(
                 "emit_dense_points": emit_dense_points,
                 "emit_sparse_points": emit_sparse_points,
                 "reference_enabled": reference_enabled,
+                "evaluate_trajectory": evaluate_trajectory,
                 "compare_to_arcore": compare_to_arcore,
                 "evaluate_cloud": evaluate_cloud,
                 "evaluate_efficiency": evaluate_efficiency,
@@ -425,7 +427,7 @@ def _render_record3d_source_settings(
 
 def _render_stage_settings(
     page_state: PipelinePageState,
-) -> tuple[bool, bool, bool, bool, bool, bool]:
+) -> tuple[bool, bool, bool, bool, bool, bool, bool]:
     stage_left, stage_right = st.columns(2, gap="large")
     with stage_left:
         st.markdown("**SLAM Stage**")
@@ -434,13 +436,15 @@ def _render_stage_settings(
         reference_enabled = st.toggle("Plan reference reconstruction", value=page_state.reference_enabled)
     with stage_right:
         st.markdown("**Evaluation Stages**")
-        compare_to_arcore = st.toggle("Plan trajectory evaluation", value=page_state.compare_to_arcore)
+        evaluate_trajectory = st.toggle("Plan trajectory evaluation", value=page_state.evaluate_trajectory)
+        compare_to_arcore = st.toggle("Compare to ARCore baseline", value=page_state.compare_to_arcore)
         evaluate_cloud = st.toggle("Plan dense-cloud evaluation", value=page_state.evaluate_cloud)
         evaluate_efficiency = st.toggle("Plan efficiency evaluation", value=page_state.evaluate_efficiency)
     return (
         emit_sparse_points,
         emit_dense_points,
         reference_enabled,
+        evaluate_trajectory,
         compare_to_arcore,
         evaluate_cloud,
         evaluate_efficiency,
@@ -495,6 +499,7 @@ def _sync_pipeline_page_state_from_template(
         emit_dense_points=request.slam.emit_dense_points,
         emit_sparse_points=request.slam.emit_sparse_points,
         reference_enabled=request.reference.enabled,
+        evaluate_trajectory=request.evaluation.evaluate_trajectory,
         compare_to_arcore=request.evaluation.compare_to_arcore,
         evaluate_cloud=request.evaluation.evaluate_cloud,
         evaluate_efficiency=request.evaluation.evaluate_efficiency,
@@ -550,6 +555,7 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
             ),
             reference=ReferenceConfig(enabled=action.reference_enabled),
             evaluation=BenchmarkEvaluationConfig(
+                evaluate_trajectory=action.evaluate_trajectory,
                 compare_to_arcore=action.compare_to_arcore,
                 evaluate_cloud=action.evaluate_cloud,
                 evaluate_efficiency=action.evaluate_efficiency,
