@@ -8,7 +8,7 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 
 ### Requirements
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
+- [conda](https://docs.conda.io/) (or mamba-compatible) environment manager
 - [typst](https://typst.app/open-source/#download) for slides & report
 - System OpenCV dev headers: `sudo apt-get install -y libopencv-dev` (required to build the ViSTA-SLAM loop-detector extension)
 
@@ -20,28 +20,28 @@ git clone --recurse-submodules <repo-url>
 # if already cloned:
 git submodule update --init --recursive
 
-# 2. Sync Python dependencies (includes torch, xformers, rerun-sdk and all ViSTA-SLAM deps)
-uv sync --all-extras
-#    Then install torch/torchvision/xformers for CUDA 12.6 (avoids CUDA version mismatch):
-uv pip install torch torchvision xformers --index-url https://download.pytorch.org/whl/cu126
+# 2. Create and activate the conda environment.
+#    This pins the CUDA 12.1 torch stack and installs uv.
+conda env create -f environment.yml
+conda activate prml-vslam
 
-# 3. Install C build tools into the project venv (run from repo root)
-uv pip install setuptools wheel cmake
+# 3. Sync dependencies from pyproject.toml.
+uv sync --all-extras
 
 # 4. Build the DBoW3Py loop-detector C extension
 #    Output goes directly to external/vista-slam/ so it is importable via sys.path.
 #    Requires libopencv-dev; one-time step after cloning.
 cmake -S external/vista-slam/DBoW3Py -B external/vista-slam/DBoW3Py/cmake_build \
-  -DPYTHON_EXECUTABLE=$(uv run which python) \
+  -DPYTHON_EXECUTABLE=$(python -c "import sys; print(sys.executable)") \
   -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(pwd)/external/vista-slam \
   -DCMAKE_BUILD_TYPE=Release
 make -C external/vista-slam/DBoW3Py/cmake_build -j$(nproc)
 
 # 5. (Optional) Build the CUDA-accelerated RoPE2D positional encoding.
-#    Requires CUDA 12.6 torch. Without this step the
+#    Requires CUDA 12.1 torch. Without this step the
 #    PyTorch fallback is used — correct but slower.
 cd external/vista-slam/vista_slam/sta_model/pos_embed/curope
-uv run python setup.py build_ext --inplace
+python setup.py build_ext --inplace
 cd -
 
 # 6. Download ViSTA-SLAM pretrained weights into external/vista-slam/pretrains/
@@ -65,7 +65,6 @@ make test PYTEST_ARGS="-n auto"
 
 Repo-owned datasets and generated benchmark outputs resolve under `.data/` and `.artifacts/` by default via [`PathConfig`](src/prml_vslam/utils/path_config.py).
 
-<<<<<<< HEAD
 ## Documentation Map
 
 - `README.md`
@@ -79,8 +78,6 @@ Repo-owned datasets and generated benchmark outputs resolve under `.data/` and `
 - `docs/Questions.md`
   - update-sessions related clarification log for challenge scope and intent
 
-## Streamlit Workbench
-=======
 ### ViSTA-SLAM: Run Offline
 
 Run the full offline ViSTA-SLAM pipeline on any video:
@@ -104,7 +101,6 @@ uv run prml-vslam run "Smoke Test" external/vista-slam/media/tumrgbd_room.mp4 \
 ```
 
 ### Streamlit Workbench
->>>>>>> cb23d46 (docs: add vista-slam setup and usage to README)
 
 ```bash
 uv sync
