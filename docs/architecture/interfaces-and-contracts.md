@@ -1,35 +1,25 @@
 # Interfaces And Contracts
 
-This note is the human-facing architecture guide for the repository's interface and contract restructuring. It consolidates the current repo findings, the target ownership model, the minimal public surface to preserve, and the incremental migration rules.
+This note is the human-facing architecture guide for the repository's interface and contract restructuring. [`src/prml_vslam/REQUIREMENTS.md`](../../src/prml_vslam/REQUIREMENTS.md) is the canonical source for top-level package ownership and cross-package contract placement rules. This document owns the minimal public surface to preserve, the wrapper-normalization rationale, and the incremental migration rules.
 
-`.agents/references/agent_reference.md` remains the compact agent lookup and reference sheet. This document carries the full rationale and migration model.
+`.agents/references/agent_reference.md` remains the compact lookup-only reference sheet for library IDs and upstream sources.
 
 ## Current State
 
-- `prml_vslam.interfaces` already owns the canonical shared data models: `CameraIntrinsics`, `SE3Pose`, and `FramePacket`.
+- `prml_vslam.interfaces` already contains the canonical shared data models: `CameraIntrinsics`, `SE3Pose`, and `FramePacket`.
 - Trajectory objects now use `PoseTrajectory3D` from `evo.core.trajectory` directly instead of a repository-owned trajectory wrapper.
-- `prml_vslam.protocols.runtime` now owns the shared `FramePacketStream` protocol, so repo-wide datamodel ownership and shared protocol ownership are separated in code.
-- `prml_vslam.protocols.source` now owns the shared `OfflineSequenceSource` and `StreamingSequenceSource` seams used across dataset adapters and pipeline orchestration.
-- Package DTO, enum, config, manifest, request, and result ownership now lives in `src/prml_vslam/methods/contracts.py`, `src/prml_vslam/datasets/contracts.py`, `src/prml_vslam/eval/contracts.py`, and `src/prml_vslam/pipeline/contracts.py`.
-- `src/prml_vslam/methods/protocols.py` now owns the currently implemented SLAM backend and session seams, while `src/prml_vslam/pipeline/contracts.py` owns the planner surface, artifact bundles, stage manifests, and `SlamUpdate`.
+- `prml_vslam.protocols.runtime` now defines the shared `FramePacketStream` protocol, so repo-wide datamodel and shared protocol layers are separated in code.
+- `prml_vslam.protocols.source` now defines the shared `OfflineSequenceSource` and `StreamingSequenceSource` seams used across dataset adapters and pipeline orchestration.
+- Package DTO, enum, config, manifest, request, and result types now live in `src/prml_vslam/methods/contracts.py`, `src/prml_vslam/datasets/contracts.py`, `src/prml_vslam/eval/contracts.py`, and `src/prml_vslam/pipeline/contracts.py`.
+- `src/prml_vslam/methods/protocols.py` now defines the currently implemented SLAM backend and session seams, while `src/prml_vslam/pipeline/contracts.py` defines the planner surface, artifact bundles, stage manifests, and `SlamUpdate`.
 - Method-local mocks now emit pipeline-owned `SlamArtifacts` directly, so the normalized trajectory and point-cloud boundary stays owned by the pipeline instead of a parallel method-local result type.
-- The repo scan found overlapping contract-reference guidance across the compact agent reference, enforcement-oriented agent instructions, and package-level documentation. That overlap made it too easy for current-state facts and target-state naming to drift, so this note becomes the human-facing source for the full rationale.
+- The repo previously duplicated contract-reference guidance across the compact agent reference, enforcement-oriented agent instructions, and package-level documentation. That overlap made it too easy for current-state facts and target-state naming to drift, so top-level ownership rules now live in `src/prml_vslam/REQUIREMENTS.md` and this note carries the shared public-surface and migration rationale.
 
-## Target State
+## Canonical Split
 
-The repository should converge on the following ownership and naming rules. These rules describe the intended steady state. Some parts are now implemented in code, while others remain conventions for future work.
-
-- `prml_vslam.interfaces.*` owns repo-wide canonical shared datamodels only.
-- `prml_vslam.protocols.*` owns repo-wide shared protocols only.
-  - `prml_vslam.protocols.runtime` owns `FramePacketStream`
-  - `prml_vslam.protocols.source` owns shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource`
-- `<package>/contracts.py` owns package DTOs, enums, configs, manifests, requests, and results.
-- `<package>/protocols.py` is the preferred module for package-local `Protocol` seams when a package needs them.
-  - `prml_vslam.methods.protocols` owns `SlamBackend` and `SlamSession`
-- `prml_vslam.app.models` owns Streamlit-only UI and session state.
-- `services.py` modules own implementations only. They do not own public contract types.
-
-One semantic concept should have one owning module. A type should be promoted into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
+- Use [`src/prml_vslam/REQUIREMENTS.md`](../../src/prml_vslam/REQUIREMENTS.md) as the canonical human-facing source for top-level package ownership and cross-package contract placement rules.
+- Use this document as the canonical human-facing source for the shared minimal public surface, migration rules, and wrapper-normalization rationale.
+- Keep [`.agents/references/agent_reference.md`](../../.agents/references/agent_reference.md) lookup-only.
 
 ## Minimal Public Surfaces
 
@@ -59,6 +49,7 @@ The `prml_vslam.io` and `prml_vslam.pipeline` package roots now match this minim
 
 - ViSTA-SLAM exposes an image-glob plus config plus output-dir offline seam. The wrapper should consume repo-owned inputs, materialize image folders through pipeline or workspace helpers when needed, invoke the upstream CLI, validate the native artifacts, and normalize them into repo-owned outputs.
 - MASt3R-SLAM exposes a dataset, video, or folder input plus config and optional calibration. The wrapper should map `SequenceManifest` into the native shape required for that run, pass calibration only when available, and normalize the resulting trajectory and point cloud into the same repo-owned artifact boundary.
+- The pipeline owns one SLAM-stage config and one SLAM artifact bundle per backend; dense output remains a capability of that stage rather than a second backend contract.
 - Because those upstream seams are materially different, the repository should not mirror either upstream CLI as a shared public interface.
 - Upstream live-camera or preview modes should not become repo-wide streaming interfaces. They remain wrapper-private unless later work proves a true shared protocol that belongs to the repository rather than to one upstream backend.
 - Wrapper outputs should converge on pipeline-owned artifacts instead of inventing parallel public result types for each method.

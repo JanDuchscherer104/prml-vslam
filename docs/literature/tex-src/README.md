@@ -39,6 +39,6 @@ This directory stores extracted arXiv LaTeX source bundles for papers that direc
 - `arXiv-DROID-SLAM/main.tex`
 - `arXiv-DROID-SLAM/supp.tex`
 
-The repo-level interpretation of these papers lives in:
+The repo-level lookup material for these papers lives in:
 
 - `.agents/references/agent_reference.md`
