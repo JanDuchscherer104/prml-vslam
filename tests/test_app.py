@@ -27,6 +27,12 @@ from prml_vslam.app.services import (
     Record3DStreamRuntimeController,
 )
 from prml_vslam.app.state import SessionStateStore
+from prml_vslam.benchmark import (
+    BenchmarkConfig,
+    CloudBenchmarkConfig,
+    EfficiencyBenchmarkConfig,
+    TrajectoryBenchmarkConfig,
+)
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tum
 from prml_vslam.datasets.contracts import DatasetId
@@ -36,16 +42,13 @@ from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts import (
-    BenchmarkEvaluationConfig,
-    DatasetSourceSpec,
-    Record3DLiveSourceSpec,
-    ReferenceConfig,
-    SlamConfig,
-)
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.path_config import PathConfig
+from prml_vslam.visualization import VisualizationConfig
 
 
 def _write_tum(path: Path, rows: list[tuple[float, float, float, float]]) -> None:
@@ -92,16 +95,23 @@ output_dir = ".artifacts"
 
 [slam]
 method = "vista"
+
+[slam.outputs]
 emit_dense_points = true
 emit_sparse_points = true
 
-[reference]
+[benchmark.reference]
 enabled = false
 
-[evaluation]
-compare_to_arcore = false
-evaluate_cloud = false
-evaluate_efficiency = false
+[benchmark.trajectory]
+enabled = false
+baseline_id = "reference"
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = false
 """.strip(),
         encoding="utf-8",
     )
@@ -114,19 +124,18 @@ def _load_pipeline_request_fixture() -> RunRequest:
         mode=PipelineMode.OFFLINE,
         output_dir=Path(".artifacts"),
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        slam=SlamConfig(
+        slam=SlamStageConfig(
             method=MethodId.VISTA,
-            config_path=None,
-            max_frames=None,
-            emit_dense_points=True,
-            emit_sparse_points=True,
+            backend={"config_path": None, "max_frames": None},
+            outputs={"emit_dense_points": True, "emit_sparse_points": True},
         ),
-        reference=ReferenceConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=False,
+        benchmark=BenchmarkConfig(
+            reference={"enabled": False},
+            trajectory=TrajectoryBenchmarkConfig(enabled=False),
+            cloud=CloudBenchmarkConfig(enabled=False),
+            efficiency=EfficiencyBenchmarkConfig(enabled=False),
         ),
+        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
     )
 
 
@@ -166,13 +175,14 @@ def _record3d_pipeline_request(
             device_index=device_index,
             device_address=device_address,
         ),
-        slam=SlamConfig(method=MethodId.VISTA),
-        reference=ReferenceConfig(enabled=False),
-        evaluation=BenchmarkEvaluationConfig(
-            compare_to_arcore=False,
-            evaluate_cloud=False,
-            evaluate_efficiency=False,
+        slam=SlamStageConfig(method=MethodId.VISTA),
+        benchmark=BenchmarkConfig(
+            reference={"enabled": False},
+            trajectory=TrajectoryBenchmarkConfig(enabled=False),
+            cloud=CloudBenchmarkConfig(enabled=False),
+            efficiency=EfficiencyBenchmarkConfig(enabled=False),
         ),
+        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
     )
 
 
@@ -300,21 +310,21 @@ class FakeAdvioRuntime:
 class FakeRunService:
     """Minimal run-service stand-in for direct page-render and navigation tests."""
 
-    def __init__(self, snapshot: PipelineSessionSnapshot | None = None) -> None:
-        self._snapshot = snapshot or PipelineSessionSnapshot()
+    def __init__(self, snapshot: RunSnapshot | None = None) -> None:
+        self._snapshot = snapshot or RunSnapshot()
         self.stop_calls = 0
         self.start_calls: list[dict[str, object]] = []
 
-    def snapshot(self) -> PipelineSessionSnapshot:
+    def snapshot(self) -> RunSnapshot:
         return self._snapshot
 
     def stop_run(self) -> None:
         self.stop_calls += 1
-        self._snapshot = PipelineSessionSnapshot(state=PipelineSessionState.STOPPED)
+        self._snapshot = RunSnapshot(state=RunState.STOPPED)
 
     def start_run(self, **kwargs: object) -> None:
         self.start_calls.append(kwargs)
-        self._snapshot = PipelineSessionSnapshot(state=PipelineSessionState.CONNECTING)
+        self._snapshot = RunSnapshot(state=RunState.PREPARING)
 
 
 class FakePacketStream:
@@ -476,7 +486,6 @@ def test_metrics_service_fails_when_timestamps_do_not_match(tmp_path: Path) -> N
 
 def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
-    from prml_vslam.pipeline.contracts import ArtifactRef, SequenceManifest, SlamArtifacts
 
     pipeline_page._compute_evo_preview.cache_clear()
     reference_path = tmp_path / "reference.tum"
@@ -484,7 +493,7 @@ def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> No
     _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0), (0.2, 2.0, 1.0, 0.0)])
     _write_tum(estimate_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.1, 0.1, 0.0), (0.2, 2.2, 1.2, 0.0)])
 
-    snapshot = PipelineSessionSnapshot(
+    snapshot = RunSnapshot(
         sequence_manifest=SequenceManifest(sequence_id="advio-15", reference_tum_path=reference_path),
         slam=SlamArtifacts(
             trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="trajectory"),
@@ -576,16 +585,16 @@ def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tm
     )
 
     assert error_message is None
-    assert context.advio_service.source_calls == [(15, AdvioPoseSource.GROUND_TRUTH, True)]
+    assert context.advio_service.source_calls == []
     assert context.state.pipeline.config_path == config_path
     assert len(runtime.start_calls) == 1
-    assert runtime.start_calls[0]["source"] is source
+    assert runtime.start_calls[0]["runtime_source"] is None
     request = runtime.start_calls[0]["request"]
     assert request.source.dataset_id is DatasetId.ADVIO
     assert request.slam.method is MethodId.VISTA
-    assert request.evaluation.compare_to_arcore is False
-    assert request.evaluation.evaluate_cloud is False
-    assert request.evaluation.evaluate_efficiency is False
+    assert request.benchmark.trajectory.enabled is False
+    assert request.benchmark.cloud.enabled is False
+    assert request.benchmark.efficiency.enabled is False
 
 
 def test_pipeline_request_builds_record3d_usb_source_from_action(tmp_path: Path) -> None:
@@ -783,7 +792,7 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
     context = SimpleNamespace(
         path_config=SimpleNamespace(),
         advio_service=AdvioServiceSpy(),
-        run_service=FakeRunService(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING)),
+        run_service=FakeRunService(snapshot=RunSnapshot(state=RunState.RUNNING)),
         state=AppState(),
         store=FakeStore(),
     )
@@ -1656,7 +1665,7 @@ def test_pipeline_page_entry_stops_advio_runtime_when_switching(monkeypatch: pyt
 
 
 def test_metrics_page_entry_keeps_run_service_when_switching(monkeypatch: pytest.MonkeyPatch) -> None:
-    runtime = FakeRunService(snapshot=PipelineSessionSnapshot(state=PipelineSessionState.RUNNING))
+    runtime = FakeRunService(snapshot=RunSnapshot(state=RunState.RUNNING))
     context = SimpleNamespace(
         state=AppState(),
         store=FakeStore(),
