@@ -8,6 +8,13 @@ from typing import Annotated
 
 import typer
 
+from prml_vslam.benchmark import (
+    BenchmarkConfig,
+    CloudBenchmarkConfig,
+    EfficiencyBenchmarkConfig,
+    TrajectoryBaselineId,
+    TrajectoryBenchmarkConfig,
+)
 from prml_vslam.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadPreset,
@@ -18,21 +25,17 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts import (
-    BenchmarkEvaluationConfig,
-    ReferenceConfig,
-    SlamConfig,
-    VideoSourceSpec,
-)
+from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.demo import build_advio_demo_request, load_run_request_toml, persist_advio_demo_request
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import get_path_config
+from prml_vslam.visualization import VisualizationConfig
 
 app = typer.Typer(
     add_completion=False,
-    no_args_is_help=False,
+    no_args_is_help=True,
     help="Utilities and entry points for the PRML monocular VSLAM project scaffold.",
 )
 advio_app = typer.Typer(
@@ -43,13 +46,6 @@ advio_app = typer.Typer(
 console = Console(__name__)
 
 app.add_typer(advio_app, name="advio")
-
-
-@app.callback(invoke_without_command=True)
-def main_callback(ctx: typer.Context) -> None:
-    """Run the offline pipeline demo when the CLI is invoked without a subcommand."""
-    if ctx.invoked_subcommand is None:
-        pipeline_demo()
 
 
 @app.command()
@@ -77,30 +73,36 @@ def plan_run(
         ),
     ] = MethodId.VISTA,
     frame_stride: Annotated[int, typer.Option(min=1, max=30, help="Frame subsampling stride.")] = 1,
-    dense_mapping: Annotated[
+    emit_dense_points: Annotated[
         bool,
         typer.Option("--dense/--no-dense", help="Whether the plan should include dense map export."),
     ] = True,
-    evaluate_trajectory: Annotated[
+    emit_sparse_points: Annotated[
         bool,
-        typer.Option(
-            "--eval-traj/--no-eval-traj",
-            help="Whether the plan should reserve a trajectory-evaluation stage.",
-        ),
+        typer.Option("--sparse/--no-sparse", help="Whether the plan should include sparse geometry export."),
     ] = True,
-    compare_to_arcore: Annotated[
+    trajectory_evaluation: Annotated[
         bool,
+        typer.Option("--trajectory-eval/--no-trajectory-eval", help="Whether to plan trajectory evaluation."),
+    ] = True,
+    trajectory_baseline: Annotated[
+        TrajectoryBaselineId,
         typer.Option(
-            "--arcore/--no-arcore",
-            help="Whether the trajectory-evaluation stage specifically targets an ARCore baseline.",
+            "--trajectory-baseline",
+            help="Baseline selected for trajectory evaluation.",
+            case_sensitive=False,
         ),
-    ] = False,
-    ground_truth_cloud: Annotated[
+    ] = TrajectoryBaselineId.REFERENCE,
+    reference_reconstruction: Annotated[
         bool,
         typer.Option(
-            "--reference-cloud/--no-reference-cloud",
+            "--reference/--no-reference",
             help="Whether the plan reserves a reference reconstruction stage.",
         ),
+    ] = False,
+    evaluate_efficiency: Annotated[
+        bool,
+        typer.Option("--efficiency/--no-efficiency", help="Whether the plan reserves efficiency metrics."),
     ] = True,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
@@ -108,78 +110,20 @@ def plan_run(
         experiment_name=experiment_name,
         output_dir=output_dir,
         source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
-        slam=SlamConfig(method=method, emit_dense_points=dense_mapping),
-        reference=ReferenceConfig(enabled=ground_truth_cloud),
-        evaluation=BenchmarkEvaluationConfig(
-            evaluate_trajectory=evaluate_trajectory,
-            compare_to_arcore=compare_to_arcore,
-            evaluate_cloud=dense_mapping and ground_truth_cloud,
-            evaluate_efficiency=True,
+        slam=SlamStageConfig(
+            method=method,
+            outputs={"emit_dense_points": emit_dense_points, "emit_sparse_points": emit_sparse_points},
         ),
+        benchmark=BenchmarkConfig(
+            reference={"enabled": reference_reconstruction},
+            trajectory=TrajectoryBenchmarkConfig(enabled=trajectory_evaluation, baseline_id=trajectory_baseline),
+            cloud=CloudBenchmarkConfig(enabled=emit_dense_points and reference_reconstruction),
+            efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
+        ),
+        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
     )
     plan = request.build()
     console.plog(plan.model_dump(mode="json"))
-
-
-@app.command("run")
-def run_offline(
-    experiment_name: Annotated[str, typer.Argument(help="Human-readable experiment name.")],
-    video_path: Annotated[Path, typer.Argument(help="Path to the input video.")],
-    output_dir: Annotated[Path, typer.Option("--output-dir", help="Root directory for benchmark artifacts.")] = Path(
-        ".artifacts"
-    ),
-    frame_stride: Annotated[int, typer.Option(min=1, max=30, help="Frame subsampling stride.")] = 1,
-    dense_mapping: Annotated[
-        bool,
-        typer.Option("--dense/--no-dense", help="Whether to emit a dense point cloud artifact."),
-    ] = True,
-    max_frames: Annotated[
-        int | None,
-        typer.Option("--max-frames", help="Optional hard cap on the number of frames processed."),
-    ] = None,
-) -> None:
-    """Execute a full offline ViSTA-SLAM benchmark run end-to-end."""
-    from prml_vslam.methods.vista_slam.config import VistaSlamBackendConfig
-    from prml_vslam.methods.vista_slam.runner import VistaSlamBackend
-    from prml_vslam.pipeline.contracts import SequenceManifest
-
-    path_config = get_path_config()
-
-    slam_cfg = SlamConfig(
-        method=MethodId.VISTA,
-        max_frames=max_frames,
-        emit_dense_points=dense_mapping,
-        emit_sparse_points=True,
-    )
-    request = RunRequest(
-        experiment_name=experiment_name,
-        output_dir=output_dir,
-        source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
-        slam=slam_cfg,
-    )
-    plan = request.build(path_config)
-    artifact_root = plan.artifact_root
-    artifact_root.mkdir(parents=True, exist_ok=True)
-
-    console.info("Run plan built — artifact root: %s", artifact_root)
-    console.plog({"run_id": plan.run_id, "stages": [s.id.value for s in plan.stages]})
-
-    sequence = SequenceManifest(
-        sequence_id=plan.run_id,
-        video_path=path_config.resolve_video_path(video_path),
-    )
-
-    backend_cfg = VistaSlamBackendConfig()
-    backend = VistaSlamBackend(config=backend_cfg, path_config=path_config)
-
-    try:
-        artifacts = backend.run_sequence(sequence=sequence, cfg=slam_cfg, artifact_root=artifact_root)
-    except RuntimeError as exc:
-        console.error("ViSTA-SLAM run failed: %s", exc)
-        raise typer.Exit(code=1) from exc
-
-    console.info("Run complete.")
-    console.plog(artifacts.model_dump(mode="json"))
 
 
 @app.command("plan-run-config")
@@ -200,6 +144,32 @@ def plan_run_config(
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
     console.plog(plan.model_dump(mode="json"))
+
+
+@app.command("run-config")
+def run_config(
+    config_path: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to an offline RunRequest TOML file (repo-relative paths are resolved via PathConfig).",
+        ),
+    ],
+) -> None:
+    """Run one offline pipeline request from a TOML config file."""
+    path_config = get_path_config()
+    try:
+        request = load_run_request_toml(path_config=path_config, config_path=config_path)
+        if request.mode is not PipelineMode.OFFLINE:
+            raise RuntimeError("`run-config` currently supports only `offline` requests.")
+        run_service = RunService(path_config=path_config)
+        run_service.start_run(request=request)
+        snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    _print_pipeline_demo_snapshot(snapshot)
+    if snapshot.state is RunState.FAILED:
+        raise typer.Exit(code=1)
 
 
 @app.command("write-demo-config")
@@ -287,14 +257,6 @@ def pipeline_demo(
             help="ADVIO sequence id to replay. Defaults to the first replay-ready local scene.",
         ),
     ] = None,
-    mode: Annotated[
-        PipelineMode,
-        typer.Option(
-            "--mode",
-            help="Run one offline pass or loop the replay as a streaming session.",
-            case_sensitive=False,
-        ),
-    ] = PipelineMode.OFFLINE,
     method: Annotated[
         MethodId,
         typer.Option(
@@ -335,7 +297,7 @@ def pipeline_demo(
     request = build_advio_demo_request(
         path_config=path_config,
         sequence_id=scene.sequence_slug,
-        mode=mode,
+        mode=PipelineMode.STREAMING,
         method=method,
     )
     source = advio_service.build_streaming_source(
@@ -347,11 +309,11 @@ def pipeline_demo(
     console.info(
         "Starting pipeline demo for %s (%s, %s).",
         scene.display_name,
-        mode.value,
+        PipelineMode.STREAMING.value,
         method.value,
     )
     try:
-        run_service.start_run(request=request, source=source)
+        run_service.start_run(request=request, runtime_source=source)
         snapshot = _wait_for_pipeline_terminal_snapshot(
             run_service,
             poll_interval_seconds=poll_interval_seconds,
@@ -363,7 +325,7 @@ def pipeline_demo(
         _print_pipeline_demo_snapshot(snapshot)
         raise typer.Exit(code=130) from exc
     _print_pipeline_demo_snapshot(snapshot)
-    if snapshot.state is PipelineSessionState.FAILED:
+    if snapshot.state is RunState.FAILED:
         raise typer.Exit(code=1)
 
 
@@ -451,9 +413,9 @@ def _wait_for_pipeline_terminal_snapshot(
     run_service: RunService,
     *,
     poll_interval_seconds: float,
-) -> PipelineSessionSnapshot:
+) -> RunSnapshot:
     """Poll the run service until the current demo session reaches a terminal state."""
-    previous_state: PipelineSessionState | None = None
+    previous_state: RunState | None = None
     previous_received_frames = -1
     while True:
         snapshot = run_service.snapshot()
@@ -463,7 +425,7 @@ def _wait_for_pipeline_terminal_snapshot(
                 "Pipeline demo state: %s%s", snapshot.state.value, "" if plan_run_id is None else f" ({plan_run_id})"
             )
             previous_state = snapshot.state
-        if snapshot.received_frames and snapshot.received_frames != previous_received_frames:
+        if isinstance(snapshot, StreamingRunSnapshot) and snapshot.received_frames != previous_received_frames:
             console.info(
                 "Frames=%d sparse=%d dense=%d",
                 snapshot.received_frames,
@@ -471,17 +433,16 @@ def _wait_for_pipeline_terminal_snapshot(
                 snapshot.num_dense_points,
             )
             previous_received_frames = snapshot.received_frames
-        if snapshot.state not in {PipelineSessionState.CONNECTING, PipelineSessionState.RUNNING}:
+        if snapshot.state not in {RunState.PREPARING, RunState.RUNNING}:
             return snapshot
         time.sleep(poll_interval_seconds)
 
 
-def _print_pipeline_demo_snapshot(snapshot: PipelineSessionSnapshot) -> None:
+def _print_pipeline_demo_snapshot(snapshot: RunSnapshot) -> None:
     """Render the final CLI demo snapshot in a compact structured form."""
     payload = {
         "state": snapshot.state.value,
         "error_message": snapshot.error_message or None,
-        "received_frames": snapshot.received_frames,
         "plan": None if snapshot.plan is None else snapshot.plan.model_dump(mode="json"),
         "sequence_manifest": None
         if snapshot.sequence_manifest is None
@@ -489,6 +450,10 @@ def _print_pipeline_demo_snapshot(snapshot: PipelineSessionSnapshot) -> None:
         "slam": None if snapshot.slam is None else snapshot.slam.model_dump(mode="json"),
         "summary": None if snapshot.summary is None else snapshot.summary.model_dump(mode="json"),
     }
+    if isinstance(snapshot, StreamingRunSnapshot):
+        payload["received_frames"] = snapshot.received_frames
+        payload["num_sparse_points"] = snapshot.num_sparse_points
+        payload["num_dense_points"] = snapshot.num_dense_points
     console.plog(payload)
 
 
