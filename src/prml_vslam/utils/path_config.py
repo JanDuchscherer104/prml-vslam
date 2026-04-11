@@ -26,6 +26,12 @@ class RunArtifactPaths(BaseData):
     """Root directory for all artifacts in the run."""
     input_frames_dir: Path
     """Directory containing decoded input frames."""
+    input_timestamps_path: Path
+    """Path to canonical normalized frame timestamps."""
+    input_intrinsics_path: Path
+    """Path to canonical normalized intrinsics metadata."""
+    input_rotation_metadata_path: Path
+    """Path to canonical source-rotation metadata."""
     capture_manifest_path: Path
     """Path to the normalized capture manifest."""
     sequence_manifest_path: Path
@@ -36,6 +42,12 @@ class RunArtifactPaths(BaseData):
     """Path to the exported sparse point cloud."""
     dense_points_path: Path
     """Path to the exported dense point cloud."""
+    viewer_rrd_path: Path
+    """Path to the normalized viewer recording."""
+    native_output_dir: Path
+    """Directory containing preserved native backend outputs."""
+    native_rerun_rrd_path: Path
+    """Path to a preserved native backend Rerun recording."""
     arcore_alignment_path: Path
     """Path to the ARCore alignment artifact."""
     trajectory_metrics_path: Path
@@ -58,11 +70,17 @@ class RunArtifactPaths(BaseData):
         return cls(
             artifact_root=resolved_root,
             input_frames_dir=(resolved_root / "input" / "frames").resolve(),
+            input_timestamps_path=(resolved_root / "input" / "timestamps.json").resolve(),
+            input_intrinsics_path=(resolved_root / "input" / "intrinsics.yaml").resolve(),
+            input_rotation_metadata_path=(resolved_root / "input" / "rotation_metadata.json").resolve(),
             capture_manifest_path=(resolved_root / "input" / "capture_manifest.json").resolve(),
             sequence_manifest_path=(resolved_root / "input" / "sequence_manifest.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
+            viewer_rrd_path=(resolved_root / "visualization" / "run.rrd").resolve(),
+            native_output_dir=(resolved_root / "native").resolve(),
+            native_rerun_rrd_path=(resolved_root / "native" / "rerun_recording.rrd").resolve(),
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
             trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),

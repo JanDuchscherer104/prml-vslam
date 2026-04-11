@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
+from prml_vslam.benchmark import TrajectoryBaselineId
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.pipeline.contracts import (
+from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage, RunPlanStageId
+from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
-    LiveSourceSpec,
     Record3DLiveSourceSpec,
-    RunPlan,
-    RunPlanStage,
-    RunPlanStageId,
     RunRequest,
-    SlamConfig,
+    SlamStageConfig,
     SourceSpec,
     VideoSourceSpec,
 )
@@ -57,13 +55,15 @@ class RunPlannerService:
 
     def _build_stages(self, request: RunRequest, run_paths: RunArtifactPaths) -> list[RunPlanStage]:
         slam_output_names = ["trajectory_path"]
-        if request.slam.emit_sparse_points:
+        if request.slam.outputs.emit_sparse_points:
             slam_output_names.append("sparse_points_path")
-        if request.slam.emit_dense_points:
+        if request.slam.outputs.emit_dense_points:
             slam_output_names.append("dense_points_path")
+        if request.visualization.export_viewer_rrd:
+            slam_output_names.append("viewer_rrd_path")
         optional_stages = (
             (
-                request.reference.enabled,
+                request.benchmark.reference.enabled,
                 (
                     RunPlanStageId.REFERENCE_RECONSTRUCTION,
                     "Build Reference Reconstruction",
@@ -72,16 +72,16 @@ class RunPlannerService:
                 ),
             ),
             (
-                request.evaluation.compare_to_arcore,
+                request.benchmark.trajectory.enabled,
                 (
                     RunPlanStageId.TRAJECTORY_EVALUATION,
                     "Evaluate Trajectory",
-                    "Align the trajectory against the available reference and persist trajectory metrics.",
+                    self._trajectory_summary(request),
                     ("trajectory_metrics_path",),
                 ),
             ),
             (
-                request.evaluation.evaluate_cloud,
+                request.benchmark.cloud.enabled,
                 (
                     RunPlanStageId.CLOUD_EVALUATION,
                     "Evaluate Dense Cloud",
@@ -90,7 +90,7 @@ class RunPlannerService:
                 ),
             ),
             (
-                request.evaluation.evaluate_efficiency,
+                request.benchmark.efficiency.enabled,
                 (
                     RunPlanStageId.EFFICIENCY_EVALUATION,
                     "Measure Efficiency",
@@ -168,23 +168,30 @@ class RunPlannerService:
                     f"Capture the Record3D {transport.label.lower()} source '{source_descriptor}' {persistence} "
                     "into a replayable sequence manifest."
                 )
-            case LiveSourceSpec(source_id=source_id, persist_capture=persist_capture):
-                persistence = "with persistence" if persist_capture else "without persistence"
-                return f"Capture the live source '{source_id}' {persistence} into a replayable sequence manifest."
 
     @staticmethod
-    def _method_summary(config: SlamConfig) -> str:
+    def _method_summary(config: SlamStageConfig) -> str:
         artifact_names = ["trajectory"]
-        if config.emit_sparse_points:
+        if config.outputs.emit_sparse_points:
             artifact_names.append("sparse geometry")
-        if config.emit_dense_points:
+        if config.outputs.emit_dense_points:
             artifact_names.append("dense geometry")
+        if config.backend.config_path is not None:
+            artifact_names.append(f"config from {config.backend.config_path.name}")
         return f"Plan the {config.method.display_name} wrapper and export {', '.join(artifact_names)} artifacts."
 
     @staticmethod
+    def _trajectory_summary(request: RunRequest) -> str:
+        baseline_label = {
+            TrajectoryBaselineId.REFERENCE: "reference trajectory",
+            TrajectoryBaselineId.ARCORE: "ARCore baseline",
+        }[request.benchmark.trajectory.baseline_id]
+        return f"Evaluate the estimated trajectory against the selected {baseline_label} and persist metrics."
+
+    @staticmethod
     def _validate_request(request: RunRequest) -> None:
-        if request.evaluation.evaluate_cloud and not request.slam.emit_dense_points:
-            raise ValueError("Cloud evaluation requires `slam.emit_dense_points=True`.")
+        if request.benchmark.cloud.enabled and not request.slam.outputs.emit_dense_points:
+            raise ValueError("Cloud evaluation requires `slam.outputs.emit_dense_points=True`.")
 
 
 __all__ = ["RunPlannerService"]

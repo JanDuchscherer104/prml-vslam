@@ -20,7 +20,24 @@ from .advio_models import (
 from .advio_sequence import AdvioOfflineSample, AdvioSequence
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts import SequenceManifest
+    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+
+
+class AdvioOfflineSequenceSource:
+    """ADVIO-backed offline source used by pipeline-owned batch runs."""
+
+    def __init__(self, *, service: AdvioDatasetService, sequence_id: int) -> None:
+        self._service = service
+        self._sequence_id = sequence_id
+
+    @property
+    def label(self) -> str:
+        """Return the human-readable ADVIO scene label."""
+        return self._service.scene(self._sequence_id).display_name
+
+    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+        """Materialize the normalized sequence boundary for one offline run."""
+        return self._service.build_sequence_manifest(sequence_id=self._sequence_id, output_dir=output_dir)
 
 
 class AdvioStreamingSequenceSource(StreamingSequenceSource):
@@ -90,6 +107,10 @@ class AdvioDatasetService(AdvioDownloadManager):
 
     def build_sequence_manifest(self, *, sequence_id: int, output_dir: Path | None = None) -> SequenceManifest:
         return self._sequence(sequence_id).to_sequence_manifest(output_dir=output_dir)
+
+    def build_offline_source(self, *, sequence_id: int) -> AdvioOfflineSequenceSource:
+        """Return a source compatible with pipeline-owned offline runs."""
+        return AdvioOfflineSequenceSource(service=self, sequence_id=sequence_id)
 
     def build_streaming_source(
         self,

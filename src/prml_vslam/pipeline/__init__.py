@@ -1,15 +1,10 @@
 """Pipeline orchestration contracts re-exported for package users."""
 
-from prml_vslam.methods.protocols import SlamBackend, SlamSession
-
-from .contracts import (
-    PipelineMode,
-    RunPlan,
-    RunRequest,
-    RunSummary,
-    SequenceManifest,
-    SlamArtifacts,
-)
+from .contracts.artifacts import SlamArtifacts
+from .contracts.plan import RunPlan
+from .contracts.provenance import RunSummary
+from .contracts.request import PipelineMode, RunRequest
+from .contracts.sequence import SequenceManifest
 
 __all__ = [
     "PipelineMode",
@@ -18,6 +13,4 @@ __all__ = [
     "SequenceManifest",
     "RunSummary",
     "SlamArtifacts",
-    "SlamBackend",
-    "SlamSession",
 ]
