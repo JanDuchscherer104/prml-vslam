@@ -33,7 +33,11 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own method execution, source normalization, or app state
 - `interfaces`
   - owns repo-wide shared datamodels only
-  - examples include `CameraIntrinsics`, `SE3Pose`, and `FramePacket`
+  - examples include `CameraIntrinsics`, `SE3Pose`, `FrameTransform`, and `FramePacket`
+- `benchmark`
+  - owns thin benchmark-policy composition such as evaluation enablement and baseline selection
+- `visualization`
+  - owns viewer/export policy plus the repo-owned Rerun integration layer
 - `io`
   - owns transport adapters, packet ingestion, replay mechanics, and transport-level normalization
   - does not own app session state or benchmark policy
@@ -62,13 +66,15 @@ Use this file for package-root ownership rules and cross-package contract constr
 - Shared repo-wide behavior seams belong in `prml_vslam.protocols.*`.
 - `prml_vslam.protocols.runtime` owns `FramePacketStream`.
 - `prml_vslam.protocols.source` owns shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource`.
-- Package-local DTOs, configs, manifests, requests, and results belong in `<package>/contracts.py`.
+- Package-local DTOs, configs, manifests, requests, and results belong in `<package>/contracts.py` or
+  `<package>/contracts/` when a package owns several distinct contract slices.
 - Package-local `Protocol` seams belong in `<package>/protocols.py` when a package truly owns that behavior boundary.
 - `prml_vslam.methods.protocols` owns `SlamBackend` and `SlamSession`.
 - `prml_vslam.app.models` owns Streamlit-only UI and session state.
 - `services.py` modules own implementations only; they must not become the home of public contract types.
 - The app must stay a launch and monitoring surface rather than a second pipeline implementation.
-- The pipeline owns one SLAM-stage config and one SLAM artifact bundle per backend; dense output is a capability of that stage, not a separate backend contract.
+- The pipeline owns one SLAM-stage request and one SLAM artifact bundle per backend; backend-private config and output
+  policy belong in `methods`.
 - External-method wrappers must stay thin and normalize into repo-owned pipeline artifacts instead of inventing parallel public result shapes.
 - Record3D live pipeline requests must use a transport-aware typed source contract instead of encoding USB or Wi-Fi details into ad hoc `source_id` strings alone.
 - `PathConfig` remains the single owner of repo-owned path semantics.

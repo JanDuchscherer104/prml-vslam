@@ -1,25 +1,26 @@
 # Methods
 
-This README explains the current implementation in `prml_vslam.methods`.
+This package owns backend ids, backend-private config, output policy, runtime
+update DTOs, and thin wrappers around external SLAM systems.
 
-Use [REQUIREMENTS.md](./REQUIREMENTS.md) for the concise package contract. Use this file for the currently implemented local method surfaces.
+## Current Structure
 
-## Current Implementation
-
-`prml_vslam.methods` is intentionally a mock interface layer in this repository.
-
-The package currently owns the smallest local surface needed by the rest of the codebase:
-
-- typed method selection enums
-- SLAM backend and session protocols in `methods/protocols.py`
-- one typed mock SLAM backend config that builds the repository-local runtime via `setup_target()`
-- deterministic offline and streaming mock runtimes that materialize pipeline-owned artifacts
-- local path bookkeeping for mock installs
+- `contracts.py`
+  - `MethodId`, `SlamBackendConfig`, `SlamOutputPolicy`
+- `updates.py`
+  - `SlamUpdate`
+- `protocols.py`
+  - `OfflineSlamBackend`, `StreamingSlamBackend`, `SlamSession`
+- `mock_vslam.py`
+  - repository-local mock backend used by the current demo slice
+- `vista/`
+  - offline-first ViSTA wrapper scaffolding
 
 ## Current Boundaries
 
-- Real ViSTA-SLAM or MASt3R-SLAM orchestration is not implemented in the current codebase.
-- Future real wrappers should stay thin, call upstream entry points, and normalize outputs into pipeline-owned artifacts rather than inventing parallel public result shapes.
-- The package should not grow repository-owned visualization logic or benchmark policy unless a later task changes scope explicitly.
-
-Use `BaseConfig` only for runtime setup and configuration objects.
+- wrappers consume normalized repo-owned inputs and normalize outputs back into
+  pipeline-owned `SlamArtifacts`
+- benchmark policy does not live here
+- viewer/export logic does not live here
+- upstream-native artifacts may be preserved, but the canonical repo surface is
+  still the normalized pipeline artifact contract

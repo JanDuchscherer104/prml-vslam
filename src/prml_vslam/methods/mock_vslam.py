@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -10,9 +9,11 @@ from numpy.typing import NDArray
 
 from prml_vslam.datasets.advio import load_advio_calibration
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
-from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
-from prml_vslam.pipeline.contracts import ArtifactRef, SequenceManifest, SlamArtifacts, SlamConfig, SlamUpdate
+from prml_vslam.methods.updates import SlamUpdate
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import BaseConfig
 from prml_vslam.utils.geometry import (
     load_tum_trajectory,
@@ -47,18 +48,24 @@ class MockSlamBackend(SlamBackend):
         self.config = config
         self.method_id = config.method_id
 
-    def start_session(self, cfg: SlamConfig, artifact_root: Path) -> MockSlamSession:
+    def start_session(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> MockSlamSession:
         """Prepare one streaming-capable session."""
-        return MockSlamSession(config=cfg, artifact_root=artifact_root)
+        return MockSlamSession(backend_config=backend_config, output_policy=output_policy, artifact_root=artifact_root)
 
     def run_sequence(
         self,
         sequence: SequenceManifest,
-        cfg: SlamConfig,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run the mock backend over a materialized sequence manifest offline."""
-        session = self.start_session(cfg, artifact_root)
+        session = self.start_session(backend_config, output_policy, artifact_root)
         intrinsics = _load_sequence_intrinsics(sequence)
         reference_path = sequence.reference_tum_path or sequence.arcore_tum_path
         if reference_path is not None and reference_path.exists():
@@ -86,12 +93,18 @@ class MockSlamBackend(SlamBackend):
 class MockSlamSession(SlamSession):
     """Stateful mock SLAM session shared by offline and streaming execution."""
 
-    def __init__(self, *, config: SlamConfig, artifact_root: Path) -> None:
-        self.config = config
+    def __init__(
+        self,
+        *,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> None:
+        self.backend_config = backend_config
+        self.output_policy = output_policy
         self._artifact_root = artifact_root.expanduser().resolve()
         self._poses: list[SE3Pose] = []
         self._timestamps_s: list[float] = []
-        self._preview_events: list[dict[str, object]] = []
         self._dense_point_chunks_xyz: list[NDArray[np.float64]] = []
         self._num_dense_points = 0
 
@@ -115,7 +128,7 @@ class MockSlamSession(SlamSession):
             self._timestamps_s,
         )
         sparse_points_ref = None
-        if self.config.emit_sparse_points:
+        if self.output_policy.emit_sparse_points:
             sparse_points_path = write_point_cloud_ply(
                 self._artifact_root / "slam" / "sparse_points.ply",
                 np.asarray([(pose.tx, pose.ty, pose.tz) for pose in self._poses], dtype=np.float64)
@@ -129,7 +142,7 @@ class MockSlamSession(SlamSession):
             )
 
         dense_points_ref = None
-        if self.config.emit_dense_points:
+        if self.output_policy.emit_dense_points:
             dense_points_path = write_point_cloud_ply(
                 self._artifact_root / "dense" / "dense_points.ply",
                 np.vstack(self._dense_point_chunks_xyz)
@@ -142,7 +155,6 @@ class MockSlamSession(SlamSession):
                 fingerprint=f"dense-points-{self._num_dense_points}",
             )
 
-        preview_log_path = self._write_preview_log(self._artifact_root / "slam" / "preview_log.jsonl")
         return SlamArtifacts(
             trajectory_tum=_artifact_ref(
                 trajectory_path,
@@ -151,11 +163,6 @@ class MockSlamSession(SlamSession):
             ),
             sparse_points_ply=sparse_points_ref,
             dense_points_ply=dense_points_ref,
-            preview_log_jsonl=_artifact_ref(
-                preview_log_path,
-                kind="jsonl",
-                fingerprint=f"preview-log-{len(self._poses)}",
-            ),
         )
 
     def fallback_pose(self) -> SE3Pose:
@@ -180,24 +187,11 @@ class MockSlamSession(SlamSession):
         self._poses.append(pose)
         self._timestamps_s.append(timestamp_s)
 
-        if self.config.emit_dense_points:
+        if self.output_policy.emit_dense_points:
             camera_points = pointmap.reshape(-1, 3) if pointmap is not None else self._synthetic_local_patch_camera()
             self._append_dense_points(transform_points_world_camera(camera_points, pose))
 
-        num_sparse_points = max(len(self._poses) * 12, 12) if self.config.emit_sparse_points else 0
-        self._preview_events.append(
-            {
-                "seq": seq,
-                "timestamp_ns": timestamp_ns,
-                "timestamp_s": timestamp_s,
-                "num_sparse_points": num_sparse_points,
-                "num_dense_points": self._num_dense_points,
-                "used_source_pose": used_source_pose,
-                "tx": pose.tx,
-                "ty": pose.ty,
-                "tz": pose.tz,
-            }
-        )
+        num_sparse_points = max(len(self._poses) * 12, 12) if self.output_policy.emit_sparse_points else 0
         return SlamUpdate(
             seq=seq,
             timestamp_ns=timestamp_ns,
@@ -220,14 +214,6 @@ class MockSlamSession(SlamSession):
         if not self._timestamps_s:
             return float(timestamp_s)
         return max(float(timestamp_s), self._timestamps_s[-1] + 1e-3)
-
-    def _write_preview_log(self, path: Path) -> Path:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            "\n".join(json.dumps(event, sort_keys=True) for event in self._preview_events) + "\n",
-            encoding="utf-8",
-        )
-        return path.resolve()
 
     def build_pointmap(
         self,
