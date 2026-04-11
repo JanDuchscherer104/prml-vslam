@@ -10,7 +10,7 @@ from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CameraIntrinsics
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils import BaseData
 
 _CSV_FLOAT_PATTERN = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
@@ -23,7 +23,7 @@ _NUMERIC_CSV_ROW_PATTERN = re.compile(
 class AdvioCalibration(BaseData):
     calibration_path: Path
     intrinsics: CameraIntrinsics
-    t_cam_imu: NDArray[np.float64]
+    t_cam_imu: FrameTransform
 
 
 def load_advio_frame_timestamps_ns(path: Path) -> NDArray[np.int64]:
@@ -72,7 +72,11 @@ def load_advio_calibration(path: Path) -> AdvioCalibration:
             distortion_model=str(distortion.get("type")) if distortion.get("type") is not None else None,
             distortion_coefficients=tuple(_expect_float_list(distortion, "parameters", "data")),
         ),
-        t_cam_imu=np.asarray(_expect_matrix(camera, "T_cam_imu"), dtype=np.float64),
+        t_cam_imu=FrameTransform.from_matrix(
+            np.asarray(_expect_matrix(camera, "T_cam_imu"), dtype=np.float64),
+            target_frame="camera",
+            source_frame="imu",
+        ),
     )
 
 

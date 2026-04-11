@@ -18,7 +18,7 @@ from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioPoseSource, A
 from .advio_replay_adapter import open_advio_stream
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts import SequenceManifest
+    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 
 class AdvioSequencePaths(BaseData):
@@ -120,7 +120,7 @@ class AdvioSequence(BaseData):
         )
 
     def to_sequence_manifest(self, *, output_dir: Path | None = None) -> SequenceManifest:
-        from prml_vslam.pipeline.contracts import SequenceManifest
+        from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
         paths = self._resolve_paths(require_arcore=False)
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir

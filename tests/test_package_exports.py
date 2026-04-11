@@ -27,8 +27,6 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
         "SequenceManifest",
         "RunSummary",
         "SlamArtifacts",
-        "SlamBackend",
-        "SlamSession",
     ]
     assert not hasattr(pipeline_package, "PipelineSessionService")
     assert not hasattr(pipeline_package, "PipelineSessionSnapshot")

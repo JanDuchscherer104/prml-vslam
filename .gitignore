@@ -237,3 +237,7 @@ docs/slides/**/*.svgz
 README_files/
 src/prml_vslam/app/README.html
 docs/literature/ViSTA-SLAM.qmd
+docs/literature/pdf/
+docs/literature/tex-src/*
+!docs/literature/tex-src/README.md
+!docs/literature/tex-src/sources.jsonl

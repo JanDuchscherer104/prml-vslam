@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.methods.contracts import MethodId
-from prml_vslam.pipeline.contracts import SequenceManifest, SlamArtifacts, SlamConfig, SlamUpdate
+from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.updates import SlamUpdate
+from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
+from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 
 @runtime_checkable
@@ -30,7 +32,8 @@ class OfflineSlamBackend(Protocol):
     def run_sequence(
         self,
         sequence: SequenceManifest,
-        cfg: SlamConfig,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run the backend over a materialized sequence and persist artifacts."""
@@ -42,7 +45,12 @@ class StreamingSlamBackend(Protocol):
 
     method_id: MethodId
 
-    def start_session(self, cfg: SlamConfig, artifact_root: Path) -> SlamSession:
+    def start_session(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> SlamSession:
         """Prepare a streaming-capable session for incremental frame updates."""
 
 

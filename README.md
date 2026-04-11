@@ -8,50 +8,13 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 
 ### Requirements
 
-- [conda](https://docs.conda.io/) (or mamba-compatible) environment manager
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
 - [typst](https://typst.app/open-source/#download) for slides & report
-- System OpenCV dev headers: `sudo apt-get install -y libopencv-dev` (required to build the ViSTA-SLAM loop-detector extension)
 
 ### Bootstrap
 
 ```bash
-# 1. Clone with submodules (includes the ViSTA-SLAM upstream repo)
-git clone --recurse-submodules <repo-url>
-# if already cloned:
-git submodule update --init --recursive
-
-# 2. Create and activate the conda environment.
-#    This pins the CUDA 12.1 torch stack and installs uv.
-conda env create -f environment.yml
-conda activate prml-vslam
-
-# 3. Sync dependencies from pyproject.toml.
 uv sync --all-extras
-
-# 4. Build the DBoW3Py loop-detector C extension
-#    Output goes directly to external/vista-slam/ so it is importable via sys.path.
-#    Requires libopencv-dev; one-time step after cloning.
-cmake -S external/vista-slam/DBoW3Py -B external/vista-slam/DBoW3Py/cmake_build \
-  -DPYTHON_EXECUTABLE=$(python -c "import sys; print(sys.executable)") \
-  -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(pwd)/external/vista-slam \
-  -DCMAKE_BUILD_TYPE=Release
-make -C external/vista-slam/DBoW3Py/cmake_build -j$(nproc)
-
-# 5. (Optional) Build the CUDA-accelerated RoPE2D positional encoding.
-#    Requires CUDA 12.1 torch. Without this step the
-#    PyTorch fallback is used — correct but slower.
-cd external/vista-slam/vista_slam/sta_model/pos_embed/curope
-python setup.py build_ext --inplace
-cd -
-
-# 6. Download ViSTA-SLAM pretrained weights into external/vista-slam/pretrains/
-#    (one-time step, not git tracked)
-wget -O external/vista-slam/pretrains/frontend_sta_weights.pth \
-  "https://huggingface.co/zhangganlin/vista_slam/resolve/main/frontend_sta_weights.pth?download=true"
-wget -O external/vista-slam/pretrains/ORBvoc.txt \
-  "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?download=true"
-
-# 7. Install pre-commit hooks and run CI checks
 uv run pre-commit install
 make ci
 ```
@@ -78,29 +41,7 @@ Repo-owned datasets and generated benchmark outputs resolve under `.data/` and `
 - `docs/Questions.md`
   - update-sessions related clarification log for challenge scope and intent
 
-### ViSTA-SLAM: Run Offline
-
-Run the full offline ViSTA-SLAM pipeline on any video:
-
-```bash
-uv run prml-vslam run "My Experiment" path/to/video.mp4 \
-  --output-dir .artifacts \
-  --max-frames 200          # optional: cap frames for quick tests
-```
-
-This command:
-1. Extracts frames from the video into `.artifacts/<slug>/vista/input/frames/`
-2. Runs ViSTA-SLAM in-process (no subprocess; imports from `external/vista-slam/`)
-3. Writes `trajectory.tum` and `sparse_points.ply` into `.artifacts/<slug>/vista/slam/`
-
-Use the demo video bundled with the submodule for a quick smoke test:
-
-```bash
-uv run prml-vslam run "Smoke Test" external/vista-slam/media/tumrgbd_room.mp4 \
-  --max-frames 50
-```
-
-### Streamlit Workbench
+## Streamlit Workbench
 
 ```bash
 uv sync
@@ -121,7 +62,8 @@ Pipeline contract and extension guidance lives in [`src/prml_vslam/pipeline/READ
 
 ## TOML-First Run Planning
 
-For durable and reproducible planning, store a [`RunRequest`](src/prml_vslam/pipeline/contracts.py#L116) as TOML under `.configs/pipelines/` and resolve it through the [`plan-run-config`](src/prml_vslam/main.py) CLI command:
+For durable and reproducible planning, store a [`RunRequest`](src/prml_vslam/pipeline/README.md) as TOML under
+`.configs/pipelines/` and resolve it through the [`plan-run-config`](src/prml_vslam/main.py) CLI command:
 
 ```toml
 experiment_name = "advio-office-offline-vista"
@@ -134,28 +76,48 @@ frame_stride = 2
 
 [slam]
 method = "vista"
+
+[slam.outputs]
 emit_dense_points = true
 emit_sparse_points = true
 
-[reference]
+[benchmark.reference]
 enabled = false
 
-[evaluation]
-evaluate_trajectory = true
-compare_to_arcore = false
-evaluate_cloud = false
-evaluate_efficiency = true
+[benchmark.trajectory]
+enabled = true
+baseline_id = "reference"
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = true
 ```
 
 ```bash
 uv run prml-vslam plan-run-config offline-advio-15-vista.toml
+uv run prml-vslam run-config offline-advio-15-vista.toml
 ```
 
-The TOML shape mirrors the nested [`RunRequest`](src/prml_vslam/pipeline/contracts.py#L116) model: top-level fields configure the run itself, while `[source]`, `[slam]`, `[reference]`, and `[evaluation]` map directly onto the nested config objects owned by [`contracts.py`](src/prml_vslam/pipeline/contracts.py). That is why an optional method-specific backend config path lives in `[slam]` as `config_path = "..."`, because the field is owned by [`SlamConfig`](src/prml_vslam/pipeline/contracts.py) rather than by the top-level request.
+The TOML shape mirrors the nested `RunRequest` model: top-level fields configure
+the run itself, while `[source]`, `[slam]`, `[benchmark]`, and
+`[visualization]` map directly onto the nested config objects owned by the
+repository. Method-private config now lives under `[slam.backend]`, and output
+policy lives under `[slam.outputs]`.
 
-[`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through the repo-owned helpers described in [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md). The config file itself is resolved through [`PathConfig`](src/prml_vslam/utils/path_config.py), while nested TOML paths are hydrated as written and should be normalized explicitly in runtime code when repo-relative behavior is required.
+[`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through the
+repo-owned helpers described in
+[`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md). Use
+[`run-config`](src/prml_vslam/main.py) for true offline execution. The config
+file itself is resolved through
+[`PathConfig`](src/prml_vslam/utils/path_config.py), while nested TOML paths are
+hydrated as written and should be normalized explicitly in runtime code when
+repo-relative behavior is required.
 
-`evaluate_trajectory` reserves the trajectory-evaluation stage in the run plan. When enabled, `compare_to_arcore` can be set to specifically include a comparison against an ARCore baseline if the dataset supports it.
+`pipeline-demo` now refers only to the bounded ADVIO streaming demo slice.
+Offline execution uses the new `run-config` path instead of reusing the
+streaming-first demo launcher.
 
 ## Challenge Context
 
