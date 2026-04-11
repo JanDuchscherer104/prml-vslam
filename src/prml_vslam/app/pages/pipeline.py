@@ -148,7 +148,6 @@ def render(context: AppContext) -> None:
         preview_plan, preview_plan_error = (
             (None, None) if preview_request is None else _build_preview_plan(preview_request, context.path_config)
         )
-<<<<<<< HEAD
         support_error = _request_support_error(
             request=preview_request,
             plan=preview_plan,
@@ -171,33 +170,6 @@ def render(context: AppContext) -> None:
                 st.dataframe(preview_plan.stage_rows(), hide_index=True, width="stretch")
             if start_error is not None:
                 st.warning(start_error)
-=======
-        left, right = st.columns(2, gap="large")
-        with left:
-            mode = st.selectbox(
-                "Mode",
-                options=list(PipelineMode),
-                index=list(PipelineMode).index(page_state.mode),
-                format_func=lambda item: item.label,
-            )
-            method = st.selectbox(
-                "Method",
-                options=list(MethodId),
-                index=list(MethodId).index(page_state.method),
-                format_func=lambda item: item.display_name,
-            )
-        with right:
-            pose_source = st.selectbox(
-                "Pose Source",
-                options=list(AdvioPoseSource),
-                index=list(AdvioPoseSource).index(page_state.pose_source),
-                format_func=lambda item: item.label,
-            )
-            respect_video_rotation = st.toggle(
-                "Respect video rotation metadata",
-                value=page_state.respect_video_rotation,
-            )
->>>>>>> 774b8aa (feat(pipeline): route ViSTA-SLAM backend in streaming factory)
         start_requested, stop_requested = render_live_action_slot(
             is_active=is_active,
             start_label="Start run",
