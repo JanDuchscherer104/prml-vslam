@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from pytransform3d.rotations import matrix_from_quaternion
 from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
@@ -31,9 +32,6 @@ from prml_vslam.benchmark import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
     EfficiencyBenchmarkConfig,
-    PreparedBenchmarkInputs,
-    ReferenceSource,
-    ReferenceTrajectoryRef,
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.datasets.advio import AdvioPoseSource
@@ -41,20 +39,28 @@ from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tu
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.contracts import SelectionSnapshot
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
+from prml_vslam.interfaces import (
+    CameraIntrinsics,
+    FramePacket,
+    FrameTransform,
+)
+from prml_vslam.io.record3d import (
+    Record3DDevice,
+    Record3DTransportId,
+)
 from prml_vslam.methods import MethodId
+from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    LiveTransportId,
-    Record3DLiveSourceSpec,
-    SlamStageConfig,
-)
+from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, LiveTransportId, Record3DLiveSourceSpec, SlamStageConfig
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.state import RunSnapshot, RunState
+from prml_vslam.pipeline.streaming import (
+    StreamingRunner,
+    _is_keyframe_like_update,
+)
 from prml_vslam.utils.path_config import PathConfig
 from prml_vslam.visualization import VisualizationConfig
 
@@ -113,7 +119,7 @@ enabled = false
 
 [benchmark.trajectory]
 enabled = false
-baseline_source = "ground_truth"
+baseline_id = "reference"
 
 [benchmark.cloud]
 enabled = false
@@ -143,7 +149,7 @@ def _load_pipeline_request_fixture() -> RunRequest:
             cloud=CloudBenchmarkConfig(enabled=False),
             efficiency=EfficiencyBenchmarkConfig(enabled=False),
         ),
-        visualization=VisualizationConfig(connect_live_viewer=False),
+        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
     )
 
 
@@ -190,7 +196,7 @@ def _record3d_pipeline_request(
             cloud=CloudBenchmarkConfig(enabled=False),
             efficiency=EfficiencyBenchmarkConfig(enabled=False),
         ),
-        visualization=VisualizationConfig(connect_live_viewer=False),
+        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
     )
 
 
@@ -496,6 +502,8 @@ def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> No
     from prml_vslam.app.pages import pipeline as pipeline_page
 
     pipeline_page._compute_evo_preview.cache_clear()
+    from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+
     reference_path = tmp_path / "reference.tum"
     estimate_path = tmp_path / "estimate.tum"
     _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0), (0.2, 2.0, 1.0, 0.0)])
@@ -504,7 +512,9 @@ def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> No
     snapshot = RunSnapshot(
         sequence_manifest=SequenceManifest(sequence_id="advio-15"),
         benchmark_inputs=PreparedBenchmarkInputs(
-            reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)]
+            reference_trajectories=[
+                ReferenceTrajectoryRef(path=reference_path, source=ReferenceSource.GROUND_TRUTH),
+            ]
         ),
         slam=SlamArtifacts(
             trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="trajectory"),
@@ -535,6 +545,219 @@ def test_pipeline_page_evo_preview_fails_when_timestamps_do_not_match(tmp_path: 
             reference_mtime_ns=reference_path.stat().st_mtime_ns,
             estimate_mtime_ns=estimate_path.stat().st_mtime_ns,
         )
+
+
+def test_pipeline_page_formats_mstr_as_mock_preview() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    assert pipeline_page._pipeline_method_label(MethodId.MSTR) == "Mock Preview"
+
+
+def test_pipeline_page_metrics_distinguish_packet_and_backend_rates(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    snapshot = StreamingRunSnapshot(
+        state=RunState.RUNNING,
+        plan=RunPlan(
+            run_id="vista-stream",
+            mode=PipelineMode.STREAMING,
+            method=MethodId.VISTA,
+            artifact_root=tmp_path / ".artifacts" / "vista-stream" / "vista",
+            source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        ),
+        received_frames=12,
+        measured_fps=18.5,
+        accepted_keyframes=3,
+        backend_fps=4.25,
+        num_sparse_points=7,
+        num_dense_points=41,
+    )
+
+    metrics = pipeline_page._pipeline_metrics(snapshot)
+
+    assert metrics[2] == ("Received Frames", "12")
+    assert metrics[3] == ("Packet FPS", "18.50 fps")
+    assert metrics[4] == ("Accepted Keyframes", "3")
+    assert metrics[5] == ("Keyframe FPS", "4.25 fps")
+
+
+def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    info_messages: list[str] = []
+    trajectory_call: dict[str, object] = {}
+    snapshot = StreamingRunSnapshot(
+        plan=RunPlan(
+            run_id="vista-stream",
+            mode=PipelineMode.STREAMING,
+            method=MethodId.VISTA,
+            artifact_root=tmp_path / ".artifacts" / "vista-stream" / "vista",
+            source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        ),
+        latest_packet=FramePacket(
+            seq=0,
+            timestamp_ns=0,
+            rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
+        ),
+        latest_slam_update=SlamUpdate(seq=0, timestamp_ns=0, is_keyframe=True),
+        )
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page.st, "tabs", lambda *_args, **_kwargs: [DummyContext() for _ in range(4)])
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "info", lambda message, *args, **kwargs: info_messages.append(message))
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_live_trajectory",
+        lambda **kwargs: trajectory_call.update(kwargs),
+    )
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_camera_intrinsics",
+        lambda *args, **kwargs: None,
+    )
+
+    pipeline_page._render_pipeline_tabs(snapshot)
+    monkeypatch.undo()
+
+    assert pipeline_page._VISTA_POINTMAP_EMPTY_MESSAGE in info_messages
+    assert trajectory_call["empty_message"] == pipeline_page._VISTA_TRAJECTORY_EMPTY_MESSAGE
+
+
+def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    preview_image = np.full((2, 2), fill_value=7.0, dtype=np.float32)
+    image_payloads: list[np.ndarray] = []
+    trajectory_call: dict[str, object] = {}
+    snapshot = StreamingRunSnapshot(
+        plan=RunPlan(
+            run_id="mock-stream",
+            mode=PipelineMode.STREAMING,
+            method=MethodId.MSTR,
+            artifact_root=tmp_path / ".artifacts" / "mock-stream" / "mstr",
+            source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        ),
+        latest_packet=FramePacket(
+            seq=1,
+            timestamp_ns=1,
+            rgb=np.ones((2, 2, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
+        ),
+        latest_slam_update=SlamUpdate(
+            seq=1,
+            timestamp_ns=1,
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            num_sparse_points=12,
+            num_dense_points=4,
+            pointmap=np.zeros((2, 2, 3), dtype=np.float32),
+            preview_rgb=None,
+        ),
+
+        accepted_keyframes=1,
+        backend_fps=9.0,
+        trajectory_positions_xyz=np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64),
+        trajectory_timestamps_s=np.asarray([0.0, 1.0], dtype=np.float64),
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page.st, "tabs", lambda *_args, **_kwargs: [DummyContext() for _ in range(4)])
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "image", lambda image, *args, **kwargs: image_payloads.append(image))
+    monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_live_trajectory",
+        lambda **kwargs: trajectory_call.update(kwargs),
+    )
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_camera_intrinsics",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(pipeline_page, "_pointmap_preview_image", lambda pointmap: preview_image)
+
+    pipeline_page._render_pipeline_tabs(snapshot)
+    monkeypatch.undo()
+
+    assert any(image is preview_image for image in image_payloads)
+    assert np.array_equal(trajectory_call["positions_xyz"], snapshot.trajectory_positions_xyz)
+    assert np.array_equal(trajectory_call["timestamps_s"], snapshot.trajectory_timestamps_s)
+
+
+def test_pipeline_page_pointmap_preview_image_uses_generic_projection() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    pointmap = np.array(
+        [
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+        ],
+        dtype=np.float32,
+    )
+
+    preview = pipeline_page._pointmap_preview_image(pointmap)
+
+    assert preview is not None
+    assert preview.shape == (2, 2)
+    assert not np.array_equal(preview, pointmap[..., 2])
+
+
+def test_packet_session_metrics_separate_packet_and_keyframe_history() -> None:
+    from prml_vslam.utils.packet_session import PacketSessionMetrics
+
+    metrics = PacketSessionMetrics(fps_window_size=4, trajectory_window_size=4)
+    metrics.record_packet(arrival_time_s=0.0)
+    metrics.record_packet(arrival_time_s=1.0)
+    metrics.record_keyframe(
+        arrival_time_s=1.0,
+        position_xyz=np.array([1.0, 0.0, 0.0], dtype=np.float64),
+        trajectory_time_s=0.5,
+    )
+    fields = metrics.snapshot_fields()
+
+    assert fields["received_frames"] == 2
+    assert fields["accepted_keyframes"] == 1
+    assert fields["trajectory_positions_xyz"].shape == (1, 3)
+    assert fields["trajectory_timestamps_s"].shape == (1,)
+    assert fields["backend_fps"] == 0.0
+
+
+def test_streaming_keyframe_gate_rejects_small_pose_jitter() -> None:
+    from prml_vslam.pipeline.streaming import _is_keyframe_like_update
+
+    previous_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
+    tiny_motion_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.05, ty=0.02, tz=0.0)
+    large_motion_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.3, ty=0.0, tz=0.0)
+
+    update_jitter = SlamUpdate(seq=1, timestamp_ns=1, is_keyframe=False)
+    update_keyframe = SlamUpdate(seq=2, timestamp_ns=2, is_keyframe=True)
+
+    assert _is_keyframe_like_update(update_jitter) is False
+    assert _is_keyframe_like_update(update_keyframe) is True
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:
@@ -628,6 +851,7 @@ def test_pipeline_request_builds_record3d_usb_source_from_action(tmp_path: Path)
     assert request is not None
     assert isinstance(request.source, Record3DLiveSourceSpec)
     assert request.source.transport is LiveTransportId.USB
+
     assert request.source.device_index == 2
     assert request.source.device_address == ""
     assert request.source.persist_capture is False
@@ -1503,6 +1727,7 @@ def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector(
     assert context.state.record3d.usb_device_index == 1
     assert context.state.record3d.is_running is True
     assert snapshot.transport is Record3DTransportId.USB
+
     assert snapshot.state is PreviewStreamState.CONNECTING
 
 
