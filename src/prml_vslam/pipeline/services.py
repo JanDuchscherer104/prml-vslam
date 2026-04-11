@@ -72,7 +72,7 @@ class RunPlannerService:
                 ),
             ),
             (
-                request.evaluation.compare_to_arcore,
+                request.evaluation.evaluate_trajectory,
                 (
                     RunPlanStageId.TRAJECTORY_EVALUATION,
                     "Evaluate Trajectory",

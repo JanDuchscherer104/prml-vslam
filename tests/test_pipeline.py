@@ -45,6 +45,7 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
         slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=True, emit_sparse_points=True),
         reference=ReferenceConfig(enabled=True),
         evaluation=BenchmarkEvaluationConfig(
+            evaluate_trajectory=True,
             compare_to_arcore=True,
             evaluate_cloud=True,
             evaluate_efficiency=True,
@@ -75,6 +76,7 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config() -> None
     ]
     assert plan.stages[-1].outputs == [run_paths.summary_path, run_paths.stage_manifests_path]
     assert request.model_dump()["evaluation"] == {
+        "evaluate_trajectory": True,
         "compare_to_arcore": True,
         "evaluate_cloud": True,
         "evaluate_efficiency": True,
@@ -127,6 +129,7 @@ def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
         slam=SlamConfig(method=MethodId.MSTR, emit_dense_points=False, emit_sparse_points=False),
         reference=ReferenceConfig(enabled=False),
     )
+    request.evaluation.evaluate_trajectory = False
     request.evaluation.compare_to_arcore = False
     request.evaluation.evaluate_cloud = False
     request.evaluation.evaluate_efficiency = False
@@ -366,6 +369,7 @@ def _build_streaming_request(
     path_config: PathConfig,
     *,
     mode: PipelineMode = PipelineMode.OFFLINE,
+    evaluate_trajectory: bool = True,
     compare_to_arcore: bool = False,
     evaluate_cloud: bool = False,
     evaluate_efficiency: bool = False,
@@ -378,6 +382,7 @@ def _build_streaming_request(
         slam=SlamConfig(method=MethodId.VISTA, emit_dense_points=True),
         reference=ReferenceConfig(enabled=False),
         evaluation=BenchmarkEvaluationConfig(
+            evaluate_trajectory=evaluate_trajectory,
             compare_to_arcore=compare_to_arcore,
             evaluate_cloud=evaluate_cloud,
             evaluate_efficiency=evaluate_efficiency,
@@ -628,7 +633,7 @@ class SessionServiceSpy:
 
 def test_run_service_builds_plan_and_passes_resolved_dependencies_to_session(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_streaming_request(path_config)
+    request = _build_streaming_request(path_config, evaluate_trajectory=False)
     source = SimpleNamespace(label="advio-demo-source")
     session_service = SessionServiceSpy()
     backend = object()

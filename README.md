@@ -141,7 +141,8 @@ emit_sparse_points = true
 enabled = false
 
 [evaluation]
-compare_to_arcore = true
+evaluate_trajectory = true
+compare_to_arcore = false
 evaluate_cloud = false
 evaluate_efficiency = true
 ```
@@ -154,7 +155,7 @@ The TOML shape mirrors the nested [`RunRequest`](src/prml_vslam/pipeline/contrac
 
 [`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through the repo-owned helpers described in [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md). The config file itself is resolved through [`PathConfig`](src/prml_vslam/utils/path_config.py), while nested TOML paths are hydrated as written and should be normalized explicitly in runtime code when repo-relative behavior is required.
 
-`compare_to_arcore` is documented here in its current code shape. Today it is the overloaded planner flag that reserves the trajectory-evaluation stage for ARCore comparison; a later refactor can separate “trajectory evaluation enabled” from “baseline selection,” but this README describes the current behavior as implemented.
+`evaluate_trajectory` reserves the trajectory-evaluation stage in the run plan. When enabled, `compare_to_arcore` can be set to specifically include a comparison against an ARCore baseline if the dataset supports it.
 
 ## Challenge Context
 

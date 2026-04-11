@@ -105,8 +105,10 @@ class ReferenceConfig(BaseConfig):
 class BenchmarkEvaluationConfig(BaseConfig):
     """Evaluation-stage toggles for the benchmark pipeline."""
 
-    compare_to_arcore: bool = True
-    """Whether the plan should reserve an ARCore comparison stage."""
+    evaluate_trajectory: bool = True
+    """Whether the plan should reserve a trajectory-evaluation stage."""
+    compare_to_arcore: bool = False
+    """Whether the trajectory-evaluation stage should specifically include an ARCore comparison."""
     evaluate_cloud: bool = False
     """Whether the run should include dense-cloud comparison."""
     evaluate_efficiency: bool = True

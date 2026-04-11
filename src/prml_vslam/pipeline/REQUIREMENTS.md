@@ -46,7 +46,7 @@ Use [README.md](./README.md) for the fuller explanation of contracts, runtime fl
 - Only the live ingress path may justify a bounded queue.
 - Offline mode must not become queue-driven inter-stage plumbing.
 - The app and CLI must not redefine pipeline semantics; they should launch or preview pipeline work through pipeline-owned services.
-- `BenchmarkEvaluationConfig.compare_to_arcore` is the current overloaded planner flag for reserving trajectory evaluation and must be documented consistently until it is refactored in code.
+- `BenchmarkEvaluationConfig` must clearly separate trajectory evaluation enablement (via `evaluate_trajectory`) from optional baseline selections (such as `compare_to_arcore`).
 
 ## Explicit Non-Goals
 

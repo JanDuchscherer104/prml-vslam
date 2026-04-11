@@ -35,6 +35,7 @@ def build_advio_demo_request(
         slam=SlamConfig(method=method, emit_dense_points=True),
         reference=ReferenceConfig(enabled=False),
         evaluation=BenchmarkEvaluationConfig(
+            evaluate_trajectory=False,
             compare_to_arcore=False,
             evaluate_cloud=False,
             evaluate_efficiency=False,

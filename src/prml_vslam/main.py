@@ -81,13 +81,20 @@ def plan_run(
         bool,
         typer.Option("--dense/--no-dense", help="Whether the plan should include dense map export."),
     ] = True,
+    evaluate_trajectory: Annotated[
+        bool,
+        typer.Option(
+            "--eval-traj/--no-eval-traj",
+            help="Whether the plan should reserve a trajectory-evaluation stage.",
+        ),
+    ] = True,
     compare_to_arcore: Annotated[
         bool,
         typer.Option(
             "--arcore/--no-arcore",
-            help="Whether the plan assumes ARCore comparison data is available.",
+            help="Whether the trajectory-evaluation stage specifically targets an ARCore baseline.",
         ),
-    ] = True,
+    ] = False,
     ground_truth_cloud: Annotated[
         bool,
         typer.Option(
@@ -104,6 +111,7 @@ def plan_run(
         slam=SlamConfig(method=method, emit_dense_points=dense_mapping),
         reference=ReferenceConfig(enabled=ground_truth_cloud),
         evaluation=BenchmarkEvaluationConfig(
+            evaluate_trajectory=evaluate_trajectory,
             compare_to_arcore=compare_to_arcore,
             evaluate_cloud=dense_mapping and ground_truth_cloud,
             evaluate_efficiency=True,
