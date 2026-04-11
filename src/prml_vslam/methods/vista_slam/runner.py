@@ -83,7 +83,46 @@ class VistaSlamSession:
         self._slam.step(value)
         self._frame_count += 1
 
-        return SlamUpdate(seq=frame.seq, timestamp_ns=frame.timestamp_ns)
+        pose: SE3Pose | None = None
+        pointmap: np.ndarray | None = None
+        try:
+            view_dict = self._slam.get_view(
+                self._frame_count - 1,
+                filter_outlier=True,
+                return_pose=True,
+                return_depth=True,
+                return_intri=True,
+            )
+            pose_tensor = view_dict.get("pose")
+            if pose_tensor is not None:
+                pose = SE3Pose.from_matrix(pose_tensor.numpy().astype(np.float64))
+
+            depth_tensor = view_dict.get("depth")
+            intri_tensor = view_dict.get("intri")
+            if depth_tensor is not None and intri_tensor is not None and pose is not None:
+                from prml_vslam.interfaces import CameraIntrinsics
+                from prml_vslam.utils.geometry import pointmap_from_depth
+
+                depth_np = depth_tensor.numpy().astype(np.float32)
+                intri_np = intri_tensor.numpy().astype(np.float64)
+                fx, fy = float(intri_np[0, 0]), float(intri_np[1, 1])
+                cx, cy = float(intri_np[0, 2]), float(intri_np[1, 2])
+                h_px, w_px = depth_np.shape
+                
+                # Use frame intrinsics if present; else infer from view dict
+                intrinsics = frame.intrinsics or CameraIntrinsics(
+                    fx=fx, fy=fy, cx=cx, cy=cy, width_px=w_px, height_px=h_px
+                )
+                pointmap = pointmap_from_depth(depth_np, intrinsics=intrinsics, stride_px=16)
+        except Exception as e:
+            self._console.warning("Failed to extract per-frame preview: %s", e)
+
+        return SlamUpdate(
+            seq=frame.seq,
+            timestamp_ns=frame.timestamp_ns,
+            pose=pose,
+            pointmap=pointmap,
+        )
 
     def close(self) -> SlamArtifacts:
         """Save OnlineSLAM outputs and convert to canonical artifacts."""
