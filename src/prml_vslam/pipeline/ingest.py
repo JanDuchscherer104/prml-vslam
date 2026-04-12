@@ -26,20 +26,36 @@ def materialize_offline_manifest(
     intrinsics_path = prepared_manifest.intrinsics_path
 
     if prepared_manifest.video_path is not None and rgb_dir is None:
-        extracted = _extract_video_frames(
+        frame_stride = _frame_stride_for_request(request)
+        cached_rgb_dir = _check_extraction_cache(
             video_path=prepared_manifest.video_path,
             output_dir=run_paths.input_frames_dir,
-            frame_stride=_frame_stride_for_request(request),
+            frame_stride=frame_stride,
         )
-        rgb_dir = extracted["rgb_dir"]
+        if cached_rgb_dir is not None:
+            rgb_dir = cached_rgb_dir
+        else:
+            extracted = _extract_video_frames(
+                video_path=prepared_manifest.video_path,
+                output_dir=run_paths.input_frames_dir,
+                frame_stride=frame_stride,
+            )
+            rgb_dir = extracted["rgb_dir"]
+            _write_json_payload(
+                rgb_dir / ".ingest_metadata.json",
+                {"video_path": str(prepared_manifest.video_path.resolve()), "frame_stride": frame_stride},
+            )
+
         timestamps_ns = _resolve_timestamps_ns(
             source_path=prepared_manifest.timestamps_path,
-            frame_stride=_frame_stride_for_request(request),
-            fallback_timestamps_ns=extracted["timestamps_ns"],
+            frame_stride=frame_stride,
+            fallback_timestamps_ns=[] if cached_rgb_dir is not None else extracted["timestamps_ns"],
         )
+        # If we reused frames, we expect the timestamps to already be materialized if they were part of a previous run.
+        # However, materialize_offline_manifest always ensures the input/ directory is populated.
         timestamps_path = _write_json_payload(
             run_paths.input_timestamps_path,
-            {"timestamps_ns": timestamps_ns, "frame_stride": _frame_stride_for_request(request)},
+            {"timestamps_ns": timestamps_ns, "frame_stride": frame_stride},
         )
 
     if intrinsics_path is not None:
@@ -68,6 +84,23 @@ def _frame_stride_for_request(request: RunRequest) -> int:
             return 1
         case _:
             return 1
+
+
+def _check_extraction_cache(*, video_path: Path, output_dir: Path, frame_stride: int) -> Path | None:
+    metadata_path = output_dir / ".ingest_metadata.json"
+    if not metadata_path.exists():
+        return None
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if (
+            metadata.get("video_path") == str(video_path.resolve())
+            and metadata.get("frame_stride") == frame_stride
+            and any(output_dir.glob("*.png"))
+        ):
+            return output_dir.resolve()
+    except (json.JSONDecodeError, KeyError):
+        pass
+    return None
 
 
 def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: int) -> dict[str, object]:

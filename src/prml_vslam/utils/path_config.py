@@ -94,6 +94,23 @@ class RunArtifactPaths(BaseData):
         """Return the canonical Plotly scene path for one method run."""
         return (self.artifact_root / "visualization" / f"{method_slug}_scene.html").resolve()
 
+    @property
+    def rgb_dir(self) -> Path:
+        """Alias for input_frames_dir used in early scaffold versions."""
+        return self.input_frames_dir
+
+    @property
+    def viewer_rrd_path(self) -> Path:
+        """Return the path to the repo-owned viewer recording."""
+        return (self.artifact_root / "visualization" / "viewer_recording.rrd").resolve()
+
+    def stage_manifest_path(self, stage_id: str | RunPlanStageId) -> Path:
+        """Return the canonical path to one stage manifest."""
+        from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+
+        stage_slug = stage_id.value if isinstance(stage_id, RunPlanStageId) else str(stage_id)
+        return (self.artifact_root / stage_slug / "stage_manifest.json").resolve()
+
 
 class PathConfig(BaseConfig):
     """Centralize all repository-owned path semantics."""
