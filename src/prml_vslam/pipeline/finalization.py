@@ -6,12 +6,14 @@ import hashlib
 import json
 from pathlib import Path
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageExecutionStatus, StageManifest
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import BaseConfig, RunArtifactPaths
+from prml_vslam.visualization import VisualizationArtifacts
 
 
 def finalize_run_outputs(
@@ -20,7 +22,9 @@ def finalize_run_outputs(
     plan: RunPlan,
     run_paths: RunArtifactPaths,
     sequence_manifest: SequenceManifest | None,
+    benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
+    visualization: VisualizationArtifacts | None,
     ingest_started: bool,
     slam_started: bool,
     pipeline_failed: bool,
@@ -40,14 +44,18 @@ def finalize_run_outputs(
         plan=plan,
         run_paths=run_paths,
         sequence_manifest=sequence_manifest,
+        benchmark_inputs=benchmark_inputs,
         slam=slam,
+        visualization=visualization,
         stage_status=stage_status,
     )
     summary_manifest = build_summary_manifest(
         request=request,
         run_paths=run_paths,
         sequence_manifest=sequence_manifest,
+        benchmark_inputs=benchmark_inputs,
         slam=slam,
+        visualization=visualization,
         stage_status=stage_status,
         existing_stage_manifests=non_summary_manifests,
         error_message=error_message,
@@ -92,7 +100,9 @@ def build_stage_manifests(
     plan: RunPlan,
     run_paths: RunArtifactPaths,
     sequence_manifest: SequenceManifest | None,
+    benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
+    visualization: VisualizationArtifacts | None,
     stage_status: dict[RunPlanStageId, StageExecutionStatus],
 ) -> list[StageManifest]:
     """Build non-summary stage manifests for the executed pipeline slice."""
@@ -108,10 +118,10 @@ def build_stage_manifests(
                 output_paths["intrinsics"] = sequence_manifest.intrinsics_path
             if sequence_manifest.rotation_metadata_path is not None:
                 output_paths["rotation_metadata"] = sequence_manifest.rotation_metadata_path
-            if sequence_manifest.reference_tum_path is not None:
-                output_paths["reference_tum"] = sequence_manifest.reference_tum_path
-            if sequence_manifest.arcore_tum_path is not None:
-                output_paths["arcore_tum"] = sequence_manifest.arcore_tum_path
+        if benchmark_inputs is not None:
+            output_paths["benchmark_inputs"] = run_paths.benchmark_inputs_path
+            for reference in benchmark_inputs.reference_trajectories:
+                output_paths[f"reference_tum:{reference.source.value}"] = reference.path
         manifests.append(
             StageManifest(
                 stage_id=RunPlanStageId.INGEST,
@@ -129,14 +139,15 @@ def build_stage_manifests(
                 output_paths["sparse_points_ply"] = slam.sparse_points_ply.path
             if slam.dense_points_ply is not None:
                 output_paths["dense_points_ply"] = slam.dense_points_ply.path
-            if slam.viewer_rrd is not None:
-                output_paths["viewer_rrd"] = slam.viewer_rrd.path
-            if slam.native_rerun_rrd is not None:
-                output_paths["native_rerun_rrd"] = slam.native_rerun_rrd.path
-            if slam.native_output_dir is not None:
-                output_paths["native_output_dir"] = slam.native_output_dir.path
             for key, artifact in slam.extras.items():
                 output_paths[f"extra:{key}"] = artifact.path
+        if visualization is not None:
+            if visualization.native_rerun_rrd is not None:
+                output_paths["native_rerun_rrd"] = visualization.native_rerun_rrd.path
+            if visualization.native_output_dir is not None:
+                output_paths["native_output_dir"] = visualization.native_output_dir.path
+            for key, artifact in visualization.extras.items():
+                output_paths[f"visualization:{key}"] = artifact.path
         manifests.append(
             StageManifest(
                 stage_id=RunPlanStageId.SLAM,
@@ -155,7 +166,9 @@ def build_summary_manifest(
     request: RunRequest,
     run_paths: RunArtifactPaths,
     sequence_manifest: SequenceManifest | None,
+    benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
+    visualization: VisualizationArtifacts | None,
     stage_status: dict[RunPlanStageId, StageExecutionStatus],
     existing_stage_manifests: list[StageManifest],
     error_message: str,
@@ -167,7 +180,9 @@ def build_summary_manifest(
         input_fingerprint=stable_hash(
             {
                 "sequence_manifest": sequence_manifest,
+                "benchmark_inputs": benchmark_inputs,
                 "slam": slam,
+                "visualization": visualization,
                 "stage_status": stage_status,
                 "stage_manifests": existing_stage_manifests,
                 "error_message": error_message,

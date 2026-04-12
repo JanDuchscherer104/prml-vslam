@@ -28,11 +28,5 @@ class SequenceManifest(BaseData):
     rotation_metadata_path: Path | None = None
     """Canonical path to source-rotation metadata used by offline ingest."""
 
-    reference_tum_path: Path | None = None
-    """Normalized reference trajectory in TUM format when available."""
-
-    arcore_tum_path: Path | None = None
-    """Normalized ARCore baseline trajectory in TUM format when available."""
-
 
 __all__ = ["SequenceManifest"]

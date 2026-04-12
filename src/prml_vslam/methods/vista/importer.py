@@ -10,13 +10,13 @@ from prml_vslam.utils import RunArtifactPaths
 
 def import_vista_artifacts(*, native_output_dir: Path, run_paths: RunArtifactPaths) -> SlamArtifacts:
     """Normalize native ViSTA outputs into repo-owned artifact contracts."""
+    del run_paths
     trajectory_path = _require_existing_path(
         native_output_dir / "trajectory.tum",
         error_message="ViSTA-SLAM did not produce the expected `trajectory.tum` output.",
     )
     sparse_points_path = _optional_existing_path(native_output_dir / "sparse_points.ply")
     dense_points_path = _optional_existing_path(native_output_dir / "dense_points.ply")
-    native_rerun_path = _optional_existing_path(native_output_dir / "rerun_recording.rrd")
     extras = {
         path.name: _artifact_ref(path, kind=path.suffix.lstrip(".") or "file", fingerprint=f"{path.name}-artifact")
         for path in sorted(native_output_dir.glob("*"))
@@ -35,12 +35,6 @@ def import_vista_artifacts(*, native_output_dir: Path, run_paths: RunArtifactPat
             if dense_points_path is None
             else _artifact_ref(dense_points_path, kind="ply", fingerprint="vista-dense")
         ),
-        native_rerun_rrd=(
-            None
-            if native_rerun_path is None
-            else _artifact_ref(native_rerun_path, kind="rrd", fingerprint="vista-native-rrd")
-        ),
-        native_output_dir=_artifact_ref(native_output_dir.resolve(), kind="dir", fingerprint="vista-native-output"),
         extras=extras,
     )
 

@@ -10,8 +10,8 @@ Use this file for current app behavior, target app constraints, and package-loca
 
 - The app currently exposes four top-level pages: `Record3D`, `ADVIO`, `Pipeline`, and `Metrics`.
 - The `Record3D` page supports both the canonical `USB` transport and the optional `Wi-Fi Preview` transport through one selector.
-- The `Pipeline` page can show example request shapes, a generated `RunPlan`, one executed run, and the bounded demo pipeline surface.
-- The `Pipeline` page may run the bounded ADVIO replay and bounded Record3D live flows through pipeline-owned services.
+- The `Pipeline` page can show example request shapes, a generated `RunPlan`, one mock executed run, and the current offline plus bounded streaming demo surface.
+- The `Pipeline` page may run offline ADVIO requests plus bounded Record3D live flows through pipeline-owned services.
 - The `Pipeline` page currently renders an explicit `evo` APE preview when both reference and estimate TUM trajectories are available for the bounded demo result.
 - The `Metrics` page keeps evaluation explicit and renders persisted `evo` trajectory results.
 
@@ -26,7 +26,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 
 - The app owns Streamlit pages, packaged bootstrap code, typed page state, app-local controllers, and UI composition.
 - The app owns rendering and user-facing interaction flow for the Record3D, ADVIO, Pipeline, and Metrics pages.
-- The app does not own transport decoding, dataset normalization, pipeline semantics, backend orchestration, or benchmark-policy logic.
+- The app does not own transport decoding, dataset normalization, pipeline semantics, backend orchestration, benchmark-policy logic, or viewer artifact semantics.
 
 ## Non-Negotiable Requirements
 
@@ -51,6 +51,6 @@ Use this file for current app behavior, target app constraints, and package-loca
 
 - Selecting `USB` or `Wi-Fi Preview` and starting a stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and confidence when available.
 - Switching to `Metrics` renders a matching persisted `evo` result without recomputing it.
-- Switching to `Pipeline` shows the direct `RunRequest(...)` workflow, a generated `RunPlan` preview, one executed run, and an `evo` APE preview when the required trajectories are available.
+- Switching to `Pipeline` shows the direct `RunRequest(...)` workflow, a generated `RunPlan` preview, one mock executed run, and an `evo` APE preview when the required trajectories are available.
 - On live pages, only one of `Start` or `Stop` is visible in the shared action slot at a time.
 - The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.

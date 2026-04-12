@@ -34,15 +34,6 @@ class SlamArtifacts(BaseData):
     dense_points_ply: ArtifactRef | None = None
     """Optional dense point cloud artifact."""
 
-    viewer_rrd: ArtifactRef | None = None
-    """Optional repo-owned normalized Rerun recording."""
-
-    native_rerun_rrd: ArtifactRef | None = None
-    """Optional preserved upstream-native Rerun recording."""
-
-    native_output_dir: ArtifactRef | None = None
-    """Optional preserved native output directory from an external backend."""
-
     extras: dict[str, ArtifactRef] = Field(default_factory=dict)
     """Optional backend-specific artifacts preserved without widening the core contract."""
 

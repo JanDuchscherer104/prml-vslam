@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from threading import Event
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.methods.protocols import OfflineSlamBackend
-from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
-from prml_vslam.protocols.source import OfflineSequenceSource
+from prml_vslam.pipeline.state import RunSnapshot, RunState
+from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.utils import Console, RunArtifactPaths
-from prml_vslam.visualization.rerun import export_viewer_recording
+from prml_vslam.visualization import VisualizationArtifacts
+from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
 
 from .finalization import finalize_run_outputs, write_json
 from .ingest import materialize_offline_manifest
@@ -76,7 +77,9 @@ class OfflineRunner:
     ) -> None:
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         sequence_manifest = None
+        benchmark_inputs: PreparedBenchmarkInputs | None = None
         slam_artifacts = None
+        visualization_artifacts: VisualizationArtifacts | None = None
         summary = None
         stage_manifests = []
         ingest_started = False
@@ -88,17 +91,21 @@ class OfflineRunner:
             self._console.info(f"Preparing offline run '{plan.run_id}' from source '{source.label}'.")
             ingest_started = True
             prepared_manifest = source.prepare_sequence_manifest(run_paths.sequence_manifest_path.parent)
+            if isinstance(source, BenchmarkInputSource):
+                benchmark_inputs = source.prepare_benchmark_inputs(run_paths.benchmark_inputs_path.parent)
+                if benchmark_inputs is not None:
+                    write_json(run_paths.benchmark_inputs_path, benchmark_inputs)
             sequence_manifest = materialize_offline_manifest(
                 request=request,
                 prepared_manifest=prepared_manifest,
                 run_paths=run_paths,
-                progress=self._console.info,
             )
             write_json(run_paths.sequence_manifest_path, sequence_manifest)
             self._runtime.update_fields(
                 state=RunState.RUNNING,
                 plan=plan,
                 sequence_manifest=sequence_manifest,
+                benchmark_inputs=benchmark_inputs,
                 error_message="",
             )
             if stop_event.is_set():
@@ -107,18 +114,16 @@ class OfflineRunner:
                 slam_started = True
                 slam_artifacts = slam_backend.run_sequence(
                     sequence_manifest,
+                    benchmark_inputs,
+                    request.benchmark.trajectory.baseline_source,
                     request.slam.backend,
                     request.slam.outputs,
                     plan.artifact_root,
                 )
-                if request.visualization.export_viewer_rrd and slam_artifacts is not None:
-                    viewer_rrd = export_viewer_recording(
-                        sequence_manifest=sequence_manifest,
-                        slam_artifacts=slam_artifacts,
-                        output_path=run_paths.viewer_rrd_path,
-                        run_id=plan.run_id,
-                    )
-                    slam_artifacts = _with_viewer_artifact(slam_artifacts, viewer_rrd)
+                visualization_artifacts = collect_native_visualization_artifacts(
+                    native_output_dir=run_paths.native_output_dir,
+                    preserve_native_rerun=request.visualization.preserve_native_rerun,
+                )
         except Exception as exc:
             final_state = RunState.FAILED
             pipeline_failed = True
@@ -133,7 +138,9 @@ class OfflineRunner:
                     plan=plan,
                     run_paths=run_paths,
                     sequence_manifest=sequence_manifest,
+                    benchmark_inputs=benchmark_inputs,
                     slam=slam_artifacts,
+                    visualization=visualization_artifacts,
                     ingest_started=ingest_started,
                     slam_started=slam_started,
                     pipeline_failed=pipeline_failed,
@@ -152,7 +159,9 @@ class OfflineRunner:
                         "state": final_state,
                         "plan": plan,
                         "sequence_manifest": sequence_manifest,
+                        "benchmark_inputs": benchmark_inputs,
                         "slam": slam_artifacts,
+                        "visualization": visualization_artifacts,
                         "summary": summary,
                         "stage_manifests": stage_manifests,
                         "error_message": error_message,
@@ -168,7 +177,3 @@ def _to_stopped_snapshot(snapshot: RunSnapshot) -> RunSnapshot:
 
 
 __all__ = ["OfflineRunner"]
-
-
-def _with_viewer_artifact(slam_artifacts: SlamArtifacts, viewer_artifact) -> SlamArtifacts:
-    return slam_artifacts.model_copy(update={"viewer_rrd": viewer_artifact})
