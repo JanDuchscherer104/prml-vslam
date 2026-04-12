@@ -302,11 +302,17 @@ class KeyframeStreamingSession:
             ]
         )
         self.steps = 0
+        self._pending: list[SlamUpdate] = []
 
-    def step(self, frame: FramePacket) -> SlamUpdate:
+    def step(self, frame: FramePacket) -> None:
         del frame
         self.steps += 1
-        return next(self._updates)
+        self._pending.append(next(self._updates))
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        updates = self._pending
+        self._pending = []
+        return updates
 
     def close(self) -> SlamArtifacts:
         trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
@@ -356,10 +362,16 @@ class PreviewRetentionStreamingSession:
                 ),
             ]
         )
+        self._pending: list[SlamUpdate] = []
 
-    def step(self, frame: FramePacket) -> SlamUpdate:
+    def step(self, frame: FramePacket) -> None:
         del frame
-        return next(self._updates)
+        self._pending.append(next(self._updates))
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        updates = self._pending
+        self._pending = []
+        return updates
 
     def close(self) -> SlamArtifacts:
         trajectory_path = self._artifact_root / "slam" / "trajectory.tum"

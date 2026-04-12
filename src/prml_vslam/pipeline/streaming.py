@@ -147,43 +147,55 @@ class StreamingRunner:
                 plan.artifact_root,
             )
             self._runtime.update_fields(state=RunState.RUNNING, error_message="")
+            
+            max_frames = request.slam.backend.max_frames
+            frames_pushed = 0
+
             while not stop_event.is_set():
+                if max_frames is not None and frames_pushed >= max_frames:
+                    self._console.info("Reached configured SLAM max frames limit (%d); stopping stream.", max_frames)
+                    break
+
                 packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
+                frames_pushed += 1
+                
                 arrival_time_s = time.monotonic()
                 if start_timestamp_ns is None:
                     start_timestamp_ns = packet.timestamp_ns
 
                 metrics.record_packet(arrival_time_s=arrival_time_s)
-                update = slam_session.step(packet)
-                if _has_renderable_preview(update):
-                    latest_preview_update = update
-                is_keyframe_update = update.is_keyframe or (update.pose is not None and update.keyframe_index is None)
-                if is_keyframe_update:
-                    keyframe_position_xyz = extract_pose_position(update)
-                    metrics.record_keyframe(
-                        arrival_time_s=arrival_time_s,
-                        position_xyz=keyframe_position_xyz,
-                        trajectory_time_s=(packet.timestamp_ns - start_timestamp_ns) / 1e9
-                        if update.pose is not None
-                        else None,
-                    )
-                    if live_recording is not None and update.pose is not None:
-                        log_transform(
-                            live_recording,
-                            entity_path="camera",
-                            transform=update.pose,
-                        )
+                slam_session.step(packet)
 
-                metrics_fields = metrics.snapshot_fields()
-                self._runtime.update_fields(
-                    state=RunState.RUNNING,
-                    latest_packet=packet,
-                    latest_slam_update=update,
-                    latest_preview_update=latest_preview_update,
-                    num_sparse_points=update.num_sparse_points,
-                    num_dense_points=update.num_dense_points,
-                    **metrics_fields,
-                )
+                for update in slam_session.try_get_updates():
+                    if _has_renderable_preview(update):
+                        latest_preview_update = update
+                    is_keyframe_update = update.is_keyframe or (update.pose is not None and update.keyframe_index is None)
+                    if is_keyframe_update:
+                        keyframe_position_xyz = extract_pose_position(update)
+                        metrics.record_keyframe(
+                            arrival_time_s=arrival_time_s,
+                            position_xyz=keyframe_position_xyz,
+                            trajectory_time_s=(packet.timestamp_ns - start_timestamp_ns) / 1e9
+                            if update.pose is not None
+                            else None,
+                        )
+                        if live_recording is not None and update.pose is not None:
+                            log_transform(
+                                live_recording,
+                                entity_path="camera",
+                                transform=update.pose,
+                            )
+
+                    metrics_fields = metrics.snapshot_fields()
+                    self._runtime.update_fields(
+                        state=RunState.RUNNING,
+                        latest_packet=packet,
+                        latest_slam_update=update,
+                        latest_preview_update=latest_preview_update,
+                        num_sparse_points=update.num_sparse_points,
+                        num_dense_points=update.num_dense_points,
+                        **metrics_fields,
+                    )
 
             final_state = RunState.COMPLETED
         except Exception as exc:
