@@ -80,13 +80,13 @@ class StreamingRunSnapshot(RunSnapshot):
     """Rolling measured packet rate."""
 
     accepted_keyframes: int = 0
-    """Number of accepted keyframe poses reported by the backend."""
+    """Number of frames accepted as keyframes by the backend."""
 
     backend_fps: float = 0.0
-    """Rolling accepted-keyframe rate reported by the backend."""
+    """Rolling measured backend processing rate."""
 
     trajectory_positions_xyz: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_POSITIONS_XYZ.copy)
-    """Bounded keyframe trajectory history in world coordinates."""
+    """Bounded trajectory history in world coordinates."""
 
     trajectory_timestamps_s: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_TIMESTAMPS_S.copy)
     """Timestamps associated with `trajectory_positions_xyz`."""

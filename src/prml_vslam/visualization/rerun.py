@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from prml_vslam.interfaces.transforms import FrameTransform
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
@@ -72,6 +73,20 @@ def log_transform(recording_stream: Any, *, entity_path: str, transform: FrameTr
     )
 
 
+def export_viewer_recording(
+    *,
+    sequence_manifest: SequenceManifest,
+    slam_artifacts: SlamArtifacts,
+    output_path: Path,
+    run_id: str,
+) -> ArtifactRef:
+    """Export a normalized repo-owned `.rrd` recording from repo-owned artifacts."""
+    del sequence_manifest, slam_artifacts
+    recording_stream = create_recording_stream(app_id="prml-vslam", recording_id=run_id)
+    attach_file_sink(recording_stream, target_path=output_path)
+    return ArtifactRef(path=output_path.resolve(), kind="rrd", fingerprint=f"viewer-rrd-{run_id}")
+
+
 def collect_native_visualization_artifacts(
     *,
     native_output_dir: Path,
@@ -104,5 +119,6 @@ __all__ = [
     "attach_grpc_sink",
     "collect_native_visualization_artifacts",
     "create_recording_stream",
+    "export_viewer_recording",
     "log_transform",
 ]

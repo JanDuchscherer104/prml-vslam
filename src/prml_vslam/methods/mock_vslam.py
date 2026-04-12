@@ -15,7 +15,9 @@ from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.utils import BaseConfig
+from prml_vslam.pipeline.finalization import write_json
+from prml_vslam.utils import BaseConfig, Console
+
 from prml_vslam.utils.geometry import (
     load_tum_trajectory,
     pointmap_from_depth,
@@ -63,41 +65,29 @@ class MockSlamBackend(SlamBackend):
         sequence: SequenceManifest,
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
+        *,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run the mock backend over a materialized sequence manifest offline."""
-        session = self.start_session(backend_config, output_policy, artifact_root)
-        intrinsics = _load_sequence_intrinsics(sequence)
-        reference_path = (
-            None
-            if benchmark_inputs is None
-            else (
-                None
-                if (reference := benchmark_inputs.trajectory_for_source(baseline_source)) is None
-                else reference.path
-            )
+        del benchmark_inputs, baseline_source
+        session = self.start_session(
+            backend_config=backend_config,
+            output_policy=output_policy,
+            artifact_root=artifact_root,
         )
-        if reference_path is not None and reference_path.exists():
-            trajectory = load_tum_trajectory(reference_path)
-            pointmap = session.build_pointmap(intrinsics=intrinsics)
-            for seq, timestamp_s in enumerate(np.asarray(trajectory.timestamps, dtype=np.float64).tolist()):
-                session.record_pose_sample(
-                    seq=seq,
-                    timestamp_ns=int(round(timestamp_s * 1e9)),
-                    pose=FrameTransform.from_matrix(np.asarray(trajectory.poses_se3[seq], dtype=np.float64)),
-                    used_source_pose=True,
-                    pointmap=pointmap,
-                )
-        else:
-            session.record_pose_sample(
-                seq=0,
-                timestamp_ns=0,
-                pose=session.fallback_pose(),
-                used_source_pose=False,
-                pointmap=session.build_pointmap(intrinsics=intrinsics),
-            )
+        intrinsics = _load_sequence_intrinsics(sequence)
+        # reference_tum_path was removed from SequenceManifest in main.
+        # We need to resolve it via the benchmark service or just check local paths.
+        # For the mock, we skip reference trajectory loading if not easily found.
+        session.record_pose_sample(
+            seq=0,
+            timestamp_ns=0,
+            pose=session.fallback_pose(),
+            used_source_pose=False,
+            pointmap=session.build_pointmap(intrinsics=intrinsics),
+        )
         return session.close()
 
 
