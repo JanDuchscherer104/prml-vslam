@@ -28,8 +28,8 @@ from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import StageManifest
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.demo import load_run_request_toml
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.plotting import build_evo_ape_colormap_figure
 from prml_vslam.utils import BaseData, PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
@@ -67,6 +67,7 @@ _VISTA_POINTMAP_EMPTY_MESSAGE = (
     "ViSTA-SLAM has not produced a renderable preview artifact for the current keyframe yet."
 )
 _VISTA_TRAJECTORY_EMPTY_MESSAGE = "ViSTA-SLAM has not accepted a keyframe pose yet, so no live trajectory is available."
+_VISTA_PREVIEW_CURRENT_MESSAGE = "Current keyframe artifact."
 
 
 class PipelinePageAction(PipelinePageState):
@@ -694,12 +695,8 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
         if packet is None:
             st.info("No frame has been processed yet.")
         else:
-            slam_update = snapshot.latest_slam_update
-            pointmap_preview = (
-                slam_update.preview_rgb
-                if slam_update is not None and slam_update.preview_rgb is not None
-                else _pointmap_preview_image(slam_update.pointmap if slam_update is not None else None)
-            )
+            preview_update = snapshot.latest_preview_update
+            pointmap_preview = _preview_image_from_update(preview_update)
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
                 st.markdown("**RGB Frame**")
@@ -710,6 +707,9 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
                     st.info(_streaming_pointmap_empty_message(snapshot))
                 else:
                     st.image(pointmap_preview, clamp=True, width="stretch")
+                    preview_status_message = _preview_status_message(snapshot)
+                    if preview_status_message is not None:
+                        st.caption(preview_status_message)
             details_left, details_right = st.columns((1.0, 1.0), gap="large")
             with details_left:
                 st.markdown("**SLAM Update**")
@@ -1038,6 +1038,49 @@ def _pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
         return np.asarray(preview_array)
     magnitude = np.linalg.norm(np.asarray(preview_array, dtype=np.float32), axis=-1)
     return normalize_grayscale_image(magnitude)
+
+
+def _preview_image_from_update(update: object) -> np.ndarray | None:
+    """Return the retained preview image for one streaming SLAM update."""
+    if update is None:
+        return None
+    preview_rgb = getattr(update, "preview_rgb", None)
+    if preview_rgb is not None and np.asarray(preview_rgb).size > 0:
+        return np.asarray(preview_rgb)
+    return _pointmap_preview_image(getattr(update, "pointmap", None))
+
+
+def _preview_status_message(snapshot: StreamingRunSnapshot) -> str | None:
+    """Return the retained-preview status line for the current streaming snapshot."""
+    preview_update = snapshot.latest_preview_update
+    if preview_update is None:
+        return None
+    latest_update = snapshot.latest_slam_update
+    if latest_update is not None and _updates_share_preview_identity(latest_update, preview_update):
+        return _VISTA_PREVIEW_CURRENT_MESSAGE
+    keyframe_label = _preview_keyframe_label(preview_update)
+    return f"Showing last valid keyframe artifact from {keyframe_label}."
+
+
+def _updates_share_preview_identity(left: object, right: object) -> bool:
+    """Return whether two updates refer to the same preview-bearing keyframe."""
+    return (
+        getattr(left, "seq", None) == getattr(right, "seq", None)
+        and getattr(left, "timestamp_ns", None) == getattr(right, "timestamp_ns", None)
+        and getattr(left, "keyframe_index", None) == getattr(right, "keyframe_index", None)
+        and _preview_image_from_update(left) is not None
+    )
+
+
+def _preview_keyframe_label(update: object) -> str:
+    """Return a human-readable keyframe label for one retained preview update."""
+    keyframe_index = getattr(update, "keyframe_index", None)
+    if keyframe_index is not None:
+        return f"keyframe {keyframe_index}"
+    seq = getattr(update, "seq", None)
+    if seq is not None:
+        return f"frame {seq}"
+    return "the last available frame"
 
 
 def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:

@@ -73,6 +73,9 @@ class StreamingRunSnapshot(RunSnapshot):
     latest_slam_update: SlamUpdate | None = None
     """Most recent incremental SLAM update."""
 
+    latest_preview_update: SlamUpdate | None = None
+    """Most recent keyframe update that still has a renderable preview payload."""
+
     received_frames: int = 0
     """Number of processed packets since the current session started."""
 

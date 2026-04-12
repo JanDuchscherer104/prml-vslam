@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from threading import Event
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.methods.protocols import OfflineSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.state import RunSnapshot, RunState
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.utils import Console, RunArtifactPaths
-from prml_vslam.visualization import VisualizationArtifacts
 from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
 
 from .finalization import finalize_run_outputs, write_json
@@ -103,7 +101,6 @@ class OfflineRunner:
                 request=request,
                 prepared_manifest=prepared_manifest,
                 run_paths=run_paths,
-                progress=self._console.info,
             )
             write_json(run_paths.sequence_manifest_path, sequence_manifest)
             self._runtime.update_fields(
