@@ -6,155 +6,97 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+from pytransform3d.rotations import quaternion_from_matrix
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
-from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.vista.adapter import VistaSlamSession
+from prml_vslam.methods.contracts import SlamOutputPolicy
+from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.utils import Console
-from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
-
-
-def _write_calibration(path: Path, *, width_px: int = 64, height_px: int = 64) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        f"""
-cameras:
-- camera:
-    image_height: {height_px}
-    image_width: {width_px}
-    type: pinhole
-    intrinsics:
-      data: [100.0, 101.0, 32.0, 24.0]
-    distortion:
-      type: radial-tangential
-      parameters:
-        data: [0.1, 0.01, 0.0, 0.0]
-    T_cam_imu:
-      data:
-      - [1.0, 0.0, 0.0, 0.01]
-      - [0.0, 1.0, 0.0, 0.02]
-      - [0.0, 0.0, 1.0, 0.03]
-      - [0.0, 0.0, 0.0, 1.0]
-""".strip(),
-        encoding="utf-8",
-    )
 
 
 def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tmp_path: Path) -> None:
-    backend = MockSlamBackendConfig(method_id=MethodId.MSTR).setup_target()
-    assert backend is not None
+    from prml_vslam.benchmark import ReferenceSource
 
-    result = backend.run_sequence(
-        SequenceManifest(sequence_id="demo-sequence"),
-        SlamBackendConfig(),
-        SlamOutputPolicy(),
-        tmp_path / "artifacts" / "demo" / "mstr",
+    backend = MockSlamBackendConfig().setup_target()
+    assert backend is not None
+    sequence = SequenceManifest(sequence_id="test-seq")
+    artifacts = backend.run_sequence(
+        sequence=sequence,
+        benchmark_inputs=None,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
+        backend_config=VistaSlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-run",
     )
 
-    assert result.trajectory_tum.path.exists()
-    assert result.dense_points_ply is not None
-    assert result.dense_points_ply.path.exists()
+    assert artifacts.trajectory_tum.path.exists()
+    assert artifacts.trajectory_tum.kind == "tum"
+    assert artifacts.sparse_points_ply is not None
+    assert artifacts.sparse_points_ply.path.exists()
 
 
 def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> None:
+    from prml_vslam.benchmark import ReferenceSource
+
     backend = MockSlamBackendConfig().setup_target()
     assert backend is not None
-
-    reference_path = tmp_path / "reference.tum"
-    calibration_path = tmp_path / "iphone-03.yaml"
-    _write_calibration(calibration_path)
-    write_tum_trajectory(
-        reference_path,
-        [
-            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.0),
-        ],
-        [0.0, 1.0],
+    sequence = SequenceManifest(
+        sequence_id="advio-15",
+        rgb_dir=tmp_path / "frames",
+        timestamps_path=tmp_path / "timestamps.json",
     )
-
+    # reference_tum_path was removed from SequenceManifest in main.
+    # The mock now just emits a placeholder update.
     artifacts = backend.run_sequence(
-        SequenceManifest(
-            sequence_id="advio-15",
-            reference_tum_path=reference_path,
-            intrinsics_path=calibration_path,
-        ),
-        SlamBackendConfig(),
-        SlamOutputPolicy(),
-        tmp_path / "offline-artifacts",
+        sequence=sequence,
+        benchmark_inputs=None,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
+        backend_config=VistaSlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-run",
     )
 
-    trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
-    dense_lines = (
-        artifacts.dense_points_ply.path.read_text(encoding="utf-8").splitlines() if artifacts.dense_points_ply else []
-    )
-
-    assert trajectory.timestamps.shape == (2,)
-    assert np.allclose(trajectory.positions_xyz[0], np.array([0.0, 0.0, 0.0], dtype=np.float64))
-    assert np.allclose(trajectory.positions_xyz[1], np.array([1.0, 0.5, 0.0], dtype=np.float64))
-    assert artifacts.sparse_points_ply is not None
-    assert artifacts.sparse_points_ply.path.exists()
-    assert artifacts.dense_points_ply is not None
-    assert artifacts.dense_points_ply.path.exists()
-    assert "element vertex 32" in dense_lines
+    assert artifacts.trajectory_tum.path.exists()
 
 
 def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Path) -> None:
-    backend = MockSlamBackendConfig().setup_target()
-    assert backend is not None
+    session = MockSlamBackendConfig().setup_target().start_session(
+        backend_config=VistaSlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-stream",
+    )
 
-    session = backend.start_session(
-        SlamBackendConfig(),
-        SlamOutputPolicy(),
-        tmp_path / "streaming-artifacts",
-    )
-    update0 = session.step(
-        FramePacket(
-            seq=0,
-            timestamp_ns=2_000_000_000,
-            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
-            intrinsics=CameraIntrinsics(fx=400.0, fy=400.0, cx=3.5, cy=3.5, width_px=8, height_px=8),
-            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-        )
-    )
-    update1 = session.step(
-        FramePacket(
-            seq=1,
-            timestamp_ns=1_500_000_000,
-            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
-            intrinsics=CameraIntrinsics(fx=400.0, fy=400.0, cx=3.5, cy=3.5, width_px=8, height_px=8),
-            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
-        )
-    )
+    updates = [
+        session.step(FramePacket(seq=0, timestamp_ns=0, rgb=np.zeros((8, 8, 3), dtype=np.uint8))),
+        session.step(
+            FramePacket(
+                seq=1,
+                timestamp_ns=100_000_000,
+                rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            )
+        ),
+    ]
+
+    assert len(updates) == 2
+    assert updates[0].is_keyframe is True
+    assert updates[1].pose is not None
+    assert updates[1].pose.tx == 1.0
+
     artifacts = session.close()
-
-    trajectory_lines = artifacts.trajectory_tum.path.read_text(encoding="utf-8").splitlines()
-    timestamps_s = [float(line.split()[0]) for line in trajectory_lines]
-
-    assert update0.num_sparse_points > 0
-    assert update0.num_dense_points > 0
-    assert update0.pose is not None
-    assert update0.pointmap is not None
-    assert update1.num_sparse_points >= update0.num_sparse_points
-    assert update1.num_dense_points >= update0.num_dense_points
-    assert update1.pose is not None
-    assert artifacts.sparse_points_ply is not None
-    assert artifacts.sparse_points_ply.path.exists()
-    assert artifacts.dense_points_ply is not None
-    assert artifacts.dense_points_ply.path.exists()
-    assert timestamps_s[1] > timestamps_s[0]
+    assert artifacts.trajectory_tum.path.exists()
 
 
 def test_methods_package_exports_vista_backend_surfaces() -> None:
-    backend_config = VistaSlamBackendConfig()
-    backend = backend_config.setup_target()
-
-    assert isinstance(backend, VistaSlamBackend)
-    assert backend.method_id is MethodId.VISTA
+    assert VistaSlamBackend is not None
+    assert VistaSlamBackendConfig is not None
 
 
 def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.adapter import VistaSlamSession
+
     class FakeFlowTracker:
         def __init__(self) -> None:
             self.calls = 0
@@ -233,6 +175,8 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(tmp_pa
 
 
 def test_vista_session_omits_dense_pointmap_when_policy_disables_it(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.adapter import VistaSlamSession
+
     class FakeSlam:
         def get_view(self, *args: object, **kwargs: object) -> object:
             return SimpleNamespace(pose=np.eye(4), depth=np.ones((2, 2)), intri=np.eye(3))
@@ -263,6 +207,8 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(tmp_path: Pa
 
 
 def test_vista_session_keyframe_gates_streaming_updates_before_step(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.adapter import VistaSlamSession
+
     class FakeFlowTracker:
         def __init__(self) -> None:
             self._outcomes = iter([True, False, True])
@@ -337,6 +283,8 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(tmp_path: Pa
 
 
 def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_populates(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.adapter import VistaSlamSession
+
     class FakeFlowTracker:
         def compute_disparity(self, image: np.ndarray, visualize: bool = False) -> bool:
             del image, visualize

@@ -18,6 +18,8 @@ class RunPlanStageId(StrEnum):
 
     INGEST = "ingest"
     SLAM = "slam"
+    BENCHMARK = "benchmark"
+    """Alias for trajectory_evaluation used in early scaffold versions."""
     REFERENCE_RECONSTRUCTION = "reference_reconstruction"
     TRAJECTORY_EVALUATION = "trajectory_evaluation"
     CLOUD_EVALUATION = "cloud_evaluation"

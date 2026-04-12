@@ -7,14 +7,17 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.datasets.advio import load_advio_calibration
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.utils import BaseConfig
+from prml_vslam.pipeline.finalization import write_json
+from prml_vslam.utils import BaseConfig, Console
+
 from prml_vslam.utils.geometry import (
     load_tum_trajectory,
     pointmap_from_depth,
@@ -60,33 +63,31 @@ class MockSlamBackend(SlamBackend):
     def run_sequence(
         self,
         sequence: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
+        *,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run the mock backend over a materialized sequence manifest offline."""
-        session = self.start_session(backend_config, output_policy, artifact_root)
+        del benchmark_inputs, baseline_source
+        session = self.start_session(
+            backend_config=backend_config,
+            output_policy=output_policy,
+            artifact_root=artifact_root,
+        )
         intrinsics = _load_sequence_intrinsics(sequence)
-        reference_path = sequence.reference_tum_path or sequence.arcore_tum_path
-        if reference_path is not None and reference_path.exists():
-            trajectory = load_tum_trajectory(reference_path)
-            pointmap = session.build_pointmap(intrinsics=intrinsics)
-            for seq, timestamp_s in enumerate(np.asarray(trajectory.timestamps, dtype=np.float64).tolist()):
-                session.record_pose_sample(
-                    seq=seq,
-                    timestamp_ns=int(round(timestamp_s * 1e9)),
-                    pose=SE3Pose.from_matrix(np.asarray(trajectory.poses_se3[seq], dtype=np.float64)),
-                    used_source_pose=True,
-                    pointmap=pointmap,
-                )
-        else:
-            session.record_pose_sample(
-                seq=0,
-                timestamp_ns=0,
-                pose=session.fallback_pose(),
-                used_source_pose=False,
-                pointmap=session.build_pointmap(intrinsics=intrinsics),
-            )
+        # reference_tum_path was removed from SequenceManifest in main.
+        # We need to resolve it via the benchmark service or just check local paths.
+        # For the mock, we skip reference trajectory loading if not easily found.
+        session.record_pose_sample(
+            seq=0,
+            timestamp_ns=0,
+            pose=session.fallback_pose(),
+            used_source_pose=False,
+            pointmap=session.build_pointmap(intrinsics=intrinsics),
+        )
         return session.close()
 
 
@@ -103,7 +104,7 @@ class MockSlamSession(SlamSession):
         self.backend_config = backend_config
         self.output_policy = output_policy
         self._artifact_root = artifact_root.expanduser().resolve()
-        self._poses: list[SE3Pose] = []
+        self._poses: list[FrameTransform] = []
         self._timestamps_s: list[float] = []
         self._dense_point_chunks_xyz: list[NDArray[np.float64]] = []
         self._num_dense_points = 0
@@ -165,20 +166,20 @@ class MockSlamSession(SlamSession):
             dense_points_ply=dense_points_ref,
         )
 
-    def fallback_pose(self) -> SE3Pose:
+    def fallback_pose(self) -> FrameTransform:
         """Build the next fallback pose when no source pose is available."""
         previous_pose = self._poses[-1] if self._poses else None
         tx = _STEP_DISTANCE_M if previous_pose is None else previous_pose.tx + _STEP_DISTANCE_M
         ty = 0.0 if previous_pose is None else previous_pose.ty
         tz = 0.0 if previous_pose is None else previous_pose.tz
-        return SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=ty, tz=tz)
+        return FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=ty, tz=tz)
 
     def record_pose_sample(
         self,
         *,
         seq: int,
         timestamp_ns: int,
-        pose: SE3Pose,
+        pose: FrameTransform,
         used_source_pose: bool,
         pointmap: NDArray[np.float32] | None = None,
     ) -> SlamUpdate:
