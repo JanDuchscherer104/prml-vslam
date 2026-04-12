@@ -167,7 +167,7 @@ class PipelinePageState(BaseData):
     """Selected pipeline mode."""
 
     method: MethodId = MethodId.VISTA
-    """Selected mock SLAM backend label."""
+    """Selected SLAM backend label."""
 
     slam_max_frames: int | None = None
     """Optional frame cap for the current request."""

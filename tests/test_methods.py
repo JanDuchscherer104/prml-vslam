@@ -7,9 +7,11 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
-from prml_vslam.methods import MethodId, MockSlamBackendConfig
+from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.vista.adapter import VistaSlamSession
 from prml_vslam.pipeline import SequenceManifest
+from prml_vslam.utils import Console
 from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
 
 
@@ -131,11 +133,89 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
 
     assert update0.num_sparse_points > 0
     assert update0.num_dense_points > 0
+    assert update0.pose is not None
     assert update0.pointmap is not None
     assert update1.num_sparse_points >= update0.num_sparse_points
     assert update1.num_dense_points >= update0.num_dense_points
+    assert update1.pose is not None
     assert artifacts.sparse_points_ply is not None
     assert artifacts.sparse_points_ply.path.exists()
     assert artifacts.dense_points_ply is not None
     assert artifacts.dense_points_ply.path.exists()
     assert timestamps_s[1] > timestamps_s[0]
+
+
+def test_methods_package_exports_vista_backend_surfaces() -> None:
+    backend_config = VistaSlamBackendConfig()
+    backend = backend_config.setup_target()
+
+    assert isinstance(backend, VistaSlamBackend)
+    assert backend.method_id is MethodId.VISTA
+
+
+def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(tmp_path: Path) -> None:
+    class FakeSlam:
+        def get_view(self, view_index: int, **kwargs: object) -> object:
+            del kwargs
+            assert view_index == 0
+            return type(
+                "_View",
+                (),
+                {
+                    "pose": np.array(
+                        [
+                            [1.0, 0.0, 0.0, 1.5],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 2.5],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ],
+                        dtype=np.float64,
+                    ),
+                    "depth": np.array([[1.0, 0.0], [2.0, 3.0]], dtype=np.float32),
+                    "intri": np.array(
+                        [
+                            [2.0, 0.0, 0.5],
+                            [0.0, 4.0, 0.5],
+                            [0.0, 0.0, 1.0],
+                        ],
+                        dtype=np.float64,
+                    ),
+                },
+            )()
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    update = session._build_live_update(seq=0, timestamp_ns=123, view_index=0)
+
+    assert update.pose is not None
+    assert update.pose.tx == 1.5
+    assert update.pose.tz == 2.5
+    assert update.pointmap is not None
+    assert update.pointmap.shape == (2, 2, 3)
+    assert np.allclose(update.pointmap[..., 2], np.array([[1.0, 0.0], [2.0, 3.0]], dtype=np.float32))
+    assert update.num_dense_points == 3
+
+
+def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_populates(tmp_path: Path) -> None:
+    class FakeSlam:
+        def get_view(self, view_index: int, **kwargs: object) -> object:
+            del view_index, kwargs
+            raise IndexError("pose graph not ready")
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    update = session._build_live_update(seq=0, timestamp_ns=123, view_index=0)
+
+    assert update.pose is None
+    assert update.pointmap is None
+    assert update.num_dense_points == 0
