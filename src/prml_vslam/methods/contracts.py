@@ -13,6 +13,8 @@ class MethodId(StrEnum):
 
     VISTA = "vista"
     MAST3R = "mast3r"
+    MSTR = "mast3r"
+    """Alias for MAST3R used in early scaffold mocks."""
 
     @property
     def display_name(self) -> str:
@@ -39,9 +41,6 @@ class SlamBackendConfig(BaseConfig):
 
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
-
-    config_path: Path | None = None
-    """Optional explicit backend config path."""
 
 
 __all__ = ["MethodId", "SlamBackendConfig", "SlamOutputPolicy"]

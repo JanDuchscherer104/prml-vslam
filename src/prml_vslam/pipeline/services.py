@@ -174,8 +174,6 @@ class RunPlannerService:
             artifact_names.append("sparse geometry")
         if config.outputs.emit_dense_points:
             artifact_names.append("dense geometry")
-        if config.backend.config_path is not None:
-            artifact_names.append(f"config from {config.backend.config_path.name}")
         return f"Plan the {config.method.display_name} wrapper and export {', '.join(artifact_names)} artifacts."
 
     @staticmethod

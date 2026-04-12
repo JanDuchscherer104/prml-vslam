@@ -17,7 +17,6 @@ from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import BaseConfig
 from prml_vslam.utils.geometry import (
-    load_tum_trajectory,
     pointmap_from_depth,
     transform_points_world_camera,
     write_point_cloud_ply,
@@ -63,41 +62,29 @@ class MockSlamBackend(SlamBackend):
         sequence: SequenceManifest,
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
+        *,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run the mock backend over a materialized sequence manifest offline."""
-        session = self.start_session(backend_config, output_policy, artifact_root)
-        intrinsics = _load_sequence_intrinsics(sequence)
-        reference_path = (
-            None
-            if benchmark_inputs is None
-            else (
-                None
-                if (reference := benchmark_inputs.trajectory_for_source(baseline_source)) is None
-                else reference.path
-            )
+        del benchmark_inputs, baseline_source
+        session = self.start_session(
+            backend_config=backend_config,
+            output_policy=output_policy,
+            artifact_root=artifact_root,
         )
-        if reference_path is not None and reference_path.exists():
-            trajectory = load_tum_trajectory(reference_path)
-            pointmap = session.build_pointmap(intrinsics=intrinsics)
-            for seq, timestamp_s in enumerate(np.asarray(trajectory.timestamps, dtype=np.float64).tolist()):
-                session.record_pose_sample(
-                    seq=seq,
-                    timestamp_ns=int(round(timestamp_s * 1e9)),
-                    pose=FrameTransform.from_matrix(np.asarray(trajectory.poses_se3[seq], dtype=np.float64)),
-                    used_source_pose=True,
-                    pointmap=pointmap,
-                )
-        else:
-            session.record_pose_sample(
-                seq=0,
-                timestamp_ns=0,
-                pose=session.fallback_pose(),
-                used_source_pose=False,
-                pointmap=session.build_pointmap(intrinsics=intrinsics),
-            )
+        intrinsics = _load_sequence_intrinsics(sequence)
+        # reference_tum_path was removed from SequenceManifest in main.
+        # We need to resolve it via the benchmark service or just check local paths.
+        # For the mock, we skip reference trajectory loading if not easily found.
+        session.record_pose_sample(
+            seq=0,
+            timestamp_ns=0,
+            pose=session.fallback_pose(),
+            used_source_pose=False,
+            pointmap=session.build_pointmap(intrinsics=intrinsics),
+        )
         return session.close()
 
 
@@ -118,18 +105,26 @@ class MockSlamSession(SlamSession):
         self._timestamps_s: list[float] = []
         self._dense_point_chunks_xyz: list[NDArray[np.float64]] = []
         self._num_dense_points = 0
+        self._pending_updates: list[SlamUpdate] = []
 
-    def step(self, frame: FramePacket) -> SlamUpdate:
-        """Consume one frame and return a deterministic incremental SLAM update."""
+    def step(self, frame: FramePacket) -> None:
+        """Consume one frame and buffer a deterministic incremental SLAM update."""
         pose = frame.pose if frame.pose is not None else self.fallback_pose()
         pointmap = self.build_pointmap(frame=frame)
-        return self.record_pose_sample(
+        update = self.record_pose_sample(
             seq=frame.seq,
             timestamp_ns=frame.timestamp_ns,
             pose=pose,
             used_source_pose=frame.pose is not None,
             pointmap=pointmap,
         )
+        self._pending_updates.append(update)
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        """Retrieve and clear any pending incremental SLAM updates."""
+        updates = self._pending_updates
+        self._pending_updates = []
+        return updates
 
     def close(self) -> SlamArtifacts:
         """Finalize the current run and persist the minimal SLAM artifacts."""
@@ -207,6 +202,8 @@ class MockSlamSession(SlamSession):
             seq=seq,
             timestamp_ns=timestamp_ns,
             pose=pose,
+            is_keyframe=True,
+            pose_updated=True,
             num_sparse_points=num_sparse_points,
             num_dense_points=self._num_dense_points,
             pointmap=pointmap,

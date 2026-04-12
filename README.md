@@ -8,13 +8,38 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 
 ### Requirements
 
+- `git` with submodule support
+- [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) (or `mamba`)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
 - [typst](https://typst.app/open-source/#download) for slides & report
 
 ### Bootstrap
 
 ```bash
+# If you did not clone recursively:
+git submodule update --init --recursive
+
+conda env create -f environment.yml
+conda activate prml-vslam
 uv sync --all-extras
+
+# ViSTA-SLAM loop closure dependency (DBoW3 Python bindings)
+pushd external/vista-slam/DBoW3Py
+pip install --no-build-isolation .
+popd
+
+# Optional: build CUDA RoPE2D acceleration for ViSTA-SLAM
+pushd external/vista-slam/vista_slam/sta_model/pos_embed/curope
+python setup.py build_ext --inplace
+popd
+
+# ViSTA pretrained files expected by the upstream backend
+mkdir -p external/vista-slam/pretrains
+curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/frontend_sta_weights.pth?download=true" \
+  -o external/vista-slam/pretrains/frontend_sta_weights.pth
+curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?download=true" \
+  -o external/vista-slam/pretrains/ORBvoc.txt
+
 uv run pre-commit install
 make ci
 ```
@@ -53,47 +78,63 @@ The app currently supports:
 
 - a `Record3D` live-capture page for `USB` and `Wi-Fi Preview`
 - an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
-- a `Pipeline` page for TOML-backed request editing, ADVIO or Record3D source selection, bounded mock execution, and artifact monitoring
+- a `Pipeline` page for TOML-backed request editing, ADVIO or Record3D source selection, and artifact monitoring
+- an **Async Multiprocessing Backend** for ViSTA-SLAM that isolates heavy GPU inference to prevent UI lag
+- **Live Rerun Visualization** for streaming 3D poses and dense point clouds in real-time
 - a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
 - [`PathConfig`](src/prml_vslam/utils/path_config.py)-driven dataset and artifact discovery without app-local path defaults
 
+## Rerun Visualization
 
-Pipeline contract and extension guidance lives in [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).
+The repository includes a comprehensive integration with the [Rerun](https://rerun.io) viewer for both live and offline analysis.
+
+### Live Mode
+1. Start the Rerun viewer with the project blueprint:
+   ```bash
+   uv run rerun .configs/visualization/vista_blueprint.rbl --serve-web
+   ```
+2. In the Streamlit UI, toggle **"Connect live Rerun viewer"** to ON.
+3. Run the pipeline. Data will stream live to the Rerun window.
+
+### Offline Mode
+To analyze a completed run, pass the generated `.rrd` artifact and the blueprint to the Rerun CLI:
+```bash
+uv run rerun .artifacts/<run_id>/vista/visualization/viewer_recording.rrd .configs/visualization/vista_blueprint.rbl
+```
+
+A utility script is available to regenerate the blueprint if needed:
+```bash
+uv run scripts/vista_rerun_viewer.py
+```
 
 ## TOML-First Run Planning
 
 For durable and reproducible planning, store a [`RunRequest`](src/prml_vslam/pipeline/README.md) as TOML under
-`.configs/pipelines/` and resolve it through the [`plan-run-config`](src/prml_vslam/main.py) CLI command:
+`.configs/pipelines/`. These files are automatically discovered by the Streamlit **"Pipeline Config"** dropdown.
 
 ```toml
-experiment_name = "advio-office-offline-vista"
-mode = "offline"
+experiment_name = "vista-full-tuning"
+mode = "streaming"
 output_dir = ".artifacts"
 
 [source]
-video_path = "captures/office-03.mp4"
-frame_stride = 2
+dataset_id = "advio"
+sequence_id = "advio-15"
 
 [slam]
 method = "vista"
 
-[slam.outputs]
-emit_dense_points = true
-emit_sparse_points = true
+[slam.backend.slam]
+# algorithmic overrides for the ViSTA backend
+flow_thres = 5.0
+max_view_num = 400
 
-[benchmark.reference]
-enabled = false
-
-[benchmark.trajectory]
-enabled = true
-baseline_source = "ground_truth"
-
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = true
+[visualization]
+connect_live_viewer = true
+export_viewer_rrd = true
 ```
+
+A comprehensive example with all available tuning parameters is provided in [`.configs/pipelines/vista-full.toml`](.configs/pipelines/vista-full.toml).
 
 ```bash
 uv run prml-vslam plan-run-config offline-advio-15-vista.toml
@@ -118,6 +159,53 @@ repo-relative behavior is required.
 `pipeline-demo` now refers only to the bounded ADVIO streaming demo slice.
 Offline execution uses the new `run-config` path instead of reusing the
 streaming-first demo launcher.
+
+## ViSTA Run Quick Checks
+
+### Video Smoke Test (TUM sample clip)
+
+```bash
+cat > .configs/pipelines/vista-smoke-test.toml <<'EOF'
+experiment_name = "smoke-test"
+mode = "offline"
+output_dir = ".artifacts"
+
+[source]
+video_path = "external/vista-slam/media/tumrgbd_room.mp4"
+frame_stride = 1
+
+[slam]
+method = "vista"
+
+[slam.backend]
+max_frames = 50
+
+[benchmark.reference]
+enabled = false
+
+[benchmark.trajectory]
+enabled = false
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = false
+EOF
+
+uv run prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
+```
+
+### ADVIO Offline ViSTA Demo
+
+```bash
+uv run prml-vslam write-demo-config --mode offline --method vista --sequence 15
+uv run prml-vslam run-config .configs/pipelines/advio-offline-advio-15-vista.toml
+```
+
+The first ADVIO offline run extracts video frames into `.artifacts/.../input/frames`
+and can take around 1-3 minutes depending on disk/CPU. Re-running the same config
+reuses cached extracted frames.
 
 ## Challenge Context
 

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.methods import MockSlamBackendConfig
+from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlanStageId
@@ -35,6 +35,11 @@ _SUPPORTED_STAGE_IDS = frozenset(
     {
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
+        RunPlanStageId.BENCHMARK,
+        RunPlanStageId.REFERENCE_RECONSTRUCTION,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
+        RunPlanStageId.CLOUD_EVALUATION,
+        RunPlanStageId.EFFICIENCY_EVALUATION,
         RunPlanStageId.SUMMARY,
     }
 )
@@ -159,10 +164,14 @@ class RunService:
 
 
 def _default_slam_backend_factory(method_id: MethodId) -> object:
-    """Build the repository-local mock backend for one selected method."""
-    backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+    """Build the repository-local backend for one selected method."""
+    if method_id is MethodId.VISTA:
+        backend = VistaSlamBackendConfig().setup_target()
+    else:
+        backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+
     if backend is None:
-        raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
+        raise RuntimeError(f"Failed to initialize the SLAM backend for method '{method_id.value}'.")
     return backend
 
 
