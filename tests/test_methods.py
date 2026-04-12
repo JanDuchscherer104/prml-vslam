@@ -6,12 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-from pytransform3d.rotations import quaternion_from_matrix
+import pytest
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
+from prml_vslam.interfaces import FramePacket, FrameTransform
+from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamOutputPolicy
-from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.utils import Console
 
@@ -62,10 +61,14 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
 
 
 def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Path) -> None:
-    session = MockSlamBackendConfig().setup_target().start_session(
-        backend_config=VistaSlamBackendConfig(),
-        output_policy=SlamOutputPolicy(),
-        artifact_root=tmp_path / "mock-stream",
+    session = (
+        MockSlamBackendConfig()
+        .setup_target()
+        .start_session(
+            backend_config=VistaSlamBackendConfig(),
+            output_policy=SlamOutputPolicy(),
+            artifact_root=tmp_path / "mock-stream",
+        )
     )
 
     updates = [
@@ -172,6 +175,49 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(tmp_pa
     assert update.pointmap.shape == (2, 2, 3)
     assert np.allclose(update.pointmap[..., 2], np.array([[1.0, 0.0], [2.0, 3.0]], dtype=np.float32))
     assert update.num_dense_points == 3
+
+
+def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_conversion(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.adapter import VistaSlamSession
+
+    class FakeSlam:
+        def __init__(self) -> None:
+            self.device = "cpu"
+
+        def step(self, value: dict[str, object]) -> None:
+            del value
+
+        def get_view(self, view_index: int, **kwargs: object) -> object:
+            del view_index, kwargs
+            pose = np.eye(4, dtype=np.float64)
+            pose[:3, :3] = np.array(
+                [
+                    [1.0 + 2e-6, 1e-6, 0.0],
+                    [-1e-6, 1.0 - 1e-6, 0.0],
+                    [0.0, 0.0, 1.0 + 1e-6],
+                ],
+                dtype=np.float64,
+            )
+            pose[:3, 3] = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+            return SimpleNamespace(pose=pose, depth=np.ones((2, 2), dtype=np.float32), intri=np.eye(3))
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, np.ndarray]:
+            del view_index
+            return np.zeros((2, 2, 3), dtype=np.uint8), np.ones((2, 2, 3), dtype=np.float32)
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    update = session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+
+    assert update.pose is not None
+    assert np.isclose(np.linalg.norm(update.pose.quaternion_xyzw()), 1.0)
+    assert update.pose.translation_xyz().tolist() == [1.0, 2.0, 3.0]
 
 
 def test_vista_session_omits_dense_pointmap_when_policy_disables_it(tmp_path: Path) -> None:
@@ -320,3 +366,46 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
     assert update.num_dense_points == 0
     assert update.is_keyframe is True
     assert update.keyframe_index == 0
+
+
+def test_vista_artifact_builder_projects_near_orthonormal_trajectory_rotations(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.adapter import _build_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    trajectory = np.repeat(np.eye(4, dtype=np.float64)[None, :, :], repeats=2, axis=0)
+    trajectory[1, :3, :3] = np.array(
+        [
+            [1.0 + 3e-6, 0.0, 0.0],
+            [0.0, 1.0 - 2e-6, 1e-6],
+            [0.0, -1e-6, 1.0 + 1e-6],
+        ],
+        dtype=np.float64,
+    )
+    trajectory[1, :3, 3] = np.array([0.5, 0.0, 0.0], dtype=np.float64)
+    np.save(native_output_dir / "trajectory.npy", trajectory)
+
+    artifacts = _build_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=tmp_path / "artifacts",
+        output_policy=SlamOutputPolicy(),
+    )
+
+    assert artifacts.trajectory_tum.path.exists()
+
+
+def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
+    from prml_vslam.methods.vista.adapter import _frame_transform_from_vista_pose
+
+    pose = np.eye(4, dtype=np.float64)
+    pose[:3, :3] = np.array(
+        [
+            [2.0, 0.0, 0.0],
+            [0.0, 0.5, 0.0],
+            [0.0, 0.0, 0.25],
+        ],
+        dtype=np.float64,
+    )
+
+    with pytest.raises(ValueError, match="too far from SO\\(3\\)"):
+        _frame_transform_from_vista_pose(pose)

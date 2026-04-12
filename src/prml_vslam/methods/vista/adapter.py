@@ -25,6 +25,7 @@ from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajector
 from .config import VistaSlamBackendConfig
 
 _VISTA_INPUT_RESOLUTION = (224, 224)
+_VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
 
 
 class _FlowTracker(Protocol):
@@ -147,7 +148,7 @@ class VistaSlamSession:
                 num_sparse_points=0,
                 num_dense_points=self._num_dense_points,
             )
-        pose = FrameTransform.from_matrix(np.asarray(view.pose, dtype=np.float64))
+        pose = _frame_transform_from_vista_pose(np.asarray(view.pose, dtype=np.float64))
         try:
             preview_rgb, pointmap = self._slam.get_pointmap_vis(view_index)
         except (IndexError, KeyError, ValueError):
@@ -383,7 +384,7 @@ def _build_artifacts(
     if not trajectory_npy.exists():
         raise RuntimeError(f"Expected trajectory file not found: '{trajectory_npy}'.")
     trajectory_se3 = np.load(trajectory_npy).astype(np.float64)
-    poses = [FrameTransform.from_matrix(transform) for transform in trajectory_se3]
+    poses = [_frame_transform_from_vista_pose(transform) for transform in trajectory_se3]
     timestamps_s = [float(index) for index in range(len(poses))]
     trajectory_path = write_tum_trajectory(artifact_root / "slam" / "trajectory.tum", poses, timestamps_s)
 
@@ -441,6 +442,39 @@ def _build_live_pointmap(view: object) -> np.ndarray | None:
     if view is None:
         return None
     return np.asarray(view, dtype=np.float32)
+
+
+def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:
+    """Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO."""
+    matrix_array = np.asarray(matrix, dtype=np.float64)
+    if matrix_array.shape != (4, 4):
+        raise ValueError(f"Expected a 4x4 pose matrix, got shape {matrix_array.shape}.")
+    if not np.allclose(matrix_array[3], np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64), atol=1e-6):
+        raise ValueError("ViSTA pose matrices must have a final row of [0, 0, 0, 1].")
+    normalized = matrix_array.copy()
+    normalized[:3, :3] = _project_rotation_to_so3(normalized[:3, :3])
+    return FrameTransform.from_matrix(normalized)
+
+
+def _project_rotation_to_so3(rotation: np.ndarray) -> np.ndarray:
+    """Project one near-rotation matrix to the closest valid SO(3) matrix."""
+    rotation_array = np.asarray(rotation, dtype=np.float64)
+    if rotation_array.shape != (3, 3):
+        raise ValueError(f"Expected a 3x3 rotation matrix, got shape {rotation_array.shape}.")
+    if not np.all(np.isfinite(rotation_array)):
+        raise ValueError("ViSTA rotation matrices must contain only finite values.")
+    u, _, vh = np.linalg.svd(rotation_array)
+    projected = u @ vh
+    if np.linalg.det(projected) < 0.0:
+        u[:, -1] *= -1.0
+        projected = u @ vh
+    projection_error = np.linalg.norm(rotation_array - projected, ord="fro")
+    if not np.isfinite(projection_error) or projection_error > _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR:
+        raise ValueError(
+            "ViSTA emitted a rotation matrix that is too far from SO(3) to normalize safely. "
+            f"Frobenius error: {projection_error:.6f}."
+        )
+    return projected
 
 
 def _count_valid_pointmap_points(pointmap: np.ndarray | None) -> int:

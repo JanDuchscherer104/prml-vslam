@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from pytransform3d.rotations import matrix_from_quaternion
 from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
@@ -53,12 +52,16 @@ from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, LiveTransportId, Record3DLiveSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.request import (
+    DatasetSourceSpec,
+    LiveTransportId,
+    Record3DLiveSourceSpec,
+    SlamStageConfig,
+)
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.streaming import (
-    StreamingRunner,
     _is_keyframe_like_update,
 )
 from prml_vslam.utils.path_config import PathConfig
@@ -608,7 +611,7 @@ def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_pa
             intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
         ),
         latest_slam_update=SlamUpdate(seq=0, timestamp_ns=0, is_keyframe=True),
-        )
+    )
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(pipeline_page.st, "tabs", lambda *_args, **_kwargs: [DummyContext() for _ in range(4)])
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
@@ -634,6 +637,78 @@ def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_pa
 
     assert pipeline_page._VISTA_POINTMAP_EMPTY_MESSAGE in info_messages
     assert trajectory_call["empty_message"] == pipeline_page._VISTA_TRAJECTORY_EMPTY_MESSAGE
+
+
+def test_pipeline_page_streaming_tabs_retain_last_valid_vista_preview(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    image_payloads: list[np.ndarray] = []
+    caption_messages: list[str] = []
+    info_messages: list[str] = []
+    retained_preview = np.full((2, 2, 3), fill_value=17, dtype=np.uint8)
+    snapshot = StreamingRunSnapshot(
+        plan=RunPlan(
+            run_id="vista-stream",
+            mode=PipelineMode.STREAMING,
+            method=MethodId.VISTA,
+            artifact_root=tmp_path / ".artifacts" / "vista-stream" / "vista",
+            source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        ),
+        latest_packet=FramePacket(
+            seq=4,
+            timestamp_ns=4,
+            rgb=np.ones((2, 2, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
+        ),
+        latest_slam_update=SlamUpdate(
+            seq=4,
+            timestamp_ns=4,
+            is_keyframe=False,
+            keyframe_index=None,
+        ),
+        latest_preview_update=SlamUpdate(
+            seq=3,
+            timestamp_ns=3,
+            is_keyframe=True,
+            keyframe_index=7,
+            preview_rgb=retained_preview,
+        ),
+        accepted_keyframes=8,
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page.st, "tabs", lambda *_args, **_kwargs: [DummyContext() for _ in range(4)])
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "image", lambda image, *args, **kwargs: image_payloads.append(image))
+    monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda message, *args, **kwargs: caption_messages.append(message))
+    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "info", lambda message, *args, **kwargs: info_messages.append(message))
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_live_trajectory",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_camera_intrinsics",
+        lambda *args, **kwargs: None,
+    )
+
+    pipeline_page._render_pipeline_tabs(snapshot)
+    monkeypatch.undo()
+
+    assert any(image is retained_preview for image in image_payloads)
+    assert "Showing last valid keyframe artifact from keyframe 7." in caption_messages
+    assert pipeline_page._VISTA_POINTMAP_EMPTY_MESSAGE not in info_messages
 
 
 def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path) -> None:
@@ -672,7 +747,15 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
             pointmap=np.zeros((2, 2, 3), dtype=np.float32),
             preview_rgb=None,
         ),
-
+        latest_preview_update=SlamUpdate(
+            seq=1,
+            timestamp_ns=1,
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            num_sparse_points=12,
+            num_dense_points=4,
+            pointmap=np.zeros((2, 2, 3), dtype=np.float32),
+            preview_rgb=None,
+        ),
         accepted_keyframes=1,
         backend_fps=9.0,
         trajectory_positions_xyz=np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64),
@@ -706,6 +789,24 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
     assert any(image is preview_image for image in image_payloads)
     assert np.array_equal(trajectory_call["positions_xyz"], snapshot.trajectory_positions_xyz)
     assert np.array_equal(trajectory_call["timestamps_s"], snapshot.trajectory_timestamps_s)
+
+
+def test_pipeline_page_preview_status_message_marks_current_keyframe() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    update = SlamUpdate(
+        seq=3,
+        timestamp_ns=3,
+        is_keyframe=True,
+        keyframe_index=5,
+        preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
+    )
+    snapshot = StreamingRunSnapshot(
+        latest_slam_update=update,
+        latest_preview_update=update,
+    )
+
+    assert pipeline_page._preview_status_message(snapshot) == pipeline_page._VISTA_PREVIEW_CURRENT_MESSAGE
 
 
 def test_pipeline_page_pointmap_preview_image_uses_generic_projection() -> None:
@@ -747,12 +848,6 @@ def test_packet_session_metrics_separate_packet_and_keyframe_history() -> None:
 
 
 def test_streaming_keyframe_gate_rejects_small_pose_jitter() -> None:
-    from prml_vslam.pipeline.streaming import _is_keyframe_like_update
-
-    previous_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
-    tiny_motion_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.05, ty=0.02, tz=0.0)
-    large_motion_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.3, ty=0.0, tz=0.0)
-
     update_jitter = SlamUpdate(seq=1, timestamp_ns=1, is_keyframe=False)
     update_keyframe = SlamUpdate(seq=2, timestamp_ns=2, is_keyframe=True)
 

@@ -7,18 +7,18 @@ from threading import Event
 
 import numpy as np
 
-from prml_vslam.interfaces import FrameTransform
 from prml_vslam.methods.protocols import StreamingSlamBackend
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.methods.updates import SlamUpdate
+from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
-from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.state import RunState, StreamingRunSnapshot
 from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.utils.packet_session import (
     PacketSessionMetrics,
-    PacketSessionRuntime,
     extract_pose_position,
 )
+from prml_vslam.visualization import VisualizationArtifacts
 from prml_vslam.visualization.rerun import (
     attach_file_sink,
     attach_grpc_sink,
@@ -104,6 +104,7 @@ class StreamingRunner:
         sequence_manifest = None
         slam_artifacts = None
         visualization_artifacts = None
+        latest_preview_update = None
 
         start_timestamp_ns: int | None = None
         live_recording = None
@@ -154,6 +155,8 @@ class StreamingRunner:
 
                 metrics.record_packet(arrival_time_s=arrival_time_s)
                 update = slam_session.step(packet)
+                if _has_renderable_preview(update):
+                    latest_preview_update = update
                 is_keyframe_update = update.is_keyframe or (update.pose is not None and update.keyframe_index is None)
                 if is_keyframe_update:
                     keyframe_position_xyz = extract_pose_position(update)
@@ -176,6 +179,7 @@ class StreamingRunner:
                     state=RunState.RUNNING,
                     latest_packet=packet,
                     latest_slam_update=update,
+                    latest_preview_update=latest_preview_update,
                     num_sparse_points=update.num_sparse_points,
                     num_dense_points=update.num_dense_points,
                     **metrics_fields,
@@ -190,7 +194,11 @@ class StreamingRunner:
             try:
                 if slam_started:
                     slam_artifacts = slam_session.close()
-                if request.visualization.export_viewer_rrd and sequence_manifest is not None and slam_artifacts is not None:
+                if (
+                    request.visualization.export_viewer_rrd
+                    and sequence_manifest is not None
+                    and slam_artifacts is not None
+                ):
                     visualization_artifacts = collect_native_visualization_artifacts(
                         native_output_dir=run_paths.native_output_dir,
                         preserve_native_rerun=request.visualization.preserve_native_rerun,
@@ -233,6 +241,16 @@ class StreamingRunner:
 def _is_keyframe_like_update(update: SlamUpdate) -> bool:
     """Return whether one backend update represents a trajectory growth event."""
     return update.is_keyframe or (update.pose is not None and update.keyframe_index is None)
+
+
+def _has_renderable_preview(update: SlamUpdate) -> bool:
+    """Return whether one backend update exposes a non-empty preview payload."""
+    if update.preview_rgb is not None and np.asarray(update.preview_rgb).size > 0:
+        return True
+    if update.pointmap is None:
+        return False
+    pointmap = np.asarray(update.pointmap)
+    return pointmap.size > 0 and pointmap.ndim in {2, 3}
 
 
 __all__ = ["StreamingRunner"]

@@ -15,11 +15,8 @@ from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.pipeline.finalization import write_json
-from prml_vslam.utils import BaseConfig, Console
-
+from prml_vslam.utils import BaseConfig
 from prml_vslam.utils.geometry import (
-    load_tum_trajectory,
     pointmap_from_depth,
     transform_points_world_camera,
     write_point_cloud_ply,

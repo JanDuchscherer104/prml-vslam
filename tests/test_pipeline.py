@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,28 +11,24 @@ import pytest
 
 from prml_vslam.datasets import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
+from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.protocols import OfflineSlamBackend, SlamBackend, SlamSession, StreamingSlamBackend
+from prml_vslam.methods.protocols import OfflineSlamBackend, SlamSession, StreamingSlamBackend
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage, RunPlanStageId
-from prml_vslam.pipeline.contracts.provenance import StageExecutionStatus, StageManifest
+from prml_vslam.pipeline.contracts.plan import RunPlanStageId
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
-    LiveTransportId,
-    Record3DLiveSourceSpec,
     SlamStageConfig,
     VideoSourceSpec,
 )
-from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.offline import OfflineRunner
 from prml_vslam.pipeline.run_service import RunService, _default_slam_backend_factory
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.streaming import StreamingRunner
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils import PathConfig
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts.runtime import RunSnapshot
@@ -78,7 +73,7 @@ def test_run_request_build_respects_disabled_optional_stage_toggles(tmp_path: Pa
 def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_request(path_config)
-    plan = request.build(path_config)
+    request.build(path_config)
 
     assert isinstance(OfflineRunner(), OfflineRunner)
     assert isinstance(StreamingRunner(), StreamingRunner)
@@ -144,11 +139,6 @@ def test_offline_runner_completes_and_persists_outputs(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_request(path_config, mode=PipelineMode.OFFLINE)
     plan = request.build(path_config)
-    run_paths = path_config.plan_run_paths(
-        experiment_name=request.experiment_name,
-        method_slug=request.slam.method.value,
-        output_dir=request.output_dir,
-    )
     sequence_manifest = _prepared_offline_manifest(tmp_path)
     source = FakeOfflineSource(sequence_manifest=sequence_manifest)
     backend = MockSlamBackendConfig().setup_target()
@@ -219,10 +209,42 @@ def test_streaming_runner_keeps_source_frames_and_keyframes_separate(tmp_path: P
     assert snapshot.latest_slam_update is not None
     assert snapshot.latest_slam_update.is_keyframe is True
     assert snapshot.latest_slam_update.keyframe_index == 1
+    assert snapshot.latest_preview_update is not None
+    assert snapshot.latest_preview_update.keyframe_index == 1
     assert snapshot.trajectory_positions_xyz.shape == (2, 3)
     np.testing.assert_allclose(snapshot.trajectory_positions_xyz[-1], np.array([0.2, 0.0, 0.0]))
     assert source.prepare_calls == 1
     assert source.open_calls == [True]
+
+
+def test_streaming_runner_retains_last_renderable_preview_update(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    plan = request.build(path_config)
+    sequence_manifest = SequenceManifest(sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov")
+    source = FakeStreamingSource(
+        sequence_manifest=sequence_manifest,
+        stream=FinitePacketStream(
+            [
+                _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
+                _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
+            ]
+        ),
+    )
+    backend = PreviewRetentionStreamingBackend()
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=backend)
+    snapshot = _wait_for_terminal_snapshot(runner)
+
+    assert isinstance(snapshot, StreamingRunSnapshot)
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.latest_slam_update is not None
+    assert snapshot.latest_slam_update.is_keyframe is False
+    assert snapshot.latest_preview_update is not None
+    assert snapshot.latest_preview_update.is_keyframe is True
+    assert snapshot.latest_preview_update.keyframe_index == 0
+    assert snapshot.latest_preview_update.preview_rgb is not None
 
 
 class KeyframeStreamingBackend:
@@ -255,6 +277,7 @@ class KeyframeStreamingSession:
                     keyframe_index=0,
                     num_sparse_points=5,
                     num_dense_points=3,
+                    preview_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
                     pointmap=np.zeros((2, 2, 3), dtype=np.float32),
                 ),
                 SlamUpdate(
@@ -273,6 +296,7 @@ class KeyframeStreamingSession:
                     keyframe_index=1,
                     num_sparse_points=8,
                     num_dense_points=6,
+                    preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
                     pointmap=np.zeros((2, 2, 3), dtype=np.float32),
                 ),
             ]
@@ -290,6 +314,59 @@ class KeyframeStreamingSession:
         trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
         return SlamArtifacts(
             trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="keyframe-streaming"),
+        )
+
+
+class PreviewRetentionStreamingBackend:
+    """Streaming backend double that stops emitting preview payloads after the first keyframe."""
+
+    method_id = MethodId.VISTA
+
+    def start_session(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> SlamSession:
+        del backend_config, output_policy
+        return PreviewRetentionStreamingSession(artifact_root=artifact_root)
+
+
+class PreviewRetentionStreamingSession:
+    """Streaming session double that keeps a prior preview valid across non-keyframe updates."""
+
+    def __init__(self, *, artifact_root: Path) -> None:
+        self._artifact_root = artifact_root
+        self._updates = iter(
+            [
+                SlamUpdate(
+                    seq=0,
+                    timestamp_ns=1_000_000_000,
+                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                    is_keyframe=True,
+                    keyframe_index=0,
+                    preview_rgb=np.full((2, 2, 3), fill_value=9, dtype=np.uint8),
+                    pointmap=np.zeros((2, 2, 3), dtype=np.float32),
+                ),
+                SlamUpdate(
+                    seq=1,
+                    timestamp_ns=2_000_000_000,
+                    is_keyframe=False,
+                    keyframe_index=None,
+                ),
+            ]
+        )
+
+    def step(self, frame: FramePacket) -> SlamUpdate:
+        del frame
+        return next(self._updates)
+
+    def close(self) -> SlamArtifacts:
+        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
+        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+        trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
+        return SlamArtifacts(
+            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="preview-retention-streaming"),
         )
 
 

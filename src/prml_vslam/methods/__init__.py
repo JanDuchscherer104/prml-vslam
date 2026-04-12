@@ -23,4 +23,6 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "MethodId",
     "MockSlamBackendConfig",
+    "VistaSlamBackend",
+    "VistaSlamBackendConfig",
 ]
