@@ -6,9 +6,11 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig
-from prml_vslam.pipeline.contracts import SequenceManifest, SlamConfig
+from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
 
 
@@ -39,12 +41,15 @@ cameras:
 
 
 def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tmp_path: Path) -> None:
-    backend = MockSlamBackendConfig(method_id=MethodId.MSTR).setup_target()
+    backend = MockSlamBackendConfig(method_id=MethodId.MAST3R).setup_target()
     assert backend is not None
 
     result = backend.run_sequence(
         SequenceManifest(sequence_id="demo-sequence"),
-        SlamConfig(method=MethodId.MSTR),
+        None,
+        ReferenceSource.GROUND_TRUTH,
+        SlamBackendConfig(),
+        SlamOutputPolicy(),
         tmp_path / "artifacts" / "demo" / "mstr",
     )
 
@@ -63,8 +68,8 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
     write_tum_trajectory(
         reference_path,
         [
-            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.0),
         ],
         [0.0, 1.0],
     )
@@ -72,10 +77,14 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
     artifacts = backend.run_sequence(
         SequenceManifest(
             sequence_id="advio-15",
-            reference_tum_path=reference_path,
             intrinsics_path=calibration_path,
         ),
-        SlamConfig(method=MethodId.VISTA),
+        PreparedBenchmarkInputs(
+            reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)]
+        ),
+        ReferenceSource.GROUND_TRUTH,
+        SlamBackendConfig(),
+        SlamOutputPolicy(),
         tmp_path / "offline-artifacts",
     )
 
@@ -89,8 +98,6 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
     assert np.allclose(trajectory.positions_xyz[1], np.array([1.0, 0.5, 0.0], dtype=np.float64))
     assert artifacts.sparse_points_ply is not None
     assert artifacts.sparse_points_ply.path.exists()
-    assert artifacts.preview_log_jsonl is not None
-    assert artifacts.preview_log_jsonl.path.exists()
     assert artifacts.dense_points_ply is not None
     assert artifacts.dense_points_ply.path.exists()
     assert "element vertex 32" in dense_lines
@@ -101,7 +108,8 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
     assert backend is not None
 
     session = backend.start_session(
-        SlamConfig(method=MethodId.VISTA),
+        SlamBackendConfig(),
+        SlamOutputPolicy(),
         tmp_path / "streaming-artifacts",
     )
     update0 = session.step(
@@ -110,7 +118,7 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
             timestamp_ns=2_000_000_000,
             rgb=np.zeros((8, 8, 3), dtype=np.uint8),
             intrinsics=CameraIntrinsics(fx=400.0, fy=400.0, cx=3.5, cy=3.5, width_px=8, height_px=8),
-            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
         )
     )
     update1 = session.step(
@@ -119,7 +127,7 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
             timestamp_ns=1_500_000_000,
             rgb=np.zeros((8, 8, 3), dtype=np.uint8),
             intrinsics=CameraIntrinsics(fx=400.0, fy=400.0, cx=3.5, cy=3.5, width_px=8, height_px=8),
-            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
         )
     )
     artifacts = session.close()

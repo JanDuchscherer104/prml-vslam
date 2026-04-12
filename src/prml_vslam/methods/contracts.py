@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
+
+from prml_vslam.utils import BaseConfig
 
 
 class MethodId(StrEnum):
     """Supported external VSLAM backends."""
 
     VISTA = "vista"
-    MSTR = "mstr"
+    MAST3R = "mast3r"
 
     @property
     def display_name(self) -> str:
@@ -17,8 +20,28 @@ class MethodId(StrEnum):
         match self:
             case MethodId.VISTA:
                 return "ViSTA-SLAM"
-            case MethodId.MSTR:
+            case MethodId.MAST3R:
                 return "MASt3R-SLAM"
 
 
-__all__ = ["MethodId"]
+class SlamOutputPolicy(BaseConfig):
+    """Method-owned output policy controls."""
+
+    emit_dense_points: bool = True
+    """Whether the backend should materialize a dense point cloud artifact."""
+
+    emit_sparse_points: bool = True
+    """Whether the backend should materialize sparse geometry artifacts."""
+
+
+class SlamBackendConfig(BaseConfig):
+    """Method-owned backend controls."""
+
+    max_frames: int | None = None
+    """Optional frame cap used for debugging or short smoke runs."""
+
+    config_path: Path | None = None
+    """Optional explicit backend config path."""
+
+
+__all__ = ["MethodId", "SlamBackendConfig", "SlamOutputPolicy"]

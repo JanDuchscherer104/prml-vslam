@@ -8,7 +8,7 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 
 - [REQUIREMENTS.md](./REQUIREMENTS.md) for top-level package ownership
 - the nearest package `README.md` and `REQUIREMENTS.md` for package-local behavior and constraints
-- [../../docs/architecture/interfaces-and-contracts.md](../../docs/architecture/interfaces-and-contracts.md) for human-facing ownership rationale
+- [../../docs/architecture/interfaces-and-contracts.md](../../docs/architecture/interfaces-and-contracts.md) for human-facing minimal public surface, wrapper normalization, and migration rationale
 
 ## Core Engineering Rules
 
@@ -39,7 +39,8 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
   - `BaseConfig.from_toml()` to load
   - `BaseConfig.to_toml()` and `save_toml()` to persist
   - `PathConfig.resolve_toml_path()` for repo-relative config paths
-- Package-boundary DTOs, configs, manifests, requests, and results belong in `<package>/contracts.py`.
+- Package-boundary DTOs, configs, manifests, requests, and results belong in `<package>/contracts.py` or
+  `<package>/contracts/` when a package owns several distinct contract slices.
 - Package-local `Protocol` definitions belong in `<package>/protocols.py` when a package owns that behavior seam.
 - `services.py` modules own implementations only.
 - Shared datamodel and protocol ownership should follow the canonical docs instead of being redefined locally:
@@ -58,7 +59,10 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Every interface, datamodel, artifact, and public method that carries poses, trajectories, point clouds, depth-derived geometry, calibration, or extrinsics must state its coordinate-frame semantics explicitly in names and docstrings.
 - Use `T_target_source` naming for explicit transforms and transform-like variables. Prefer names such as `T_world_camera`, `T_cam_imu`, and `points_xyz_camera` over ambiguous names such as `pose`, `transform`, or `points`.
 - The canonical repo pose convention for camera poses is world <- camera (`T_world_camera`). For pose datamodels, translation is the source-frame origin expressed in target coordinates, and rotation maps source-frame vectors into target coordinates.
-- `SE3Pose`, `FramePacket.pose`, normalized trajectory artifacts, and downstream pipeline-owned pose outputs must use the canonical repo pose convention unless a boundary adapter explicitly documents an upstream-native exception.
+- `FrameTransform`, `FramePacket.pose`, normalized trajectory artifacts, and downstream pipeline-owned pose outputs must use
+  the canonical repo pose convention unless a boundary adapter explicitly documents an upstream-native exception.
+- Use `FrameTransform` for both runtime camera poses and explicit frame-labelled static transforms such as calibration,
+  frame-graph edges, or viewer export transforms.
 - Camera-frame metric geometry must document its axis convention.
 - World frames must be named explicitly at boundaries. Do not assume that upstream `world` frames from different systems are interchangeable.
 - Cross-system alignment transforms are derived comparison artifacts, not raw source poses. Do not silently align or relabel upstream trajectories inside loaders or wrappers.
@@ -87,4 +91,4 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Run targeted tests with `uv run pytest <path>` when a focused surface changes.
 - Use `make test` when the change is broad enough to justify the full suite.
 - Before creating a commit, run `make ci`.
-- When changing config contracts, artifact formats, or benchmark assumptions, update `.agents/references/agent_reference.md` in the same change.
+- When changing config contracts, artifact formats, or benchmark assumptions, update [`REQUIREMENTS.md`](./REQUIREMENTS.md) and/or [../../docs/architecture/interfaces-and-contracts.md](../../docs/architecture/interfaces-and-contracts.md) in the same change.

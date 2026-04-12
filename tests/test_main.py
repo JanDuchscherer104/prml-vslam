@@ -114,16 +114,23 @@ frame_stride = 2
 
 [slam]
 method = "vista"
+
+[slam.outputs]
 emit_dense_points = true
 emit_sparse_points = true
 
-[reference]
+[benchmark.reference]
 enabled = false
 
-[evaluation]
-compare_to_arcore = true
-evaluate_cloud = false
-evaluate_efficiency = true
+[benchmark.trajectory]
+enabled = true
+baseline_source = "ground_truth"
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = true
 """.strip(),
         encoding="utf-8",
     )
@@ -170,19 +177,13 @@ def test_write_demo_config_command_persists_under_pipeline_config_dir(tmp_path: 
     assert config_path.exists()
 
 
-def test_root_cli_defaults_to_offline_pipeline_demo(monkeypatch) -> None:
+def test_root_cli_shows_help_when_no_subcommand_is_given() -> None:
     runner = CliRunner()
-    captured: dict[str, object] = {}
-
-    def fake_pipeline_demo() -> None:
-        captured["called"] = True
-
-    monkeypatch.setattr(main, "pipeline_demo", fake_pipeline_demo)
 
     result = runner.invoke(main.app, [])
 
-    assert result.exit_code == 0
-    assert captured == {"called": True}
+    assert result.exit_code == 2
+    assert "Usage:" in result.stdout
 
 
 def test_pipeline_demo_command_reuses_shared_demo_request(tmp_path: Path, monkeypatch) -> None:
@@ -218,12 +219,12 @@ def test_pipeline_demo_command_reuses_shared_demo_request(tmp_path: Path, monkey
         def __init__(self, *, path_config: PathConfig) -> None:
             captured["run_service_path_config"] = path_config
 
-        def start_run(self, *, request, source) -> None:
+        def start_run(self, *, request, runtime_source=None) -> None:
             captured["request"] = request
-            captured["source"] = source
+            captured["runtime_source"] = runtime_source
 
         def snapshot(self):
-            return main.PipelineSessionSnapshot(state=main.PipelineSessionState.COMPLETED)
+            return main.StreamingRunSnapshot(state=main.RunState.COMPLETED)
 
         def stop_run(self) -> None:
             captured["stopped"] = True
@@ -236,12 +237,69 @@ def test_pipeline_demo_command_reuses_shared_demo_request(tmp_path: Path, monkey
 
     assert result.exit_code == 0
     request = captured["request"]
-    assert request.experiment_name == "advio-offline-advio-15-vista"
-    assert request.mode is main.PipelineMode.OFFLINE
+    assert request.experiment_name == "advio-streaming-advio-15-vista"
+    assert request.mode is main.PipelineMode.STREAMING
     assert request.slam.method is main.MethodId.VISTA
     assert request.source.sequence_id == "advio-15"
-    assert captured["source"] == "streaming-source"
+    assert captured["runtime_source"] == "streaming-source"
     assert captured["source_args"]["sequence_id"] == 15
+
+
+def test_run_config_command_executes_offline_request(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+    config_path = tmp_path / ".configs" / "pipelines" / "offline.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        """
+experiment_name = "Offline Run"
+mode = "offline"
+output_dir = ".artifacts"
+
+[source]
+video_path = "captures/office-03.mp4"
+
+[slam]
+method = "vista"
+
+[slam.outputs]
+emit_dense_points = true
+emit_sparse_points = true
+
+[benchmark.reference]
+enabled = false
+
+[benchmark.trajectory]
+enabled = false
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    class FakeRunService:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            captured["path_config"] = path_config
+
+        def start_run(self, *, request, runtime_source=None) -> None:
+            captured["request"] = request
+            captured["runtime_source"] = runtime_source
+
+        def snapshot(self):
+            return main.RunSnapshot(state=main.RunState.COMPLETED)
+
+    monkeypatch.setattr(main, "RunService", FakeRunService)
+    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
+
+    result = runner.invoke(main.app, ["run-config", "offline.toml"])
+
+    assert result.exit_code == 0
+    assert captured["request"].mode is main.PipelineMode.OFFLINE
+    assert captured["runtime_source"] is None
 
 
 def test_runtime_dependencies_include_pyyaml() -> None:

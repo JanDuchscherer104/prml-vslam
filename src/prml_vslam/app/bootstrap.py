@@ -11,7 +11,7 @@ import streamlit as st
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.session import PipelineSessionState
+from prml_vslam.pipeline.state import RunState
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState
@@ -115,8 +115,8 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
     if state_changed:
         context.store.save(context.state)
     if page_id not in {AppPageId.PIPELINE, AppPageId.METRICS} and context.run_service.snapshot().state in {
-        PipelineSessionState.CONNECTING,
-        PipelineSessionState.RUNNING,
+        RunState.PREPARING,
+        RunState.RUNNING,
     }:
         context.run_service.stop_run()
 

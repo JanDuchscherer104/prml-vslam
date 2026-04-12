@@ -13,6 +13,29 @@ This directory stores extracted arXiv LaTeX source bundles for papers that direc
 - `arXiv-DROID-SLAM/`
   - DROID-SLAM: Deep Visual SLAM for Monocular, Stereo, and RGB-D Cameras
   - extracted from the arXiv e-print source bundle for `2108.10869`
+- `arXiv-ADVIO/`
+  - ADVIO: An authentic dataset for visual-inertial odometry.
+  - extracted from the arXiv e-print source bundle for `1807.09828`
+
+## Manifest and refresh workflow
+
+The checked-in manifest for this directory lives at:
+
+- `sources.jsonl`
+
+Each JSONL row describes one paper and the local output names needed to fetch its arXiv e-print source tree and, optionally, its PDF. The current schema is:
+
+- required: `arxiv_id`, `tex_dir`
+- optional: `title`, `source_url`, `pdf_url`, `pdf_file`
+
+Run the downloader from the repo root:
+
+```bash
+uv run python scripts/download_arxiv_tex_src.py docs/literature/tex-src/sources.jsonl
+uv run python scripts/download_arxiv_tex_src.py docs/literature/tex-src/sources.jsonl --download-pdfs
+```
+
+By default the script writes extracted source trees into `docs/literature/tex-src/` and PDFs into `docs/literature/pdf/`. Use `--overwrite` to replace an existing extracted tree or PDF target.
 
 ## Why these sources are kept locally
 
@@ -39,6 +62,6 @@ This directory stores extracted arXiv LaTeX source bundles for papers that direc
 - `arXiv-DROID-SLAM/main.tex`
 - `arXiv-DROID-SLAM/supp.tex`
 
-The repo-level interpretation of these papers lives in:
+The repo-level lookup material for these papers lives in:
 
 - `.agents/references/agent_reference.md`
