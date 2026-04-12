@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 from pydantic import Field
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseConfig
 
@@ -43,7 +43,7 @@ class Cv2ProducerConfig(BaseConfig):
     intrinsics: CameraIntrinsics | None = None
     """Camera intrinsics associated with the replayed sample when known."""
 
-    poses_by_frame: list[SE3Pose | None] | None = None
+    poses_by_frame: list[FrameTransform | None] | None = None
     """Optional per-frame camera poses aligned to source frame indices."""
 
     fps: float = 60.0
@@ -160,7 +160,7 @@ class Cv2FrameProducer:
         if sleep_seconds > 0.0:
             time.sleep(sleep_seconds)
 
-    def _pose_for_frame(self, frame_index: int) -> SE3Pose | None:
+    def _pose_for_frame(self, frame_index: int) -> FrameTransform | None:
         poses_by_frame = self.config.poses_by_frame
         if poses_by_frame is None or frame_index >= len(poses_by_frame):
             return None

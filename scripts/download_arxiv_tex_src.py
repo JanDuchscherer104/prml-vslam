@@ -155,7 +155,11 @@ def safe_extract_tarball(archive_path: Path, target_dir: Path) -> None:
 def normalize_member_path(member_name: str) -> tuple[str, ...]:
     """Normalize one archive member path and reject traversal segments."""
 
-    parts = tuple(part for part in PurePosixPath(member_name).parts if part not in {"", "."})
+    pure_path = PurePosixPath(member_name)
+    if pure_path.is_absolute():
+        msg = f"Unsafe archive member path: {member_name!r}"
+        raise ValueError(msg)
+    parts = tuple(part for part in pure_path.parts if part not in {"", "."})
     if not parts or any(part == ".." for part in parts):
         msg = f"Unsafe archive member path: {member_name!r}"
         raise ValueError(msg)

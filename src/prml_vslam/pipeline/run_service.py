@@ -8,27 +8,28 @@ from typing import TYPE_CHECKING
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
+from prml_vslam.methods import MockSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId
-from prml_vslam.methods.protocols import OfflineSlamBackend, SlamBackend, StreamingSlamBackend
+from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlanStageId
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
     PipelineMode,
     Record3DLiveSourceSpec,
-    RunRequest,
     VideoSourceSpec,
 )
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.offline import OfflineRunner
 from prml_vslam.pipeline.services import RunPlannerService
+from prml_vslam.pipeline.state import RunSnapshot, RunState
 from prml_vslam.pipeline.streaming import StreamingRunner
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from .contracts.request import RunRequest, SourceSpec
 
 _SUPPORTED_STAGE_IDS = frozenset(
     {
@@ -68,12 +69,12 @@ class OfflineSourceResolver:
 
     path_config: PathConfig
 
-    def resolve(self, source_spec: object) -> OfflineSequenceSource:
+    def resolve(self, source_spec: SourceSpec) -> OfflineSequenceSource:
         """Resolve one source spec into an offline-capable source implementation."""
         match source_spec:
             case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id):
                 service = AdvioDatasetService(self.path_config)
-                numeric_sequence_id = _advio_sequence_id_from_slug(sequence_id)
+                numeric_sequence_id = service.resolve_sequence_id(sequence_id)
                 return service.build_offline_source(sequence_id=numeric_sequence_id)
             case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
                 return VideoOfflineSequenceSource(
@@ -97,7 +98,7 @@ class RunService:
         planner_service: RunPlannerService | None = None,
         offline_runner: OfflineRunner | None = None,
         streaming_runner: StreamingRunner | None = None,
-        slam_backend_factory: Callable[[MethodId], SlamBackend] | None = None,
+        slam_backend_factory: Callable[[MethodId], object] | None = None,
         offline_source_resolver: OfflineSourceResolver | None = None,
     ) -> None:
         self.path_config = PathConfig() if path_config is None else path_config
@@ -105,9 +106,7 @@ class RunService:
         self._offline_runner = OfflineRunner() if offline_runner is None else offline_runner
         self._streaming_runner = StreamingRunner() if streaming_runner is None else streaming_runner
         self._slam_backend_factory = (
-            (lambda method_id: _default_slam_backend_factory(method_id, path_config=self.path_config))
-            if slam_backend_factory is None
-            else slam_backend_factory
+            _default_slam_backend_factory if slam_backend_factory is None else slam_backend_factory
         )
         self._offline_source_resolver = (
             OfflineSourceResolver(self.path_config) if offline_source_resolver is None else offline_source_resolver
@@ -153,30 +152,18 @@ class RunService:
         """Return the latest run snapshot from the active runner."""
         offline_snapshot = self._offline_runner.snapshot()
         streaming_snapshot = self._streaming_runner.snapshot()
-        return offline_snapshot if offline_snapshot.state is not RunState.IDLE else streaming_snapshot
+        return streaming_snapshot if streaming_snapshot.state is not RunState.IDLE else offline_snapshot
 
     def _runner_for_mode(self, mode: PipelineMode) -> OfflineRunner | StreamingRunner:
         return self._offline_runner if mode is PipelineMode.OFFLINE else self._streaming_runner
 
 
-def _default_slam_backend_factory(method_id: MethodId, *, path_config: PathConfig) -> SlamBackend:
-    """Build the runtime backend for one selected method id."""
-    match method_id:
-        case MethodId.VISTA:
-            return VistaSlamBackend(config=VistaSlamBackendConfig(), path_config=path_config)
-        case MethodId.MSTR:
-            backend = MockSlamBackendConfig(method_id=method_id).setup_target()
-            if backend is None:
-                raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
-            return backend
-
-
-def _advio_sequence_id_from_slug(sequence_slug: str) -> int:
-    if sequence_slug.startswith("advio-"):
-        _, suffix = sequence_slug.split("-", maxsplit=1)
-        if suffix.isdigit():
-            return int(suffix)
-    raise RuntimeError(f"ADVIO sequence slug '{sequence_slug}' could not be resolved to a numeric scene id.")
+def _default_slam_backend_factory(method_id: MethodId) -> object:
+    """Build the repository-local mock backend for one selected method."""
+    backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+    if backend is None:
+        raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
+    return backend
 
 
 __all__ = ["OfflineSourceResolver", "RunService", "VideoOfflineSequenceSource"]

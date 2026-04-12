@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from prml_vslam.interfaces import CameraIntrinsics, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils.geometry import (
     load_tum_trajectory,
     pointmap_from_depth,
@@ -37,7 +37,7 @@ def test_camera_intrinsics_from_column_major_flat_k() -> None:
 
 
 def test_se3_pose_roundtrips_through_matrix() -> None:
-    pose = SE3Pose(
+    pose = FrameTransform(
         qx=0.0,
         qy=0.0,
         qz=math.sin(math.pi / 4.0),
@@ -47,14 +47,14 @@ def test_se3_pose_roundtrips_through_matrix() -> None:
         tz=0.25,
     )
 
-    roundtripped = SE3Pose.from_matrix(pose.as_matrix())
+    roundtripped = FrameTransform.from_matrix(pose.as_matrix())
 
     assert np.allclose(roundtripped.as_matrix(), pose.as_matrix())
     assert np.allclose(roundtripped.translation_xyz(), np.array([1.5, -2.0, 0.25], dtype=np.float64))
 
 
 def test_se3_pose_to_tum_fields() -> None:
-    pose = SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0)
+    pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0)
 
     assert pose.to_tum_fields() == (1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -62,8 +62,8 @@ def test_se3_pose_to_tum_fields() -> None:
 def test_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> None:
     path = tmp_path / "trajectory.tum"
     poses = [
-        SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
-        SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=4.0, ty=5.0, tz=6.0),
+        FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+        FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=4.0, ty=5.0, tz=6.0),
     ]
 
     write_tum_trajectory(path, poses, [0.0, 1.0])
@@ -96,7 +96,7 @@ def test_pointmap_from_depth_uses_intrinsics_and_stride() -> None:
 def test_transform_points_world_camera_applies_pose_translation() -> None:
     points_world = transform_points_world_camera(
         np.array([[0.0, 0.0, 1.0], [1.0, 2.0, 3.0]], dtype=np.float32),
-        SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=10.0, ty=20.0, tz=30.0),
+        FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=10.0, ty=20.0, tz=30.0),
     )
 
     assert np.allclose(points_world, np.array([[10.0, 20.0, 31.0], [11.0, 22.0, 33.0]], dtype=np.float64))

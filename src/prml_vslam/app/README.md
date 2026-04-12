@@ -2,7 +2,7 @@
 
 This package contains the packaged Streamlit workbench for PRML VSLAM.
 
-The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.eval`, `prml_vslam.pipeline`, and `prml_vslam.utils`.
+The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.datasets`, `prml_vslam.eval`, `prml_vslam.pipeline`, `prml_vslam.benchmark`, `prml_vslam.visualization`, and `prml_vslam.utils`.
 
 Use this document together with the other app-specific and repo-wide guidance:
 
@@ -194,8 +194,14 @@ sequenceDiagram
   - `PathConfig` is the source of truth for repo paths and discovery roots.
 
 - `prml_vslam.pipeline`
-  - Owns benchmark planning/orchestration concepts.
+  - Owns run planning, execution orchestration, manifests, and runtime state.
   - The Streamlit app may expose pipeline-facing controls, but it should not define pipeline semantics itself.
+
+- `prml_vslam.benchmark`
+  - Owns benchmark-policy contracts plus prepared benchmark-side inputs such as available reference trajectories.
+
+- `prml_vslam.visualization`
+  - Owns viewer policy and preserved native Rerun artifacts.
 
 - `prml_vslam.eval`
   - Owns evaluation logic, artifact semantics, and benchmark-run discovery for the metrics surface.
@@ -280,5 +286,7 @@ When adding features, prefer extending the existing pattern rather than adding n
 - new chart -> `plotting/<name>.py`
 - new app session-state model -> `models.py`
 - new evaluation/discovery contract -> `prml_vslam.eval`
+- new benchmark-policy or prepared benchmark-input contract -> `prml_vslam.benchmark`
+- new viewer/export artifact contract -> `prml_vslam.visualization`
 - new app-facing orchestration or runtime behavior -> `services.py`
 - new persisted state slot -> `state.py`

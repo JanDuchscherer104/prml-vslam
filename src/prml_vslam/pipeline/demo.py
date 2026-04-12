@@ -38,7 +38,7 @@ def build_advio_demo_request(
             cloud=CloudBenchmarkConfig(enabled=False),
             efficiency=EfficiencyBenchmarkConfig(enabled=False),
         ),
-        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
+        visualization=VisualizationConfig(connect_live_viewer=False),
     )
 
 

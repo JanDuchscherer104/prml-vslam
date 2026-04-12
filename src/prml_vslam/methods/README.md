@@ -12,9 +12,9 @@ update DTOs, and thin wrappers around external SLAM systems.
 - `protocols.py`
   - `OfflineSlamBackend`, `StreamingSlamBackend`, `SlamSession`
 - `mock_vslam.py`
-  - repository-local mock backend used for `mstr` placeholder runs
+  - repository-local mock backend used by the current demo slice
 - `vista/`
-  - canonical ViSTA backend implementation (offline and streaming)
+  - offline-first ViSTA wrapper scaffolding
 
 ## Current Boundaries
 

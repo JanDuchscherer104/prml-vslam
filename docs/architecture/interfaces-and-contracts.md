@@ -6,7 +6,7 @@ contract split after the offline/streaming refactor.
 ## Canonical Ownership
 
 - `prml_vslam.interfaces`
-  - repo-wide shared semantic DTOs such as `CameraIntrinsics`, `SE3Pose`,
+  - repo-wide shared semantic DTOs such as `CameraIntrinsics`,
     `FramePacket`, and `FrameTransform`
 - `prml_vslam.protocols`
   - repo-wide behavior seams such as `OfflineSequenceSource`,
@@ -36,17 +36,15 @@ artifacts remain TUM trajectories, PLY clouds, manifests, and stage summaries.
 Normalized `.rrd` recordings are viewer/export artifacts, not the scientific
 source of truth.
 
-## Pose And Transform Split
+## Pose And Transform Ownership
 
-- `SE3Pose`
-  - remains the canonical runtime pose DTO used by packet/session updates and
-    trajectory helpers in this series
 - `FrameTransform`
-  - is the explicit frame-labelled transform DTO used for dataset calibration,
-    frame-graph edges, and visualization/export logic
+  - is the canonical rigid-transform DTO for runtime poses, dataset
+    calibration, frame-graph edges, and visualization/export logic
+  - defaults to the repo pose convention `camera -> world` for runtime pose use
 
-This keeps runtime pose churn low while still making static transform ownership
-explicit at dataset and viewer boundaries.
+This keeps rigid-transform math in one place while preserving explicit frame
+labels at package boundaries.
 
 ## Wrapper Implications
 
@@ -54,6 +52,6 @@ explicit at dataset and viewer boundaries.
   containing canonical `rgb_dir` and sidecar metadata.
 - Method-specific preparation such as resizing, workspace layout, or native
   output import stays in `methods/vista`, not in shared ingest.
-- Native upstream `.rrd` recordings may be preserved as method artifacts, but
-  the repo-owned normalized Rerun schema is generated from repo-owned artifacts
-  rather than by reinterpreting the upstream viewer tree.
+- Native upstream `.rrd` recordings may be preserved as visualization-owned
+  artifacts, but the repo does not currently ship a separate canonical
+  repo-owned `.rrd` exporter.

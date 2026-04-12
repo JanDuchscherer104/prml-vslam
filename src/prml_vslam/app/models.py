@@ -167,7 +167,7 @@ class PipelinePageState(BaseData):
     """Selected pipeline mode."""
 
     method: MethodId = MethodId.VISTA
-    """Selected SLAM backend label."""
+    """Selected mock SLAM backend label."""
 
     slam_max_frames: int | None = None
     """Optional frame cap for the current request."""
@@ -184,11 +184,8 @@ class PipelinePageState(BaseData):
     reference_enabled: bool = False
     """Whether the reference-reconstruction stage should be planned."""
 
-    evaluate_trajectory: bool = True
-    """Whether trajectory evaluation against a reference should be planned."""
-
-    compare_to_arcore: bool = False
-    """Whether trajectory evaluation against ARCore specifically should be planned."""
+    trajectory_eval_enabled: bool = False
+    """Whether trajectory evaluation should be planned."""
 
     evaluate_cloud: bool = False
     """Whether dense-cloud evaluation should be planned."""

@@ -1,9 +1,11 @@
 # ViSTA-SLAM Wrapper
 
-This package contains the canonical ViSTA-SLAM backend integration used by the pipeline.
+This package contains the offline-first ViSTA-SLAM wrapper scaffolding.
 
 ## Current Scope
 
-- run ViSTA through the upstream `OnlineSLAM` runtime for both offline and streaming pipeline modes
+- bridge canonical `SequenceManifest` inputs into ViSTA CLI arguments
 - preserve native output directories and native `.rrd` files when present
 - import native outputs back into normalized `SlamArtifacts`
+
+Live ViSTA integration is intentionally out of scope for this series.

@@ -13,7 +13,7 @@ from evo.tools import file_interface
 from pydantic import ConfigDict
 from pytransform3d.transformations import transform, vectors_to_points
 
-from prml_vslam.interfaces import CameraIntrinsics, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 
 from .base_data import BaseData
 
@@ -54,10 +54,10 @@ class ImageSize(BaseData):
 
 def write_tum_trajectory(
     trajectory_path: Path,
-    poses: Sequence[SE3Pose],
+    poses: Sequence[FrameTransform],
     timestamps: Sequence[float],
 ) -> Path:
-    """Write a TUM trajectory file from canonical SE(3) poses and timestamps."""
+    """Write a TUM trajectory file from canonical camera-to-world transforms and timestamps."""
     if len(poses) != len(timestamps):
         raise ValueError(f"Expected one timestamp per pose, got {len(timestamps)} timestamps for {len(poses)} poses.")
 
@@ -70,7 +70,7 @@ def write_tum_trajectory(
     quaternions_xyzw = pose_array[:, 3:]
     quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
     if np.any(quaternion_norms == 0.0):
-        raise ValueError("SE3 quaternions must be non-zero.")
+        raise ValueError("FrameTransform quaternions must be non-zero.")
 
     file_interface.write_tum_trajectory_file(
         trajectory_path,
@@ -127,7 +127,7 @@ def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
 
 def transform_points_world_camera(
     points_xyz_camera: np.ndarray,
-    pose_world_camera: SE3Pose,
+    pose_world_camera: FrameTransform,
 ) -> np.ndarray:
     """Transform camera-frame XYZ points into world coordinates."""
     points = np.asarray(points_xyz_camera, dtype=np.float64)

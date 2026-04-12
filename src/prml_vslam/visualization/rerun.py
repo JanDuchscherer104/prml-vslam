@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from prml_vslam.interfaces.transforms import FrameTransform
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
+from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
 def _import_rerun() -> Any:
@@ -33,6 +33,7 @@ def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> 
 def attach_file_sink(recording_stream: Any, *, target_path: Path) -> None:
     """Attach a file sink or save path to an existing recording stream."""
     rr = _import_rerun()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     if hasattr(rr, "FileSink") and hasattr(recording_stream, "add_sink"):
         recording_stream.add_sink(rr.FileSink(str(target_path)))
         return
@@ -71,24 +72,37 @@ def log_transform(recording_stream: Any, *, entity_path: str, transform: FrameTr
     )
 
 
-def export_viewer_recording(
+def collect_native_visualization_artifacts(
     *,
-    sequence_manifest: SequenceManifest,
-    slam_artifacts: SlamArtifacts,
-    output_path: Path,
-    run_id: str,
-) -> ArtifactRef:
-    """Export a normalized repo-owned `.rrd` recording from repo-owned artifacts."""
-    del sequence_manifest, slam_artifacts
-    recording_stream = create_recording_stream(app_id="prml-vslam", recording_id=run_id)
-    attach_file_sink(recording_stream, target_path=output_path)
-    return ArtifactRef(path=output_path.resolve(), kind="rrd", fingerprint=f"viewer-rrd-{run_id}")
+    native_output_dir: Path,
+    preserve_native_rerun: bool,
+) -> VisualizationArtifacts | None:
+    """Collect visualization-owned artifacts produced by an external backend."""
+    if not native_output_dir.exists():
+        return None
+    native_rerun_path = native_output_dir / "rerun_recording.rrd"
+    return VisualizationArtifacts(
+        native_rerun_rrd=(
+            None
+            if not preserve_native_rerun or not native_rerun_path.exists()
+            else ArtifactRef(
+                path=native_rerun_path.resolve(),
+                kind="rrd",
+                fingerprint=f"{native_rerun_path.name}-native",
+            )
+        ),
+        native_output_dir=ArtifactRef(
+            path=native_output_dir.resolve(),
+            kind="dir",
+            fingerprint=f"{native_output_dir.name}-native-output",
+        ),
+    )
 
 
 __all__ = [
     "attach_file_sink",
     "attach_grpc_sink",
+    "collect_native_visualization_artifacts",
     "create_recording_stream",
-    "export_viewer_recording",
     "log_transform",
 ]

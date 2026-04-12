@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 from .runtime import FramePacketStream
@@ -21,6 +22,14 @@ class OfflineSequenceSource(Protocol):
 
 
 @runtime_checkable
+class BenchmarkInputSource(Protocol):
+    """Optional protocol for sources that can prepare benchmark-side inputs."""
+
+    def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs | None:
+        """Materialize prepared benchmark inputs for one run."""
+
+
+@runtime_checkable
 class StreamingSequenceSource(OfflineSequenceSource, Protocol):
     """Protocol for replay or live sources used by streaming pipeline sessions."""
 
@@ -29,6 +38,7 @@ class StreamingSequenceSource(OfflineSequenceSource, Protocol):
 
 
 __all__ = [
+    "BenchmarkInputSource",
     "OfflineSequenceSource",
     "StreamingSequenceSource",
 ]

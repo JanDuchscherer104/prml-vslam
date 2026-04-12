@@ -1,6 +1,5 @@
-"""Canonical ViSTA backend public surfaces."""
+"""ViSTA-SLAM offline wrapper surfaces."""
 
-from .adapter import VistaSlamBackend, VistaSlamSession
-from .config import VistaSlamBackendConfig, VistaSlamConfig
+from .adapter import VistaSlamBackend, VistaSlamBackendConfig
 
-__all__ = ["VistaSlamBackend", "VistaSlamBackendConfig", "VistaSlamConfig", "VistaSlamSession"]
+__all__ = ["VistaSlamBackend", "VistaSlamBackendConfig"]

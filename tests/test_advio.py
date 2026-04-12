@@ -338,15 +338,23 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
     manifest = sequence.to_sequence_manifest()
+    benchmark_inputs = sequence.to_benchmark_inputs()
 
     assert manifest.sequence_id == "advio-15"
     assert manifest.video_path == sequence_dir / "iphone" / "frames.mov"
     assert manifest.timestamps_path == sequence_dir / "iphone" / "frames.csv"
     assert manifest.intrinsics_path == tmp_path / "calibration" / "iphone-03.yaml"
-    assert manifest.reference_tum_path == sequence_dir / "evaluation" / "ground_truth.tum"
-    assert manifest.arcore_tum_path == sequence_dir / "evaluation" / "arcore.tum"
-    assert manifest.reference_tum_path.exists()
-    assert manifest.arcore_tum_path.exists()
+    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
+        "ground_truth",
+        "arcore",
+        "arkit",
+    ]
+    assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
+    assert benchmark_inputs.reference_trajectories[1].path == sequence_dir / "evaluation" / "arcore.tum"
+    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arkit.tum"
+    assert benchmark_inputs.reference_trajectories[0].path.exists()
+    assert benchmark_inputs.reference_trajectories[1].path.exists()
+    assert benchmark_inputs.reference_trajectories[2].path.exists()
 
 
 def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> None:

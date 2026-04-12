@@ -1,5 +1,5 @@
 """Visualization contracts and Rerun helpers."""
 
-from .contracts import VisualizationConfig
+from .contracts import VisualizationArtifacts, VisualizationConfig
 
-__all__ = ["VisualizationConfig"]
+__all__ = ["VisualizationArtifacts", "VisualizationConfig"]

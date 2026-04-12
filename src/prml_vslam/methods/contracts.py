@@ -12,7 +12,7 @@ class MethodId(StrEnum):
     """Supported external VSLAM backends."""
 
     VISTA = "vista"
-    MSTR = "mstr"
+    MAST3R = "mast3r"
 
     @property
     def display_name(self) -> str:
@@ -20,7 +20,7 @@ class MethodId(StrEnum):
         match self:
             case MethodId.VISTA:
                 return "ViSTA-SLAM"
-            case MethodId.MSTR:
+            case MethodId.MAST3R:
                 return "MASt3R-SLAM"
 
 

@@ -10,7 +10,8 @@ from pydantic import ConfigDict, Field
 
 from prml_vslam.utils.base_data import BaseData
 
-from .camera import CameraIntrinsics, SE3Pose
+from .camera import CameraIntrinsics
+from .transforms import FrameTransform
 
 
 class FramePacket(BaseData):
@@ -26,5 +27,5 @@ class FramePacket(BaseData):
     confidence: NDArray[np.float32] | None = None
     """Optional HxW sensor-confidence raster aligned with the depth image."""
     intrinsics: CameraIntrinsics | None = None
-    pose: SE3Pose | None = None
+    pose: FrameTransform | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

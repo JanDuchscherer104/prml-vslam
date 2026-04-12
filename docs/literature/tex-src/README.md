@@ -15,7 +15,7 @@ This directory stores extracted arXiv LaTeX source bundles for papers that direc
   - extracted from the arXiv e-print source bundle for `2108.10869`
 - `arXiv-ADVIO/`
   - ADVIO: An authentic dataset for visual-inertial odometry.
-  - extracted from the arXiv e-print source bundle for `2004.06121`
+  - extracted from the arXiv e-print source bundle for `1807.09828`
 
 ## Manifest and refresh workflow
 

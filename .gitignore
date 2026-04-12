@@ -241,16 +241,3 @@ docs/literature/pdf/
 docs/literature/tex-src/*
 !docs/literature/tex-src/README.md
 !docs/literature/tex-src/sources.jsonl
-
-# Graphify (root repo only)
-/.graphify/
-/.graphify_*.json
-/.graphify_python
-
-/graphify-out/*
-!/graphify-out/
-!/graphify-out/GRAPH_REPORT.md
-!/graphify-out/graph.json
-!/graphify-out/graph.html
-/graphify-out/cache/
-/graphify-out/.graphify*

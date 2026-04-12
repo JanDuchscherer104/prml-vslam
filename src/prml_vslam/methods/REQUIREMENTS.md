@@ -7,7 +7,7 @@ This document is the concise source of truth for `prml_vslam.methods`.
 ## Current State
 
 - the package owns method ids, backend config, output policy, runtime updates,
-  the mock placeholder backend, and the canonical ViSTA backend integration
+  mock execution, and the first external-wrapper scaffolding
 - `SlamUpdate` is method-owned
 - method protocols no longer depend on pipeline-owned config models
 
