@@ -4,7 +4,7 @@ flowchart TB
   subgraph REF["Benchmark reference"]
     direction TB
     GT["Ground truth"]
-    GTP["pose.csv or poses.csv<br/>reference trajectory<br/>6DoF, 100 Hz"]
+    GTP["pose.csv<br/>reference trajectory<br/>6DoF, 100 Hz"]
     GTF["fixpoints.csv<br/>manual metric location fixes"]
     GT --> GTP
     GT --> GTF
@@ -18,9 +18,9 @@ flowchart TB
       IP["Primary capture device"]
       IPV["frames.mov + frames.csv<br/>RGB video timestamps<br/>1280x720 portrait, 60 Hz"]
       IPA["arkit.csv<br/>ARKit 6DoF poses<br/>60 Hz"]
-      IPIMU["accelerometer.csv + gyroscope/gyro.csv<br/>+ magnetometer.csv<br/>raw IMU sensors, 100 Hz"]
+      IPIMU["accelerometer.csv + gyro.csv<br/>+ magnetometer.csv<br/>raw IMU sensors, 100 Hz"]
       IPB["barometer.csv<br/>pressure and relative altitude"]
-      IPL["platform-location.csv or platform-locations.csv<br/>lat/lon/alt/speed samples"]
+      IPL["platform-locations.csv<br/>lat/lon/alt/speed samples"]
       IP --> IPV
       IP --> IPA
       IP --> IPIMU
