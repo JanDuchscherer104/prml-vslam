@@ -14,14 +14,18 @@ from prml_vslam.utils import BaseData
 
 
 class FrameTransform(BaseData):
-    """Serializable rigid transform with explicit frame direction."""
+    """Serializable rigid transform with explicit frame direction.
+
+    When frame labels are omitted, the repository default is the canonical
+    runtime camera pose convention: `camera -> world`.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    target_frame: str
+    target_frame: str = "world"
     """Frame whose coordinates the transform maps into."""
 
-    source_frame: str
+    source_frame: str = "camera"
     """Frame whose coordinates the transform maps from."""
 
     qx: float
@@ -31,7 +35,28 @@ class FrameTransform(BaseData):
     tx: float
     ty: float
     tz: float
-    timestamp_ns: int | None = None
+
+    @classmethod
+    def from_quaternion_translation(
+        cls,
+        quaternion_xyzw: NDArray[np.float64],
+        translation_xyz: NDArray[np.float64],
+        *,
+        target_frame: str = "world",
+        source_frame: str = "camera",
+    ) -> Self:
+        """Build a transform from XYZW quaternion and XYZ translation arrays."""
+        return cls(
+            target_frame=target_frame,
+            source_frame=source_frame,
+            qx=float(quaternion_xyzw[0]),
+            qy=float(quaternion_xyzw[1]),
+            qz=float(quaternion_xyzw[2]),
+            qw=float(quaternion_xyzw[3]),
+            tx=float(translation_xyz[0]),
+            ty=float(translation_xyz[1]),
+            tz=float(translation_xyz[2]),
+        )
 
     def quaternion_xyzw(self) -> NDArray[np.float64]:
         """Return the normalized quaternion in XYZW order."""
@@ -56,9 +81,8 @@ class FrameTransform(BaseData):
         cls,
         matrix: NDArray[np.float64],
         *,
-        target_frame: str,
-        source_frame: str,
-        timestamp_ns: int | None = None,
+        target_frame: str = "world",
+        source_frame: str = "camera",
     ) -> Self:
         """Build a transform from a 4x4 homogeneous matrix."""
         matrix_array = np.asarray(matrix, dtype=np.float64)
@@ -67,18 +91,17 @@ class FrameTransform(BaseData):
         if not np.allclose(matrix_array[3], np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)):
             raise ValueError("FrameTransform matrices must have a final row of [0, 0, 0, 1].")
         quaternion_wxyz = quaternion_from_matrix(matrix_array[:3, :3])
-        return cls(
+        return cls.from_quaternion_translation(
+            quaternion_wxyz[[1, 2, 3, 0]],
+            matrix_array[:3, 3],
             target_frame=target_frame,
             source_frame=source_frame,
-            qx=float(quaternion_wxyz[1]),
-            qy=float(quaternion_wxyz[2]),
-            qz=float(quaternion_wxyz[3]),
-            qw=float(quaternion_wxyz[0]),
-            tx=float(matrix_array[0, 3]),
-            ty=float(matrix_array[1, 3]),
-            tz=float(matrix_array[2, 3]),
-            timestamp_ns=timestamp_ns,
         )
+
+    def to_tum_fields(self) -> tuple[float, float, float, float, float, float, float]:
+        """Return the transform fields in TUM trajectory order."""
+        qx, qy, qz, qw = self.quaternion_xyzw()
+        return (self.tx, self.ty, self.tz, float(qx), float(qy), float(qz), float(qw))
 
 
 __all__ = ["FrameTransform"]

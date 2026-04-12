@@ -7,7 +7,7 @@ import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.io.cv2_producer import Cv2ProducerConfig, Cv2ReplayMode, open_cv2_replay_stream
 from prml_vslam.protocols import FramePacketStream
 
@@ -79,7 +79,7 @@ def _load_pose_trajectory(
 def _poses_for_frame_timestamps(
     frame_timestamps_ns: NDArray[np.int64],
     trajectory: PoseTrajectory3D | None,
-) -> list[SE3Pose | None]:
+) -> list[FrameTransform | None]:
     if trajectory is None or frame_timestamps_ns.size == 0:
         return [None] * int(frame_timestamps_ns.size)
     target_timestamps_s = frame_timestamps_ns.astype(np.float64) / 1e9
@@ -94,11 +94,13 @@ def _poses_for_frame_timestamps(
         source_timestamps_s[nearest_indices] - target_timestamps_s
     )
     nearest_indices = np.where(pick_previous, previous_indices, nearest_indices)
-    poses: list[SE3Pose] = []
+    poses: list[FrameTransform] = []
     for position, nearest_index in zip(interpolated_positions, nearest_indices, strict=True):
-        nearest_pose = SE3Pose.from_matrix(np.asarray(trajectory.poses_se3[int(nearest_index)], dtype=np.float64))
+        nearest_pose = FrameTransform.from_matrix(
+            np.asarray(trajectory.poses_se3[int(nearest_index)], dtype=np.float64)
+        )
         poses.append(
-            SE3Pose(
+            FrameTransform(
                 qx=nearest_pose.qx,
                 qy=nearest_pose.qy,
                 qz=nearest_pose.qz,

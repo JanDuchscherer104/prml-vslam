@@ -12,7 +12,7 @@ from prml_vslam.benchmark import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
     EfficiencyBenchmarkConfig,
-    TrajectoryBaselineId,
+    ReferenceSource,
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.datasets.advio import (
@@ -26,9 +26,9 @@ from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.demo import build_advio_demo_request, load_run_request_toml, persist_advio_demo_request
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import get_path_config
 from prml_vslam.visualization import VisualizationConfig
@@ -84,15 +84,15 @@ def plan_run(
     trajectory_evaluation: Annotated[
         bool,
         typer.Option("--trajectory-eval/--no-trajectory-eval", help="Whether to plan trajectory evaluation."),
-    ] = True,
+    ] = False,
     trajectory_baseline: Annotated[
-        TrajectoryBaselineId,
+        ReferenceSource,
         typer.Option(
             "--trajectory-baseline",
-            help="Baseline selected for trajectory evaluation.",
+            help="Reference source selected for trajectory evaluation.",
             case_sensitive=False,
         ),
-    ] = TrajectoryBaselineId.REFERENCE,
+    ] = ReferenceSource.GROUND_TRUTH,
     reference_reconstruction: Annotated[
         bool,
         typer.Option(
@@ -103,7 +103,7 @@ def plan_run(
     evaluate_efficiency: Annotated[
         bool,
         typer.Option("--efficiency/--no-efficiency", help="Whether the plan reserves efficiency metrics."),
-    ] = True,
+    ] = False,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
     request = RunRequest(
@@ -116,11 +116,11 @@ def plan_run(
         ),
         benchmark=BenchmarkConfig(
             reference={"enabled": reference_reconstruction},
-            trajectory=TrajectoryBenchmarkConfig(enabled=trajectory_evaluation, baseline_id=trajectory_baseline),
+            trajectory=TrajectoryBenchmarkConfig(enabled=trajectory_evaluation, baseline_source=trajectory_baseline),
             cloud=CloudBenchmarkConfig(enabled=emit_dense_points and reference_reconstruction),
             efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
         ),
-        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
+        visualization=VisualizationConfig(connect_live_viewer=False),
     )
     plan = request.build()
     console.plog(plan.model_dump(mode="json"))

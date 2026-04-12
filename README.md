@@ -86,7 +86,7 @@ enabled = false
 
 [benchmark.trajectory]
 enabled = true
-baseline_id = "reference"
+baseline_source = "ground_truth"
 
 [benchmark.cloud]
 enabled = false

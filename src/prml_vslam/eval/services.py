@@ -8,6 +8,7 @@ from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
 
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.eval.contracts import (
     DiscoveredRun,
     EvaluationArtifact,
@@ -59,7 +60,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         """Resolve dataset sequences, runs, and the current metrics-page selection."""
         dataset_root = self.path_config.resolve_dataset_dir(dataset.value)
         artifacts_root = self.path_config.artifacts_dir
-        sequence_slugs = dataset.list_sequence_slugs(dataset_root)
+        sequence_slugs = list_sequence_slugs(dataset, dataset_root)
         if not sequence_slugs:
             return EvaluationSelection(
                 dataset=dataset,
@@ -89,7 +90,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             runs=runs,
             selection=SelectionSnapshot(
                 sequence_slug=sequence_slug,
-                reference_path=dataset.resolve_reference_path(dataset_root, sequence_slug),
+                reference_path=resolve_reference_path(dataset, dataset_root, sequence_slug),
                 run=run,
             ),
         )

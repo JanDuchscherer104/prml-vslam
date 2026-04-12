@@ -16,6 +16,9 @@ The current ADVIO stack includes:
 - dataset fetch and cache mechanics in `fetch.py` plus archive extraction flows in `advio_download.py`
 - a high-level app- and pipeline-facing service in `advio_service.py`
 - ADVIO replay stream assembly in `advio_replay_adapter.py`
+- offline benchmark-input preparation, including typed reference trajectories, in `advio_sequence.py` and
+  `advio_service.py`
+- explicit frame-graph helpers in `frame_graph.py`
 
 The replay path is layered on purpose:
 
@@ -29,6 +32,8 @@ The replay path is layered on purpose:
   - summarize the local dataset state
   - inspect scenes
   - download selected modalities
+  - resolve dataset sequence ids for pipeline execution
+  - prepare normalized sequence manifests and benchmark inputs
   - open a replay stream for the app or pipeline surfaces
 - `AdvioSequence`
   - load one offline sample

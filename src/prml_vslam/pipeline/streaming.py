@@ -5,19 +5,19 @@ from __future__ import annotations
 import time
 from threading import Event
 
-from prml_vslam.interfaces import FrameTransform
+from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.methods.protocols import SlamSession, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
-from prml_vslam.pipeline.contracts.runtime import RunState, StreamingRunSnapshot
-from prml_vslam.protocols.source import StreamingSequenceSource
+from prml_vslam.pipeline.state import RunState, StreamingRunSnapshot
+from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.utils.packet_session import PacketSessionMetrics, extract_pose_position
+from prml_vslam.visualization import VisualizationArtifacts
 from prml_vslam.visualization.rerun import (
-    attach_file_sink,
     attach_grpc_sink,
+    collect_native_visualization_artifacts,
     create_recording_stream,
-    export_viewer_recording,
     log_transform,
 )
 
@@ -99,7 +99,9 @@ class StreamingRunner:
         )
         slam_session: SlamSession | None = None
         sequence_manifest = None
+        benchmark_inputs: PreparedBenchmarkInputs | None = None
         slam_artifacts = None
+        visualization_artifacts: VisualizationArtifacts | None = None
         summary = None
         stage_manifests = []
         ingest_started = False
@@ -124,23 +126,25 @@ class StreamingRunner:
             self._console.info(f"Preparing streaming run '{plan.run_id}' from source '{source.label}'.")
             ingest_started = True
             sequence_manifest = source.prepare_sequence_manifest(run_paths.sequence_manifest_path.parent)
+            if isinstance(source, BenchmarkInputSource):
+                benchmark_inputs = source.prepare_benchmark_inputs(run_paths.benchmark_inputs_path.parent)
+                if benchmark_inputs is not None:
+                    write_json(run_paths.benchmark_inputs_path, benchmark_inputs)
             write_json(run_paths.sequence_manifest_path, sequence_manifest)
             self._runtime.update_fields(
                 state=RunState.PREPARING,
                 plan=plan,
                 sequence_manifest=sequence_manifest,
+                benchmark_inputs=benchmark_inputs,
                 error_message="",
             )
             stream = source.open_stream(loop=True)
             self._runtime.register_cleanup(stop_event=stop_event, cleanup=stream.disconnect)
             connected_target = stream.connect()
             del connected_target
-            if request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd:
+            if request.visualization.connect_live_viewer:
                 live_recording = create_recording_stream(app_id="prml-vslam", recording_id=plan.run_id)
-                if request.visualization.connect_live_viewer:
-                    attach_grpc_sink(live_recording, grpc_url=request.visualization.grpc_url)
-                if request.visualization.export_viewer_rrd:
-                    attach_file_sink(live_recording, target_path=run_paths.viewer_rrd_path)
+                attach_grpc_sink(live_recording, grpc_url=request.visualization.grpc_url)
             slam_started = True
             slam_session = slam_backend.start_session(
                 request.slam.backend,
@@ -170,12 +174,7 @@ class StreamingRunner:
                     log_transform(
                         live_recording,
                         entity_path=f"/run/{plan.run_id}/camera/current",
-                        transform=FrameTransform.from_matrix(
-                            update.pose.as_matrix(),
-                            target_frame="world",
-                            source_frame="camera",
-                            timestamp_ns=update.timestamp_ns,
-                        ),
+                        transform=update.pose,
                     )
         except EOFError:
             final_state = RunState.COMPLETED
@@ -195,24 +194,19 @@ class StreamingRunner:
                         self._console.error(error_message)
             if stop_event.is_set() and final_state is not RunState.FAILED:
                 final_state = RunState.STOPPED
-            if request.visualization.export_viewer_rrd and sequence_manifest is not None and slam_artifacts is not None:
-                slam_artifacts = slam_artifacts.model_copy(
-                    update={
-                        "viewer_rrd": export_viewer_recording(
-                            sequence_manifest=sequence_manifest,
-                            slam_artifacts=slam_artifacts,
-                            output_path=run_paths.viewer_rrd_path,
-                            run_id=plan.run_id,
-                        )
-                    }
-                )
+            visualization_artifacts = collect_native_visualization_artifacts(
+                native_output_dir=run_paths.native_output_dir,
+                preserve_native_rerun=request.visualization.preserve_native_rerun,
+            )
             try:
                 summary, stage_manifests = finalize_run_outputs(
                     request=request,
                     plan=plan,
                     run_paths=run_paths,
                     sequence_manifest=sequence_manifest,
+                    benchmark_inputs=benchmark_inputs,
                     slam=slam_artifacts,
+                    visualization=visualization_artifacts,
                     ingest_started=ingest_started,
                     slam_started=slam_started,
                     pipeline_failed=pipeline_failed,
@@ -231,7 +225,9 @@ class StreamingRunner:
                         "state": final_state,
                         "plan": plan,
                         "sequence_manifest": sequence_manifest,
+                        "benchmark_inputs": benchmark_inputs,
                         "slam": slam_artifacts,
+                        "visualization": visualization_artifacts,
                         "summary": summary,
                         "stage_manifests": stage_manifests,
                         "error_message": error_message,

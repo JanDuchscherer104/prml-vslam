@@ -36,14 +36,14 @@ class RunArtifactPaths(BaseData):
     """Path to the normalized capture manifest."""
     sequence_manifest_path: Path
     """Path to the normalized sequence manifest."""
+    benchmark_inputs_path: Path
+    """Path to prepared benchmark-side input metadata."""
     trajectory_path: Path
     """Path to the exported trajectory."""
     sparse_points_path: Path
     """Path to the exported sparse point cloud."""
     dense_points_path: Path
     """Path to the exported dense point cloud."""
-    viewer_rrd_path: Path
-    """Path to the normalized viewer recording."""
     native_output_dir: Path
     """Directory containing preserved native backend outputs."""
     native_rerun_rrd_path: Path
@@ -75,10 +75,10 @@ class RunArtifactPaths(BaseData):
             input_rotation_metadata_path=(resolved_root / "input" / "rotation_metadata.json").resolve(),
             capture_manifest_path=(resolved_root / "input" / "capture_manifest.json").resolve(),
             sequence_manifest_path=(resolved_root / "input" / "sequence_manifest.json").resolve(),
+            benchmark_inputs_path=(resolved_root / "benchmark" / "inputs.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
-            viewer_rrd_path=(resolved_root / "visualization" / "run.rrd").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),
             native_rerun_rrd_path=(resolved_root / "native" / "rerun_recording.rrd").resolve(),
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),

@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import OfflineSlamBackend
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
@@ -44,11 +45,14 @@ class VistaSlamBackend(OfflineSlamBackend):
     def run_sequence(
         self,
         sequence: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run ViSTA-SLAM offline and import its normalized artifacts."""
+        del benchmark_inputs, baseline_source
         repo_dir = self._resolve_repo_dir()
         native_output_dir = RunArtifactPaths.build(artifact_root).native_output_dir
         if native_output_dir.exists():

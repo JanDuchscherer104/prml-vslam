@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.utils import BaseConfig, BaseData, Console
 
 
@@ -223,8 +223,8 @@ class Record3DUSBPacketStream:
         )
 
     @staticmethod
-    def _camera_pose_from_binding(camera_pose: Any) -> SE3Pose:
-        return SE3Pose(
+    def _camera_pose_from_binding(camera_pose: Any) -> FrameTransform:
+        return FrameTransform(
             qx=float(camera_pose.qx),
             qy=float(camera_pose.qy),
             qz=float(camera_pose.qz),

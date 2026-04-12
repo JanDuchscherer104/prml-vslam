@@ -71,6 +71,8 @@ def _frame_stride_for_request(request: RunRequest) -> int:
 
 
 def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: int) -> dict[str, object]:
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -87,9 +89,8 @@ def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: i
             frame_index += 1
             continue
         timestamp_ns = int(round(frame_index / fps * 1e9)) if fps > 0.0 else int(frame_index * 1e9 / 30.0)
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         frame_path = output_dir / f"{written_index:06d}.png"
-        if not cv2.imwrite(str(frame_path), cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)):
+        if not cv2.imwrite(str(frame_path), frame_bgr):
             raise RuntimeError(f"Failed to write extracted frame to '{frame_path}'.")
         timestamps_ns.append(timestamp_ns)
         written_index += 1
