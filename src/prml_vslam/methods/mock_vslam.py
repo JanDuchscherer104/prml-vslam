@@ -196,6 +196,8 @@ class MockSlamSession(SlamSession):
             seq=seq,
             timestamp_ns=timestamp_ns,
             pose=pose,
+            is_keyframe=True,
+            pose_updated=True,
             num_sparse_points=num_sparse_points,
             num_dense_points=self._num_dense_points,
             pointmap=pointmap,

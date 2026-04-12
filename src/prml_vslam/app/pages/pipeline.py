@@ -64,13 +64,9 @@ _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 _SUPPORTED_APP_STAGE_IDS = frozenset({RunPlanStageId.INGEST, RunPlanStageId.SLAM, RunPlanStageId.SUMMARY})
 _MOCK_METHOD_LABEL = "Mock Preview"
 _VISTA_POINTMAP_EMPTY_MESSAGE = (
-    "ViSTA-SLAM streaming does not expose a live pointmap preview in the current wrapper. "
-    "Use Mock Preview to verify the Streamlit visualization path."
+    "ViSTA-SLAM has not produced a renderable preview artifact for the current keyframe yet."
 )
-_VISTA_TRAJECTORY_EMPTY_MESSAGE = (
-    "ViSTA-SLAM streaming does not expose live trajectory points in the current wrapper. "
-    "Use Mock Preview to verify the Streamlit visualization path."
-)
+_VISTA_TRAJECTORY_EMPTY_MESSAGE = "ViSTA-SLAM has not accepted a keyframe pose yet, so no live trajectory is available."
 
 
 class PipelinePageAction(PipelinePageState):
@@ -104,8 +100,8 @@ def _pipeline_method_help(method: MethodId) -> str:
     if method is MethodId.MSTR:
         return "Repository-local mock backend that emits live pose and pointmap telemetry for UI validation."
     return (
-        "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs stay strict and only show "
-        "live trajectory or pointmaps when the backend emits them."
+        "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs show packet FPS, accepted "
+        "keyframe FPS, and live previews only when the backend produces a new keyframe artifact."
     )
 
 
@@ -654,13 +650,17 @@ def _source_input_error(action: PipelinePageAction) -> str | None:
 def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[LiveMetric, ...]:
     received_frames = snapshot.received_frames if isinstance(snapshot, StreamingRunSnapshot) else 0
     measured_fps = snapshot.measured_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
+    accepted_keyframes = snapshot.accepted_keyframes if isinstance(snapshot, StreamingRunSnapshot) else 0
+    backend_fps = snapshot.backend_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
     num_sparse_points = snapshot.num_sparse_points if isinstance(snapshot, StreamingRunSnapshot) else 0
     num_dense_points = snapshot.num_dense_points if isinstance(snapshot, StreamingRunSnapshot) else 0
     return (
         ("Status", snapshot.state.value.upper()),
         ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.label),
         ("Received Frames", str(received_frames)),
-        ("Frame Rate", f"{measured_fps:.2f} fps"),
+        ("Packet FPS", f"{measured_fps:.2f} fps"),
+        ("Accepted Keyframes", str(accepted_keyframes)),
+        ("Keyframe FPS", f"{backend_fps:.2f} fps"),
         ("Sparse Points", str(num_sparse_points)),
         ("Dense Points", str(num_dense_points)),
     )
@@ -694,17 +694,22 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
         if packet is None:
             st.info("No frame has been processed yet.")
         else:
-            pointmap = snapshot.latest_slam_update.pointmap if snapshot.latest_slam_update is not None else None
+            slam_update = snapshot.latest_slam_update
+            pointmap_preview = (
+                slam_update.preview_rgb
+                if slam_update is not None and slam_update.preview_rgb is not None
+                else _pointmap_preview_image(slam_update.pointmap if slam_update is not None else None)
+            )
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
                 st.markdown("**RGB Frame**")
                 st.image(packet.rgb, channels="RGB", clamp=True, width="stretch")
             with preview_right:
-                st.markdown("**Pointmap Depth**")
-                if pointmap is None:
+                st.markdown("**ViSTA Preview Artifact**")
+                if pointmap_preview is None:
                     st.info(_streaming_pointmap_empty_message(snapshot))
                 else:
-                    st.image(_pointmap_depth_preview(pointmap), clamp=True, width="stretch")
+                    st.image(pointmap_preview, clamp=True, width="stretch")
             details_left, details_right = st.columns((1.0, 1.0), gap="large")
             with details_left:
                 st.markdown("**SLAM Update**")
@@ -713,8 +718,15 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
                 else:
                     st.json(
                         {
-                            **snapshot.latest_slam_update.model_dump(mode="json", exclude={"pointmap"}),
-                            "pointmap_shape": None if pointmap is None else list(pointmap.shape),
+                            **snapshot.latest_slam_update.model_dump(mode="json", exclude={"pointmap", "preview_rgb"}),
+                            "pointmap_shape": None
+                            if snapshot.latest_slam_update.pointmap is None
+                            else list(snapshot.latest_slam_update.pointmap.shape),
+                            "preview_shape": None
+                            if snapshot.latest_slam_update.preview_rgb is None
+                            else list(snapshot.latest_slam_update.preview_rgb.shape),
+                            "accepted_keyframes": snapshot.accepted_keyframes,
+                            "keyframe_fps": snapshot.backend_fps,
                         },
                         expanded=False,
                     )
@@ -1006,8 +1018,26 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
     return payload
 
 
-def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:
-    return normalize_grayscale_image(np.asarray(pointmap[..., 2], dtype=np.float32))
+def _pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
+    """Return a renderable preview image for one ViSTA preview artifact."""
+    if pointmap is None:
+        return None
+    preview_array = np.asarray(pointmap)
+    if preview_array.size == 0:
+        return None
+    if preview_array.ndim == 2:
+        return normalize_grayscale_image(np.asarray(preview_array, dtype=np.float32))
+    if preview_array.ndim != 3:
+        return None
+    if preview_array.shape[-1] == 1:
+        return normalize_grayscale_image(np.asarray(preview_array[..., 0], dtype=np.float32))
+    if preview_array.shape[-1] in {3, 4} and (
+        np.issubdtype(preview_array.dtype, np.integer)
+        or (np.isfinite(preview_array).all() and np.nanmin(preview_array) >= 0.0 and np.nanmax(preview_array) <= 1.0)
+    ):
+        return np.asarray(preview_array)
+    magnitude = np.linalg.norm(np.asarray(preview_array, dtype=np.float32), axis=-1)
+    return normalize_grayscale_image(magnitude)
 
 
 def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:
