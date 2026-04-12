@@ -84,11 +84,11 @@ advio-XX" data-shape="rectangle">
   <rect x="481.07970833333326" y="393.40000000000003" width="115.30900000000001" height="36.900000000000006" rx="0" ry="0" fill="#e8f1ff" stroke="#2b6cb0" stroke-width="1.5px" />
   <text x="538.7342083333333" y="411.85" text-anchor="middle" font-size="13" font-weight="500" fill="#15314b" dy="4.55">Ground truth</text>
 </g>
-<g class="node" data-id="GTP" data-label="pose.csv or poses.csv
+<g class="node" data-id="GTP" data-label="pose.csv
 reference trajectory
 6DoF, 100 Hz" data-shape="rectangle">
   <rect x="469.54637499999995" y="478.30000000000007" width="176.81199999999998" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
-  <text x="557.952375" y="513.6500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="557.952375" dy="-12.350000000000001">pose.csv or poses.csv</tspan><tspan x="557.952375" dy="16.900000000000002">reference trajectory</tspan><tspan x="557.952375" dy="16.900000000000002">6DoF, 100 Hz</tspan></text>
+  <text x="557.952375" y="513.6500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="557.952375" dy="-12.350000000000001">pose.csv</tspan><tspan x="557.952375" dy="16.900000000000002">reference trajectory</tspan><tspan x="557.952375" dy="16.900000000000002">6DoF, 100 Hz</tspan></text>
 </g>
 <g class="node" data-id="GTF" data-label="fixpoints.csv
 manual metric location fixes" data-shape="rectangle">
@@ -111,21 +111,21 @@ ARKit 6DoF poses
   <rect x="1178.7559999999999" y="993.5" width="148.654" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
   <text x="1253.0829999999999" y="1028.85" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="1253.0829999999999" dy="-12.350000000000001">arkit.csv</tspan><tspan x="1253.0829999999999" dy="16.900000000000002">ARKit 6DoF poses</tspan><tspan x="1253.0829999999999" dy="16.900000000000002">60 Hz</tspan></text>
 </g>
-<g class="node" data-id="IPIMU" data-label="accelerometer.csv + gyroscope/gyro.csv
+<g class="node" data-id="IPIMU" data-label="accelerometer.csv + gyro.csv
 + magnetometer.csv
 raw IMU sensors, 100 Hz" data-shape="rectangle">
   <rect x="72" y="993.5" width="287.221" height="70.7" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
-  <text x="215.6105" y="1028.85" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="215.6105" dy="-12.350000000000001">accelerometer.csv + gyroscope/gyro.csv</tspan><tspan x="215.6105" dy="16.900000000000002">+ magnetometer.csv</tspan><tspan x="215.6105" dy="16.900000000000002">raw IMU sensors, 100 Hz</tspan></text>
+  <text x="215.6105" y="1028.85" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="215.6105" dy="-12.350000000000001">accelerometer.csv + gyro.csv</tspan><tspan x="215.6105" dy="16.900000000000002">+ magnetometer.csv</tspan><tspan x="215.6105" dy="16.900000000000002">raw IMU sensors, 100 Hz</tspan></text>
 </g>
 <g class="node" data-id="IPB" data-label="barometer.csv
 pressure and relative altitude" data-shape="rectangle">
   <rect x="387.221" y="993.5" width="213.12099999999995" height="53.800000000000004" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
   <text x="493.7815" y="1020.4" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="493.7815" dy="-3.9000000000000012">barometer.csv</tspan><tspan x="493.7815" dy="16.900000000000002">pressure and relative altitude</tspan></text>
 </g>
-<g class="node" data-id="IPL" data-label="platform-location.csv or platform-locations.csv
+<g class="node" data-id="IPL" data-label="platform-locations.csv
 lat/lon/alt/speed samples" data-shape="rectangle">
   <rect x="628.342" y="993.5" width="308.7099999999999" height="53.800000000000004" rx="0" ry="0" fill="#f8fbff" stroke="#94a3b8" stroke-width="0.75" />
-  <text x="782.6969999999999" y="1020.4" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="782.6969999999999" dy="-3.9000000000000012">platform-location.csv or platform-locations.csv</tspan><tspan x="782.6969999999999" dy="16.900000000000002">lat/lon/alt/speed samples</tspan></text>
+  <text x="782.6969999999999" y="1020.4" text-anchor="middle" font-size="13" font-weight="500" fill="#1f2937"><tspan x="782.6969999999999" dy="-3.9000000000000012">platform-locations.csv</tspan><tspan x="782.6969999999999" dy="16.900000000000002">lat/lon/alt/speed samples</tspan></text>
 </g>
 <g class="node" data-id="PX" data-label="Secondary baseline device" data-shape="rectangle">
   <rect x="72" y="673" width="203.488" height="36.900000000000006" rx="0" ry="0" fill="#e8f1ff" stroke="#2b6cb0" stroke-width="1.5px" />

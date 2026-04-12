@@ -48,7 +48,7 @@
 <polyline class="edge" data-from="TRGB" data-to="TCAM" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="413.16400000000004,316.45 449.16400000000004,316.45 449.16400000000004,290 464.54700000000014,290" fill="none" stroke="#94a3b8" stroke-width="1.2px" marker-end="url(#arrowhead-2394a3b8)" />
 <polyline class="edge" data-from="TPC" data-to="TCAM" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="aligned to current Tango pose" points="215.32999999999998,251.25 449.16400000000004,251.25 449.16400000000004,277.7 464.54700000000014,277.7" fill="none" stroke="#94a3b8" stroke-width="1.2px" marker-end="url(#arrowhead-2394a3b8)" />
 <polyline class="edge" data-from="ICAM" data-to="GTW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
-ground-truth/pose(s).csv" points="658.402,83.87499999999997 948.576,83.87499999999997 948.576,57.99999999999997 1099.838,57.99999999999997 1099.838,174.2 1111.838,174.2" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
+ground-truth/pose.csv" points="658.402,83.87499999999997 948.576,83.87499999999997 948.576,57.99999999999997 1099.838,57.99999999999997 1099.838,174.2 1111.838,174.2" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
 <polyline class="edge" data-from="ICAM" data-to="ARKW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
 iphone/arkit.csv" points="658.402,96.17499999999995 697.7850000000001,96.17499999999995 697.7850000000001,122.04999999999995 844.061,122.04999999999995" fill="none" stroke="#2563eb" stroke-width="1.5px" marker-end="url(#arrowhead-232563eb)" />
 <polyline class="edge" data-from="PCAM" data-to="ARCW" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="dynamic SE(3)
@@ -66,9 +66,9 @@ tango/area-learning.csv" points="673.2220000000002,290 705.839,290 705.839,316.2
   <text x="338.247" y="250.4" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">aligned to current Tango pose</text>
 </g>
 <g class="edge-label" data-from="ICAM" data-to="GTW" data-label="dynamic SE(3)
-ground-truth/pose(s).csv">
+ground-truth/pose.csv">
   <rect x="956.5760000000001" y="34.99999999999997" width="135.262" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
-  <text x="1024.207" y="57.29999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="1024.207" dy="-3.3000000000000007">dynamic SE(3)</tspan><tspan x="1024.207" dy="14.3">ground-truth/pose(s).csv</tspan></text>
+  <text x="1024.207" y="57.29999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="1024.207" dy="-3.3000000000000007">dynamic SE(3)</tspan><tspan x="1024.207" dy="14.3">ground-truth/pose.csv</tspan></text>
 </g>
 <g class="edge-label" data-from="ICAM" data-to="ARKW" data-label="dynamic SE(3)
 iphone/arkit.csv">
