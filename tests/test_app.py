@@ -143,7 +143,7 @@ def _load_pipeline_request_fixture() -> RunRequest:
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
         slam=SlamStageConfig(
             method=MethodId.VISTA,
-            backend={"config_path": None, "max_frames": None},
+            backend={"max_frames": None},
             outputs={"emit_dense_points": True, "emit_sparse_points": True},
         ),
         benchmark=BenchmarkConfig(

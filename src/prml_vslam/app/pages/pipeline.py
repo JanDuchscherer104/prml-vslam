@@ -250,7 +250,6 @@ def _render_request_editor(
         mode,
         method,
         slam_max_frames,
-        slam_config_path,
         identity_input_error,
     ) = _render_request_identity_controls(
         page_state=page_state,
@@ -279,6 +278,8 @@ def _render_request_editor(
         trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
+        connect_live_viewer,
+        export_viewer_rrd,
     ) = _render_stage_settings(page_state)
     return (
         PipelinePageAction.model_validate(
@@ -291,13 +292,14 @@ def _render_request_editor(
                 "mode": mode,
                 "method": method,
                 "slam_max_frames": slam_max_frames,
-                "slam_config_path": slam_config_path,
                 "emit_dense_points": emit_dense_points,
                 "emit_sparse_points": emit_sparse_points,
                 "reference_enabled": reference_enabled,
                 "trajectory_eval_enabled": trajectory_eval_enabled,
                 "evaluate_cloud": evaluate_cloud,
                 "evaluate_efficiency": evaluate_efficiency,
+                "connect_live_viewer": connect_live_viewer,
+                "export_viewer_rrd": export_viewer_rrd,
                 "record3d_transport": record3d_transport,
                 "record3d_usb_device_index": record3d_usb_device_index,
                 "record3d_wifi_device_address": record3d_wifi_device_address,
@@ -320,7 +322,7 @@ def _render_request_identity_controls(
     page_state: PipelinePageState,
     path_config: PathConfig,
     source_kind: PipelineSourceId,
-) -> tuple[str, PipelineMode, MethodId, int | None, Path | None, str | None]:
+) -> tuple[str, PipelineMode, MethodId, int | None, str | None]:
     left, _ = st.columns(2, gap="large")
     with left:
         experiment_name = st.text_input("Experiment Name", value=page_state.experiment_name).strip()
@@ -348,15 +350,7 @@ def _render_request_identity_controls(
             raw_value=slam_max_frames_raw,
             field_label="SLAM Max Frames",
         )
-        slam_config_path = _parse_optional_repo_path(
-            path_config,
-            st.text_input(
-                "SLAM Config Path",
-                value=_display_repo_relative_path(path_config, page_state.slam_config_path),
-                placeholder=".configs/methods/vista/demo.toml",
-            ).strip(),
-        )
-    return experiment_name, mode, method, slam_max_frames, slam_config_path, slam_max_frames_error
+    return experiment_name, mode, method, slam_max_frames, slam_max_frames_error
 
 
 def _render_source_settings(
@@ -462,13 +456,18 @@ def _render_record3d_source_settings(
 
 def _render_stage_settings(
     page_state: PipelinePageState,
-) -> tuple[bool, bool, bool, bool, bool, bool]:
+) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool]:
     stage_left, stage_right = st.columns(2, gap="large")
     with stage_left:
         st.markdown("**SLAM Stage**")
         emit_sparse_points = st.toggle("Emit sparse geometry", value=page_state.emit_sparse_points)
         emit_dense_points = st.toggle("Emit dense geometry", value=page_state.emit_dense_points)
         reference_enabled = st.toggle("Plan reference reconstruction", value=page_state.reference_enabled)
+
+        st.markdown("**Visualization**")
+        connect_live_viewer = st.toggle("Connect live Rerun viewer", value=page_state.connect_live_viewer)
+        export_viewer_rrd = st.toggle("Export viewer .rrd artifact", value=page_state.export_viewer_rrd)
+
     with stage_right:
         st.markdown("**Evaluation Stages**")
         trajectory_eval_enabled = st.toggle("Plan trajectory evaluation", value=page_state.trajectory_eval_enabled)
@@ -481,6 +480,8 @@ def _render_stage_settings(
         trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
+        connect_live_viewer,
+        export_viewer_rrd,
     )
 
 
@@ -528,13 +529,14 @@ def _sync_pipeline_page_state_from_template(
         mode=request.mode,
         method=request.slam.method,
         slam_max_frames=request.slam.backend.max_frames,
-        slam_config_path=request.slam.backend.config_path,
         emit_dense_points=request.slam.outputs.emit_dense_points,
         emit_sparse_points=request.slam.outputs.emit_sparse_points,
         reference_enabled=request.benchmark.reference.enabled,
         trajectory_eval_enabled=request.benchmark.trajectory.enabled,
         evaluate_cloud=request.benchmark.cloud.enabled,
         evaluate_efficiency=request.benchmark.efficiency.enabled,
+        connect_live_viewer=request.visualization.connect_live_viewer,
+        export_viewer_rrd=request.visualization.export_viewer_rrd,
         **source_updates,
     )
 
@@ -586,7 +588,6 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
                 },
                 backend={
                     "max_frames": action.slam_max_frames,
-                    "config_path": action.slam_config_path,
                 },
             ),
             benchmark=BenchmarkConfig(
@@ -595,7 +596,10 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
                 cloud=CloudBenchmarkConfig(enabled=action.evaluate_cloud),
                 efficiency=EfficiencyBenchmarkConfig(enabled=action.evaluate_efficiency),
             ),
-            visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
+            visualization=VisualizationConfig(
+                export_viewer_rrd=action.export_viewer_rrd,
+                connect_live_viewer=action.connect_live_viewer,
+            ),
         )
         return request, None
     except Exception as exc:
@@ -996,9 +1000,6 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
         "output_dir": request.output_dir.as_posix(),
         "slam": {
             "method": request.slam.method.value,
-            "config_path": None
-            if request.slam.backend.config_path is None
-            else request.slam.backend.config_path.as_posix(),
             "max_frames": request.slam.backend.max_frames,
             "emit_dense_points": request.slam.outputs.emit_dense_points,
             "emit_sparse_points": request.slam.outputs.emit_sparse_points,

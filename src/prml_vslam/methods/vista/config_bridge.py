@@ -28,8 +28,6 @@ def build_vista_command(
         "--output_dir",
         str(output_dir),
     ]
-    if backend_config.config_path is not None:
-        command.extend(["--config", str(backend_config.config_path)])
     if backend_config.max_frames is not None:
         command.extend(["--max_frames", str(backend_config.max_frames)])
     if not output_policy.emit_dense_points:

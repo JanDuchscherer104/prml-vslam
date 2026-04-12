@@ -87,8 +87,6 @@ class SlamConfig(BaseConfig):
     """External monocular VSLAM backend to use for the run."""
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
-    config_path: Path | None = None
-    """Optional explicit backend config path."""
     emit_dense_points: bool = True
     """Whether the SLAM stage should materialize a dense point cloud artifact."""
     emit_sparse_points: bool = True
