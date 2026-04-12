@@ -1,0 +1,17 @@
+name: prml-vslam
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.11
+  - cmake=3.31.2
+  - gcc_linux-64=11.4.0
+  - gxx_linux-64=11.4.0
+  - pip
+  - uv
+  # Match ViSTA-SLAM's CUDA 12.1 torch stack explicitly by channel.
+  - pytorch::pytorch=2.5.1
+  - pytorch::torchvision=0.20.1
+  - pytorch::torchaudio=2.5.1
+  - pytorch::pytorch-cuda=12.1
