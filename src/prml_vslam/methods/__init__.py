@@ -10,11 +10,11 @@ def __getattr__(name: str) -> object:
 
         return MockSlamBackendConfig
     if name == "VistaSlamBackendConfig":
-        from .vista_slam.config import VistaSlamBackendConfig
+        from .vista.config import VistaSlamBackendConfig
 
         return VistaSlamBackendConfig
     if name == "VistaSlamBackend":
-        from .vista_slam.runner import VistaSlamBackend
+        from .vista.adapter import VistaSlamBackend
 
         return VistaSlamBackend
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

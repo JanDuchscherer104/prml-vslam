@@ -99,6 +99,7 @@ class OfflineRunner:
                 request=request,
                 prepared_manifest=prepared_manifest,
                 run_paths=run_paths,
+                progress=self._console.info,
             )
             write_json(run_paths.sequence_manifest_path, sequence_manifest)
             self._runtime.update_fields(
