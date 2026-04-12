@@ -30,66 +30,48 @@ be aligned before cross-system comparison.
 Source diagram:
 [`docs/figures/mermaid/advio-modalities-overview.mmd`](../../../../docs/figures/mermaid/advio-modalities-overview.mmd)
 
-Practical summary:
-
-- `ground-truth`
-  - `pose.csv` or `poses.csv`: 6DoF benchmark reference trajectory
-  - `fixpoints.csv`: manually marked position fixes used to build the reference
-- `iphone`
-  - `frames.mov`, `frames.csv`: RGB video plus exact frame timestamps
-  - `arkit.csv`: ARKit pose stream for the iPhone camera
-  - `accelerometer.csv`, `gyroscope.csv` or `gyro.csv`,
-    `magnetometer.csv`, `barometer.csv`
-  - `platform-location.csv` or `platform-locations.csv`: geographic/platform
-    location samples
-- `pixel`
-  - `arcore.csv`: ARCore pose stream from the Google Pixel
-- `tango`
-  - `raw.csv`: Tango raw odometry
-  - `area-learning.csv`: Tango loop-closing/map-building odometry
-  - `frames.mov`, `frames.csv`: Tango fisheye video
-  - `point-cloud.csv` and `point-cloud-*.csv`: Tango point-cloud capture
-- `calibration`
-  - `iphone-XX.yaml`: iPhone intrinsics, distortion, and `T_cam_imu`
-
 ## File Conventions
 
-The official docs and the released ZIP files are close, but not perfectly
-identical. The repository adapter intentionally accepts the known variants
-present in the public data.
+The official ADVIO repository README and the released ZIP archives are close,
+but not perfectly identical. In the checked local ADVIO archives under
+`.data/advio/`, all 23 sequences use `ground-truth/pose.csv`,
+`iphone/gyro.csv`, and `iphone/platform-locations.csv`, whereas the official
+README documents `poses.csv`, `gyroscope.csv`, and `platform-location.csv`.
+The repository adapter intentionally accepts both spellings where needed, but
+the examples below prefer the names present in the released archives.
 
 Canonical per-sequence structure:
 
 ```text
 data/
-  advio-XX/
-    ground-truth/
-      pose.csv or poses.csv
-      fixpoints.csv
-    iphone/
-      frames.mov
-      frames.csv
-      platform-location.csv or platform-locations.csv
-      accelerometer.csv
-      gyroscope.csv or gyro.csv
-      magnetometer.csv
-      barometer.csv
-      arkit.csv
-    pixel/
-      arcore.csv
-    tango/
-      frames.mov
-      frames.csv
-      raw.csv
-      area-learning.csv
-      point-cloud.csv
-      point-cloud-001.csv
-      point-cloud-002.csv
-      ...
-  calibration/
-    iphone-01.yaml
-    iphone-02.yaml
-    ...
+├── advio-XX/
+│   ├── ground-truth/
+│   │   ├── pose.csv                  # 6DoF benchmark reference trajectory in the released archives
+│   │   └── fixpoints.csv             # manually marked position fixes used to build the reference
+│   ├── iphone/
+│   │   ├── frames.mov                # RGB video capture
+│   │   ├── frames.csv                # exact frame timestamps for the RGB video
+│   │   ├── platform-locations.csv    # geographic / platform location samples
+│   │   ├── accelerometer.csv         # raw accelerometer stream
+│   │   ├── gyro.csv                  # raw gyroscope stream
+│   │   ├── magnetometer.csv          # raw magnetometer stream
+│   │   ├── barometer.csv             # pressure and relative altitude samples
+│   │   └── arkit.csv                 # ARKit pose stream for the iPhone camera
+│   ├── pixel/
+│   │   └── arcore.csv                # ARCore pose stream from the Google Pixel
+│   └── tango/
+│       ├── frames.mov                # Tango fisheye video
+│       ├── frames.csv                # exact frame timestamps for the fisheye video
+│       ├── raw.csv                   # Tango raw odometry
+│       ├── area-learning.csv         # Tango loop-closing / map-building odometry
+│       ├── point-cloud.csv           # point-cloud timestamps / index table
+│       ├── point-cloud-001.csv       # Tango point-cloud capture
+│       ├── point-cloud-002.csv       # Tango point-cloud capture
+│       └── ...
+└── calibration/
+    ├── iphone-01.yaml                # iPhone intrinsics, distortion, and T_cam_imu
+    ├── iphone-02.yaml
+    └── ...
 ```
 
 Repository loader conventions:
@@ -105,8 +87,9 @@ Repository loader conventions:
   - image size
   - distortion model and coefficients
   - `T_cam_imu`
-- In this repository, poses are handled with camera-to-world semantics through
-  [`SE3Pose`](../../interfaces/camera.py).
+- In this repository, poses and calibration transforms are handled through
+  [`FrameTransform`](../../interfaces/transforms.py) using the canonical
+  camera-to-world runtime convention for poses.
 
 ## Frame And Transform Tree
 

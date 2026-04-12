@@ -12,6 +12,13 @@ import streamlit as st
 from evo.core import metrics as evo_metrics
 from evo.core import sync as evo_sync
 
+from prml_vslam.benchmark import (
+    BenchmarkConfig,
+    CloudBenchmarkConfig,
+    EfficiencyBenchmarkConfig,
+    ReferenceSource,
+    TrajectoryBenchmarkConfig,
+)
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
@@ -19,23 +26,21 @@ from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts import (
-    BenchmarkEvaluationConfig,
+from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
+from prml_vslam.pipeline.contracts.provenance import StageManifest
+from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
-    LiveSourceSpec,
+    LiveTransportId,
     Record3DLiveSourceSpec,
-    ReferenceConfig,
-    RunPlan,
-    RunPlanStageId,
-    SlamConfig,
-    StageManifest,
+    SlamStageConfig,
 )
 from prml_vslam.pipeline.demo import load_run_request_toml
-from prml_vslam.pipeline.session import PipelineSessionSnapshot, PipelineSessionState
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.plotting import build_evo_ape_colormap_figure
 from prml_vslam.utils import BaseData, PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.image_utils import normalize_grayscale_image
+from prml_vslam.visualization import VisualizationConfig
 
 from ..live_session import (
     LiveMetric,
@@ -60,7 +65,7 @@ if TYPE_CHECKING:
     from ..bootstrap import AppContext
 
 
-_ACTIVE_SESSION_STATES = frozenset({PipelineSessionState.CONNECTING, PipelineSessionState.RUNNING})
+_ACTIVE_SESSION_STATES = frozenset({RunState.PREPARING, RunState.RUNNING})
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 _SUPPORTED_APP_STAGE_IDS = frozenset({RunPlanStageId.INGEST, RunPlanStageId.SLAM, RunPlanStageId.SUMMARY})
 
@@ -240,7 +245,7 @@ def _render_request_editor(
         emit_sparse_points,
         emit_dense_points,
         reference_enabled,
-        compare_to_arcore,
+        trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
     ) = _render_stage_settings(page_state)
@@ -259,7 +264,7 @@ def _render_request_editor(
                 "emit_dense_points": emit_dense_points,
                 "emit_sparse_points": emit_sparse_points,
                 "reference_enabled": reference_enabled,
-                "compare_to_arcore": compare_to_arcore,
+                "trajectory_eval_enabled": trajectory_eval_enabled,
                 "evaluate_cloud": evaluate_cloud,
                 "evaluate_efficiency": evaluate_efficiency,
                 "record3d_transport": record3d_transport,
@@ -434,20 +439,20 @@ def _render_stage_settings(
         reference_enabled = st.toggle("Plan reference reconstruction", value=page_state.reference_enabled)
     with stage_right:
         st.markdown("**Evaluation Stages**")
-        compare_to_arcore = st.toggle("Plan trajectory evaluation", value=page_state.compare_to_arcore)
+        trajectory_eval_enabled = st.toggle("Plan trajectory evaluation", value=page_state.trajectory_eval_enabled)
         evaluate_cloud = st.toggle("Plan dense-cloud evaluation", value=page_state.evaluate_cloud)
         evaluate_efficiency = st.toggle("Plan efficiency evaluation", value=page_state.evaluate_efficiency)
     return (
         emit_sparse_points,
         emit_dense_points,
         reference_enabled,
-        compare_to_arcore,
+        trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
     )
 
 
-def _render_pipeline_snapshot(snapshot: PipelineSessionSnapshot) -> None:
+def _render_pipeline_snapshot(snapshot: RunSnapshot) -> None:
     render_live_session_shell(
         title=None,
         status_renderer=lambda: _render_pipeline_notice(snapshot),
@@ -490,14 +495,14 @@ def _sync_pipeline_page_state_from_template(
         experiment_name=request.experiment_name,
         mode=request.mode,
         method=request.slam.method,
-        slam_max_frames=request.slam.max_frames,
-        slam_config_path=request.slam.config_path,
-        emit_dense_points=request.slam.emit_dense_points,
-        emit_sparse_points=request.slam.emit_sparse_points,
-        reference_enabled=request.reference.enabled,
-        compare_to_arcore=request.evaluation.compare_to_arcore,
-        evaluate_cloud=request.evaluation.evaluate_cloud,
-        evaluate_efficiency=request.evaluation.evaluate_efficiency,
+        slam_max_frames=request.slam.backend.max_frames,
+        slam_config_path=request.slam.backend.config_path,
+        emit_dense_points=request.slam.outputs.emit_dense_points,
+        emit_sparse_points=request.slam.outputs.emit_sparse_points,
+        reference_enabled=request.benchmark.reference.enabled,
+        trajectory_eval_enabled=request.benchmark.trajectory.enabled,
+        evaluate_cloud=request.benchmark.cloud.enabled,
+        evaluate_efficiency=request.benchmark.efficiency.enabled,
         **source_updates,
     )
 
@@ -506,7 +511,7 @@ def _record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLiv
     """Build the typed Record3D live source contract from one pipeline action."""
     return Record3DLiveSourceSpec(
         persist_capture=action.record3d_persist_capture,
-        transport=action.record3d_transport,
+        transport=LiveTransportId(action.record3d_transport.value),
         device_index=action.record3d_usb_device_index if action.record3d_transport is Record3DTransportId.USB else None,
         device_address=action.record3d_wifi_device_address
         if action.record3d_transport is Record3DTransportId.WIFI
@@ -518,7 +523,7 @@ def _record3d_page_updates_from_source(source: Record3DLiveSourceSpec) -> dict[s
     """Build pipeline page-state updates from a typed Record3D live source contract."""
     return {
         "source_kind": PipelineSourceId.RECORD3D,
-        "record3d_transport": source.transport,
+        "record3d_transport": Record3DTransportId(source.transport.value),
         "record3d_usb_device_index": 0 if source.device_index is None else source.device_index,
         "record3d_wifi_device_address": source.device_address,
         "record3d_persist_capture": source.persist_capture,
@@ -541,19 +546,24 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
             mode=action.mode,
             output_dir=context.path_config.artifacts_dir,
             source=source,
-            slam=SlamConfig(
+            slam=SlamStageConfig(
                 method=action.method,
-                max_frames=action.slam_max_frames,
-                config_path=action.slam_config_path,
-                emit_dense_points=action.emit_dense_points,
-                emit_sparse_points=action.emit_sparse_points,
+                outputs={
+                    "emit_dense_points": action.emit_dense_points,
+                    "emit_sparse_points": action.emit_sparse_points,
+                },
+                backend={
+                    "max_frames": action.slam_max_frames,
+                    "config_path": action.slam_config_path,
+                },
             ),
-            reference=ReferenceConfig(enabled=action.reference_enabled),
-            evaluation=BenchmarkEvaluationConfig(
-                compare_to_arcore=action.compare_to_arcore,
-                evaluate_cloud=action.evaluate_cloud,
-                evaluate_efficiency=action.evaluate_efficiency,
+            benchmark=BenchmarkConfig(
+                reference={"enabled": action.reference_enabled},
+                trajectory=TrajectoryBenchmarkConfig(enabled=action.trajectory_eval_enabled),
+                cloud=CloudBenchmarkConfig(enabled=action.evaluate_cloud),
+                efficiency=EfficiencyBenchmarkConfig(enabled=action.evaluate_efficiency),
             ),
+            visualization=VisualizationConfig(connect_live_viewer=False),
         )
         return request, None
     except Exception as exc:
@@ -591,8 +601,6 @@ def _request_support_error(
             if request.mode is not PipelineMode.STREAMING:
                 return "Record3D live sources currently require `streaming` mode."
             return None
-        case LiveSourceSpec(source_id=source_id):
-            return f"Live source '{source_id}' is not supported by this demo page."
         case DatasetSourceSpec(dataset_id=dataset_id):
             return f"Dataset '{dataset_id.value}' is not supported by this demo page."
         case _:
@@ -608,18 +616,22 @@ def _source_input_error(action: PipelinePageAction) -> str | None:
     )
 
 
-def _pipeline_metrics(snapshot: PipelineSessionSnapshot) -> tuple[LiveMetric, ...]:
+def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[LiveMetric, ...]:
+    received_frames = snapshot.received_frames if isinstance(snapshot, StreamingRunSnapshot) else 0
+    measured_fps = snapshot.measured_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
+    num_sparse_points = snapshot.num_sparse_points if isinstance(snapshot, StreamingRunSnapshot) else 0
+    num_dense_points = snapshot.num_dense_points if isinstance(snapshot, StreamingRunSnapshot) else 0
     return (
         ("Status", snapshot.state.value.upper()),
         ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.label),
-        ("Received Frames", str(snapshot.received_frames)),
-        ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
-        ("Sparse Points", str(snapshot.num_sparse_points)),
-        ("Dense Points", str(snapshot.num_dense_points)),
+        ("Received Frames", str(received_frames)),
+        ("Frame Rate", f"{measured_fps:.2f} fps"),
+        ("Sparse Points", str(num_sparse_points)),
+        ("Dense Points", str(num_dense_points)),
     )
 
 
-def _pipeline_caption(snapshot: PipelineSessionSnapshot) -> str | None:
+def _pipeline_caption(snapshot: RunSnapshot) -> str | None:
     if snapshot.plan is None:
         return None
     return (
@@ -628,7 +640,7 @@ def _pipeline_caption(snapshot: PipelineSessionSnapshot) -> str | None:
     )
 
 
-def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
+def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
     if _is_offline_pipeline_run(snapshot):
         st.caption("Offline runs skip the live replay panels and focus on stage progress plus persisted outputs.")
         tabs = st.tabs(["Plan", "Artifacts"])
@@ -638,6 +650,9 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
             _render_pipeline_artifacts_tab(snapshot)
         return
 
+    if not isinstance(snapshot, StreamingRunSnapshot):
+        st.info("Streaming telemetry is not available for this run.")
+        return
     packet = snapshot.latest_packet
     tabs = st.tabs(["Frames", "Trajectory", "Plan", "Artifacts"])
     with tabs[0]:
@@ -723,7 +738,7 @@ def _render_pipeline_tabs(snapshot: PipelineSessionSnapshot) -> None:
         _render_pipeline_artifacts_tab(snapshot)
 
 
-def _render_pipeline_plan_tab(snapshot: PipelineSessionSnapshot) -> None:
+def _render_pipeline_plan_tab(snapshot: RunSnapshot) -> None:
     if snapshot.plan is None:
         st.info("Start a run to inspect the generated plan and execution records.")
         return
@@ -740,7 +755,7 @@ def _render_pipeline_plan_tab(snapshot: PipelineSessionSnapshot) -> None:
             st.info("Stage manifests will appear once the run starts writing outputs.")
 
 
-def _render_pipeline_artifacts_tab(snapshot: PipelineSessionSnapshot) -> None:
+def _render_pipeline_artifacts_tab(snapshot: RunSnapshot) -> None:
     if snapshot.sequence_manifest is None and snapshot.slam is None and snapshot.summary is None:
         st.info("Run the demo to inspect the materialized manifest, SLAM artifacts, and run summary.")
         return
@@ -768,34 +783,34 @@ def _render_pipeline_artifacts_tab(snapshot: PipelineSessionSnapshot) -> None:
             )
 
 
-def _is_offline_pipeline_run(snapshot: PipelineSessionSnapshot) -> bool:
+def _is_offline_pipeline_run(snapshot: RunSnapshot) -> bool:
     return snapshot.plan is not None and snapshot.plan.mode is PipelineMode.OFFLINE
 
 
-def _render_pipeline_notice(snapshot: PipelineSessionSnapshot) -> None:
+def _render_pipeline_notice(snapshot: RunSnapshot) -> None:
     match snapshot.state:
-        case PipelineSessionState.IDLE:
+        case RunState.IDLE:
             st.info(
                 "Select a request template, configure the supported source and stages, then start the pipeline demo."
             )
-        case PipelineSessionState.CONNECTING:
+        case RunState.PREPARING:
             st.info("Preparing the sequence manifest and starting the mock SLAM backend.")
-        case PipelineSessionState.RUNNING:
+        case RunState.RUNNING:
             if _is_offline_pipeline_run(snapshot):
                 st.success("Processing the bounded offline slice and materializing artifacts.")
             else:
                 st.success("Processing frames through the mock SLAM backend.")
-        case PipelineSessionState.COMPLETED:
+        case RunState.COMPLETED:
             if _is_offline_pipeline_run(snapshot):
                 st.success("The bounded offline demo finished and wrote artifacts.")
             else:
                 st.success("The bounded demo finished and wrote mock SLAM artifacts.")
-        case PipelineSessionState.STOPPED:
+        case RunState.STOPPED:
             if _is_offline_pipeline_run(snapshot):
                 st.warning("The offline demo stopped. The written artifacts remain visible below.")
             else:
                 st.warning("The demo stopped. The last frame, trajectory, and written artifacts remain visible below.")
-        case PipelineSessionState.FAILED:
+        case RunState.FAILED:
             st.error(snapshot.error_message or "The pipeline demo failed.")
 
 
@@ -827,8 +842,10 @@ def _start_pipeline_demo_run(context: AppContext, *, action: PipelinePageAction)
     request, request_error = _build_request_from_action(context, action)
     if request is None:
         raise ValueError(request_error or "Failed to build the current request.")
-    source = _build_streaming_source_from_action(context, action)
-    context.run_service.start_run(request=request, source=source)
+    runtime_source = (
+        None if request.mode is PipelineMode.OFFLINE else _build_streaming_source_from_action(context, action)
+    )
+    context.run_service.start_run(request=request, runtime_source=runtime_source)
 
 
 def _discover_pipeline_config_paths(path_config: PathConfig) -> list[Path]:
@@ -932,13 +949,15 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
         "output_dir": request.output_dir.as_posix(),
         "slam": {
             "method": request.slam.method.value,
-            "config_path": None if request.slam.config_path is None else request.slam.config_path.as_posix(),
-            "max_frames": request.slam.max_frames,
-            "emit_dense_points": request.slam.emit_dense_points,
-            "emit_sparse_points": request.slam.emit_sparse_points,
+            "config_path": None
+            if request.slam.backend.config_path is None
+            else request.slam.backend.config_path.as_posix(),
+            "max_frames": request.slam.backend.max_frames,
+            "emit_dense_points": request.slam.outputs.emit_dense_points,
+            "emit_sparse_points": request.slam.outputs.emit_sparse_points,
         },
-        "reference": request.reference.model_dump(mode="json"),
-        "evaluation": request.evaluation.model_dump(mode="json"),
+        "benchmark": request.benchmark.model_dump(mode="json"),
+        "visualization": request.visualization.model_dump(mode="json"),
     }
     match request.source:
         case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
@@ -956,10 +975,18 @@ def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:
     return normalize_grayscale_image(np.asarray(pointmap[..., 2], dtype=np.float32))
 
 
-def _resolve_evo_preview(snapshot: PipelineSessionSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:
-    if snapshot.sequence_manifest is None or snapshot.slam is None:
+def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:
+    if snapshot.slam is None:
         return None, None
-    reference_path = snapshot.sequence_manifest.reference_tum_path
+    reference_path = (
+        None
+        if snapshot.benchmark_inputs is None
+        else (
+            None
+            if (reference := snapshot.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)) is None
+            else reference.path
+        )
+    )
     estimate_path = snapshot.slam.trajectory_tum.path
     if reference_path is None:
         return None, "No `ground_truth.tum` reference is available for this ADVIO slice."

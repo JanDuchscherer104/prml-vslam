@@ -9,7 +9,7 @@ import numpy as np
 import plotly.graph_objects as go
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.interfaces import SE3Pose
+from prml_vslam.interfaces import FrameTransform
 
 from .theme import AXIS_COLORS, DEFAULT_COLORS, apply_standard_3d_layout, apply_standard_xy_layout
 
@@ -331,7 +331,7 @@ class TrajectoryPlotBuilder:
         }
 
         for index in indices.tolist():
-            pose = SE3Pose.from_matrix(np.asarray(trajectory.poses_se3[index], dtype=np.float64))
+            pose = FrameTransform.from_matrix(np.asarray(trajectory.poses_se3[index], dtype=np.float64))
             transform = pose.as_matrix()
             origin = transform[:3, 3]
             rotation = transform[:3, :3]

@@ -62,7 +62,8 @@ Pipeline contract and extension guidance lives in [`src/prml_vslam/pipeline/READ
 
 ## TOML-First Run Planning
 
-For durable and reproducible planning, store a [`RunRequest`](src/prml_vslam/pipeline/contracts.py#L116) as TOML under `.configs/pipelines/` and resolve it through the [`plan-run-config`](src/prml_vslam/main.py) CLI command:
+For durable and reproducible planning, store a [`RunRequest`](src/prml_vslam/pipeline/README.md) as TOML under
+`.configs/pipelines/` and resolve it through the [`plan-run-config`](src/prml_vslam/main.py) CLI command:
 
 ```toml
 experiment_name = "advio-office-offline-vista"
@@ -75,27 +76,48 @@ frame_stride = 2
 
 [slam]
 method = "vista"
+
+[slam.outputs]
 emit_dense_points = true
 emit_sparse_points = true
 
-[reference]
+[benchmark.reference]
 enabled = false
 
-[evaluation]
-compare_to_arcore = true
-evaluate_cloud = false
-evaluate_efficiency = true
+[benchmark.trajectory]
+enabled = true
+baseline_source = "ground_truth"
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = true
 ```
 
 ```bash
 uv run prml-vslam plan-run-config offline-advio-15-vista.toml
+uv run prml-vslam run-config offline-advio-15-vista.toml
 ```
 
-The TOML shape mirrors the nested [`RunRequest`](src/prml_vslam/pipeline/contracts.py#L116) model: top-level fields configure the run itself, while `[source]`, `[slam]`, `[reference]`, and `[evaluation]` map directly onto the nested config objects owned by [`contracts.py`](src/prml_vslam/pipeline/contracts.py). That is why an optional method-specific backend config path lives in `[slam]` as `config_path = "..."`, because the field is owned by [`SlamConfig`](src/prml_vslam/pipeline/contracts.py) rather than by the top-level request.
+The TOML shape mirrors the nested `RunRequest` model: top-level fields configure
+the run itself, while `[source]`, `[slam]`, `[benchmark]`, and
+`[visualization]` map directly onto the nested config objects owned by the
+repository. Method-private config now lives under `[slam.backend]`, and output
+policy lives under `[slam.outputs]`.
 
-[`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through the repo-owned helpers described in [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md). The config file itself is resolved through [`PathConfig`](src/prml_vslam/utils/path_config.py), while nested TOML paths are hydrated as written and should be normalized explicitly in runtime code when repo-relative behavior is required.
+[`plan-run-config`](src/prml_vslam/main.py) loads persisted requests through the
+repo-owned helpers described in
+[`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md). Use
+[`run-config`](src/prml_vslam/main.py) for true offline execution. The config
+file itself is resolved through
+[`PathConfig`](src/prml_vslam/utils/path_config.py), while nested TOML paths are
+hydrated as written and should be normalized explicitly in runtime code when
+repo-relative behavior is required.
 
-`compare_to_arcore` is documented here in its current code shape. Today it is the overloaded planner flag that reserves the trajectory-evaluation stage for ARCore comparison; a later refactor can separate “trajectory evaluation enabled” from “baseline selection,” but this README describes the current behavior as implemented.
+`pipeline-demo` now refers only to the bounded ADVIO streaming demo slice.
+Offline execution uses the new `run-config` path instead of reusing the
+streaming-first demo launcher.
 
 ## Challenge Context
 

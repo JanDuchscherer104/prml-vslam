@@ -184,8 +184,8 @@ class PipelinePageState(BaseData):
     reference_enabled: bool = False
     """Whether the reference-reconstruction stage should be planned."""
 
-    compare_to_arcore: bool = False
-    """Whether trajectory evaluation against ARCore should be planned."""
+    trajectory_eval_enabled: bool = False
+    """Whether trajectory evaluation should be planned."""
 
     evaluate_cloud: bool = False
     """Whether dense-cloud evaluation should be planned."""

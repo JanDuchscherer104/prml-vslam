@@ -19,7 +19,7 @@ For repo-owned entry points and higher-level transport guidance, see [README.md]
 | --- | --- | --- | --- |
 | `DeviceInfo` | `product_id`, `udid`, `_handle` | connected iOS device identity and native handle | `product_id` and `udid` are normalized into `Record3DDevice`; `_handle` is not used |
 | `IntrinsicMatrixCoeffs` | `fx`, `fy`, `tx`, `ty` | upstream intrinsic coefficients | normalized into `CameraIntrinsics(fx, fy, cx=tx, cy=ty)` |
-| `CameraPose` | `qx`, `qy`, `qz`, `qw`, `tx`, `ty`, `tz` | per-frame camera pose from Record3D / ARKit | normalized into `SE3Pose` |
+| `CameraPose` | `qx`, `qy`, `qz`, `qw`, `tx`, `ty`, `tz` | per-frame camera pose from Record3D / ARKit | normalized into `FrameTransform` |
 
 ### Exposed `Record3DStream` Methods And Callbacks
 

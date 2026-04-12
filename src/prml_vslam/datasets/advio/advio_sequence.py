@@ -9,6 +9,7 @@ from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 from pydantic import Field
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
@@ -18,7 +19,7 @@ from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioPoseSource, A
 from .advio_replay_adapter import open_advio_stream
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts import SequenceManifest
+    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 
 class AdvioSequencePaths(BaseData):
@@ -120,25 +121,44 @@ class AdvioSequence(BaseData):
         )
 
     def to_sequence_manifest(self, *, output_dir: Path | None = None) -> SequenceManifest:
-        from prml_vslam.pipeline.contracts import SequenceManifest
+        from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
         paths = self._resolve_paths(require_arcore=False)
-        evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
-        evaluation_dir.mkdir(parents=True, exist_ok=True)
-        reference_tum_path = _ensure_tum(self.write_ground_truth_tum, evaluation_dir / "ground_truth.tum")
-        arcore_tum_path = (
-            _ensure_tum(self.write_arcore_tum, evaluation_dir / "arcore.tum")
-            if paths.arcore_csv_path.exists()
-            else None
-        )
+        if output_dir is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
         return SequenceManifest(
             sequence_id=self.scene.sequence_slug,
             video_path=paths.video_path,
             timestamps_path=paths.frame_timestamps_path,
             intrinsics_path=paths.calibration_path,
-            reference_tum_path=reference_tum_path,
-            arcore_tum_path=arcore_tum_path,
         )
+
+    def to_benchmark_inputs(self, *, output_dir: Path | None = None) -> PreparedBenchmarkInputs:
+        """Materialize benchmark-owned reference trajectories for one sequence."""
+        paths = self._resolve_paths(require_arcore=False)
+        evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
+        evaluation_dir.mkdir(parents=True, exist_ok=True)
+        references = [
+            ReferenceTrajectoryRef(
+                source=ReferenceSource.GROUND_TRUTH,
+                path=_ensure_tum(self.write_ground_truth_tum, evaluation_dir / "ground_truth.tum"),
+            )
+        ]
+        if paths.arcore_csv_path.exists():
+            references.append(
+                ReferenceTrajectoryRef(
+                    source=ReferenceSource.ARCORE,
+                    path=_ensure_tum(self.write_arcore_tum, evaluation_dir / "arcore.tum"),
+                )
+            )
+        if paths.arkit_csv_path is not None:
+            references.append(
+                ReferenceTrajectoryRef(
+                    source=ReferenceSource.ARKIT,
+                    path=_ensure_tum(self.write_arkit_tum, evaluation_dir / "arkit.tum"),
+                )
+            )
+        return PreparedBenchmarkInputs(reference_trajectories=references)
 
     def open_stream(
         self,
