@@ -32,8 +32,14 @@ class PacketSessionSnapshot(BaseData):
     measured_fps: float = 0.0
     """Rolling measured packet rate."""
 
+    accepted_keyframes: int = 0
+    """Number of keyframe-like updates accepted during the current session."""
+
+    backend_fps: float = 0.0
+    """Rolling accepted-keyframe rate for the current session."""
+
     trajectory_positions_xyz: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_POSITIONS_XYZ.copy)
-    """Bounded trajectory history in world coordinates."""
+    """Bounded keyframe trajectory history in world coordinates."""
 
     trajectory_timestamps_s: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_TIMESTAMPS_S.copy)
     """Timestamps associated with `trajectory_positions_xyz`."""
@@ -56,9 +62,30 @@ class PacketSessionMetrics:
 
     def __init__(self, *, fps_window_size: int, trajectory_window_size: int) -> None:
         self._arrival_times: deque[float] = deque(maxlen=fps_window_size)
+        self._keyframe_arrival_times: deque[float] = deque(maxlen=fps_window_size)
         self._trajectory_positions: deque[np.ndarray] = deque(maxlen=trajectory_window_size)
         self._trajectory_timestamps: deque[float] = deque(maxlen=trajectory_window_size)
         self._received_frames = 0
+        self._accepted_keyframes = 0
+
+    def record_packet(self, *, arrival_time_s: float) -> None:
+        """Append one packet arrival to the rolling packet-rate window."""
+        self._received_frames += 1
+        self._arrival_times.append(arrival_time_s)
+
+    def record_keyframe(
+        self,
+        *,
+        arrival_time_s: float,
+        position_xyz: np.ndarray | None,
+        trajectory_time_s: float | None,
+    ) -> None:
+        """Append one accepted keyframe sample to the rolling backend window."""
+        self._accepted_keyframes += 1
+        self._keyframe_arrival_times.append(arrival_time_s)
+        if position_xyz is not None and trajectory_time_s is not None:
+            self._trajectory_positions.append(position_xyz)
+            self._trajectory_timestamps.append(trajectory_time_s)
 
     def record(
         self,
@@ -67,21 +94,34 @@ class PacketSessionMetrics:
         position_xyz: np.ndarray | None,
         trajectory_time_s: float | None,
     ) -> None:
-        """Append one frame arrival and optional trajectory sample."""
-        self._received_frames += 1
-        self._arrival_times.append(arrival_time_s)
+        """Append one packet arrival and optional keyframe sample."""
+        self.record_packet(arrival_time_s=arrival_time_s)
         if position_xyz is not None and trajectory_time_s is not None:
-            self._trajectory_positions.append(position_xyz)
-            self._trajectory_timestamps.append(trajectory_time_s)
+            self.record_keyframe(
+                arrival_time_s=arrival_time_s,
+                position_xyz=position_xyz,
+                trajectory_time_s=trajectory_time_s,
+            )
 
-    def snapshot_fields(self) -> dict[str, int | float | np.ndarray]:
-        """Return the current metrics in snapshot-ready form."""
+    def packet_snapshot_fields(self) -> dict[str, int | float]:
+        """Return packet-rate snapshot fields."""
         return {
             "received_frames": self._received_frames,
             "measured_fps": self._measure_fps(self._arrival_times),
+        }
+
+    def keyframe_snapshot_fields(self) -> dict[str, int | float | np.ndarray]:
+        """Return backend-keyframe snapshot fields."""
+        return {
+            "accepted_keyframes": self._accepted_keyframes,
+            "backend_fps": self._measure_fps(self._keyframe_arrival_times),
             "trajectory_positions_xyz": self._positions_to_array(self._trajectory_positions),
             "trajectory_timestamps_s": np.asarray(tuple(self._trajectory_timestamps), dtype=np.float64),
         }
+
+    def snapshot_fields(self) -> dict[str, int | float | np.ndarray]:
+        """Return the current metrics in snapshot-ready form."""
+        return self.packet_snapshot_fields() | self.keyframe_snapshot_fields()
 
     @staticmethod
     def _measure_fps(arrival_times: deque[float]) -> float:

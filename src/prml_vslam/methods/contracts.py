@@ -13,6 +13,8 @@ class MethodId(StrEnum):
 
     VISTA = "vista"
     MAST3R = "mast3r"
+    MSTR = "mast3r"
+    """Alias for MAST3R used in early scaffold mocks."""
 
     @property
     def display_name(self) -> str:
