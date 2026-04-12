@@ -105,18 +105,26 @@ class MockSlamSession(SlamSession):
         self._timestamps_s: list[float] = []
         self._dense_point_chunks_xyz: list[NDArray[np.float64]] = []
         self._num_dense_points = 0
+        self._pending_updates: list[SlamUpdate] = []
 
-    def step(self, frame: FramePacket) -> SlamUpdate:
-        """Consume one frame and return a deterministic incremental SLAM update."""
+    def step(self, frame: FramePacket) -> None:
+        """Consume one frame and buffer a deterministic incremental SLAM update."""
         pose = frame.pose if frame.pose is not None else self.fallback_pose()
         pointmap = self.build_pointmap(frame=frame)
-        return self.record_pose_sample(
+        update = self.record_pose_sample(
             seq=frame.seq,
             timestamp_ns=frame.timestamp_ns,
             pose=pose,
             used_source_pose=frame.pose is not None,
             pointmap=pointmap,
         )
+        self._pending_updates.append(update)
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        """Retrieve and clear any pending incremental SLAM updates."""
+        updates = self._pending_updates
+        self._pending_updates = []
+        return updates
 
     def close(self) -> SlamArtifacts:
         """Finalize the current run and persist the minimal SLAM artifacts."""

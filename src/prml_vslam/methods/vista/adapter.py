@@ -56,32 +56,37 @@ class VistaSlamSession:
         self._accepted_keyframe_count = 0
         self._num_dense_points = 0
         self._live_preview_wait_logged = False
+        self._pending_updates: list[SlamUpdate] = []
 
-    def step(self, frame: FramePacket) -> SlamUpdate:
-        """Feed one frame to OnlineSLAM and return incremental telemetry."""
+    def step(self, frame: FramePacket) -> None:
+        """Feed one frame to OnlineSLAM and buffer incremental telemetry."""
         self._source_frame_count += 1
 
         if frame.rgb is None:
-            return SlamUpdate(
+            update = SlamUpdate(
                 seq=frame.seq,
                 timestamp_ns=frame.timestamp_ns,
                 is_keyframe=False,
                 keyframe_index=None,
                 num_dense_points=self._num_dense_points,
             )
+            self._pending_updates.append(update)
+            return
 
         height_px, width_px = _VISTA_INPUT_RESOLUTION
         resized_rgb = cv2.resize(frame.rgb, (width_px, height_px), interpolation=cv2.INTER_LINEAR)
         grayscale = cv2.cvtColor(resized_rgb, cv2.COLOR_RGB2GRAY)
         is_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
         if not is_keyframe:
-            return SlamUpdate(
+            update = SlamUpdate(
                 seq=frame.seq,
                 timestamp_ns=frame.timestamp_ns,
                 is_keyframe=False,
                 keyframe_index=None,
                 num_dense_points=self._num_dense_points,
             )
+            self._pending_updates.append(update)
+            return
 
         import torch  # noqa: PLC0415
 
@@ -101,14 +106,28 @@ class VistaSlamSession:
         update.is_keyframe = True
         update.keyframe_index = self._accepted_keyframe_count
         self._accepted_keyframe_count += 1
-        return update
+        self._pending_updates.append(update)
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        """Retrieve and clear any pending incremental SLAM updates."""
+        updates = self._pending_updates
+        self._pending_updates = []
+        return updates
 
     def close(self) -> SlamArtifacts:
         """Persist upstream outputs and convert to canonical repository artifacts."""
         run_paths = RunArtifactPaths.build(self._artifact_root)
         native_output_dir = run_paths.native_output_dir
         native_output_dir.mkdir(parents=True, exist_ok=True)
-        self._slam.save_data_all(str(native_output_dir), save_images=False, save_depths=False)
+        try:
+            self._slam.save_data_all(str(native_output_dir), save_images=False, save_depths=False)
+        except Exception as exc:
+            raise RuntimeError(
+                f"ViSTA-SLAM failed to export artifacts. "
+                f"The sequence ({self._source_frame_count} frames, {self._accepted_keyframe_count} keyframes) "
+                "may have been too short to initialize the pose graph."
+            ) from exc
+        
         self._console.info(
             "ViSTA-SLAM session closed after %d frames; native outputs in '%s'.",
             self._source_frame_count,
@@ -193,15 +212,23 @@ class VistaSlamBackend(SlamBackend):
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
-    ) -> VistaSlamSession:
-        """Load upstream OnlineSLAM and return a ready streaming session."""
-        del backend_config
-        session = self._build_session(
-            artifact_root=artifact_root,
+    ) -> SlamSession:
+        """Load upstream OnlineSLAM and return a ready multiprocess streaming session."""
+        from prml_vslam.methods.multiprocess import MultiprocessSlamSession  # noqa: PLC0415
+
+        # We use a partial or a top-level function-like object to ensure it's pickleable
+        # when using the 'spawn' multiprocessing context.
+        factory = _VistaSessionFactory(
+            config=self._cfg,
             output_policy=output_policy,
-            live_mode=True,
+            artifact_root=artifact_root,
         )
-        self._console.info("OnlineSLAM model loaded; session ready.")
+
+        session = MultiprocessSlamSession(
+            session_factory=factory,
+            console=self._console,
+        )
+        self._console.info("OnlineSLAM worker process launched; session ready.")
         return session
 
     def run_sequence(
@@ -483,6 +510,31 @@ def _count_valid_pointmap_points(pointmap: np.ndarray | None) -> int:
         return 0
     depth = np.asarray(pointmap[..., 2], dtype=np.float32)
     return int(np.count_nonzero(np.isfinite(depth) & (depth > 0.0)))
+
+
+class _VistaSessionFactory:
+    """Pickleable factory for ViSTA-SLAM sessions used by multiprocessing."""
+
+    def __init__(
+        self,
+        config: VistaSlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> None:
+        self.config = config
+        self.output_policy = output_policy
+        self.artifact_root = artifact_root
+
+    def __call__(self) -> VistaSlamSession:
+        # Re-instantiate the backend logic in the child process.
+        from .adapter import VistaSlamBackend  # noqa: PLC0415
+
+        backend = VistaSlamBackend(config=self.config)
+        return backend._build_session(
+            artifact_root=self.artifact_root,
+            output_policy=self.output_policy,
+            live_mode=True,
+        )
 
 
 __all__ = ["VistaSlamBackend", "VistaSlamSession"]

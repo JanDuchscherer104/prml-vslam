@@ -71,17 +71,16 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
         )
     )
 
-    updates = [
-        session.step(FramePacket(seq=0, timestamp_ns=0, rgb=np.zeros((8, 8, 3), dtype=np.uint8))),
-        session.step(
-            FramePacket(
-                seq=1,
-                timestamp_ns=100_000_000,
-                rgb=np.zeros((8, 8, 3), dtype=np.uint8),
-                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
-            )
-        ),
-    ]
+    session.step(FramePacket(seq=0, timestamp_ns=0, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        FramePacket(
+            seq=1,
+            timestamp_ns=100_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+        )
+    )
+    updates = session.try_get_updates()
 
     assert len(updates) == 2
     assert updates[0].is_keyframe is True
@@ -161,7 +160,10 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(tmp_pa
         console=Console(__name__).child("vista-test"),
     )
 
-    update = session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    updates = session.try_get_updates()
+    assert len(updates) == 1
+    update = updates[0]
 
     assert update.pose is not None
     assert update.pose.tx == 1.5
@@ -213,7 +215,10 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
         console=Console(__name__).child("vista-test"),
     )
 
-    update = session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    updates = session.try_get_updates()
+    assert len(updates) == 1
+    update = updates[0]
 
     assert update.pose is not None
     assert np.isclose(np.linalg.norm(update.pose.quaternion_xyzw()), 1.0)
@@ -245,7 +250,10 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(tmp_path: Pa
         console=Console(__name__).child("vista-test"),
     )
 
-    update = session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    updates = session.try_get_updates()
+    assert len(updates) == 1
+    update = updates[0]
 
     assert update.is_keyframe is True
     assert update.pointmap is None
@@ -311,9 +319,13 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(tmp_path: Pa
         console=Console(__name__).child("vista-test"),
     )
 
-    update0 = session.step(FramePacket(seq=0, timestamp_ns=100, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    update1 = session.step(FramePacket(seq=1, timestamp_ns=200, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    update2 = session.step(FramePacket(seq=2, timestamp_ns=300, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=0, timestamp_ns=100, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=1, timestamp_ns=200, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=2, timestamp_ns=300, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    updates = session.try_get_updates()
+
+    assert len(updates) == 3
+    update0, update1, update2 = updates
 
     assert update0.is_keyframe is True
     assert update0.keyframe_index == 0
@@ -359,7 +371,10 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
         console=Console(__name__).child("vista-test"),
     )
 
-    update = session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    updates = session.try_get_updates()
+    assert len(updates) == 1
+    update = updates[0]
 
     assert update.pose is None
     assert update.pointmap is None
