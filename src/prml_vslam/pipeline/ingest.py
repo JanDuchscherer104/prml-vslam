@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import cv2
@@ -18,6 +19,7 @@ def materialize_offline_manifest(
     request: RunRequest,
     prepared_manifest: SequenceManifest,
     run_paths: RunArtifactPaths,
+    progress: Callable[[str], None] | None = None,
 ) -> SequenceManifest:
     """Materialize the canonical offline ingest boundary for one run."""
     rotation_degrees = 0
@@ -26,21 +28,41 @@ def materialize_offline_manifest(
     intrinsics_path = prepared_manifest.intrinsics_path
 
     if prepared_manifest.video_path is not None and rgb_dir is None:
-        extracted = _extract_video_frames(
-            video_path=prepared_manifest.video_path,
+        frame_stride = _frame_stride_for_request(request)
+        reused = _load_cached_extraction(
             output_dir=run_paths.input_frames_dir,
-            frame_stride=_frame_stride_for_request(request),
+            timestamps_path=run_paths.input_timestamps_path,
+            frame_stride=frame_stride,
         )
-        rgb_dir = extracted["rgb_dir"]
-        timestamps_ns = _resolve_timestamps_ns(
-            source_path=prepared_manifest.timestamps_path,
-            frame_stride=_frame_stride_for_request(request),
-            fallback_timestamps_ns=extracted["timestamps_ns"],
-        )
-        timestamps_path = _write_json_payload(
-            run_paths.input_timestamps_path,
-            {"timestamps_ns": timestamps_ns, "frame_stride": _frame_stride_for_request(request)},
-        )
+        if reused is not None:
+            _emit_progress(
+                progress,
+                f"Reusing {reused['frame_count']} extracted frames in '{run_paths.input_frames_dir}'.",
+            )
+            rgb_dir = run_paths.input_frames_dir.resolve()
+            timestamps_path = run_paths.input_timestamps_path.resolve()
+        else:
+            _emit_progress(
+                progress,
+                f"Extracting frames from '{prepared_manifest.video_path}' into '{run_paths.input_frames_dir}' "
+                f"(stride={frame_stride}).",
+            )
+            extracted = _extract_video_frames(
+                video_path=prepared_manifest.video_path,
+                output_dir=run_paths.input_frames_dir,
+                frame_stride=frame_stride,
+                progress=progress,
+            )
+            rgb_dir = extracted["rgb_dir"]
+            timestamps_ns = _resolve_timestamps_ns(
+                source_path=prepared_manifest.timestamps_path,
+                frame_stride=frame_stride,
+                fallback_timestamps_ns=extracted["timestamps_ns"],
+            )
+            timestamps_path = _write_json_payload(
+                run_paths.input_timestamps_path,
+                {"timestamps_ns": timestamps_ns, "frame_stride": frame_stride},
+            )
 
     if intrinsics_path is not None:
         intrinsics_path = _copy_if_needed(intrinsics_path, run_paths.input_intrinsics_path)
@@ -70,8 +92,16 @@ def _frame_stride_for_request(request: RunRequest) -> int:
             return 1
 
 
-def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: int) -> dict[str, object]:
+def _extract_video_frames(
+    *,
+    video_path: Path,
+    output_dir: Path,
+    frame_stride: int,
+    progress: Callable[[str], None] | None = None,
+) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    for stale_frame in output_dir.glob("*.png"):
+        stale_frame.unlink()
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
         raise FileNotFoundError(f"Cannot open video: {video_path}")
@@ -93,9 +123,36 @@ def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: i
             raise RuntimeError(f"Failed to write extracted frame to '{frame_path}'.")
         timestamps_ns.append(timestamp_ns)
         written_index += 1
+        if written_index % 250 == 0:
+            _emit_progress(progress, f"Extracted {written_index} frames...")
         frame_index += 1
     capture.release()
+    _emit_progress(progress, f"Frame extraction complete: {written_index} frames.")
     return {"rgb_dir": output_dir.resolve(), "timestamps_ns": timestamps_ns}
+
+
+def _load_cached_extraction(*, output_dir: Path, timestamps_path: Path, frame_stride: int) -> dict[str, int] | None:
+    if not output_dir.exists() or not timestamps_path.exists():
+        return None
+    png_paths = sorted(output_dir.glob("*.png"))
+    if not png_paths:
+        return None
+
+    try:
+        payload = json.loads(timestamps_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    payload_stride = payload.get("frame_stride")
+    timestamps_ns = payload.get("timestamps_ns")
+    if payload_stride != frame_stride:
+        return None
+    if not isinstance(timestamps_ns, list):
+        return None
+    if len(timestamps_ns) != len(png_paths):
+        return None
+    return {"frame_count": len(png_paths)}
 
 
 def _copy_if_needed(source_path: Path, target_path: Path) -> Path:
@@ -136,6 +193,11 @@ def _write_json_payload(path: Path, payload: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return path.resolve()
+
+
+def _emit_progress(progress: Callable[[str], None] | None, message: str) -> None:
+    if progress is not None:
+        progress(message)
 
 
 __all__ = ["materialize_offline_manifest"]

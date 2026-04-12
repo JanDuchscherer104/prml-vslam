@@ -62,6 +62,15 @@ if TYPE_CHECKING:
 _ACTIVE_SESSION_STATES = frozenset({RunState.PREPARING, RunState.RUNNING})
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 _SUPPORTED_APP_STAGE_IDS = frozenset({RunPlanStageId.INGEST, RunPlanStageId.SLAM, RunPlanStageId.SUMMARY})
+_MOCK_METHOD_LABEL = "Mock Preview"
+_VISTA_POINTMAP_EMPTY_MESSAGE = (
+    "ViSTA-SLAM streaming does not expose a live pointmap preview in the current wrapper. "
+    "Use Mock Preview to verify the Streamlit visualization path."
+)
+_VISTA_TRAJECTORY_EMPTY_MESSAGE = (
+    "ViSTA-SLAM streaming does not expose live trajectory points in the current wrapper. "
+    "Use Mock Preview to verify the Streamlit visualization path."
+)
 
 
 class PipelinePageAction(PipelinePageState):
@@ -83,6 +92,37 @@ class PipelineEvoPreview(BaseData):
     stats: MetricStats
 
 
+def _pipeline_method_label(method: MethodId) -> str:
+    """Return the app-facing method label used by the bounded pipeline demo."""
+    if method is MethodId.MSTR:
+        return _MOCK_METHOD_LABEL
+    return method.display_name
+
+
+def _pipeline_method_help(method: MethodId) -> str:
+    """Explain the current streaming-preview semantics for the selected method."""
+    if method is MethodId.MSTR:
+        return "Repository-local mock backend that emits live pose and pointmap telemetry for UI validation."
+    return (
+        "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs stay strict and only show "
+        "live trajectory or pointmaps when the backend emits them."
+    )
+
+
+def _streaming_pointmap_empty_message(snapshot: StreamingRunSnapshot) -> str:
+    """Return the current pointmap empty-state message for the streaming page."""
+    if snapshot.plan is not None and snapshot.plan.method is MethodId.VISTA:
+        return _VISTA_POINTMAP_EMPTY_MESSAGE
+    return "No pointmap preview is available for the current frame."
+
+
+def _streaming_trajectory_empty_message(snapshot: StreamingRunSnapshot) -> str:
+    """Return the current trajectory empty-state message for the streaming page."""
+    if snapshot.plan is not None and snapshot.plan.method is MethodId.VISTA:
+        return _VISTA_TRAJECTORY_EMPTY_MESSAGE
+    return "The selected SLAM backend has not produced any trajectory points yet."
+
+
 def render(context: AppContext) -> None:
     """Render the interactive ADVIO replay demo."""
     render_page_intro(
@@ -90,7 +130,7 @@ def render(context: AppContext) -> None:
         title="Pipeline Demo",
         body=(
             "Select a persisted pipeline request template, edit the bounded in-app source and stage settings, "
-            "then run the current mock pipeline slice and inspect frames, trajectory, plans, and artifacts."
+            "then run the current pipeline slice and inspect frames, trajectory, plans, and artifacts."
         ),
     )
     statuses = context.advio_service.local_scene_statuses()
@@ -296,11 +336,12 @@ def _render_request_identity_controls(
             format_func=lambda item: item.label,
         )
         method = st.selectbox(
-            "Mock Method",
+            "Method",
             options=list(MethodId),
             index=list(MethodId).index(page_state.method),
-            format_func=lambda item: item.display_name,
+            format_func=_pipeline_method_label,
         )
+        st.caption(_pipeline_method_help(method))
         slam_max_frames_raw = st.text_input(
             "SLAM Max Frames",
             value="" if page_state.slam_max_frames is None else str(page_state.slam_max_frames),
@@ -630,7 +671,7 @@ def _pipeline_caption(snapshot: RunSnapshot) -> str | None:
         return None
     return (
         f"Run Id: `{snapshot.plan.run_id}` · Artifact Root: `{snapshot.plan.artifact_root}`"
-        f" · Method: {snapshot.plan.method.display_name}"
+        f" · Method: {_pipeline_method_label(snapshot.plan.method)}"
     )
 
 
@@ -661,7 +702,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
             with preview_right:
                 st.markdown("**Pointmap Depth**")
                 if pointmap is None:
-                    st.info("No pointmap preview is available for the current frame.")
+                    st.info(_streaming_pointmap_empty_message(snapshot))
                 else:
                     st.image(_pointmap_depth_preview(pointmap), clamp=True, width="stretch")
             details_left, details_right = st.columns((1.0, 1.0), gap="large")
@@ -696,7 +737,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
         render_live_trajectory(
             positions_xyz=snapshot.trajectory_positions_xyz,
             timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
-            empty_message="The mock SLAM backend has not produced any trajectory points yet.",
+            empty_message=_streaming_trajectory_empty_message(snapshot),
         )
         st.markdown("**Evo APE Colormap**")
         show_evo_preview = st.toggle(
@@ -788,17 +829,17 @@ def _render_pipeline_notice(snapshot: RunSnapshot) -> None:
                 "Select a request template, configure the supported source and stages, then start the pipeline demo."
             )
         case RunState.PREPARING:
-            st.info("Preparing the sequence manifest and starting the mock SLAM backend.")
+            st.info("Preparing the sequence manifest and starting the selected SLAM backend.")
         case RunState.RUNNING:
             if _is_offline_pipeline_run(snapshot):
                 st.success("Processing the bounded offline slice and materializing artifacts.")
             else:
-                st.success("Processing frames through the mock SLAM backend.")
+                st.success("Processing frames through the selected SLAM backend.")
         case RunState.COMPLETED:
             if _is_offline_pipeline_run(snapshot):
                 st.success("The bounded offline demo finished and wrote artifacts.")
             else:
-                st.success("The bounded demo finished and wrote mock SLAM artifacts.")
+                st.success("The bounded demo finished and wrote SLAM artifacts.")
         case RunState.STOPPED:
             if _is_offline_pipeline_run(snapshot):
                 st.warning("The offline demo stopped. The written artifacts remain visible below.")

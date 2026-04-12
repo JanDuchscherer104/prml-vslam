@@ -41,10 +41,12 @@ from prml_vslam.eval.contracts import SelectionSnapshot
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.methods import MethodId
+from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.utils.path_config import PathConfig
@@ -524,6 +526,136 @@ def test_pipeline_page_evo_preview_fails_when_timestamps_do_not_match(tmp_path: 
             reference_mtime_ns=reference_path.stat().st_mtime_ns,
             estimate_mtime_ns=estimate_path.stat().st_mtime_ns,
         )
+
+
+def test_pipeline_page_formats_mstr_as_mock_preview() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    assert pipeline_page._pipeline_method_label(MethodId.MSTR) == "Mock Preview"
+
+
+def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    info_messages: list[str] = []
+    trajectory_call: dict[str, object] = {}
+    snapshot = StreamingRunSnapshot(
+        plan=RunPlan(
+            run_id="vista-stream",
+            mode=PipelineMode.STREAMING,
+            method=MethodId.VISTA,
+            artifact_root=tmp_path / ".artifacts" / "vista-stream" / "vista",
+            source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        ),
+        latest_packet=FramePacket(
+            seq=0,
+            timestamp_ns=0,
+            rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
+        ),
+        latest_slam_update=SlamUpdate(seq=0, timestamp_ns=0),
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page.st, "tabs", lambda *_args, **_kwargs: [DummyContext() for _ in range(4)])
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "info", lambda message, *args, **kwargs: info_messages.append(message))
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_live_trajectory",
+        lambda **kwargs: trajectory_call.update(kwargs),
+    )
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_camera_intrinsics",
+        lambda *args, **kwargs: None,
+    )
+
+    pipeline_page._render_pipeline_tabs(snapshot)
+    monkeypatch.undo()
+
+    assert pipeline_page._VISTA_POINTMAP_EMPTY_MESSAGE in info_messages
+    assert trajectory_call["empty_message"] == pipeline_page._VISTA_TRAJECTORY_EMPTY_MESSAGE
+
+
+def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    preview_image = np.full((2, 2), fill_value=7.0, dtype=np.float32)
+    image_payloads: list[np.ndarray] = []
+    trajectory_call: dict[str, object] = {}
+    snapshot = StreamingRunSnapshot(
+        plan=RunPlan(
+            run_id="mock-stream",
+            mode=PipelineMode.STREAMING,
+            method=MethodId.MSTR,
+            artifact_root=tmp_path / ".artifacts" / "mock-stream" / "mstr",
+            source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        ),
+        latest_packet=FramePacket(
+            seq=1,
+            timestamp_ns=1,
+            rgb=np.ones((2, 2, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
+        ),
+        latest_slam_update=SlamUpdate(
+            seq=1,
+            timestamp_ns=1,
+            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            num_sparse_points=12,
+            num_dense_points=4,
+            pointmap=np.zeros((2, 2, 3), dtype=np.float32),
+        ),
+        trajectory_positions_xyz=np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64),
+        trajectory_timestamps_s=np.asarray([0.0, 1.0], dtype=np.float64),
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page.st, "tabs", lambda *_args, **_kwargs: [DummyContext() for _ in range(4)])
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "image", lambda image, *args, **kwargs: image_payloads.append(image))
+    monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pipeline_page.st, "info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_live_trajectory",
+        lambda **kwargs: trajectory_call.update(kwargs),
+    )
+    monkeypatch.setattr(
+        pipeline_page,
+        "render_camera_intrinsics",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(pipeline_page, "_pointmap_depth_preview", lambda pointmap: preview_image)
+
+    pipeline_page._render_pipeline_tabs(snapshot)
+    monkeypatch.undo()
+
+    assert any(image is preview_image for image in image_payloads)
+    assert np.array_equal(trajectory_call["positions_xyz"], snapshot.trajectory_positions_xyz)
+    assert np.array_equal(trajectory_call["timestamps_s"], snapshot.trajectory_timestamps_s)
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:

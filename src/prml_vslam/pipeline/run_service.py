@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.methods import MockSlamBackendConfig
+from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.methods.protocols import OfflineSlamBackend, SlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlanStageId
@@ -105,7 +105,9 @@ class RunService:
         self._offline_runner = OfflineRunner() if offline_runner is None else offline_runner
         self._streaming_runner = StreamingRunner() if streaming_runner is None else streaming_runner
         self._slam_backend_factory = (
-            _default_slam_backend_factory if slam_backend_factory is None else slam_backend_factory
+            (lambda method_id: _default_slam_backend_factory(method_id, path_config=self.path_config))
+            if slam_backend_factory is None
+            else slam_backend_factory
         )
         self._offline_source_resolver = (
             OfflineSourceResolver(self.path_config) if offline_source_resolver is None else offline_source_resolver
@@ -157,12 +159,16 @@ class RunService:
         return self._offline_runner if mode is PipelineMode.OFFLINE else self._streaming_runner
 
 
-def _default_slam_backend_factory(method_id: MethodId) -> SlamBackend:
-    """Build the repository-local mock backend for one selected method."""
-    backend = MockSlamBackendConfig(method_id=method_id).setup_target()
-    if backend is None:
-        raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
-    return backend
+def _default_slam_backend_factory(method_id: MethodId, *, path_config: PathConfig) -> SlamBackend:
+    """Build the runtime backend for one selected method id."""
+    match method_id:
+        case MethodId.VISTA:
+            return VistaSlamBackend(config=VistaSlamBackendConfig(), path_config=path_config)
+        case MethodId.MSTR:
+            backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+            if backend is None:
+                raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
+            return backend
 
 
 def _advio_sequence_id_from_slug(sequence_slug: str) -> int:

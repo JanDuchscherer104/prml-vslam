@@ -261,7 +261,7 @@ def pipeline_demo(
         MethodId,
         typer.Option(
             "--method",
-            help="Mock SLAM backend label used by the bounded demo.",
+            help="SLAM backend used by the bounded demo.",
             case_sensitive=False,
         ),
     ] = MethodId.VISTA,

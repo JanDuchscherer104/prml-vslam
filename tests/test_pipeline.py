@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
+import prml_vslam.pipeline.ingest as ingest_module
 from prml_vslam.benchmark import BenchmarkConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
@@ -18,6 +19,7 @@ from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import OfflineSlamBackend, SlamBackend, SlamSession, StreamingSlamBackend
+from prml_vslam.methods.vista.adapter import VistaSlamBackend
 from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import StageExecutionStatus, StageManifest
@@ -30,7 +32,7 @@ from prml_vslam.pipeline.contracts.request import (
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.offline import OfflineRunner
-from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.run_service import RunService, _default_slam_backend_factory
 from prml_vslam.pipeline.streaming import StreamingRunner
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import PathConfig
@@ -278,6 +280,47 @@ def test_materialize_offline_manifest_extracts_frames_and_sidecars(tmp_path: Pat
     assert manifest.rotation_metadata_path == run_paths.input_rotation_metadata_path
 
 
+def test_materialize_offline_manifest_reuses_cached_frames(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    run_paths = path_config.plan_run_paths(experiment_name="Cached Video Offline", method_slug="vista")
+    video_path = path_config.resolve_video_path("video.mp4")
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_demo_video(video_path)
+
+    run_paths.input_frames_dir.mkdir(parents=True, exist_ok=True)
+    for frame_index in range(2):
+        frame = np.full((4, 4, 3), frame_index * 80, dtype=np.uint8)
+        assert cv2.imwrite(str(run_paths.input_frames_dir / f"{frame_index:06d}.png"), frame)
+    run_paths.input_timestamps_path.parent.mkdir(parents=True, exist_ok=True)
+    run_paths.input_timestamps_path.write_text(
+        json.dumps({"timestamps_ns": [0, 100_000_000], "frame_stride": 1}),
+        encoding="utf-8",
+    )
+
+    request = RunRequest(
+        experiment_name="Cached Video Offline",
+        output_dir=path_config.artifacts_dir,
+        source=VideoSourceSpec(video_path=Path("video.mp4"), frame_stride=1),
+        slam=SlamStageConfig(method=MethodId.VISTA),
+        benchmark=BenchmarkConfig(trajectory={"enabled": False}, efficiency={"enabled": False}),
+    )
+
+    def _unexpected_extract(**_: object) -> dict[str, object]:
+        raise AssertionError("Frame extraction should not run when cached frames match the request.")
+
+    monkeypatch.setattr(ingest_module, "_extract_video_frames", _unexpected_extract)
+
+    manifest = materialize_offline_manifest(
+        request=request,
+        prepared_manifest=SequenceManifest(sequence_id="video", video_path=video_path),
+        run_paths=run_paths,
+    )
+
+    assert manifest.rgb_dir == run_paths.input_frames_dir
+    assert manifest.timestamps_path == run_paths.input_timestamps_path
+    assert sorted(path.name for path in manifest.rgb_dir.glob("*.png")) == ["000000.png", "000001.png"]
+
+
 def test_offline_runner_completes_and_persists_outputs(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_request(path_config, mode=PipelineMode.OFFLINE)
@@ -391,6 +434,23 @@ def test_run_service_dispatches_streaming_with_runtime_source(tmp_path: Path) ->
 
     assert offline_runner.start_calls == []
     assert len(streaming_runner.start_calls) == 1
+
+
+def test_default_slam_backend_factory_maps_vista_to_real_backend(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+
+    backend = _default_slam_backend_factory(MethodId.VISTA, path_config=path_config)
+
+    assert isinstance(backend, VistaSlamBackend)
+    assert backend.method_id is MethodId.VISTA
+
+
+def test_default_slam_backend_factory_maps_mstr_to_mock_backend(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+
+    backend = _default_slam_backend_factory(MethodId.MSTR, path_config=path_config)
+
+    assert backend.method_id is MethodId.MSTR
 
 
 class FakeOfflineSource:
