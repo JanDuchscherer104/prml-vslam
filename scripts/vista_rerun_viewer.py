@@ -34,20 +34,22 @@ def build_blueprint() -> rrb.Blueprint:
     )
 
 def main() -> None:
-    blueprint_path = Path("vista_blueprint.rbl")
-    
+    blueprint_path = Path(".configs/visualization/vista_blueprint.rbl")
+    blueprint_path.parent.mkdir(parents=True, exist_ok=True)
+
     print(f"Generating Rerun blueprint at '{blueprint_path.resolve()}'...")
     rr.init("prml-vslam")
     blueprint = build_blueprint()
-    
+
     # Save the blueprint to disk
     rr.save(blueprint_path, default_blueprint=blueprint)
-    
+
     print("\nBlueprint generated successfully!")
     print("To view your data with this configuration, run the Rerun CLI with both files:")
     print(f"\n    uv run rerun .artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd {blueprint_path}\n")
     print("Or to view the native ViSTA-SLAM output:")
     print(f"    uv run rerun .artifacts/vista-full-tuning/vista/native/rerun_recording.rrd {blueprint_path}\n")
+
 
 if __name__ == "__main__":
     main()
