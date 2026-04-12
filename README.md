@@ -78,47 +78,63 @@ The app currently supports:
 
 - a `Record3D` live-capture page for `USB` and `Wi-Fi Preview`
 - an `ADVIO` dataset page for local readiness checks, selective downloads, and loop preview
-- a `Pipeline` page for TOML-backed request editing, ADVIO or Record3D source selection, bounded pipeline execution, and artifact monitoring
+- a `Pipeline` page for TOML-backed request editing, ADVIO or Record3D source selection, and artifact monitoring
+- an **Async Multiprocessing Backend** for ViSTA-SLAM that isolates heavy GPU inference to prevent UI lag
+- **Live Rerun Visualization** for streaming 3D poses and dense point clouds in real-time
 - a `Metrics` page for persisted trajectory review and explicit `evo` evaluation
 - [`PathConfig`](src/prml_vslam/utils/path_config.py)-driven dataset and artifact discovery without app-local path defaults
 
+## Rerun Visualization
 
-Pipeline contract and extension guidance lives in [`src/prml_vslam/pipeline/README.md`](src/prml_vslam/pipeline/README.md).
+The repository includes a comprehensive integration with the [Rerun](https://rerun.io) viewer for both live and offline analysis.
+
+### Live Mode
+1. Start the Rerun viewer with the project blueprint:
+   ```bash
+   uv run rerun .configs/visualization/vista_blueprint.rbl --serve-web
+   ```
+2. In the Streamlit UI, toggle **"Connect live Rerun viewer"** to ON.
+3. Run the pipeline. Data will stream live to the Rerun window.
+
+### Offline Mode
+To analyze a completed run, pass the generated `.rrd` artifact and the blueprint to the Rerun CLI:
+```bash
+uv run rerun .artifacts/<run_id>/vista/visualization/viewer_recording.rrd .configs/visualization/vista_blueprint.rbl
+```
+
+A utility script is available to regenerate the blueprint if needed:
+```bash
+uv run scripts/vista_rerun_viewer.py
+```
 
 ## TOML-First Run Planning
 
 For durable and reproducible planning, store a [`RunRequest`](src/prml_vslam/pipeline/README.md) as TOML under
-`.configs/pipelines/` and resolve it through the [`plan-run-config`](src/prml_vslam/main.py) CLI command:
+`.configs/pipelines/`. These files are automatically discovered by the Streamlit **"Pipeline Config"** dropdown.
 
 ```toml
-experiment_name = "advio-office-offline-vista"
-mode = "offline"
+experiment_name = "vista-full-tuning"
+mode = "streaming"
 output_dir = ".artifacts"
 
 [source]
-video_path = "captures/office-03.mp4"
-frame_stride = 2
+dataset_id = "advio"
+sequence_id = "advio-15"
 
 [slam]
 method = "vista"
 
-[slam.outputs]
-emit_dense_points = true
-emit_sparse_points = true
+[slam.backend.slam]
+# algorithmic overrides for the ViSTA backend
+flow_thres = 5.0
+max_view_num = 400
 
-[benchmark.reference]
-enabled = false
-
-[benchmark.trajectory]
-enabled = true
-baseline_source = "ground_truth"
-
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = true
+[visualization]
+connect_live_viewer = true
+export_viewer_rrd = true
 ```
+
+A comprehensive example with all available tuning parameters is provided in [`.configs/pipelines/vista-full.toml`](.configs/pipelines/vista-full.toml).
 
 ```bash
 uv run prml-vslam plan-run-config offline-advio-15-vista.toml

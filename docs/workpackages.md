@@ -46,6 +46,7 @@ input: RGB Video Stream
 output: incrementally updating Pointcloud & Trajectory
 - defined input / output interface for VSLAM algorithms
 - setup real-time capable ViSTA-SLAM algorithm
+- implemented **Async Multiprocessing Backend** to decouple heavy GPU inference from the UI loop.
 - make it Apple Silicon compatible.
 
 ### WP 3.3: MASt3R-SLAM
@@ -90,11 +91,11 @@ input: VSLAM image output
 - created quality metrics based on VSLAM image output (PSNR or other Standard Reconstruction Metrics)
 
 ## WP 9: 3D Viewer
-- Integrate a 3D Viewer for visualizing scenes from offline artifacts or live stream
-- Display modalities like point clouds, trajectories, camera frusta, 3DGS reconstructions, etc.
-- Integrate it into the streamlit app.
-- Should integrate well with the yet to be chosen 3DGS library.
-- Potential candidates: [Viser](https://viser.studio/main/)
+Assignee: Lukas Röß
+- Integrate [Rerun](https://rerun.io) as the primary 3D viewer for visualizing scenes from offline artifacts or live streams.
+- Display modalities like point clouds, trajectories, and camera frusta in a unified hierarchical state graph.
+- Implement live streaming support via gRPC and offline analysis via `.rrd` and `.rbl` files.
+- Integrate visualization toggles into the Streamlit app.
 
 ## WP 10: (Optional) Ground Truth Creation -> Grab if you're bored!
 Assignee(s): Open
