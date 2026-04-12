@@ -28,7 +28,7 @@ from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import StageManifest
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.demo import load_run_request_toml
 from prml_vslam.plotting import build_evo_ape_colormap_figure
 from prml_vslam.utils import BaseData, PathConfig
@@ -275,7 +275,7 @@ def _render_request_editor(
         emit_sparse_points,
         emit_dense_points,
         reference_enabled,
-        compare_to_arcore,
+        trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
     ) = _render_stage_settings(page_state)
@@ -294,7 +294,7 @@ def _render_request_editor(
                 "emit_dense_points": emit_dense_points,
                 "emit_sparse_points": emit_sparse_points,
                 "reference_enabled": reference_enabled,
-                "compare_to_arcore": compare_to_arcore,
+                "trajectory_eval_enabled": trajectory_eval_enabled,
                 "evaluate_cloud": evaluate_cloud,
                 "evaluate_efficiency": evaluate_efficiency,
                 "record3d_transport": record3d_transport,
@@ -470,14 +470,14 @@ def _render_stage_settings(
         reference_enabled = st.toggle("Plan reference reconstruction", value=page_state.reference_enabled)
     with stage_right:
         st.markdown("**Evaluation Stages**")
-        compare_to_arcore = st.toggle("Plan trajectory evaluation", value=page_state.compare_to_arcore)
+        trajectory_eval_enabled = st.toggle("Plan trajectory evaluation", value=page_state.trajectory_eval_enabled)
         evaluate_cloud = st.toggle("Plan dense-cloud evaluation", value=page_state.evaluate_cloud)
         evaluate_efficiency = st.toggle("Plan efficiency evaluation", value=page_state.evaluate_efficiency)
     return (
         emit_sparse_points,
         emit_dense_points,
         reference_enabled,
-        compare_to_arcore,
+        trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
     )
@@ -531,7 +531,7 @@ def _sync_pipeline_page_state_from_template(
         emit_dense_points=request.slam.outputs.emit_dense_points,
         emit_sparse_points=request.slam.outputs.emit_sparse_points,
         reference_enabled=request.benchmark.reference.enabled,
-        compare_to_arcore=request.benchmark.trajectory.enabled,
+        trajectory_eval_enabled=request.benchmark.trajectory.enabled,
         evaluate_cloud=request.benchmark.cloud.enabled,
         evaluate_efficiency=request.benchmark.efficiency.enabled,
         **source_updates,
@@ -590,7 +590,7 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
             ),
             benchmark=BenchmarkConfig(
                 reference={"enabled": action.reference_enabled},
-                trajectory=TrajectoryBenchmarkConfig(enabled=action.compare_to_arcore),
+                trajectory=TrajectoryBenchmarkConfig(enabled=action.trajectory_eval_enabled),
                 cloud=CloudBenchmarkConfig(enabled=action.evaluate_cloud),
                 efficiency=EfficiencyBenchmarkConfig(enabled=action.evaluate_efficiency),
             ),
@@ -1041,12 +1041,16 @@ def _pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
 
 
 def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:
-    if snapshot.sequence_manifest is None or snapshot.slam is None:
+    if (
+        snapshot.slam is None
+        or snapshot.slam.trajectory_tum is None
+        or snapshot.benchmark_inputs is None
+        or not snapshot.benchmark_inputs.reference_trajectories
+    ):
         return None, None
-    reference_path = snapshot.sequence_manifest.reference_tum_path
+
+    reference_path = snapshot.benchmark_inputs.reference_trajectories[0].path
     estimate_path = snapshot.slam.trajectory_tum.path
-    if reference_path is None:
-        return None, "No `ground_truth.tum` reference is available for this ADVIO slice."
     if not reference_path.exists() or not estimate_path.exists():
         return None, None
     try:

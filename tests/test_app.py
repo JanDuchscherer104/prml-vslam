@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from pytransform3d.rotations import matrix_from_quaternion
 from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
@@ -38,17 +39,28 @@ from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tu
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.contracts import SelectionSnapshot
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
-from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
+from prml_vslam.interfaces import (
+    CameraIntrinsics,
+    FramePacket,
+    FrameTransform,
+)
+from prml_vslam.io.record3d import (
+    Record3DDevice,
+    Record3DTransportId,
+)
 from prml_vslam.methods import MethodId
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, LiveTransportId, Record3DLiveSourceSpec, SlamStageConfig
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.streaming import (
+    StreamingRunner,
+    _is_keyframe_like_update,
+)
 from prml_vslam.utils.path_config import PathConfig
 from prml_vslam.visualization import VisualizationConfig
 
@@ -490,13 +502,20 @@ def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> No
     from prml_vslam.app.pages import pipeline as pipeline_page
 
     pipeline_page._compute_evo_preview.cache_clear()
+    from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+
     reference_path = tmp_path / "reference.tum"
     estimate_path = tmp_path / "estimate.tum"
     _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0), (0.2, 2.0, 1.0, 0.0)])
     _write_tum(estimate_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.1, 0.1, 0.0), (0.2, 2.2, 1.2, 0.0)])
 
     snapshot = RunSnapshot(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15", reference_tum_path=reference_path),
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_trajectories=[
+                ReferenceTrajectoryRef(path=reference_path, source=ReferenceSource.GROUND_TRUTH),
+            ]
+        ),
         slam=SlamArtifacts(
             trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="trajectory"),
         ),
@@ -588,9 +607,8 @@ def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_pa
             rgb=np.zeros((2, 2, 3), dtype=np.uint8),
             intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
         ),
-        latest_slam_update=SlamUpdate(seq=0, timestamp_ns=0),
-    )
-
+        latest_slam_update=SlamUpdate(seq=0, timestamp_ns=0, is_keyframe=True),
+        )
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(pipeline_page.st, "tabs", lambda *_args, **_kwargs: [DummyContext() for _ in range(4)])
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
@@ -648,11 +666,13 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
         latest_slam_update=SlamUpdate(
             seq=1,
             timestamp_ns=1,
-            pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
             num_sparse_points=12,
             num_dense_points=4,
             pointmap=np.zeros((2, 2, 3), dtype=np.float32),
+            preview_rgb=None,
         ),
+
         accepted_keyframes=1,
         backend_fps=9.0,
         trajectory_positions_xyz=np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64),
@@ -729,12 +749,15 @@ def test_packet_session_metrics_separate_packet_and_keyframe_history() -> None:
 def test_streaming_keyframe_gate_rejects_small_pose_jitter() -> None:
     from prml_vslam.pipeline.streaming import _is_keyframe_like_update
 
-    previous_pose = SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
-    tiny_motion_pose = SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.05, ty=0.02, tz=0.0)
-    large_motion_pose = SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.3, ty=0.0, tz=0.0)
+    previous_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
+    tiny_motion_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.05, ty=0.02, tz=0.0)
+    large_motion_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.3, ty=0.0, tz=0.0)
 
-    assert _is_keyframe_like_update(previous_pose=previous_pose, current_pose=tiny_motion_pose) is False
-    assert _is_keyframe_like_update(previous_pose=previous_pose, current_pose=large_motion_pose) is True
+    update_jitter = SlamUpdate(seq=1, timestamp_ns=1, is_keyframe=False)
+    update_keyframe = SlamUpdate(seq=2, timestamp_ns=2, is_keyframe=True)
+
+    assert _is_keyframe_like_update(update_jitter) is False
+    assert _is_keyframe_like_update(update_keyframe) is True
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:
@@ -827,7 +850,8 @@ def test_pipeline_request_builds_record3d_usb_source_from_action(tmp_path: Path)
     assert error_message is None
     assert request is not None
     assert isinstance(request.source, Record3DLiveSourceSpec)
-    assert request.source.transport is Record3DTransportId.USB
+    assert request.source.transport is LiveTransportId.USB
+
     assert request.source.device_index == 2
     assert request.source.device_address == ""
     assert request.source.persist_capture is False
@@ -851,7 +875,7 @@ def test_pipeline_request_builds_record3d_wifi_source_from_action(tmp_path: Path
     assert error_message is None
     assert request is not None
     assert isinstance(request.source, Record3DLiveSourceSpec)
-    assert request.source.transport is Record3DTransportId.WIFI
+    assert request.source.transport is LiveTransportId.WIFI
     assert request.source.device_index is None
     assert request.source.device_address == "myiPhone.local"
     assert request.source.persist_capture is True
@@ -976,7 +1000,7 @@ def test_load_pipeline_request_toml_parses_record3d_wifi_source(tmp_path: Path) 
     request = load_run_request_toml(path_config=path_config, config_path=config_path)
 
     assert isinstance(request.source, Record3DLiveSourceSpec)
-    assert request.source.transport is Record3DTransportId.WIFI
+    assert request.source.transport is LiveTransportId.WIFI
     assert request.source.persist_capture is False
     assert request.source.device_address == "myiPhone.local"
 
@@ -1703,6 +1727,7 @@ def test_record3d_page_controller_restarts_running_usb_stream_with_new_selector(
     assert context.state.record3d.usb_device_index == 1
     assert context.state.record3d.is_running is True
     assert snapshot.transport is Record3DTransportId.USB
+
     assert snapshot.state is PreviewStreamState.CONNECTING
 
 
@@ -1716,7 +1741,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 rgb=np.ones((2, 2, 3), dtype=np.uint8),
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
                 confidence=np.ones((2, 2), dtype=np.float32),
                 metadata={"transport": Record3DTransportId.USB.value},
             ),
@@ -1727,7 +1752,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 rgb=np.ones((2, 2, 3), dtype=np.uint8),
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
                 confidence=np.ones((2, 2), dtype=np.float32),
                 metadata={"transport": Record3DTransportId.USB.value},
             ),
@@ -1797,7 +1822,7 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
                     cx=32.0,
                     cy=24.0,
                 ),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
                 metadata={"loop_index": 0, "source_frame_index": 0},
             ),
             FramePacket(
@@ -1812,7 +1837,7 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
                     cx=32.0,
                     cy=24.0,
                 ),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
                 metadata={"loop_index": 0, "source_frame_index": 1},
             ),
         ]

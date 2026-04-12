@@ -14,6 +14,9 @@ class VisualizationConfig(BaseConfig):
     connect_live_viewer: bool = False
     """Whether streaming runs should attach a live gRPC viewer sink."""
 
+    export_viewer_rrd: bool = False
+    """Whether one canonical repo-owned `.rrd` recording should be exported."""
+
     grpc_url: str = "rerun+http://127.0.0.1:9876/proxy"
     """Rerun gRPC endpoint used when `connect_live_viewer` is enabled."""
 

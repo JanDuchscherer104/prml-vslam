@@ -12,7 +12,8 @@ import cv2
 import numpy as np
 import open3d as o3d
 
-from prml_vslam.interfaces import FramePacket, SE3Pose
+from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.interfaces import FramePacket, FrameTransform
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.methods.updates import SlamUpdate
@@ -146,7 +147,7 @@ class VistaSlamSession:
                 num_sparse_points=0,
                 num_dense_points=self._num_dense_points,
             )
-        pose = SE3Pose.from_matrix(np.asarray(view.pose, dtype=np.float64))
+        pose = FrameTransform.from_matrix(np.asarray(view.pose, dtype=np.float64))
         try:
             preview_rgb, pointmap = self._slam.get_pointmap_vis(view_index)
         except (IndexError, KeyError, ValueError):
@@ -205,11 +206,14 @@ class VistaSlamBackend(SlamBackend):
     def run_sequence(
         self,
         sequence: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run ViSTA-SLAM over a materialized sequence and persist artifacts."""
+        del benchmark_inputs, baseline_source
         frames_dir = self._resolve_frames(sequence, artifact_root, backend_config)
         image_paths = sorted(frames_dir.glob("*.png"))
         if backend_config.max_frames is not None:
@@ -379,7 +383,7 @@ def _build_artifacts(
     if not trajectory_npy.exists():
         raise RuntimeError(f"Expected trajectory file not found: '{trajectory_npy}'.")
     trajectory_se3 = np.load(trajectory_npy).astype(np.float64)
-    poses = [SE3Pose.from_matrix(transform) for transform in trajectory_se3]
+    poses = [FrameTransform.from_matrix(transform) for transform in trajectory_se3]
     timestamps_s = [float(index) for index in range(len(poses))]
     trajectory_path = write_tum_trajectory(artifact_root / "slam" / "trajectory.tum", poses, timestamps_s)
 
