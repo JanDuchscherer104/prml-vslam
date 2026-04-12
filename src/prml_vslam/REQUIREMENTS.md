@@ -33,11 +33,11 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own method execution, source normalization, or app state
 - `interfaces`
   - owns repo-wide shared datamodels only
-  - examples include `CameraIntrinsics`, `SE3Pose`, `FrameTransform`, and `FramePacket`
+  - examples include `CameraIntrinsics`, `FrameTransform`, and `FramePacket`
 - `benchmark`
   - owns thin benchmark-policy composition such as evaluation enablement and baseline selection
 - `visualization`
-  - owns viewer/export policy plus the repo-owned Rerun integration layer
+  - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
 - `io`
   - owns transport adapters, packet ingestion, replay mechanics, and transport-level normalization
   - does not own app session state or benchmark policy

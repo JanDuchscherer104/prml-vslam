@@ -10,7 +10,6 @@ from pydantic import Field
 
 from prml_vslam.benchmark import BenchmarkConfig
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.utils import BaseConfig, PathConfig
 from prml_vslam.visualization import VisualizationConfig
@@ -32,6 +31,18 @@ class PipelineMode(StrEnum):
             self.OFFLINE: "Offline (batch)",
             self.STREAMING: "Streaming (incremental)",
         }[self]
+
+
+class LiveTransportId(StrEnum):
+    """Pipeline-owned transport selector for Record3D live sources."""
+
+    USB = "usb"
+    WIFI = "wifi"
+
+    @property
+    def label(self) -> str:
+        """Return the user-facing transport label."""
+        return "Wi-Fi Preview" if self is LiveTransportId.WIFI else self.value.upper()
 
 
 class VideoSourceSpec(BaseConfig):
@@ -60,7 +71,7 @@ class Record3DLiveSourceSpec(BaseConfig):
     source_id: Literal["record3d"] = "record3d"
     """Stable live-source identifier for Record3D-backed runs."""
 
-    transport: Record3DTransportId = Record3DTransportId.USB
+    transport: LiveTransportId = LiveTransportId.USB
     """Selected Record3D transport."""
 
     persist_capture: bool = True
@@ -122,6 +133,7 @@ class RunRequest(BaseConfig):
 
 __all__ = [
     "DatasetSourceSpec",
+    "LiveTransportId",
     "PipelineMode",
     "Record3DLiveSourceSpec",
     "RunRequest",

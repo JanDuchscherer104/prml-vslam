@@ -87,8 +87,9 @@ Repository loader conventions:
   - image size
   - distortion model and coefficients
   - `T_cam_imu`
-- In this repository, poses are handled with camera-to-world semantics through
-  [`SE3Pose`](../../interfaces/camera.py).
+- In this repository, poses and calibration transforms are handled through
+  [`FrameTransform`](../../interfaces/transforms.py) using the canonical
+  camera-to-world runtime convention for poses.
 
 ## Frame And Transform Tree
 

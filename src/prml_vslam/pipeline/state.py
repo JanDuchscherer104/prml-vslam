@@ -1,4 +1,4 @@
-"""Pipeline runtime snapshot contracts."""
+"""Pipeline runtime snapshot state."""
 
 from __future__ import annotations
 
@@ -7,14 +7,16 @@ from enum import StrEnum
 import numpy as np
 from pydantic import Field
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.utils import BaseData
+from prml_vslam.visualization import VisualizationArtifacts
 
-from .artifacts import SlamArtifacts
-from .plan import RunPlan
-from .provenance import RunSummary, StageManifest
-from .sequence import SequenceManifest
+from .contracts.artifacts import SlamArtifacts
+from .contracts.plan import RunPlan
+from .contracts.provenance import RunSummary, StageManifest
+from .contracts.sequence import SequenceManifest
 
 _EMPTY_TRAJECTORY_POSITIONS_XYZ = np.empty((0, 3), dtype=np.float64)
 _EMPTY_TRAJECTORY_TIMESTAMPS_S = np.empty((0,), dtype=np.float64)
@@ -43,8 +45,14 @@ class RunSnapshot(BaseData):
     sequence_manifest: SequenceManifest | None = None
     """Normalized sequence manifest prepared by the ingest stage."""
 
+    benchmark_inputs: PreparedBenchmarkInputs | None = None
+    """Prepared benchmark-side inputs materialized for the run."""
+
     slam: SlamArtifacts | None = None
     """Persisted SLAM artifacts returned by the backend."""
+
+    visualization: VisualizationArtifacts | None = None
+    """Viewer artifacts preserved for the run."""
 
     summary: RunSummary | None = None
     """Final persisted run summary."""

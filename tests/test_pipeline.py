@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from prml_vslam.benchmark import BenchmarkConfig
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
@@ -27,10 +27,10 @@ from prml_vslam.pipeline.contracts.request import (
     SlamStageConfig,
     VideoSourceSpec,
 )
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.offline import OfflineRunner
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.streaming import StreamingRunner
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import PathConfig
@@ -85,7 +85,7 @@ def test_run_request_build_keeps_default_stage_selection() -> None:
         experiment_name="Default Check",
         output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/default-check.mp4")),
-        slam=SlamStageConfig(method=MethodId.MSTR),
+        slam=SlamStageConfig(method=MethodId.MAST3R),
     )
 
     plan = request.build()
@@ -93,8 +93,6 @@ def test_run_request_build_keeps_default_stage_selection() -> None:
     assert [stage.id for stage in plan.stages] == [
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
-        RunPlanStageId.TRAJECTORY_EVALUATION,
-        RunPlanStageId.EFFICIENCY_EVALUATION,
         RunPlanStageId.SUMMARY,
     ]
 
@@ -125,7 +123,7 @@ def test_run_request_build_respects_disabled_optional_stage_toggles() -> None:
         output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/quick-check.mp4")),
         slam=SlamStageConfig(
-            method=MethodId.MSTR,
+            method=MethodId.MAST3R,
             outputs=SlamOutputPolicy(emit_dense_points=False, emit_sparse_points=False),
         ),
         benchmark=BenchmarkConfig(
@@ -223,7 +221,7 @@ def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: 
         sequence_manifest=sequence_manifest,
         stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=0, tx=0.0)]),
     )
-    backend = MockSlamBackendConfig(method_id=MethodId.MSTR).setup_target()
+    backend = MockSlamBackendConfig(method_id=MethodId.MAST3R).setup_target()
     assert backend is not None
     session = backend.start_session(
         SlamBackendConfig(),
@@ -237,7 +235,7 @@ def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: 
     assert isinstance(backend, StreamingSlamBackend)
     assert isinstance(backend, SlamBackend)
     assert isinstance(session, SlamSession)
-    assert backend.method_id is MethodId.MSTR
+    assert backend.method_id is MethodId.MAST3R
 
 
 def test_materialize_offline_manifest_extracts_frames_and_sidecars(tmp_path: Path) -> None:
@@ -500,7 +498,7 @@ def _make_packet(*, seq: int, timestamp_ns: int, tx: float) -> FramePacket:
         timestamp_ns=timestamp_ns,
         rgb=np.zeros((4, 4, 3), dtype=np.uint8),
         intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
-        pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=0.0, tz=0.0),
+        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=0.0, tz=0.0),
     )
 
 
@@ -554,8 +552,8 @@ cameras:
     write_tum_trajectory(
         reference_path,
         [
-            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.0),
         ],
         [0.0, 1.0],
     )
@@ -564,7 +562,6 @@ cameras:
         rgb_dir=rgb_dir,
         timestamps_path=timestamps_path,
         intrinsics_path=intrinsics_path,
-        reference_tum_path=reference_path,
     )
 
 

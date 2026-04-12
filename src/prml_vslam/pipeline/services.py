@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from prml_vslam.benchmark import TrajectoryBaselineId
-from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage, RunPlanStageId
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
+    LiveTransportId,
     Record3DLiveSourceSpec,
     RunRequest,
     SlamStageConfig,
@@ -59,8 +59,6 @@ class RunPlannerService:
             slam_output_names.append("sparse_points_path")
         if request.slam.outputs.emit_dense_points:
             slam_output_names.append("dense_points_path")
-        if request.visualization.export_viewer_rrd:
-            slam_output_names.append("viewer_rrd_path")
         optional_stages = (
             (
                 request.benchmark.reference.enabled,
@@ -159,9 +157,9 @@ class RunPlannerService:
                 persistence = "with persistence" if persist_capture else "without persistence"
                 source_descriptor = (
                     f"USB device #{device_index}"
-                    if transport is Record3DTransportId.USB and device_index is not None
+                    if transport is LiveTransportId.USB and device_index is not None
                     else "default USB device"
-                    if transport is Record3DTransportId.USB
+                    if transport is LiveTransportId.USB
                     else device_address or "Wi-Fi preview"
                 )
                 return (
@@ -183,9 +181,10 @@ class RunPlannerService:
     @staticmethod
     def _trajectory_summary(request: RunRequest) -> str:
         baseline_label = {
-            TrajectoryBaselineId.REFERENCE: "reference trajectory",
-            TrajectoryBaselineId.ARCORE: "ARCore baseline",
-        }[request.benchmark.trajectory.baseline_id]
+            ReferenceSource.GROUND_TRUTH: "ground-truth trajectory",
+            ReferenceSource.ARCORE: "ARCore baseline",
+            ReferenceSource.ARKIT: "ARKit baseline",
+        }[request.benchmark.trajectory.baseline_source]
         return f"Evaluate the estimated trajectory against the selected {baseline_label} and persist metrics."
 
     @staticmethod

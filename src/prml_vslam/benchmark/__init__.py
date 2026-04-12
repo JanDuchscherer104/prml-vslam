@@ -4,8 +4,10 @@ from .contracts import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
     EfficiencyBenchmarkConfig,
+    PreparedBenchmarkInputs,
     ReferenceReconstructionConfig,
-    TrajectoryBaselineId,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
     TrajectoryBenchmarkConfig,
 )
 
@@ -13,7 +15,9 @@ __all__ = [
     "BenchmarkConfig",
     "CloudBenchmarkConfig",
     "EfficiencyBenchmarkConfig",
+    "PreparedBenchmarkInputs",
+    "ReferenceSource",
     "ReferenceReconstructionConfig",
-    "TrajectoryBaselineId",
+    "ReferenceTrajectoryRef",
     "TrajectoryBenchmarkConfig",
 ]

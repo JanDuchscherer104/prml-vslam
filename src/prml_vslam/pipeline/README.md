@@ -16,8 +16,10 @@ repository pipeline.
   - `ArtifactRef`, `SlamArtifacts`
 - `contracts/provenance.py`
   - `StageExecutionStatus`, `StageManifest`, `RunSummary`
-- `contracts/runtime.py`
+- `state.py`
   - `RunState`, `RunSnapshot`, `StreamingRunSnapshot`
+- `benchmark`
+  - prepared benchmark inputs such as available reference trajectories
 - `run_service.py`
   - public façade used by CLI and app surfaces
 - `offline.py`
@@ -49,7 +51,9 @@ the current runner slice.
 
 ## Boundary Rules
 
-- `SequenceManifest` is the normalized offline boundary.
+- `SequenceManifest` is the normalized offline ingest boundary.
+- Benchmark-owned prepared inputs such as reference trajectories are kept
+  separate from the sequence manifest.
 - `SlamArtifacts` are the normalized SLAM outputs.
 - `RunSummary` and `StageManifest` are the authoritative provenance records.
 - Offline ingest stays source-faithful; method-specific workspace shaping stays

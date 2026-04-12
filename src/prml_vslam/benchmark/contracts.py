@@ -3,17 +3,49 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseConfig, BaseData
 
 
-class TrajectoryBaselineId(StrEnum):
-    """Explicit baseline selection for trajectory evaluation."""
+class ReferenceSource(StrEnum):
+    """Typed source identifier for one available reference trajectory."""
 
-    REFERENCE = "reference"
+    GROUND_TRUTH = "ground_truth"
     ARCORE = "arcore"
+    ARKIT = "arkit"
+
+    @property
+    def label(self) -> str:
+        """Return the human-readable source label."""
+        return {
+            ReferenceSource.GROUND_TRUTH: "ground truth",
+            ReferenceSource.ARCORE: "ARCore",
+            ReferenceSource.ARKIT: "ARKit",
+        }[self]
+
+
+class ReferenceTrajectoryRef(BaseData):
+    """One prepared reference trajectory available to a benchmark run."""
+
+    source: ReferenceSource
+    """Typed source that produced the trajectory."""
+
+    path: Path
+    """Filesystem path to the normalized TUM trajectory."""
+
+
+class PreparedBenchmarkInputs(BaseData):
+    """Prepared benchmark-side inputs discovered for one normalized sequence."""
+
+    reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
+    """Available normalized reference trajectories keyed by source."""
+
+    def trajectory_for_source(self, source: ReferenceSource) -> ReferenceTrajectoryRef | None:
+        """Return the prepared reference trajectory for one requested source."""
+        return next((reference for reference in self.reference_trajectories if reference.source is source), None)
 
 
 class ReferenceReconstructionConfig(BaseConfig):
@@ -26,11 +58,11 @@ class ReferenceReconstructionConfig(BaseConfig):
 class TrajectoryBenchmarkConfig(BaseConfig):
     """Policy for trajectory evaluation."""
 
-    enabled: bool = True
+    enabled: bool = False
     """Whether the run should include trajectory evaluation."""
 
-    baseline_id: TrajectoryBaselineId = TrajectoryBaselineId.REFERENCE
-    """Explicit baseline used by the trajectory evaluation stage when available."""
+    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
+    """Explicit reference source used by the trajectory evaluation stage when available."""
 
 
 class CloudBenchmarkConfig(BaseConfig):
@@ -43,7 +75,7 @@ class CloudBenchmarkConfig(BaseConfig):
 class EfficiencyBenchmarkConfig(BaseConfig):
     """Policy for efficiency evaluation."""
 
-    enabled: bool = True
+    enabled: bool = False
     """Whether the run should include efficiency metrics."""
 
 
@@ -67,7 +99,9 @@ __all__ = [
     "BenchmarkConfig",
     "CloudBenchmarkConfig",
     "EfficiencyBenchmarkConfig",
+    "PreparedBenchmarkInputs",
+    "ReferenceSource",
     "ReferenceReconstructionConfig",
-    "TrajectoryBaselineId",
+    "ReferenceTrajectoryRef",
     "TrajectoryBenchmarkConfig",
 ]

@@ -31,6 +31,9 @@ from prml_vslam.benchmark import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
     EfficiencyBenchmarkConfig,
+    PreparedBenchmarkInputs,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.datasets.advio import AdvioPoseSource
@@ -38,15 +41,20 @@ from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tu
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.eval.contracts import SelectionSnapshot
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, SE3Pose
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.request import (
+    DatasetSourceSpec,
+    LiveTransportId,
+    Record3DLiveSourceSpec,
+    SlamStageConfig,
+)
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.state import RunSnapshot, RunState
 from prml_vslam.utils.path_config import PathConfig
 from prml_vslam.visualization import VisualizationConfig
 
@@ -105,7 +113,7 @@ enabled = false
 
 [benchmark.trajectory]
 enabled = false
-baseline_id = "reference"
+baseline_source = "ground_truth"
 
 [benchmark.cloud]
 enabled = false
@@ -135,7 +143,7 @@ def _load_pipeline_request_fixture() -> RunRequest:
             cloud=CloudBenchmarkConfig(enabled=False),
             efficiency=EfficiencyBenchmarkConfig(enabled=False),
         ),
-        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
+        visualization=VisualizationConfig(connect_live_viewer=False),
     )
 
 
@@ -182,7 +190,7 @@ def _record3d_pipeline_request(
             cloud=CloudBenchmarkConfig(enabled=False),
             efficiency=EfficiencyBenchmarkConfig(enabled=False),
         ),
-        visualization=VisualizationConfig(export_viewer_rrd=False, connect_live_viewer=False),
+        visualization=VisualizationConfig(connect_live_viewer=False),
     )
 
 
@@ -494,7 +502,10 @@ def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> No
     _write_tum(estimate_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.1, 0.1, 0.0), (0.2, 2.2, 1.2, 0.0)])
 
     snapshot = RunSnapshot(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15", reference_tum_path=reference_path),
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)]
+        ),
         slam=SlamArtifacts(
             trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="trajectory"),
         ),
@@ -616,7 +627,7 @@ def test_pipeline_request_builds_record3d_usb_source_from_action(tmp_path: Path)
     assert error_message is None
     assert request is not None
     assert isinstance(request.source, Record3DLiveSourceSpec)
-    assert request.source.transport is Record3DTransportId.USB
+    assert request.source.transport is LiveTransportId.USB
     assert request.source.device_index == 2
     assert request.source.device_address == ""
     assert request.source.persist_capture is False
@@ -640,7 +651,7 @@ def test_pipeline_request_builds_record3d_wifi_source_from_action(tmp_path: Path
     assert error_message is None
     assert request is not None
     assert isinstance(request.source, Record3DLiveSourceSpec)
-    assert request.source.transport is Record3DTransportId.WIFI
+    assert request.source.transport is LiveTransportId.WIFI
     assert request.source.device_index is None
     assert request.source.device_address == "myiPhone.local"
     assert request.source.persist_capture is True
@@ -765,7 +776,7 @@ def test_load_pipeline_request_toml_parses_record3d_wifi_source(tmp_path: Path) 
     request = load_run_request_toml(path_config=path_config, config_path=config_path)
 
     assert isinstance(request.source, Record3DLiveSourceSpec)
-    assert request.source.transport is Record3DTransportId.WIFI
+    assert request.source.transport is LiveTransportId.WIFI
     assert request.source.persist_capture is False
     assert request.source.device_address == "myiPhone.local"
 
@@ -1505,7 +1516,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 rgb=np.ones((2, 2, 3), dtype=np.uint8),
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
                 confidence=np.ones((2, 2), dtype=np.float32),
                 metadata={"transport": Record3DTransportId.USB.value},
             ),
@@ -1516,7 +1527,7 @@ def test_record3d_runtime_controller_updates_stats_and_clears_on_stop() -> None:
                 rgb=np.ones((2, 2, 3), dtype=np.uint8),
                 depth=np.ones((2, 2), dtype=np.float32),
                 intrinsics=CameraIntrinsics(fx=100.0, fy=200.0, cx=10.0, cy=20.0),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
                 confidence=np.ones((2, 2), dtype=np.float32),
                 metadata={"transport": Record3DTransportId.USB.value},
             ),
@@ -1586,7 +1597,7 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
                     cx=32.0,
                     cy=24.0,
                 ),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
                 metadata={"loop_index": 0, "source_frame_index": 0},
             ),
             FramePacket(
@@ -1601,7 +1612,7 @@ def test_advio_preview_runtime_controller_updates_stats_and_clears_on_stop() -> 
                     cx=32.0,
                     cy=24.0,
                 ),
-                pose=SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.5, tz=0.25),
                 metadata={"loop_index": 0, "source_frame_index": 1},
             ),
         ]
