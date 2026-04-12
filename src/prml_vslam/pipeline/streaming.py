@@ -5,7 +5,9 @@ from __future__ import annotations
 import time
 from threading import Event
 
-from prml_vslam.interfaces import FrameTransform
+import numpy as np
+
+from prml_vslam.interfaces import FrameTransform, SE3Pose
 from prml_vslam.methods.protocols import SlamSession, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
@@ -25,6 +27,8 @@ from .finalization import finalize_run_outputs, write_json
 from .runner_runtime import RunnerRuntime
 
 _STOP_JOIN_TIMEOUT_SECONDS = 10.0
+_KEYFRAME_TRANSLATION_THRESHOLD_M = 0.15
+_KEYFRAME_ROTATION_THRESHOLD_RAD = float(np.deg2rad(5.0))
 
 
 class StreamingRunner:
@@ -108,6 +112,7 @@ class StreamingRunner:
         pipeline_failed = False
         error_message = ""
         start_monotonic = time.monotonic()
+        start_timestamp_ns: int | None = None
         live_recording = None
 
         def _record_runtime_error(exc: Exception) -> None:
@@ -150,32 +155,51 @@ class StreamingRunner:
             self._runtime.update_fields(state=RunState.RUNNING, error_message="")
             while not stop_event.is_set():
                 packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
-                update = slam_session.step(packet)
                 arrival_time_s = time.monotonic()
-                metrics.record(
-                    arrival_time_s=arrival_time_s,
-                    position_xyz=extract_pose_position(update),
-                    trajectory_time_s=arrival_time_s - start_monotonic if update.pose is not None else None,
-                )
-                self._runtime.update_fields(
-                    state=RunState.RUNNING,
-                    latest_packet=packet,
-                    latest_slam_update=update,
-                    num_sparse_points=update.num_sparse_points,
-                    num_dense_points=update.num_dense_points,
-                    error_message="",
-                    **metrics.snapshot_fields(),
-                )
-                if live_recording is not None and update.pose is not None:
-                    log_transform(
-                        live_recording,
-                        entity_path=f"/run/{plan.run_id}/camera/current",
-                        transform=FrameTransform.from_matrix(
-                            update.pose.as_matrix(),
-                            target_frame="world",
-                            source_frame="camera",
-                            timestamp_ns=update.timestamp_ns,
-                        ),
+                if start_timestamp_ns is None:
+                    start_timestamp_ns = packet.timestamp_ns
+
+                metrics.record_packet(arrival_time_s=arrival_time_s)
+                update = slam_session.step(packet)
+                is_keyframe_update = update.is_keyframe or (update.pose is not None and update.keyframe_index is None)
+                if is_keyframe_update:
+                    keyframe_position_xyz = extract_pose_position(update)
+                    metrics.record_keyframe(
+                        arrival_time_s=arrival_time_s,
+                        position_xyz=keyframe_position_xyz,
+                        trajectory_time_s=(packet.timestamp_ns - start_timestamp_ns) / 1e9
+                        if update.pose is not None
+                        else None,
+                    )
+                    packet_fields = metrics.packet_snapshot_fields()
+                    self._runtime.update_fields(
+                        state=RunState.RUNNING,
+                        latest_packet=packet,
+                        latest_slam_update=update,
+                        num_sparse_points=update.num_sparse_points,
+                        num_dense_points=update.num_dense_points,
+                        error_message="",
+                        **packet_fields,
+                        **metrics.keyframe_snapshot_fields(),
+                    )
+                    if live_recording is not None and update.pose is not None:
+                        log_transform(
+                            live_recording,
+                            entity_path=f"/run/{plan.run_id}/camera/current",
+                            transform=FrameTransform.from_matrix(
+                                update.pose.as_matrix(),
+                                target_frame="world",
+                                source_frame="camera",
+                                timestamp_ns=update.timestamp_ns,
+                            ),
+                        )
+                else:
+                    packet_fields = metrics.packet_snapshot_fields()
+                    self._runtime.update_fields(
+                        state=RunState.RUNNING,
+                        latest_packet=packet,
+                        error_message="",
+                        **packet_fields,
                     )
         except EOFError:
             final_state = RunState.COMPLETED
@@ -244,6 +268,25 @@ def _to_stopped_snapshot(snapshot: StreamingRunSnapshot) -> StreamingRunSnapshot
     if snapshot.state not in {RunState.PREPARING, RunState.RUNNING}:
         return snapshot
     return snapshot.model_copy(update={"state": RunState.STOPPED})
+
+
+def _is_keyframe_like_update(*, previous_pose: SE3Pose | None, current_pose: SE3Pose | None) -> bool:
+    """Return whether one streaming update should advance the live keyframe history."""
+    if current_pose is None:
+        return False
+    if previous_pose is None:
+        return True
+
+    translation_delta = np.linalg.norm(current_pose.translation_xyz() - previous_pose.translation_xyz())
+    if translation_delta >= _KEYFRAME_TRANSLATION_THRESHOLD_M:
+        return True
+
+    previous_rotation = previous_pose.as_matrix()[:3, :3]
+    current_rotation = current_pose.as_matrix()[:3, :3]
+    relative_rotation = current_rotation @ previous_rotation.T
+    cosine_angle = np.clip((np.trace(relative_rotation) - 1.0) / 2.0, -1.0, 1.0)
+    rotation_angle = float(np.arccos(cosine_angle))
+    return rotation_angle >= _KEYFRAME_ROTATION_THRESHOLD_RAD
 
 
 __all__ = ["StreamingRunner"]

@@ -534,6 +534,34 @@ def test_pipeline_page_formats_mstr_as_mock_preview() -> None:
     assert pipeline_page._pipeline_method_label(MethodId.MSTR) == "Mock Preview"
 
 
+def test_pipeline_page_metrics_distinguish_packet_and_backend_rates(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    snapshot = StreamingRunSnapshot(
+        state=RunState.RUNNING,
+        plan=RunPlan(
+            run_id="vista-stream",
+            mode=PipelineMode.STREAMING,
+            method=MethodId.VISTA,
+            artifact_root=tmp_path / ".artifacts" / "vista-stream" / "vista",
+            source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        ),
+        received_frames=12,
+        measured_fps=18.5,
+        accepted_keyframes=3,
+        backend_fps=4.25,
+        num_sparse_points=7,
+        num_dense_points=41,
+    )
+
+    metrics = pipeline_page._pipeline_metrics(snapshot)
+
+    assert metrics[2] == ("Received Frames", "12")
+    assert metrics[3] == ("Packet FPS", "18.50 fps")
+    assert metrics[4] == ("Accepted Keyframes", "3")
+    assert metrics[5] == ("Keyframe FPS", "4.25 fps")
+
+
 def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_path: Path) -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
 
@@ -625,6 +653,8 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
             num_dense_points=4,
             pointmap=np.zeros((2, 2, 3), dtype=np.float32),
         ),
+        accepted_keyframes=1,
+        backend_fps=9.0,
         trajectory_positions_xyz=np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64),
         trajectory_timestamps_s=np.asarray([0.0, 1.0], dtype=np.float64),
     )
@@ -648,7 +678,7 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
         "render_camera_intrinsics",
         lambda *args, **kwargs: None,
     )
-    monkeypatch.setattr(pipeline_page, "_pointmap_depth_preview", lambda pointmap: preview_image)
+    monkeypatch.setattr(pipeline_page, "_pointmap_preview_image", lambda pointmap: preview_image)
 
     pipeline_page._render_pipeline_tabs(snapshot)
     monkeypatch.undo()
@@ -656,6 +686,55 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
     assert any(image is preview_image for image in image_payloads)
     assert np.array_equal(trajectory_call["positions_xyz"], snapshot.trajectory_positions_xyz)
     assert np.array_equal(trajectory_call["timestamps_s"], snapshot.trajectory_timestamps_s)
+
+
+def test_pipeline_page_pointmap_preview_image_uses_generic_projection() -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    pointmap = np.array(
+        [
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+        ],
+        dtype=np.float32,
+    )
+
+    preview = pipeline_page._pointmap_preview_image(pointmap)
+
+    assert preview is not None
+    assert preview.shape == (2, 2)
+    assert not np.array_equal(preview, pointmap[..., 2])
+
+
+def test_packet_session_metrics_separate_packet_and_keyframe_history() -> None:
+    from prml_vslam.utils.packet_session import PacketSessionMetrics
+
+    metrics = PacketSessionMetrics(fps_window_size=4, trajectory_window_size=4)
+    metrics.record_packet(arrival_time_s=0.0)
+    metrics.record_packet(arrival_time_s=1.0)
+    metrics.record_keyframe(
+        arrival_time_s=1.0,
+        position_xyz=np.array([1.0, 0.0, 0.0], dtype=np.float64),
+        trajectory_time_s=0.5,
+    )
+    fields = metrics.snapshot_fields()
+
+    assert fields["received_frames"] == 2
+    assert fields["accepted_keyframes"] == 1
+    assert fields["trajectory_positions_xyz"].shape == (1, 3)
+    assert fields["trajectory_timestamps_s"].shape == (1,)
+    assert fields["backend_fps"] == 0.0
+
+
+def test_streaming_keyframe_gate_rejects_small_pose_jitter() -> None:
+    from prml_vslam.pipeline.streaming import _is_keyframe_like_update
+
+    previous_pose = SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
+    tiny_motion_pose = SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.05, ty=0.02, tz=0.0)
+    large_motion_pose = SE3Pose(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.3, ty=0.0, tz=0.0)
+
+    assert _is_keyframe_like_update(previous_pose=previous_pose, current_pose=tiny_motion_pose) is False
+    assert _is_keyframe_like_update(previous_pose=previous_pose, current_pose=large_motion_pose) is True
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:
