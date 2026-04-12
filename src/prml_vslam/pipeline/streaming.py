@@ -9,6 +9,7 @@ import numpy as np
 
 from prml_vslam.methods.protocols import StreamingSlamBackend
 from prml_vslam.methods.updates import SlamUpdate
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.state import RunState, StreamingRunSnapshot
@@ -24,7 +25,8 @@ from prml_vslam.visualization.rerun import (
     attach_grpc_sink,
     collect_native_visualization_artifacts,
     create_recording_stream,
-    export_viewer_recording,
+    log_pointcloud,
+    log_preview_image,
     log_transform,
 )
 
@@ -185,6 +187,19 @@ class StreamingRunner:
                                 entity_path="camera",
                                 transform=update.pose,
                             )
+                            if update.pointmap is not None:
+                                log_pointcloud(
+                                    live_recording,
+                                    entity_path="camera/pointcloud",
+                                    pointmap=update.pointmap,
+                                    colors=update.preview_rgb,
+                                )
+                            if update.preview_rgb is not None:
+                                log_preview_image(
+                                    live_recording,
+                                    entity_path="camera/preview",
+                                    image_rgb=update.preview_rgb,
+                                )
 
                     metrics_fields = metrics.snapshot_fields()
                     self._runtime.update_fields(
@@ -215,12 +230,10 @@ class StreamingRunner:
                         native_output_dir=run_paths.native_output_dir,
                         preserve_native_rerun=request.visualization.preserve_native_rerun,
                     )
-                    # Merge repo-owned RRD if explicit export was requested.
-                    repo_rrd_ref = export_viewer_recording(
-                        sequence_manifest=sequence_manifest,
-                        slam_artifacts=slam_artifacts,
-                        output_path=run_paths.viewer_rrd_path,
-                        run_id=plan.run_id,
+                    repo_rrd_ref = ArtifactRef(
+                        path=run_paths.viewer_rrd_path.resolve(),
+                        kind="rrd",
+                        fingerprint=f"viewer-rrd-{plan.run_id}",
                     )
                     if visualization_artifacts is None:
                         visualization_artifacts = VisualizationArtifacts()

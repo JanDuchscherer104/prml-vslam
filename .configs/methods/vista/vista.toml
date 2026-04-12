@@ -1,4 +1,0 @@
-[slam]
-flow_thres = 5
-[visualization]
-connect_live_viewer = true

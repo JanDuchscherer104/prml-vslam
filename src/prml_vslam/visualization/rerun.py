@@ -28,7 +28,22 @@ def _import_rerun() -> Any:
 def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> Any:
     """Create one explicit Rerun recording stream."""
     rr = _import_rerun()
-    return rr.RecordingStream(app_id=app_id, recording_id=recording_id)
+    stream = rr.RecordingStream(application_id=app_id, recording_id=recording_id)
+
+    try:
+        import rerun.blueprint as rrb  # noqa: PLC0415
+
+        blueprint = rrb.Blueprint(
+            rrb.Horizontal(
+                rrb.Spatial3DView(origin="camera", name="3D Scene"),
+                rrb.Spatial2DView(origin="camera/preview", name="Live Preview"),
+            ),
+        )
+        stream.send_blueprint(blueprint)
+    except (ImportError, AttributeError):
+        pass
+
+    return stream
 
 
 def attach_file_sink(recording_stream: Any, *, target_path: Path) -> None:
@@ -67,10 +82,51 @@ def log_transform(recording_stream: Any, *, entity_path: str, transform: FrameTr
         entity_path,
         rr.Transform3D(
             translation=translation,
-            rotation=rr.Quaternion(xyzw=quaternion),
-            from_parent=True,
+            quaternion=rr.Quaternion(xyzw=quaternion),
+            relation=rr.TransformRelation.ChildFromParent,
         ),
     )
+
+
+def log_pointcloud(
+    recording_stream: Any,
+    *,
+    entity_path: str,
+    pointmap: np.ndarray,
+    colors: np.ndarray | None = None,
+) -> None:
+    """Log a point cloud (and optionally colors) to the viewer."""
+    import numpy as np  # noqa: PLC0415
+
+    rr = _import_rerun()
+    if not hasattr(rr, "Points3D"):
+        raise RuntimeError("The installed Rerun SDK does not expose `Points3D`.")
+
+    positions = np.asarray(pointmap).reshape(-1, 3)
+    valid_mask = (positions[:, 2] > 0) & np.isfinite(positions[:, 2])
+    valid_positions = positions[valid_mask]
+
+    if len(valid_positions) == 0:
+        return
+
+    valid_colors = None
+    if colors is not None:
+        c = np.asarray(colors).reshape(-1, 3)
+        if len(c) == len(positions):
+            valid_colors = c[valid_mask]
+
+    recording_stream.log(
+        entity_path,
+        rr.Points3D(positions=valid_positions, colors=valid_colors, radii=0.05),
+    )
+
+
+def log_preview_image(recording_stream: Any, *, entity_path: str, image_rgb: np.ndarray) -> None:
+    """Log an RGB image to the viewer."""
+    rr = _import_rerun()
+    if not hasattr(rr, "Image"):
+        raise RuntimeError("The installed Rerun SDK does not expose `Image`.")
+    recording_stream.log(entity_path, rr.Image(image_rgb))
 
 
 def export_viewer_recording(
@@ -120,5 +176,7 @@ __all__ = [
     "collect_native_visualization_artifacts",
     "create_recording_stream",
     "export_viewer_recording",
+    "log_pointcloud",
+    "log_preview_image",
     "log_transform",
 ]
