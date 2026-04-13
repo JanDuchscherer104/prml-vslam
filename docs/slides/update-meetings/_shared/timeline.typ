@@ -1,8 +1,20 @@
 #let timeline = [
-  // Keep the slide as bullets until milestone dates are fixed; then switch to `@preview/gantty`
-  // for a date-driven Gantt chart instead of a hand-drawn timeline.
-  - Weeks 1-2: repo bootstrap, work package split, report and slide setup.
-  // - Weeks 3-5: capture workflow and first method integration.
-  // - Weeks 6-8: trajectory and dense reconstruction benchmarking.
-  // - Final phase: consolidate results into the final report and presentation.
+  #table(
+    columns: (10%, 15%, 75%),
+    inset: 8pt,
+    align: (center, center, left),
+    [*Weeks*], [*Target*], [*Milestones / Scope*],
+    [1], [26.03], [Repo bootstrap, work package split, report and slide setup.],
+    [2-5], [23.04], [
+      Implement full-stack configurable pipeline:
+      - captured mobile client & ADVIA dataset
+      - implemented 2 VSLAM methods
+      - implemented live-output
+      - performance metrics
+      - trajectory and dense reconstruction benchmarking.
+    ],
+    [5], [23.04], [_Refinement of further steps._],
+    [6-12], [11.06], [_Open_],
+    [13-15], [02.07], [Finalization, preparation of report & presentation.],
+  )
 ]

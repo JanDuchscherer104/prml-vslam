@@ -11,10 +11,11 @@
 ]
 
 #let reference_links = [
-  // - Candidate methods: #link("https://arxiv.org/pdf/2509.01584")[ViSTA-SLAM] and
-  //   #link("https://arxiv.org/abs/2412.12392")[MASt3R-SLAM].
-  // - Evaluation references: #link("https://github.com/AaltoVision/ADVIO")[ADVIO],
-  //   #link("https://github.com/MichaelGrupp/evo")[evo], and
-  //   #link("https://colmap.github.io/index.html")[COLMAP].
-  // - Geometry tooling: #link("https://www.open3d.org/")[Open3D] for inspection and metric support.
+  - #link("https://arxiv.org/abs/2509.01584")[ViSTA-SLAM: Visual SLAM with Symmetric Two-view Association]
+  - #link("https://arxiv.org/abs/2412.12392")[MASt3R-SLAM: Real-Time Dense SLAM with 3D Reconstruction Priors]
+  - #link("https://arxiv.org/abs/1807.09828")[ADVIO: An authentic dataset for visual-inertial odometry]
+  - #link("https://github.com/AaltoVision/ADVIO")[ADVIO]
+  - #link("https://github.com/MichaelGrupp/evo")[evo: Python package for the evaluation of odometry and SLAM]
+  - #link("https://www.cloudcompare.org/")[CloudCompare]
+  - #link("https://www.open3d.org/")[Open3D]
 ]
