@@ -216,7 +216,9 @@
 
   #meeting_slide(meeting_items_02, title: [Work Packages & Responsibilities])[
     #workpackages.work_packages_table()
+  ]
 
+  #meeting_slide(meeting_items_02, title: [References])[
     #if meeting_02.reference_links != none [
       #v(0.85em)
       #color-block(title: [Reference Links])[

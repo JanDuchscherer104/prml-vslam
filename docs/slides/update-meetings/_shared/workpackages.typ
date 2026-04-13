@@ -2,13 +2,15 @@
 #import "@preview/booktabs:0.0.4": *
 
 #let work_packages = (
-  ([WP1], [Repository and environment scaffolding], [Ja ]),
-  ([WP2], [Data capture and ARCore logging workflow], [?]),
-  ([WP3], [Method integration], [?]),
-  ([WP4], [Trajectory evaluation], [?]),
-  ([WP5], [Dense reconstruction evaluation], [?]),
-  ([WP6], [Reference reconstruction pipeline], [?]),
-  ([WP7], [Benchmarking and reporting], [?]),
+  ([WP1], [Dataset Acquisition (ADVIO & Client)], [Jan, Lukas]),
+  ([WP2.1], [Implementation of configuraable Pipeline Framework], [Jan]),
+  ([WP2.2], [ViSTA-SLAM], [Lukas]),
+  ([WP2.3], [MASt3R-SLAM], [Christoph]),
+  ([WP3], [Incremental Streaming (3DGS)], [Florian]),
+  ([WP4.1], [Performance Metrics - Component Throughput], [Florian]),
+  ([WP4.2], [Trajectory Evaluation (evo)], [Valentin]),
+  ([WP4.3], [Point Cloud Evaluation], [Valentin]),
+  ([WP5], [Benchmarking and reporting], [Shared]),
 )
 
 #let work_packages_table() = [
