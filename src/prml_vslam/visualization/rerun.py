@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
@@ -96,7 +98,6 @@ def log_pointcloud(
     colors: np.ndarray | None = None,
 ) -> None:
     """Log a point cloud (and optionally colors) to the viewer."""
-    import numpy as np  # noqa: PLC0415
 
     rr = _import_rerun()
     if not hasattr(rr, "Points3D"):

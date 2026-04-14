@@ -47,7 +47,11 @@ def materialize_offline_manifest(
             )
 
         timestamps_ns = _resolve_timestamps_ns(
-            source_path=prepared_manifest.timestamps_path,
+            source_path=_preferred_timestamps_source(
+                prepared_manifest=prepared_manifest,
+                run_paths=run_paths,
+                cached_rgb_dir=cached_rgb_dir,
+            ),
             frame_stride=frame_stride,
             fallback_timestamps_ns=[] if cached_rgb_dir is not None else extracted["timestamps_ns"],
         )
@@ -164,6 +168,19 @@ def _resolve_timestamps_ns(
         return fallback_timestamps_ns
     values = [int(round(float(value) * 1e9)) for value in rows]
     return values[::frame_stride]
+
+
+def _preferred_timestamps_source(
+    *,
+    prepared_manifest: SequenceManifest,
+    run_paths: RunArtifactPaths,
+    cached_rgb_dir: Path | None,
+) -> Path | None:
+    if prepared_manifest.timestamps_path is not None and prepared_manifest.timestamps_path.exists():
+        return prepared_manifest.timestamps_path
+    if cached_rgb_dir is not None and run_paths.input_timestamps_path.exists():
+        return run_paths.input_timestamps_path
+    return prepared_manifest.timestamps_path
 
 
 def _write_json_payload(path: Path, payload: object) -> Path:

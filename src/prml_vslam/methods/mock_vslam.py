@@ -201,6 +201,8 @@ class MockSlamSession(SlamSession):
         return SlamUpdate(
             seq=seq,
             timestamp_ns=timestamp_ns,
+            source_seq=seq,
+            source_timestamp_ns=timestamp_ns,
             pose=pose,
             is_keyframe=True,
             pose_updated=True,

@@ -5,11 +5,15 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict, Field, ValidationInfo, field_validator
 
 from .base_config import BaseConfig
 from .base_data import BaseData
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.contracts.plan import RunPlanStageId
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
@@ -40,6 +44,8 @@ class RunArtifactPaths(BaseData):
     """Path to prepared benchmark-side input metadata."""
     trajectory_path: Path
     """Path to the exported trajectory."""
+    point_cloud_path: Path
+    """Path to the canonical exported point cloud."""
     sparse_points_path: Path
     """Path to the exported sparse point cloud."""
     dense_points_path: Path
@@ -77,6 +83,7 @@ class RunArtifactPaths(BaseData):
             sequence_manifest_path=(resolved_root / "input" / "sequence_manifest.json").resolve(),
             benchmark_inputs_path=(resolved_root / "benchmark" / "inputs.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
+            point_cloud_path=(resolved_root / "slam" / "point_cloud.ply").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),

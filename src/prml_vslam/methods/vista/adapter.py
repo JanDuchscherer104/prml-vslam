@@ -6,7 +6,7 @@ import ctypes
 import site
 import sys
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import cv2
 import numpy as np
@@ -23,6 +23,9 @@ from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
 from .config import VistaSlamBackendConfig
+
+if TYPE_CHECKING:
+    from prml_vslam.methods.protocols import SlamSession
 
 _VISTA_INPUT_RESOLUTION = (224, 224)
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
@@ -66,6 +69,8 @@ class VistaSlamSession:
             update = SlamUpdate(
                 seq=frame.seq,
                 timestamp_ns=frame.timestamp_ns,
+                source_seq=frame.seq,
+                source_timestamp_ns=frame.timestamp_ns,
                 is_keyframe=False,
                 keyframe_index=None,
                 num_dense_points=self._num_dense_points,
@@ -81,6 +86,8 @@ class VistaSlamSession:
             update = SlamUpdate(
                 seq=frame.seq,
                 timestamp_ns=frame.timestamp_ns,
+                source_seq=frame.seq,
+                source_timestamp_ns=frame.timestamp_ns,
                 is_keyframe=False,
                 keyframe_index=None,
                 num_dense_points=self._num_dense_points,
@@ -127,7 +134,7 @@ class VistaSlamSession:
                 f"The sequence ({self._source_frame_count} frames, {self._accepted_keyframe_count} keyframes) "
                 "may have been too short to initialize the pose graph."
             ) from exc
-        
+
         self._console.info(
             "ViSTA-SLAM session closed after %d frames; native outputs in '%s'.",
             self._source_frame_count,
@@ -162,6 +169,8 @@ class VistaSlamSession:
             return SlamUpdate(
                 seq=seq,
                 timestamp_ns=timestamp_ns,
+                source_seq=seq,
+                source_timestamp_ns=timestamp_ns,
                 is_keyframe=True,
                 keyframe_index=view_index,
                 num_sparse_points=0,
@@ -179,6 +188,8 @@ class VistaSlamSession:
         return SlamUpdate(
             seq=seq,
             timestamp_ns=timestamp_ns,
+            source_seq=seq,
+            source_timestamp_ns=timestamp_ns,
             pose=pose,
             is_keyframe=True,
             keyframe_index=view_index,
@@ -421,20 +432,17 @@ def _build_artifacts(
     if pointcloud_ply.exists() and (output_policy.emit_sparse_points or output_policy.emit_dense_points):
         point_cloud = o3d.io.read_point_cloud(str(pointcloud_ply))
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
+        run_paths = RunArtifactPaths.build(artifact_root)
+        point_cloud_path = write_point_cloud_ply(run_paths.point_cloud_path, points_xyz)
+        canonical_ref = ArtifactRef(
+            path=point_cloud_path,
+            kind="ply",
+            fingerprint=f"vista-point-cloud-{len(points_xyz)}",
+        )
         if output_policy.emit_sparse_points:
-            sparse_points_path = write_point_cloud_ply(artifact_root / "slam" / "sparse_points.ply", points_xyz)
-            sparse_points_ref = ArtifactRef(
-                path=sparse_points_path,
-                kind="ply",
-                fingerprint=f"vista-sparse-{len(points_xyz)}",
-            )
+            sparse_points_ref = canonical_ref
         if output_policy.emit_dense_points:
-            dense_points_path = write_point_cloud_ply(artifact_root / "dense" / "dense_points.ply", points_xyz)
-            dense_points_ref = ArtifactRef(
-                path=dense_points_path,
-                kind="ply",
-                fingerprint=f"vista-dense-{len(points_xyz)}",
-            )
+            dense_points_ref = canonical_ref
 
     native_rerun_path = native_output_dir / "rerun_recording.rrd"
     extras = {

@@ -5,16 +5,31 @@ from __future__ import annotations
 import multiprocessing as mp
 import queue
 from collections.abc import Callable
-from pathlib import Path
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from prml_vslam.utils import Console
 
 if TYPE_CHECKING:
     from prml_vslam.interfaces import FramePacket
+    from prml_vslam.methods.protocols import SlamSession
     from prml_vslam.methods.updates import SlamUpdate
     from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
-    from prml_vslam.methods.protocols import SlamSession
+
+
+@dataclass(slots=True)
+class _UpdateMessage:
+    update: SlamUpdate
+
+
+@dataclass(slots=True)
+class _WorkerErrorMessage:
+    error_message: str
+
+
+@dataclass(slots=True)
+class _DoneMessage:
+    pass
 
 
 class MultiprocessSlamSession:
@@ -28,7 +43,7 @@ class MultiprocessSlamSession:
     ) -> None:
         self._console = console.child("MultiprocessSlamSession")
         ctx = mp.get_context("spawn")
-        # Bound the input queue so that if the SLAM backend falls behind, 
+        # Bound the input queue so that if the SLAM backend falls behind,
         # the producer blocks (backpressure), keeping the pipeline in sync.
         self._input_queue: mp.Queue = ctx.Queue(maxsize=2)
         self._output_queue: mp.Queue = ctx.Queue()
@@ -45,7 +60,7 @@ class MultiprocessSlamSession:
     def step(self, frame: FramePacket) -> None:
         """Push one frame to the background worker, blocking if the queue is full (backpressure)."""
         # Block until there is space in the queue.
-        # This causes the upstream ingestion loop to wait, naturally slowing down 
+        # This causes the upstream ingestion loop to wait, naturally slowing down
         # the entire pipeline to the speed of the SLAM backend without dropping frames.
         self._input_queue.put(frame)
 
@@ -54,10 +69,14 @@ class MultiprocessSlamSession:
         updates = []
         while True:
             try:
-                update = self._output_queue.get_nowait()
-                if update is None:  # Sentinel for errors or unexpected exit
+                message = self._output_queue.get_nowait()
+                if isinstance(message, _UpdateMessage):
+                    updates.append(message.update)
+                    continue
+                if isinstance(message, _WorkerErrorMessage):
+                    raise RuntimeError(message.error_message)
+                if isinstance(message, _DoneMessage):
                     break
-                updates.append(update)
             except queue.Empty:
                 break
         return updates
@@ -65,12 +84,16 @@ class MultiprocessSlamSession:
     def close(self) -> SlamArtifacts:
         """Signal the worker to exit and retrieve final artifacts."""
         self._console.info("Closing multiprocess SLAM worker...")
-        self._input_queue.put(None)  # Sentinel for exit
+        try:
+            self._input_queue.put_nowait(None)
+        except queue.Full as exc:
+            self._console.error("SLAM worker input queue is full during shutdown; terminating the worker process.")
+            self._terminate_worker_process()
+            raise RuntimeError("Failed to shut down the SLAM worker cleanly because its input queue was full.") from exc
         self._process.join(timeout=30.0)
         if self._process.is_alive():
             self._console.error("Worker process did not exit gracefully; terminating.")
-            self._process.terminate()
-            self._process.join()
+            self._terminate_worker_process()
 
         if self._result_pipe_parent.poll(timeout=1.0):
             artifacts = self._result_pipe_parent.recv()
@@ -79,6 +102,11 @@ class MultiprocessSlamSession:
             return artifacts
 
         raise RuntimeError("Failed to retrieve artifacts from the background worker.")
+
+    def _terminate_worker_process(self) -> None:
+        if self._process.is_alive():
+            self._process.terminate()
+        self._process.join()
 
 
 def _session_worker(
@@ -105,16 +133,19 @@ def _session_worker(
             try:
                 session.step(packet)
                 for update in session.try_get_updates():
-                    output_queue.put(update)
+                    output_queue.put(_UpdateMessage(update=update))
             except Exception as exc:
                 logger.exception("Error during SLAM step in background worker: %s", exc)
-                # We don't break here, try to continue with next frames
-                # but we could send a sentinel if it's fatal.
+                output_queue.put(_WorkerErrorMessage(error_message=str(exc)))
+                result_pipe.send(RuntimeError(str(exc)))
+                return
 
         artifacts = session.close()
         result_pipe.send(artifacts)
+        output_queue.put(_DoneMessage())
     except Exception as exc:
         logger.exception("Fatal error in background worker: %s", exc)
+        output_queue.put(_WorkerErrorMessage(error_message=str(exc)))
         result_pipe.send(exc)
     finally:
         result_pipe.close()

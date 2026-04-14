@@ -976,6 +976,46 @@ def test_pipeline_request_builds_record3d_wifi_source_from_action(tmp_path: Path
     assert request.source.persist_capture is True
 
 
+def test_pipeline_request_build_preserves_vista_backend_payload(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class AdvioServiceStub:
+        def scene(self, sequence_id: int) -> SimpleNamespace:
+            assert sequence_id == 15
+            return SimpleNamespace(sequence_slug="advio-15")
+
+    context = SimpleNamespace(
+        path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"),
+        advio_service=AdvioServiceStub(),
+    )
+
+    request, error_message = pipeline_page._build_request_from_action(
+        context,
+        pipeline_page.PipelinePageAction(
+            config_path=tmp_path / "vista.toml",
+            source_kind=PipelineSourceId.ADVIO,
+            advio_sequence_id=15,
+            mode=PipelineMode.STREAMING,
+            method=MethodId.VISTA,
+            slam_max_frames=21,
+            slam_backend_payload={
+                "max_frames": 10,
+                "slam": {
+                    "flow_thres": 2.5,
+                    "max_view_num": 256,
+                },
+            },
+            connect_live_viewer=True,
+        ),
+    )
+
+    assert error_message is None
+    assert request is not None
+    assert request.slam.backend.max_frames == 21
+    assert request.slam.backend.model_dump(mode="python")["slam"]["flow_thres"] == 2.5
+    assert request.slam.backend.model_dump(mode="python")["slam"]["max_view_num"] == 256
+
+
 def test_pipeline_source_input_error_requires_wifi_device_address() -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
 
@@ -1078,6 +1118,42 @@ def test_pipeline_page_state_sync_hydrates_record3d_wifi_template(tmp_path: Path
     assert context.state.pipeline.record3d_transport is Record3DTransportId.WIFI
     assert context.state.pipeline.record3d_wifi_device_address == "myiPhone.local"
     assert context.state.pipeline.record3d_persist_capture is True
+
+
+def test_pipeline_page_state_sync_preserves_vista_backend_payload(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace(
+        state=AppState(),
+        store=FakeStore(),
+    )
+    request = RunRequest(
+        experiment_name="vista-full",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        slam=SlamStageConfig(
+            method=MethodId.VISTA,
+            backend={
+                "max_frames": 50,
+                "slam": {
+                    "flow_thres": 1.5,
+                    "max_view_num": 128,
+                },
+            },
+        ),
+    )
+
+    pipeline_page._sync_pipeline_page_state_from_template(
+        context=context,
+        config_path=tmp_path / "vista-full.toml",
+        request=request,
+        statuses=[SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)],
+    )
+
+    assert context.state.pipeline.slam_max_frames == 50
+    assert context.state.pipeline.slam_backend_payload["slam"]["flow_thres"] == 1.5
+    assert context.state.pipeline.slam_backend_payload["slam"]["max_view_num"] == 128
 
 
 def test_load_pipeline_request_toml_parses_record3d_wifi_source(tmp_path: Path) -> None:

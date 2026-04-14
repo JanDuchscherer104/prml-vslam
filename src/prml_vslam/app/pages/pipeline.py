@@ -529,6 +529,7 @@ def _sync_pipeline_page_state_from_template(
         mode=request.mode,
         method=request.slam.method,
         slam_max_frames=request.slam.backend.max_frames,
+        slam_backend_payload=request.slam.backend.model_dump(mode="python", exclude_none=True),
         emit_dense_points=request.slam.outputs.emit_dense_points,
         emit_sparse_points=request.slam.outputs.emit_sparse_points,
         reference_enabled=request.benchmark.reference.enabled,
@@ -586,9 +587,7 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
                     "emit_dense_points": action.emit_dense_points,
                     "emit_sparse_points": action.emit_sparse_points,
                 },
-                backend={
-                    "max_frames": action.slam_max_frames,
-                },
+                backend=_backend_payload_from_action(action),
             ),
             benchmark=BenchmarkConfig(
                 reference={"enabled": action.reference_enabled},
@@ -1000,7 +999,7 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
         "output_dir": request.output_dir.as_posix(),
         "slam": {
             "method": request.slam.method.value,
-            "max_frames": request.slam.backend.max_frames,
+            "backend": request.slam.backend.model_dump(mode="json", exclude_none=True),
             "emit_dense_points": request.slam.outputs.emit_dense_points,
             "emit_sparse_points": request.slam.outputs.emit_sparse_points,
         },
@@ -1016,6 +1015,14 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
             }
         case _:
             payload["source"] = request.source.model_dump(mode="json")
+    return payload
+
+
+def _backend_payload_from_action(action: PipelinePageAction) -> dict[str, object]:
+    if action.method is not MethodId.VISTA:
+        return {"max_frames": action.slam_max_frames}
+    payload = dict(action.slam_backend_payload)
+    payload["max_frames"] = action.slam_max_frames
     return payload
 
 

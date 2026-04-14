@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
+from prml_vslam.methods.contracts import SlamBackendConfig
 from prml_vslam.utils import BaseConfig
 
 if TYPE_CHECKING:
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
 
 class VistaSlamConfig(BaseConfig):
     """Algorithm-level hyperparameters forwarded to upstream OnlineSLAM."""
+
+    model_config = ConfigDict(extra="forbid")
 
     device: str = "cuda"
     """Torch device string used for model inference."""
@@ -59,8 +62,10 @@ class VistaSlamConfig(BaseConfig):
     """Random seed set before model initialisation for reproducibility."""
 
 
-class VistaSlamBackendConfig(BaseConfig):
+class VistaSlamBackendConfig(SlamBackendConfig):
     """Factory config that builds the canonical ViSTA backend."""
+
+    model_config = ConfigDict(extra="forbid")
 
     vista_slam_dir: Path = Path("external/vista-slam")
     """Path to the ViSTA repository (submodule root)."""
