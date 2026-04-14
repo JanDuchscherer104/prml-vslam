@@ -7,7 +7,7 @@
     [1], [26.03], [Repo bootstrap, work package split, report and slide setup.],
     [2-6], [29.04], [
       Implement full-stack configurable pipeline:
-      - captured mobile client & ADVIA dataset
+      - captured mobile client & ADVIO dataset
       - implemented 2 VSLAM methods
       - implemented live-output
       - performance metrics

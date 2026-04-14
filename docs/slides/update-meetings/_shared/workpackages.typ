@@ -3,7 +3,7 @@
 
 #let work_packages = (
   ([WP1], [Dataset Acquisition (ADVIO & Client)], [Jan, Lukas]),
-  ([WP2.1], [Implementation of configuraable Pipeline Framework], [Jan]),
+  ([WP2.1], [Implementation of configurable Pipeline Framework], [Jan]),
   ([WP2.2], [ViSTA-SLAM], [Lukas]),
   ([WP2.3], [MASt3R-SLAM], [Christoph]),
   ([WP3], [Incremental Streaming (3DGS)], [Florian]),
