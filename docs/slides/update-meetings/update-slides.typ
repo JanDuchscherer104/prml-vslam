@@ -227,7 +227,7 @@
     ]
   ]
 
-  #meeting_slide(meeting_items_02, title: [Timeline (rough)])[
+  #meeting_slide(meeting_items_02, title: [Timeline & Milestones])[
     #timeline_mod.timeline
   ]
 
