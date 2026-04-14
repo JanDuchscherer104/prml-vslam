@@ -19,9 +19,13 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 # If you did not clone recursively:
 git submodule update --init --recursive
 
+# Base repository tooling and tests:
+uv sync --extra dev
+
+# Optional Linux/CUDA helper environment for ViSTA work:
 conda env create -f environment.yml
 conda activate prml-vslam
-uv sync --all-extras
+uv sync --extra dev --extra vista --extra streaming
 
 # ViSTA-SLAM loop closure dependency (DBoW3 Python bindings)
 pushd external/vista-slam/DBoW3Py
@@ -69,8 +73,8 @@ Repo-owned datasets and generated benchmark outputs resolve under `.data/` and `
 ## Streamlit Workbench
 
 ```bash
-uv sync
-# add `--extra streaming` to enable Record3D USB and Wi-Fi Preview support
+# add `--extra streaming` for Record3D and `--extra vista` for ViSTA + Rerun support
+uv sync --extra streaming
 uv run streamlit run streamlit_app.py
 ```
 

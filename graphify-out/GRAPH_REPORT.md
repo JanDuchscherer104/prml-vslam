@@ -165,7 +165,7 @@ Nodes (29): attach_file_sink(), attach_grpc_sink(), collect_native_visualization
 
 ### Community 32 - "Community 32"
 Cohesion: 0.06
-Nodes (0): 
+Nodes (0):
 
 ### Community 33 - "Community 33"
 Cohesion: 0.09
@@ -249,11 +249,11 @@ Nodes (1): Tests for package-root public export surfaces.
 
 ### Community 53 - "Community 53"
 Cohesion: 0.4
-Nodes (0): 
+Nodes (0):
 
 ### Community 54 - "Community 54"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (0):
 
 ### Community 55 - "Community 55"
 Cohesion: 1.0
@@ -265,11 +265,11 @@ Nodes (1): Simple script for rebuilding .codespell-ignore-lines  Usage:  cat < /
 
 ### Community 57 - "Community 57"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 58 - "Community 58"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 59 - "Community 59"
 Cohesion: 0.67
@@ -281,11 +281,11 @@ Nodes (1): Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The
 
 ### Community 61 - "Community 61"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 62 - "Community 62"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 63 - "Community 63"
 Cohesion: 1.0
@@ -333,19 +333,19 @@ Nodes (1): Build a transform from a 4x4 homogeneous matrix.
 
 ### Community 74 - "Community 74"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 75 - "Community 75"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 76 - "Community 76"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 77 - "Community 77"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 78 - "Community 78"
 Cohesion: 1.0

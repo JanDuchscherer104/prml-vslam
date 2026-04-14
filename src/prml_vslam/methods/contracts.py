@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
+
+from pydantic import ConfigDict
 
 from prml_vslam.utils import BaseConfig
 
@@ -38,6 +39,8 @@ class SlamOutputPolicy(BaseConfig):
 
 class SlamBackendConfig(BaseConfig):
     """Method-owned backend controls."""
+
+    model_config = ConfigDict(extra="forbid")
 
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""

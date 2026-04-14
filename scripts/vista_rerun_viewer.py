@@ -15,9 +15,10 @@ except ImportError:
     print("Error: The rerun-sdk is not installed. Please install it using `uv pip install rerun-sdk`.")
     sys.exit(1)
 
+
 def build_blueprint() -> rrb.Blueprint:
     """Build a comprehensive blueprint to visualize all ViSTA-SLAM data."""
-    # We create a layout that handles both the canonical prml-vslam output (camera/) 
+    # We create a layout that handles both the canonical prml-vslam output (camera/)
     # and the native ViSTA output (world/est/).
     return rrb.Blueprint(
         rrb.Horizontal(
@@ -33,6 +34,7 @@ def build_blueprint() -> rrb.Blueprint:
         rrb.TimePanel(state="expanded"),
     )
 
+
 def main() -> None:
     blueprint_path = Path(".configs/visualization/vista_blueprint.rbl")
     blueprint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +48,9 @@ def main() -> None:
 
     print("\nBlueprint generated successfully!")
     print("To view your data with this configuration, run the Rerun CLI with both files:")
-    print(f"\n    uv run rerun .artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd {blueprint_path}\n")
+    print(
+        f"\n    uv run rerun .artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd {blueprint_path}\n"
+    )
     print("Or to view the native ViSTA-SLAM output:")
     print(f"    uv run rerun .artifacts/vista-full-tuning/vista/native/rerun_recording.rrd {blueprint_path}\n")
 

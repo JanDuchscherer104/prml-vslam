@@ -18,6 +18,12 @@ class SlamUpdate(BaseData):
     timestamp_ns: int
     """Timestamp in nanoseconds."""
 
+    source_seq: int | None = None
+    """Source-packet sequence number that produced this update, when explicit."""
+
+    source_timestamp_ns: int | None = None
+    """Source-packet timestamp that produced this update, when explicit."""
+
     is_keyframe: bool = False
     """Whether the update came from an accepted keyframe."""
 
