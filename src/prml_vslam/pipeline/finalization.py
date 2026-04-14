@@ -7,12 +7,15 @@ import json
 from pathlib import Path
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs
+from prml_vslam.eval.contracts import DiscoveredRun, EvaluationArtifact, SelectionSnapshot
+from prml_vslam.eval.services import TrajectoryEvaluationService
+from prml_vslam.methods.contracts import MethodId
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageExecutionStatus, StageManifest
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.utils import BaseConfig, RunArtifactPaths
+from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization import VisualizationArtifacts
 
 
@@ -25,6 +28,7 @@ def finalize_run_outputs(
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
     visualization: VisualizationArtifacts | None,
+    trajectory_evaluation: EvaluationArtifact | None,
     ingest_started: bool,
     slam_started: bool,
     pipeline_failed: bool,
@@ -35,6 +39,7 @@ def finalize_run_outputs(
         plan=plan,
         sequence_manifest=sequence_manifest,
         slam=slam,
+        trajectory_evaluation=trajectory_evaluation,
         ingest_started=ingest_started,
         slam_started=slam_started,
         pipeline_failed=pipeline_failed,
@@ -47,6 +52,7 @@ def finalize_run_outputs(
         benchmark_inputs=benchmark_inputs,
         slam=slam,
         visualization=visualization,
+        trajectory_evaluation=trajectory_evaluation,
         stage_status=stage_status,
     )
     summary_manifest = build_summary_manifest(
@@ -76,6 +82,7 @@ def build_stage_status(
     plan: RunPlan,
     sequence_manifest: SequenceManifest | None,
     slam: SlamArtifacts | None,
+    trajectory_evaluation: EvaluationArtifact | None,
     ingest_started: bool,
     slam_started: bool,
     pipeline_failed: bool,
@@ -91,6 +98,12 @@ def build_stage_status(
         stage_status[RunPlanStageId.SLAM] = (
             StageExecutionStatus.RAN if slam is not None and not pipeline_failed else StageExecutionStatus.FAILED
         )
+    if RunPlanStageId.TRAJECTORY_EVALUATION in planned_ids:
+        stage_status[RunPlanStageId.TRAJECTORY_EVALUATION] = (
+            StageExecutionStatus.RAN
+            if trajectory_evaluation is not None and not pipeline_failed
+            else StageExecutionStatus.FAILED
+        )
     return stage_status
 
 
@@ -103,6 +116,7 @@ def build_stage_manifests(
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
     visualization: VisualizationArtifacts | None,
+    trajectory_evaluation: EvaluationArtifact | None,
     stage_status: dict[RunPlanStageId, StageExecutionStatus],
 ) -> list[StageManifest]:
     """Build non-summary stage manifests for the executed pipeline slice."""
@@ -157,6 +171,26 @@ def build_stage_manifests(
                 status=stage_status[RunPlanStageId.SLAM],
             )
         )
+    if RunPlanStageId.TRAJECTORY_EVALUATION in stage_status:
+        output_paths: dict[str, Path] = {}
+        if trajectory_evaluation is not None:
+            output_paths["trajectory_metrics"] = trajectory_evaluation.path
+            output_paths["reference_tum"] = trajectory_evaluation.reference_path
+            output_paths["estimate_tum"] = trajectory_evaluation.estimate_path
+        manifests.append(
+            StageManifest(
+                stage_id=RunPlanStageId.TRAJECTORY_EVALUATION,
+                config_hash=stable_hash(request.benchmark.trajectory),
+                input_fingerprint=stable_hash(
+                    {
+                        "benchmark_inputs": benchmark_inputs,
+                        "slam_trajectory": None if slam is None else slam.trajectory_tum,
+                    }
+                ),
+                output_paths=output_paths,
+                status=stage_status[RunPlanStageId.TRAJECTORY_EVALUATION],
+            )
+        )
     planned_ids = {stage.id for stage in plan.stages}
     return [manifest for manifest in manifests if manifest.stage_id in planned_ids]
 
@@ -209,10 +243,44 @@ def write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(BaseConfig.to_jsonable(payload), indent=2, sort_keys=True), encoding="utf-8")
 
 
+def compute_trajectory_evaluation(
+    *,
+    request: RunRequest,
+    plan: RunPlan,
+    sequence_manifest: SequenceManifest | None,
+    benchmark_inputs: PreparedBenchmarkInputs | None,
+    slam: SlamArtifacts | None,
+) -> EvaluationArtifact | None:
+    """Compute trajectory evaluation for one completed run when enabled."""
+    if not request.benchmark.trajectory.enabled:
+        return None
+    if sequence_manifest is None or benchmark_inputs is None or slam is None:
+        raise RuntimeError("Trajectory evaluation requires a sequence manifest, benchmark inputs, and SLAM artifacts.")
+    reference = benchmark_inputs.trajectory_for_source(request.benchmark.trajectory.baseline_source)
+    if reference is None:
+        raise RuntimeError(
+            "Prepared benchmark inputs do not include the requested trajectory baseline "
+            f"'{request.benchmark.trajectory.baseline_source.value}'."
+        )
+    evaluator = TrajectoryEvaluationService(PathConfig(artifacts_dir=request.output_dir))
+    selection = SelectionSnapshot(
+        sequence_slug=sequence_manifest.sequence_id,
+        reference_path=reference.path,
+        run=DiscoveredRun(
+            artifact_root=plan.artifact_root,
+            estimate_path=slam.trajectory_tum.path,
+            method=plan.method if isinstance(plan.method, MethodId) else None,
+            label=plan.method.display_name,
+        ),
+    )
+    return evaluator.compute_evaluation(selection=selection)
+
+
 __all__ = [
     "build_stage_manifests",
     "build_stage_status",
     "build_summary_manifest",
+    "compute_trajectory_evaluation",
     "finalize_run_outputs",
     "stable_hash",
     "write_json",

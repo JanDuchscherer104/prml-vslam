@@ -31,7 +31,7 @@ from prml_vslam.visualization.rerun import (
     log_transform,
 )
 
-from .finalization import finalize_run_outputs, write_json
+from .finalization import compute_trajectory_evaluation, finalize_run_outputs, write_json
 from .runner_runtime import RunnerRuntime
 
 _STOP_JOIN_TIMEOUT_SECONDS = 10.0
@@ -116,6 +116,7 @@ class StreamingRunner:
         slam_artifacts = None
         visualization_artifacts = None
         latest_preview_update = None
+        trajectory_evaluation = None
 
         start_timestamp_ns: int | None = None
         live_recording = None
@@ -260,6 +261,13 @@ class StreamingRunner:
                 if visualization_artifacts is None:
                     visualization_artifacts = VisualizationArtifacts()
                 visualization_artifacts.extras["viewer_rrd"] = repo_rrd_ref
+            trajectory_evaluation = compute_trajectory_evaluation(
+                request=request,
+                plan=plan,
+                sequence_manifest=sequence_manifest,
+                benchmark_inputs=benchmark_inputs,
+                slam=slam_artifacts,
+            )
             try:
                 summary, stage_manifests = finalize_run_outputs(
                     request=request,
@@ -269,6 +277,7 @@ class StreamingRunner:
                     benchmark_inputs=benchmark_inputs,
                     slam=slam_artifacts,
                     visualization=visualization_artifacts,
+                    trajectory_evaluation=trajectory_evaluation,
                     ingest_started=ingest_started,
                     slam_started=slam_started,
                     pipeline_failed=pipeline_failed,
@@ -306,11 +315,6 @@ def _has_renderable_preview(update: SlamUpdate) -> bool:
         return False
     pointmap = np.asarray(update.pointmap)
     return pointmap.size > 0 and pointmap.ndim in {2, 3}
-
-
-def _is_keyframe_like_update(update: SlamUpdate) -> bool:
-    """Return whether one update should count as a keyframe trajectory event."""
-    return update.is_keyframe
 
 
 def _to_stopped_snapshot(snapshot: StreamingRunSnapshot) -> StreamingRunSnapshot:

@@ -61,9 +61,6 @@ from prml_vslam.pipeline.contracts.request import (
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
-from prml_vslam.pipeline.streaming import (
-    _is_keyframe_like_update,
-)
 from prml_vslam.utils.path_config import PathConfig
 from prml_vslam.visualization import VisualizationConfig
 
@@ -851,8 +848,8 @@ def test_streaming_keyframe_gate_rejects_small_pose_jitter() -> None:
     update_jitter = SlamUpdate(seq=1, timestamp_ns=1, is_keyframe=False)
     update_keyframe = SlamUpdate(seq=2, timestamp_ns=2, is_keyframe=True)
 
-    assert _is_keyframe_like_update(update_jitter) is False
-    assert _is_keyframe_like_update(update_keyframe) is True
+    assert update_jitter.is_keyframe is False
+    assert update_keyframe.is_keyframe is True
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:

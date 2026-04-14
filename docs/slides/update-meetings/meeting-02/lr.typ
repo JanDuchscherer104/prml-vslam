@@ -29,3 +29,5 @@
   - Install CUDA 13.0 toolkit, rebuild RoPE2D extension
   - End-to-end streaming test on ADVIO sequences
 ]
+
+#let proposal_detail_body = none
