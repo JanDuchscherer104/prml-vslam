@@ -977,21 +977,6 @@ def _parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None
         return None, f"Enter a whole number for `{field_label}` or leave the field blank."
 
 
-def _parse_optional_repo_path(path_config: PathConfig, raw_value: str) -> Path | None:
-    return None if raw_value == "" else path_config.resolve_repo_path(raw_value)
-
-
-def _display_repo_relative_path(path_config: PathConfig, path: Path | None) -> str:
-    if path is None:
-        return ""
-    resolved = path if path.is_absolute() else path_config.resolve_repo_path(path)
-    return (
-        str(resolved.relative_to(path_config.root))
-        if resolved.is_relative_to(path_config.root)
-        else resolved.as_posix()
-    )
-
-
 def _request_summary_payload(request: RunRequest) -> dict[str, object]:
     payload = {
         "experiment_name": request.experiment_name,

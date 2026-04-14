@@ -373,6 +373,9 @@ def test_streaming_runner_prepares_benchmark_inputs_for_streaming_sources(tmp_pa
 
     assert snapshot.benchmark_inputs is not None
     assert run_paths.benchmark_inputs_path.exists()
+    assert run_paths.trajectory_metrics_path.exists()
+    assert snapshot.summary is not None
+    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION].value == "ran"
 
 
 def test_streaming_runner_retains_last_renderable_preview_update(tmp_path: Path) -> None:
@@ -512,7 +515,7 @@ class KeyframeStreamingSession:
     def close(self) -> SlamArtifacts:
         trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
         trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
+        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
         return SlamArtifacts(
             trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="keyframe-streaming"),
         )
@@ -571,7 +574,7 @@ class PreviewRetentionStreamingSession:
     def close(self) -> SlamArtifacts:
         trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
         trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
+        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
         return SlamArtifacts(
             trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="preview-retention-streaming"),
         )
@@ -621,7 +624,7 @@ class StickyPreviewSession:
     def close(self) -> SlamArtifacts:
         trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
         trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
+        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
         return SlamArtifacts(
             trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="sticky-preview-streaming"),
         )
@@ -686,7 +689,7 @@ class NativeRerunStreamingSession:
         (native_dir / "rerun_recording.rrd").write_bytes(b"native-rerun")
         trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
         trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
+        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
         return SlamArtifacts(
             trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="native-rerun-streaming"),
         )
@@ -760,6 +763,21 @@ def test_run_service_dispatches_streaming_with_runtime_source(tmp_path: Path) ->
 
     assert offline_runner.start_calls == 0
     assert streaming_runner.start_calls == 1
+
+
+def test_run_service_rejects_non_executable_optional_stages(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.OFFLINE)
+    request.benchmark.reference.enabled = True
+    service = RunService(
+        path_config=path_config,
+        slam_backend_factory=lambda _method: MockSlamBackendConfig().setup_target(),
+    )
+
+    with pytest.raises(RuntimeError, match="Unsupported stages"):
+        service.start_run(request=request)
+
+    assert service.snapshot().state is RunState.FAILED
 
 
 def test_default_slam_backend_factory_maps_vista_to_real_backend(tmp_path: Path) -> None:

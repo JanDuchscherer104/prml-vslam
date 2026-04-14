@@ -12,7 +12,7 @@ from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSou
 from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
 
-from .finalization import finalize_run_outputs, write_json
+from .finalization import compute_trajectory_evaluation, finalize_run_outputs, write_json
 from .ingest import materialize_offline_manifest
 from .runner_runtime import RunnerRuntime
 
@@ -85,6 +85,7 @@ class OfflineRunner:
         benchmark_inputs = None
         slam_artifacts = None
         visualization_artifacts = None
+        trajectory_evaluation = None
 
         final_state = RunState.COMPLETED
 
@@ -126,6 +127,13 @@ class OfflineRunner:
                     native_output_dir=run_paths.native_output_dir,
                     preserve_native_rerun=request.visualization.preserve_native_rerun,
                 )
+                trajectory_evaluation = compute_trajectory_evaluation(
+                    request=request,
+                    plan=plan,
+                    sequence_manifest=sequence_manifest,
+                    benchmark_inputs=benchmark_inputs,
+                    slam=slam_artifacts,
+                )
         except Exception as exc:
             final_state = RunState.FAILED
             pipeline_failed = True
@@ -143,6 +151,7 @@ class OfflineRunner:
                     benchmark_inputs=benchmark_inputs,
                     slam=slam_artifacts,
                     visualization=visualization_artifacts,
+                    trajectory_evaluation=trajectory_evaluation,
                     ingest_started=ingest_started,
                     slam_started=slam_started,
                     pipeline_failed=pipeline_failed,

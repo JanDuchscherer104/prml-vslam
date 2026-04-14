@@ -36,11 +36,7 @@ _SUPPORTED_STAGE_IDS = frozenset(
     {
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
-        RunPlanStageId.BENCHMARK,
-        RunPlanStageId.REFERENCE_RECONSTRUCTION,
         RunPlanStageId.TRAJECTORY_EVALUATION,
-        RunPlanStageId.CLOUD_EVALUATION,
-        RunPlanStageId.EFFICIENCY_EVALUATION,
         RunPlanStageId.SUMMARY,
     }
 )
