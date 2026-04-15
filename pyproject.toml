@@ -36,7 +36,6 @@ dependencies = [
     "rebiber>=1.1.3",
     "ruff>=0.11,<1",
   ]
-  repo-context = ["qdrant-client[fastembed]>=1,<2"]
   replay = ["av>=16,<17"]
   streaming = ["aiortc>=1.9,<2", "record3d>=1.4.1,<2"]
   vista = [
@@ -85,11 +84,11 @@ addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 [tool.uv]
 no-build-isolation-package = ["dbow3py"]
 
-[tool.uv.extra-build-dependencies]
-xformers = ["torch==2.5.1"]
+  [tool.uv.extra-build-dependencies]
+  xformers = ["torch==2.5.1"]
 
-[tool.uv.sources]
-DBoW3Py = { path = "external/vista-slam/DBoW3Py", editable = false }
+  [tool.uv.sources]
+  DBoW3Py = { path = "external/vista-slam/DBoW3Py", editable = false }
 
 [tool.mypy]
 python_version      = "3.11"
