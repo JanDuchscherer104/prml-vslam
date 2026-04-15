@@ -32,7 +32,7 @@ _POINTMAP_DEPTH_SPAN_M = 1.0
 class MockSlamBackendConfig(BaseConfig):
     """Config that builds the repository-local mock SLAM backend."""
 
-    method_id: MethodId = MethodId.VISTA
+    method_id: MethodId = MethodId.MOCK
     """Selected mock backend label."""
 
     @property

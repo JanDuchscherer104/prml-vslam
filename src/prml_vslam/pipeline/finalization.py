@@ -96,7 +96,7 @@ def build_stage_status(
         )
     if RunPlanStageId.SLAM in planned_ids and slam_started:
         stage_status[RunPlanStageId.SLAM] = (
-            StageExecutionStatus.RAN if slam is not None and not pipeline_failed else StageExecutionStatus.FAILED
+            StageExecutionStatus.RAN if slam is not None else StageExecutionStatus.FAILED
         )
     if RunPlanStageId.TRAJECTORY_EVALUATION in planned_ids:
         stage_status[RunPlanStageId.TRAJECTORY_EVALUATION] = (

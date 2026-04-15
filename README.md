@@ -23,19 +23,19 @@ git submodule update --init --recursive
 uv sync --extra dev
 
 # Optional Linux/CUDA helper environment for ViSTA work:
+# For a fresh environment:
 conda env create -f environment.yml
+
+# Or, if updating an older prml-vslam conda env, prune packages no longer owned by environment.yml:
+conda env update --prune -f environment.yml
+
 conda activate prml-vslam
+unset VIRTUAL_ENV
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 uv sync --extra dev --extra vista --extra streaming
 
-# ViSTA-SLAM loop closure dependency (DBoW3 Python bindings)
-pushd external/vista-slam/DBoW3Py
-pip install --no-build-isolation .
-popd
-
 # Optional: build CUDA RoPE2D acceleration for ViSTA-SLAM
-pushd external/vista-slam/vista_slam/sta_model/pos_embed/curope
-python setup.py build_ext --inplace
-popd
+uv run --extra vista python scripts/build_vista_curope.py
 
 # ViSTA pretrained files expected by the upstream backend
 mkdir -p external/vista-slam/pretrains

@@ -72,6 +72,31 @@ def attach_grpc_sink(recording_stream: Any, *, grpc_url: str) -> None:
     raise RuntimeError("The installed Rerun SDK does not expose a supported gRPC sink API.")
 
 
+def attach_recording_sinks(
+    recording_stream: Any,
+    *,
+    grpc_url: str | None = None,
+    target_path: Path | None = None,
+) -> None:
+    """Attach all requested Rerun sinks without replacing earlier sinks."""
+    rr = _import_rerun()
+    sinks: list[Any] = []
+    if grpc_url is not None:
+        if not hasattr(rr, "GrpcSink"):
+            raise RuntimeError("The installed Rerun SDK does not expose `GrpcSink`.")
+        sinks.append(rr.GrpcSink(grpc_url))
+    if target_path is not None:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if not hasattr(rr, "FileSink"):
+            raise RuntimeError("The installed Rerun SDK does not expose `FileSink`.")
+        sinks.append(rr.FileSink(str(target_path)))
+    if not sinks:
+        return
+    if not hasattr(recording_stream, "set_sinks"):
+        raise RuntimeError("The installed Rerun SDK does not expose the multi-sink `set_sinks` API.")
+    recording_stream.set_sinks(*sinks)
+
+
 def log_transform(recording_stream: Any, *, entity_path: str, transform: FrameTransform) -> None:
     """Log one explicit transform using repo-owned direction semantics."""
     rr = _import_rerun()
@@ -159,6 +184,7 @@ def collect_native_visualization_artifacts(
 __all__ = [
     "attach_file_sink",
     "attach_grpc_sink",
+    "attach_recording_sinks",
     "collect_native_visualization_artifacts",
     "create_recording_stream",
     "log_pointcloud",

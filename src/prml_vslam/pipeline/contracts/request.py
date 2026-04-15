@@ -114,16 +114,19 @@ class SlamStageConfig(BaseConfig):
             return raw_data
         method_id = method if isinstance(method, MethodId) else MethodId(method)
         payload = dict(raw_data)
+        backend_payload = backend.model_dump(mode="python") if isinstance(backend, SlamBackendConfig) else backend
         if method_id is MethodId.VISTA:
-            payload["backend"] = VistaSlamBackendConfig.model_validate(backend)
+            payload["backend"] = VistaSlamBackendConfig.model_validate(backend_payload)
+        elif isinstance(backend, VistaSlamBackendConfig):
+            payload["backend"] = SlamBackendConfig.model_validate({"max_frames": backend.max_frames})
         else:
-            payload["backend"] = SlamBackendConfig.model_validate(backend)
+            payload["backend"] = SlamBackendConfig.model_validate(backend_payload)
         return payload
 
     @model_validator(mode="after")
     def _normalize_backend_default(self) -> SlamStageConfig:
         if self.method is MethodId.VISTA and not isinstance(self.backend, VistaSlamBackendConfig):
-            self.backend = VistaSlamBackendConfig.model_validate({})
+            self.backend = VistaSlamBackendConfig.model_validate(self.backend.model_dump(mode="python"))
         if self.method is not MethodId.VISTA and isinstance(self.backend, VistaSlamBackendConfig):
             self.backend = SlamBackendConfig.model_validate({"max_frames": self.backend.max_frames})
         return self

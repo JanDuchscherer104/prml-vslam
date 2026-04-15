@@ -56,17 +56,17 @@ def test_run_request_builds_expected_stage_sequence_from_direct_config(tmp_path:
 
 def test_run_request_build_keeps_default_stage_selection(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, method=MethodId.MSTR)
+    request = _build_request(path_config, method=MethodId.MOCK)
 
     plan = request.build(path_config)
 
-    assert plan.method is MethodId.MSTR
+    assert plan.method is MethodId.MOCK
     assert len(plan.stages) == 3
 
 
 def test_run_request_build_respects_disabled_optional_stage_toggles(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, method=MethodId.MSTR)
+    request = _build_request(path_config, method=MethodId.MOCK)
     request.benchmark.trajectory.enabled = False
 
     plan = request.build(path_config)
@@ -131,6 +131,67 @@ unsupported = true
 
     with pytest.raises(ValueError, match="unsupported"):
         RunRequest.from_toml(config_path)
+
+
+def test_method_id_keeps_mock_and_mast3r_without_mstr_alias() -> None:
+    assert MethodId("mock") is MethodId.MOCK
+    assert MethodId("mast3r") is MethodId.MAST3R
+    assert not hasattr(MethodId, "MSTR")
+
+    with pytest.raises(ValueError, match="mstr"):
+        MethodId("mstr")
+
+
+def test_run_request_from_toml_accepts_mock_method(tmp_path: Path) -> None:
+    config_path = tmp_path / "mock.toml"
+    config_path.write_text(
+        """
+experiment_name = "Mock"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-15"
+
+[slam]
+method = "mock"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    request = RunRequest.from_toml(config_path)
+
+    assert request.slam.method is MethodId.MOCK
+
+
+def test_run_request_from_toml_rejects_mstr_method(tmp_path: Path) -> None:
+    config_path = tmp_path / "mstr.toml"
+    config_path.write_text(
+        """
+experiment_name = "MSTR"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-15"
+
+[slam]
+method = "mstr"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="mstr"):
+        RunRequest.from_toml(config_path)
+
+
+def test_slam_stage_config_normalizes_generic_vista_backend_config() -> None:
+    config = SlamStageConfig(method=MethodId.VISTA, backend=SlamBackendConfig(max_frames=7))
+
+    assert isinstance(config.backend, VistaSlamBackendConfig)
+    assert config.backend.max_frames == 7
 
 
 def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: Path) -> None:
@@ -378,6 +439,56 @@ def test_streaming_runner_prepares_benchmark_inputs_for_streaming_sources(tmp_pa
     assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION].value == "ran"
 
 
+def test_streaming_runner_terminalizes_when_trajectory_evaluation_inputs_are_missing(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    request.benchmark.trajectory.enabled = True
+    plan = request.build(path_config)
+    source = FakeStreamingSource(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
+    )
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
+    snapshot = _wait_for_terminal_snapshot(runner)
+    run_paths = path_config.plan_run_paths(
+        experiment_name=request.experiment_name,
+        method_slug=request.slam.method.value,
+        output_dir=request.output_dir,
+    )
+
+    assert snapshot.state is RunState.FAILED
+    assert "Trajectory evaluation requires" in snapshot.error_message
+    assert snapshot.summary is not None
+    assert snapshot.summary.stage_status[RunPlanStageId.SLAM].value == "ran"
+    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION].value == "failed"
+    assert run_paths.summary_path.exists()
+    assert run_paths.stage_manifests_path.exists()
+
+
+def test_streaming_runner_applies_update_emitted_during_session_close(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    plan = request.build(path_config)
+    source = FakeStreamingSource(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
+    )
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=CloseUpdateStreamingBackend())
+    snapshot = _wait_for_terminal_snapshot(runner)
+
+    assert isinstance(snapshot, StreamingRunSnapshot)
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.accepted_keyframes == 1
+    assert snapshot.latest_slam_update is not None
+    assert snapshot.latest_slam_update.keyframe_index == 0
+    assert snapshot.latest_preview_update is not None
+    np.testing.assert_allclose(snapshot.trajectory_positions_xyz[-1], np.array([0.4, 0.0, 0.0]))
+
+
 def test_streaming_runner_retains_last_renderable_preview_update(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_request(path_config, mode=PipelineMode.STREAMING)
@@ -439,7 +550,7 @@ def test_streaming_runner_fails_when_multiprocess_worker_raises(tmp_path: Path) 
     runner = StreamingRunner(frame_timeout_seconds=0.01)
 
     runner.start(request=request, plan=plan, source=source, slam_backend=FailingWorkerBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
+    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=10.0)
 
     assert snapshot.state is RunState.FAILED
     assert "synthetic worker failure" in snapshot.error_message
@@ -695,6 +806,55 @@ class NativeRerunStreamingSession:
         )
 
 
+class CloseUpdateStreamingBackend:
+    method_id = MethodId.VISTA
+
+    def start_session(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> SlamSession:
+        del backend_config, output_policy
+        return CloseUpdateStreamingSession(artifact_root=artifact_root)
+
+
+class CloseUpdateStreamingSession:
+    def __init__(self, *, artifact_root: Path) -> None:
+        self._artifact_root = artifact_root
+        self._pending: list[SlamUpdate] = []
+        self._last_frame: FramePacket | None = None
+
+    def step(self, frame: FramePacket) -> None:
+        self._last_frame = frame
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        updates = self._pending
+        self._pending = []
+        return updates
+
+    def close(self) -> SlamArtifacts:
+        if self._last_frame is not None:
+            self._pending.append(
+                SlamUpdate(
+                    seq=self._last_frame.seq,
+                    timestamp_ns=self._last_frame.timestamp_ns,
+                    source_seq=self._last_frame.seq,
+                    source_timestamp_ns=self._last_frame.timestamp_ns,
+                    is_keyframe=True,
+                    keyframe_index=0,
+                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.4, ty=0.0, tz=0.0),
+                    preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
+                )
+            )
+        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
+        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+        return SlamArtifacts(
+            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="close-update-streaming"),
+        )
+
+
 class FailingWorkerBackend:
     method_id = MethodId.VISTA
 
@@ -786,9 +946,14 @@ def test_default_slam_backend_factory_maps_vista_to_real_backend(tmp_path: Path)
     assert isinstance(backend, VistaSlamBackend)
 
 
-def test_default_slam_backend_factory_maps_mstr_to_mock_backend(tmp_path: Path) -> None:
-    backend = _default_slam_backend_factory(MethodId.MSTR)
+def test_default_slam_backend_factory_maps_mock_to_mock_backend(tmp_path: Path) -> None:
+    backend = _default_slam_backend_factory(MethodId.MOCK)
     assert isinstance(backend, MockSlamBackendConfig().target_type)
+
+
+def test_default_slam_backend_factory_rejects_mast3r_until_backend_exists(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="mast3r.*support execution"):
+        _default_slam_backend_factory(MethodId.MAST3R)
 
 
 def _build_request(
@@ -827,8 +992,11 @@ def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
     raise AssertionError("Timed out waiting for the expected runtime state.")
 
 
-def _wait_for_terminal_snapshot(runner: OfflineRunner | StreamingRunner) -> RunSnapshot:
-    for _ in range(50):
+def _wait_for_terminal_snapshot(
+    runner: OfflineRunner | StreamingRunner, *, timeout_seconds: float = 2.5
+) -> RunSnapshot:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
         snapshot = runner.snapshot()
         if snapshot.state in (RunState.COMPLETED, RunState.FAILED, RunState.STOPPED):
             return snapshot
