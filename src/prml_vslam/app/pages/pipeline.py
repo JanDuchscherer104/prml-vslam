@@ -61,7 +61,14 @@ if TYPE_CHECKING:
 
 _ACTIVE_SESSION_STATES = frozenset({RunState.PREPARING, RunState.RUNNING})
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
-_SUPPORTED_APP_STAGE_IDS = frozenset({RunPlanStageId.INGEST, RunPlanStageId.SLAM, RunPlanStageId.SUMMARY})
+_SUPPORTED_APP_STAGE_IDS = frozenset(
+    {
+        RunPlanStageId.INGEST,
+        RunPlanStageId.SLAM,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
+        RunPlanStageId.SUMMARY,
+    }
+)
 _MOCK_METHOD_LABEL = "Mock Preview"
 _VISTA_POINTMAP_EMPTY_MESSAGE = (
     "ViSTA-SLAM has not produced a renderable preview artifact for the current keyframe yet."
@@ -91,15 +98,15 @@ class PipelineEvoPreview(BaseData):
 
 def _pipeline_method_label(method: MethodId) -> str:
     """Return the app-facing method label used by the bounded pipeline demo."""
-    if method is MethodId.MSTR:
-        return _MOCK_METHOD_LABEL
     return method.display_name
 
 
 def _pipeline_method_help(method: MethodId) -> str:
     """Explain the current streaming-preview semantics for the selected method."""
-    if method is MethodId.MSTR:
+    if method is MethodId.MOCK:
         return "Repository-local mock backend that emits live pose and pointmap telemetry for UI validation."
+    if method is MethodId.MAST3R:
+        return "MASt3R-SLAM is retained as a method id, but this repository has no executable MASt3R backend yet."
     return (
         "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs show packet FPS, accepted "
         "keyframe FPS, and live previews only when the backend produces a new keyframe artifact."
@@ -335,7 +342,7 @@ def _render_request_identity_controls(
             format_func=lambda item: item.label,
         )
         method = st.selectbox(
-            "Method",
+            "VSLAM Method",
             options=list(MethodId),
             index=list(MethodId).index(page_state.method),
             format_func=_pipeline_method_label,
@@ -622,10 +629,13 @@ def _request_support_error(
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
+    if request.slam.method is MethodId.MAST3R:
+        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
     unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
-        return "The current app demo can execute only ingest, slam, and summary stages. Disable: " + ", ".join(
-            unsupported_stage_ids
+        return (
+            "The current app demo can execute only ingest, slam, trajectory evaluation, and summary stages. Disable: "
+            + ", ".join(unsupported_stage_ids)
         )
     match request.source:
         case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):

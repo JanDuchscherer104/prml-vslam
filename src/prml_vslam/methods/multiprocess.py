@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -32,6 +33,10 @@ class _DoneMessage:
     pass
 
 
+_WORKER_CLOSE_TIMEOUT_SECONDS = 30.0
+_WORKER_POLL_INTERVAL_SECONDS = 0.05
+
+
 class MultiprocessSlamSession:
     """Proxy that runs a synchronous SLAM session in a separate background process."""
 
@@ -48,6 +53,9 @@ class MultiprocessSlamSession:
         self._input_queue: mp.Queue = ctx.Queue(maxsize=2)
         self._output_queue: mp.Queue = ctx.Queue()
         self._result_pipe_parent, result_pipe_child = ctx.Pipe(duplex=False)
+        self._pending_updates: list[SlamUpdate] = []
+        self._worker_error: RuntimeError | None = None
+        self._result: SlamArtifacts | None = None
 
         self._process = ctx.Process(
             target=_session_worker,
@@ -59,49 +67,109 @@ class MultiprocessSlamSession:
 
     def step(self, frame: FramePacket) -> None:
         """Push one frame to the background worker, blocking if the queue is full (backpressure)."""
-        # Block until there is space in the queue.
-        # This causes the upstream ingestion loop to wait, naturally slowing down
-        # the entire pipeline to the speed of the SLAM backend without dropping frames.
-        self._input_queue.put(frame)
+        while True:
+            self._poll_worker_state()
+            self._raise_worker_error()
+            if not self._process.is_alive():
+                self._worker_error = RuntimeError("SLAM worker exited before accepting a frame.")
+                self._raise_worker_error()
+            try:
+                self._input_queue.put(frame, timeout=_WORKER_POLL_INTERVAL_SECONDS)
+                return
+            except queue.Full:
+                continue
 
     def try_get_updates(self) -> list[SlamUpdate]:
         """Poll the output queue for any completed updates."""
-        updates = []
-        while True:
-            try:
-                message = self._output_queue.get_nowait()
-                if isinstance(message, _UpdateMessage):
-                    updates.append(message.update)
-                    continue
-                if isinstance(message, _WorkerErrorMessage):
-                    raise RuntimeError(message.error_message)
-                if isinstance(message, _DoneMessage):
-                    break
-            except queue.Empty:
-                break
+        self._poll_worker_state()
+        self._raise_worker_error()
+        updates = self._pending_updates
+        self._pending_updates = []
         return updates
 
     def close(self) -> SlamArtifacts:
         """Signal the worker to exit and retrieve final artifacts."""
         self._console.info("Closing multiprocess SLAM worker...")
-        try:
-            self._input_queue.put_nowait(None)
-        except queue.Full as exc:
-            self._console.error("SLAM worker input queue is full during shutdown; terminating the worker process.")
-            self._terminate_worker_process()
-            raise RuntimeError("Failed to shut down the SLAM worker cleanly because its input queue was full.") from exc
-        self._process.join(timeout=30.0)
-        if self._process.is_alive():
-            self._console.error("Worker process did not exit gracefully; terminating.")
-            self._terminate_worker_process()
-
-        if self._result_pipe_parent.poll(timeout=1.0):
-            artifacts = self._result_pipe_parent.recv()
-            if isinstance(artifacts, Exception):
-                raise artifacts
-            return artifacts
+        self._poll_worker_state()
+        self._raise_worker_error()
+        self._send_shutdown_sentinel()
+        self._wait_for_worker_exit()
+        self._poll_worker_state(result_timeout_seconds=1.0)
+        self._raise_worker_error()
+        if self._result is not None:
+            return self._result
 
         raise RuntimeError("Failed to retrieve artifacts from the background worker.")
+
+    def _send_shutdown_sentinel(self) -> None:
+        deadline = time.monotonic() + _WORKER_CLOSE_TIMEOUT_SECONDS
+        while True:
+            self._poll_worker_state()
+            self._raise_worker_error()
+            if not self._process.is_alive():
+                return
+            try:
+                self._input_queue.put(None, timeout=_WORKER_POLL_INTERVAL_SECONDS)
+                return
+            except queue.Full as exc:
+                if time.monotonic() >= deadline:
+                    self._console.error("SLAM worker input queue stayed full during shutdown; terminating worker.")
+                    self._terminate_worker_process()
+                    raise RuntimeError(
+                        "Failed to shut down the SLAM worker because its input queue stayed full."
+                    ) from exc
+
+    def _wait_for_worker_exit(self) -> None:
+        deadline = time.monotonic() + _WORKER_CLOSE_TIMEOUT_SECONDS
+        while self._process.is_alive():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                self._console.error("Worker process did not exit gracefully; terminating.")
+                self._terminate_worker_process()
+                return
+            self._process.join(timeout=min(_WORKER_POLL_INTERVAL_SECONDS, remaining))
+            self._poll_worker_state()
+            self._raise_worker_error()
+
+    def _poll_worker_state(self, *, result_timeout_seconds: float = 0.0) -> None:
+        self._drain_output_messages()
+        self._poll_result_pipe(timeout_seconds=result_timeout_seconds)
+
+    def _drain_output_messages(self) -> None:
+        while True:
+            try:
+                message = self._output_queue.get_nowait()
+            except (queue.Empty, OSError, ValueError):
+                return
+            if isinstance(message, _UpdateMessage):
+                self._pending_updates.append(message.update)
+            elif isinstance(message, _WorkerErrorMessage):
+                self._worker_error = RuntimeError(message.error_message)
+
+    def _poll_result_pipe(self, *, timeout_seconds: float) -> None:
+        if self._result is not None or self._worker_error is not None:
+            return
+        try:
+            has_result = self._result_pipe_parent.poll(timeout_seconds)
+        except (EOFError, OSError):
+            return
+        if not has_result:
+            return
+        try:
+            result = self._result_pipe_parent.recv()
+        except EOFError:
+            return
+        if isinstance(result, Exception):
+            self._worker_error = result if isinstance(result, RuntimeError) else RuntimeError(str(result))
+            return
+        self._result = result
+
+    def _raise_worker_error(self) -> None:
+        if self._worker_error is None:
+            return
+        if self._process.is_alive():
+            self._terminate_worker_process()
+        raise self._worker_error
 
     def _terminate_worker_process(self) -> None:
         if self._process.is_alive():
@@ -141,6 +209,8 @@ def _session_worker(
                 return
 
         artifacts = session.close()
+        for update in session.try_get_updates():
+            output_queue.put(_UpdateMessage(update=update))
         result_pipe.send(artifacts)
         output_queue.put(_DoneMessage())
     except Exception as exc:

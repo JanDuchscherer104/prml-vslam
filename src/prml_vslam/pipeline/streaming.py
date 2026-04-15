@@ -22,8 +22,7 @@ from prml_vslam.utils.packet_session import (
 )
 from prml_vslam.visualization import VisualizationArtifacts
 from prml_vslam.visualization.rerun import (
-    attach_file_sink,
-    attach_grpc_sink,
+    attach_recording_sinks,
     collect_native_visualization_artifacts,
     create_recording_stream,
     log_pointcloud,
@@ -35,6 +34,8 @@ from .finalization import compute_trajectory_evaluation, finalize_run_outputs, w
 from .runner_runtime import RunnerRuntime
 
 _STOP_JOIN_TIMEOUT_SECONDS = 10.0
+_FINAL_UPDATE_DRAIN_TIMEOUT_SECONDS = 0.25
+_FINAL_UPDATE_DRAIN_POLL_SECONDS = 0.02
 
 
 class StreamingRunner:
@@ -122,6 +123,64 @@ class StreamingRunner:
         live_recording = None
         final_state = RunState.COMPLETED
 
+        def _apply_slam_updates(updates: list[SlamUpdate], *, arrival_time_s: float) -> None:
+            nonlocal latest_preview_update
+            for update in updates:
+                if _has_renderable_preview(update):
+                    latest_preview_update = update
+                if update.is_keyframe:
+                    keyframe_position_xyz = extract_pose_position(update)
+                    update_timestamp_ns = update.source_timestamp_ns or update.timestamp_ns
+                    metrics.record_keyframe(
+                        arrival_time_s=arrival_time_s,
+                        position_xyz=keyframe_position_xyz,
+                        trajectory_time_s=(update_timestamp_ns - start_timestamp_ns) / 1e9
+                        if update.pose is not None and start_timestamp_ns is not None
+                        else None,
+                    )
+                    if live_recording is not None and update.pose is not None:
+                        log_transform(
+                            live_recording,
+                            entity_path="camera",
+                            transform=update.pose,
+                        )
+                        if update.pointmap is not None:
+                            log_pointcloud(
+                                live_recording,
+                                entity_path="camera/pointcloud",
+                                pointmap=update.pointmap,
+                                colors=update.preview_rgb,
+                            )
+                        if update.preview_rgb is not None:
+                            log_preview_image(
+                                live_recording,
+                                entity_path="camera/preview",
+                                image_rgb=update.preview_rgb,
+                            )
+
+                self._runtime.update_fields(
+                    state=RunState.RUNNING,
+                    latest_slam_update=update,
+                    latest_preview_update=latest_preview_update,
+                    num_sparse_points=update.num_sparse_points,
+                    num_dense_points=update.num_dense_points,
+                    error_message="",
+                    **metrics.keyframe_snapshot_fields(),
+                )
+
+        def _drain_slam_updates(timeout_seconds: float = 0.0) -> None:
+            if slam_session is None:
+                return
+            deadline = time.monotonic() + timeout_seconds
+            while True:
+                updates = slam_session.try_get_updates()
+                if updates:
+                    _apply_slam_updates(updates, arrival_time_s=time.monotonic())
+                    continue
+                if timeout_seconds <= 0.0 or time.monotonic() >= deadline:
+                    return
+                time.sleep(min(_FINAL_UPDATE_DRAIN_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+
         def _record_runtime_error(exc: Exception) -> None:
             nonlocal final_state, pipeline_failed, error_message
             if isinstance(exc, EOFError):
@@ -154,10 +213,11 @@ class StreamingRunner:
             del connected_target
             if request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd:
                 live_recording = create_recording_stream(app_id="prml-vslam", recording_id=plan.run_id)
-                if request.visualization.connect_live_viewer:
-                    attach_grpc_sink(live_recording, grpc_url=request.visualization.grpc_url)
-                if request.visualization.export_viewer_rrd:
-                    attach_file_sink(live_recording, target_path=run_paths.viewer_rrd_path)
+                attach_recording_sinks(
+                    live_recording,
+                    grpc_url=request.visualization.grpc_url if request.visualization.connect_live_viewer else None,
+                    target_path=run_paths.viewer_rrd_path if request.visualization.export_viewer_rrd else None,
+                )
             slam_session = slam_backend.start_session(
                 request.slam.backend,
                 request.slam.outputs,
@@ -189,55 +249,24 @@ class StreamingRunner:
                     **metrics.packet_snapshot_fields(),
                 )
                 slam_session.step(packet)
-
-                for update in slam_session.try_get_updates():
-                    if _has_renderable_preview(update):
-                        latest_preview_update = update
-                    if update.is_keyframe:
-                        keyframe_position_xyz = extract_pose_position(update)
-                        update_timestamp_ns = update.source_timestamp_ns or update.timestamp_ns
-                        metrics.record_keyframe(
-                            arrival_time_s=arrival_time_s,
-                            position_xyz=keyframe_position_xyz,
-                            trajectory_time_s=(update_timestamp_ns - start_timestamp_ns) / 1e9
-                            if update.pose is not None and start_timestamp_ns is not None
-                            else None,
-                        )
-                        if live_recording is not None and update.pose is not None:
-                            log_transform(
-                                live_recording,
-                                entity_path="camera",
-                                transform=update.pose,
-                            )
-                            if update.pointmap is not None:
-                                log_pointcloud(
-                                    live_recording,
-                                    entity_path="camera/pointcloud",
-                                    pointmap=update.pointmap,
-                                    colors=update.preview_rgb,
-                                )
-                            if update.preview_rgb is not None:
-                                log_preview_image(
-                                    live_recording,
-                                    entity_path="camera/preview",
-                                    image_rgb=update.preview_rgb,
-                                )
-
-                    self._runtime.update_fields(
-                        state=RunState.RUNNING,
-                        latest_slam_update=update,
-                        latest_preview_update=latest_preview_update,
-                        num_sparse_points=update.num_sparse_points,
-                        num_dense_points=update.num_dense_points,
-                        error_message="",
-                        **metrics.keyframe_snapshot_fields(),
-                    )
+                _apply_slam_updates(slam_session.try_get_updates(), arrival_time_s=arrival_time_s)
+            if slam_session is not None and not stop_event.is_set():
+                _drain_slam_updates(timeout_seconds=_FINAL_UPDATE_DRAIN_TIMEOUT_SECONDS)
         except Exception as exc:
             _record_runtime_error(exc)
+            if isinstance(exc, EOFError) and slam_session is not None and not stop_event.is_set():
+                try:
+                    _drain_slam_updates(timeout_seconds=_FINAL_UPDATE_DRAIN_TIMEOUT_SECONDS)
+                except Exception as drain_exc:
+                    _record_runtime_error(drain_exc)
         finally:
             try:
                 if slam_session is not None:
+                    if final_state is not RunState.FAILED:
+                        _drain_slam_updates()
                     slam_artifacts = slam_session.close()
+                    if final_state is not RunState.FAILED:
+                        _drain_slam_updates()
             except Exception as exc:
                 if final_state is RunState.FAILED or stop_event.is_set():
                     self._console.warning(str(exc))
@@ -261,14 +290,21 @@ class StreamingRunner:
                 if visualization_artifacts is None:
                     visualization_artifacts = VisualizationArtifacts()
                 visualization_artifacts.extras["viewer_rrd"] = repo_rrd_ref
-            trajectory_evaluation = compute_trajectory_evaluation(
-                request=request,
-                plan=plan,
-                sequence_manifest=sequence_manifest,
-                benchmark_inputs=benchmark_inputs,
-                slam=slam_artifacts,
-            )
             try:
+                if final_state is RunState.COMPLETED and not pipeline_failed:
+                    try:
+                        trajectory_evaluation = compute_trajectory_evaluation(
+                            request=request,
+                            plan=plan,
+                            sequence_manifest=sequence_manifest,
+                            benchmark_inputs=benchmark_inputs,
+                            slam=slam_artifacts,
+                        )
+                    except Exception as exc:
+                        final_state = RunState.FAILED
+                        pipeline_failed = True
+                        error_message = str(exc)
+                        self._console.error(error_message)
                 summary, stage_manifests = finalize_run_outputs(
                     request=request,
                     plan=plan,

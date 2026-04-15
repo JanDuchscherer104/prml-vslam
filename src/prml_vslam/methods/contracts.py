@@ -14,8 +14,7 @@ class MethodId(StrEnum):
 
     VISTA = "vista"
     MAST3R = "mast3r"
-    MSTR = "mast3r"
-    """Alias for MAST3R used in early scaffold mocks."""
+    MOCK = "mock"
 
     @property
     def display_name(self) -> str:
@@ -25,6 +24,8 @@ class MethodId(StrEnum):
                 return "ViSTA-SLAM"
             case MethodId.MAST3R:
                 return "MASt3R-SLAM"
+            case MethodId.MOCK:
+                return "Mock Preview"
 
 
 class SlamOutputPolicy(BaseConfig):

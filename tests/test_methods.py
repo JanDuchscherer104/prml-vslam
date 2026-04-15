@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from prml_vslam.interfaces import FramePacket, FrameTransform
-from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
+from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamOutputPolicy
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.utils import Console
@@ -75,6 +75,10 @@ def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tm
     assert artifacts.trajectory_tum.kind == "tum"
     assert artifacts.sparse_points_ply is not None
     assert artifacts.sparse_points_ply.path.exists()
+
+
+def test_mock_slam_backend_config_defaults_to_mock_method() -> None:
+    assert MockSlamBackendConfig().method_id is MethodId.MOCK
 
 
 def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> None:
@@ -481,6 +485,7 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
     native_output_dir = tmp_path / "native"
     native_output_dir.mkdir(parents=True, exist_ok=True)
     np.save(native_output_dir / "trajectory.npy", np.eye(4, dtype=np.float64)[None, :, :])
+    (native_output_dir / "rerun_recording.rrd").write_bytes(b"native-rerun")
     (native_output_dir / "pointcloud.ply").write_text(
         "\n".join(
             [
@@ -508,6 +513,9 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
     assert artifacts.dense_points_ply is not None
     assert artifacts.sparse_points_ply.path == artifacts.dense_points_ply.path
     assert artifacts.sparse_points_ply.path.name == "point_cloud.ply"
+    assert not hasattr(artifacts, "native_rerun_rrd")
+    assert not hasattr(artifacts, "native_output_dir")
+    assert "rerun_recording.rrd" not in artifacts.extras
 
 
 def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:

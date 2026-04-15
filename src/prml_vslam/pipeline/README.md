@@ -33,21 +33,25 @@ repository pipeline.
 
 ## Execution Model
 
-`ingest -> slam -> summary` is the only executable stage slice today.
+`ingest -> slam -> [trajectory_evaluation] -> summary` is the executable
+stage slice today. Trajectory evaluation runs only when the request enables it
+and the source prepares the requested benchmark trajectory input.
 
 - offline
   - resolve or materialize a `SequenceManifest`
   - canonicalize `rgb_dir`, timestamps, calibration, and rotation sidecars
   - run one offline backend over the materialized manifest
+  - optionally compute trajectory metrics from prepared benchmark inputs
   - persist stage manifests and the final run summary
 - streaming
   - prepare a manifest
   - open a packet stream
   - start a streaming session and consume `FramePacket` updates
+  - optionally compute trajectory metrics from prepared benchmark inputs
   - persist stage manifests and the final run summary
 
-Reference and evaluation stages remain plannable but are not yet executable in
-the current runner slice.
+Reference reconstruction, cloud evaluation, and efficiency evaluation remain
+plannable but are not yet executable in the current runner slice.
 
 ## Boundary Rules
 

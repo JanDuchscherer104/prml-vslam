@@ -176,8 +176,10 @@ def _default_slam_backend_factory(
             backend_config if isinstance(backend_config, VistaSlamBackendConfig) else VistaSlamBackendConfig()
         )
         backend = vista_backend_config.setup_target(path_config=path_config)
-    else:
+    elif method_id is MethodId.MOCK:
         backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+    else:
+        raise RuntimeError(f"Backend '{method_id.value}' does not support execution yet.")
 
     if backend is None:
         raise RuntimeError(f"Failed to initialize the SLAM backend for method '{method_id.value}'.")

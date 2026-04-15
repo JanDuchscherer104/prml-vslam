@@ -3,7 +3,7 @@
 CPU_COUNT ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || python3 -c 'import os; print(os.cpu_count() or 1)' 2>/dev/null || echo 1)
 UV_RUN ?= uv run
 RUFF ?= $(UV_RUN) ruff
-PRE_COMMIT ?= $(UV_RUN) pre-commit run --all-files --show-diff-on-failure
+PRE_COMMIT ?= $(UV_RUN) --extra dev pre-commit run --all-files --show-diff-on-failure
 TYPST ?= typst
 TYPSTYLE ?= typstyle
 PYTEST ?= $(UV_RUN) --extra dev pytest

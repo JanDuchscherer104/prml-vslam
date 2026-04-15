@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Protocol
 
 import cv2
 import numpy as np
-import open3d as o3d
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.interfaces import FramePacket, FrameTransform
@@ -29,6 +28,14 @@ if TYPE_CHECKING:
 
 _VISTA_INPUT_RESOLUTION = (224, 224)
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
+
+
+def _import_open3d() -> object:
+    try:
+        import open3d as o3d
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("ViSTA point-cloud artifact import requires the optional Open3D dependency.") from exc
+    return o3d
 
 
 class _FlowTracker(Protocol):
@@ -430,6 +437,7 @@ def _build_artifacts(
     dense_points_ref: ArtifactRef | None = None
     pointcloud_ply = native_output_dir / "pointcloud.ply"
     if pointcloud_ply.exists() and (output_policy.emit_sparse_points or output_policy.emit_dense_points):
+        o3d = _import_open3d()
         point_cloud = o3d.io.read_point_cloud(str(pointcloud_ply))
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
         run_paths = RunArtifactPaths.build(artifact_root)
@@ -444,7 +452,6 @@ def _build_artifacts(
         if output_policy.emit_dense_points:
             dense_points_ref = canonical_ref
 
-    native_rerun_path = native_output_dir / "rerun_recording.rrd"
     extras = {
         path.name: ArtifactRef(
             path=path.resolve(),
@@ -462,12 +469,6 @@ def _build_artifacts(
         ),
         sparse_points_ply=sparse_points_ref,
         dense_points_ply=dense_points_ref,
-        native_rerun_rrd=(
-            None
-            if not native_rerun_path.exists()
-            else ArtifactRef(path=native_rerun_path.resolve(), kind="rrd", fingerprint="vista-native-rerun")
-        ),
-        native_output_dir=ArtifactRef(path=native_output_dir.resolve(), kind="dir", fingerprint="vista-native-output"),
         extras=extras,
     )
 
