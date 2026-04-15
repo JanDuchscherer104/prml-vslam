@@ -15,7 +15,11 @@ from prml_vslam.datasets import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.multiprocess import MultiprocessSlamSession
+from prml_vslam.methods.multiprocess import (
+    MultiprocessSlamSession,
+    _deserialize_frame_packet,
+    _serialize_frame_packet,
+)
 from prml_vslam.methods.protocols import OfflineSlamBackend, SlamSession, StreamingSlamBackend
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.methods.vista.config import VistaSlamBackendConfig
@@ -465,6 +469,37 @@ def test_streaming_runner_terminalizes_when_trajectory_evaluation_inputs_are_mis
     assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION].value == "failed"
     assert run_paths.summary_path.exists()
     assert run_paths.stage_manifests_path.exists()
+
+
+def test_multiprocess_frame_packet_serialization_round_trips_contract(tmp_path: Path) -> None:
+    packet = FramePacket(
+        seq=7,
+        timestamp_ns=123_000,
+        arrival_timestamp_s=4.5,
+        rgb=np.full((2, 3, 3), fill_value=17, dtype=np.uint8),
+        depth=np.full((2, 3), fill_value=2.5, dtype=np.float32),
+        confidence=np.ones((2, 3), dtype=np.float32),
+        intrinsics=CameraIntrinsics(fx=200.0, fy=201.0, cx=1.0, cy=1.5, width_px=3, height_px=2),
+        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+        metadata={"method": MethodId.VISTA, "source_path": tmp_path, "nested": ("frame", 7)},
+    )
+
+    restored = _deserialize_frame_packet(_serialize_frame_packet(packet))
+
+    assert isinstance(restored, FramePacket)
+    assert restored.seq == packet.seq
+    assert restored.timestamp_ns == packet.timestamp_ns
+    assert restored.arrival_timestamp_s == packet.arrival_timestamp_s
+    assert restored.intrinsics == packet.intrinsics
+    assert restored.pose == packet.pose
+    np.testing.assert_array_equal(restored.rgb, packet.rgb)
+    np.testing.assert_array_equal(restored.depth, packet.depth)
+    np.testing.assert_array_equal(restored.confidence, packet.confidence)
+    assert restored.metadata == {
+        "method": MethodId.VISTA.value,
+        "source_path": str(tmp_path),
+        "nested": ["frame", 7],
+    }
 
 
 def test_streaming_runner_applies_update_emitted_during_session_close(tmp_path: Path) -> None:
