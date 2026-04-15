@@ -34,7 +34,6 @@ from .finalization import finalize_run_outputs, write_json
 from .runner_runtime import RunnerRuntime
 
 _STOP_JOIN_TIMEOUT_SECONDS = 10.0
-_KEYFRAME_ROTATION_THRESHOLD_RAD = 0.15
 
 
 class StreamingRunner:
@@ -71,7 +70,10 @@ class StreamingRunner:
 
     def stop(self) -> None:
         """Stop the active streaming run."""
-        self._runtime.stop(join_timeout_seconds=_STOP_JOIN_TIMEOUT_SECONDS)
+        self._runtime.stop(
+            snapshot_update=_to_stopped_snapshot,
+            join_timeout_seconds=_STOP_JOIN_TIMEOUT_SECONDS,
+        )
 
     def snapshot(self) -> StreamingRunSnapshot:
         """Return the latest streaming runtime snapshot."""
@@ -79,10 +81,13 @@ class StreamingRunner:
 
     def set_failed_start(self, *, plan: RunPlan, error_message: str) -> None:
         """Set the initial snapshot state for a run that failed to start."""
-        self._runtime.update_fields(
-            state=RunState.FAILED,
-            plan=plan,
-            error_message=error_message,
+        self.stop()
+        self._runtime.replace_snapshot(
+            StreamingRunSnapshot(
+                state=RunState.FAILED,
+                plan=plan,
+                error_message=error_message,
+            )
         )
 
     def _run_worker(
@@ -107,9 +112,11 @@ class StreamingRunner:
         slam_artifacts = None
         visualization_artifacts = None
         latest_preview_update = None
+        slam_session = None
 
         start_timestamp_ns: int | None = None
         live_recording = None
+        final_state = RunState.COMPLETED
 
         def _record_runtime_error(exc: Exception) -> None:
             nonlocal final_state, pipeline_failed, error_message
@@ -142,14 +149,14 @@ class StreamingRunner:
                     attach_grpc_sink(live_recording, grpc_url=request.visualization.grpc_url)
                 if request.visualization.export_viewer_rrd:
                     attach_file_sink(live_recording, target_path=run_paths.viewer_rrd_path)
-            slam_started = True
             slam_session = slam_backend.start_session(
                 request.slam.backend,
                 request.slam.outputs,
                 plan.artifact_root,
             )
+            slam_started = True
             self._runtime.update_fields(state=RunState.RUNNING, error_message="")
-            
+
             max_frames = request.slam.backend.max_frames
             frames_pushed = 0
 
@@ -160,24 +167,29 @@ class StreamingRunner:
 
                 packet = stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
                 frames_pushed += 1
-                
+
                 arrival_time_s = time.monotonic()
                 if start_timestamp_ns is None:
                     start_timestamp_ns = packet.timestamp_ns
 
                 metrics.record_packet(arrival_time_s=arrival_time_s)
+                self._runtime.update_fields(
+                    state=RunState.RUNNING,
+                    latest_packet=packet,
+                    **metrics.packet_snapshot_fields(),
+                )
                 slam_session.step(packet)
 
                 for update in slam_session.try_get_updates():
                     if _has_renderable_preview(update):
                         latest_preview_update = update
-                    is_keyframe_update = update.is_keyframe or (update.pose is not None and update.keyframe_index is None)
+                    is_keyframe_update = _is_keyframe_like_update(update)
                     if is_keyframe_update:
                         keyframe_position_xyz = extract_pose_position(update)
                         metrics.record_keyframe(
                             arrival_time_s=arrival_time_s,
                             position_xyz=keyframe_position_xyz,
-                            trajectory_time_s=(packet.timestamp_ns - start_timestamp_ns) / 1e9
+                            trajectory_time_s=(update.timestamp_ns - start_timestamp_ns) / 1e9
                             if update.pose is not None
                             else None,
                         )
@@ -204,7 +216,6 @@ class StreamingRunner:
                     metrics_fields = metrics.snapshot_fields()
                     self._runtime.update_fields(
                         state=RunState.RUNNING,
-                        latest_packet=packet,
                         latest_slam_update=update,
                         latest_preview_update=latest_preview_update,
                         num_sparse_points=update.num_sparse_points,
@@ -219,25 +230,22 @@ class StreamingRunner:
             if stop_event.is_set() and final_state is not RunState.FAILED:
                 final_state = RunState.STOPPED
             try:
-                if slam_started:
+                if slam_session is not None:
                     slam_artifacts = slam_session.close()
-                if (
-                    request.visualization.export_viewer_rrd
-                    and sequence_manifest is not None
-                    and slam_artifacts is not None
-                ):
+                if sequence_manifest is not None and slam_artifacts is not None:
                     visualization_artifacts = collect_native_visualization_artifacts(
                         native_output_dir=run_paths.native_output_dir,
                         preserve_native_rerun=request.visualization.preserve_native_rerun,
                     )
-                    repo_rrd_ref = ArtifactRef(
-                        path=run_paths.viewer_rrd_path.resolve(),
-                        kind="rrd",
-                        fingerprint=f"viewer-rrd-{plan.run_id}",
-                    )
-                    if visualization_artifacts is None:
-                        visualization_artifacts = VisualizationArtifacts()
-                    visualization_artifacts.extras["viewer_rrd"] = repo_rrd_ref
+                    if request.visualization.export_viewer_rrd:
+                        repo_rrd_ref = ArtifactRef(
+                            path=run_paths.viewer_rrd_path.resolve(),
+                            kind="rrd",
+                            fingerprint=f"viewer-rrd-{plan.run_id}",
+                        )
+                        if visualization_artifacts is None:
+                            visualization_artifacts = VisualizationArtifacts()
+                        visualization_artifacts.extras["viewer_rrd"] = repo_rrd_ref
 
                 summary, stage_manifests = finalize_run_outputs(
                     request=request,
@@ -252,15 +260,26 @@ class StreamingRunner:
                     pipeline_failed=pipeline_failed,
                     error_message=error_message,
                 )
-                self._runtime.update_fields(
-                    state=final_state,
-                    summary=summary,
-                    stage_manifests=stage_manifests,
-                    error_message=error_message,
+                self._runtime.finalize(
+                    stop_event=stop_event,
+                    snapshot_update=lambda snapshot: snapshot.model_copy(
+                        update={
+                            "state": final_state,
+                            "summary": summary,
+                            "stage_manifests": stage_manifests,
+                            "error_message": error_message,
+                        }
+                    ),
                 )
             except Exception as exc:
                 self._console.error(f"Finalization failed: {exc}")
-                self._runtime.update_fields(state=RunState.FAILED, error_message=str(exc))
+                finalization_error = str(exc)
+                self._runtime.finalize(
+                    stop_event=stop_event,
+                    snapshot_update=lambda snapshot: snapshot.model_copy(
+                        update={"state": RunState.FAILED, "error_message": finalization_error}
+                    ),
+                )
 
 
 def _is_keyframe_like_update(update: SlamUpdate) -> bool:
@@ -276,6 +295,11 @@ def _has_renderable_preview(update: SlamUpdate) -> bool:
         return False
     pointmap = np.asarray(update.pointmap)
     return pointmap.size > 0 and pointmap.ndim in {2, 3}
+
+
+def _to_stopped_snapshot(snapshot: StreamingRunSnapshot) -> StreamingRunSnapshot:
+    """Return a STOPPED snapshot that preserves the latest visual state."""
+    return snapshot.model_copy(update={"state": RunState.STOPPED, "error_message": ""})
 
 
 __all__ = ["StreamingRunner"]

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
+
+from pydantic import Field
 
 from prml_vslam.utils import BaseConfig
 
@@ -41,6 +42,9 @@ class SlamBackendConfig(BaseConfig):
 
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
+
+    slam: dict[str, object] = Field(default_factory=dict)
+    """Backend-specific nested overrides preserved from `[slam.backend.slam]` TOML blocks."""
 
 
 __all__ = ["MethodId", "SlamBackendConfig", "SlamOutputPolicy"]
