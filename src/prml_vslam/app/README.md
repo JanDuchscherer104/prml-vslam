@@ -92,9 +92,9 @@ sequenceDiagram
             Service-->>Page: EvaluationArtifact
         end
         Page-->>Browser: Render metrics, figures, provenance
-    else ADVIO page
+    else Datasets page
         Page->>Service: summarize() / scene_rows()
-        Service->>Service: Read committed ADVIO catalog and local dataset root
+        Service->>Service: Read committed dataset catalogs and local dataset roots
         Page-->>Browser: Render dataset summary metrics and scene table
         User->>Page: Submit explicit download form
         Page->>Service: download(...)
@@ -150,10 +150,10 @@ sequenceDiagram
   - Uses explicit actions for `evo` execution.
   - Delegates data access to `TrajectoryEvaluationService` and figure creation to `plotting.metrics`.
 
-- [pages/advio.py](pages/advio.py)
-  - ADVIO dataset-management page renderer.
+- [pages/datasets.py](pages/datasets.py)
+  - Dataset-management page renderer for ADVIO and TUM RGB-D tabs.
   - Renders committed upstream metadata, local dataset coverage, and explicit download controls.
-  - Delegates dataset discovery and downloads to `AdvioDatasetService`.
+  - Delegates dataset discovery and downloads to dataset services.
 
 - [pages/record3d.py](pages/record3d.py)
   - Record3D page renderer.

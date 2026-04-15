@@ -52,7 +52,6 @@ class AdvioDownloadManager:
                 archive_path=self._existing_archive_path(scene),
                 replay_ready=_modalities_present(local_modalities, AdvioDownloadPreset.STREAMING.modalities),
                 offline_ready=_modalities_present(local_modalities, AdvioDownloadPreset.OFFLINE.modalities),
-                full_ready=_modalities_present(local_modalities, AdvioDownloadPreset.FULL.modalities),
             )
             for scene in self.catalog.scenes
         ]

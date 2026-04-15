@@ -82,6 +82,8 @@ def sync_pipeline_page_state_from_template(
             source_updates = {
                 "source_kind": PipelineSourceId.ADVIO,
                 "advio_sequence_id": advio_sequence_id,
+                "dataset_frame_stride": request.source.frame_stride,
+                "dataset_target_fps": request.source.target_fps,
                 "pose_source": request.source.pose_source,
                 "respect_video_rotation": request.source.respect_video_rotation,
             }
@@ -128,6 +130,8 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             source = DatasetSourceSpec(
                 dataset_id=DatasetId.ADVIO,
                 sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
+                frame_stride=action.dataset_frame_stride,
+                target_fps=action.dataset_target_fps,
                 pose_source=action.pose_source,
                 respect_video_rotation=action.respect_video_rotation,
             )
@@ -298,6 +302,17 @@ def parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None,
         return None, f"Enter a whole number for `{field_label}` or leave the field blank."
 
 
+def parse_optional_float(*, raw_value: str, field_label: str) -> tuple[float | None, str | None]:
+    """Parse a blankable positive float form field."""
+    if raw_value == "":
+        return None, None
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return None, f"Enter a positive number for `{field_label}` or leave the field blank."
+    return (value, None) if value > 0.0 else (None, f"Enter a positive number for `{field_label}`.")
+
+
 def request_summary_payload(request: RunRequest) -> JsonObject:
     """Return the compact JSON payload rendered by the Pipeline request preview."""
     payload: JsonObject = {
@@ -316,6 +331,8 @@ def request_summary_payload(request: RunRequest) -> JsonObject:
         case DatasetSourceSpec(
             dataset_id=dataset_id,
             sequence_id=sequence_id,
+            frame_stride=frame_stride,
+            target_fps=target_fps,
             pose_source=pose_source,
             respect_video_rotation=respect_video_rotation,
         ):
@@ -323,6 +340,8 @@ def request_summary_payload(request: RunRequest) -> JsonObject:
                 "kind": "dataset",
                 "dataset_id": dataset_id.value,
                 "sequence_id": sequence_id,
+                "frame_stride": frame_stride,
+                "target_fps": target_fps,
                 "pose_source": pose_source.value,
                 "respect_video_rotation": respect_video_rotation,
             }
@@ -372,6 +391,7 @@ __all__ = [
     "json_dump",
     "load_pipeline_request",
     "parse_optional_int",
+    "parse_optional_float",
     "pipeline_config_label",
     "record3d_source_spec_from_action",
     "request_summary_payload",

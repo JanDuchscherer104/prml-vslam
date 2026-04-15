@@ -204,7 +204,6 @@ class AdvioLocalSceneStatus(BaseData):
     archive_path: Path | None = None
     replay_ready: bool = False
     offline_ready: bool = False
-    full_ready: bool = False
 
 
 class AdvioDatasetSummary(BaseData):
@@ -214,7 +213,6 @@ class AdvioDatasetSummary(BaseData):
     local_scene_count: int
     replay_ready_scene_count: int
     offline_ready_scene_count: int
-    full_scene_count: int
     cached_archive_count: int
     total_remote_archive_bytes: int
 

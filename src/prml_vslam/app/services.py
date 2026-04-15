@@ -121,7 +121,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
     def start(
         self,
         *,
-        sequence_id: int,
+        sequence_id: int | str,
         sequence_label: str,
         pose_source: AdvioPoseSource,
         stream: FramePacketStream,
@@ -133,7 +133,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
                 sequence_label=sequence_label,
                 pose_source=pose_source,
             ),
-            thread_name=f"ADVIO-preview-{sequence_id:02d}",
+            thread_name=f"dataset-preview-{sequence_id}",
             worker_target=lambda stop_event: self._run_stream_worker(
                 sequence_id=sequence_id,
                 sequence_label=sequence_label,
@@ -146,7 +146,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
     def _run_stream_worker(
         self,
         *,
-        sequence_id: int,
+        sequence_id: int | str,
         sequence_label: str,
         pose_source: AdvioPoseSource,
         stream: FramePacketStream,

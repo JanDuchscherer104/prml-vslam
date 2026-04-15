@@ -9,6 +9,7 @@ from pydantic import Field
 
 from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
@@ -22,14 +23,14 @@ class AppPageId(StrEnum):
     """Top-level pages exposed by the packaged Streamlit app."""
 
     RECORD3D = "record3d"
-    ADVIO = "advio"
+    DATASETS = "datasets"
     PIPELINE = "pipeline"
     METRICS = "metrics"
 
     @property
     def label(self) -> str:
         """Return the user-facing page label."""
-        return {AppPageId.RECORD3D: "Record3D", AppPageId.ADVIO: "ADVIO"}.get(self, self.value.capitalize())
+        return {AppPageId.RECORD3D: "Record3D", AppPageId.DATASETS: "Datasets"}.get(self, self.value.capitalize())
 
 
 class PreviewStreamState(StrEnum):
@@ -63,15 +64,15 @@ class Record3DStreamSnapshot(PreviewSessionSnapshot):
 
 
 class AdvioPreviewSnapshot(PreviewSessionSnapshot):
-    """Latest ADVIO loop-preview snapshot shared inside the app layer."""
+    """Latest dataset loop-preview snapshot shared inside the app layer."""
 
-    sequence_id: int | None = None
-    """Active ADVIO sequence identifier when a preview is selected."""
+    sequence_id: int | str | None = None
+    """Active dataset sequence identifier when a preview is selected."""
 
     sequence_label: str = ""
-    """Human-readable label for the selected ADVIO sequence."""
+    """Human-readable label for the selected dataset sequence."""
 
-    pose_source: AdvioPoseSource | None = None
+    pose_source: AdvioPoseSource | TumRgbdPoseSource | None = None
     """Pose source currently used for the preview stream."""
 
 
@@ -104,6 +105,37 @@ class AdvioPageState(BaseData):
 
     preview_is_running: bool = False
     """Whether the current browser session expects an ADVIO preview stream to be active."""
+
+
+class TumRgbdPageState(BaseData):
+    """Persisted selector state for the TUM RGB-D dataset-management tab."""
+
+    selected_sequence_ids: list[str] = Field(default_factory=list)
+    """Explicit scene selection for download actions."""
+
+    download_preset: TumRgbdDownloadPreset = TumRgbdDownloadPreset.OFFLINE
+    """Selected curated download bundle."""
+
+    selected_modalities: list[TumRgbdModality] = Field(default_factory=list)
+    """Optional explicit modality override."""
+
+    overwrite_existing: bool = False
+    """Whether download actions should overwrite local archives and extracted files."""
+
+    explorer_sequence_id: str | None = None
+    """Selected local sequence shown in the explorer section."""
+
+    preview_sequence_id: str | None = None
+    """Selected local sequence shown in the loop-preview section."""
+
+    preview_pose_source: TumRgbdPoseSource = TumRgbdPoseSource.GROUND_TRUTH
+    """Selected camera-pose source for the loop-preview stream."""
+
+    preview_include_depth: bool = True
+    """Whether the preview should include depth frames when available."""
+
+    preview_is_running: bool = False
+    """Whether the current browser session expects a TUM RGB-D preview stream to be active."""
 
 
 class MetricsPageState(BaseData):
@@ -164,6 +196,12 @@ class PipelinePageState(BaseData):
 
     advio_sequence_id: int | None = None
     """Selected ADVIO sequence id when the source family is `ADVIO`."""
+
+    dataset_frame_stride: int = 1
+    """Dataset frame stride used by the bounded pipeline source."""
+
+    dataset_target_fps: float | None = None
+    """Optional target FPS used instead of dataset frame stride."""
 
     mode: PipelineMode = PipelineMode.OFFLINE
     """Selected pipeline mode."""
@@ -229,6 +267,9 @@ class AppState(BaseData):
     advio: AdvioPageState = Field(default_factory=AdvioPageState)
     """ADVIO page selector state."""
 
+    tum_rgbd: TumRgbdPageState = Field(default_factory=TumRgbdPageState)
+    """TUM RGB-D tab selector state."""
+
     pipeline: PipelinePageState = Field(default_factory=PipelinePageState)
     """Pipeline-page selector state."""
 
@@ -247,4 +288,5 @@ __all__ = [
     "PreviewStreamState",
     "Record3DPageState",
     "Record3DStreamSnapshot",
+    "TumRgbdPageState",
 ]
