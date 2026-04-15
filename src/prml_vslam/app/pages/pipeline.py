@@ -3,38 +3,19 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import streamlit as st
-from evo.core import metrics as evo_metrics
-from evo.core import sync as evo_sync
 
-from prml_vslam.benchmark import (
-    BenchmarkConfig,
-    CloudBenchmarkConfig,
-    EfficiencyBenchmarkConfig,
-    TrajectoryBenchmarkConfig,
-)
 from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageManifest
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.demo import load_run_request_toml
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.plotting import build_evo_ape_colormap_figure
-from prml_vslam.utils import BaseData, PathConfig
-from prml_vslam.utils.geometry import load_tum_trajectory
-from prml_vslam.utils.image_utils import normalize_grayscale_image
-from prml_vslam.visualization import VisualizationConfig
+from prml_vslam.plotting.pipeline import preview_image_from_update
 
 from ..live_session import (
     LiveMetric,
@@ -48,12 +29,26 @@ from ..live_session import (
     rerun_after_action,
 )
 from ..models import PipelinePageState, PipelineSourceId
+from ..pipeline_controller import (
+    PipelinePageAction,
+    action_from_page_state,
+    build_preview_plan,
+    build_request_from_action,
+    discover_pipeline_config_paths,
+    handle_pipeline_page_action,
+    load_pipeline_request,
+    parse_optional_int,
+    pipeline_config_label,
+    request_summary_payload,
+    request_support_error,
+    resolve_evo_preview,
+    source_input_error,
+    sync_pipeline_page_state_from_template,
+)
 from ..record3d_controls import (
-    record3d_transport_input_error,
     render_record3d_transport_controls,
     render_record3d_transport_details,
 )
-from ..state import save_model_updates
 from ..ui import render_page_intro
 
 if TYPE_CHECKING:
@@ -61,45 +56,11 @@ if TYPE_CHECKING:
 
 
 _ACTIVE_SESSION_STATES = frozenset({RunState.PREPARING, RunState.RUNNING})
-_EVO_ASSOCIATION_MAX_DIFF_S = 0.01
-_SUPPORTED_APP_STAGE_IDS = frozenset(
-    {
-        RunPlanStageId.INGEST,
-        RunPlanStageId.SLAM,
-        RunPlanStageId.TRAJECTORY_EVALUATION,
-        RunPlanStageId.SUMMARY,
-    }
-)
-_MOCK_METHOD_LABEL = "Mock Preview"
 _VISTA_POINTMAP_EMPTY_MESSAGE = (
     "ViSTA-SLAM has not produced a renderable preview artifact for the current keyframe yet."
 )
 _VISTA_TRAJECTORY_EMPTY_MESSAGE = "ViSTA-SLAM has not accepted a keyframe pose yet, so no live trajectory is available."
 _VISTA_PREVIEW_CURRENT_MESSAGE = "Current keyframe artifact."
-
-
-class PipelinePageAction(PipelinePageState):
-    """Typed action payload for the pipeline page controls."""
-
-    start_requested: bool = False
-    """Whether the user requested a new run."""
-
-    stop_requested: bool = False
-    """Whether the user requested the current run to stop."""
-
-
-class PipelineEvoPreview(BaseData):
-    """`evo` APE payload rendered by the pipeline-demo trajectory tab."""
-
-    reference: TrajectorySeries
-    estimate: TrajectorySeries
-    error_series: ErrorSeries
-    stats: MetricStats
-
-
-def _pipeline_method_label(method: MethodId) -> str:
-    """Return the app-facing method label used by the bounded pipeline demo."""
-    return method.display_name
 
 
 def _pipeline_method_help(method: MethodId) -> str:
@@ -148,7 +109,7 @@ def render(context: AppContext) -> None:
             "Use a TOML request as the starting template, then configure the bounded app-supported source and stage "
             "settings before launching the current demo slice."
         )
-        config_paths = _discover_pipeline_config_paths(context.path_config)
+        config_paths = discover_pipeline_config_paths(context.path_config)
         if not config_paths:
             st.info("Persist at least one pipeline request TOML under `.configs/pipelines/` to unlock this demo.")
             return
@@ -158,11 +119,11 @@ def render(context: AppContext) -> None:
             "Pipeline Config",
             options=config_paths,
             index=config_paths.index(selected_config_path),
-            format_func=lambda config_path: _pipeline_config_label(context.path_config, config_path),
+            format_func=lambda config_path: pipeline_config_label(context.path_config, config_path),
         )
-        template_request, template_error = _load_pipeline_request(context.path_config, selected_config_path)
+        template_request, template_error = load_pipeline_request(context.path_config, selected_config_path)
         if template_request is not None:
-            _sync_pipeline_page_state_from_template(
+            sync_pipeline_page_state_from_template(
                 context=context,
                 config_path=selected_config_path,
                 request=template_request,
@@ -172,27 +133,27 @@ def render(context: AppContext) -> None:
 
         if template_request is None:
             st.warning(template_error or "Failed to load the selected pipeline config.")
-            action = _action_from_page_state(page_state, selected_config_path)
+            action = action_from_page_state(page_state, selected_config_path)
             identity_input_error = None
-            source_input_error = _source_input_error(action)
+            source_error = source_input_error(action)
         else:
-            action, identity_input_error, source_input_error = _render_request_editor(
+            action, identity_input_error, source_error = _render_request_editor(
                 context=context,
                 page_state=page_state,
                 selected_config_path=selected_config_path,
                 previewable_statuses=previewable_statuses,
             )
 
-        preview_request, preview_error = _build_request_from_action(context, action)
+        preview_request, preview_error = build_request_from_action(context, action)
         preview_plan, preview_plan_error = (
-            (None, None) if preview_request is None else _build_preview_plan(preview_request, context.path_config)
+            (None, None) if preview_request is None else build_preview_plan(preview_request, context.path_config)
         )
-        support_error = _request_support_error(
+        support_error = request_support_error(
             request=preview_request,
             plan=preview_plan,
             previewable_statuses=previewable_statuses,
         )
-        start_error = support_error or identity_input_error or source_input_error
+        start_error = support_error or identity_input_error or source_error
 
         preview_left, preview_right = st.columns(2, gap="large")
         with preview_left:
@@ -200,7 +161,7 @@ def render(context: AppContext) -> None:
             if preview_request is None:
                 st.warning(preview_error or "The current request is invalid.")
             else:
-                st.json(_request_summary_payload(preview_request), expanded=False)
+                st.json(request_summary_payload(preview_request), expanded=False)
         with preview_right:
             st.markdown("**Planned Stages**")
             if preview_plan is None:
@@ -217,7 +178,7 @@ def render(context: AppContext) -> None:
         )
         action.start_requested = start_requested
         action.stop_requested = stop_requested
-        error_message = _handle_pipeline_page_action(
+        error_message = handle_pipeline_page_action(
             context=context,
             action=action,
         )
@@ -261,7 +222,6 @@ def _render_request_editor(
         identity_input_error,
     ) = _render_request_identity_controls(
         page_state=page_state,
-        path_config=context.path_config,
         source_kind=resolved_source_kind,
     )
     (
@@ -321,14 +281,9 @@ def _render_request_editor(
     )
 
 
-def _action_from_page_state(page_state: PipelinePageState, config_path: Path) -> PipelinePageAction:
-    return PipelinePageAction.model_validate(page_state.model_dump(mode="python") | {"config_path": config_path})
-
-
 def _render_request_identity_controls(
     *,
     page_state: PipelinePageState,
-    path_config: PathConfig,
     source_kind: PipelineSourceId,
 ) -> tuple[str, PipelineMode, MethodId, int | None, str | None]:
     left, _ = st.columns(2, gap="large")
@@ -346,7 +301,7 @@ def _render_request_identity_controls(
             "VSLAM Method",
             options=list(MethodId),
             index=list(MethodId).index(page_state.method),
-            format_func=_pipeline_method_label,
+            format_func=lambda item: item.display_name,
         )
         st.caption(_pipeline_method_help(method))
         slam_max_frames_raw = st.text_input(
@@ -354,7 +309,7 @@ def _render_request_identity_controls(
             value="" if page_state.slam_max_frames is None else str(page_state.slam_max_frames),
             placeholder="blank for no limit",
         ).strip()
-        slam_max_frames, slam_max_frames_error = _parse_optional_int(
+        slam_max_frames, slam_max_frames_error = parse_optional_int(
             raw_value=slam_max_frames_raw,
             field_label="SLAM Max Frames",
         )
@@ -503,165 +458,6 @@ def _render_pipeline_snapshot(snapshot: RunSnapshot) -> None:
     )
 
 
-def _sync_pipeline_page_state_from_template(
-    *,
-    context: AppContext,
-    config_path: Path,
-    request: RunRequest,
-    statuses: list[object],
-) -> None:
-    page_state = context.state.pipeline
-    if page_state.config_path == config_path:
-        return
-    source_updates: dict[str, object] = {
-        "source_kind": page_state.source_kind,
-        "advio_sequence_id": page_state.advio_sequence_id,
-    }
-    match request.source:
-        case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
-            advio_sequence_id, _ = _resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=statuses)
-            source_updates = {
-                "source_kind": PipelineSourceId.ADVIO,
-                "advio_sequence_id": advio_sequence_id,
-            }
-        case Record3DLiveSourceSpec() as record3d_source:
-            source_updates = _record3d_page_updates_from_source(record3d_source)
-        case _:
-            source_updates = {"source_kind": page_state.source_kind, "advio_sequence_id": page_state.advio_sequence_id}
-    save_model_updates(
-        context.store,
-        context.state,
-        page_state,
-        config_path=config_path,
-        experiment_name=request.experiment_name,
-        mode=request.mode,
-        method=request.slam.method,
-        slam_max_frames=request.slam.backend.max_frames,
-        slam_backend_payload=request.slam.backend.model_dump(mode="python", exclude_none=True),
-        emit_dense_points=request.slam.outputs.emit_dense_points,
-        emit_sparse_points=request.slam.outputs.emit_sparse_points,
-        reference_enabled=request.benchmark.reference.enabled,
-        trajectory_eval_enabled=request.benchmark.trajectory.enabled,
-        evaluate_cloud=request.benchmark.cloud.enabled,
-        evaluate_efficiency=request.benchmark.efficiency.enabled,
-        connect_live_viewer=request.visualization.connect_live_viewer,
-        export_viewer_rrd=request.visualization.export_viewer_rrd,
-        **source_updates,
-    )
-
-
-def _record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLiveSourceSpec:
-    """Build the typed Record3D live source contract from one pipeline action."""
-    return Record3DLiveSourceSpec(
-        persist_capture=action.record3d_persist_capture,
-        transport=action.record3d_transport,
-        device_index=action.record3d_usb_device_index if action.record3d_transport is Record3DTransportId.USB else None,
-        device_address=action.record3d_wifi_device_address
-        if action.record3d_transport is Record3DTransportId.WIFI
-        else "",
-    )
-
-
-def _record3d_page_updates_from_source(source: Record3DLiveSourceSpec) -> dict[str, object]:
-    """Build pipeline page-state updates from a typed Record3D live source contract."""
-    return {
-        "source_kind": PipelineSourceId.RECORD3D,
-        "record3d_transport": source.transport,
-        "record3d_usb_device_index": 0 if source.device_index is None else source.device_index,
-        "record3d_wifi_device_address": source.device_address,
-        "record3d_persist_capture": source.persist_capture,
-    }
-
-
-def _build_request_from_action(context: AppContext, action: PipelinePageAction) -> tuple[RunRequest | None, str | None]:
-    try:
-        if action.source_kind is PipelineSourceId.ADVIO:
-            if action.advio_sequence_id is None:
-                raise ValueError("Select a replay-ready ADVIO scene.")
-            source = DatasetSourceSpec(
-                dataset_id=DatasetId.ADVIO,
-                sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
-            )
-        else:
-            source = _record3d_source_spec_from_action(action)
-        request = RunRequest(
-            experiment_name=action.experiment_name.strip() or "pipeline-demo",
-            mode=action.mode,
-            output_dir=context.path_config.artifacts_dir,
-            source=source,
-            slam=SlamStageConfig(
-                method=action.method,
-                outputs={
-                    "emit_dense_points": action.emit_dense_points,
-                    "emit_sparse_points": action.emit_sparse_points,
-                },
-                backend=_backend_payload_from_action(action),
-            ),
-            benchmark=BenchmarkConfig(
-                reference={"enabled": action.reference_enabled},
-                trajectory=TrajectoryBenchmarkConfig(enabled=action.trajectory_eval_enabled),
-                cloud=CloudBenchmarkConfig(enabled=action.evaluate_cloud),
-                efficiency=EfficiencyBenchmarkConfig(enabled=action.evaluate_efficiency),
-            ),
-            visualization=VisualizationConfig(
-                export_viewer_rrd=action.export_viewer_rrd,
-                connect_live_viewer=action.connect_live_viewer,
-            ),
-        )
-        return request, None
-    except Exception as exc:
-        return None, str(exc)
-
-
-def _build_preview_plan(request: RunRequest, path_config: PathConfig) -> tuple[RunPlan | None, str | None]:
-    try:
-        return request.build(path_config), None
-    except Exception as exc:
-        return None, str(exc)
-
-
-def _request_support_error(
-    *,
-    request: RunRequest | None,
-    plan: RunPlan | None,
-    previewable_statuses: list[object],
-) -> str | None:
-    if request is None:
-        return None
-    if plan is None:
-        return "The current request failed validation and could not be planned."
-    if request.slam.method is MethodId.MAST3R:
-        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
-    unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
-    if unsupported_stage_ids:
-        return (
-            "The current app demo can execute only ingest, slam, trajectory evaluation, and summary stages. Disable: "
-            + ", ".join(unsupported_stage_ids)
-        )
-    match request.source:
-        case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
-            if _resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=previewable_statuses)[0] is None:
-                return f"ADVIO sequence '{sequence_slug}' is not replay-ready in the local dataset."
-            return None
-        case Record3DLiveSourceSpec():
-            if request.mode is not PipelineMode.STREAMING:
-                return "Record3D live sources currently require `streaming` mode."
-            return None
-        case DatasetSourceSpec(dataset_id=dataset_id):
-            return f"Dataset '{dataset_id.value}' is not supported by this demo page."
-        case _:
-            return "This demo page only supports ADVIO dataset replay and Record3D live capture."
-
-
-def _source_input_error(action: PipelinePageAction) -> str | None:
-    if action.source_kind is PipelineSourceId.ADVIO:
-        return None if action.advio_sequence_id is not None else "Select a replay-ready ADVIO scene."
-    return record3d_transport_input_error(
-        transport=action.record3d_transport,
-        wifi_device_address=action.record3d_wifi_device_address,
-    )
-
-
 def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[LiveMetric, ...]:
     received_frames = snapshot.received_frames if isinstance(snapshot, StreamingRunSnapshot) else 0
     measured_fps = snapshot.measured_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
@@ -686,7 +482,7 @@ def _pipeline_caption(snapshot: RunSnapshot) -> str | None:
         return None
     return (
         f"Run Id: `{snapshot.plan.run_id}` · Artifact Root: `{snapshot.plan.artifact_root}`"
-        f" · Method: {_pipeline_method_label(snapshot.plan.method)}"
+        f" · Method: {snapshot.plan.method.display_name}"
     )
 
 
@@ -710,7 +506,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
             st.info("No frame has been processed yet.")
         else:
             preview_update = snapshot.latest_preview_update
-            pointmap_preview = _preview_image_from_update(preview_update)
+            pointmap_preview = preview_image_from_update(preview_update)
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
                 st.markdown("**RGB Frame**")
@@ -774,7 +570,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
         if not show_evo_preview:
             st.caption("Enable the toggle to run explicit evo APE preview for the current demo slice.")
         else:
-            evo_preview, evo_error = _resolve_evo_preview(snapshot)
+            evo_preview, evo_error = resolve_evo_preview(snapshot)
             if evo_error is not None:
                 st.warning(evo_error)
             elif evo_preview is None:
@@ -875,185 +671,6 @@ def _render_pipeline_notice(snapshot: RunSnapshot) -> None:
             st.error(snapshot.error_message or "The pipeline demo failed.")
 
 
-def _handle_pipeline_page_action(context: AppContext, action: PipelinePageAction) -> str | None:
-    """Apply one pipeline-page action and return a surfaced error when one occurs."""
-    save_model_updates(
-        context.store,
-        context.state,
-        context.state.pipeline,
-        **action.model_dump(mode="python", exclude={"start_requested", "stop_requested"}),
-    )
-    try:
-        if action.stop_requested:
-            context.run_service.stop_run()
-            return None
-        if not action.start_requested:
-            return None
-        _start_pipeline_demo_run(
-            context,
-            action=action,
-        )
-        return None
-    except Exception as exc:
-        return str(exc)
-
-
-def _start_pipeline_demo_run(context: AppContext, *, action: PipelinePageAction) -> None:
-    """Start one bounded pipeline run through the shared app facade."""
-    request, request_error = _build_request_from_action(context, action)
-    if request is None:
-        raise ValueError(request_error or "Failed to build the current request.")
-    runtime_source = (
-        None if request.mode is PipelineMode.OFFLINE else _build_streaming_source_from_action(context, action)
-    )
-    context.run_service.start_run(request=request, runtime_source=runtime_source)
-
-
-def _discover_pipeline_config_paths(path_config: PathConfig) -> list[Path]:
-    config_dir = path_config.resolve_pipeline_configs_dir()
-    if not config_dir.exists():
-        return []
-    return sorted(path.resolve() for path in config_dir.rglob("*.toml") if path.is_file())
-
-
-def _pipeline_config_label(path_config: PathConfig, config_path: Path) -> str:
-    config_root = path_config.resolve_pipeline_configs_dir()
-    try:
-        return str(config_path.relative_to(config_root))
-    except ValueError:
-        return (
-            str(config_path.relative_to(path_config.root))
-            if config_path.is_relative_to(path_config.root)
-            else str(config_path)
-        )
-
-
-def _load_pipeline_request(path_config: PathConfig, config_path: Path) -> tuple[RunRequest | None, str | None]:
-    try:
-        return load_run_request_toml(path_config=path_config, config_path=config_path), None
-    except Exception as exc:
-        return None, str(exc)
-
-
-def _build_streaming_source_from_action(context: AppContext, action: PipelinePageAction):
-    if action.source_kind is PipelineSourceId.ADVIO:
-        if action.advio_sequence_id is None:
-            raise ValueError("Select a replay-ready ADVIO scene.")
-        return context.advio_service.build_streaming_source(
-            sequence_id=action.advio_sequence_id,
-            pose_source=action.pose_source,
-            respect_video_rotation=action.respect_video_rotation,
-        )
-    transport_input_error = record3d_transport_input_error(
-        transport=action.record3d_transport,
-        wifi_device_address=action.record3d_wifi_device_address,
-    )
-    if transport_input_error is not None:
-        raise ValueError(transport_input_error)
-    record3d_source = _record3d_source_spec_from_action(action)
-    source = Record3DStreamingSourceConfig(
-        transport=record3d_source.transport,
-        device_index=0 if record3d_source.device_index is None else record3d_source.device_index,
-        device_address=record3d_source.device_address,
-    ).setup_target()
-    if source is None:
-        raise RuntimeError("Failed to initialize the Record3D streaming source.")
-    return source
-
-
-def _advio_sequence_id_from_slug(sequence_slug: str, statuses: list[object]) -> int | None:
-    for status in statuses:
-        scene = getattr(status, "scene", None)
-        if scene is not None and getattr(scene, "sequence_slug", None) == sequence_slug:
-            return int(scene.sequence_id)
-    if not sequence_slug.startswith("advio-"):
-        return None
-    suffix = sequence_slug.split("-", maxsplit=1)[1]
-    return int(suffix) if suffix.isdigit() else None
-
-
-def _resolve_advio_sequence_id(*, sequence_slug: str, statuses: list[object]) -> tuple[int | None, str | None]:
-    sequence_id = _advio_sequence_id_from_slug(sequence_slug, statuses)
-    if sequence_id is None:
-        return None, f"ADVIO sequence '{sequence_slug}' is not replay-ready in the local dataset."
-    return sequence_id, None
-
-
-def _parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None, str | None]:
-    if raw_value == "":
-        return None, None
-    try:
-        return int(raw_value), None
-    except ValueError:
-        return None, f"Enter a whole number for `{field_label}` or leave the field blank."
-
-
-def _request_summary_payload(request: RunRequest) -> dict[str, object]:
-    payload = {
-        "experiment_name": request.experiment_name,
-        "mode": request.mode.value,
-        "output_dir": request.output_dir.as_posix(),
-        "slam": {
-            "method": request.slam.method.value,
-            "backend": request.slam.backend.model_dump(mode="json", exclude_none=True),
-            "emit_dense_points": request.slam.outputs.emit_dense_points,
-            "emit_sparse_points": request.slam.outputs.emit_sparse_points,
-        },
-        "benchmark": request.benchmark.model_dump(mode="json"),
-        "visualization": request.visualization.model_dump(mode="json"),
-    }
-    match request.source:
-        case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
-            payload["source"] = {
-                "kind": "dataset",
-                "dataset_id": dataset_id.value,
-                "sequence_id": sequence_id,
-            }
-        case _:
-            payload["source"] = request.source.model_dump(mode="json")
-    return payload
-
-
-def _backend_payload_from_action(action: PipelinePageAction) -> dict[str, object]:
-    if action.method is not MethodId.VISTA:
-        return {"max_frames": action.slam_max_frames}
-    payload = dict(action.slam_backend_payload)
-    payload["max_frames"] = action.slam_max_frames
-    return payload
-
-
-def _pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
-    """Return a renderable preview image for one ViSTA preview artifact."""
-    if pointmap is None:
-        return None
-    preview_array = np.asarray(pointmap)
-    if preview_array.size == 0:
-        return None
-    if preview_array.ndim == 2:
-        return normalize_grayscale_image(np.asarray(preview_array, dtype=np.float32))
-    if preview_array.ndim != 3:
-        return None
-    if preview_array.shape[-1] == 1:
-        return normalize_grayscale_image(np.asarray(preview_array[..., 0], dtype=np.float32))
-    if preview_array.shape[-1] in {3, 4} and (
-        np.issubdtype(preview_array.dtype, np.integer)
-        or (np.isfinite(preview_array).all() and np.nanmin(preview_array) >= 0.0 and np.nanmax(preview_array) <= 1.0)
-    ):
-        return np.asarray(preview_array)
-    magnitude = np.linalg.norm(np.asarray(preview_array, dtype=np.float32), axis=-1)
-    return normalize_grayscale_image(magnitude)
-
-
-def _preview_image_from_update(update: object) -> np.ndarray | None:
-    """Return the retained preview image for one streaming SLAM update."""
-    if update is None:
-        return None
-    preview_rgb = getattr(update, "preview_rgb", None)
-    if preview_rgb is not None and np.asarray(preview_rgb).size > 0:
-        return np.asarray(preview_rgb)
-    return _pointmap_preview_image(getattr(update, "pointmap", None))
-
-
 def _preview_status_message(snapshot: StreamingRunSnapshot) -> str | None:
     """Return the retained-preview status line for the current streaming snapshot."""
     preview_update = snapshot.latest_preview_update
@@ -1072,7 +689,7 @@ def _updates_share_preview_identity(left: object, right: object) -> bool:
         getattr(left, "seq", None) == getattr(right, "seq", None)
         and getattr(left, "timestamp_ns", None) == getattr(right, "timestamp_ns", None)
         and getattr(left, "keyframe_index", None) == getattr(right, "keyframe_index", None)
-        and _preview_image_from_update(left) is not None
+        and preview_image_from_update(left) is not None
     )
 
 
@@ -1085,80 +702,6 @@ def _preview_keyframe_label(update: object) -> str:
     if seq is not None:
         return f"frame {seq}"
     return "the last available frame"
-
-
-def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:
-    if (
-        snapshot.slam is None
-        or snapshot.slam.trajectory_tum is None
-        or snapshot.benchmark_inputs is None
-        or not snapshot.benchmark_inputs.reference_trajectories
-    ):
-        return None, None
-
-    reference_path = snapshot.benchmark_inputs.reference_trajectories[0].path
-    estimate_path = snapshot.slam.trajectory_tum.path
-    if not reference_path.exists() or not estimate_path.exists():
-        return None, None
-    try:
-        return (
-            _compute_evo_preview(
-                reference_path=reference_path,
-                estimate_path=estimate_path,
-                reference_mtime_ns=reference_path.stat().st_mtime_ns,
-                estimate_mtime_ns=estimate_path.stat().st_mtime_ns,
-            ),
-            None,
-        )
-    except (RuntimeError, ValueError) as exc:
-        return None, str(exc)
-
-
-@lru_cache(maxsize=32)
-def _compute_evo_preview(
-    *,
-    reference_path: Path,
-    estimate_path: Path,
-    reference_mtime_ns: int,
-    estimate_mtime_ns: int,
-) -> PipelineEvoPreview:
-    del reference_mtime_ns, estimate_mtime_ns
-    reference_trajectory = load_tum_trajectory(reference_path)
-    estimate_trajectory = load_tum_trajectory(estimate_path)
-    try:
-        associated_reference, associated_estimate = evo_sync.associate_trajectories(
-            reference_trajectory,
-            estimate_trajectory,
-            max_diff=_EVO_ASSOCIATION_MAX_DIFF_S,
-        )
-    except evo_sync.SyncException as exc:
-        raise ValueError(
-            f"No matching timestamps were found for evo APE (max_diff={_EVO_ASSOCIATION_MAX_DIFF_S:.3f}s)."
-        ) from exc
-
-    metric = evo_metrics.APE(evo_metrics.PoseRelation.translation_part)
-    metric.process_data((associated_reference, associated_estimate))
-    error_values = np.asarray(metric.error, dtype=np.float64)
-    if error_values.size == 0:
-        raise ValueError("evo APE produced zero matched trajectory pairs for the current run.")
-
-    return PipelineEvoPreview(
-        reference=TrajectorySeries(
-            name="Reference",
-            timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
-            positions_xyz=np.asarray(associated_reference.positions_xyz, dtype=np.float64),
-        ),
-        estimate=TrajectorySeries(
-            name="Estimate",
-            timestamps_s=np.asarray(associated_estimate.timestamps, dtype=np.float64),
-            positions_xyz=np.asarray(associated_estimate.positions_xyz, dtype=np.float64),
-        ),
-        error_series=ErrorSeries(
-            timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
-            values=error_values,
-        ),
-        stats=MetricStats.from_error_values(error_values),
-    )
 
 
 __all__ = ["render"]
