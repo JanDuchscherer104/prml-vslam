@@ -11,6 +11,8 @@ import pytest
 from prml_vslam.interfaces import FramePacket, FrameTransform
 from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamOutputPolicy
+from prml_vslam.methods.multiprocess import MultiprocessSlamSession
+from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.utils import Console
 
@@ -424,3 +426,24 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
 
     with pytest.raises(ValueError, match="too far from SO\\(3\\)"):
         _frame_transform_from_vista_pose(pose)
+
+
+def test_multiprocess_session_surfaces_worker_frame_errors(tmp_path: Path) -> None:
+    class FailingSession:
+        def step(self, frame: FramePacket) -> None:
+            del frame
+            raise RuntimeError("worker step failed")
+
+        def try_get_updates(self) -> list[SlamUpdate]:
+            return []
+
+        def close(self) -> object:
+            return object()
+
+    session = MultiprocessSlamSession(
+        session_factory=lambda: FailingSession(),  # type: ignore[arg-type]
+        console=Console(__name__),
+    )
+    session.step(FramePacket(seq=0, timestamp_ns=0, rgb=np.zeros((4, 4, 3), dtype=np.uint8)))
+    with pytest.raises(RuntimeError, match="worker step failed"):
+        session.try_get_updates()

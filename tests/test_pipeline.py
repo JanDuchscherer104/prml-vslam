@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from threading import Event
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -68,6 +69,30 @@ def test_run_request_build_respects_disabled_optional_stage_toggles(tmp_path: Pa
     plan = request.build(path_config)
 
     assert RunPlanStageId.BENCHMARK not in [stage.id for stage in plan.stages]
+
+
+def test_run_request_parses_vista_specific_backend_overrides_from_toml() -> None:
+    request = RunRequest.from_toml(
+        """
+experiment_name = "vista-config"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-15"
+
+[slam]
+method = "vista"
+
+[slam.backend.slam]
+flow_thres = 3.5
+max_view_num = 123
+"""
+    )
+
+    assert request.slam.backend.slam["flow_thres"] == 3.5
+    assert request.slam.backend.slam["max_view_num"] == 123
 
 
 def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: Path) -> None:
@@ -247,6 +272,117 @@ def test_streaming_runner_retains_last_renderable_preview_update(tmp_path: Path)
     assert snapshot.latest_preview_update.preview_rgb is not None
 
 
+def test_streaming_runner_stop_preserves_last_preview_and_trajectory_via_run_service(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    service = RunService(
+        path_config=path_config,
+        slam_backend_factory=lambda _method: PreviewRetentionStreamingBackend(),
+    )
+    source = FakeStreamingSource(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        stream=BlockingPacketStream(first_packet=_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)),
+    )
+
+    service.start_run(request=request, runtime_source=source)
+    for _ in range(50):
+        snapshot = service.snapshot()
+        if isinstance(snapshot, StreamingRunSnapshot) and snapshot.received_frames >= 1:
+            break
+        time.sleep(0.02)
+    service.stop_run()
+    snapshot = service.snapshot()
+
+    assert isinstance(snapshot, StreamingRunSnapshot)
+    assert snapshot.state is RunState.STOPPED
+    assert snapshot.latest_preview_update is not None
+    assert snapshot.latest_preview_update.preview_rgb is not None
+    assert snapshot.trajectory_positions_xyz.shape[0] == 1
+
+
+def test_streaming_runner_attributes_delayed_updates_by_update_timestamp(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    plan = request.build(path_config)
+    source = FakeStreamingSource(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        stream=FinitePacketStream(
+            [
+                _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
+                _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
+            ]
+        ),
+    )
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+    runner.start(
+        request=request,
+        plan=plan,
+        source=source,
+        slam_backend=DelayedUpdateStreamingBackend(),
+    )
+    snapshot = _wait_for_terminal_snapshot(runner)
+
+    assert isinstance(snapshot, StreamingRunSnapshot)
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.accepted_keyframes == 1
+    np.testing.assert_allclose(snapshot.trajectory_timestamps_s, np.array([0.0]))
+
+
+def test_streaming_runner_failed_start_surfaces_startup_error_without_unboundlocal(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    plan = request.build(path_config)
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+    source = FakeStreamingSource(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
+    )
+    runner.start(
+        request=request,
+        plan=plan,
+        source=source,
+        slam_backend=StartFailureStreamingBackend(),
+    )
+    snapshot = _wait_for_terminal_snapshot(runner)
+
+    assert isinstance(snapshot, StreamingRunSnapshot)
+    assert snapshot.state is RunState.FAILED
+    assert "start session failed" in snapshot.error_message
+
+
+def test_streaming_runner_finalize_runs_registered_cleanup_on_completion_and_failure(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    plan = request.build(path_config)
+
+    completion_stream = DisconnectSpyPacketStream(packets=[_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)])
+    completion_runner = StreamingRunner(frame_timeout_seconds=0.01)
+    completion_runner.start(
+        request=request,
+        plan=plan,
+        source=FakeStreamingSource(
+            sequence_manifest=SequenceManifest(sequence_id="advio-15"), stream=completion_stream
+        ),
+        slam_backend=PreviewRetentionStreamingBackend(),
+    )
+    completion_snapshot = _wait_for_terminal_snapshot(completion_runner)
+
+    failure_stream = DisconnectSpyPacketStream(packets=[_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)])
+    failure_runner = StreamingRunner(frame_timeout_seconds=0.01)
+    failure_runner.start(
+        request=request,
+        plan=plan,
+        source=FakeStreamingSource(sequence_manifest=SequenceManifest(sequence_id="advio-15"), stream=failure_stream),
+        slam_backend=FailingStepStreamingBackend(),
+    )
+    failure_snapshot = _wait_for_terminal_snapshot(failure_runner)
+
+    assert completion_snapshot.state is RunState.COMPLETED
+    assert failure_snapshot.state is RunState.FAILED
+    assert completion_stream.disconnect_calls >= 1
+    assert failure_stream.disconnect_calls >= 1
+
+
 class KeyframeStreamingBackend:
     """Small streaming backend double that emits explicit keyframe metadata."""
 
@@ -380,6 +516,94 @@ class PreviewRetentionStreamingSession:
         return SlamArtifacts(
             trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="preview-retention-streaming"),
         )
+
+
+class DelayedUpdateStreamingBackend:
+    method_id = MethodId.VISTA
+
+    def start_session(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> SlamSession:
+        del backend_config, output_policy
+        return DelayedUpdateStreamingSession(artifact_root=artifact_root)
+
+
+class DelayedUpdateStreamingSession:
+    def __init__(self, *, artifact_root: Path) -> None:
+        self._artifact_root = artifact_root
+        self._pending: list[SlamUpdate] = []
+        self._frames: list[FramePacket] = []
+
+    def step(self, frame: FramePacket) -> None:
+        self._frames.append(frame)
+        if len(self._frames) == 2:
+            self._pending.append(
+                SlamUpdate(
+                    seq=self._frames[0].seq,
+                    timestamp_ns=self._frames[0].timestamp_ns,
+                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                    is_keyframe=True,
+                    keyframe_index=0,
+                )
+            )
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        updates = self._pending
+        self._pending = []
+        return updates
+
+    def close(self) -> SlamArtifacts:
+        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
+        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+        trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
+        return SlamArtifacts(trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="delayed"))
+
+
+class StartFailureStreamingBackend:
+    method_id = MethodId.VISTA
+
+    def start_session(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> SlamSession:
+        del backend_config, output_policy, artifact_root
+        raise RuntimeError("start session failed")
+
+
+class FailingStepStreamingBackend:
+    method_id = MethodId.VISTA
+
+    def start_session(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> SlamSession:
+        del backend_config, output_policy
+        return FailingStepStreamingSession(artifact_root=artifact_root)
+
+
+class FailingStepStreamingSession:
+    def __init__(self, *, artifact_root: Path) -> None:
+        self._artifact_root = artifact_root
+
+    def step(self, frame: FramePacket) -> None:
+        del frame
+        raise RuntimeError("frame step failed")
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        return []
+
+    def close(self) -> SlamArtifacts:
+        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
+        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+        trajectory_path.write_text("0 0 0 0 0 0 1\n", encoding="utf-8")
+        return SlamArtifacts(trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="failing-step"))
 
 
 def test_run_service_dispatches_offline_without_runtime_source(tmp_path: Path) -> None:
@@ -530,6 +754,36 @@ class FinitePacketStream:
 
     def disconnect(self) -> None:
         pass
+
+
+class DisconnectSpyPacketStream(FinitePacketStream):
+    def __init__(self, packets: list[FramePacket]) -> None:
+        super().__init__(packets)
+        self.disconnect_calls = 0
+
+    def disconnect(self) -> None:
+        self.disconnect_calls += 1
+
+
+class BlockingPacketStream:
+    def __init__(self, *, first_packet: FramePacket) -> None:
+        self._first_packet = first_packet
+        self._served = False
+        self._unblock = Event()
+
+    def connect(self) -> None:
+        return None
+
+    def wait_for_packet(self, timeout_seconds: float) -> FramePacket:
+        if not self._served:
+            self._served = True
+            return self._first_packet
+        if not self._unblock.wait(timeout_seconds):
+            raise TimeoutError("waiting for stop")
+        raise EOFError
+
+    def disconnect(self) -> None:
+        self._unblock.set()
 
 
 class OfflineRunnerSpy:
