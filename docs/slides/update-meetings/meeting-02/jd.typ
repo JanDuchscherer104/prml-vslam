@@ -8,15 +8,19 @@
       gutter: 0.8cm,
       [
         *Benchmark & Streaming foundation* \
-        - Typed `RunRequest`, `RunPlan`, `SequenceManifest`, and `RunSummary` define the benchmark flow.
+        - Typed `RunRequest`, `RunPlan`, `SequenceManifest`, and `RunSummary` define the pipeline flow.
         - Canonical artifacts resolve under `input`, `slam`, `dense`, `evaluation`, and `summary`.
-        - TOML-first planning already works through `plan-run-config`.
+        - TOML-based planning & streamlit overwrites.
+        - Offline and streaming runner paths.
+        - ViSTA-SLAM wrapper and mock-slam backend.
+        - Protocols & DTOs for all stages are defined and partially implemented.
       ],
       [
         *User-facing surfaces* \
-        - The workbench exposes `Record3D`, `ADVIO`, first `Pipeline` darft.
+        - The workbench exposes `Record3D`, `ADVIO`, `Pipeline` edit and run interfaces.
         - Streaming demo from `Record3D` & `ADVIO`.
         - The CLI & App support dataset inspection, device discovery, pipeline stage configuration.
+        - WIP rerun interface for live and offline visualization.
       ],
     )
   ]
