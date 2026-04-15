@@ -1,6 +1,4 @@
 # ruff: noqa: F401
-from __future__ import annotations
-
 from .advio_layout import load_advio_catalog
 from .advio_loading import (
     AdvioCalibration,
@@ -33,32 +31,3 @@ from .advio_sequence import (
     load_advio_sequence,
 )
 from .advio_service import AdvioDatasetService
-
-__all__ = [
-    "AdvioOfflineSample",
-    "AdvioCalibration",
-    "AdvioCatalog",
-    "AdvioDatasetService",
-    "AdvioDatasetSummary",
-    "AdvioDownloadPreset",
-    "AdvioDownloadRequest",
-    "AdvioDownloadResult",
-    "AdvioEnvironment",
-    "AdvioLocalSceneStatus",
-    "AdvioModality",
-    "AdvioPeopleLevel",
-    "AdvioPoseSource",
-    "AdvioSceneMetadata",
-    "AdvioSequence",
-    "AdvioSequenceConfig",
-    "AdvioSequencePaths",
-    "AdvioUpstreamMetadata",
-    "ADVIO_SEQUENCE_COUNT",
-    "list_advio_sequence_ids",
-    "load_advio_calibration",
-    "load_advio_frame_timestamps_ns",
-    "load_advio_trajectory",
-    "load_advio_sequence",
-    "write_advio_pose_tum",
-    "load_advio_catalog",
-]

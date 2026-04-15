@@ -148,6 +148,38 @@ enabled = true
     assert payload["source"]["video_path"] == "captures/office-03.mp4"
 
 
+def test_plan_run_config_command_overrides_dataset_sampling(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+    config_path = tmp_path / ".configs" / "pipelines" / "advio-vista.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        """
+experiment_name = "advio-vista"
+mode = "offline"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-15"
+frame_stride = 4
+
+[slam]
+method = "vista"
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
+    monkeypatch.setattr(main.console, "plog", lambda payload: captured.setdefault("payload", payload))
+
+    result = runner.invoke(main.app, ["plan-run-config", "advio-vista.toml", "--dataset-target-fps", "5"])
+
+    assert result.exit_code == 0
+    source = captured["payload"]["source"]
+    assert source["frame_stride"] == 1
+    assert source["target_fps"] == 5.0
+
+
 def test_write_demo_config_command_persists_under_pipeline_config_dir(tmp_path: Path, monkeypatch) -> None:
     runner = CliRunner()
     captured: dict[str, object] = {}
@@ -207,11 +239,13 @@ def test_pipeline_demo_command_reuses_shared_demo_request(tmp_path: Path, monkey
             sequence_id: int,
             pose_source,
             respect_video_rotation: bool,
+            frame_selection=None,
         ) -> object:
             captured["source_args"] = {
                 "sequence_id": sequence_id,
                 "pose_source": pose_source,
                 "respect_video_rotation": respect_video_rotation,
+                "frame_selection": frame_selection,
             }
             return "streaming-source"
 

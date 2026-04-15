@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import Field, model_validator
 
 from prml_vslam.benchmark import BenchmarkConfig
-from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.vista.config import VistaSlamBackendConfig
 from prml_vslam.utils import BaseConfig, PathConfig
@@ -27,7 +27,6 @@ class PipelineMode(StrEnum):
 
     @property
     def label(self) -> str:
-        """Return the human-readable mode label."""
         return {
             self.OFFLINE: "Offline (batch)",
             self.STREAMING: "Streaming (incremental)",
@@ -42,7 +41,6 @@ class LiveTransportId(StrEnum):
 
     @property
     def label(self) -> str:
-        """Return the user-facing transport label."""
         return "Wi-Fi Preview" if self is LiveTransportId.WIFI else self.value.upper()
 
 
@@ -57,65 +55,39 @@ class StreamingExecutionConfig(BaseConfig):
     """Execution placement policy for streaming mode."""
 
     ingest: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for source manifest and benchmark input preparation."""
-
     packet_source: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for packet-source consumption."""
-
     slam: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for streaming SLAM session execution."""
-
     trajectory_evaluation: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for optional trajectory evaluation."""
-
     summary: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for final summary and manifest persistence."""
 
 
 class PipelineExecutionConfig(BaseConfig):
     """Run-level execution placement policy."""
 
     streaming: StreamingExecutionConfig = Field(default_factory=StreamingExecutionConfig)
-    """Streaming-mode execution policy."""
 
 
-class VideoSourceSpec(BaseConfig):
+class VideoSourceSpec(FrameSelectionConfig):
     """Video-backed source used for offline planning and execution."""
 
     video_path: Path
-    """Path to the input video that will be processed."""
-
-    frame_stride: int = 1
-    """Frame subsampling stride applied during canonical ingest."""
 
 
-class DatasetSourceSpec(BaseConfig):
+class DatasetSourceSpec(FrameSelectionConfig):
     """Dataset-backed source used for offline planning and execution."""
 
     dataset_id: DatasetId
-    """Dataset family that owns the sequence."""
-
     sequence_id: str
-    """Dataset-specific sequence identifier."""
 
 
 class Record3DLiveSourceSpec(BaseConfig):
     """Typed Record3D live source used by the pipeline app and planner."""
 
     source_id: Literal["record3d"] = "record3d"
-    """Stable live-source identifier for Record3D-backed runs."""
-
     transport: LiveTransportId = LiveTransportId.USB
-    """Selected Record3D transport."""
-
     persist_capture: bool = True
-    """Whether to persist the captured session for downstream offline use."""
-
     device_index: int | None = None
-    """Selected USB device index when using the USB transport."""
-
     device_address: str = ""
-    """Entered Wi-Fi preview device address when using the Wi-Fi transport."""
 
 
 SourceSpec = VideoSourceSpec | DatasetSourceSpec | Record3DLiveSourceSpec
@@ -126,13 +98,8 @@ class SlamStageConfig(BaseConfig):
     """Pipeline-owned SLAM stage request."""
 
     method: MethodId
-    """External monocular VSLAM backend to use for the run."""
-
     outputs: SlamOutputPolicy = Field(default_factory=SlamOutputPolicy)
-    """Output materialization wishes for the selected backend."""
-
     backend: BackendConfig = Field(default_factory=SlamBackendConfig)
-    """Backend-private runtime or wrapper controls."""
 
     @model_validator(mode="before")
     @classmethod
@@ -169,40 +136,25 @@ class RunRequest(BaseConfig):
     """Config-defined entry contract for one pipeline run."""
 
     experiment_name: str
-    """Human-readable name for the benchmark run."""
-
     mode: PipelineMode = PipelineMode.OFFLINE
-    """Whether the run is offline-only or live-backed."""
-
     output_dir: Path
-    """Root directory where planned artifacts should be written."""
-
     source: SourceSpec
-    """Source specification normalized before the main benchmark stages run."""
-
     slam: SlamStageConfig
-    """SLAM-stage configuration."""
-
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
-    """Benchmark-policy configuration kept outside the pipeline core."""
-
     visualization: VisualizationConfig = Field(default_factory=VisualizationConfig)
-    """Viewer-export policy kept outside pipeline execution semantics."""
-
     execution: PipelineExecutionConfig = Field(default_factory=PipelineExecutionConfig)
-    """Execution placement policy for local or process-backed run components."""
 
     def build(self, path_config: PathConfig | None = None) -> RunPlan:
-        """Materialize the canonical run plan for this request."""
         from prml_vslam.pipeline.services import RunPlannerService
 
         return RunPlannerService().build_run_plan(request=self, path_config=path_config)
 
 
 __all__ = [
-    "DatasetSourceSpec",
     "BackendConfig",
+    "DatasetSourceSpec",
     "LiveTransportId",
+    "PipelineExecutionConfig",
     "PipelineMode",
     "Record3DLiveSourceSpec",
     "RunRequest",
@@ -210,6 +162,5 @@ __all__ = [
     "SourceSpec",
     "StageExecutionMode",
     "StreamingExecutionConfig",
-    "PipelineExecutionConfig",
     "VideoSourceSpec",
 ]

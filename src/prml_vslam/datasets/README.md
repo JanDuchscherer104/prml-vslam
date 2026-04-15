@@ -6,7 +6,8 @@ Use [../REQUIREMENTS.md](../REQUIREMENTS.md) for top-level ownership rules. Use 
 
 ## Current Implementation
 
-This package owns repository-local dataset adapters and dataset-facing contracts. The main implemented target today is ADVIO.
+This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO
+and TUM RGB-D.
 
 The current ADVIO stack includes:
 
@@ -18,13 +19,22 @@ The current ADVIO stack includes:
 - ADVIO replay stream assembly in `advio_replay_adapter.py`
 - offline benchmark-input preparation, including typed reference trajectories, in `advio_sequence.py` and
   `advio_service.py`
-- explicit frame-graph helpers in `frame_graph.py`
 
 The replay path is layered on purpose:
 
 - `prml_vslam.io.cv2_producer` owns generic video replay and pacing
 - `advio_replay_adapter.py` adds ADVIO-specific timestamps, calibration, poses, and optional video-rotation handling
 - `advio_sequence.py` exposes the sequence-level entry points used by the app and tests
+
+The TUM RGB-D stack mirrors the same service shape where practical:
+
+- typed metadata, status, and download request models in `tum_rgbd/tum_rgbd_models.py`
+- ViSTA-compatible scene catalog and local path resolution in `tum_rgbd/tum_rgbd_layout.py`
+- TUM timestamp-list parsing, RGB/depth/pose association, and Freiburg intrinsics in
+  `tum_rgbd/tum_rgbd_loading.py`
+- TGZ download/extraction flows in `tum_rgbd/tum_rgbd_download.py`
+- sequence manifest and benchmark input preparation in `tum_rgbd/tum_rgbd_sequence.py`
+- image-sequence loop preview in `tum_rgbd/tum_rgbd_replay_adapter.py`
 
 ## Main Entry Points
 
@@ -41,6 +51,14 @@ The replay path is layered on purpose:
   - export ground-truth and baseline trajectories to TUM
 - `load_advio_sequence(...)`
   - convenience entry point for one fully loaded local sample
+- `TumRgbdDatasetService`
+  - summarize local TUM RGB-D state
+  - download selected TUM RGB-D archives
+  - prepare RGB-directory sequence manifests and ground-truth TUM references
+- `TumRgbdSequence`
+  - load one local sequence
+  - open one RGB-D image-sequence replay stream
+  - export ground-truth trajectories to normalized `.tum` paths
 
 ## Typical Usage
 

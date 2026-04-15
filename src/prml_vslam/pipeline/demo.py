@@ -24,13 +24,20 @@ def build_advio_demo_request(
     sequence_id: str,
     mode: PipelineMode,
     method: MethodId,
+    dataset_frame_stride: int = 1,
+    dataset_target_fps: float | None = None,
 ) -> RunRequest:
     """Build the canonical bounded ADVIO demo request shared by app and CLI."""
     return RunRequest(
         experiment_name=f"{sequence_id}-{mode.value}-{method.value}",
         mode=mode,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id),
+        source=DatasetSourceSpec(
+            dataset_id=DatasetId.ADVIO,
+            sequence_id=sequence_id,
+            frame_stride=dataset_frame_stride,
+            target_fps=dataset_target_fps,
+        ),
         slam=SlamStageConfig(method=method),
         benchmark=BenchmarkConfig(
             reference={"enabled": False},
@@ -66,6 +73,8 @@ def persist_advio_demo_request(
     sequence_id: str,
     mode: PipelineMode,
     method: MethodId,
+    dataset_frame_stride: int = 1,
+    dataset_target_fps: float | None = None,
     config_path: str | Path | None = None,
 ) -> Path:
     """Persist the canonical ADVIO demo request under `.configs/pipelines/` by default."""
@@ -74,6 +83,8 @@ def persist_advio_demo_request(
         sequence_id=sequence_id,
         mode=mode,
         method=method,
+        dataset_frame_stride=dataset_frame_stride,
+        dataset_target_fps=dataset_target_fps,
     )
     return save_run_request_toml(
         path_config=path_config,

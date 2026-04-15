@@ -82,6 +82,11 @@ def test_run_request_build_respects_disabled_optional_stage_toggles(tmp_path: Pa
     assert RunPlanStageId.BENCHMARK not in [stage.id for stage in plan.stages]
 
 
+def test_dataset_source_rejects_stride_and_target_fps_together() -> None:
+    with pytest.raises(ValueError, match="frame_stride.*target_fps"):
+        DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15", frame_stride=2, target_fps=10.0)
+
+
 def test_run_request_from_toml_parses_nested_vista_backend_config(tmp_path: Path) -> None:
     config_path = tmp_path / "vista-full.toml"
     config_path.write_text(

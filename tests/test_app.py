@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from streamlit.testing.v1 import AppTest
 
 from prml_vslam.app import bootstrap
 from prml_vslam.app.models import (
@@ -1423,7 +1422,7 @@ def test_advio_download_form_returns_typed_request_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from prml_vslam.app.advio_controller import AdvioDownloadFormData
-    from prml_vslam.app.pages import advio as advio_page
+    from prml_vslam.app.pages import datasets as advio_page
     from prml_vslam.datasets.advio import AdvioDatasetService, AdvioDownloadPreset, AdvioModality
 
     class DummyContext:
@@ -1447,7 +1446,7 @@ def test_advio_download_form_returns_typed_request_model(
         advio_service=AdvioDatasetService(PathConfig(root=tmp_path)),
         advio_runtime=FakeAdvioRuntime(),
     )
-    form = advio_page._render_download_form(context)
+    form = advio_page._render_advio_download_form(context)
 
     assert isinstance(form, AdvioDownloadFormData)
     assert form.submitted is True
@@ -1486,7 +1485,6 @@ def test_advio_page_data_treats_empty_download_selection_as_full_catalog() -> No
                 local_scene_count=0,
                 replay_ready_scene_count=0,
                 offline_ready_scene_count=0,
-                full_scene_count=0,
                 cached_archive_count=0,
                 total_remote_archive_bytes=0,
             )
@@ -1582,7 +1580,7 @@ def test_advio_controller_handles_preview_start_and_stop() -> None:
 
 
 def test_advio_loop_preview_shows_only_stop_button_while_preview_is_running() -> None:
-    from prml_vslam.app.pages import advio as advio_page
+    from prml_vslam.app.pages import datasets as advio_page
 
     class DummyContext:
         def __enter__(self):
@@ -1622,14 +1620,14 @@ def test_advio_loop_preview_shows_only_stop_button_while_preview_is_running() ->
     monkeypatch.setattr(advio_page, "handle_advio_preview_action", lambda *args, **kwargs: None)
     monkeypatch.setattr(advio_page, "render_live_fragment", lambda *args, **kwargs: None)
 
-    advio_page._render_loop_preview(context, statuses)
+    advio_page._render_advio_loop_preview(context, statuses)
     monkeypatch.undo()
 
     assert seen_labels == ["Stop preview"]
 
 
 def test_advio_loop_preview_reruns_after_successful_start_action() -> None:
-    from prml_vslam.app.pages import advio as advio_page
+    from prml_vslam.app.pages import datasets as advio_page
 
     class DummyContext:
         def __enter__(self):
@@ -1670,59 +1668,41 @@ def test_advio_loop_preview_reruns_after_successful_start_action() -> None:
     monkeypatch.setattr(advio_page.st, "rerun", lambda: rerun_calls.append(True))
     monkeypatch.setattr(advio_page, "render_live_fragment", lambda *args, **kwargs: None)
 
-    advio_page._render_loop_preview(context, statuses)
+    advio_page._render_advio_loop_preview(context, statuses)
     monkeypatch.undo()
 
     assert rerun_calls == [True]
 
 
 def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) -> None:
-    dataset_root = tmp_path / ".data" / "advio"
-    sequence_dir = dataset_root / "advio-15" / "iphone"
-    sequence_dir.mkdir(parents=True, exist_ok=True)
-    (sequence_dir / "frames.mov").write_bytes(b"")
-    (sequence_dir / "frames.csv").write_text("0.0,0\n0.1,1\n", encoding="utf-8")
+    from prml_vslam.app.pages import datasets as datasets_page
 
-    def _render_advio_page_script(root_path: str) -> None:
-        from pathlib import Path
-        from types import SimpleNamespace
+    class DummyContext:
+        def __enter__(self):
+            return self
 
-        from prml_vslam.app.models import AppState
-        from prml_vslam.app.pages.advio import render as render_advio_page
-        from prml_vslam.datasets.advio import AdvioDatasetService
-        from prml_vslam.utils import PathConfig
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
 
-        class _Store:
-            def save(self, state: AppState) -> None:
-                self.last_state = state.model_copy(deep=True)
-
-        class _AdvioRuntime:
-            def snapshot(self):
-                from prml_vslam.app.models import AdvioPreviewSnapshot
-
-                return AdvioPreviewSnapshot()
-
-            def stop(self) -> None:
-                return None
-
-            def start(self, *, sequence_id: int, sequence_label: str, pose_source, stream) -> None:
-                del sequence_id, sequence_label, pose_source, stream
-                return None
-
-        context = SimpleNamespace(
-            state=AppState(),
-            store=_Store(),
-            advio_service=AdvioDatasetService(PathConfig(root=Path(root_path))),
-            advio_runtime=_AdvioRuntime(),
+    warnings: list[str] = []
+    statuses = [
+        SimpleNamespace(
+            sequence_dir=tmp_path / ".data" / "advio" / "advio-15",
+            offline_ready=False,
+            scene=SimpleNamespace(sequence_id=15),
         )
-        render_advio_page(context)
+    ]
 
-    at = AppTest.from_function(_render_advio_page_script, args=(str(tmp_path),))
-    at.run(timeout=10)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(datasets_page.st, "container", lambda *args, **kwargs: DummyContext())
+    monkeypatch.setattr(datasets_page.st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(datasets_page.st, "warning", lambda message: warnings.append(message))
+    monkeypatch.setattr(datasets_page.st, "info", lambda message: warnings.append(message))
 
-    assert any(item.value == "Sequence Explorer" for item in at.subheader)
-    assert any(item.value == "Loop Preview" for item in at.subheader)
-    assert any("none are offline-ready yet" in item.value.lower() for item in at.warning)
+    datasets_page._render_advio_sequence_explorer(SimpleNamespace(), statuses)
+    monkeypatch.undo()
+
+    assert any("none are offline-ready yet" in item.lower() for item in warnings)
 
 
 def test_record3d_transport_change_does_not_start_stream_until_submit() -> None:

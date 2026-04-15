@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
@@ -77,7 +78,11 @@ class OfflineSourceResolver:
             case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id):
                 service = AdvioDatasetService(self.path_config)
                 numeric_sequence_id = service.resolve_sequence_id(sequence_id)
-                return service.build_offline_source(sequence_id=numeric_sequence_id)
+                return service.build_offline_source(sequence_id=numeric_sequence_id, frame_selection=source_spec)
+            case DatasetSourceSpec(dataset_id=DatasetId.TUM_RGBD, sequence_id=sequence_id):
+                service = TumRgbdDatasetService(self.path_config)
+                resolved_sequence_id = service.resolve_sequence_id(sequence_id)
+                return service.build_offline_source(sequence_id=resolved_sequence_id, frame_selection=source_spec)
             case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
                 return VideoOfflineSequenceSource(
                     path_config=self.path_config,

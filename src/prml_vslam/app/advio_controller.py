@@ -125,6 +125,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
             ),
         )
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=True)
+        save_model_updates(context.store, context.state, context.state.tum_rgbd, preview_is_running=False)
         return None
     except Exception as exc:
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)

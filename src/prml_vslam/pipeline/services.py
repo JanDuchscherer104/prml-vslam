@@ -150,9 +150,17 @@ class RunPlannerService:
     def _ingest_summary(source: SourceSpec) -> str:
         match source:
             case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
-                return f"Decode '{video_path}' at stride {frame_stride} and materialize a normalized sequence manifest."
+                sampling = (
+                    f"target {source.target_fps:g} fps" if source.target_fps is not None else f"stride {frame_stride}"
+                )
+                return f"Decode '{video_path}' at {sampling} and materialize a normalized sequence manifest."
             case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
-                return f"Normalize dataset sequence '{dataset_id.value}:{sequence_id}' into a shared sequence manifest."
+                sampling = (
+                    f" at target {source.target_fps:g} fps"
+                    if source.target_fps is not None
+                    else (f" at stride {source.frame_stride}" if source.frame_stride != 1 else "")
+                )
+                return f"Normalize dataset sequence '{dataset_id.value}:{sequence_id}'{sampling} into a shared sequence manifest."
             case Record3DLiveSourceSpec(
                 transport=transport,
                 persist_capture=persist_capture,

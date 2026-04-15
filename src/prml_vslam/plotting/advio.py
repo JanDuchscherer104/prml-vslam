@@ -66,12 +66,11 @@ def build_local_readiness_figure(statuses: list[AdvioLocalSceneStatus]) -> go.Fi
             sum(status.sequence_dir is not None for status in statuses),
             sum(status.replay_ready for status in statuses),
             sum(status.offline_ready for status in statuses),
-            sum(status.full_ready for status in statuses),
         ],
         dtype=np.int64,
     )
-    labels = ["Catalog", "Local", "Replay Ready", "Offline Ready", "Full Ready"]
-    colors = [_NEUTRAL_COLOR, _LOCAL_COLOR, _INDOOR_COLOR, _OFFLINE_COLOR, _FEATURE_COLOR]
+    labels = ["Catalog", "Local", "Replay Ready", "Offline Ready"]
+    colors = [_NEUTRAL_COLOR, _LOCAL_COLOR, _INDOOR_COLOR, _OFFLINE_COLOR]
     texts = [
         f"{value}" if index == 0 or total == 0 else f"{value} ({(100.0 * value / total):.0f}%)"
         for index, value in enumerate(values.tolist())

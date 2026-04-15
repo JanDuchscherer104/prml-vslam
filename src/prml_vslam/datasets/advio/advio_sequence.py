@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from pydantic import Field
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.datasets.contracts import FrameSelectionConfig
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
@@ -125,9 +126,15 @@ class AdvioSequence(BaseData):
             ),
         )
 
-    def to_sequence_manifest(self, *, output_dir: Path | None = None) -> SequenceManifest:
+    def to_sequence_manifest(
+        self,
+        *,
+        output_dir: Path | None = None,
+        frame_selection: FrameSelectionConfig | None = None,
+    ) -> SequenceManifest:
         from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
+        del frame_selection
         paths = self._resolve_paths(require_arcore=False)
         if output_dir is not None:
             output_dir.mkdir(parents=True, exist_ok=True)

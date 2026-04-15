@@ -84,6 +84,8 @@ def sync_pipeline_page_state_from_template(
             source_updates = {
                 "source_kind": PipelineSourceId.ADVIO,
                 "advio_sequence_id": advio_sequence_id,
+                "dataset_frame_stride": request.source.frame_stride,
+                "dataset_target_fps": request.source.target_fps,
             }
         case Record3DLiveSourceSpec() as record3d_source:
             source_updates = {
@@ -128,6 +130,8 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             source = DatasetSourceSpec(
                 dataset_id=DatasetId.ADVIO,
                 sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
+                frame_stride=action.dataset_frame_stride,
+                target_fps=action.dataset_target_fps,
             )
         else:
             source = record3d_source_spec_from_action(action)
@@ -276,6 +280,12 @@ def build_streaming_source_from_action(context: AppContext, action: PipelinePage
             sequence_id=action.advio_sequence_id,
             pose_source=action.pose_source,
             respect_video_rotation=action.respect_video_rotation,
+            frame_selection=DatasetSourceSpec(
+                dataset_id=DatasetId.ADVIO,
+                sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
+                frame_stride=action.dataset_frame_stride,
+                target_fps=action.dataset_target_fps,
+            ),
         )
     transport_input_error = record3d_transport_input_error(
         transport=action.record3d_transport,
@@ -381,6 +391,8 @@ def request_summary_payload(request: RunRequest) -> dict[str, object]:
                 "kind": "dataset",
                 "dataset_id": dataset_id.value,
                 "sequence_id": sequence_id,
+                "frame_stride": request.source.frame_stride,
+                "target_fps": request.source.target_fps,
             }
         case _:
             payload["source"] = request.source.model_dump(mode="json")

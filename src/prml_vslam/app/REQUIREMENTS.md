@@ -8,7 +8,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 
 ## Current State
 
-- The app currently exposes four top-level pages: `Record3D`, `ADVIO`, `Pipeline`, and `Metrics`.
+- The app currently exposes four top-level pages: `Record3D`, `Datasets`, `Pipeline`, and `Metrics`.
 - The `Record3D` page supports both the canonical `USB` transport and the optional `Wi-Fi Preview` transport through one selector.
 - The `Pipeline` page can show example request shapes, a generated `RunPlan`, one mock executed run, and the current offline plus bounded streaming demo surface.
 - The `Pipeline` page may run offline ADVIO requests plus bounded Record3D live flows through pipeline-owned services.
@@ -25,7 +25,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 ## Responsibilities
 
 - The app owns Streamlit pages, packaged bootstrap code, typed page state, app-local controllers, and UI composition.
-- The app owns rendering and user-facing interaction flow for the Record3D, ADVIO, Pipeline, and Metrics pages.
+- The app owns rendering and user-facing interaction flow for the Record3D, Datasets, Pipeline, and Metrics pages.
 - The app does not own transport decoding, dataset normalization, pipeline semantics, backend orchestration, benchmark-policy logic, or viewer artifact semantics.
 
 ## Non-Negotiable Requirements

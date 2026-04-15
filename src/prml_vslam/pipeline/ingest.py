@@ -8,6 +8,7 @@ from pathlib import Path
 
 import cv2
 
+from prml_vslam.datasets.contracts import FrameSelectionConfig
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, RunRequest, VideoSourceSpec
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import RunArtifactPaths
@@ -24,13 +25,13 @@ def materialize_offline_manifest(
     rgb_dir = prepared_manifest.rgb_dir
     timestamps_path = prepared_manifest.timestamps_path
     intrinsics_path = prepared_manifest.intrinsics_path
+    frame_selection = _frame_selection_for_request(request)
 
     if prepared_manifest.video_path is not None and rgb_dir is None:
-        frame_stride = _frame_stride_for_request(request)
         cached_rgb_dir = _check_extraction_cache(
             video_path=prepared_manifest.video_path,
             output_dir=run_paths.input_frames_dir,
-            frame_stride=frame_stride,
+            frame_selection=frame_selection,
         )
         if cached_rgb_dir is not None:
             rgb_dir = cached_rgb_dir
@@ -38,28 +39,38 @@ def materialize_offline_manifest(
             extracted = _extract_video_frames(
                 video_path=prepared_manifest.video_path,
                 output_dir=run_paths.input_frames_dir,
-                frame_stride=frame_stride,
+                frame_selection=frame_selection,
             )
             rgb_dir = extracted["rgb_dir"]
             _write_json_payload(
                 rgb_dir / ".ingest_metadata.json",
-                {"video_path": str(prepared_manifest.video_path.resolve()), "frame_stride": frame_stride},
+                {
+                    "video_path": str(prepared_manifest.video_path.resolve()),
+                    "frame_stride": frame_selection.frame_stride,
+                    "target_fps": frame_selection.target_fps,
+                    "effective_frame_stride": extracted["frame_stride"],
+                },
             )
 
+        timestamps_source = _preferred_timestamps_source(
+            prepared_manifest=prepared_manifest,
+            run_paths=run_paths,
+            cached_rgb_dir=cached_rgb_dir,
+        )
         timestamps_ns = _resolve_timestamps_ns(
-            source_path=_preferred_timestamps_source(
-                prepared_manifest=prepared_manifest,
-                run_paths=run_paths,
-                cached_rgb_dir=cached_rgb_dir,
-            ),
-            frame_stride=frame_stride,
+            source_path=timestamps_source,
+            frame_selection=FrameSelectionConfig() if cached_rgb_dir is not None else frame_selection,
             fallback_timestamps_ns=[] if cached_rgb_dir is not None else extracted["timestamps_ns"],
         )
         # If we reused frames, we expect the timestamps to already be materialized if they were part of a previous run.
         # However, materialize_offline_manifest always ensures the input/ directory is populated.
         timestamps_path = _write_json_payload(
             run_paths.input_timestamps_path,
-            {"timestamps_ns": timestamps_ns, "frame_stride": frame_stride},
+            {
+                "timestamps_ns": timestamps_ns,
+                "frame_stride": frame_selection.frame_stride,
+                "target_fps": frame_selection.target_fps,
+            },
         )
 
     if intrinsics_path is not None:
@@ -80,17 +91,22 @@ def materialize_offline_manifest(
     )
 
 
-def _frame_stride_for_request(request: RunRequest) -> int:
+def _frame_selection_for_request(request: RunRequest) -> FrameSelectionConfig:
     match request.source:
-        case VideoSourceSpec(frame_stride=frame_stride):
-            return frame_stride
-        case DatasetSourceSpec():
-            return 1
+        case VideoSourceSpec() as source:
+            return source
+        case DatasetSourceSpec() as source:
+            return source
         case _:
-            return 1
+            return FrameSelectionConfig()
 
 
-def _check_extraction_cache(*, video_path: Path, output_dir: Path, frame_stride: int) -> Path | None:
+def _check_extraction_cache(
+    *,
+    video_path: Path,
+    output_dir: Path,
+    frame_selection: FrameSelectionConfig,
+) -> Path | None:
     metadata_path = output_dir / ".ingest_metadata.json"
     if not metadata_path.exists():
         return None
@@ -98,7 +114,8 @@ def _check_extraction_cache(*, video_path: Path, output_dir: Path, frame_stride:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         if (
             metadata.get("video_path") == str(video_path.resolve())
-            and metadata.get("frame_stride") == frame_stride
+            and metadata.get("frame_stride") == frame_selection.frame_stride
+            and metadata.get("target_fps") == frame_selection.target_fps
             and any(output_dir.glob("*.png"))
         ):
             return output_dir.resolve()
@@ -107,7 +124,12 @@ def _check_extraction_cache(*, video_path: Path, output_dir: Path, frame_stride:
     return None
 
 
-def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: int) -> dict[str, object]:
+def _extract_video_frames(
+    *,
+    video_path: Path,
+    output_dir: Path,
+    frame_selection: FrameSelectionConfig,
+) -> dict[str, object]:
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -118,6 +140,11 @@ def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: i
     frame_index = 0
     written_index = 0
     fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+    frame_stride = (
+        max(1, int(round(fps / frame_selection.target_fps)))
+        if fps > 0.0 and frame_selection.target_fps is not None
+        else frame_selection.frame_stride
+    )
     while True:
         ok, frame_bgr = capture.read()
         if not ok:
@@ -133,7 +160,7 @@ def _extract_video_frames(*, video_path: Path, output_dir: Path, frame_stride: i
         written_index += 1
         frame_index += 1
     capture.release()
-    return {"rgb_dir": output_dir.resolve(), "timestamps_ns": timestamps_ns}
+    return {"rgb_dir": output_dir.resolve(), "timestamps_ns": timestamps_ns, "frame_stride": frame_stride}
 
 
 def _copy_if_needed(source_path: Path, target_path: Path) -> Path:
@@ -147,7 +174,7 @@ def _copy_if_needed(source_path: Path, target_path: Path) -> Path:
 def _resolve_timestamps_ns(
     *,
     source_path: Path | None,
-    frame_stride: int,
+    frame_selection: FrameSelectionConfig,
     fallback_timestamps_ns: list[int],
 ) -> list[int]:
     if source_path is None or not source_path.exists():
@@ -157,7 +184,7 @@ def _resolve_timestamps_ns(
         payload = json.loads(source_path.read_text(encoding="utf-8"))
         if isinstance(payload, dict) and isinstance(payload.get("timestamps_ns"), list):
             values = [int(value) for value in payload["timestamps_ns"]]
-            return values[::frame_stride]
+            return values[:: _stride_for_timestamps(values, frame_selection)]
     rows = []
     for line in source_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -167,7 +194,11 @@ def _resolve_timestamps_ns(
     if not rows:
         return fallback_timestamps_ns
     values = [int(round(float(value) * 1e9)) for value in rows]
-    return values[::frame_stride]
+    return values[:: _stride_for_timestamps(values, frame_selection)]
+
+
+def _stride_for_timestamps(timestamps_ns: list[int], frame_selection: FrameSelectionConfig) -> int:
+    return frame_selection.stride_for_timestamps_ns(timestamps_ns)
 
 
 def _preferred_timestamps_source(

@@ -25,7 +25,7 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.demo import build_advio_demo_request, load_run_request_toml, persist_advio_demo_request
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
@@ -134,11 +134,24 @@ def plan_run_config(
             help="Path to a RunRequest TOML file (repo-relative paths are resolved via PathConfig).",
         ),
     ],
+    dataset_frame_stride: Annotated[
+        int | None,
+        typer.Option("--dataset-frame-stride", min=1, help="Override dataset frame stride from the TOML source."),
+    ] = None,
+    dataset_target_fps: Annotated[
+        float | None,
+        typer.Option("--dataset-target-fps", min=0.01, help="Override dataset target FPS from the TOML source."),
+    ] = None,
 ) -> None:
     """Build a typed benchmark run plan from a TOML config file."""
     path_config = get_path_config()
     try:
         request = load_run_request_toml(path_config=path_config, config_path=config_path)
+        request = _apply_dataset_sampling_overrides(
+            request,
+            dataset_frame_stride=dataset_frame_stride,
+            dataset_target_fps=dataset_target_fps,
+        )
         plan = request.build(path_config)
     except Exception as exc:
         console.error(str(exc))
@@ -154,11 +167,24 @@ def run_config(
             help="Path to an offline RunRequest TOML file (repo-relative paths are resolved via PathConfig).",
         ),
     ],
+    dataset_frame_stride: Annotated[
+        int | None,
+        typer.Option("--dataset-frame-stride", min=1, help="Override dataset frame stride from the TOML source."),
+    ] = None,
+    dataset_target_fps: Annotated[
+        float | None,
+        typer.Option("--dataset-target-fps", min=0.01, help="Override dataset target FPS from the TOML source."),
+    ] = None,
 ) -> None:
     """Run one offline pipeline request from a TOML config file."""
     path_config = get_path_config()
     try:
         request = load_run_request_toml(path_config=path_config, config_path=config_path)
+        request = _apply_dataset_sampling_overrides(
+            request,
+            dataset_frame_stride=dataset_frame_stride,
+            dataset_target_fps=dataset_target_fps,
+        )
         if request.mode is not PipelineMode.OFFLINE:
             raise RuntimeError("`run-config` currently supports only `offline` requests.")
         run_service = RunService(path_config=path_config)
@@ -204,6 +230,14 @@ def write_demo_config(
             help="Optional output TOML path. Bare filenames resolve under .configs/pipelines/.",
         ),
     ] = None,
+    dataset_frame_stride: Annotated[
+        int,
+        typer.Option("--dataset-frame-stride", min=1, help="Dataset frame stride stored in the demo request."),
+    ] = 1,
+    dataset_target_fps: Annotated[
+        float | None,
+        typer.Option("--dataset-target-fps", min=0.01, help="Dataset target FPS stored in the demo request."),
+    ] = None,
 ) -> None:
     """Persist the canonical ADVIO demo request as TOML."""
     path_config = get_path_config()
@@ -215,6 +249,8 @@ def write_demo_config(
         sequence_id=scene.sequence_slug,
         mode=mode,
         method=method,
+        dataset_frame_stride=dataset_frame_stride,
+        dataset_target_fps=dataset_target_fps,
         config_path=config_path,
     )
     console.plog(
@@ -280,6 +316,14 @@ def pipeline_demo(
             help="Whether to honor ADVIO video rotation metadata during replay.",
         ),
     ] = False,
+    dataset_frame_stride: Annotated[
+        int,
+        typer.Option("--dataset-frame-stride", min=1, help="Frame stride used for ADVIO replay packets."),
+    ] = 1,
+    dataset_target_fps: Annotated[
+        float | None,
+        typer.Option("--dataset-target-fps", min=0.01, help="Target FPS used for ADVIO replay packets."),
+    ] = None,
     poll_interval_seconds: Annotated[
         float,
         typer.Option(
@@ -299,11 +343,14 @@ def pipeline_demo(
         sequence_id=scene.sequence_slug,
         mode=PipelineMode.STREAMING,
         method=method,
+        dataset_frame_stride=dataset_frame_stride,
+        dataset_target_fps=dataset_target_fps,
     )
     source = advio_service.build_streaming_source(
         sequence_id=resolved_sequence_id,
         pose_source=pose_source,
         respect_video_rotation=respect_video_rotation,
+        frame_selection=request.source if isinstance(request.source, DatasetSourceSpec) else None,
     )
     run_service = RunService(path_config=path_config)
     console.info(
@@ -407,6 +454,27 @@ def _resolve_demo_sequence_id(service: AdvioDatasetService, *, explicit_sequence
             "No replay-ready ADVIO scenes were found. Download the streaming bundle first or pass --sequence."
         )
     return previewable_ids[0]
+
+
+def _apply_dataset_sampling_overrides(
+    request: RunRequest,
+    *,
+    dataset_frame_stride: int | None,
+    dataset_target_fps: float | None,
+) -> RunRequest:
+    if dataset_frame_stride is None and dataset_target_fps is None:
+        return request
+    if dataset_frame_stride is not None and dataset_target_fps is not None:
+        raise typer.BadParameter("Configure either --dataset-frame-stride or --dataset-target-fps, not both.")
+    if not isinstance(request.source, DatasetSourceSpec):
+        raise typer.BadParameter("Dataset sampling overrides require a dataset-backed source.")
+    source = request.source.model_copy(
+        update={
+            "frame_stride": 1 if dataset_target_fps is not None else dataset_frame_stride,
+            "target_fps": dataset_target_fps,
+        }
+    )
+    return request.model_copy(update={"source": DatasetSourceSpec.model_validate(source.model_dump(mode="python"))})
 
 
 def _wait_for_pipeline_terminal_snapshot(
