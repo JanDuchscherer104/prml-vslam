@@ -82,6 +82,9 @@ Repository loader conventions:
   - translation: columns `1:4`
   - quaternion: columns `4:8`
   - timestamps: column `0`
+- The repository treats `ground-truth/fixpoints.csv` as part of the
+  `GROUND_TRUTH` modality bundle. It is preserved for source fidelity and local
+  completeness checks, but the trajectory loader reads only the pose CSV.
 - The calibration YAML is parsed as:
   - pinhole intrinsics: `fx, fy, cx, cy`
   - image size
