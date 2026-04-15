@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 import prml_vslam.io as io_package
 import prml_vslam.methods as methods_package
 import prml_vslam.pipeline as pipeline_package
@@ -30,6 +32,14 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
     ]
     assert not hasattr(pipeline_package, "PipelineSessionService")
     assert not hasattr(pipeline_package, "PipelineSessionSnapshot")
+
+
+def test_pipeline_contracts_package_is_not_a_compatibility_hub() -> None:
+    contracts_package = importlib.import_module("prml_vslam.pipeline.contracts")
+    request_contracts = importlib.import_module("prml_vslam.pipeline.contracts.request")
+
+    assert pipeline_package.RunRequest is request_contracts.RunRequest
+    assert not hasattr(contracts_package, "RunRequest")
 
 
 def test_methods_package_exports_slam_surfaces() -> None:

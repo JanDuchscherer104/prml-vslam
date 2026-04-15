@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from prml_vslam.benchmark import ReferenceSource
+from prml_vslam.methods.contracts import MethodId
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage, RunPlanStageId
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
@@ -55,10 +56,14 @@ class RunPlannerService:
 
     def _build_stages(self, request: RunRequest, run_paths: RunArtifactPaths) -> list[RunPlanStage]:
         slam_output_names = ["trajectory_path"]
-        if request.slam.outputs.emit_sparse_points:
-            slam_output_names.append("sparse_points_path")
-        if request.slam.outputs.emit_dense_points:
-            slam_output_names.append("dense_points_path")
+        if request.slam.method is MethodId.VISTA:
+            if request.slam.outputs.emit_sparse_points or request.slam.outputs.emit_dense_points:
+                slam_output_names.append("point_cloud_path")
+        else:
+            if request.slam.outputs.emit_sparse_points:
+                slam_output_names.append("sparse_points_path")
+            if request.slam.outputs.emit_dense_points:
+                slam_output_names.append("dense_points_path")
         optional_stages = (
             (
                 request.benchmark.reference.enabled,
@@ -170,10 +175,14 @@ class RunPlannerService:
     @staticmethod
     def _method_summary(config: SlamStageConfig) -> str:
         artifact_names = ["trajectory"]
-        if config.outputs.emit_sparse_points:
-            artifact_names.append("sparse geometry")
-        if config.outputs.emit_dense_points:
-            artifact_names.append("dense geometry")
+        if config.method is MethodId.VISTA:
+            if config.outputs.emit_sparse_points or config.outputs.emit_dense_points:
+                artifact_names.append("point-cloud geometry")
+        else:
+            if config.outputs.emit_sparse_points:
+                artifact_names.append("sparse geometry")
+            if config.outputs.emit_dense_points:
+                artifact_names.append("dense geometry")
         return f"Plan the {config.method.display_name} wrapper and export {', '.join(artifact_names)} artifacts."
 
     @staticmethod

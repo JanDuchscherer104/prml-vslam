@@ -6,11 +6,10 @@ import ctypes
 import site
 import sys
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import cv2
 import numpy as np
-import open3d as o3d
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.interfaces import FramePacket, FrameTransform
@@ -24,8 +23,19 @@ from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajector
 
 from .config import VistaSlamBackendConfig
 
+if TYPE_CHECKING:
+    from prml_vslam.methods.protocols import SlamSession
+
 _VISTA_INPUT_RESOLUTION = (224, 224)
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
+
+
+def _import_open3d() -> object:
+    try:
+        import open3d as o3d
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("ViSTA point-cloud artifact import requires the optional Open3D dependency.") from exc
+    return o3d
 
 
 class _FlowTracker(Protocol):
@@ -66,6 +76,8 @@ class VistaSlamSession:
             update = SlamUpdate(
                 seq=frame.seq,
                 timestamp_ns=frame.timestamp_ns,
+                source_seq=frame.seq,
+                source_timestamp_ns=frame.timestamp_ns,
                 is_keyframe=False,
                 keyframe_index=None,
                 num_dense_points=self._num_dense_points,
@@ -81,6 +93,8 @@ class VistaSlamSession:
             update = SlamUpdate(
                 seq=frame.seq,
                 timestamp_ns=frame.timestamp_ns,
+                source_seq=frame.seq,
+                source_timestamp_ns=frame.timestamp_ns,
                 is_keyframe=False,
                 keyframe_index=None,
                 num_dense_points=self._num_dense_points,
@@ -127,7 +141,7 @@ class VistaSlamSession:
                 f"The sequence ({self._source_frame_count} frames, {self._accepted_keyframe_count} keyframes) "
                 "may have been too short to initialize the pose graph."
             ) from exc
-        
+
         self._console.info(
             "ViSTA-SLAM session closed after %d frames; native outputs in '%s'.",
             self._source_frame_count,
@@ -162,6 +176,8 @@ class VistaSlamSession:
             return SlamUpdate(
                 seq=seq,
                 timestamp_ns=timestamp_ns,
+                source_seq=seq,
+                source_timestamp_ns=timestamp_ns,
                 is_keyframe=True,
                 keyframe_index=view_index,
                 num_sparse_points=0,
@@ -179,6 +195,8 @@ class VistaSlamSession:
         return SlamUpdate(
             seq=seq,
             timestamp_ns=timestamp_ns,
+            source_seq=seq,
+            source_timestamp_ns=timestamp_ns,
             pose=pose,
             is_keyframe=True,
             keyframe_index=view_index,
@@ -419,24 +437,21 @@ def _build_artifacts(
     dense_points_ref: ArtifactRef | None = None
     pointcloud_ply = native_output_dir / "pointcloud.ply"
     if pointcloud_ply.exists() and (output_policy.emit_sparse_points or output_policy.emit_dense_points):
+        o3d = _import_open3d()
         point_cloud = o3d.io.read_point_cloud(str(pointcloud_ply))
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
+        run_paths = RunArtifactPaths.build(artifact_root)
+        point_cloud_path = write_point_cloud_ply(run_paths.point_cloud_path, points_xyz)
+        canonical_ref = ArtifactRef(
+            path=point_cloud_path,
+            kind="ply",
+            fingerprint=f"vista-point-cloud-{len(points_xyz)}",
+        )
         if output_policy.emit_sparse_points:
-            sparse_points_path = write_point_cloud_ply(artifact_root / "slam" / "sparse_points.ply", points_xyz)
-            sparse_points_ref = ArtifactRef(
-                path=sparse_points_path,
-                kind="ply",
-                fingerprint=f"vista-sparse-{len(points_xyz)}",
-            )
+            sparse_points_ref = canonical_ref
         if output_policy.emit_dense_points:
-            dense_points_path = write_point_cloud_ply(artifact_root / "dense" / "dense_points.ply", points_xyz)
-            dense_points_ref = ArtifactRef(
-                path=dense_points_path,
-                kind="ply",
-                fingerprint=f"vista-dense-{len(points_xyz)}",
-            )
+            dense_points_ref = canonical_ref
 
-    native_rerun_path = native_output_dir / "rerun_recording.rrd"
     extras = {
         path.name: ArtifactRef(
             path=path.resolve(),
@@ -454,12 +469,6 @@ def _build_artifacts(
         ),
         sparse_points_ply=sparse_points_ref,
         dense_points_ply=dense_points_ref,
-        native_rerun_rrd=(
-            None
-            if not native_rerun_path.exists()
-            else ArtifactRef(path=native_rerun_path.resolve(), kind="rrd", fingerprint="vista-native-rerun")
-        ),
-        native_output_dir=ArtifactRef(path=native_output_dir.resolve(), kind="dir", fingerprint="vista-native-output"),
         extras=extras,
     )
 
@@ -483,6 +492,7 @@ def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:
     return FrameTransform.from_matrix(normalized)
 
 
+# TODO: this is a generic helper that should not be defined here!
 def _project_rotation_to_so3(rotation: np.ndarray) -> np.ndarray:
     """Project one near-rotation matrix to the closest valid SO(3) matrix."""
     rotation_array = np.asarray(rotation, dtype=np.float64)

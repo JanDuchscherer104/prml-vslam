@@ -32,3 +32,5 @@
   - Run full streaming validation on ADVIO sequences and capture regressions.
   - Finalize reproducible Conda setup notes for smoother team onboarding.
 ]
+
+#let proposal_detail_body = none

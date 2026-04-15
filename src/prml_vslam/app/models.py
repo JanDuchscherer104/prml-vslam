@@ -172,6 +172,9 @@ class PipelinePageState(BaseData):
     slam_max_frames: int | None = None
     """Optional frame cap for the current request."""
 
+    slam_backend_payload: dict[str, object] = Field(default_factory=dict)
+    """Full backend payload preserved from the selected request template."""
+
     emit_dense_points: bool = True
     """Whether dense geometry artifacts should be emitted."""
 

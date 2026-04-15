@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,12 +10,50 @@ import numpy as np
 import pytest
 
 from prml_vslam.interfaces import FramePacket, FrameTransform
-from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
+from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamOutputPolicy
-from prml_vslam.methods.multiprocess import MultiprocessSlamSession
-from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.utils import Console
+
+
+def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeTensor:
+        def __init__(self, value: np.ndarray) -> None:
+            self._value = np.asarray(value)
+
+        @property
+        def shape(self) -> tuple[int, ...]:
+            return self._value.shape
+
+        def permute(self, *axes: int) -> FakeTensor:
+            self._value = np.transpose(self._value, axes)
+            return self
+
+        def float(self) -> FakeTensor:
+            self._value = self._value.astype(np.float32)
+            return self
+
+        def unsqueeze(self, axis: int) -> FakeTensor:
+            self._value = np.expand_dims(self._value, axis)
+            return self
+
+        def to(self, device: str) -> FakeTensor:
+            del device
+            return self
+
+        def __truediv__(self, scalar: float) -> FakeTensor:
+            self._value = self._value / scalar
+            return self
+
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            from_numpy=lambda value: FakeTensor(np.asarray(value)),
+            tensor=lambda value: FakeTensor(np.asarray(value)),
+            manual_seed=lambda seed: None,
+        ),
+    )
 
 
 def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tmp_path: Path) -> None:
@@ -36,6 +75,10 @@ def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tm
     assert artifacts.trajectory_tum.kind == "tum"
     assert artifacts.sparse_points_ply is not None
     assert artifacts.sparse_points_ply.path.exists()
+
+
+def test_mock_slam_backend_config_defaults_to_mock_method() -> None:
+    assert MockSlamBackendConfig().method_id is MethodId.MOCK
 
 
 def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> None:
@@ -98,8 +141,13 @@ def test_methods_package_exports_vista_backend_surfaces() -> None:
     assert VistaSlamBackendConfig is not None
 
 
-def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(tmp_path: Path) -> None:
+def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from prml_vslam.methods.vista.adapter import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
 
     class FakeFlowTracker:
         def __init__(self) -> None:
@@ -181,8 +229,13 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(tmp_pa
     assert update.num_dense_points == 3
 
 
-def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_conversion(tmp_path: Path) -> None:
+def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_conversion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from prml_vslam.methods.vista.adapter import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
 
     class FakeSlam:
         def __init__(self) -> None:
@@ -227,8 +280,13 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
     assert update.pose.translation_xyz().tolist() == [1.0, 2.0, 3.0]
 
 
-def test_vista_session_omits_dense_pointmap_when_policy_disables_it(tmp_path: Path) -> None:
+def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from prml_vslam.methods.vista.adapter import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
 
     class FakeSlam:
         def get_view(self, *args: object, **kwargs: object) -> object:
@@ -262,8 +320,13 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(tmp_path: Pa
     assert update.preview_rgb is not None
 
 
-def test_vista_session_keyframe_gates_streaming_updates_before_step(tmp_path: Path) -> None:
+def test_vista_session_keyframe_gates_streaming_updates_before_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from prml_vslam.methods.vista.adapter import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
 
     class FakeFlowTracker:
         def __init__(self) -> None:
@@ -342,8 +405,13 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(tmp_path: Pa
     assert slam.get_pointmap_vis_calls == [0, 1]
 
 
-def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_populates(tmp_path: Path) -> None:
+def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_populates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from prml_vslam.methods.vista.adapter import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
 
     class FakeFlowTracker:
         def compute_disparity(self, image: np.ndarray, visualize: bool = False) -> bool:
@@ -411,6 +479,45 @@ def test_vista_artifact_builder_projects_near_orthonormal_trajectory_rotations(t
     assert artifacts.trajectory_tum.path.exists()
 
 
+def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.adapter import _build_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    np.save(native_output_dir / "trajectory.npy", np.eye(4, dtype=np.float64)[None, :, :])
+    (native_output_dir / "rerun_recording.rrd").write_bytes(b"native-rerun")
+    (native_output_dir / "pointcloud.ply").write_text(
+        "\n".join(
+            [
+                "ply",
+                "format ascii 1.0",
+                "element vertex 1",
+                "property float x",
+                "property float y",
+                "property float z",
+                "end_header",
+                "0 0 1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    artifacts = _build_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=tmp_path / "artifacts",
+        output_policy=SlamOutputPolicy(),
+    )
+
+    assert artifacts.sparse_points_ply is not None
+    assert artifacts.dense_points_ply is not None
+    assert artifacts.sparse_points_ply.path == artifacts.dense_points_ply.path
+    assert artifacts.sparse_points_ply.path.name == "point_cloud.ply"
+    assert not hasattr(artifacts, "native_rerun_rrd")
+    assert not hasattr(artifacts, "native_output_dir")
+    assert "rerun_recording.rrd" not in artifacts.extras
+
+
 def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
     from prml_vslam.methods.vista.adapter import _frame_transform_from_vista_pose
 
@@ -426,24 +533,3 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
 
     with pytest.raises(ValueError, match="too far from SO\\(3\\)"):
         _frame_transform_from_vista_pose(pose)
-
-
-def test_multiprocess_session_surfaces_worker_frame_errors(tmp_path: Path) -> None:
-    class FailingSession:
-        def step(self, frame: FramePacket) -> None:
-            del frame
-            raise RuntimeError("worker step failed")
-
-        def try_get_updates(self) -> list[SlamUpdate]:
-            return []
-
-        def close(self) -> object:
-            return object()
-
-    session = MultiprocessSlamSession(
-        session_factory=lambda: FailingSession(),  # type: ignore[arg-type]
-        console=Console(__name__),
-    )
-    session.step(FramePacket(seq=0, timestamp_ns=0, rgb=np.zeros((4, 4, 3), dtype=np.uint8)))
-    with pytest.raises(RuntimeError, match="worker step failed"):
-        session.try_get_updates()

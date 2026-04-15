@@ -32,7 +32,7 @@ _POINTMAP_DEPTH_SPAN_M = 1.0
 class MockSlamBackendConfig(BaseConfig):
     """Config that builds the repository-local mock SLAM backend."""
 
-    method_id: MethodId = MethodId.VISTA
+    method_id: MethodId = MethodId.MOCK
     """Selected mock backend label."""
 
     @property
@@ -201,6 +201,8 @@ class MockSlamSession(SlamSession):
         return SlamUpdate(
             seq=seq,
             timestamp_ns=timestamp_ns,
+            source_seq=seq,
+            source_timestamp_ns=timestamp_ns,
             pose=pose,
             is_keyframe=True,
             pose_updated=True,
