@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import ConfigDict
 
 from prml_vslam.utils import BaseConfig
 
@@ -14,8 +14,7 @@ class MethodId(StrEnum):
 
     VISTA = "vista"
     MAST3R = "mast3r"
-    MSTR = "mast3r"
-    """Alias for MAST3R used in early scaffold mocks."""
+    MOCK = "mock"
 
     @property
     def display_name(self) -> str:
@@ -25,6 +24,8 @@ class MethodId(StrEnum):
                 return "ViSTA-SLAM"
             case MethodId.MAST3R:
                 return "MASt3R-SLAM"
+            case MethodId.MOCK:
+                return "Mock Preview"
 
 
 class SlamOutputPolicy(BaseConfig):
@@ -40,11 +41,10 @@ class SlamOutputPolicy(BaseConfig):
 class SlamBackendConfig(BaseConfig):
     """Method-owned backend controls."""
 
+    model_config = ConfigDict(extra="forbid")
+
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
-
-    slam: dict[str, object] = Field(default_factory=dict)
-    """Backend-specific nested overrides preserved from `[slam.backend.slam]` TOML blocks."""
 
 
 __all__ = ["MethodId", "SlamBackendConfig", "SlamOutputPolicy"]

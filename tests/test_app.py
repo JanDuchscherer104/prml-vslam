@@ -17,6 +17,7 @@ from prml_vslam.app.models import (
     AdvioPreviewSnapshot,
     AppPageId,
     AppState,
+    PipelinePageState,
     PipelineSourceId,
     PreviewStreamState,
     Record3DPageState,
@@ -61,9 +62,6 @@ from prml_vslam.pipeline.contracts.request import (
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
-from prml_vslam.pipeline.streaming import (
-    _is_keyframe_like_update,
-)
 from prml_vslam.utils.path_config import PathConfig
 from prml_vslam.visualization import VisualizationConfig
 
@@ -94,16 +92,25 @@ def _build_path_config(tmp_path: Path) -> PathConfig:
     )
 
 
+def test_live_image_data_url_uses_inline_payload() -> None:
+    from prml_vslam.app.live_session import live_image_data_url
+
+    data_url = live_image_data_url(np.zeros((2, 2, 3), dtype=np.uint8))
+
+    assert data_url.startswith("data:image/jpeg;base64,")
+    assert "/media/" not in data_url
+
+
 def _write_pipeline_config(
     path_config: PathConfig,
     *,
-    name: str = "advio-offline-advio-15-vista.toml",
+    name: str = "advio-15-offline-vista.toml",
     source_block: str = 'dataset_id = "advio"\nsequence_id = "advio-15"',
 ) -> Path:
     config_path = path_config.resolve_pipeline_config_path(name, create_parent=True)
     config_path.write_text(
         f"""
-experiment_name = "advio-offline-advio-15-vista"
+experiment_name = "advio-15-offline-vista"
 mode = "offline"
 output_dir = ".artifacts"
 
@@ -137,7 +144,7 @@ enabled = false
 
 def _load_pipeline_request_fixture() -> RunRequest:
     return RunRequest(
-        experiment_name="advio-offline-advio-15-vista",
+        experiment_name="advio-15-offline-vista",
         mode=PipelineMode.OFFLINE,
         output_dir=Path(".artifacts"),
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
@@ -550,10 +557,49 @@ def test_pipeline_page_evo_preview_fails_when_timestamps_do_not_match(tmp_path: 
         )
 
 
-def test_pipeline_page_formats_mstr_as_mock_preview() -> None:
+def test_pipeline_page_formats_mock_as_mock_preview() -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
 
-    assert pipeline_page._pipeline_method_label(MethodId.MSTR) == "Mock Preview"
+    assert pipeline_page._pipeline_method_label(MethodId.MOCK) == "Mock Preview"
+    assert pipeline_page._pipeline_method_label(MethodId.MAST3R) == "MASt3R-SLAM"
+
+
+def test_pipeline_page_identity_controls_label_vslam_method_selector(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    selectbox_calls: list[tuple[str, list[object]]] = []
+
+    def fake_selectbox(label: str, *, options: list[object], index: int, **kwargs: object) -> object:
+        del kwargs
+        selectbox_calls.append((label, list(options)))
+        return options[index]
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
+    monkeypatch.setattr(
+        pipeline_page.st,
+        "text_input",
+        lambda label, *args, **kwargs: "demo" if label == "Experiment Name" else "",
+    )
+    monkeypatch.setattr(pipeline_page.st, "selectbox", fake_selectbox)
+    monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
+
+    pipeline_page._render_request_identity_controls(
+        page_state=PipelinePageState(method=MethodId.VISTA),
+        path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"),
+        source_kind=PipelineSourceId.ADVIO,
+    )
+    monkeypatch.undo()
+
+    method_call = next(call for call in selectbox_calls if call[0] == "VSLAM Method")
+    assert method_call[1] == list(MethodId)
 
 
 def test_pipeline_page_metrics_distinguish_packet_and_backend_rates(tmp_path: Path) -> None:
@@ -617,6 +663,7 @@ def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_pa
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page, "render_live_image", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
@@ -688,6 +735,7 @@ def test_pipeline_page_streaming_tabs_retain_last_valid_vista_preview(tmp_path: 
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "image", lambda image, *args, **kwargs: image_payloads.append(image))
+    monkeypatch.setattr(pipeline_page, "render_live_image", lambda image, *args, **kwargs: image_payloads.append(image))
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda message, *args, **kwargs: caption_messages.append(message))
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
@@ -728,8 +776,8 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
         plan=RunPlan(
             run_id="mock-stream",
             mode=PipelineMode.STREAMING,
-            method=MethodId.MSTR,
-            artifact_root=tmp_path / ".artifacts" / "mock-stream" / "mstr",
+            method=MethodId.MOCK,
+            artifact_root=tmp_path / ".artifacts" / "mock-stream" / "mock",
             source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
         ),
         latest_packet=FramePacket(
@@ -767,6 +815,7 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "image", lambda image, *args, **kwargs: image_payloads.append(image))
+    monkeypatch.setattr(pipeline_page, "render_live_image", lambda image, *args, **kwargs: image_payloads.append(image))
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
@@ -851,8 +900,8 @@ def test_streaming_keyframe_gate_rejects_small_pose_jitter() -> None:
     update_jitter = SlamUpdate(seq=1, timestamp_ns=1, is_keyframe=False)
     update_keyframe = SlamUpdate(seq=2, timestamp_ns=2, is_keyframe=True)
 
-    assert _is_keyframe_like_update(update_jitter) is False
-    assert _is_keyframe_like_update(update_keyframe) is True
+    assert update_jitter.is_keyframe is False
+    assert update_keyframe.is_keyframe is True
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:
@@ -976,6 +1025,116 @@ def test_pipeline_request_builds_record3d_wifi_source_from_action(tmp_path: Path
     assert request.source.persist_capture is True
 
 
+def test_pipeline_request_build_preserves_vista_backend_payload(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    class AdvioServiceStub:
+        def scene(self, sequence_id: int) -> SimpleNamespace:
+            assert sequence_id == 15
+            return SimpleNamespace(sequence_slug="advio-15")
+
+    context = SimpleNamespace(
+        path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"),
+        advio_service=AdvioServiceStub(),
+    )
+
+    request, error_message = pipeline_page._build_request_from_action(
+        context,
+        pipeline_page.PipelinePageAction(
+            config_path=tmp_path / "vista.toml",
+            source_kind=PipelineSourceId.ADVIO,
+            advio_sequence_id=15,
+            mode=PipelineMode.STREAMING,
+            method=MethodId.VISTA,
+            slam_max_frames=21,
+            slam_backend_payload={
+                "max_frames": 10,
+                "slam": {
+                    "flow_thres": 2.5,
+                    "max_view_num": 256,
+                },
+            },
+            connect_live_viewer=True,
+        ),
+    )
+
+    assert error_message is None
+    assert request is not None
+    assert request.slam.backend.max_frames == 21
+    assert request.slam.backend.model_dump(mode="python")["slam"]["flow_thres"] == 2.5
+    assert request.slam.backend.model_dump(mode="python")["slam"]["max_view_num"] == 256
+
+
+def test_pipeline_page_supports_trajectory_evaluation_stage(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="advio-trajectory-eval",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        slam=SlamStageConfig(method=MethodId.VISTA),
+        benchmark=BenchmarkConfig(trajectory=TrajectoryBenchmarkConfig(enabled=True)),
+    )
+    plan = request.build(path_config)
+
+    error_message = pipeline_page._request_support_error(
+        request=request,
+        plan=plan,
+        previewable_statuses=[],
+    )
+
+    assert error_message is None
+
+
+def test_pipeline_page_rejects_unsupported_cloud_evaluation_stage(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="advio-cloud-eval",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        slam=SlamStageConfig(method=MethodId.VISTA),
+        benchmark=BenchmarkConfig(cloud=CloudBenchmarkConfig(enabled=True)),
+    )
+    plan = request.build(path_config)
+
+    error_message = pipeline_page._request_support_error(
+        request=request,
+        plan=plan,
+        previewable_statuses=[],
+    )
+
+    assert error_message is not None
+    assert "cloud_evaluation" in error_message
+
+
+def test_pipeline_page_rejects_mast3r_execution_until_backend_exists(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="advio-mast3r",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        slam=SlamStageConfig(method=MethodId.MAST3R),
+    )
+    plan = request.build(path_config)
+
+    error_message = pipeline_page._request_support_error(
+        request=request,
+        plan=plan,
+        previewable_statuses=[],
+    )
+
+    assert error_message is not None
+    assert "MASt3R-SLAM is not executable yet" in error_message
+
+
 def test_pipeline_source_input_error_requires_wifi_device_address() -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
 
@@ -1080,6 +1239,42 @@ def test_pipeline_page_state_sync_hydrates_record3d_wifi_template(tmp_path: Path
     assert context.state.pipeline.record3d_persist_capture is True
 
 
+def test_pipeline_page_state_sync_preserves_vista_backend_payload(tmp_path: Path) -> None:
+    from prml_vslam.app.pages import pipeline as pipeline_page
+
+    context = SimpleNamespace(
+        state=AppState(),
+        store=FakeStore(),
+    )
+    request = RunRequest(
+        experiment_name="vista-full",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
+        slam=SlamStageConfig(
+            method=MethodId.VISTA,
+            backend={
+                "max_frames": 50,
+                "slam": {
+                    "flow_thres": 1.5,
+                    "max_view_num": 128,
+                },
+            },
+        ),
+    )
+
+    pipeline_page._sync_pipeline_page_state_from_template(
+        context=context,
+        config_path=tmp_path / "vista-full.toml",
+        request=request,
+        statuses=[SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)],
+    )
+
+    assert context.state.pipeline.slam_max_frames == 50
+    assert context.state.pipeline.slam_backend_payload["slam"]["flow_thres"] == 1.5
+    assert context.state.pipeline.slam_backend_payload["slam"]["max_view_num"] == 128
+
+
 def test_load_pipeline_request_toml_parses_record3d_wifi_source(tmp_path: Path) -> None:
     from prml_vslam.pipeline.demo import load_run_request_toml
 
@@ -1118,7 +1313,7 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
             return SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Mall 01")
 
     seen_labels: list[str] = []
-    config_path = Path("/tmp/advio-offline-advio-15-vista.toml")
+    config_path = Path("/tmp/advio-15-offline-vista.toml")
     context = SimpleNamespace(
         path_config=SimpleNamespace(),
         advio_service=AdvioServiceSpy(),
@@ -1193,7 +1388,7 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
             return False
 
     rerun_calls: list[bool] = []
-    config_path = Path("/tmp/advio-offline-advio-15-vista.toml")
+    config_path = Path("/tmp/advio-15-offline-vista.toml")
     context = SimpleNamespace(
         path_config=SimpleNamespace(),
         advio_service=SimpleNamespace(
@@ -1566,7 +1761,7 @@ def test_advio_page_warns_when_local_scene_is_not_offline_ready(tmp_path: Path) 
         render_advio_page(context)
 
     at = AppTest.from_function(_render_advio_page_script, args=(str(tmp_path),))
-    at.run()
+    at.run(timeout=10)
 
     assert any(item.value == "Sequence Explorer" for item in at.subheader)
     assert any(item.value == "Loop Preview" for item in at.subheader)

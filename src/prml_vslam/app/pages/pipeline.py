@@ -42,6 +42,7 @@ from ..live_session import (
     render_camera_intrinsics,
     render_live_action_slot,
     render_live_fragment,
+    render_live_image,
     render_live_session_shell,
     render_live_trajectory,
     rerun_after_action,
@@ -61,7 +62,14 @@ if TYPE_CHECKING:
 
 _ACTIVE_SESSION_STATES = frozenset({RunState.PREPARING, RunState.RUNNING})
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
-_SUPPORTED_APP_STAGE_IDS = frozenset({RunPlanStageId.INGEST, RunPlanStageId.SLAM, RunPlanStageId.SUMMARY})
+_SUPPORTED_APP_STAGE_IDS = frozenset(
+    {
+        RunPlanStageId.INGEST,
+        RunPlanStageId.SLAM,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
+        RunPlanStageId.SUMMARY,
+    }
+)
 _MOCK_METHOD_LABEL = "Mock Preview"
 _VISTA_POINTMAP_EMPTY_MESSAGE = (
     "ViSTA-SLAM has not produced a renderable preview artifact for the current keyframe yet."
@@ -91,15 +99,15 @@ class PipelineEvoPreview(BaseData):
 
 def _pipeline_method_label(method: MethodId) -> str:
     """Return the app-facing method label used by the bounded pipeline demo."""
-    if method is MethodId.MSTR:
-        return _MOCK_METHOD_LABEL
     return method.display_name
 
 
 def _pipeline_method_help(method: MethodId) -> str:
     """Explain the current streaming-preview semantics for the selected method."""
-    if method is MethodId.MSTR:
+    if method is MethodId.MOCK:
         return "Repository-local mock backend that emits live pose and pointmap telemetry for UI validation."
+    if method is MethodId.MAST3R:
+        return "MASt3R-SLAM is retained as a method id, but this repository has no executable MASt3R backend yet."
     return (
         "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs show packet FPS, accepted "
         "keyframe FPS, and live previews only when the backend produces a new keyframe artifact."
@@ -335,7 +343,7 @@ def _render_request_identity_controls(
             format_func=lambda item: item.label,
         )
         method = st.selectbox(
-            "Method",
+            "VSLAM Method",
             options=list(MethodId),
             index=list(MethodId).index(page_state.method),
             format_func=_pipeline_method_label,
@@ -529,6 +537,7 @@ def _sync_pipeline_page_state_from_template(
         mode=request.mode,
         method=request.slam.method,
         slam_max_frames=request.slam.backend.max_frames,
+        slam_backend_payload=request.slam.backend.model_dump(mode="python", exclude_none=True),
         emit_dense_points=request.slam.outputs.emit_dense_points,
         emit_sparse_points=request.slam.outputs.emit_sparse_points,
         reference_enabled=request.benchmark.reference.enabled,
@@ -586,9 +595,7 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
                     "emit_dense_points": action.emit_dense_points,
                     "emit_sparse_points": action.emit_sparse_points,
                 },
-                backend={
-                    "max_frames": action.slam_max_frames,
-                },
+                backend=_backend_payload_from_action(action),
             ),
             benchmark=BenchmarkConfig(
                 reference={"enabled": action.reference_enabled},
@@ -623,10 +630,13 @@ def _request_support_error(
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
+    if request.slam.method is MethodId.MAST3R:
+        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
     unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
-        return "The current app demo can execute only ingest, slam, and summary stages. Disable: " + ", ".join(
-            unsupported_stage_ids
+        return (
+            "The current app demo can execute only ingest, slam, trajectory evaluation, and summary stages. Disable: "
+            + ", ".join(unsupported_stage_ids)
         )
     match request.source:
         case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
@@ -704,13 +714,13 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
                 st.markdown("**RGB Frame**")
-                st.image(packet.rgb, channels="RGB", clamp=True, width="stretch")
+                render_live_image(packet.rgb, channels="RGB", clamp=True, width="stretch")
             with preview_right:
                 st.markdown("**ViSTA Preview Artifact**")
                 if pointmap_preview is None:
                     st.info(_streaming_pointmap_empty_message(snapshot))
                 else:
-                    st.image(pointmap_preview, clamp=True, width="stretch")
+                    render_live_image(pointmap_preview, clamp=True, width="stretch")
                     preview_status_message = _preview_status_message(snapshot)
                     if preview_status_message is not None:
                         st.caption(preview_status_message)
@@ -978,21 +988,6 @@ def _parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None
         return None, f"Enter a whole number for `{field_label}` or leave the field blank."
 
 
-def _parse_optional_repo_path(path_config: PathConfig, raw_value: str) -> Path | None:
-    return None if raw_value == "" else path_config.resolve_repo_path(raw_value)
-
-
-def _display_repo_relative_path(path_config: PathConfig, path: Path | None) -> str:
-    if path is None:
-        return ""
-    resolved = path if path.is_absolute() else path_config.resolve_repo_path(path)
-    return (
-        str(resolved.relative_to(path_config.root))
-        if resolved.is_relative_to(path_config.root)
-        else resolved.as_posix()
-    )
-
-
 def _request_summary_payload(request: RunRequest) -> dict[str, object]:
     payload = {
         "experiment_name": request.experiment_name,
@@ -1000,7 +995,7 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
         "output_dir": request.output_dir.as_posix(),
         "slam": {
             "method": request.slam.method.value,
-            "max_frames": request.slam.backend.max_frames,
+            "backend": request.slam.backend.model_dump(mode="json", exclude_none=True),
             "emit_dense_points": request.slam.outputs.emit_dense_points,
             "emit_sparse_points": request.slam.outputs.emit_sparse_points,
         },
@@ -1016,6 +1011,14 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
             }
         case _:
             payload["source"] = request.source.model_dump(mode="json")
+    return payload
+
+
+def _backend_payload_from_action(action: PipelinePageAction) -> dict[str, object]:
+    if action.method is not MethodId.VISTA:
+        return {"max_frames": action.slam_max_frames}
+    payload = dict(action.slam_backend_payload)
+    payload["max_frames"] = action.slam_max_frames
     return payload
 
 

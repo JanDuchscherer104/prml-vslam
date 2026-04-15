@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
+from importlib import import_module
+from typing import TYPE_CHECKING
 
 import streamlit as st
 
@@ -15,9 +17,13 @@ from prml_vslam.pipeline.state import RunState
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState
-from .pages import render_advio_page, render_metrics_page, render_pipeline_page, render_record3d_page
 from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
 from .state import SessionStateStore
+
+if TYPE_CHECKING:
+    from types import ModuleType
+
+PageRenderer = Callable[["AppContext"], None]
 
 
 @dataclass(slots=True)
@@ -35,10 +41,10 @@ class AppContext:
 
 
 _PAGE_SPECS = (
-    (AppPageId.RECORD3D, ":material/videocam:", render_record3d_page, True),
-    (AppPageId.ADVIO, ":material/download:", render_advio_page, False),
-    (AppPageId.PIPELINE, ":material/account_tree:", render_pipeline_page, False),
-    (AppPageId.METRICS, ":material/show_chart:", render_metrics_page, False),
+    (AppPageId.RECORD3D, ":material/videocam:", "record3d", True),
+    (AppPageId.ADVIO, ":material/download:", "advio", False),
+    (AppPageId.PIPELINE, ":material/account_tree:", "pipeline", False),
+    (AppPageId.METRICS, ":material/show_chart:", "metrics", False),
 )
 
 
@@ -82,23 +88,28 @@ def _render_sidebar_brand() -> None:
 def _build_pages(context: AppContext) -> list[st.Page]:
     return [
         st.Page(
-            partial(_render_page_entry, context, page_id, render_page),
+            partial(_render_page_entry, context, page_id, page_module),
             title=page_id.label,
             icon=icon,
             url_path=page_id.value,
             default=default,
         )
-        for page_id, icon, render_page, default in _PAGE_SPECS
+        for page_id, icon, page_module, default in _PAGE_SPECS
     ]
 
 
 def _render_page_entry(
     context: AppContext,
     page_id: AppPageId,
-    render_page: Callable[[AppContext], None],
+    page_module: str | PageRenderer,
 ) -> None:
     _enter_page(context, page_id)
+    render_page = page_module if callable(page_module) else _load_page_module(page_module).render
     render_page(context)
+
+
+def _load_page_module(page_module: str) -> ModuleType:
+    return import_module(f".pages.{page_module}", __package__)
 
 
 def _enter_page(context: AppContext, page_id: AppPageId) -> None:

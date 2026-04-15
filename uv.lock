@@ -395,6 +395,17 @@ wheels = [
 ]
 
 [[package]]
+name = "dbow3py"
+version = "0.0.3"
+source = { directory = "external/vista-slam/DBoW3Py" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy" }]
+
+[[package]]
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -687,7 +698,7 @@ http2 = [
 
 [[package]]
 name = "huggingface-hub"
-version = "1.9.0"
+version = "1.10.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -700,9 +711,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/88/bb/62c7aa86f63a05e2f9b96642fdef9b94526a23979820b09f5455deff4983/huggingface_hub-1.9.0.tar.gz", hash = "sha256:0ea5be7a56135c91797cae6ad726e38eaeb6eb4b77cefff5c9d38ba0ecf874f7", size = 750326, upload-time = "2026-04-03T08:35:55.888Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/4d/00734890c7fcfe2c7ff04f1c1a167186c42b19e370a2dd8cfd8c34fc92c4/huggingface_hub-1.10.2.tar.gz", hash = "sha256:4b276f820483b709dc86a53bcb8183ea496b8d8447c9f7f88a115a12b498a95f", size = 758428, upload-time = "2026-04-14T10:42:28.498Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/37/0d15d16150e1829f3e90962c99f28257f6de9e526a680b4c6f5acdb54fd2/huggingface_hub-1.9.0-py3-none-any.whl", hash = "sha256:2999328c058d39fd19ab748dd09bd4da2fbaa4f4c1ddea823eab103051e14a1f", size = 637355, upload-time = "2026-04-03T08:35:53.897Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/c9/4c1e1216b24bcab140c83acdf8bc89a846ea17cd8a06cd18e3fd308a297f/huggingface_hub-1.10.2-py3-none-any.whl", hash = "sha256:c26c908767cc711493978dc0b4f5747ba7841602997cc98bfd628450a28cf9bc", size = 642581, upload-time = "2026-04-14T10:42:26.563Z" },
 ]
 
 [[package]]
@@ -1523,34 +1534,24 @@ name = "prml-vslam"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "einops" },
     { name = "evo" },
     { name = "jaxtyping" },
     { name = "matplotlib" },
-    { name = "munch" },
     { name = "numpy" },
     { name = "open3d" },
     { name = "opencv-python" },
     { name = "plotly" },
     { name = "pooch" },
     { name = "pydantic" },
-    { name = "pykdtree" },
-    { name = "pypose" },
     { name = "pytransform3d" },
     { name = "pyyaml" },
-    { name = "rerun-sdk" },
     { name = "rich" },
     { name = "scipy" },
     { name = "seaborn" },
     { name = "streamlit" },
-    { name = "tensorboard" },
     { name = "tomli-w" },
-    { name = "torch" },
-    { name = "torchaudio" },
-    { name = "torchvision" },
     { name = "tqdm" },
     { name = "typer" },
-    { name = "xformers" },
 ]
 
 [package.optional-dependencies]
@@ -1573,17 +1574,31 @@ streaming = [
     { name = "aiortc" },
     { name = "record3d" },
 ]
+vista = [
+    { name = "dbow3py" },
+    { name = "einops" },
+    { name = "munch" },
+    { name = "pykdtree" },
+    { name = "pypose" },
+    { name = "rerun-sdk" },
+    { name = "tensorboard" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "torchvision" },
+    { name = "xformers" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "aiortc", marker = "extra == 'streaming'", specifier = ">=1.9,<2" },
     { name = "av", marker = "extra == 'replay'", specifier = ">=16,<17" },
     { name = "bibtex-updater", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "einops", specifier = ">=0.6" },
+    { name = "dbow3py", marker = "extra == 'vista'", directory = "external/vista-slam/DBoW3Py" },
+    { name = "einops", marker = "extra == 'vista'", specifier = ">=0.6" },
     { name = "evo", specifier = ">=1.31,<2" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
     { name = "matplotlib", specifier = ">=3.8,<4" },
-    { name = "munch", specifier = ">=2.5" },
+    { name = "munch", marker = "extra == 'vista'", specifier = ">=2.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11,<2" },
     { name = "numpy", specifier = ">=1.26,<3" },
     { name = "open3d", specifier = ">=0.19.0,<0.20" },
@@ -1592,8 +1607,8 @@ requires-dist = [
     { name = "pooch", specifier = ">=1.8,<2" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.2,<5" },
     { name = "pydantic", specifier = ">=2.11,<3" },
-    { name = "pykdtree", specifier = ">=1.3" },
-    { name = "pypose", specifier = ">=0.6" },
+    { name = "pykdtree", marker = "extra == 'vista'", specifier = ">=1.3" },
+    { name = "pypose", marker = "extra == 'vista'", specifier = ">=0.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<9" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6,<4" },
     { name = "pytransform3d", specifier = ">=3.14.4" },
@@ -1601,22 +1616,22 @@ requires-dist = [
     { name = "qdrant-client", extras = ["fastembed"], marker = "extra == 'repo-context'", specifier = ">=1,<2" },
     { name = "rebiber", marker = "extra == 'dev'", specifier = ">=1.1.3" },
     { name = "record3d", marker = "extra == 'streaming'", specifier = ">=1.4.1,<2" },
-    { name = "rerun-sdk", specifier = "==0.24.1" },
+    { name = "rerun-sdk", marker = "extra == 'vista'", specifier = "==0.24.1" },
     { name = "rich", specifier = ">=13.7,<15" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11,<1" },
     { name = "scipy", specifier = ">=1.13,<2" },
     { name = "seaborn", specifier = ">=0.13,<1" },
     { name = "streamlit", specifier = ">=1.35,<2" },
-    { name = "tensorboard", specifier = ">=2.14,<3" },
+    { name = "tensorboard", marker = "extra == 'vista'", specifier = ">=2.14,<3" },
     { name = "tomli-w", specifier = ">=1.2,<2" },
-    { name = "torch", specifier = "==2.5.1" },
-    { name = "torchaudio", specifier = "==2.5.1" },
-    { name = "torchvision", specifier = "==0.20.1" },
+    { name = "torch", marker = "extra == 'vista'", specifier = "==2.5.1" },
+    { name = "torchaudio", marker = "extra == 'vista'", specifier = "==2.5.1" },
+    { name = "torchvision", marker = "extra == 'vista'", specifier = "==0.20.1" },
     { name = "tqdm", specifier = ">=4.66,<5" },
     { name = "typer", specifier = ">=0.12,<1" },
-    { name = "xformers" },
+    { name = "xformers", marker = "extra == 'vista'" },
 ]
-provides-extras = ["dev", "repo-context", "replay", "streaming"]
+provides-extras = ["dev", "repo-context", "replay", "streaming", "vista"]
 
 [[package]]
 name = "protobuf"

@@ -1,0 +1,35 @@
+experiment_name = "advio-15-offline-vista"
+mode            = "offline"
+output_dir      = ".artifacts"
+
+[source]
+dataset_id  = "advio"
+sequence_id = "advio-15"
+
+[slam]
+method = "vista"
+
+    [slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [slam.backend]
+
+[benchmark.reference]
+enabled = false
+
+[benchmark.trajectory]
+enabled     = false
+baseline_id = "reference"
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = false
+
+[visualization]
+export_viewer_rrd     = false
+connect_live_viewer   = false
+grpc_url              = "rerun+http://127.0.0.1:9876/proxy"
+preserve_native_rerun = true

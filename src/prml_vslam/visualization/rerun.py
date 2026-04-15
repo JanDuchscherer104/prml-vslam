@@ -9,9 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from prml_vslam.interfaces.transforms import FrameTransform
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
 from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
@@ -71,6 +72,31 @@ def attach_grpc_sink(recording_stream: Any, *, grpc_url: str) -> None:
     raise RuntimeError("The installed Rerun SDK does not expose a supported gRPC sink API.")
 
 
+def attach_recording_sinks(
+    recording_stream: Any,
+    *,
+    grpc_url: str | None = None,
+    target_path: Path | None = None,
+) -> None:
+    """Attach all requested Rerun sinks without replacing earlier sinks."""
+    rr = _import_rerun()
+    sinks: list[Any] = []
+    if grpc_url is not None:
+        if not hasattr(rr, "GrpcSink"):
+            raise RuntimeError("The installed Rerun SDK does not expose `GrpcSink`.")
+        sinks.append(rr.GrpcSink(grpc_url))
+    if target_path is not None:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if not hasattr(rr, "FileSink"):
+            raise RuntimeError("The installed Rerun SDK does not expose `FileSink`.")
+        sinks.append(rr.FileSink(str(target_path)))
+    if not sinks:
+        return
+    if not hasattr(recording_stream, "set_sinks"):
+        raise RuntimeError("The installed Rerun SDK does not expose the multi-sink `set_sinks` API.")
+    recording_stream.set_sinks(*sinks)
+
+
 def log_transform(recording_stream: Any, *, entity_path: str, transform: FrameTransform) -> None:
     """Log one explicit transform using repo-owned direction semantics."""
     rr = _import_rerun()
@@ -96,7 +122,6 @@ def log_pointcloud(
     colors: np.ndarray | None = None,
 ) -> None:
     """Log a point cloud (and optionally colors) to the viewer."""
-    import numpy as np  # noqa: PLC0415
 
     rr = _import_rerun()
     if not hasattr(rr, "Points3D"):
@@ -129,20 +154,6 @@ def log_preview_image(recording_stream: Any, *, entity_path: str, image_rgb: np.
     recording_stream.log(entity_path, rr.Image(image_rgb))
 
 
-def export_viewer_recording(
-    *,
-    sequence_manifest: SequenceManifest,
-    slam_artifacts: SlamArtifacts,
-    output_path: Path,
-    run_id: str,
-) -> ArtifactRef:
-    """Export a normalized repo-owned `.rrd` recording from repo-owned artifacts."""
-    del sequence_manifest, slam_artifacts
-    recording_stream = create_recording_stream(app_id="prml-vslam", recording_id=run_id)
-    attach_file_sink(recording_stream, target_path=output_path)
-    return ArtifactRef(path=output_path.resolve(), kind="rrd", fingerprint=f"viewer-rrd-{run_id}")
-
-
 def collect_native_visualization_artifacts(
     *,
     native_output_dir: Path,
@@ -173,9 +184,9 @@ def collect_native_visualization_artifacts(
 __all__ = [
     "attach_file_sink",
     "attach_grpc_sink",
+    "attach_recording_sinks",
     "collect_native_visualization_artifacts",
     "create_recording_stream",
-    "export_viewer_recording",
     "log_pointcloud",
     "log_preview_image",
     "log_transform",

@@ -8,6 +8,8 @@ from typing import Self
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import ConfigDict
+from pytransform3d.rotations import matrix_from_quaternion, quaternion_from_matrix
+from pytransform3d.transformations import transform_from
 
 from prml_vslam.utils.base_data import BaseData
 
