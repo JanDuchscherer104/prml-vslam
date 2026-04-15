@@ -37,8 +37,11 @@ but not perfectly identical. In the checked local ADVIO archives under
 `.data/advio/`, all 23 sequences use `ground-truth/pose.csv`,
 `iphone/gyro.csv`, and `iphone/platform-locations.csv`, whereas the official
 README documents `poses.csv`, `gyroscope.csv`, and `platform-location.csv`.
-The repository adapter intentionally accepts both spellings where needed, but
-the examples below prefer the names present in the released archives.
+The Tango point-cloud payloads are also stored as five-digit names such as
+`point-cloud-00001.csv`, while the official README documents the schematic
+`point-cloud-$index.csv` form. The repository adapter intentionally accepts the
+observed released names where needed, but the examples below prefer the names
+present in the released archives.
 
 Canonical per-sequence structure:
 
@@ -65,8 +68,8 @@ data/
 │       ├── raw.csv                   # Tango raw odometry
 │       ├── area-learning.csv         # Tango loop-closing / map-building odometry
 │       ├── point-cloud.csv           # point-cloud timestamps / index table
-│       ├── point-cloud-001.csv       # Tango point-cloud capture
-│       ├── point-cloud-002.csv       # Tango point-cloud capture
+│       ├── point-cloud-00001.csv     # Tango point-cloud capture
+│       ├── point-cloud-00002.csv     # Tango point-cloud capture
 │       └── ...
 └── calibration/
     ├── iphone-01.yaml                # iPhone intrinsics, distortion, and T_cam_imu
@@ -85,6 +88,11 @@ Repository loader conventions:
 - The repository treats `ground-truth/fixpoints.csv` as part of the
   `GROUND_TRUTH` modality bundle. It is preserved for source fidelity and local
   completeness checks, but the trajectory loader reads only the pose CSV.
+- Tango `raw.csv` and `area-learning.csv` use the same pose CSV convention as
+  the other ADVIO pose streams.
+- Tango `point-cloud.csv` rows are `timestamp, point_cloud_index`; each index
+  points to a matching `point-cloud-00001.csv`-style payload file whose rows are
+  `x, y, z` metric point coordinates emitted by the Tango depth pipeline.
 - The calibration YAML is parsed as:
   - pinhole intrinsics: `fx, fy, cx, cy`
   - image size
@@ -93,6 +101,45 @@ Repository loader conventions:
 - In this repository, poses and calibration transforms are handled through
   [`FrameTransform`](../../interfaces/transforms.py) using the canonical
   camera-to-world runtime convention for poses.
+
+## Ground-Truth Fixpoints
+
+`ground-truth/fixpoints.csv` stores the manually marked position fixes used to
+build the ADVIO reference trajectory. The paper describes the ground truth as an
+iPhone-IMU inertial-navigation estimate conditioned on these manual fixes,
+additional calibration, and the external/reference videos and floor plans.
+The fixes constrain position only; orientation comes from the inertial
+trajectory inference.
+
+In the released CSVs, each row is numeric and starts with the fix timestamp
+followed by the metric 3D fix position used by the trajectory optimizer. The
+remaining fields preserve the floor-plan marking metadata used by the ADVIO
+annotation tooling, such as image-plane marker coordinates and floor or level
+identifier. This repository currently preserves the file and uses it for
+ground-truth modality completeness checks, but does not parse it into a typed
+runtime model.
+
+## Tango Bundle
+
+The Tango modality is an auxiliary Google Tango-device stream, not iPhone RGB-D
+ground truth. It contains:
+
+- `raw.csv`: Tango raw odometry, a frame-to-frame pose stream without long-term
+  map memory.
+- `area-learning.csv`: Tango area-learning odometry, a map-building pose stream
+  that can use loop closure to reduce drift.
+- `frames.mov` and `frames.csv`: Tango fisheye grayscale video and its frame
+  timestamps. The paper reports this video as roughly 5 fps at 640x480.
+- `point-cloud.csv`: timestamps and integer point-cloud indices. Sampling is
+  non-uniform and follows Tango depth availability rather than video frame rate.
+- `point-cloud-00001.csv`, `point-cloud-00002.csv`, ...: one XYZ point-cloud
+  payload per index, acquired by the Tango depth sensor and aligned to the
+  current Tango device pose by Tango.
+
+Because the Tango capture comes from a separate rigidly mounted device, its
+poses and point clouds live in Tango-local coordinate systems. Treat them as
+source-native auxiliary geometry until an explicit temporal association and
+cross-system alignment into the iPhone or GT world has been performed.
 
 ## Frame And Transform Tree
 
