@@ -48,37 +48,19 @@ conda activate prml-vslam
 unset VIRTUAL_ENV
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 
-uv sync --extra dev --extra vista --extra streaming
+uv sync --all-extras
+# uv sync --extra dev --extra vista --extra streaming
 ```
 
-For an existing environment, update first:
+Build the optional CUDA RoPE2D extension after activating the conda environment; do not install it manually from the submodule:
 
 ```bash
-conda env update --prune -f environment.yml
-conda activate prml-vslam
-
-unset VIRTUAL_ENV
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-
-uv sync --extra dev --extra vista --extra streaming
+uv run python scripts/build_vista_curope.py
 ```
 
-If the solver keeps old packages around, recreate the environment:
-
-```bash
-conda deactivate
-conda env remove -n prml-vslam
-conda env create -f environment.yml
-conda activate prml-vslam
-
-unset VIRTUAL_ENV
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-
-uv sync --extra dev --extra vista --extra streaming
-```
-
-DBoW3Py is installed by the `vista` extra through `pyproject.toml`; do not
-install it manually from the submodule.
+This helper sets `CUDA_HOME` from the active conda environment when `nvcc` is
+available there. If it cannot find `nvcc`, update or recreate the conda
+environment from `environment.yml`.
 
 ## ViSTA Pretrained Files
 
@@ -91,19 +73,6 @@ curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/frontend_sta
 curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?download=true" \
   -o external/vista-slam/pretrains/ORBvoc.txt
 ```
-
-## cuROPE Acceleration
-
-Build the optional CUDA RoPE2D extension after activating the conda environment
-and syncing the `vista` extra:
-
-```bash
-uv run --extra vista python scripts/build_vista_curope.py
-```
-
-This helper sets `CUDA_HOME` from the active conda environment when `nvcc` is
-available there. If it cannot find `nvcc`, update or recreate the conda
-environment from `environment.yml`.
 
 ## Validation
 
