@@ -6,7 +6,7 @@ import numpy as np
 
 from prml_vslam.eval.contracts import ErrorSeries, TrajectorySeries
 from prml_vslam.plotting.metrics import build_trajectory_figure
-from prml_vslam.plotting.pipeline import build_evo_ape_colormap_figure
+from prml_vslam.plotting.pipeline import build_evo_ape_colormap_figure, pointmap_preview_image
 from prml_vslam.plotting.record3d import build_live_trajectory_figure
 
 
@@ -47,3 +47,19 @@ def test_pipeline_evo_figure_uses_shared_3d_layout() -> None:
     assert [trace.name for trace in figure.data] == ["Reference", "Estimate", "APE (m)"]
     assert figure.layout.scene.zaxis.title.text == "Z (m)"
     assert figure.layout.scene.aspectmode == "data"
+
+
+def test_pipeline_pointmap_preview_image_uses_generic_projection() -> None:
+    pointmap = np.array(
+        [
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+        ],
+        dtype=np.float32,
+    )
+
+    preview = pointmap_preview_image(pointmap)
+
+    assert preview is not None
+    assert preview.shape == (2, 2)
+    assert not np.array_equal(preview, pointmap[..., 2])

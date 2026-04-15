@@ -149,10 +149,73 @@ sources = [
     ".agents/resolved.toml",
 ]
 
+[[todos]]
+id = "TODO-0036"
+title = "Introduce stage executor contracts and a linear process-aware scheduler"
+status = "pending"
+priority = "high"
+issue_ids = [
+    "ISSUE-0034",
+]
+loc_min = 160
+loc_expected = 320
+loc_max = 650
+files = [
+    "src/prml_vslam/pipeline/contracts/plan.py",
+    "src/prml_vslam/pipeline/contracts/provenance.py",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/methods/multiprocess.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "Pipeline stages have a typed execution request/result boundary that records stage id, config hash, input fingerprint, output artifacts, status, and error detail.",
+    "The current deterministic stage order remains unchanged, but each supported stage can be run through a local or process-backed executor boundary.",
+    "Offline and streaming runners stop duplicating finalization/status bookkeeping and consume stage results to build stage manifests.",
+    "The existing SLAM multiprocessing path is either reused through the new stage execution primitive or clearly isolated as a backend-internal optimization.",
+]
+sources = [
+    "src/prml_vslam/pipeline/REQUIREMENTS.md",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/methods/multiprocess.py",
+]
+
+[[todos]]
+id = "TODO-0037"
+title = "Consolidate remaining reusable frame-materialization helpers out of method-wrapper files"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0035",
+]
+loc_min = 25
+loc_expected = 65
+loc_max = 140
+files = [
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "tests/test_pipeline.py",
+    "tests/test_methods.py",
+]
+acceptance = [
+    "Generic video-frame materialization is owned once and reused by offline ingest and method adapters where fallback extraction remains necessary.",
+    "The Pipeline page helper cleanup is treated as already done unless new drift appears; request/source helpers are app-controller owned and evo/pointmap preview helpers are eval/plotting owned.",
+    "Python LOC decreases or stays neutral while focused tests continue covering the moved behavior.",
+]
+sources = [
+    "src/prml_vslam/utils/REQUIREMENTS.md",
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-06"
-source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review, a later narrative-review relevance triage, and the 2026-04-06 merged re-review of the surviving PR15 findings."
+updated_on = "2026-04-15"
+source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review, a later narrative-review relevance triage, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, and the Pipeline page helper cleanup."
 active_collection = "todos"
 loc_unit = "lines"

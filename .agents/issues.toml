@@ -108,9 +108,73 @@ sources = [
     ".agents/resolved.toml",
 ]
 
+[[issues]]
+id = "ISSUE-0034"
+title = "Pipeline stages are planned as labels but executed as monolithic runner branches"
+status = "open"
+priority = "high"
+category = "orchestration"
+summary = "RunPlanStageId is typed and visible in manifests, but offline and streaming execution still inline stage control flow inside runner worker methods, so only method-owned SLAM can be isolated behind a multiprocessing boundary."
+files = [
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/methods/multiprocess.py",
+    "src/prml_vslam/pipeline/contracts/plan.py",
+    "src/prml_vslam/pipeline/contracts/provenance.py",
+]
+notes = [
+    "`RunPlanStageId` gives stages stable names, but there is no `StageExecutor` or stage result contract that can run ingest, SLAM, evaluation, or summary uniformly.",
+    "`OfflineRunner._run_worker` and `StreamingRunner._run_worker` duplicate orchestration and track stage progress through booleans such as `ingest_started` and `slam_started`.",
+    "`build_stage_status` and `build_stage_manifests` infer outcomes after the fact instead of consuming typed stage execution results, which makes cache hits and process isolation hard to add cleanly.",
+    "`MultiprocessSlamSession` is method-owned and frame-packet-specific, so its process boundary cannot be reused for ingest, evaluation, summary, or future reconstruction stages.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/pipeline/REQUIREMENTS.md",
+    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/methods/multiprocess.py",
+]
+
+[[issues]]
+id = "ISSUE-0035"
+title = "Reusable pure helpers remain trapped in leaf UI and method-wrapper modules"
+status = "open"
+priority = "medium"
+category = "simplification"
+summary = "Several generally useful artifact, image, and frame-materialization helpers live in Streamlit page modules, pipeline leaf modules, or the ViSTA adapter instead of reusable package-owned modules."
+files = [
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/utils/REQUIREMENTS.md",
+]
+notes = [
+    "`app/pages/pipeline.py` previously owned request-building, source adaptation, support checks, evo preview, artifact display, and pointmap-preview image conversion in one large page module; request/source logic now lives in an app controller and evo/preview conversion moved to eval/plotting.",
+    "Frame extraction exists in both `pipeline.ingest` and `methods.vista.adapter`, even though generic video-to-frame materialization should be shared or performed once before method adapters run.",
+    "JSON writing, stable hashing, stage-manifest output-path assembly, and live image normalization are reusable mechanics but currently live near specific workflow leaves.",
+    "The cleanup should move pure helpers to existing owners such as `pipeline`, `visualization`, `plotting`, or `utils` only when the helper is genuinely generic and reduces the leaf surface.",
+]
+sources = [
+    "src/prml_vslam/utils/REQUIREMENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-06"
-source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, a later narrative-review relevance triage, and the 2026-04-06 merged re-review of the surviving PR15 findings."
+updated_on = "2026-04-15"
+source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, a later narrative-review relevance triage, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, and the Pipeline page helper cleanup."
 active_collection = "issues"

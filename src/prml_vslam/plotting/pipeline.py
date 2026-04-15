@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from prml_vslam.eval.contracts import ErrorSeries, TrajectorySeries
+from prml_vslam.utils.image_utils import normalize_grayscale_image
 
 from .theme import BLUE, GRAY
 from .trajectories import _add_3d_trajectory_trace, _apply_standard_trajectory_3d_layout
@@ -67,4 +68,36 @@ def build_evo_ape_colormap_figure(
     return figure
 
 
-__all__ = ["build_evo_ape_colormap_figure"]
+def pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
+    """Return a renderable preview image for one pointmap-like preview artifact."""
+    if pointmap is None:
+        return None
+    preview_array = np.asarray(pointmap)
+    if preview_array.size == 0:
+        return None
+    if preview_array.ndim == 2:
+        return normalize_grayscale_image(np.asarray(preview_array, dtype=np.float32))
+    if preview_array.ndim != 3:
+        return None
+    if preview_array.shape[-1] == 1:
+        return normalize_grayscale_image(np.asarray(preview_array[..., 0], dtype=np.float32))
+    if preview_array.shape[-1] in {3, 4} and (
+        np.issubdtype(preview_array.dtype, np.integer)
+        or (np.isfinite(preview_array).all() and np.nanmin(preview_array) >= 0.0 and np.nanmax(preview_array) <= 1.0)
+    ):
+        return np.asarray(preview_array)
+    magnitude = np.linalg.norm(np.asarray(preview_array, dtype=np.float32), axis=-1)
+    return normalize_grayscale_image(magnitude)
+
+
+def preview_image_from_update(update: object) -> np.ndarray | None:
+    """Return the retained preview image for one streaming SLAM update-like object."""
+    if update is None:
+        return None
+    preview_rgb = getattr(update, "preview_rgb", None)
+    if preview_rgb is not None and np.asarray(preview_rgb).size > 0:
+        return np.asarray(preview_rgb)
+    return pointmap_preview_image(getattr(update, "pointmap", None))
+
+
+__all__ = ["build_evo_ape_colormap_figure", "pointmap_preview_image", "preview_image_from_update"]

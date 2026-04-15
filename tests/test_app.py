@@ -509,9 +509,7 @@ def test_metrics_service_fails_when_timestamps_do_not_match(tmp_path: Path) -> N
 
 
 def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
-
-    pipeline_page._compute_evo_preview.cache_clear()
+    from prml_vslam.app import pipeline_controller
     from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
 
     reference_path = tmp_path / "reference.tum"
@@ -531,7 +529,8 @@ def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> No
         ),
     )
 
-    evo_preview, evo_error = pipeline_page._resolve_evo_preview(snapshot)
+    pipeline_controller._compute_evo_preview.cache_clear()
+    evo_preview, evo_error = pipeline_controller.resolve_evo_preview(snapshot)
 
     assert evo_error is None
     assert evo_preview is not None
@@ -539,32 +538,7 @@ def test_pipeline_page_computes_evo_preview_from_artifacts(tmp_path: Path) -> No
     assert evo_preview.stats.rmse > 0.0
 
 
-def test_pipeline_page_evo_preview_fails_when_timestamps_do_not_match(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
-
-    pipeline_page._compute_evo_preview.cache_clear()
-    reference_path = tmp_path / "reference.tum"
-    estimate_path = tmp_path / "estimate.tum"
-    _write_tum(reference_path, [(0.0, 0.0, 0.0, 0.0), (0.1, 1.0, 0.0, 0.0)])
-    _write_tum(estimate_path, [(10.0, 0.0, 0.0, 0.0), (10.1, 1.0, 0.0, 0.0)])
-
-    with pytest.raises(ValueError, match="No matching timestamps"):
-        pipeline_page._compute_evo_preview(
-            reference_path=reference_path,
-            estimate_path=estimate_path,
-            reference_mtime_ns=reference_path.stat().st_mtime_ns,
-            estimate_mtime_ns=estimate_path.stat().st_mtime_ns,
-        )
-
-
-def test_pipeline_page_formats_mock_as_mock_preview() -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
-
-    assert pipeline_page._pipeline_method_label(MethodId.MOCK) == "Mock Preview"
-    assert pipeline_page._pipeline_method_label(MethodId.MAST3R) == "MASt3R-SLAM"
-
-
-def test_pipeline_page_identity_controls_label_vslam_method_selector(tmp_path: Path) -> None:
+def test_pipeline_page_identity_controls_label_vslam_method_selector() -> None:
     from prml_vslam.app.pages import pipeline as pipeline_page
 
     class DummyContext:
@@ -593,7 +567,6 @@ def test_pipeline_page_identity_controls_label_vslam_method_selector(tmp_path: P
 
     pipeline_page._render_request_identity_controls(
         page_state=PipelinePageState(method=MethodId.VISTA),
-        path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"),
         source_kind=PipelineSourceId.ADVIO,
     )
     monkeypatch.undo()
@@ -830,7 +803,7 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
         "render_camera_intrinsics",
         lambda *args, **kwargs: None,
     )
-    monkeypatch.setattr(pipeline_page, "_pointmap_preview_image", lambda pointmap: preview_image)
+    monkeypatch.setattr(pipeline_page, "preview_image_from_update", lambda update: preview_image)
 
     pipeline_page._render_pipeline_tabs(snapshot)
     monkeypatch.undo()
@@ -856,24 +829,6 @@ def test_pipeline_page_preview_status_message_marks_current_keyframe() -> None:
     )
 
     assert pipeline_page._preview_status_message(snapshot) == pipeline_page._VISTA_PREVIEW_CURRENT_MESSAGE
-
-
-def test_pipeline_page_pointmap_preview_image_uses_generic_projection() -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
-
-    pointmap = np.array(
-        [
-            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
-            [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
-        ],
-        dtype=np.float32,
-    )
-
-    preview = pipeline_page._pointmap_preview_image(pointmap)
-
-    assert preview is not None
-    assert preview.shape == (2, 2)
-    assert not np.array_equal(preview, pointmap[..., 2])
 
 
 def test_packet_session_metrics_separate_packet_and_keyframe_history() -> None:
@@ -905,7 +860,7 @@ def test_streaming_keyframe_gate_rejects_small_pose_jitter() -> None:
 
 
 def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     source = object()
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
@@ -948,9 +903,9 @@ def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tm
         store=FakeStore(),
     )
 
-    error_message = pipeline_page._handle_pipeline_page_action(
+    error_message = pipeline_controller.handle_pipeline_page_action(
         context,
-        pipeline_page.PipelinePageAction(
+        pipeline_controller.PipelinePageAction(
             config_path=config_path,
             source_kind=PipelineSourceId.ADVIO,
             advio_sequence_id=15,
@@ -976,13 +931,13 @@ def test_pipeline_page_action_starts_pipeline_session_once_from_selected_toml(tm
 
 
 def test_pipeline_request_builds_record3d_usb_source_from_action(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     context = SimpleNamespace(path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"))
 
-    request, error_message = pipeline_page._build_request_from_action(
+    request, error_message = pipeline_controller.build_request_from_action(
         context,
-        pipeline_page.PipelinePageAction(
+        pipeline_controller.PipelinePageAction(
             **_record3d_pipeline_action(
                 transport=Record3DTransportId.USB,
                 usb_device_index=2,
@@ -1002,13 +957,13 @@ def test_pipeline_request_builds_record3d_usb_source_from_action(tmp_path: Path)
 
 
 def test_pipeline_request_builds_record3d_wifi_source_from_action(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     context = SimpleNamespace(path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts"))
 
-    request, error_message = pipeline_page._build_request_from_action(
+    request, error_message = pipeline_controller.build_request_from_action(
         context,
-        pipeline_page.PipelinePageAction(
+        pipeline_controller.PipelinePageAction(
             **_record3d_pipeline_action(
                 transport=Record3DTransportId.WIFI,
                 wifi_device_address="myiPhone.local",
@@ -1026,7 +981,7 @@ def test_pipeline_request_builds_record3d_wifi_source_from_action(tmp_path: Path
 
 
 def test_pipeline_request_build_preserves_vista_backend_payload(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     class AdvioServiceStub:
         def scene(self, sequence_id: int) -> SimpleNamespace:
@@ -1038,9 +993,9 @@ def test_pipeline_request_build_preserves_vista_backend_payload(tmp_path: Path) 
         advio_service=AdvioServiceStub(),
     )
 
-    request, error_message = pipeline_page._build_request_from_action(
+    request, error_message = pipeline_controller.build_request_from_action(
         context,
-        pipeline_page.PipelinePageAction(
+        pipeline_controller.PipelinePageAction(
             config_path=tmp_path / "vista.toml",
             source_kind=PipelineSourceId.ADVIO,
             advio_sequence_id=15,
@@ -1066,7 +1021,7 @@ def test_pipeline_request_build_preserves_vista_backend_payload(tmp_path: Path) 
 
 
 def test_pipeline_page_supports_trajectory_evaluation_stage(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
     request = RunRequest(
@@ -1079,7 +1034,7 @@ def test_pipeline_page_supports_trajectory_evaluation_stage(tmp_path: Path) -> N
     )
     plan = request.build(path_config)
 
-    error_message = pipeline_page._request_support_error(
+    error_message = pipeline_controller.request_support_error(
         request=request,
         plan=plan,
         previewable_statuses=[],
@@ -1089,7 +1044,7 @@ def test_pipeline_page_supports_trajectory_evaluation_stage(tmp_path: Path) -> N
 
 
 def test_pipeline_page_rejects_unsupported_cloud_evaluation_stage(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
     request = RunRequest(
@@ -1102,7 +1057,7 @@ def test_pipeline_page_rejects_unsupported_cloud_evaluation_stage(tmp_path: Path
     )
     plan = request.build(path_config)
 
-    error_message = pipeline_page._request_support_error(
+    error_message = pipeline_controller.request_support_error(
         request=request,
         plan=plan,
         previewable_statuses=[],
@@ -1113,7 +1068,7 @@ def test_pipeline_page_rejects_unsupported_cloud_evaluation_stage(tmp_path: Path
 
 
 def test_pipeline_page_rejects_mast3r_execution_until_backend_exists(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
     request = RunRequest(
@@ -1125,7 +1080,7 @@ def test_pipeline_page_rejects_mast3r_execution_until_backend_exists(tmp_path: P
     )
     plan = request.build(path_config)
 
-    error_message = pipeline_page._request_support_error(
+    error_message = pipeline_controller.request_support_error(
         request=request,
         plan=plan,
         previewable_statuses=[],
@@ -1136,22 +1091,22 @@ def test_pipeline_page_rejects_mast3r_execution_until_backend_exists(tmp_path: P
 
 
 def test_pipeline_source_input_error_requires_wifi_device_address() -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
-    error_message = pipeline_page._source_input_error(
-        pipeline_page.PipelinePageAction(**_record3d_pipeline_action(transport=Record3DTransportId.WIFI))
+    error_message = pipeline_controller.source_input_error(
+        pipeline_controller.PipelinePageAction(**_record3d_pipeline_action(transport=Record3DTransportId.WIFI))
     )
 
     assert error_message == "Enter a Record3D Wi-Fi preview device address."
 
 
 def test_pipeline_streaming_source_supports_record3d_wifi() -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     context = SimpleNamespace()
-    source = pipeline_page._build_streaming_source_from_action(
+    source = pipeline_controller.build_streaming_source_from_action(
         context,
-        pipeline_page.PipelinePageAction(
+        pipeline_controller.PipelinePageAction(
             **_record3d_pipeline_action(
                 transport=Record3DTransportId.WIFI,
                 wifi_device_address="myiPhone.local",
@@ -1164,28 +1119,30 @@ def test_pipeline_streaming_source_supports_record3d_wifi() -> None:
 
 
 def test_pipeline_streaming_source_requires_wifi_device_address() -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     context = SimpleNamespace()
 
     with pytest.raises(ValueError, match="Enter a Record3D Wi-Fi preview device address."):
-        pipeline_page._build_streaming_source_from_action(
+        pipeline_controller.build_streaming_source_from_action(
             context,
-            pipeline_page.PipelinePageAction(**_record3d_pipeline_action(transport=Record3DTransportId.WIFI)),
+            pipeline_controller.PipelinePageAction(**_record3d_pipeline_action(transport=Record3DTransportId.WIFI)),
         )
 
 
 def test_parse_optional_int_rejects_invalid_input() -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
-    value, error_message = pipeline_page._parse_optional_int(raw_value="not-a-number", field_label="SLAM Max Frames")
+    value, error_message = pipeline_controller.parse_optional_int(
+        raw_value="not-a-number", field_label="SLAM Max Frames"
+    )
 
     assert value is None
     assert error_message == "Enter a whole number for `SLAM Max Frames` or leave the field blank."
 
 
 def test_pipeline_page_state_sync_hydrates_record3d_usb_template(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     context = SimpleNamespace(
         state=AppState(),
@@ -1199,7 +1156,7 @@ def test_pipeline_page_state_sync_hydrates_record3d_usb_template(tmp_path: Path)
         device_index=3,
     )
 
-    pipeline_page._sync_pipeline_page_state_from_template(
+    pipeline_controller.sync_pipeline_page_state_from_template(
         context=context,
         config_path=tmp_path / "record3d-usb.toml",
         request=request,
@@ -1213,7 +1170,7 @@ def test_pipeline_page_state_sync_hydrates_record3d_usb_template(tmp_path: Path)
 
 
 def test_pipeline_page_state_sync_hydrates_record3d_wifi_template(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     context = SimpleNamespace(
         state=AppState(),
@@ -1226,7 +1183,7 @@ def test_pipeline_page_state_sync_hydrates_record3d_wifi_template(tmp_path: Path
         device_address="myiPhone.local",
     )
 
-    pipeline_page._sync_pipeline_page_state_from_template(
+    pipeline_controller.sync_pipeline_page_state_from_template(
         context=context,
         config_path=tmp_path / "record3d-wifi.toml",
         request=request,
@@ -1240,7 +1197,7 @@ def test_pipeline_page_state_sync_hydrates_record3d_wifi_template(tmp_path: Path
 
 
 def test_pipeline_page_state_sync_preserves_vista_backend_payload(tmp_path: Path) -> None:
-    from prml_vslam.app.pages import pipeline as pipeline_page
+    from prml_vslam.app import pipeline_controller
 
     context = SimpleNamespace(
         state=AppState(),
@@ -1263,7 +1220,7 @@ def test_pipeline_page_state_sync_preserves_vista_backend_payload(tmp_path: Path
         ),
     )
 
-    pipeline_page._sync_pipeline_page_state_from_template(
+    pipeline_controller.sync_pipeline_page_state_from_template(
         context=context,
         config_path=tmp_path / "vista-full.toml",
         request=request,
@@ -1337,10 +1294,10 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "warning", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "dataframe", lambda *args, **kwargs: None)
-    monkeypatch.setattr(pipeline_page, "_discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
+    monkeypatch.setattr(pipeline_page, "discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
     monkeypatch.setattr(
         pipeline_page,
-        "_load_pipeline_request",
+        "load_pipeline_request",
         lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None),
     )
     monkeypatch.setattr(
@@ -1360,15 +1317,15 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
         ),
     )
     monkeypatch.setattr(
-        pipeline_page, "_build_request_from_action", lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None)
+        pipeline_page, "build_request_from_action", lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None)
     )
     monkeypatch.setattr(
         pipeline_page,
-        "_build_preview_plan",
+        "build_preview_plan",
         lambda *_args, **_kwargs: (SimpleNamespace(stages=[], stage_rows=lambda: []), None),
     )
     monkeypatch.setattr(pipeline_page.st, "button", fake_button)
-    monkeypatch.setattr(pipeline_page, "_handle_pipeline_page_action", lambda **kwargs: None)
+    monkeypatch.setattr(pipeline_page, "handle_pipeline_page_action", lambda **kwargs: None)
     monkeypatch.setattr(pipeline_page, "render_live_fragment", lambda *args, **kwargs: None)
 
     pipeline_page.render(context)
@@ -1416,10 +1373,10 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "warning", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "dataframe", lambda *args, **kwargs: None)
-    monkeypatch.setattr(pipeline_page, "_discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
+    monkeypatch.setattr(pipeline_page, "discover_pipeline_config_paths", lambda *_args, **_kwargs: [config_path])
     monkeypatch.setattr(
         pipeline_page,
-        "_load_pipeline_request",
+        "load_pipeline_request",
         lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None),
     )
     monkeypatch.setattr(
@@ -1439,11 +1396,11 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
         ),
     )
     monkeypatch.setattr(
-        pipeline_page, "_build_request_from_action", lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None)
+        pipeline_page, "build_request_from_action", lambda *_args, **_kwargs: (_load_pipeline_request_fixture(), None)
     )
     monkeypatch.setattr(
         pipeline_page,
-        "_build_preview_plan",
+        "build_preview_plan",
         lambda *_args, **_kwargs: (SimpleNamespace(stages=[], stage_rows=lambda: []), None),
     )
     monkeypatch.setattr(
@@ -1451,7 +1408,7 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
         "button",
         lambda label, *args, **kwargs: label == "Start run",
     )
-    monkeypatch.setattr(pipeline_page, "_handle_pipeline_page_action", lambda **kwargs: None)
+    monkeypatch.setattr(pipeline_page, "handle_pipeline_page_action", lambda **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "rerun", lambda: rerun_calls.append(True))
     monkeypatch.setattr(pipeline_page, "render_live_fragment", lambda *args, **kwargs: None)
 
