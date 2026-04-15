@@ -42,6 +42,7 @@ from ..live_session import (
     render_camera_intrinsics,
     render_live_action_slot,
     render_live_fragment,
+    render_live_image,
     render_live_session_shell,
     render_live_trajectory,
     rerun_after_action,
@@ -713,13 +714,13 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
                 st.markdown("**RGB Frame**")
-                st.image(packet.rgb, channels="RGB", clamp=True, width="stretch")
+                render_live_image(packet.rgb, channels="RGB", clamp=True, width="stretch")
             with preview_right:
                 st.markdown("**ViSTA Preview Artifact**")
                 if pointmap_preview is None:
                     st.info(_streaming_pointmap_empty_message(snapshot))
                 else:
-                    st.image(pointmap_preview, clamp=True, width="stretch")
+                    render_live_image(pointmap_preview, clamp=True, width="stretch")
                     preview_status_message = _preview_status_message(snapshot)
                     if preview_status_message is not None:
                         st.caption(preview_status_message)

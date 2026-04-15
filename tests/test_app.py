@@ -92,6 +92,15 @@ def _build_path_config(tmp_path: Path) -> PathConfig:
     )
 
 
+def test_live_image_data_url_uses_inline_payload() -> None:
+    from prml_vslam.app.live_session import live_image_data_url
+
+    data_url = live_image_data_url(np.zeros((2, 2, 3), dtype=np.uint8))
+
+    assert data_url.startswith("data:image/jpeg;base64,")
+    assert "/media/" not in data_url
+
+
 def _write_pipeline_config(
     path_config: PathConfig,
     *,
@@ -654,6 +663,7 @@ def test_pipeline_page_streaming_tabs_surface_strict_vista_preview_limits(tmp_pa
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_page, "render_live_image", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
@@ -725,6 +735,7 @@ def test_pipeline_page_streaming_tabs_retain_last_valid_vista_preview(tmp_path: 
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "image", lambda image, *args, **kwargs: image_payloads.append(image))
+    monkeypatch.setattr(pipeline_page, "render_live_image", lambda image, *args, **kwargs: image_payloads.append(image))
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda message, *args, **kwargs: caption_messages.append(message))
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
@@ -804,6 +815,7 @@ def test_pipeline_page_streaming_tabs_render_mock_preview_outputs(tmp_path: Path
     monkeypatch.setattr(pipeline_page.st, "columns", lambda *args, **kwargs: (DummyContext(), DummyContext()))
     monkeypatch.setattr(pipeline_page.st, "markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "image", lambda image, *args, **kwargs: image_payloads.append(image))
+    monkeypatch.setattr(pipeline_page, "render_live_image", lambda image, *args, **kwargs: image_payloads.append(image))
     monkeypatch.setattr(pipeline_page.st, "json", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "caption", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline_page.st, "toggle", lambda *args, **kwargs: False)
