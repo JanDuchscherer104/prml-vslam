@@ -13,7 +13,7 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 
 from ..models import PipelinePageState, PipelineSourceId
-from ..pipeline_controller import PipelinePageAction, parse_optional_int
+from ..pipeline_controller import PipelinePageAction, parse_optional_float, parse_optional_int
 from ..record3d_controls import render_record3d_transport_controls, render_record3d_transport_details
 
 if TYPE_CHECKING:
@@ -45,6 +45,8 @@ def render_request_editor(
     )
     (
         advio_sequence_id,
+        dataset_frame_stride,
+        dataset_target_fps,
         record3d_transport,
         record3d_usb_device_index,
         record3d_wifi_device_address,
@@ -76,6 +78,8 @@ def render_request_editor(
                 "experiment_name": experiment_name,
                 "source_kind": resolved_source_kind,
                 "advio_sequence_id": advio_sequence_id,
+                "dataset_frame_stride": dataset_frame_stride,
+                "dataset_target_fps": dataset_target_fps,
                 "mode": mode,
                 "method": method,
                 "slam_max_frames": slam_max_frames,
@@ -153,7 +157,7 @@ def _render_source_settings(
     page_state: PipelinePageState,
     source_kind: PipelineSourceId,
     previewable_statuses: list[AdvioLocalSceneStatus],
-) -> tuple[int | None, Record3DTransportId, int, str, bool, AdvioPoseSource, bool, str | None]:
+) -> tuple[int | None, int, float | None, Record3DTransportId, int, str, bool, AdvioPoseSource, bool, str | None]:
     _, right = st.columns(2, gap="large")
     with right:
         advio_sequence_id = page_state.advio_sequence_id
@@ -163,14 +167,24 @@ def _render_source_settings(
         record3d_persist_capture = page_state.record3d_persist_capture
         pose_source = page_state.pose_source
         respect_video_rotation = page_state.respect_video_rotation
+        dataset_frame_stride = page_state.dataset_frame_stride
+        dataset_target_fps = page_state.dataset_target_fps
         source_input_error = None
         if source_kind is PipelineSourceId.ADVIO:
-            advio_sequence_id, pose_source, respect_video_rotation = _render_advio_source_settings(
+            (
+                advio_sequence_id,
+                pose_source,
+                respect_video_rotation,
+                dataset_frame_stride,
+                dataset_target_fps,
+                source_input_error,
+            ) = _render_advio_source_settings(
                 context=context,
                 page_state=page_state,
                 previewable_statuses=previewable_statuses,
             )
-            source_input_error = None if advio_sequence_id is not None else "Select a replay-ready ADVIO scene."
+            if advio_sequence_id is None:
+                source_input_error = "Select a replay-ready ADVIO scene."
         else:
             (
                 record3d_transport,
@@ -181,6 +195,8 @@ def _render_source_settings(
             ) = _render_record3d_source_settings(page_state=page_state)
     return (
         advio_sequence_id,
+        dataset_frame_stride,
+        dataset_target_fps,
         record3d_transport,
         record3d_usb_device_index,
         record3d_wifi_device_address,
@@ -196,7 +212,7 @@ def _render_advio_source_settings(
     context: AppContext,
     page_state: PipelinePageState,
     previewable_statuses: list[AdvioLocalSceneStatus],
-) -> tuple[int | None, AdvioPoseSource, bool]:
+) -> tuple[int | None, AdvioPoseSource, bool, int, float | None, str | None]:
     previewable_ids = [status.scene.sequence_id for status in previewable_statuses]
     if previewable_ids:
         selected_advio_sequence = (
@@ -221,7 +237,31 @@ def _render_advio_source_settings(
         "Respect video rotation metadata",
         value=page_state.respect_video_rotation,
     )
-    return advio_sequence_id, pose_source, respect_video_rotation
+    dataset_frame_stride = int(
+        st.number_input("Dataset Frame Stride", min_value=1, max_value=120, value=page_state.dataset_frame_stride)
+    )
+    target_fps_raw = st.text_input(
+        "Dataset Target FPS",
+        value="" if page_state.dataset_target_fps is None else str(page_state.dataset_target_fps),
+        placeholder="blank to use stride",
+    ).strip()
+    dataset_target_fps, target_fps_error = parse_optional_float(
+        raw_value=target_fps_raw,
+        field_label="Dataset Target FPS",
+    )
+    sampling_error = (
+        "Configure either `Dataset Frame Stride` or `Dataset Target FPS`, not both."
+        if dataset_target_fps is not None and dataset_frame_stride != 1
+        else target_fps_error
+    )
+    return (
+        advio_sequence_id,
+        pose_source,
+        respect_video_rotation,
+        dataset_frame_stride,
+        dataset_target_fps,
+        sampling_error,
+    )
 
 
 def _render_record3d_source_settings(

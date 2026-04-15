@@ -17,7 +17,7 @@ from prml_vslam.benchmark import (
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.interfaces import Record3DTransportId
 from prml_vslam.methods.contracts import MethodId, SlamOutputPolicy
 from prml_vslam.utils import BaseConfig, PathConfig
@@ -44,17 +44,14 @@ class PipelineMode(StrEnum):
         }[self]
 
 
-class VideoSourceSpec(BaseConfig):
+class VideoSourceSpec(FrameSelectionConfig):
     """Video-backed source used for offline planning and execution."""
 
     video_path: Path
     """Path to the input video that will be processed."""
 
-    frame_stride: int = 1
-    """Frame subsampling stride applied during canonical ingest."""
 
-
-class DatasetSourceSpec(BaseConfig):
+class DatasetSourceSpec(FrameSelectionConfig):
     """Dataset-backed source used for offline planning and execution."""
 
     dataset_id: DatasetId
