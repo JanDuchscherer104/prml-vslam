@@ -17,7 +17,9 @@ and stage summaries remain the scientific/provenance source of truth.
 Start the live viewer with the project blueprint:
 
 ```bash
-uv run rerun .configs/visualization/vista_blueprint.rbl --serve-web
+uv run --extra vista rerun \
+  .configs/visualization/vista_blueprint.rbl \
+  --serve-web
 ```
 
 When using the web viewer, open the encoded proxy URL:
