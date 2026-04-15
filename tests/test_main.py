@@ -173,7 +173,7 @@ def test_write_demo_config_command_persists_under_pipeline_config_dir(tmp_path: 
     payload = captured["payload"]
     assert isinstance(payload, dict)
     config_path = Path(payload["config_path"])
-    assert config_path == (tmp_path / ".configs" / "pipelines" / "advio-offline-advio-15-vista.toml").resolve()
+    assert config_path == (tmp_path / ".configs" / "pipelines" / "advio-15-offline-vista.toml").resolve()
     assert config_path.exists()
 
 
@@ -237,7 +237,7 @@ def test_pipeline_demo_command_reuses_shared_demo_request(tmp_path: Path, monkey
 
     assert result.exit_code == 0
     request = captured["request"]
-    assert request.experiment_name == "advio-streaming-advio-15-vista"
+    assert request.experiment_name == "advio-15-streaming-vista"
     assert request.mode is main.PipelineMode.STREAMING
     assert request.slam.method is main.MethodId.VISTA
     assert request.source.sequence_id == "advio-15"

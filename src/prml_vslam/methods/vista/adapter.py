@@ -492,6 +492,7 @@ def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:
     return FrameTransform.from_matrix(normalized)
 
 
+# TODO: this is a generic helper that should not be defined here!
 def _project_rotation_to_so3(rotation: np.ndarray) -> np.ndarray:
     """Project one near-rotation matrix to the closest valid SO(3) matrix."""
     rotation_array = np.asarray(rotation, dtype=np.float64)

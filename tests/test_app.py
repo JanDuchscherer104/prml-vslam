@@ -95,13 +95,13 @@ def _build_path_config(tmp_path: Path) -> PathConfig:
 def _write_pipeline_config(
     path_config: PathConfig,
     *,
-    name: str = "advio-offline-advio-15-vista.toml",
+    name: str = "advio-15-offline-vista.toml",
     source_block: str = 'dataset_id = "advio"\nsequence_id = "advio-15"',
 ) -> Path:
     config_path = path_config.resolve_pipeline_config_path(name, create_parent=True)
     config_path.write_text(
         f"""
-experiment_name = "advio-offline-advio-15-vista"
+experiment_name = "advio-15-offline-vista"
 mode = "offline"
 output_dir = ".artifacts"
 
@@ -135,7 +135,7 @@ enabled = false
 
 def _load_pipeline_request_fixture() -> RunRequest:
     return RunRequest(
-        experiment_name="advio-offline-advio-15-vista",
+        experiment_name="advio-15-offline-vista",
         mode=PipelineMode.OFFLINE,
         output_dir=Path(".artifacts"),
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
@@ -1301,7 +1301,7 @@ def test_pipeline_demo_controls_show_only_stop_button_while_run_is_active() -> N
             return SimpleNamespace(display_name=f"advio-{sequence_id:02d} · Mall 01")
 
     seen_labels: list[str] = []
-    config_path = Path("/tmp/advio-offline-advio-15-vista.toml")
+    config_path = Path("/tmp/advio-15-offline-vista.toml")
     context = SimpleNamespace(
         path_config=SimpleNamespace(),
         advio_service=AdvioServiceSpy(),
@@ -1376,7 +1376,7 @@ def test_pipeline_page_reruns_after_successful_start_action() -> None:
             return False
 
     rerun_calls: list[bool] = []
-    config_path = Path("/tmp/advio-offline-advio-15-vista.toml")
+    config_path = Path("/tmp/advio-15-offline-vista.toml")
     context = SimpleNamespace(
         path_config=SimpleNamespace(),
         advio_service=SimpleNamespace(
