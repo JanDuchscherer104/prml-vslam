@@ -141,8 +141,8 @@ export_viewer_rrd = true
 A comprehensive example with all available tuning parameters is provided in [`.configs/pipelines/vista-full.toml`](.configs/pipelines/vista-full.toml).
 
 ```bash
-uv run prml-vslam plan-run-config offline-advio-15-vista.toml
-uv run prml-vslam run-config offline-advio-15-vista.toml
+uv run prml-vslam plan-run-config advio-15-offline-vista.toml
+uv run prml-vslam run-config advio-15-offline-vista.toml
 ```
 
 The TOML shape mirrors the nested `RunRequest` model: top-level fields configure
@@ -204,7 +204,7 @@ uv run prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
 
 ```bash
 uv run prml-vslam write-demo-config --mode offline --method vista --sequence 15
-uv run prml-vslam run-config .configs/pipelines/advio-offline-advio-15-vista.toml
+uv run prml-vslam run-config .configs/pipelines/advio-15-offline-vista.toml
 ```
 
 The first ADVIO offline run extracts video frames into `.artifacts/.../input/frames`
