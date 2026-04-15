@@ -74,6 +74,11 @@ def _write_pose_csv(path: Path) -> None:
     )
 
 
+def _write_fixpoints_csv(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("0.0,1.0,2.0,3.0\n0.2,2.0,3.0,4.0\n", encoding="utf-8")
+
+
 def _write_advio_sequence(
     dataset_root: Path,
     *,
@@ -113,6 +118,7 @@ def _write_advio_sequence(
         (sequence_dir / "iphone" / name).write_text("0.0,0.0,0.0,0.0\n", encoding="utf-8")
     ground_truth_name = "pose.csv" if official_archive_names else "poses.csv"
     _write_pose_csv(sequence_dir / "ground-truth" / ground_truth_name)
+    _write_fixpoints_csv(sequence_dir / "ground-truth" / "fixpoints.csv")
     _write_pose_csv(sequence_dir / "pixel" / "arcore.csv")
     _write_pose_csv(sequence_dir / "iphone" / "arkit.csv")
     _write_calibration(dataset_root / "calibration" / "iphone-03.yaml")
@@ -410,6 +416,40 @@ def test_advio_dataset_service_downloads_selected_modalities_from_cached_archive
     assert status.offline_ready is False
 
 
+def test_advio_dataset_service_extracts_complete_ground_truth_bundle(tmp_path: Path) -> None:
+    catalog = _build_fake_catalog(tmp_path)
+    service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
+
+    result = service.download(
+        AdvioDownloadRequest(
+            sequence_ids=[15],
+            modalities=[AdvioModality.GROUND_TRUTH],
+        )
+    )
+
+    dataset_root = tmp_path / ".data" / "advio"
+    ground_truth_dir = dataset_root / "data" / "advio-15" / "ground-truth"
+
+    assert result.downloaded_archive_count == 1
+    assert (ground_truth_dir / "poses.csv").exists()
+    assert (ground_truth_dir / "fixpoints.csv").exists()
+    assert service.local_scene_statuses()[0].local_modalities == [AdvioModality.GROUND_TRUTH]
+
+
+def test_advio_ground_truth_modality_requires_fixpoints_csv(tmp_path: Path) -> None:
+    catalog = _build_fake_catalog(tmp_path)
+    dataset_root = tmp_path / ".data" / "advio"
+    sequence_dir = _write_advio_sequence(dataset_root, sequence_id=15)
+    (sequence_dir / "ground-truth" / "fixpoints.csv").unlink()
+    service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
+
+    status = service.local_scene_statuses()[0]
+
+    assert AdvioModality.GROUND_TRUTH not in status.local_modalities
+    assert status.replay_ready is False
+    assert status.offline_ready is False
+
+
 def test_advio_dataset_service_offline_preset_downloads_evaluation_ready_bundle(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
@@ -511,8 +551,11 @@ def test_advio_dataset_service_handles_official_archive_layout(tmp_path: Path) -
     service.download(AdvioDownloadRequest(sequence_ids=[15], preset=AdvioDownloadPreset.OFFLINE))
 
     status = service.local_scene_statuses()[0]
+    ground_truth_dir = tmp_path / ".data" / "advio" / "data" / "advio-15" / "ground-truth"
 
     assert status.offline_ready is True
+    assert (ground_truth_dir / "pose.csv").exists()
+    assert (ground_truth_dir / "fixpoints.csv").exists()
     assert service.list_local_sequence_ids() == [15]
     assert service.load_local_sample(15).sequence_name == "advio-15"
 
