@@ -218,6 +218,8 @@ docs/slides/build/
 docs/slides/**/*.pdf
 docs/slides/**/*.png
 docs/slides/**/*.svgz
+**/.DS_Store
+
 
 # Codex workspace state
 .codex/*
