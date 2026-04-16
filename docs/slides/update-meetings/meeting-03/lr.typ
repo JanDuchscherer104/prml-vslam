@@ -1,38 +1,44 @@
 #import "../_shared/meeting-blocks.typ": meeting_detail_slide
 
 #let done_table_row = (
+  [WP2.2],
   [LR],
-  [ViSTA-SLAM integration and pipeline execution],
+  [ViSTA-SLAM implementation in Streamlit runtime],
 )
 #let challenges_table_row = (
+  [WP2.{1,2}],
   [LR],
-  [Streaming lifecycle and upstream runtime setup],
+  [Runtime orchestration and environment setup],
 )
 #let next_steps_table_row = (
-  [LR],
-  [Execution cleanup and ADVIO validation],
+  [WP1 / WP2.1],
+  [LR, JD],
+  [Async stability and streaming validation],
 )
 
 #let done_detail_body = items => [
   #meeting_detail_slide(items, title: [Lukas Röß: What Was Done?])[
-    - Integrated ViSTA-SLAM for offline and streaming pipeline execution.
-    - Added repo-owned `plan-run-config` and `run-config` workflow around the shared pipeline services.
-    - Stabilized streaming stop and failure handling so previews and artifacts remain visible at terminal states.
-    - Built and linked DBoW3Py for loop-detection support in the ViSTA integration.
+    - Integrated ViSTA-SLAM into the Streamlit pipeline page as the active backend path.
+    - Implemented async execution flow so long-running steps do not block the app UI.
+    - Added rerun-safe state handling so results persist correctly across Streamlit reruns.
+    - Wired the CLI `run` command and Streamlit pipeline flow to share the same runtime behavior.
+    - Built and linked DBoW3Py for loop-detection support in the integrated pipeline.
   ]
 ]
 
+
 #let challenges_detail_body = items => [
   #meeting_detail_slide(items, title: [Lukas Röß: Challenges])[
-    - Aligning upstream ViSTA runtime prerequisites and optional dependencies with the repo bootstrap.
-    - Keeping backend-specific worker code separate from pipeline-owned streaming orchestration.
+    - Main effort was coordinating async task lifecycle with Streamlit rerun semantics.
+    - Environment was standardized via Conda to keep builds and runtime behavior consistent.
   ]
 ]
 
 #let next_steps_detail_body = items => [
   #meeting_detail_slide(items, title: [Lukas Röß: Next Steps])[
-    - Move process orchestration and packet transport behind pipeline-owned execution seams.
-    - Run end-to-end ADVIO streaming validation and capture remaining regressions.
-    - Restore the pipeline docs so they match the final execution architecture.
+    - Harden async + rerun behavior under repeated user interactions.
+    - Run full streaming validation on ADVIO sequences and capture regressions.
+    - Finalize reproducible Conda setup notes for smoother team onboarding.
   ]
 ]
+
