@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from prml_vslam.utils import BaseConfig, BaseData
+from prml_vslam.utils import BaseConfig, BaseData, FactoryConfig
 
 
 class RuntimeTarget:
@@ -19,7 +19,7 @@ class RuntimeTarget:
         self.config = config
 
 
-class RuntimeConfig(BaseConfig):
+class RuntimeConfig(BaseConfig, FactoryConfig[RuntimeTarget]):
     """Config whose runtime target is constructed via ``target_type``."""
 
     @property
@@ -35,7 +35,7 @@ class DataOnlyConfig(BaseConfig):
     value: int = 11
 
 
-class InvalidTargetConfig(BaseConfig):
+class InvalidTargetConfig(BaseConfig, FactoryConfig[object]):
     """Config that exposes an invalid target_type."""
 
     @property
@@ -93,10 +93,10 @@ def test_setup_target_constructs_runtime_from_target_type() -> None:
     assert target.config.value == 13
 
 
-def test_setup_target_returns_none_for_data_only_configs() -> None:
+def test_data_only_configs_do_not_expose_factory_helpers() -> None:
     config = DataOnlyConfig()
 
-    assert config.setup_target() is None
+    assert not hasattr(config, "setup_target")
 
 
 def test_setup_target_raises_for_invalid_target_type() -> None:

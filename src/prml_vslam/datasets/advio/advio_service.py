@@ -7,7 +7,7 @@ from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
-from prml_vslam.utils import Console, PathConfig
+from prml_vslam.utils import BaseConfig, Console, FactoryConfig, PathConfig
 
 from .advio_download import AdvioDownloadManager
 from .advio_layout import load_advio_catalog
@@ -45,44 +45,63 @@ class AdvioOfflineSequenceSource(BenchmarkInputSource):
         return self._service.build_benchmark_inputs(sequence_id=self._sequence_id, output_dir=output_dir)
 
 
+class AdvioStreamingSourceConfig(BaseConfig, FactoryConfig["AdvioStreamingSequenceSource"]):
+    """Config-backed ADVIO streaming source for process-backed execution."""
+
+    dataset_root: Path
+    """Resolved ADVIO dataset root."""
+
+    sequence_id: int
+    """ADVIO sequence id."""
+
+    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
+    """Pose source injected into replay packets."""
+
+    respect_video_rotation: bool = False
+    """Whether replay should honor video rotation metadata."""
+
+    frame_stride: int = 1
+    """Frame subsampling stride."""
+
+    @property
+    def target_type(self) -> type[AdvioStreamingSequenceSource]:
+        """Runtime source type."""
+        return AdvioStreamingSequenceSource
+
+
 class AdvioStreamingSequenceSource(StreamingSequenceSource, BenchmarkInputSource):
     """ADVIO-backed streaming source used by pipeline-owned replay sessions."""
 
-    def __init__(
-        self,
-        *,
-        service: AdvioDatasetService,
-        sequence_id: int,
-        pose_source: AdvioPoseSource,
-        respect_video_rotation: bool,
-    ) -> None:
-        self._service = service
-        self._sequence_id = sequence_id
-        self._pose_source = pose_source
-        self._respect_video_rotation = respect_video_rotation
+    def __init__(self, config: AdvioStreamingSourceConfig) -> None:
+        self.config = config
 
     @property
     def label(self) -> str:
         """Return the human-readable ADVIO scene label."""
-        return self._service.scene(self._sequence_id).display_name
+        return self._sequence().scene.display_name
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
         """Materialize the normalized sequence boundary for one replay run."""
-        return self._service.build_sequence_manifest(sequence_id=self._sequence_id, output_dir=output_dir)
+        return self._sequence().to_sequence_manifest(output_dir=output_dir)
 
     def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
         """Materialize benchmark-side inputs for one replay run."""
-        return self._service.build_benchmark_inputs(sequence_id=self._sequence_id, output_dir=output_dir)
+        return self._sequence().to_benchmark_inputs(output_dir=output_dir)
 
     def open_stream(self, *, loop: bool) -> FramePacketStream:
         """Open the replay stream consumed by the pipeline session."""
-        return self._service.open_preview_stream(
-            sequence_id=self._sequence_id,
-            pose_source=self._pose_source,
-            respect_video_rotation=self._respect_video_rotation,
+        return self._sequence().open_stream(
+            pose_source=self.config.pose_source,
+            stride=self.config.frame_stride,
+            respect_video_rotation=self.config.respect_video_rotation,
             loop=loop,
             replay_mode=Cv2ReplayMode.REALTIME,
         )
+
+    def _sequence(self) -> AdvioSequence:
+        return AdvioSequenceConfig(
+            dataset_root=self.config.dataset_root, sequence_id=self.config.sequence_id
+        ).setup_target()
 
 
 class AdvioDatasetService(AdvioDownloadManager):
@@ -140,12 +159,12 @@ class AdvioDatasetService(AdvioDownloadManager):
         respect_video_rotation: bool,
     ) -> StreamingSequenceSource:
         """Return a replay source compatible with pipeline-owned streaming sessions."""
-        return AdvioStreamingSequenceSource(
-            service=self,
+        return AdvioStreamingSourceConfig(
+            dataset_root=self.dataset_root,
             sequence_id=sequence_id,
             pose_source=pose_source,
             respect_video_rotation=respect_video_rotation,
-        )
+        ).setup_target()
 
     def open_preview_stream(
         self,

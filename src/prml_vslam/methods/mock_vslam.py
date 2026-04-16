@@ -15,7 +15,7 @@ from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseConfig, FactoryConfig
 from prml_vslam.utils.geometry import (
     pointmap_from_depth,
     transform_points_world_camera,
@@ -29,7 +29,7 @@ _POINTMAP_BASE_DEPTH_M = 1.5
 _POINTMAP_DEPTH_SPAN_M = 1.0
 
 
-class MockSlamBackendConfig(BaseConfig):
+class MockSlamBackendConfig(BaseConfig, FactoryConfig["MockSlamBackend"]):
     """Config that builds the repository-local mock SLAM backend."""
 
     method_id: MethodId = MethodId.MOCK
