@@ -1,5 +1,7 @@
 """Mock and real method surfaces used to satisfy shared repository interfaces."""
 
+from importlib import import_module
+
 from .contracts import MethodId
 
 
@@ -9,14 +11,8 @@ def __getattr__(name: str) -> object:
         from .mock_vslam import MockSlamBackendConfig
 
         return MockSlamBackendConfig
-    if name == "VistaSlamBackend":
-        from .vista.adapter import VistaSlamBackend
-
-        return VistaSlamBackend
-    if name == "VistaSlamBackendConfig":
-        from .vista.config import VistaSlamBackendConfig
-
-        return VistaSlamBackendConfig
+    if name in {"VistaSlamBackend", "VistaSlamBackendConfig"}:
+        return getattr(import_module(".vista", __name__), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
