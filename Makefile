@@ -17,7 +17,7 @@ GRAPHIFY_DIR ?= graphify-out
 GRAPHIFY_REPORT ?= $(GRAPHIFY_DIR)/GRAPH_REPORT.md
 GRAPHIFY_GRAPH ?= $(GRAPHIFY_DIR)/graph.json
 GRAPHIFY_HTML ?= $(GRAPHIFY_DIR)/graph.html
-GRAPHIFY_PYTHON ?= python3
+GRAPHIFY_PYTHON ?= $(UV_RUN) --group dev python
 
 BIB_FILE ?= docs/references.bib
 BIB_CACHE_DIR ?= .cache/bib
