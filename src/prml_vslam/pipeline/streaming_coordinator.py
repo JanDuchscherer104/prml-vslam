@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Protocol
 
 import numpy as np
+import rerun as rr  # type: ignore[import-not-found]
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceCloudCoordinateStatus
-from prml_vslam.interfaces import FramePacket
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import ProcessStreamingSlamBackend, SlamSession, StreamingSlamBackend
 from prml_vslam.methods.updates import SlamUpdate
@@ -75,7 +76,22 @@ class _ViewerHooks(Protocol):
         preserve_native_rerun: bool,
     ) -> VisualizationArtifacts | None: ...
 
-    def log_transform(self, recording_stream: object, *, entity_path: str, transform: object) -> None: ...
+    def log_transform(
+        self,
+        recording_stream: object,
+        *,
+        entity_path: str,
+        transform: object,
+        axis_length: float | None = None,
+    ) -> None: ...
+
+    def log_pinhole(
+        self,
+        recording_stream: object,
+        *,
+        entity_path: str,
+        intrinsics: CameraIntrinsics,
+    ) -> None: ...
 
     def log_pointcloud(
         self,
@@ -95,12 +111,6 @@ class _ViewerHooks(Protocol):
         colors: np.ndarray | None = None,
         radii: float = 0.05,
     ) -> None: ...
-
-    def log_preview_image(self, recording_stream: object, *, entity_path: str, image_rgb: np.ndarray) -> None: ...
-
-    def log_y_up_view_coordinates(self, recording_stream: object, *, entity_path: str) -> None: ...
-
-    def set_time_sequence(self, recording_stream: object, *, timeline: str, sequence: int) -> None: ...
 
     def load_point_cloud_ply(self, path: Path) -> np.ndarray: ...
 
@@ -218,7 +228,6 @@ class StreamingCoordinator:
                     grpc_url=request.visualization.grpc_url if request.visualization.connect_live_viewer else None,
                     target_path=run_paths.viewer_rrd_path if request.visualization.export_viewer_rrd else None,
                 )
-                self._viewer_hooks.log_y_up_view_coordinates(live_recording, entity_path="world")
                 self._log_reference_clouds(live_recording, benchmark_inputs)
 
             slam_result = self._run_streaming_workers(
@@ -384,43 +393,80 @@ class StreamingCoordinator:
                     )
                     if live_recording is not None and update.pose is not None:
                         viewer_pose = self._viewer_hooks.viewer_pose_from_update(update, method_id=request.slam.method)
-                        live_camera_entity = "world/live_camera"
+                        live_camera_entity = "world/live/camera"
+                        live_camera_image_entity = f"{live_camera_entity}/cam"
+                        live_pointmap_entity = "world/live/pointmap"
                         self._viewer_hooks.log_transform(
                             live_recording,
                             entity_path=live_camera_entity,
                             transform=viewer_pose,
                         )
+                        self._viewer_hooks.log_transform(
+                            live_recording,
+                            entity_path=live_pointmap_entity,
+                            transform=viewer_pose,
+                            axis_length=0.0,
+                        )
+                        if update.camera_intrinsics is not None:
+                            self._viewer_hooks.log_pinhole(
+                                live_recording,
+                                entity_path=live_camera_image_entity,
+                                intrinsics=update.camera_intrinsics,
+                            )
+                        if update.image_rgb is not None:
+                            live_recording.log(live_camera_image_entity, rr.Image(update.image_rgb))
+                        if update.depth_map is not None:
+                            live_recording.log(
+                                f"{live_camera_image_entity}/depth",
+                                rr.DepthImage(np.asarray(update.depth_map, dtype=np.float32), meter=1.0),
+                            )
+                        if update.pointmap is not None:
+                            self._viewer_hooks.log_pointcloud(
+                                live_recording,
+                                entity_path=f"{live_pointmap_entity}/points",
+                                pointmap=update.pointmap,
+                                colors=update.image_rgb,
+                            )
                         if update.preview_rgb is not None:
-                            self._viewer_hooks.log_preview_image(
-                                live_recording,
-                                entity_path=f"{live_camera_entity}/preview",
-                                image_rgb=update.preview_rgb,
-                            )
+                            live_recording.log(f"{live_camera_entity}/preview", rr.Image(update.preview_rgb))
                         if update.keyframe_index is not None:
-                            self._viewer_hooks.set_time_sequence(
-                                live_recording,
-                                timeline="keyframe",
-                                sequence=update.keyframe_index,
-                            )
-                            keyframe_entity = f"world/est/cam_{update.keyframe_index:06d}"
+                            live_recording.set_time("keyframe", sequence=update.keyframe_index)
+                            keyframe_camera_entity = f"world/est/cameras/cam_{update.keyframe_index:06d}"
+                            keyframe_image_entity = f"{keyframe_camera_entity}/cam"
+                            keyframe_pointmap_entity = f"world/est/pointmaps/cam_{update.keyframe_index:06d}"
                             self._viewer_hooks.log_transform(
                                 live_recording,
-                                entity_path=keyframe_entity,
+                                entity_path=keyframe_camera_entity,
                                 transform=viewer_pose,
                             )
+                            self._viewer_hooks.log_transform(
+                                live_recording,
+                                entity_path=keyframe_pointmap_entity,
+                                transform=viewer_pose,
+                                axis_length=0.0,
+                            )
+                            if update.camera_intrinsics is not None:
+                                self._viewer_hooks.log_pinhole(
+                                    live_recording,
+                                    entity_path=keyframe_image_entity,
+                                    intrinsics=update.camera_intrinsics,
+                                )
+                            if update.image_rgb is not None:
+                                live_recording.log(keyframe_image_entity, rr.Image(update.image_rgb))
+                            if update.depth_map is not None:
+                                live_recording.log(
+                                    f"{keyframe_image_entity}/depth",
+                                    rr.DepthImage(np.asarray(update.depth_map, dtype=np.float32), meter=1.0),
+                                )
                             if update.pointmap is not None:
                                 self._viewer_hooks.log_pointcloud(
                                     live_recording,
-                                    entity_path=f"{keyframe_entity}/points",
+                                    entity_path=f"{keyframe_pointmap_entity}/points",
                                     pointmap=update.pointmap,
-                                    colors=update.preview_rgb,
+                                    colors=update.image_rgb,
                                 )
                             if update.preview_rgb is not None:
-                                self._viewer_hooks.log_preview_image(
-                                    live_recording,
-                                    entity_path=f"{keyframe_entity}/preview",
-                                    image_rgb=update.preview_rgb,
-                                )
+                                live_recording.log(f"{keyframe_camera_entity}/preview", rr.Image(update.preview_rgb))
                 self._runtime.update_fields(
                     state=RunState.RUNNING,
                     latest_slam_update=update,

@@ -13,22 +13,25 @@ This document is the concise source of truth for `prml_vslam.visualization`.
   - root world coordinates
   - aligned reference clouds
   - live camera and keyframe transforms
+  - `rr.Pinhole` camera models
+  - actual RGB camera images
+  - metric `rr.DepthImage` payloads
   - per-keyframe pointmaps as `rr.Points3D`
   - one diagnostic preview image per keyframe
 - the current repo-owned stream does not yet log:
-  - `rr.Pinhole`
-  - `rr.DepthImage`
   - trajectory polylines
   - a world-space fused dense cloud separate from per-keyframe pointmaps
 - the current ViSTA preview payload is a colorized pointmap preview, not raw RGB
   and not metric depth
-- the current transform export is likely incorrect because repo
-  `T_world_camera` poses are emitted with
-  `rr.TransformRelation.ChildFromParent`
+- the repo-owned transform export now uses parent-from-child semantics for repo
+  `T_world_camera` poses
 
 ### Current Issues
 
-The main issue is the likely transform-relation bug: rerun.py logs repo T_world_camera poses with rr.TransformRelation.ChildFromParent, while the repo pose contract and upstream ViSTA usage imply parent-from-child semantics. The current preview_rgb coming from ViSTA is a pseudo-colored pointmap preview, not a true depth image, and that the repo currently omits rr.Pinhole, which makes frame/intrinsics debugging much harder.
+The remaining issues are trajectory overlays, a separate world-space dense cloud
+layer, and offline repo-owned `.rrd` parity. The current `preview_rgb` coming
+from ViSTA remains a pseudo-colored pointmap preview, so it must stay separate
+from the actual camera image and the metric depth entity.
 
 ## Responsibilities
 
@@ -43,8 +46,8 @@ The main issue is the likely transform-relation bug: rerun.py logs repo T_world_
 - repo camera poses use world <- camera (`T_world_camera`)
 - frame-labelled transforms crossing into visualization must keep explicit source
   and target frame names
-- the root 3D scene must declare one right-handed world convention exactly once;
-  the current repo standard is `rr.ViewCoordinates.RIGHT_HAND_Y_UP`
+- the live ViSTA-aligned viewer path must preserve upstream ViSTA world
+  orientation instead of applying a viewer-only basis remap
 - `rr.Pinhole.image_from_camera` uses row-major intrinsics with
   `X = Right`, `Y = Down`, `Z = Forward`
 - camera entities should use `camera_xyz = rr.ViewCoordinates.RDF` unless a
@@ -52,8 +55,8 @@ The main issue is the likely transform-relation bug: rerun.py logs repo T_world_
 - `rr.Pinhole.resolution` is `[width, height]`
 - metric depth rasters use `rr.DepthImage`; if the array is in meters,
   `meter = 1.0`
-- camera-local pointmaps remain camera-local until composed through the camera
-  transform in the entity tree
+- camera-local pointmaps remain camera-local until composed through a posed
+  pointmap branch in the entity tree
 - left-handed coordinate systems must not be used
 
 ## Required Modalities
@@ -78,6 +81,10 @@ The main issue is the likely transform-relation bug: rerun.py logs repo T_world_
 - a repo `T_world_camera` transform logged to Rerun must use parent-from-child
   semantics or an explicitly inverted matrix; `ChildFromParent` is invalid
   unless the matrix is inverted first
+- pointmap transforms intended only for inheritance should suppress visible frame
+  axes, for example by logging `axis_length=0`
+- ViSTA-specific viewer hooks must not add an extra world-basis conversion on
+  top of the upstream pose stream
 - intrinsics, images, depth, and pointmaps logged for one camera must refer to
   the same raster resolution and crop
 - camera-local pointmaps must not be mislabeled as world coordinates

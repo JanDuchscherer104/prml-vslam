@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils import BaseData
 
 
@@ -42,8 +42,17 @@ class SlamUpdate(BaseData):
     pointmap: NDArray[np.float32] | None = None
     """Optional HxWx3 pointmap in camera coordinates for the current accepted keyframe."""
 
+    camera_intrinsics: CameraIntrinsics | None = None
+    """Optional camera intrinsics for the current accepted keyframe raster."""
+
+    image_rgb: NDArray[np.uint8] | None = None
+    """Optional HxWx3 RGB image for the current accepted keyframe raster."""
+
+    depth_map: NDArray[np.float32] | None = None
+    """Optional HxW metric depth raster for the current accepted keyframe raster."""
+
     preview_rgb: NDArray[np.uint8] | None = None
-    """Optional HxWx3 preview visualization for the current accepted keyframe."""
+    """Optional HxWx3 diagnostic preview visualization for the current accepted keyframe."""
 
     pose_updated: bool = False
     """Whether the pose in this update is a fresh result from a new backend step."""

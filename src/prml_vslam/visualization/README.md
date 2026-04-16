@@ -96,7 +96,7 @@ Rerun is easiest to integrate when you treat it as four separate concerns:
 
 2. Entity tree
    - Every logged payload belongs to one entity path such as
-     `world/est/cam_000123/points`.
+     `world/est/pointmaps/cam_000123/points`.
    - Transforms compose along the entity tree.
    - If a point cloud is already in camera coordinates, log it under the camera
      entity and let the parent transform place it in world coordinates.
@@ -104,9 +104,8 @@ Rerun is easiest to integrate when you treat it as four separate concerns:
 3. Timelines
    - Use one integer timeline for keyframe order and optionally a timestamp
      timeline for wall-clock or capture time.
-   - In `rerun-sdk==0.24.1`, both `rr.set_time_sequence(...)` and
-     `rr.set_time("timeline", sequence=...)` exist. Prefer `set_time(...)` for
-     new code.
+   - In `rerun-sdk==0.24.1`, use `rr.set_time("timeline", sequence=...)`.
+     `rr.set_time_sequence(...)` is deprecated.
 
 4. Blueprint
    - Blueprints describe viewer layout only.
@@ -121,12 +120,12 @@ Rerun is easiest to integrate when you treat it as four separate concerns:
 | `rr.RecordingStream` | yes | One explicit recording per run. |
 | `rr.GrpcSink`, `rr.FileSink`, `set_sinks` | yes | Live streaming plus durable `.rrd` export from the same stream. |
 | `rr.log` | yes | Primary logging entry point for entity-path-based data. |
-| `rr.set_time` / `rr.set_time_sequence` | yes | Keyframe timeline and optional timestamp timeline. |
-| `rr.ViewCoordinates` | yes | Declare the root world convention once and declare camera conventions explicitly. |
+| `rr.set_time` | yes | Keyframe timeline and optional timestamp timeline. |
+| `rr.ViewCoordinates` | optional | Use only when a workflow needs an explicit root-world convention; the ViSTA-aligned path keeps upstream-native world semantics. |
 | `rr.Transform3D` | yes | Log repo poses with the correct relation semantics for `T_world_camera`. |
-| `rr.Pinhole` | not yet | Log intrinsics, camera frusta, and camera coordinate semantics. |
+| `rr.Pinhole` | yes | Log intrinsics, camera frusta, and camera coordinate semantics. |
 | `rr.Image` | yes | Log actual RGB or explicit diagnostic previews. |
-| `rr.DepthImage` | not yet | Log metric depth rasters and let Rerun back-project them through `Pinhole`. |
+| `rr.DepthImage` | yes | Log metric depth rasters and let Rerun back-project them through `Pinhole`. |
 | `rr.Points3D` | yes | Log camera-local pointmaps or world-space clouds. |
 | `rr.LineStrips3D` | not yet | Log explicit trajectory lines when needed. |
 | `rr.blueprint.Spatial3DView`, `rr.blueprint.Spatial2DView` | yes | Give runs a stable 3D scene and 2D image/depth view. |
@@ -178,20 +177,24 @@ Do not pass a repo `T_world_camera` matrix together with
 The repo should converge on the following scene tree:
 
 ```text
-world                                   ViewCoordinates.RIGHT_HAND_Y_UP (static)
+world
 world/reference/aligned_gt_world/...    Points3D in world coordinates
 
-world/live_camera                       Transform3D(T_world_camera_live)
-world/live_camera/cam                   Pinhole(K_live, resolution, camera_xyz=RDF)
-world/live_camera/cam                   Image(rgb_live) or diagnostic preview
-world/live_camera/cam/depth             DepthImage(depth_live_m, meter=1.0)
-world/live_camera/points                Points3D(pointmap_xyz_camera_live)
+world/live/camera                       Transform3D(T_world_camera_live)
+world/live/camera/cam                   Pinhole(K_live, resolution, camera_xyz=RDF)
+world/live/camera/cam                   Image(rgb_live)
+world/live/camera/cam/depth             DepthImage(depth_live_m, meter=1.0)
+world/live/camera/preview               Image(debug_preview_live)
+world/live/pointmap                     Transform3D(T_world_camera_live, axis_length=0)
+world/live/pointmap/points              Points3D(pointmap_xyz_camera_live)
 
-world/est/cam_000000                    Transform3D(T_world_camera_keyframe)
-world/est/cam_000000/cam                Pinhole(K_keyframe, resolution, camera_xyz=RDF)
-world/est/cam_000000/cam                Image(rgb_keyframe)
-world/est/cam_000000/cam/depth          DepthImage(depth_keyframe_m, meter=1.0)
-world/est/cam_000000/points             Points3D(pointmap_xyz_camera_keyframe)
+world/est/cameras/cam_000000            Transform3D(T_world_camera_keyframe)
+world/est/cameras/cam_000000/cam        Pinhole(K_keyframe, resolution, camera_xyz=RDF)
+world/est/cameras/cam_000000/cam        Image(rgb_keyframe)
+world/est/cameras/cam_000000/cam/depth  DepthImage(depth_keyframe_m, meter=1.0)
+world/est/cameras/cam_000000/preview    Image(debug_preview_keyframe)
+world/est/pointmaps/cam_000000          Transform3D(T_world_camera_keyframe, axis_length=0)
+world/est/pointmaps/cam_000000/points   Points3D(pointmap_xyz_camera_keyframe)
 
 world/est/trajectory                    LineStrips3D(world positions)
 world/est/global_dense_points           Points3D(world-space fused cloud)
@@ -202,8 +205,11 @@ Important consequences:
 - `Pinhole` and the image it describes should live on the same camera entity.
 - `DepthImage` should live under that camera entity so Rerun can back-project it
   through the camera model.
-- Camera-local pointmaps belong under the camera transform, not directly under
-  `world`, unless they have already been transformed into world coordinates.
+- Camera-local pointmaps should live under a separate posed pointmap branch when
+  the user needs to hide camera frusta and camera frames without hiding the
+  points.
+- Pointmap transform branches should log `axis_length=0` so they do not add
+  another visible frame to the 3D scene.
 
 ## Modalities We Want To Export
 
@@ -212,16 +218,16 @@ Important consequences:
 - aligned reference clouds from benchmark inputs
 - live camera transform
 - keyframe transforms
+- camera intrinsics and frusta via `rr.Pinhole`
+- actual RGB camera images via `rr.Image`
+- metric depth via `rr.DepthImage`
 - keyframe pointmaps via `rr.Points3D`
-- one preview image per keyframe
+- diagnostic preview images separate from the camera image entity
 - live gRPC streaming and repo-owned `.rrd` export for streaming runs
 - preserved native upstream `.rrd` files when present
 
 ### Missing but required for a correct camera visualization
 
-- `rr.Pinhole` for every camera entity
-- actual RGB keyframe images
-- metric `rr.DepthImage` payloads
 - explicit trajectory visualization
 - a clear split between camera-local pointmaps and world-space fused clouds
 
@@ -236,18 +242,17 @@ Important consequences:
 The current implementation is intentionally thin but incomplete:
 
 - [`rerun.py`](./rerun.py) creates recordings, attaches sinks, logs a world
-  `ViewCoordinates`, logs transforms, images, and `Points3D`, and preserves
-  native `.rrd` artifacts.
+  `ViewCoordinates`, logs transforms, pinhole cameras, RGB images, depth
+  images, and `Points3D`, and preserves native `.rrd` artifacts.
 - [`../pipeline/streaming_coordinator.py`](../pipeline/streaming_coordinator.py)
-  logs reference clouds, the live camera pose, per-keyframe poses, preview
-  images, and pointmaps.
+  logs reference clouds, the live camera pose, per-keyframe poses, camera
+  intrinsics, actual camera images, diagnostic previews, depth images, and
+  pointmaps.
 - Offline runs currently preserve native upstream visualization artifacts but do
   not synthesize a repo-owned offline `.rrd`.
 
 The current repo-owned stream does not yet log:
 
-- `rr.Pinhole`
-- `rr.DepthImage`
 - trajectory polylines
 - a world-space dense cloud separate from per-keyframe pointmaps
 
@@ -274,33 +279,24 @@ on the camera transform to place it in the scene.
 
 ## Findings From Comparing Our Wrapper Against Upstream
 
-### 1. The current transform relation is likely wrong
+### 1. The transform relation must match the canonical repo pose direction
 
-[`rerun.py`](./rerun.py) logs repo `FrameTransform` values with
-`relation=rr.TransformRelation.ChildFromParent`.
+The repo stores camera poses as `T_world_camera`, so the Rerun helper must log
+them with parent-from-child semantics.
 
-That conflicts with repo semantics because `FrameTransform` stores
-`T_world_camera`. Rerun's `ChildFromParent` means the logged matrix maps parent
-space into child space. Upstream ViSTA does not set this relation at all, which
-means the default `space -> parent` semantics apply and match a
-camera-to-world pose.
+The repo-owned path now uses explicit `ParentFromChild` semantics and keeps the
+same world/frame orientation as upstream ViSTA instead of remapping ViSTA into a
+repo-specific Y-up viewer world.
 
-This is the strongest candidate for the current "points do not unproject into
-world coordinates correctly" symptom.
+If future pointmaps look mirrored or displaced again, inspect transform
+relations before touching basis-conversion code.
 
-### 2. We do not currently log `Pinhole`
+### 2. Camera-complete entities require `Pinhole`, RGB, and `DepthImage`
 
-Without `rr.Pinhole` we lose:
+The repo-owned streaming path now logs `Pinhole`, actual RGB, and metric depth
+under camera entities. Keep those payloads synchronized and raster-consistent.
 
-- explicit camera frusta
-- explicit camera coordinate semantics
-- a direct visual cross-check between intrinsics, image, and pointmap
-- Rerun's automatic depth-to-3D projection for `DepthImage`
-
-Upstream ViSTA logs `Pinhole` on every camera entity. The repo wrapper should do
-the same.
-
-### 3. The current `preview_rgb` payload is not RGB and not depth
+### 3. `preview_rgb` is diagnostic preview only
 
 Upstream `get_pointmap_vis(...)` in
 [`../../../external/vista-slam/vista_slam/slam.py`](../../../external/vista-slam/vista_slam/slam.py)
@@ -309,32 +305,24 @@ returns:
 - a pseudo-color visualization produced from normalized XYZ values
 - the actual camera-local point cloud
 
-Our wrapper stores that first payload as `preview_rgb`. That means the current
-viewer image is a diagnostic pointmap preview. It is not the original RGB frame
-and it is not a metric depth image.
-
-This explains why the current image payload does not behave like a true depth
-view.
+The repo now keeps that pseudo-colored payload on separate `.../preview`
+entities. It is not the camera image entity and it is not the depth entity.
 
 ### 4. ViSTA live payloads are in ViSTA resolution, not capture resolution
 
 The streaming adapter resizes input frames to `224x224` before sending them to
 ViSTA.
 
-Any future `Pinhole`, `Image`, or `DepthImage` logged from live ViSTA outputs
-must use intrinsics and resolution consistent with that raster. We must not mix
+`Pinhole`, `Image`, and `DepthImage` logged from live ViSTA outputs must use
+intrinsics and resolution consistent with that raster. Do not mix
 original-capture intrinsics with ViSTA-resized pointmaps.
 
-### 5. The current basis conversion must remain explicit and singular
+### 5. Keep upstream ViSTA world semantics unless there is a method-agnostic normalization layer
 
-[`../pipeline/streaming.py`](../pipeline/streaming.py) applies
-`diag([1, -1, -1])` to ViSTA poses before logging them into a
-`RIGHT_HAND_Y_UP` world.
-
-That may be a valid viewer-basis adapter, but only if it is the single,
-documented conversion point between ViSTA's internal world and the viewer's
-world. The code and docs must treat it as an explicit boundary adapter, not an
-implicit convention.
+The current live viewer path now keeps ViSTA's native world orientation instead
+of applying a viewer-only basis conversion. If the repo later wants one shared
+cross-method viewer world, that normalization should live in an explicit,
+method-agnostic alignment layer rather than in the ViSTA viewer hook alone.
 
 ## Recommended Integration Pattern
 
@@ -348,11 +336,10 @@ recording = rr.RecordingStream(application_id="prml-vslam", recording_id=run_id)
 recording.set_sinks(rr.GrpcSink(grpc_url), rr.FileSink(str(viewer_rrd_path)))
 recording.send_blueprint(blueprint)
 
-recording.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 recording.set_time("keyframe", sequence=keyframe_index)
 
 recording.log(
-    f"world/est/cam_{keyframe_index:06d}",
+    f"world/est/cameras/cam_{keyframe_index:06d}",
     rr.Transform3D(
         translation=T_world_camera[:3, 3],
         mat3x3=T_world_camera[:3, :3],
@@ -361,7 +348,7 @@ recording.log(
 )
 
 recording.log(
-    f"world/est/cam_{keyframe_index:06d}/cam",
+    f"world/est/cameras/cam_{keyframe_index:06d}/cam",
     rr.Pinhole(
         image_from_camera=K,
         resolution=[width, height],
@@ -369,22 +356,27 @@ recording.log(
     ),
 )
 
-recording.log(f"world/est/cam_{keyframe_index:06d}/cam", rr.Image(rgb))
-recording.log(f"world/est/cam_{keyframe_index:06d}/cam/depth", rr.DepthImage(depth_m, meter=1.0))
-recording.log(f"world/est/cam_{keyframe_index:06d}/points", rr.Points3D(points_xyz_camera, colors=colors))
+recording.log(
+    f"world/est/pointmaps/cam_{keyframe_index:06d}",
+    rr.Transform3D(
+        translation=T_world_camera[:3, 3],
+        mat3x3=T_world_camera[:3, :3],
+        relation=rr.TransformRelation.ParentFromChild,
+        axis_length=0.0,
+    ),
+)
+recording.log(f"world/est/cameras/cam_{keyframe_index:06d}/cam", rr.Image(rgb))
+recording.log(f"world/est/cameras/cam_{keyframe_index:06d}/cam/depth", rr.DepthImage(depth_m, meter=1.0))
+recording.log(f"world/est/pointmaps/cam_{keyframe_index:06d}/points", rr.Points3D(points_xyz_camera, colors=colors))
 ```
 
 If the point cloud is already in world coordinates, log it somewhere under
 `world/...` without the camera parent transform.
 
-## Short-Term Fix Checklist
+## Remaining Follow-Ups
 
-1. Change repo transform logging so a repo `T_world_camera` is emitted with
-   parent-from-child semantics.
-2. Extend the live ViSTA update surface to carry actual intrinsics and metric
-   depth, not only a pseudo-color preview plus pointmap.
-3. Add `rr.Pinhole` to every logged camera entity.
-4. Log true RGB and/or true `DepthImage` payloads separately from diagnostic
-   previews.
-5. Add one synthetic integration test that checks a known pose + depth map
-   produces the expected world-space point cloud in Rerun semantics.
+1. Add explicit trajectory overlays.
+2. Add a world-space fused dense cloud layer separate from camera-local
+   pointmaps.
+3. Add repo-owned offline `.rrd` synthesis if offline viewer parity becomes a
+   priority.
