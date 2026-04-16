@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from threading import Event
 
-import numpy as np
-
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.methods.protocols import StreamingSlamBackend
@@ -24,37 +22,23 @@ from prml_vslam.visualization.rerun import (
 from prml_vslam.visualization.rerun import (
     create_recording_stream as _create_recording_stream,
 )
+from prml_vslam.visualization.rerun import log_pinhole as _log_pinhole
 from prml_vslam.visualization.rerun import log_pointcloud as _log_pointcloud
 from prml_vslam.visualization.rerun import log_points3d as _log_points3d
-from prml_vslam.visualization.rerun import log_preview_image as _log_preview_image
 from prml_vslam.visualization.rerun import log_transform as _log_transform
-from prml_vslam.visualization.rerun import (
-    log_y_up_view_coordinates as _log_y_up_view_coordinates,
-)
-from prml_vslam.visualization.rerun import set_time_sequence as _set_time_sequence
 
 from .runner_runtime import RunnerRuntime
 from .streaming_coordinator import StreamingCoordinator
 
 _STOP_JOIN_TIMEOUT_SECONDS = 10.0
-_VISTA_VIEWER_BASIS = np.diag([1.0, -1.0, -1.0])
 
 
 def _viewer_pose_from_update(update: SlamUpdate, *, method_id: MethodId) -> FrameTransform:
-    """Project one repo pose into the viewer coordinate convention."""
+    """Return one repo pose unchanged for viewer logging."""
     if update.pose is None:
         raise ValueError("Viewer pose conversion requires an update with a pose.")
-    if method_id is not MethodId.VISTA:
-        return update.pose
-    pose_matrix = update.pose.as_matrix()
-    viewer_matrix = pose_matrix.copy()
-    viewer_matrix[:3, :3] = _VISTA_VIEWER_BASIS @ pose_matrix[:3, :3]
-    viewer_matrix[:3, 3] = _VISTA_VIEWER_BASIS @ pose_matrix[:3, 3]
-    return FrameTransform.from_matrix(
-        viewer_matrix,
-        target_frame=update.pose.target_frame,
-        source_frame=update.pose.source_frame,
-    )
+    del method_id
+    return update.pose
 
 
 class _StreamingViewerHooks:
@@ -63,12 +47,10 @@ class _StreamingViewerHooks:
     create_recording_stream = staticmethod(_create_recording_stream)
     attach_recording_sinks = staticmethod(_attach_recording_sinks)
     collect_native_visualization_artifacts = staticmethod(_collect_native_visualization_artifacts)
+    log_pinhole = staticmethod(_log_pinhole)
     log_transform = staticmethod(_log_transform)
     log_pointcloud = staticmethod(_log_pointcloud)
     log_points3d = staticmethod(_log_points3d)
-    log_preview_image = staticmethod(_log_preview_image)
-    log_y_up_view_coordinates = staticmethod(_log_y_up_view_coordinates)
-    set_time_sequence = staticmethod(_set_time_sequence)
     load_point_cloud_ply = staticmethod(load_point_cloud_ply)
     viewer_pose_from_update = staticmethod(_viewer_pose_from_update)
 

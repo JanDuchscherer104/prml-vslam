@@ -528,10 +528,19 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
                 else:
                     st.json(
                         {
-                            **snapshot.latest_slam_update.model_dump(mode="json", exclude={"pointmap", "preview_rgb"}),
+                            **snapshot.latest_slam_update.model_dump(
+                                mode="json",
+                                exclude={"pointmap", "image_rgb", "depth_map", "preview_rgb"},
+                            ),
                             "pointmap_shape": None
                             if snapshot.latest_slam_update.pointmap is None
                             else list(snapshot.latest_slam_update.pointmap.shape),
+                            "image_shape": None
+                            if snapshot.latest_slam_update.image_rgb is None
+                            else list(snapshot.latest_slam_update.image_rgb.shape),
+                            "depth_shape": None
+                            if snapshot.latest_slam_update.depth_map is None
+                            else list(snapshot.latest_slam_update.depth_map.shape),
                             "preview_shape": None
                             if snapshot.latest_slam_update.preview_rgb is None
                             else list(snapshot.latest_slam_update.preview_rgb.shape),

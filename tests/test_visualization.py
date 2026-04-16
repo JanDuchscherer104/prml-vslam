@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
+# Import pipeline first to avoid the known package-init cycle between
+# `visualization.contracts` and `pipeline.contracts.request` during test collection.
+import prml_vslam.pipeline  # noqa: F401
 from prml_vslam.visualization import rerun as rerun_helpers
 
 
@@ -28,11 +30,7 @@ def test_attach_recording_sinks_configures_grpc_and_file_together(
             nonlocal configured_sinks
             configured_sinks = sinks
 
-    monkeypatch.setattr(
-        rerun_helpers,
-        "_import_rerun",
-        lambda: SimpleNamespace(GrpcSink=FakeGrpcSink, FileSink=FakeFileSink),
-    )
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(GrpcSink=FakeGrpcSink, FileSink=FakeFileSink))
 
     rerun_helpers.attach_recording_sinks(
         FakeRecordingStream(),
@@ -76,18 +74,17 @@ def test_create_recording_stream_uses_world_based_default_blueprint(monkeypatch)
         def __init__(self, layout: object) -> None:
             self.layout = layout
 
-    fake_rerun = SimpleNamespace(RecordingStream=FakeRecordingStream)
-    fake_rerun_package = ModuleType("rerun")
-    fake_rerun_package.__path__ = []  # type: ignore[attr-defined]
-    fake_blueprint_module = ModuleType("rerun.blueprint")
-    fake_blueprint_module.Blueprint = FakeBlueprint
-    fake_blueprint_module.Horizontal = FakeHorizontal
-    fake_blueprint_module.Spatial3DView = FakeSpatial3DView
-    fake_blueprint_module.Spatial2DView = FakeSpatial2DView
-
-    monkeypatch.setattr(rerun_helpers, "_import_rerun", lambda: fake_rerun)
-    monkeypatch.setitem(sys.modules, "rerun", fake_rerun_package)
-    monkeypatch.setitem(sys.modules, "rerun.blueprint", fake_blueprint_module)
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(RecordingStream=FakeRecordingStream))
+    monkeypatch.setattr(
+        rerun_helpers,
+        "rrb",
+        SimpleNamespace(
+            Blueprint=FakeBlueprint,
+            Horizontal=FakeHorizontal,
+            Spatial3DView=FakeSpatial3DView,
+            Spatial2DView=FakeSpatial2DView,
+        ),
+    )
 
     stream = rerun_helpers.create_recording_stream(app_id="prml-vslam", recording_id="demo")
 
@@ -95,4 +92,4 @@ def test_create_recording_stream_uses_world_based_default_blueprint(monkeypatch)
     assert len(sent_blueprints) == 1
     layout = sent_blueprints[0].layout
     assert layout.views[0].origin == "world"
-    assert layout.views[1].origin == "world/live_camera/preview"
+    assert layout.views[1].origin == "world/live/camera/cam"
