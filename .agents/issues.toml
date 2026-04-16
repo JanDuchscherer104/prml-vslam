@@ -1,58 +1,56 @@
 [[issues]]
 id = "ISSUE-0030"
-title = "Trajectory evaluation contracts still conflate ARCore selection with evaluation enablement"
+title = "Trajectory evaluation still lacks explicit alignment and drift semantics"
 status = "open"
 priority = "high"
 category = "evaluation"
-summary = "The public pipeline config still uses `compare_to_arcore` to decide whether trajectory evaluation exists at all, while the evaluator always resolves the dataset reference path and computes translation-only APE."
+summary = "Enablement and baseline selection are now split correctly, but persisted trajectory evaluation still only records translation APE and does not state alignment or drift-oriented semantics explicitly."
 files = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/benchmark/contracts.py",
     "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/main.py",
-    "src/prml_vslam/datasets/contracts.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/pipeline/finalization.py",
     "README.md",
     "docs/Questions.md",
 ]
 notes = [
-    "`compare_to_arcore` still controls reservation of the `TRAJECTORY_EVALUATION` stage even though ARCore is optional in the project Q&A.",
-    "The current `TrajectoryEvaluationService` uses `DatasetId.resolve_reference_path(...)`, so the field name no longer matches the implemented behavior.",
+    "The public config already separates `benchmark.trajectory.enabled` from `baseline_source`, so the old enablement-vs-baseline conflation is resolved.",
     "The evaluator persists only translation APE; explicit alignment and drift-oriented RPE remain missing even though trajectory quality is the top evaluation priority.",
+    "The persisted payload does not record enough evaluation semantics to tell a downstream reader which alignment and metric choices were applied.",
 ]
 sources = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/benchmark/contracts.py",
     "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/main.py",
-    "src/prml_vslam/datasets/contracts.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/pipeline/finalization.py",
     "README.md",
     "docs/Questions.md",
 ]
 
 [[issues]]
 id = "ISSUE-0031"
-title = "Ingress and live-source contracts still rely on untyped provenance fields"
+title = "Ingress and live-source contracts still rely on untyped packet provenance and duplicate transport enums"
 status = "open"
 priority = "medium"
 category = "contracts"
-summary = "The repo removed the earlier `FramePacket` pointmap/uncertainty overlap, but the hot-path contracts still use generic metadata blobs and free-string live-source identifiers for provenance that should be typed."
+summary = "The repo removed the earlier `FramePacket` overlap, but the hot-path contracts still push replay and transport provenance through generic metadata and duplicate Record3D transport identity across pipeline and app/io enums."
 files = [
     "src/prml_vslam/interfaces/runtime.py",
     "src/prml_vslam/io/cv2_producer.py",
     "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/app/pipeline_controller.py",
 ]
 notes = [
     "`FramePacket.metadata` still carries replay, dataset, transport, device-address, and rotation provenance in a generic `dict[str, Any]` blob.",
     "Replay and dataset adapters currently depend on `static_metadata` plumbing instead of a typed source/provenance contract.",
-    "`LiveSourceSpec.source_id` is still a free string, so the live-source boundary can drift away from typed Record3D transport identifiers and future source types.",
+    "The live-source boundary is no longer a free-form source string, but transport identity is still split between `LiveTransportId` in pipeline contracts and `Record3DTransportId` in app/io surfaces.",
 ]
 sources = [
     "src/prml_vslam/interfaces/runtime.py",
     "src/prml_vslam/io/cv2_producer.py",
     "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
-    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
     "src/prml_vslam/pipeline/REQUIREMENTS.md",
 ]
 
@@ -110,35 +108,32 @@ sources = [
 
 [[issues]]
 id = "ISSUE-0034"
-title = "Pipeline stages are planned as labels but executed as monolithic runner branches"
+title = "Offline and unsupported planned stages still need the process-aware stage-result executor"
 status = "open"
 priority = "high"
 category = "orchestration"
-summary = "RunPlanStageId is typed and visible in manifests, but offline and streaming execution still inline stage control flow inside runner worker methods, so only method-owned SLAM can be isolated behind a multiprocessing boundary."
+summary = "Streaming execution now has a pipeline-owned coordinator and typed stage results, but offline execution and the still-unsupported planned stages continue to rely on the older boolean/finalization model."
 files = [
-    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/pipeline/contracts/execution.py",
     "src/prml_vslam/pipeline/offline.py",
-    "src/prml_vslam/pipeline/streaming.py",
     "src/prml_vslam/pipeline/finalization.py",
-    "src/prml_vslam/methods/multiprocess.py",
-    "src/prml_vslam/pipeline/contracts/plan.py",
-    "src/prml_vslam/pipeline/contracts/provenance.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "tests/test_pipeline.py",
 ]
 notes = [
-    "`RunPlanStageId` gives stages stable names, but there is no `StageExecutor` or stage result contract that can run ingest, SLAM, evaluation, or summary uniformly.",
-    "`OfflineRunner._run_worker` and `StreamingRunner._run_worker` duplicate orchestration and track stage progress through booleans such as `ingest_started` and `slam_started`.",
-    "`build_stage_status` and `build_stage_manifests` infer outcomes after the fact instead of consuming typed stage execution results, which makes cache hits and process isolation hard to add cleanly.",
-    "`MultiprocessSlamSession` is method-owned and frame-packet-specific, so its process boundary cannot be reused for ingest, evaluation, summary, or future reconstruction stages.",
+    "Streaming mode now uses `StageExecutionMode`, `StageResult`, and `StreamingCoordinator` to run ingest, packet-source, SLAM, evaluation, and summary through explicit execution records.",
+    "`OfflineRunner._run_worker` still tracks progress through booleans such as `ingest_started` and `slam_started` rather than consuming stage results.",
+    "The legacy finalization path still exists for offline execution, so the older boolean/finalization model is not fully removed from the pipeline package.",
+    "Reference reconstruction, cloud evaluation, and efficiency stages remain plannable but unsupported by the executable slice.",
 ]
 sources = [
     "README.md",
     "docs/Questions.md",
     "src/prml_vslam/pipeline/REQUIREMENTS.md",
-    "src/prml_vslam/pipeline/services.py",
+    "src/prml_vslam/pipeline/contracts/execution.py",
     "src/prml_vslam/pipeline/offline.py",
-    "src/prml_vslam/pipeline/streaming.py",
     "src/prml_vslam/pipeline/finalization.py",
-    "src/prml_vslam/methods/multiprocess.py",
+    "src/prml_vslam/pipeline/run_service.py",
 ]
 
 [[issues]]
@@ -172,9 +167,76 @@ sources = [
     "src/prml_vslam/methods/vista/adapter.py",
 ]
 
+[[issues]]
+id = "ISSUE-0036"
+title = "Repo-owned Rerun transform relation contradicts the canonical camera pose direction"
+status = "open"
+priority = "high"
+category = "visualization"
+summary = "The repo stores camera poses as `T_world_camera`, but `visualization.rerun.log_transform()` logs them as `rr.TransformRelation.ChildFromParent`, which reverses the declared pose direction and is the strongest current explanation for misplaced camera-local pointmaps and incorrect world unprojection in the repo-owned viewer path."
+files = [
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+notes = [
+    "`FrameTransform` and the package guidance define the canonical camera pose convention as world <- camera (`T_world_camera`).",
+    "`log_transform()` emits that pose with `rr.TransformRelation.ChildFromParent`, while `streaming_coordinator` logs camera-local pointmaps under posed keyframe entities that inherit the transform.",
+    "`streaming._viewer_pose_from_update()` also applies a ViSTA-specific basis flip before logging, so transform-direction mistakes and viewer-basis conversion are currently coupled in one path.",
+    "Current streaming visualization tests assert entity paths, timelines, and basis values, but they do not round-trip a known camera-local point into an expected world-space location.",
+]
+sources = [
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+]
+
+[[issues]]
+id = "ISSUE-0037"
+title = "Live Rerun updates drop intrinsics and metric depth, so camera unprojection cannot be validated"
+status = "open"
+priority = "medium"
+category = "visualization"
+summary = "The live ViSTA adapter requests depth and intrinsics, but `SlamUpdate` only carries `pointmap` and `preview_rgb`, the repo-owned viewer path never logs `Pinhole` or `DepthImage`, and the current `preview_rgb` payload is a pseudo-colored XYZ preview rather than raw RGB or metric depth."
+files = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_methods.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+notes = [
+    "`VistaSlamSession._build_live_update()` calls `get_view(... return_depth=True, return_intri=True)` but drops `view.depth` and `view.intri` after requesting them.",
+    "`get_pointmap_vis()` returns a pseudo-colored visualization plus a camera-local pointmap, yet the repo stores the first payload as `preview_rgb` and logs it with `rr.Image` semantics.",
+    "Without typed intrinsics and metric depth in `SlamUpdate`, the repo-owned viewer path cannot log `Pinhole` frusta or `DepthImage` backprojections keyed to the same raster as the pointmap.",
+    "Explicit trajectory polylines and a separate world-space dense cloud are also still missing, but the camera-model and depth gap is the first blocker to trustworthy unprojection debugging.",
+]
+sources = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_methods.py",
+    "src/prml_vslam/visualization/README.md",
+    "external/vista-slam/run.py",
+    "external/vista-slam/run_live.py",
+    "external/vista-slam/vista_slam/slam.py",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-15"
-source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, a later narrative-review relevance triage, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, and the Pipeline page helper cleanup."
+updated_on = "2026-04-16"
+source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, the Pipeline page helper cleanup, the 2026-04-16 streaming execution state review, and the 2026-04-16 Rerun integration review."
 active_collection = "issues"
