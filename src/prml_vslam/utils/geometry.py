@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
@@ -12,9 +12,11 @@ from evo.tools import file_interface
 from pydantic import ConfigDict
 from pytransform3d.transformations import transform, vectors_to_points
 
-from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-
 from .base_data import BaseData
+
+if TYPE_CHECKING:
+    from prml_vslam.interfaces.camera import CameraIntrinsics
+    from prml_vslam.interfaces.transforms import FrameTransform
 
 
 class ImageSize(BaseData):
@@ -94,59 +96,40 @@ def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
     return trajectory
 
 
+def _import_open3d() -> object:
+    try:
+        import open3d as o3d
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("Point-cloud PLY I/O requires the repository Open3D dependency.") from exc
+    return o3d
+
+
 def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     """Write an XYZ point cloud to PLY using the repository's Open3D dependency."""
     positions = np.asarray(points_xyz, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 3:
         raise ValueError(f"Expected point cloud shape (N, 3), got {positions.shape}.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    header = "\n".join(
-        [
-            "ply",
-            "format ascii 1.0",
-            f"element vertex {len(positions)}",
-            "property double x",
-            "property double y",
-            "property double z",
-            "end_header",
-        ]
-    )
-    if len(positions) == 0:
-        path.write_text(f"{header}\n", encoding="utf-8")
-        return path.resolve()
-    rows = "\n".join(f"{x:.17g} {y:.17g} {z:.17g}" for x, y, z in positions)
-    path.write_text(f"{header}\n{rows}\n", encoding="utf-8")
+    o3d = _import_open3d()
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(positions)
+    if not o3d.io.write_point_cloud(str(path), point_cloud, write_ascii=True):
+        raise RuntimeError(f"Failed to write point cloud to '{path}'.")
     return path.resolve()
 
 
 def load_point_cloud_ply(path: Path) -> np.ndarray:
-    """Load an ASCII XYZ point cloud from a simple repository-owned PLY file."""
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if not lines or lines[0].strip() != "ply":
-        raise ValueError(f"Expected an ASCII PLY file at '{path}'.")
-    vertex_count: int | None = None
-    data_start = None
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("element vertex "):
-            vertex_count = int(stripped.split()[-1])
-        if stripped == "end_header":
-            data_start = index + 1
-            break
-    if vertex_count is None or data_start is None:
-        raise ValueError(f"PLY file '{path}' is missing a vertex header.")
-    rows: list[list[float]] = []
-    for line in lines[data_start : data_start + vertex_count]:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        xyz = stripped.split()[:3]
-        if len(xyz) != 3:
-            raise ValueError(f"Expected XYZ rows in '{path}', got '{line}'.")
-        rows.append([float(xyz[0]), float(xyz[1]), float(xyz[2])])
-    if not rows:
+    """Load an XYZ point cloud from PLY using the repository's Open3D dependency."""
+    if not path.exists():
+        raise FileNotFoundError(f"Point cloud '{path}' does not exist.")
+    o3d = _import_open3d()
+    point_cloud = o3d.io.read_point_cloud(str(path))
+    points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
+    if points_xyz.ndim != 2 or (points_xyz.size > 0 and points_xyz.shape[1] != 3):
+        raise ValueError(f"Expected Open3D to return shape (N, 3) for '{path}', got {points_xyz.shape}.")
+    if points_xyz.size == 0:
         return np.empty((0, 3), dtype=np.float64)
-    return np.asarray(rows, dtype=np.float64)
+    return points_xyz
 
 
 def transform_points_world_camera(

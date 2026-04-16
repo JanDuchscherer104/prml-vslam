@@ -242,7 +242,7 @@ def finalize_stage_results(
     """Persist summary artifacts from explicit stage results."""
     planned_ids = {stage.id for stage in plan.stages}
     non_summary_manifests = [
-        build_stage_manifest_from_result(result)
+        result.to_stage_manifest()
         for result in stage_results
         if result.stage_id in planned_ids and result.stage_id is not RunPlanStageId.SUMMARY
     ]
@@ -272,17 +272,6 @@ def finalize_stage_results(
         output_paths=summary_manifest.output_paths,
         summary=summary,
         stage_manifests=stage_manifests,
-    )
-
-
-def build_stage_manifest_from_result(result: StageResult) -> StageManifest:
-    """Convert one explicit stage result into a persisted stage manifest."""
-    return StageManifest(
-        stage_id=result.stage_id,
-        config_hash=result.config_hash,
-        input_fingerprint=result.input_fingerprint,
-        output_paths=result.output_paths,
-        status=result.status,
     )
 
 
@@ -380,7 +369,6 @@ __all__ = [
     "build_stage_manifests",
     "build_stage_status",
     "build_summary_manifest",
-    "build_stage_manifest_from_result",
     "compute_trajectory_evaluation",
     "finalize_stage_results",
     "finalize_run_outputs",
