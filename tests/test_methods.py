@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,8 @@ import pytest
 
 from prml_vslam.interfaces import FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
-from prml_vslam.methods.contracts import SlamOutputPolicy
+from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.protocols import ProcessStreamingSlamBackend
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.utils import Console
 
@@ -138,6 +140,21 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
 
 def test_methods_package_exports_vista_backend_surfaces() -> None:
     assert VistaSlamBackend is not None
+
+
+def test_vista_backend_exposes_picklable_streaming_session_factory(tmp_path: Path) -> None:
+    backend = VistaSlamBackendConfig().setup_target()
+    assert backend is not None
+
+    factory = backend.streaming_session_factory(
+        SlamBackendConfig(),
+        SlamOutputPolicy(),
+        tmp_path / "vista-stream",
+    )
+
+    assert isinstance(backend, ProcessStreamingSlamBackend)
+    assert callable(factory)
+    pickle.dumps(factory)
     assert VistaSlamBackendConfig is not None
 
 

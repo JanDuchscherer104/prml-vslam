@@ -119,6 +119,36 @@ def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     return path.resolve()
 
 
+def load_point_cloud_ply(path: Path) -> np.ndarray:
+    """Load an ASCII XYZ point cloud from a simple repository-owned PLY file."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "ply":
+        raise ValueError(f"Expected an ASCII PLY file at '{path}'.")
+    vertex_count: int | None = None
+    data_start = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("element vertex "):
+            vertex_count = int(stripped.split()[-1])
+        if stripped == "end_header":
+            data_start = index + 1
+            break
+    if vertex_count is None or data_start is None:
+        raise ValueError(f"PLY file '{path}' is missing a vertex header.")
+    rows: list[list[float]] = []
+    for line in lines[data_start : data_start + vertex_count]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        xyz = stripped.split()[:3]
+        if len(xyz) != 3:
+            raise ValueError(f"Expected XYZ rows in '{path}', got '{line}'.")
+        rows.append([float(xyz[0]), float(xyz[1]), float(xyz[2])])
+    if not rows:
+        return np.empty((0, 3), dtype=np.float64)
+    return np.asarray(rows, dtype=np.float64)
+
+
 def transform_points_world_camera(
     points_xyz_camera: np.ndarray,
     pose_world_camera: FrameTransform,
@@ -166,6 +196,7 @@ def pointmap_from_depth(
 
 __all__ = [
     "ImageSize",
+    "load_point_cloud_ply",
     "load_tum_trajectory",
     "pointmap_from_depth",
     "transform_points_world_camera",

@@ -29,7 +29,7 @@ from prml_vslam.pipeline.contracts.request import (
 from prml_vslam.pipeline.demo import load_run_request_toml
 from prml_vslam.pipeline.state import RunSnapshot
 from prml_vslam.utils import PathConfig
-from prml_vslam.visualization import VisualizationConfig
+from prml_vslam.visualization.contracts import VisualizationConfig
 
 from .models import PipelinePageState, PipelineSourceId
 from .record3d_controls import record3d_transport_input_error

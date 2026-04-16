@@ -14,6 +14,7 @@ __all__ = [
     "BaseData",
     "Console",
     "ImageSize",
+    "load_point_cloud_ply",
     "PathConfig",
     "RunArtifactPaths",
     "caller_namespace",
@@ -23,6 +24,6 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
-    if name != "ImageSize":
+    if name not in {"ImageSize", "load_point_cloud_ply"}:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     return getattr(import_module(".geometry", __name__), name)
