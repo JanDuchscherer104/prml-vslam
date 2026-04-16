@@ -40,7 +40,7 @@ from prml_vslam.pipeline.run_service import RunService, _default_slam_backend_fa
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.streaming import StreamingRunner
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.utils import BaseConfig, BaseData, Console, PathConfig
+from prml_vslam.utils import BaseConfig, BaseData, Console, FactoryConfig, PathConfig
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts.runtime import RunSnapshot
@@ -1544,7 +1544,7 @@ class FakeStreamingSource(StreamingSequenceSource):
         return self.stream
 
 
-class FakeStreamingSourceConfig(BaseConfig):
+class FakeStreamingSourceConfig(BaseConfig, FactoryConfig["ConfigBackedFakeStreamingSource"]):
     sequence_manifest: SequenceManifest
     packets: list[FramePacket] = Field(default_factory=list)
     prepare_delay_seconds: float = 0.0

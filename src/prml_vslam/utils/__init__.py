@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base_config import BaseConfig
+from .base_config import BaseConfig, FactoryConfig
 from .base_data import BaseData
 from .console import Console, caller_namespace, get_console
 from .geometry import ImageSize, load_point_cloud_ply
@@ -12,6 +12,7 @@ __all__ = [
     "BaseConfig",
     "BaseData",
     "Console",
+    "FactoryConfig",
     "ImageSize",
     "load_point_cloud_ply",
     "PathConfig",

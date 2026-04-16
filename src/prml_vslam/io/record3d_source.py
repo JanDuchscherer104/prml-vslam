@@ -7,12 +7,12 @@ from pathlib import Path
 
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.protocols.source import StreamingSequenceSource
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseConfig, FactoryConfig
 
 from .record3d import Record3DTransportId, open_record3d_usb_packet_stream
 
 
-class Record3DStreamingSourceConfig(BaseConfig):
+class Record3DStreamingSourceConfig(BaseConfig, FactoryConfig["Record3DStreamingSource"]):
     """Configuration for one Record3D-backed streaming source."""
 
     transport: Record3DTransportId = Record3DTransportId.USB
