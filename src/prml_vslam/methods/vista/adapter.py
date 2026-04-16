@@ -234,20 +234,27 @@ class VistaSlamBackend(SlamBackend):
         """Load upstream OnlineSLAM and return a ready multiprocess streaming session."""
         from prml_vslam.methods.multiprocess import MultiprocessSlamSession  # noqa: PLC0415
 
-        # We use a partial or a top-level function-like object to ensure it's pickleable
-        # when using the 'spawn' multiprocessing context.
-        factory = _VistaSessionFactory(
-            config=self._cfg,
-            output_policy=output_policy,
-            artifact_root=artifact_root,
-        )
-
+        factory = self.streaming_session_factory(backend_config, output_policy, artifact_root)
         session = MultiprocessSlamSession(
             session_factory=factory,
             console=self._console,
         )
         self._console.info("OnlineSLAM worker process launched; session ready.")
         return session
+
+    def streaming_session_factory(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> _VistaSessionFactory:
+        """Return a picklable streaming session factory for process-backed pipeline execution."""
+        del backend_config
+        return _VistaSessionFactory(
+            config=self._cfg,
+            output_policy=output_policy,
+            artifact_root=artifact_root,
+        )
 
     def run_sequence(
         self,

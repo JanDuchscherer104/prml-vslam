@@ -13,7 +13,7 @@ from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.vista.config import VistaSlamBackendConfig
 from prml_vslam.utils import BaseConfig, PathConfig
-from prml_vslam.visualization import VisualizationConfig
+from prml_vslam.visualization.contracts import VisualizationConfig
 
 if TYPE_CHECKING:
     from .plan import RunPlan
@@ -44,6 +44,39 @@ class LiveTransportId(StrEnum):
     def label(self) -> str:
         """Return the user-facing transport label."""
         return "Wi-Fi Preview" if self is LiveTransportId.WIFI else self.value.upper()
+
+
+class StageExecutionMode(StrEnum):
+    """Where one pipeline execution component should run."""
+
+    LOCAL = "local"
+    PROCESS = "process"
+
+
+class StreamingExecutionConfig(BaseConfig):
+    """Execution placement policy for streaming mode."""
+
+    ingest: StageExecutionMode = StageExecutionMode.LOCAL
+    """Execution mode for source manifest and benchmark input preparation."""
+
+    packet_source: StageExecutionMode = StageExecutionMode.LOCAL
+    """Execution mode for packet-source consumption."""
+
+    slam: StageExecutionMode = StageExecutionMode.LOCAL
+    """Execution mode for streaming SLAM session execution."""
+
+    trajectory_evaluation: StageExecutionMode = StageExecutionMode.LOCAL
+    """Execution mode for optional trajectory evaluation."""
+
+    summary: StageExecutionMode = StageExecutionMode.LOCAL
+    """Execution mode for final summary and manifest persistence."""
+
+
+class PipelineExecutionConfig(BaseConfig):
+    """Run-level execution placement policy."""
+
+    streaming: StreamingExecutionConfig = Field(default_factory=StreamingExecutionConfig)
+    """Streaming-mode execution policy."""
 
 
 class VideoSourceSpec(BaseConfig):
@@ -156,6 +189,9 @@ class RunRequest(BaseConfig):
     visualization: VisualizationConfig = Field(default_factory=VisualizationConfig)
     """Viewer-export policy kept outside pipeline execution semantics."""
 
+    execution: PipelineExecutionConfig = Field(default_factory=PipelineExecutionConfig)
+    """Execution placement policy for local or process-backed run components."""
+
     def build(self, path_config: PathConfig | None = None) -> RunPlan:
         """Materialize the canonical run plan for this request."""
         from prml_vslam.pipeline.services import RunPlannerService
@@ -172,5 +208,8 @@ __all__ = [
     "RunRequest",
     "SlamStageConfig",
     "SourceSpec",
+    "StageExecutionMode",
+    "StreamingExecutionConfig",
+    "PipelineExecutionConfig",
     "VideoSourceSpec",
 ]

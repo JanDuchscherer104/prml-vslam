@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from pydantic import Field
 
+import prml_vslam.pipeline.streaming_coordinator as streaming_coordinator_module
 from prml_vslam.benchmark import BenchmarkConfig, PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
 from prml_vslam.datasets import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
@@ -18,26 +20,31 @@ from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.multiprocess import (
     MultiprocessSlamSession,
-    _deserialize_frame_packet,
-    _serialize_frame_packet,
 )
 from prml_vslam.methods.protocols import OfflineSlamBackend, SlamSession, StreamingSlamBackend
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.methods.vista.config import VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.contracts.execution import StageExecutionKey, StageExecutionMode, StageResult
 from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+from prml_vslam.pipeline.contracts.provenance import StageExecutionStatus
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
     SlamStageConfig,
     VideoSourceSpec,
 )
+from prml_vslam.pipeline.finalization import build_stage_manifest_from_result
 from prml_vslam.pipeline.offline import OfflineRunner
+from prml_vslam.pipeline.packet_codec import (
+    deserialize_frame_packet,
+    serialize_frame_packet,
+)
 from prml_vslam.pipeline.run_service import RunService, _default_slam_backend_factory
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.streaming import StreamingRunner
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.utils import Console, PathConfig
+from prml_vslam.utils import BaseConfig, Console, PathConfig
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts.runtime import RunSnapshot
@@ -137,6 +144,59 @@ max_view_num = 123
     assert request.slam.backend.slam.max_view_num == 123
 
 
+def test_run_request_execution_config_defaults_to_local() -> None:
+    request = RunRequest.from_toml(
+        """
+experiment_name = "execution-defaults"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-15"
+
+[slam]
+method = "mock"
+"""
+    )
+
+    assert request.execution.streaming.ingest is StageExecutionMode.LOCAL
+    assert request.execution.streaming.packet_source is StageExecutionMode.LOCAL
+    assert request.execution.streaming.slam is StageExecutionMode.LOCAL
+    assert request.execution.streaming.trajectory_evaluation is StageExecutionMode.LOCAL
+    assert request.execution.streaming.summary is StageExecutionMode.LOCAL
+
+
+def test_run_request_parses_streaming_execution_modes_from_toml() -> None:
+    request = RunRequest.from_toml(
+        """
+experiment_name = "execution-process"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-15"
+
+[slam]
+method = "mock"
+
+[execution.streaming]
+ingest = "process"
+packet_source = "process"
+slam = "process"
+trajectory_evaluation = "process"
+summary = "process"
+"""
+    )
+
+    assert request.execution.streaming.ingest is StageExecutionMode.PROCESS
+    assert request.execution.streaming.packet_source is StageExecutionMode.PROCESS
+    assert request.execution.streaming.slam is StageExecutionMode.PROCESS
+    assert request.execution.streaming.trajectory_evaluation is StageExecutionMode.PROCESS
+    assert request.execution.streaming.summary is StageExecutionMode.PROCESS
+
+
 def test_run_request_rejects_unknown_vista_backend_fields(tmp_path: Path) -> None:
     config_path = tmp_path / "vista-invalid.toml"
     config_path.write_text(
@@ -233,6 +293,23 @@ def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: 
     assert isinstance(StreamingRunner(), StreamingRunner)
     assert isinstance(MockSlamBackendConfig().setup_target(), OfflineSlamBackend)
     assert isinstance(MockSlamBackendConfig().setup_target(), StreamingSlamBackend)
+
+
+def test_stage_result_converts_to_stage_manifest() -> None:
+    result = StageResult(
+        stage_id=RunPlanStageId.INGEST,
+        execution_key=StageExecutionKey.INGEST,
+        status=StageExecutionStatus.RAN,
+        config_hash="config",
+        input_fingerprint="input",
+        output_paths={"sequence_manifest": Path("sequence_manifest.json")},
+    )
+
+    manifest = build_stage_manifest_from_result(result)
+
+    assert manifest.stage_id is RunPlanStageId.INGEST
+    assert manifest.status is StageExecutionStatus.RAN
+    assert manifest.output_paths["sequence_manifest"] == Path("sequence_manifest.json")
 
 
 def test_materialize_offline_manifest_reuses_cached_frames(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -376,6 +453,105 @@ def test_streaming_runner_completes_and_persists_outputs(tmp_path: Path) -> None
     assert snapshot.summary is not None
 
 
+def test_streaming_runner_process_packet_source_and_slam_complete(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    request.execution.streaming.packet_source = StageExecutionMode.PROCESS
+    request.execution.streaming.slam = StageExecutionMode.PROCESS
+    plan = request.build(path_config)
+    source = FakeStreamingSourceConfig(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        packets=[
+            _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
+            _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
+            _make_packet(seq=2, timestamp_ns=3_000_000_000, tx=0.2),
+        ],
+    ).setup_target()
+    assert source is not None
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
+    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=10.0)
+
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.received_frames == 3
+    assert snapshot.accepted_keyframes == 2
+    assert snapshot.summary is not None
+    assert snapshot.summary.stage_status[RunPlanStageId.SLAM] is StageExecutionStatus.RAN
+
+
+def test_streaming_runner_process_finite_stages_complete_trajectory_evaluation(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    request.benchmark.trajectory.enabled = True
+    request.execution.streaming.ingest = StageExecutionMode.PROCESS
+    request.execution.streaming.trajectory_evaluation = StageExecutionMode.PROCESS
+    request.execution.streaming.summary = StageExecutionMode.PROCESS
+    plan = request.build(path_config)
+    reference_path = tmp_path / "ground_truth.tum"
+    reference_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    source = BenchmarkStreamingSource(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_trajectories=[ReferenceTrajectoryRef(path=reference_path, source=ReferenceSource.GROUND_TRUTH)]
+        ),
+    )
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
+    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=10.0)
+
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.summary is not None
+    assert snapshot.summary.stage_status[RunPlanStageId.INGEST] is StageExecutionStatus.RAN
+    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION] is StageExecutionStatus.RAN
+    assert snapshot.summary.stage_status[RunPlanStageId.SUMMARY] is StageExecutionStatus.RAN
+
+
+def test_execute_finite_stage_process_timeout_returns_failed_stage_result() -> None:
+    result = streaming_coordinator_module.execute_finite_stage(
+        stage_id=RunPlanStageId.INGEST,
+        mode=StageExecutionMode.PROCESS,
+        target=_sleeping_stage_result,
+        kwargs={"sleep_seconds": 0.1},
+        timeout_seconds=0.01,
+        config_hash="config",
+        input_fingerprint="input",
+    )
+
+    assert result.status is StageExecutionStatus.FAILED
+    assert "ingest stage exceeded process timeout" in result.error_message
+
+
+def test_streaming_runner_process_ingest_timeout_terminalizes_with_failed_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    request.execution.streaming.ingest = StageExecutionMode.PROCESS
+    plan = request.build(path_config)
+    source = FakeStreamingSourceConfig(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        prepare_delay_seconds=0.1,
+        fail_on_open=True,
+    ).setup_target()
+    assert source is not None
+    monkeypatch.setattr(
+        streaming_coordinator_module,
+        "_stage_process_timeout_seconds",
+        lambda stage_id: 0.01 if stage_id is RunPlanStageId.INGEST else 5.0,
+    )
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
+    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=5.0)
+
+    assert snapshot.state is RunState.FAILED
+    assert "ingest stage exceeded process timeout" in snapshot.error_message
+
+
 def test_streaming_runner_stop_preserves_last_preview_snapshot(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_request(path_config, mode=PipelineMode.STREAMING)
@@ -510,7 +686,7 @@ def test_multiprocess_frame_packet_serialization_round_trips_contract(tmp_path: 
         metadata={"method": MethodId.VISTA, "source_path": tmp_path, "nested": ("frame", 7)},
     )
 
-    restored = _deserialize_frame_packet(_serialize_frame_packet(packet))
+    restored = deserialize_frame_packet(serialize_frame_packet(packet))
 
     assert isinstance(restored, FramePacket)
     assert restored.seq == packet.seq
@@ -1265,6 +1441,17 @@ def _wait_for_terminal_snapshot(
     raise TimeoutError("Pipeline runner did not reach a terminal state.")
 
 
+def _sleeping_stage_result(sleep_seconds: float) -> StageResult:
+    time.sleep(sleep_seconds)
+    return StageResult(
+        stage_id=RunPlanStageId.INGEST,
+        execution_key=StageExecutionKey.INGEST,
+        status=StageExecutionStatus.RAN,
+        config_hash="config",
+        input_fingerprint="input",
+    )
+
+
 def _make_packet(*, seq: int, timestamp_ns: int, tx: float) -> FramePacket:
     return FramePacket(
         seq=seq,
@@ -1308,6 +1495,38 @@ class FakeStreamingSource(StreamingSequenceSource):
     def open_stream(self, *, loop: bool = False) -> object:
         self.open_calls.append(loop)
         return self.stream
+
+
+class FakeStreamingSourceConfig(BaseConfig):
+    sequence_manifest: SequenceManifest
+    packets: list[FramePacket] = Field(default_factory=list)
+    prepare_delay_seconds: float = 0.0
+    fail_on_open: bool = False
+
+    @property
+    def target_type(self) -> type[ConfigBackedFakeStreamingSource]:
+        return ConfigBackedFakeStreamingSource
+
+
+class ConfigBackedFakeStreamingSource(FakeStreamingSource):
+    def __init__(self, config: FakeStreamingSourceConfig) -> None:
+        self.config = config
+        self._prepare_delay_seconds = config.prepare_delay_seconds
+        self._fail_on_open = config.fail_on_open
+        super().__init__(
+            sequence_manifest=config.sequence_manifest,
+            stream=FinitePacketStream(list(config.packets)),
+        )
+
+    def prepare_sequence_manifest(self, _output_dir: Path) -> SequenceManifest:
+        time.sleep(self._prepare_delay_seconds)
+        return self.sequence_manifest
+
+    def open_stream(self, *, loop: bool = False) -> object:
+        if self._fail_on_open:
+            del loop
+            raise AssertionError("stream should not open when ingest times out")
+        return super().open_stream(loop=loop)
 
 
 class FinitePacketStream:

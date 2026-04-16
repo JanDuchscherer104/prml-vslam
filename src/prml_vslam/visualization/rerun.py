@@ -36,8 +36,8 @@ def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> 
 
         blueprint = rrb.Blueprint(
             rrb.Horizontal(
-                rrb.Spatial3DView(origin="camera", name="3D Scene"),
-                rrb.Spatial2DView(origin="camera/preview", name="Live Preview"),
+                rrb.Spatial3DView(origin="world", name="3D Scene"),
+                rrb.Spatial2DView(origin="world/live_camera/preview", name="Live Preview"),
             ),
         )
         stream.send_blueprint(blueprint)
@@ -146,12 +146,57 @@ def log_pointcloud(
     )
 
 
+def log_points3d(
+    recording_stream: Any,
+    *,
+    entity_path: str,
+    points_xyz: np.ndarray,
+    colors: np.ndarray | None = None,
+    radii: float = 0.05,
+) -> None:
+    """Log explicit XYZ rows to the viewer."""
+    rr = _import_rerun()
+    if not hasattr(rr, "Points3D"):
+        raise RuntimeError("The installed Rerun SDK does not expose `Points3D`.")
+    positions = np.asarray(points_xyz, dtype=np.float32).reshape(-1, 3)
+    if len(positions) == 0:
+        return
+    color_payload = None if colors is None else np.asarray(colors)
+    recording_stream.log(entity_path, rr.Points3D(positions=positions, colors=color_payload, radii=radii))
+
+
 def log_preview_image(recording_stream: Any, *, entity_path: str, image_rgb: np.ndarray) -> None:
     """Log an RGB image to the viewer."""
     rr = _import_rerun()
     if not hasattr(rr, "Image"):
         raise RuntimeError("The installed Rerun SDK does not expose `Image`.")
     recording_stream.log(entity_path, rr.Image(image_rgb))
+
+
+def set_time_sequence(recording_stream: Any, *, timeline: str, sequence: int) -> None:
+    """Set the current integer sequence time on the recording when supported."""
+    del recording_stream
+    rr = _import_rerun()
+    setter = getattr(rr, "set_time_sequence", None)
+    if setter is None:
+        return
+    setter(timeline, sequence)
+
+
+def log_y_up_view_coordinates(recording_stream: Any, *, entity_path: str) -> None:
+    """Declare a Y-up world coordinate frame when the installed Rerun SDK supports it."""
+    rr = _import_rerun()
+    view_coordinates = getattr(rr, "ViewCoordinates", None)
+    if view_coordinates is None:
+        return
+    coordinate_value = (
+        getattr(view_coordinates, "RIGHT_HAND_Y_UP", None)
+        or getattr(view_coordinates, "RUB", None)
+        or getattr(view_coordinates, "RUF", None)
+    )
+    if coordinate_value is None:
+        return
+    recording_stream.log(entity_path, coordinate_value)
 
 
 def collect_native_visualization_artifacts(
@@ -188,6 +233,9 @@ __all__ = [
     "collect_native_visualization_artifacts",
     "create_recording_stream",
     "log_pointcloud",
+    "log_points3d",
     "log_preview_image",
     "log_transform",
+    "log_y_up_view_coordinates",
+    "set_time_sequence",
 ]

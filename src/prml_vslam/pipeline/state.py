@@ -11,7 +11,7 @@ from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.utils import BaseData
-from prml_vslam.visualization import VisualizationArtifacts
+from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 from .contracts.artifacts import SlamArtifacts
 from .contracts.plan import RunPlan
