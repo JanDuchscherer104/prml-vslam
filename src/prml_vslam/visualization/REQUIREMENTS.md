@@ -26,12 +26,6 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - the repo-owned transform export now uses parent-from-child semantics for repo
   `T_world_camera` poses
 
-### Current Issues
-
-The remaining issues are trajectory overlays, a separate world-space dense cloud
-layer, and offline repo-owned `.rrd` parity. The current `preview_rgb` coming
-from ViSTA remains a pseudo-colored pointmap preview, so it must stay separate
-from the actual camera image and the metric depth entity.
 
 ## Responsibilities
 
@@ -52,12 +46,12 @@ from the actual camera image and the metric depth entity.
   `X = Right`, `Y = Down`, `Z = Forward`
 - camera entities should use `camera_xyz = rr.ViewCoordinates.RDF` unless a
   different camera basis is explicitly documented
+- the root world frame needs to be declared as RDF `live_recording.log("world", rr.ViewCoordinates.RDF, static=True)`
 - `rr.Pinhole.resolution` is `[width, height]`
 - metric depth rasters use `rr.DepthImage`; if the array is in meters,
   `meter = 1.0`
 - camera-local pointmaps remain camera-local until composed through a posed
   pointmap branch in the entity tree
-- left-handed coordinate systems must not be used
 
 ## Required Modalities
 

@@ -228,6 +228,7 @@ class StreamingCoordinator:
                     grpc_url=request.visualization.grpc_url if request.visualization.connect_live_viewer else None,
                     target_path=run_paths.viewer_rrd_path if request.visualization.export_viewer_rrd else None,
                 )
+                live_recording.log("world", rr.ViewCoordinates.RDF, static=True)
                 self._log_reference_clouds(live_recording, benchmark_inputs)
 
             slam_result = self._run_streaming_workers(
@@ -415,11 +416,6 @@ class StreamingCoordinator:
                             )
                         if update.image_rgb is not None:
                             live_recording.log(live_camera_image_entity, rr.Image(update.image_rgb))
-                        if update.depth_map is not None:
-                            live_recording.log(
-                                f"{live_camera_image_entity}/depth",
-                                rr.DepthImage(np.asarray(update.depth_map, dtype=np.float32), meter=1.0),
-                            )
                         if update.pointmap is not None:
                             self._viewer_hooks.log_pointcloud(
                                 live_recording,
@@ -453,11 +449,6 @@ class StreamingCoordinator:
                                 )
                             if update.image_rgb is not None:
                                 live_recording.log(keyframe_image_entity, rr.Image(update.image_rgb))
-                            if update.depth_map is not None:
-                                live_recording.log(
-                                    f"{keyframe_image_entity}/depth",
-                                    rr.DepthImage(np.asarray(update.depth_map, dtype=np.float32), meter=1.0),
-                                )
                             if update.pointmap is not None:
                                 self._viewer_hooks.log_pointcloud(
                                     live_recording,

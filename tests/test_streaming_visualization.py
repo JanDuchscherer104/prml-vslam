@@ -49,14 +49,15 @@ class _RecordingProbe:
     def set_time(self, timeline: str, *, sequence: int) -> None:
         self.time_events.append((timeline, sequence))
 
-    def log(self, entity_path: str, payload: object) -> None:
+    def log(self, entity_path: str, payload: object, *extra: object, static: bool = False, strict: bool | None = None) -> None:
+        del extra, static, strict
         self.logged_events.append((entity_path, payload))
 
 
 def _patch_streaming_rerun_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "prml_vslam.pipeline.streaming_coordinator.rr",
-        SimpleNamespace(Image=_FakeImage, DepthImage=_FakeDepthImage),
+        SimpleNamespace(Image=_FakeImage, DepthImage=_FakeDepthImage, ViewCoordinates=SimpleNamespace(RDF="rdf")),
     )
 
 
@@ -89,8 +90,6 @@ def test_streaming_runner_logs_live_pointmaps_under_posed_keyframe_entities(
     pointcloud_paths: list[str] = []
     reference_paths: list[str] = []
     pinhole_paths: list[str] = []
-    coordinates_paths: list[str] = []
-
     _patch_streaming_rerun_payloads(monkeypatch)
     monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.create_recording_stream", lambda **_: recording)
     monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.attach_recording_sinks", lambda *_, **__: None)
@@ -120,7 +119,7 @@ def test_streaming_runner_logs_live_pointmaps_under_posed_keyframe_entities(
     image_paths = [
         path for path, payload in recording.logged_events if isinstance(payload, _FakeImage) and path.endswith("/cam")
     ]
-    depth_paths = [path for path, payload in recording.logged_events if isinstance(payload, _FakeDepthImage)]
+    world_coordinate_paths = [path for path, payload in recording.logged_events if payload == "rdf"]
     preview_paths = [
         path
         for path, payload in recording.logged_events
@@ -128,7 +127,7 @@ def test_streaming_runner_logs_live_pointmaps_under_posed_keyframe_entities(
     ]
 
     assert snapshot.state is RunState.COMPLETED
-    assert coordinates_paths == []
+    assert world_coordinate_paths == ["world"]
     assert reference_paths == []
     assert recording.time_events == [("keyframe", 0), ("keyframe", 1)]
     assert pinhole_paths == [
@@ -142,12 +141,6 @@ def test_streaming_runner_logs_live_pointmaps_under_posed_keyframe_entities(
         "world/est/cameras/cam_000000/cam",
         "world/live/camera/cam",
         "world/est/cameras/cam_000001/cam",
-    ]
-    assert depth_paths == [
-        "world/live/camera/cam/depth",
-        "world/est/cameras/cam_000000/cam/depth",
-        "world/live/camera/cam/depth",
-        "world/est/cameras/cam_000001/cam/depth",
     ]
     assert pointcloud_paths == [
         "world/live/pointmap/points",
@@ -450,7 +443,6 @@ class _KeyframeStreamingSession:
                     keyframe_index=0,
                     camera_intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
                     image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
-                    depth_map=np.ones((2, 2), dtype=np.float32),
                     preview_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
                     pointmap=np.zeros((2, 2, 3), dtype=np.float32),
                 ),
@@ -463,7 +455,6 @@ class _KeyframeStreamingSession:
                     keyframe_index=1,
                     camera_intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
                     image_rgb=np.ones((2, 2, 3), dtype=np.uint8),
-                    depth_map=np.full((2, 2), fill_value=2.0, dtype=np.float32),
                     preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
                     pointmap=np.zeros((2, 2, 3), dtype=np.float32),
                 ),
