@@ -1,36 +1,4 @@
 [[todos]]
-id = "TODO-0031"
-title = "Split trajectory-evaluation enablement from baseline selection"
-status = "pending"
-priority = "high"
-issue_ids = [
-    "ISSUE-0030",
-]
-loc_min = 35
-loc_expected = 85
-loc_max = 170
-files = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/pipeline/services.py",
-    "src/prml_vslam/main.py",
-    "README.md",
-    "tests/test_pipeline.py",
-    "tests/test_main.py",
-]
-acceptance = [
-    "The public pipeline config no longer uses `compare_to_arcore` as the switch for whether trajectory evaluation exists.",
-    "The planner stage names, CLI flags, and README examples describe the same semantics as the code.",
-    "ARCore remains an optional baseline choice instead of the meaning of trajectory evaluation itself.",
-]
-sources = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/pipeline/services.py",
-    "src/prml_vslam/main.py",
-    "README.md",
-    "docs/Questions.md",
-]
-
-[[todos]]
 id = "TODO-0032"
 title = "Extend the evo adapter with explicit alignment and drift evaluation"
 status = "pending"
@@ -61,7 +29,7 @@ sources = [
 
 [[todos]]
 id = "TODO-0033"
-title = "Replace generic packet metadata and free-string live-source ids with typed provenance"
+title = "Replace generic packet metadata and duplicate transport enums with typed provenance"
 status = "pending"
 priority = "medium"
 issue_ids = [
@@ -74,21 +42,21 @@ files = [
     "src/prml_vslam/interfaces/runtime.py",
     "src/prml_vslam/io/cv2_producer.py",
     "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/app/pipeline_controller.py",
     "tests/test_app.py",
     "tests/test_pipeline.py",
 ]
 acceptance = [
     "`FramePacket` no longer exposes a generic provenance `metadata` dict on the shared hot path.",
     "Replay, dataset, rotation, and transport provenance remain available through typed fields or dedicated runtime-event data.",
-    "`LiveSourceSpec` stops depending on a free-form source string for identifiers that already have a typed enum or source contract.",
+    "Pipeline and app/io stop duplicating Record3D transport identity across separate enums when one shared transport type would suffice.",
 ]
 sources = [
     "src/prml_vslam/interfaces/runtime.py",
     "src/prml_vslam/io/cv2_producer.py",
     "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
-    "src/prml_vslam/pipeline/contracts.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
 ]
 
 [[todos]]
@@ -151,37 +119,34 @@ sources = [
 
 [[todos]]
 id = "TODO-0036"
-title = "Introduce stage executor contracts and a linear process-aware scheduler"
+title = "Extend stage-result execution to offline and remaining planned stages"
 status = "pending"
 priority = "high"
 issue_ids = [
     "ISSUE-0034",
 ]
-loc_min = 160
-loc_expected = 320
-loc_max = 650
+loc_min = 80
+loc_expected = 180
+loc_max = 380
 files = [
-    "src/prml_vslam/pipeline/contracts/plan.py",
-    "src/prml_vslam/pipeline/contracts/provenance.py",
+    "src/prml_vslam/pipeline/contracts/execution.py",
     "src/prml_vslam/pipeline/offline.py",
-    "src/prml_vslam/pipeline/streaming.py",
     "src/prml_vslam/pipeline/finalization.py",
     "src/prml_vslam/pipeline/run_service.py",
-    "src/prml_vslam/methods/multiprocess.py",
     "tests/test_pipeline.py",
 ]
 acceptance = [
-    "Pipeline stages have a typed execution request/result boundary that records stage id, config hash, input fingerprint, output artifacts, status, and error detail.",
-    "The current deterministic stage order remains unchanged, but each supported stage can be run through a local or process-backed executor boundary.",
-    "Offline and streaming runners stop duplicating finalization/status bookkeeping and consume stage results to build stage manifests.",
-    "The existing SLAM multiprocessing path is either reused through the new stage execution primitive or clearly isolated as a backend-internal optimization.",
+    "Streaming mode keeps the process-capable stage-result execution path already implemented.",
+    "Offline execution stops depending on `ingest_started`/`slam_started` booleans and consumes explicit stage results to build manifests and summaries.",
+    "Reference reconstruction, cloud evaluation, and efficiency stages either remain explicitly unsupported or gain real executors with typed stage results.",
+    "Stage manifests and run summaries are built from explicit stage results across every executable mode.",
 ]
 sources = [
     "src/prml_vslam/pipeline/REQUIREMENTS.md",
+    "src/prml_vslam/pipeline/contracts/execution.py",
     "src/prml_vslam/pipeline/offline.py",
-    "src/prml_vslam/pipeline/streaming.py",
     "src/prml_vslam/pipeline/finalization.py",
-    "src/prml_vslam/methods/multiprocess.py",
+    "src/prml_vslam/pipeline/run_service.py",
 ]
 
 [[todos]]
@@ -212,10 +177,75 @@ sources = [
     "src/prml_vslam/methods/vista/adapter.py",
 ]
 
+[[todos]]
+id = "TODO-0038"
+title = "Fix Rerun pose-direction logging and add a world-space round-trip geometry test"
+status = "pending"
+priority = "high"
+issue_ids = [
+    "ISSUE-0036",
+]
+loc_min = 20
+loc_expected = 60
+loc_max = 140
+files = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+acceptance = [
+    "Repo `T_world_camera` poses are logged with parent-from-child semantics or an explicitly equivalent inverted-transform path.",
+    "The ViSTA viewer-basis adapter remains explicit and singular instead of compensating for a wrong transform relation downstream.",
+    "A focused visualization test round-trips a known camera-local point through a known pose and fails if world placement is mirrored, inverted, or displaced.",
+    "Existing streaming visualization tests continue to cover entity layout and timeline behavior.",
+]
+sources = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+]
+
+[[todos]]
+id = "TODO-0039"
+title = "Extend live visualization updates to carry intrinsics, metric depth, and camera-complete Rerun payloads"
+status = "pending"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0037",
+]
+loc_min = 60
+loc_expected = 150
+loc_max = 320
+files = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_methods.py",
+    "tests/test_streaming_visualization.py",
+]
+acceptance = [
+    "`SlamUpdate` can carry camera intrinsics plus a metric depth raster or another explicit typed depth payload for live keyframes.",
+    "The ViSTA live adapter no longer drops `view.depth` and `view.intri` after requesting them from upstream.",
+    "Repo-owned viewer logging can emit `Pinhole` and `DepthImage` under camera entities and keep diagnostic previews separate from raw RGB and metric-depth semantics.",
+    "The resulting viewer tree supports frustum-aligned debugging of camera-local pointmaps against depth and intrinsics for live keyframes.",
+]
+sources = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_methods.py",
+    "external/vista-slam/run.py",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-15"
-source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review, a later narrative-review relevance triage, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, and the Pipeline page helper cleanup."
+updated_on = "2026-04-16"
+source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, the Pipeline page helper cleanup, the 2026-04-16 streaming execution state review, and the 2026-04-16 Rerun integration review."
 active_collection = "todos"
 loc_unit = "lines"

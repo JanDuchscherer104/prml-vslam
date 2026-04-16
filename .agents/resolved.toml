@@ -1,7 +1,7 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-06"
+updated_on = "2026-04-16"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
 
 [[resolved_issues]]
@@ -2014,4 +2014,33 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-06"
 resolution_note = "PipelineSessionService now consumes a pre-built plan plus resolved backend, while RunService owns planning, stage validation, and backend resolution."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0031"
+title = "Resolve stale issue wording and references for the trajectory-evaluation config split"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0030",
+]
+loc_min = 10
+loc_expected = 20
+loc_max = 40
+files = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+]
+acceptance = [
+    "Active issue and todo wording no longer claims that trajectory-evaluation enablement is still conflated with baseline selection.",
+    "Stale file references such as `pipeline/contracts.py` are replaced with current module paths.",
+]
+sources = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    "src/prml_vslam/benchmark/contracts.py",
+]
+previous_status = "completed"
+resolved_on = "2026-04-16"
+resolution_note = "Already implemented: benchmark.trajectory.enabled is separated from baseline_source; active issue wording was narrowed to the remaining evaluation-semantics debt."
 source_collection = "todos"
