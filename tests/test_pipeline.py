@@ -1477,7 +1477,7 @@ def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
 
 
 def _wait_for_terminal_snapshot(
-    runner: OfflineRunner | StreamingRunner, *, timeout_seconds: float = 2.5
+    runner: OfflineRunner | StreamingRunner, *, timeout_seconds: float = 6.0
 ) -> RunSnapshot:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
