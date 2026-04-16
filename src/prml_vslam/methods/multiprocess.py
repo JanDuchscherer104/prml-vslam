@@ -9,19 +9,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from prml_vslam.pipeline.packet_codec import (
-    deserialize_frame_packet as _deserialize_frame_packet,
-)
-from prml_vslam.pipeline.packet_codec import (
-    pickle_stable_metadata as _pickle_stable_metadata,
-)
-from prml_vslam.pipeline.packet_codec import (
-    serialize_frame_packet as _serialize_frame_packet,
-)
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.utils import Console
 
 if TYPE_CHECKING:
-    from prml_vslam.interfaces import FramePacket
     from prml_vslam.methods.protocols import SlamSession
     from prml_vslam.methods.updates import SlamUpdate
     from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
@@ -76,7 +67,7 @@ class MultiprocessSlamSession:
 
     def step(self, frame: FramePacket) -> None:
         """Push one frame to the background worker, blocking if the queue is full (backpressure)."""
-        serialized_frame = _serialize_frame_packet(frame)
+        serialized_frame = frame.to_ipc_bytes()
         while True:
             self._poll_worker_state()
             self._raise_worker_error()
@@ -209,7 +200,7 @@ def _session_worker(
                 break
 
             try:
-                packet = _deserialize_frame_packet(packet_payload)
+                packet = FramePacket.from_ipc_bytes(packet_payload)
                 session.step(packet)
                 for update in session.try_get_updates():
                     output_queue.put(_UpdateMessage(update=update))
@@ -234,9 +225,4 @@ def _session_worker(
         output_queue.close()
 
 
-__all__ = [
-    "MultiprocessSlamSession",
-    "_deserialize_frame_packet",
-    "_pickle_stable_metadata",
-    "_serialize_frame_packet",
-]
+__all__ = ["MultiprocessSlamSession"]

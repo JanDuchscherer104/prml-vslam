@@ -34,17 +34,13 @@ from prml_vslam.pipeline.contracts.request import (
     SlamStageConfig,
     VideoSourceSpec,
 )
-from prml_vslam.pipeline.finalization import build_stage_manifest_from_result
+from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.offline import OfflineRunner
-from prml_vslam.pipeline.packet_codec import (
-    deserialize_frame_packet,
-    serialize_frame_packet,
-)
 from prml_vslam.pipeline.run_service import RunService, _default_slam_backend_factory
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.streaming import StreamingRunner
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.utils import BaseConfig, Console, PathConfig
+from prml_vslam.utils import BaseConfig, BaseData, Console, PathConfig
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts.runtime import RunSnapshot
@@ -305,7 +301,7 @@ def test_stage_result_converts_to_stage_manifest() -> None:
         output_paths={"sequence_manifest": Path("sequence_manifest.json")},
     )
 
-    manifest = build_stage_manifest_from_result(result)
+    manifest = result.to_stage_manifest()
 
     assert manifest.stage_id is RunPlanStageId.INGEST
     assert manifest.status is StageExecutionStatus.RAN
@@ -673,7 +669,52 @@ def test_streaming_runner_terminalizes_when_trajectory_evaluation_inputs_are_mis
     assert run_paths.stage_manifests_path.exists()
 
 
+def test_streaming_runner_failed_trajectory_evaluation_uses_real_slam_input_fingerprint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.STREAMING)
+    request.benchmark.trajectory.enabled = True
+    plan = request.build(path_config)
+    reference_path = tmp_path / "ground_truth.tum"
+    reference_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    source = BenchmarkStreamingSource(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_trajectories=[ReferenceTrajectoryRef(path=reference_path, source=ReferenceSource.GROUND_TRUTH)]
+        ),
+    )
+    monkeypatch.setattr(
+        streaming_coordinator_module,
+        "compute_trajectory_evaluation",
+        lambda **_: (_ for _ in ()).throw(RuntimeError("synthetic trajectory evaluation failure")),
+    )
+    runner = StreamingRunner(frame_timeout_seconds=0.01)
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
+    snapshot = _wait_for_terminal_snapshot(runner)
+
+    assert snapshot.state is RunState.FAILED
+    assert snapshot.slam is not None
+    assert snapshot.benchmark_inputs is not None
+    trajectory_manifest = next(
+        manifest for manifest in snapshot.stage_manifests if manifest.stage_id is RunPlanStageId.TRAJECTORY_EVALUATION
+    )
+    assert trajectory_manifest.status is StageExecutionStatus.FAILED
+    assert trajectory_manifest.input_fingerprint == stable_hash(
+        {
+            "benchmark_inputs": snapshot.benchmark_inputs,
+            "slam_trajectory": snapshot.slam.trajectory_tum,
+        }
+    )
+
+
 def test_multiprocess_frame_packet_serialization_round_trips_contract(tmp_path: Path) -> None:
+    class MetadataPayload(BaseData):
+        value: int
+
     packet = FramePacket(
         seq=7,
         timestamp_ns=123_000,
@@ -683,10 +724,15 @@ def test_multiprocess_frame_packet_serialization_round_trips_contract(tmp_path: 
         confidence=np.ones((2, 3), dtype=np.float32),
         intrinsics=CameraIntrinsics(fx=200.0, fy=201.0, cx=1.0, cy=1.5, width_px=3, height_px=2),
         pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
-        metadata={"method": MethodId.VISTA, "source_path": tmp_path, "nested": ("frame", 7)},
+        metadata={
+            "method": MethodId.VISTA,
+            "source_path": tmp_path,
+            "nested": MetadataPayload(value=7),
+            "frame_key": ("frame", 7),
+        },
     )
 
-    restored = deserialize_frame_packet(serialize_frame_packet(packet))
+    restored = FramePacket.from_ipc_bytes(packet.to_ipc_bytes())
 
     assert isinstance(restored, FramePacket)
     assert restored.seq == packet.seq
@@ -700,7 +746,8 @@ def test_multiprocess_frame_packet_serialization_round_trips_contract(tmp_path: 
     assert restored.metadata == {
         "method": MethodId.VISTA.value,
         "source_path": str(tmp_path),
-        "nested": ["frame", 7],
+        "nested": {"value": 7},
+        "frame_key": ("frame", 7),
     }
 
 

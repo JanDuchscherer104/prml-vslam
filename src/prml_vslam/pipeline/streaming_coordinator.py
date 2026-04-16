@@ -15,6 +15,7 @@ from typing import Protocol
 import numpy as np
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceCloudCoordinateStatus
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import ProcessStreamingSlamBackend, SlamSession, StreamingSlamBackend
 from prml_vslam.methods.updates import SlamUpdate
@@ -36,7 +37,6 @@ from prml_vslam.pipeline.finalization import (
     stable_hash,
     write_json,
 )
-from prml_vslam.pipeline.packet_codec import deserialize_frame_packet, serialize_frame_packet
 from prml_vslam.pipeline.runner_runtime import RunnerRuntime
 from prml_vslam.pipeline.state import RunState, StreamingRunSnapshot
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
@@ -258,7 +258,12 @@ class StreamingCoordinator:
                     },
                     timeout_seconds=_stage_process_timeout_seconds(RunPlanStageId.TRAJECTORY_EVALUATION),
                     config_hash=stable_hash(request.benchmark.trajectory),
-                    input_fingerprint=stable_hash({"benchmark_inputs": benchmark_inputs, "slam_trajectory": None}),
+                    input_fingerprint=stable_hash(
+                        {
+                            "benchmark_inputs": benchmark_inputs,
+                            "slam_trajectory": None if slam_artifacts is None else slam_artifacts.trajectory_tum,
+                        }
+                    ),
                 )
                 stage_results.append(eval_result)
                 _raise_if_failed(eval_result)
@@ -735,7 +740,7 @@ def _packet_source_worker(
                     packet=packet,
                 )
             )
-            _queue_put(packet_queue, serialize_frame_packet(packet), stop_event)
+            _queue_put(packet_queue, packet.to_ipc_bytes(), stop_event)
             frames_sent += 1
         event_queue.put(
             StreamingStageEvent(kind=StreamingStageEventKind.STOPPED, execution_key=StageExecutionKey.PACKET_SOURCE)
@@ -772,7 +777,7 @@ def _slam_worker(
                 continue
             if packet_payload is _PACKET_SENTINEL:
                 break
-            packet = deserialize_frame_packet(packet_payload)
+            packet = FramePacket.from_ipc_bytes(packet_payload)
             session.step(packet)
             _emit_slam_updates(session, event_queue)
         artifacts = session.close()

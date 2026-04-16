@@ -76,6 +76,16 @@ class StageResult(BaseData):
     stage_manifests: list[StageManifest] = Field(default_factory=list)
     """Stage manifests produced by the summary stage."""
 
+    def to_stage_manifest(self) -> StageManifest:
+        """Convert this stage result into its persisted manifest form."""
+        return StageManifest(
+            stage_id=self.stage_id,
+            config_hash=self.config_hash,
+            input_fingerprint=self.input_fingerprint,
+            output_paths=self.output_paths,
+            status=self.status,
+        )
+
 
 class StreamingStageEventKind(StrEnum):
     """Event kinds emitted by streaming worker components."""
