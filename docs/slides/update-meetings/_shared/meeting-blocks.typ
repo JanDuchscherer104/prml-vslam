@@ -14,16 +14,18 @@
 ) = slide(title: title, ..args)[
   #show: booktabs-default-table-style
   #show table.cell.where(y: 0): set text(weight: "bold")
-  #table(
-    columns: (1fr, 1.5fr, 5.5fr),
-    align: (left, left, left),
-    inset: (x: 0.4em, y: 0.28em),
-    toprule(),
-    table.header([WP-ID], [Member], [Description]),
-    midrule(),
-    ..rows.flatten(),
-    bottomrule(),
-  )
+  #align(center)[
+    #table(
+      columns: (auto, auto, auto),
+      align: (left, left, left),
+      inset: (x: 0.4em, y: 0.28em),
+      toprule(),
+      table.header([WP-ID], [Member], [Description]),
+      midrule(),
+      ..rows.flatten(),
+      bottomrule(),
+    )
+  ]
 ]
 
 #let meeting_detail_slide(
