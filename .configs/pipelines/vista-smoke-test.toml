@@ -7,9 +7,9 @@ video_path = "external/vista-slam/media/tumrgbd_room.mp4"
 frame_stride = 1
 
 [slam]
-method = "vista"
 
 [slam.backend]
+kind = "vista"
 max_frames = 50
 
 [benchmark.reference]

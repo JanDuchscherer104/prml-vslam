@@ -7,13 +7,12 @@ dataset_id  = "advio"
 sequence_id = "advio-15"
 
 [slam]
-method = "vista"
-
     [slam.outputs]
     emit_dense_points  = true
     emit_sparse_points = false
 
     [slam.backend]
+    kind = "vista"
 
 [benchmark.reference]
 enabled = false

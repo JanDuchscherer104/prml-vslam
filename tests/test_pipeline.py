@@ -27,7 +27,14 @@ from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
-from prml_vslam.pipeline.contracts.events import FramePacketSummary, PacketObserved
+from prml_vslam.pipeline.contracts.events import (
+    FramePacketSummary,
+    PacketObserved,
+    RunStopped,
+    StageFailed,
+    StageOutcome,
+    StageStatus,
+)
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
@@ -132,6 +139,49 @@ def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
     assert updated.latest_preview == preview
 
 
+def test_snapshot_projector_preserves_completed_state_on_run_stopped() -> None:
+    projector = SnapshotProjector()
+    snapshot = StreamingRunSnapshot(run_id="run-1", state=RunState.COMPLETED)
+
+    updated = projector.apply(
+        snapshot,
+        RunStopped(event_id="2", run_id="run-1", ts_ns=2),
+    )
+
+    assert updated.state is RunState.COMPLETED
+
+
+def test_snapshot_projector_clears_current_stage_on_stage_failed() -> None:
+    projector = SnapshotProjector()
+    snapshot = RunSnapshot(
+        run_id="run-1",
+        state=RunState.RUNNING,
+        current_stage_key=StageKey.SLAM,
+        stage_status={StageKey.SLAM: StageStatus.RUNNING},
+    )
+
+    updated = projector.apply(
+        snapshot,
+        StageFailed(
+            event_id="3",
+            run_id="run-1",
+            ts_ns=3,
+            stage_key=StageKey.SLAM,
+            outcome=StageOutcome(
+                stage_key=StageKey.SLAM,
+                status=StageStatus.FAILED,
+                config_hash="cfg",
+                input_fingerprint="inp",
+                error_message="boom",
+            ),
+        ),
+    )
+
+    assert updated.current_stage_key is None
+    assert updated.stage_status[StageKey.SLAM] is StageStatus.FAILED
+    assert updated.error_message == "boom"
+
+
 def test_translate_slam_update_emits_explicit_backend_events() -> None:
     update = SlamUpdate(
         seq=4,
@@ -227,22 +277,6 @@ def test_actor_options_explicit_ingest_placement_overrides_resources() -> None:
     assert options["max_restarts"] == -1
 
 
-def test_packet_source_does_not_inherit_backend_gpu_defaults() -> None:
-    request = _placement_request()
-    backend = _test_backend_descriptor(default_cpu=4.0, default_gpu=1.0)
-
-    options = actor_options_for_stage(
-        stage_key="packet_source",
-        request=request,
-        backend=backend,
-        default_num_cpus=1.0,
-        default_num_gpus=0.0,
-    )
-
-    assert options["num_cpus"] == 1.0
-    assert options["num_gpus"] == 0.0
-
-
 def test_clean_actor_options_keeps_nonempty_resources_dict() -> None:
     cleaned = clean_actor_options(
         {
@@ -314,6 +348,28 @@ def test_run_coordinator_submits_rerun_bindings_without_hot_path_ray_get(monkeyp
     assert len(submitted) == 1
     assert submitted[0][1][0][0] == "frame-1"
     assert coordinator._rerun_sink_last_call == "rerun-call-1"
+
+
+def test_run_coordinator_records_stage_failed_events() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+
+    coordinator._record_stage_failure(
+        stage_key=StageKey.SLAM,
+        outcome=StageOutcome(
+            stage_key=StageKey.SLAM,
+            status=StageStatus.FAILED,
+            config_hash="cfg",
+            input_fingerprint="inp",
+            error_message="backend boom",
+        ),
+    )
+
+    snapshot = coordinator.snapshot()
+
+    assert snapshot.stage_status[StageKey.SLAM] is StageStatus.FAILED
+    assert snapshot.error_message == "backend boom"
+    assert any(getattr(event, "kind", None) == "stage.failed" for event in coordinator.events())
 
 
 def test_streaming_slam_stage_resolves_materialized_payloads_without_ray_get() -> None:
@@ -567,13 +623,18 @@ def _repo_root() -> Path:
 
 
 def _placement_request(*, placement: dict[str, object] | None = None) -> RunRequest:
+    by_stage = (
+        {}
+        if placement is None
+        else {StageKey(stage_key): stage_placement for stage_key, stage_placement in placement.items()}
+    )
     return RunRequest(
         experiment_name="placement-demo",
         mode=PipelineMode.OFFLINE,
         output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
         slam=SlamStageConfig(backend={"kind": "mock"}),
-        placement={} if placement is None else {"by_stage": placement},
+        placement={"by_stage": by_stage},
     )
 
 

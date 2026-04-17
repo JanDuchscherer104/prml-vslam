@@ -17,6 +17,7 @@ from prml_vslam.visualization.contracts import VisualizationConfig
 
 if TYPE_CHECKING:
     from .plan import RunPlan
+from .stages import StageKey
 from .transport import TransportModel
 
 
@@ -124,16 +125,13 @@ BackendSpec = Annotated[
 class StagePlacement(BaseConfig):
     """Repo-owned placement preference for one stage."""
 
-    pool: str | None = None
     resources: dict[str, float] = Field(default_factory=dict)
-    colocate_with: list[str] = Field(default_factory=list)
-    spread: bool = False
 
 
 class PlacementPolicy(BaseConfig):
     """Repo-owned placement policy translated by the backend layer only."""
 
-    by_stage: dict[str, StagePlacement] = Field(default_factory=dict)
+    by_stage: dict[StageKey, StagePlacement] = Field(default_factory=dict)
 
 
 class SlamStageConfig(BaseConfig):

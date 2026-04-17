@@ -10,63 +10,62 @@ output_dir      = ".artifacts"
 
 [source]
 dataset_id  = "advio"
-sequence_id = "advio-01"
+sequence_id = "advio-13"
 
 [slam]
-method = "vista"
-
     [slam.outputs]
+    # ViSTA only emits dense pointmaps
     emit_dense_points  = true
-    emit_sparse_points = true
+    emit_sparse_points = false
 
     [slam.backend]
+    kind = "vista"
     # Frame cap to stop the backend after N frames.
     max_frames = 1000
 
     # Torch device string used for model inference.
     # device = "cuda"
 
-        [slam.backend.slam]
-        # Maximum number of keyframes the pose graph may hold.
-        max_view_num = 400
+    # Maximum number of keyframes the pose graph may hold.
+    max_view_num = 300
 
-        # Keyframe stride fallback used by upstream keyframe selection.
-        stride = 25
+    # Keyframe stride fallback used by upstream keyframe selection.
+    stride = 75
 
-        # Optical-flow magnitude threshold that triggers a new keyframe.
-        # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
-        # and test true backpressure.
-        flow_thres = 5.0
+    # Optical-flow magnitude threshold that triggers a new keyframe.
+    # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
+    # and test true backpressure.
+    flow_thres = 5.0
 
-        # Keyframe-selection strategy passed to the upstream frontend.
-        keyframe_detection = "flow_stride"
+    # Keyframe-selection strategy passed to the upstream frontend.
+    keyframe_detection = "flow_stride"
 
-        # Number of temporal-neighbor edges per keyframe in the pose graph.
-        neighbor_edge_num = 3
+    # Number of temporal-neighbor edges per keyframe in the pose graph.
+    neighbor_edge_num = 3
 
-        # Maximum number of loop-closure edges added per keyframe.
-        loop_edge_num = 3
+    # Maximum number of loop-closure edges added per keyframe.
+    loop_edge_num = 3
 
-        # Minimum frame distance for a valid loop-closure candidate.
-        loop_dist_min = 40
+    # Minimum frame distance for a valid loop-closure candidate.
+    loop_dist_min = 40
 
-        # Non-maximum suppression window for loop-closure candidates.
-        loop_nms = 40
+    # Non-maximum suppression window for loop-closure candidates.
+    loop_nms = 40
 
-        # Loop candidate must share more neighbours than this threshold.
-        loop_cand_thresh_neighbor = 5
+    # Loop candidate must share more neighbours than this threshold.
+    loop_cand_thresh_neighbor = 5
 
-        # Minimum point-confidence score retained in the reconstruction.
-        point_conf_thres = 4.2
+    # Minimum point-confidence score retained in the reconstruction.
+    point_conf_thres = 4.2
 
-        # Maximum relative-pose uncertainty accepted for an edge.
-        rel_pose_thres = 0.75
+    # Maximum relative-pose uncertainty accepted for an edge.
+    rel_pose_thres = 0.75
 
-        # Pose-graph optimisation interval in keyframes.
-        pgo_every = 500
+    # Pose-graph optimisation interval in keyframes.
+    pgo_every = 500
 
-        # Random seed set before model initialisation for reproducibility.
-        random_seed = 43
+    # Random seed set before model initialisation for reproducibility.
+    random_seed = 43
 
 [benchmark.reference]
 enabled = false

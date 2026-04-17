@@ -43,8 +43,8 @@ class RerunEventSink:
             return
         self._log_pinhole = log_pinhole
         self._log_pointcloud = log_pointcloud
-        self._log_rgb_image = log_rgb_image
         self._log_depth_image = log_depth_image
+        self._log_rgb_image = log_rgb_image
         self._log_transform = log_transform
         self._stream = create_recording_stream(app_id="prml-vslam", recording_id=recording_id)
         attach_recording_sinks(self._stream, grpc_url=grpc_url, target_path=target_path)

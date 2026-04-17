@@ -133,12 +133,15 @@ class SnapshotProjector:
             case StageFailed(stage_key=stage_key, outcome=outcome):
                 updated.stage_status[stage_key] = StageStatus.FAILED
                 updated.stage_progress.pop(stage_key, None)
+                if updated.current_stage_key is stage_key:
+                    updated.current_stage_key = None
                 updated.error_message = outcome.error_message
             case RunStopRequested():
                 if updated.state not in {RunState.COMPLETED, RunState.FAILED}:
                     updated.state = RunState.STOPPED
             case RunStopped():
-                updated.state = RunState.STOPPED
+                if updated.state not in {RunState.COMPLETED, RunState.FAILED}:
+                    updated.state = RunState.STOPPED
                 updated.current_stage_key = None
             case RunCompleted():
                 if updated.state is not RunState.STOPPED:
