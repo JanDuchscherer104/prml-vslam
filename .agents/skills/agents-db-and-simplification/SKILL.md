@@ -21,7 +21,7 @@ This skill is the canonical workflow source for:
 - using `.agents/AGENTS_INTERNAL_DB.md` as stable repo memory to persist important findings that should be reflected in the repository's canonical agent guidance
 - using `.agents/issues.toml`, `.agents/todos.toml`, and `.agents/resolved.toml` as working memory
 - using `make agents-db` to inspect, resolve, and maintain the active backlog
-- doing behavior-preserving simplification, redundancy reduction, pruning, and LOC-aware refactoring
+- doing behavior-preserving simplification of the current intended surface, redundancy reduction, pruning, and LOC-aware refactoring
 
 This skill is not the canonical source for:
 
@@ -72,7 +72,7 @@ Ranking rules:
 
 ## Simplification Workflow
 
-Use this workflow when the task is about simplification, pruning, redundancy reduction, or behavior-preserving refactoring:
+Use this workflow when the task is about simplification, pruning, redundancy reduction, or behavior-preserving refactoring of the current intended surface:
 
 1. Ground in repo intent and current boundaries.
    - Read `README.md`, `docs/Questions.md`, `.agents/AGENTS_INTERNAL_DB.md`, and the nearest `AGENTS.md`.
@@ -86,6 +86,8 @@ Use this workflow when the task is about simplification, pruning, redundancy red
    - For deeper overlap, ownership, or flow analysis, switch to `repo-context-explorer`.
 5. Choose the smallest behavior-preserving cut.
    - Prefer deleting or collapsing code over introducing more abstraction.
+   - Unless the user explicitly asks for backwards compatibility, prefer clean cuts over preserving stale APIs, old import paths, deprecated wrappers, or transitional shims.
+   - Do not keep obsolete surfaces alive through shallow re-exports, alias modules, compatibility import hubs, or thin wrapper functions added only to preserve the old shape.
 6. Validate the result.
    - Run focused tests, `make lint`, `ruff format`, and a final `make loc`.
    - Run `make ci` before creating a commit.
@@ -108,6 +110,31 @@ Examples that fit this repo well:
 - packet or runtime metadata carried through untyped generic bags instead of dedicated contracts
 - config fields whose meaning drifted until they became misleading or only partially consumed
 - preview-only transport paths that are useful but maintenance-heavy relative to their bounded scope
+
+## Architecture Review Heuristics
+
+When backlog triage or simplification work overlaps architecture review, prefer these patterns:
+
+- repo-owned contracts and thin adapters around external frameworks or tools
+- one authoritative controller or coordinator per workflow instead of split mutable truths
+- snapshots or view models projected from durable events instead of parallel mutable state
+- controller-owned rebuild and replay seams instead of page-local orchestration glue
+- discriminated unions, typed key sets, and explicit DTOs instead of free-form strings, `object`, `Any`, or generic metadata bags
+- registry-driven stage vocabularies and capability checks instead of duplicated enums or ad hoc string switches
+
+Treat these as responsibility smells that usually belong in the agents DB when validated:
+
+- renderer or page modules that also tail events, resolve previews, build runtime sources, or orchestrate execution
+- wrappers that both normalize outputs and perform environment bootstrapping, import-path mutation, or private-upstream API reach-in
+- public contracts that advertise placement, capability, or lifecycle semantics the active runtime does not actually honor
+- production packages that still own test-only doubles or preview-only subsystems that should be quarantined
+
+Treat these as redundancy smells that usually deserve simplification follow-up:
+
+- multiple DTOs, wrappers, or metadata bags carrying the same concept across package boundaries
+- compatibility re-exports, alias helpers, or transitional wrappers kept only to preserve an old shape
+- typed seams that degrade back to `object`, `Any`, or `dict[str, object]` at the main orchestration boundaries
+- duplicate stage keys, transport identities, transform contracts, or placement identifiers across layers
 
 See [references/redundancy-discovery.md](references/redundancy-discovery.md) for the detailed discovery workflow.
 
@@ -139,12 +166,14 @@ Prefer:
 - lower Python LOC with preserved behavior
 - less indirection, fewer stale adapters, and narrower public or semi-public surfaces
 - deleting dead paths, unused fields, and duplicate helpers instead of wrapping them
+- clean cuts that remove obsolete surfaces instead of keeping them alive through compatibility layers
 - typed, explicit contracts over generic metadata escape hatches
 
 Reject:
 
 - refactors that only move code around
 - API or config widening that is not required by the user-facing behavior
+- shallow re-export modules, alias symbols, deprecated wrappers, or other compatibility scaffolding added only to preserve old paths during cleanup
 - mock-only abstractions, speculative future-proofing, and unrelated cleanup
 - feature creep during a simplification task
 - positive Python LOC unless the user explicitly accepts the tradeoff or tests or safety clearly justify it

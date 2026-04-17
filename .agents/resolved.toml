@@ -1,7 +1,7 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-16"
+updated_on = "2026-04-17"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
 
 [[resolved_issues]]
@@ -1026,6 +1026,322 @@ resolved_on = "2026-04-06"
 resolution_note = "Propagated the intentional `.artifacts`/`.data` policy through tests, CLI defaults, and examples so hidden roots are the consistent repo-owned layout again."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0034"
+title = "Offline and unsupported planned stages still need the process-aware stage-result executor"
+status = "resolved"
+priority = "high"
+category = "orchestration"
+summary = "Streaming execution now has a pipeline-owned coordinator and typed stage results, but offline execution and the still-unsupported planned stages continue to rely on the older boolean/finalization model."
+files = [
+    "src/prml_vslam/pipeline/contracts/execution.py",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "tests/test_pipeline.py",
+]
+notes = [
+    "Streaming mode now uses `StageExecutionMode`, `StageResult`, and `StreamingCoordinator` to run ingest, packet-source, SLAM, evaluation, and summary through explicit execution records.",
+    "`OfflineRunner._run_worker` still tracks progress through booleans such as `ingest_started` and `slam_started` rather than consuming stage results.",
+    "The legacy finalization path still exists for offline execution, so the older boolean/finalization model is not fully removed from the pipeline package.",
+    "Reference reconstruction, cloud evaluation, and efficiency stages remain plannable but unsupported by the executable slice.",
+]
+sources = [
+    "README.md",
+    "docs/Questions.md",
+    "src/prml_vslam/pipeline/REQUIREMENTS.md",
+    "src/prml_vslam/pipeline/contracts/execution.py",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/pipeline/run_service.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-16"
+resolution_note = "Superseded by the Ray-backed pipeline refactor; the old offline/process-stage executor path and its boolean finalization model were removed from the active architecture."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0036"
+title = "Repo-owned Rerun transform relation contradicts the canonical camera pose direction"
+status = "resolved"
+priority = "high"
+category = "visualization"
+summary = "The repo stores camera poses as `T_world_camera`, but `visualization.rerun.log_transform()` logs them as `rr.TransformRelation.ChildFromParent`, which reverses the declared pose direction and is the strongest current explanation for misplaced camera-local pointmaps and incorrect world unprojection in the repo-owned viewer path."
+files = [
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+notes = [
+    "`FrameTransform` and the package guidance define the canonical camera pose convention as world <- camera (`T_world_camera`).",
+    "`log_transform()` emits that pose with `rr.TransformRelation.ChildFromParent`, while `streaming_coordinator` logs camera-local pointmaps under posed keyframe entities that inherit the transform.",
+    "`streaming._viewer_pose_from_update()` also applies a ViSTA-specific basis flip before logging, so transform-direction mistakes and viewer-basis conversion are currently coupled in one path.",
+    "Current streaming visualization tests assert entity paths, timelines, and basis values, but they do not round-trip a known camera-local point into an expected world-space location.",
+]
+sources = [
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "src/prml_vslam/pipeline/streaming_coordinator.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-16"
+resolution_note = "Resolved by the visualization refactor: repo transforms now log with parent-from-child semantics, so the original pose-direction contradiction is no longer present."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0038"
+title = "Residual compatibility shims and stale cutover docs remain after the Ray migration"
+status = "resolved"
+priority = "medium"
+category = "simplification"
+summary = "Most of the Ray/event-first cutover is in place, but a few transition surfaces still preserve redundant or stale architecture state: a compatibility re-export in `pipeline.state`, duplicate backend identity in `RunPlan`, a dead process-era ViSTA session factory, and docs that still mention removed runner files."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+files = [
+    "src/prml_vslam/pipeline/state.py",
+    "src/prml_vslam/pipeline/contracts/plan.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/README.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+]
+notes = [
+    "`pipeline.state` is now only a compatibility re-export over `contracts.runtime`.",
+    "`RunPlan` still carries both `method` and `backend_kind`, even though `backend.kind` is now the actual source of truth for backend selection.",
+    "`VistaSlamBackend.start_session()` still goes through `_VistaSessionFactory`, and the same file still carries a TODO noting that one pure rotation helper should live in a generic owner instead.",
+    "Some internal or package docs still describe removed pre-Ray surfaces such as the old session/runner split, which increases confusion for later agents and reviewers.",
+]
+sources = [
+    "src/prml_vslam/pipeline/state.py",
+    "src/prml_vslam/pipeline/contracts/plan.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/README.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+resolution_note = "Removed the active post-cutover compatibility shims called out by the issue: pipeline.state is gone, RunPlan no longer duplicates backend identity, the ViSTA process-era session-factory path was deleted, and the maintained pipeline/visualization docs plus AGENTS_INTERNAL_DB now describe the current Ray/event-first architecture."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0031"
+title = "Ingress and live-source contracts still rely on untyped packet provenance and duplicate transport enums"
+status = "resolved"
+priority = "medium"
+category = "contracts"
+summary = "The repo removed the earlier `FramePacket` overlap, but the hot-path contracts still push replay and transport provenance through generic metadata and duplicate Record3D transport identity across pipeline and app/io enums."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+files = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+]
+notes = [
+    "`FramePacket.metadata` still carries replay, dataset, transport, device-address, and rotation provenance in a generic `dict[str, Any]` blob.",
+    "Replay and dataset adapters currently depend on `static_metadata` plumbing instead of a typed source/provenance contract.",
+    "The live-source boundary is no longer a free-form source string, but transport identity is still split between `LiveTransportId` in pipeline contracts and `Record3DTransportId` in app/io surfaces.",
+]
+sources = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/REQUIREMENTS.md",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+resolution_note = "Closed after replacing FramePacket metadata with typed provenance and anchoring Record3D transport identity in the shared runtime contract."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0035"
+title = "Reusable pure helpers remain trapped in leaf UI and method-wrapper modules"
+status = "resolved"
+priority = "medium"
+category = "simplification"
+summary = "Several generally useful artifact, image, and frame-materialization helpers live in Streamlit page modules, pipeline leaf modules, or the ViSTA adapter instead of reusable package-owned modules."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+files = [
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/utils/REQUIREMENTS.md",
+]
+notes = [
+    "`app/pages/pipeline.py` previously owned request-building, source adaptation, support checks, evo preview, artifact display, and pointmap-preview image conversion in one large page module; request/source logic now lives in an app controller and evo/preview conversion moved to eval/plotting.",
+    "Frame extraction exists in both `pipeline.ingest` and `methods.vista.adapter`, even though generic video-to-frame materialization should be shared or performed once before method adapters run.",
+    "JSON writing, stable hashing, stage-manifest output-path assembly, and live image normalization are reusable mechanics but currently live near specific workflow leaves.",
+    "The cleanup should move pure helpers to existing owners such as `pipeline`, `visualization`, `plotting`, or `utils` only when the helper is genuinely generic and reduces the leaf surface.",
+]
+sources = [
+    "src/prml_vslam/utils/REQUIREMENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/live_session.py",
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+resolution_note = "Closed after extracting shared video-frame materialization and moving generic SO(3) projection out of the ViSTA adapter."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0036"
+title = "Rerun pose-direction semantics need regression coverage after the ParentFromChild cutover"
+status = "resolved"
+priority = "high"
+category = "visualization"
+summary = "The current code now logs repo `T_world_camera` poses with `ParentFromChild`, but the repo still lacks a focused world-space round-trip test to lock in that transform direction and prevent regressions."
+files = [
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+notes = [
+    "`FrameTransform` and the package guidance define the canonical camera pose convention as world <- camera (`T_world_camera`).",
+    "`visualization.rerun.log_transform()` now uses `rr.TransformRelation.ParentFromChild`, so the original direction bug appears fixed in the current worktree.",
+    "What remains missing is a focused regression test that round-trips a known camera-local point through a known pose and fails if world placement becomes mirrored, inverted, or displaced again.",
+    "The active backlog had drifted toward removed pre-Ray streaming files, so the remaining visualization debt should now be tracked against the sink/helper path that actually logs poses.",
+]
+sources = [
+    "src/prml_vslam/AGENTS.md",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-16"
+resolution_note = "Closed after adding focused Rerun transform-direction regression coverage and keeping ParentFromChild as the single repo-owned pose relation path."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0037"
+title = "Camera-complete live payloads exist in contracts, but the Rerun sink still ignores them"
+status = "resolved"
+priority = "medium"
+category = "visualization"
+summary = "The method/runtime layer now carries camera intrinsics, RGB, and metric depth for live keyframes, but the repo-owned Rerun sink still only logs pose and preview imagery, so the camera-complete payload never reaches the viewer path end-to-end."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+files = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/events.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/pipeline/ray_actors.py",
+    "tests/test_methods.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+notes = [
+    "`SlamUpdate` now carries `camera_intrinsics`, `image_rgb`, and `depth_map`, and `translate_slam_update()` already threads image/depth handles through the explicit backend-event surface.",
+    "`RerunEventSink.observe()` still ignores the available `PreviewReady.image` and `PreviewReady.depth` handles, so the viewer path does not yet log RGB plus `DepthImage` plus `Pinhole` together.",
+    "The current visualization test surface only checks a no-op path when Rerun is unavailable, not the camera-complete payload wiring through the sink and handle resolver.",
+    "The remaining gap is now mostly in the sink plus end-to-end coverage rather than in `SlamUpdate` itself.",
+]
+sources = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/events.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/pipeline/ray_actors.py",
+    "tests/test_methods.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+resolution_note = "Closed after wiring intrinsics, RGB, and metric depth through explicit backend events into the repo-owned Rerun sink with modality-level selection and tests."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0039"
+title = "Streamlit Pipeline page breaks ViSTA request replay because session-state JSON round-tripping stringifies strict Path fields"
+status = "resolved"
+priority = "high"
+category = "app"
+summary = "The pipeline TOML loads and plans correctly, but the Streamlit Pipeline page persists `slam_backend_payload` through JSON session state, converts ViSTA `Path` fields into strings, and then fails when rebuilding the strict `VistaBackendSpec` for request preview and planning."
+files = [
+    "src/prml_vslam/app/state.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    ".configs/pipelines/vista-full.toml",
+    "tests/test_app.py",
+]
+notes = [
+    "Direct TOML hydration through `RunRequest.from_toml()` still produces proper `Path` instances for `vista_slam_dir`, `checkpoint_path`, and `vocab_path`, so the persisted config itself is valid.",
+    "The Pipeline page stores `request.slam.backend.model_dump(mode=\"python\")` in `slam_backend_payload`, then `SessionStateStore.save()` serializes the whole app state with `model_dump(mode=\"json\")`, which turns those `Path` values into strings.",
+    "When `build_request_from_action()` rebuilds the request, `backend_payload_from_action()` feeds those stringified values back into the discriminated `VistaBackendSpec`, and strict transport validation rejects them as non-`Path` values.",
+    "This is a real workbench regression because the page can show `Resolved Request` validation errors and fail to plan even though the same ViSTA config plans successfully outside the app path.",
+]
+sources = [
+    "src/prml_vslam/app/state.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    ".configs/pipelines/vista-full.toml",
+    "tests/test_app.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-16"
+resolution_note = "Closed after normalizing strict backend Path fields during request rebuild so the Streamlit Pipeline page survives app-state JSON round-trips for ViSTA configs."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0042"
+title = "Parallel SE(3) datamodels duplicate transform ownership and semantics"
+status = "resolved"
+priority = "medium"
+category = "contracts"
+summary = "The repo currently carries both `SE3Pose` and `FrameTransform`, each with overlapping quaternion normalization, matrix conversion, and TUM serialization logic, even though `FrameTransform` is already the canonical frame-labeled transform DTO."
+files = [
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/AGENTS.md",
+    "docs/architecture/interfaces-and-contracts.md",
+]
+notes = [
+    "The duplicate conversion logic is easy to keep temporarily, but it invites semantic drift because only one of the two types carries explicit frame labels.",
+    "The current package guidance already treats `FrameTransform` as the canonical pose-like contract for runtime and boundary-facing transforms.",
+    "This is a smaller issue than the typed-boundary drift, but it is a clear redundancy target for future simplification work.",
+]
+sources = [
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/AGENTS.md",
+    "docs/architecture/interfaces-and-contracts.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-17"
+resolution_note = "Removed SE3Pose and kept FrameTransform as the sole shared pose/transform DTO."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -2043,4 +2359,294 @@ sources = [
 previous_status = "completed"
 resolved_on = "2026-04-16"
 resolution_note = "Already implemented: benchmark.trajectory.enabled is separated from baseline_source; active issue wording was narrowed to the remaining evaluation-semantics debt."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0036"
+title = "Extend stage-result execution to offline and remaining planned stages"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0034",
+]
+loc_min = 80
+loc_expected = 180
+loc_max = 380
+files = [
+    "src/prml_vslam/pipeline/contracts/execution.py",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "Streaming mode keeps the process-capable stage-result execution path already implemented.",
+    "Offline execution stops depending on `ingest_started`/`slam_started` booleans and consumes explicit stage results to build manifests and summaries.",
+    "Reference reconstruction, cloud evaluation, and efficiency stages either remain explicitly unsupported or gain real executors with typed stage results.",
+    "Stage manifests and run summaries are built from explicit stage results across every executable mode.",
+]
+sources = [
+    "src/prml_vslam/pipeline/REQUIREMENTS.md",
+    "src/prml_vslam/pipeline/contracts/execution.py",
+    "src/prml_vslam/pipeline/offline.py",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/pipeline/run_service.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-16"
+resolution_note = "Superseded by the Ray-backed pipeline refactor; the legacy execution.py/offline.py/finalization.py stage-result extension task no longer matches the active architecture."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0038"
+title = "Fix Rerun pose-direction logging and add a world-space round-trip geometry test"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0036",
+]
+loc_min = 20
+loc_expected = 60
+loc_max = 140
+files = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+acceptance = [
+    "Repo `T_world_camera` poses are logged with parent-from-child semantics or an explicitly equivalent inverted-transform path.",
+    "The ViSTA viewer-basis adapter remains explicit and singular instead of compensating for a wrong transform relation downstream.",
+    "A focused visualization test round-trips a known camera-local point through a known pose and fails if world placement is mirrored, inverted, or displaced.",
+    "Existing streaming visualization tests continue to cover entity layout and timeline behavior.",
+]
+sources = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/streaming.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+]
+previous_status = "pending"
+resolved_on = "2026-04-16"
+resolution_note = "The original transform-direction bug is fixed. Any remaining visualization coverage work should be tracked as a narrower follow-up rather than this stale fix task."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0040"
+title = "Remove residual post-cutover compatibility shims and stale runner-era docs"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0038",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 25
+loc_expected = 70
+loc_max = 160
+files = [
+    "src/prml_vslam/pipeline/state.py",
+    "src/prml_vslam/pipeline/contracts/plan.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/README.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+]
+acceptance = [
+    "The repo either removes `pipeline.state` as a compatibility re-export or documents and tests it as an intentional public surface.",
+    "`RunPlan` no longer carries redundant backend identity once the authoritative field is chosen.",
+    "Dead process-era ViSTA session-factory code and the adjacent generic-helper TODO are removed or moved to a still-live owner.",
+    "Docs and internal DB facts stop referencing removed runner/session surfaces from the pre-Ray architecture.",
+]
+sources = [
+    "src/prml_vslam/pipeline/state.py",
+    "src/prml_vslam/pipeline/contracts/plan.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/README.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+resolution_note = "Removed the pipeline.state compatibility surface, dropped the redundant RunPlan.backend_kind field, deleted the dead ViSTA _VistaSessionFactory path, and updated pipeline/visualization docs plus AGENTS_INTERNAL_DB to the current Ray-backed architecture."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0033"
+title = "Replace generic packet metadata and duplicate transport enums with typed provenance"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0031",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 40
+loc_expected = 95
+loc_max = 190
+files = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "tests/test_app.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "`FramePacket` no longer exposes a generic provenance `metadata` dict on the shared hot path.",
+    "Replay, dataset, rotation, and transport provenance remain available through typed fields or dedicated runtime-event data.",
+    "Pipeline and app/io stop duplicating Record3D transport identity across separate enums when one shared transport type would suffice.",
+]
+sources = [
+    "src/prml_vslam/interfaces/runtime.py",
+    "src/prml_vslam/io/cv2_producer.py",
+    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+resolution_note = "Resolved by replacing FramePacket metadata with typed FramePacketProvenance and centralizing Record3D transport identity in the shared runtime contract."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0037"
+title = "Consolidate remaining reusable frame-materialization helpers out of method-wrapper files"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0035",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 25
+loc_expected = 65
+loc_max = 140
+files = [
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "tests/test_pipeline.py",
+    "tests/test_methods.py",
+]
+acceptance = [
+    "Generic video-frame materialization is owned once and reused by offline ingest and method adapters where fallback extraction remains necessary.",
+    "The Pipeline page helper cleanup is treated as already done unless new drift appears; request/source helpers are app-controller owned and evo/pointmap preview helpers are eval/plotting owned.",
+    "Python LOC decreases or stays neutral while focused tests continue covering the moved behavior.",
+]
+sources = [
+    "src/prml_vslam/utils/REQUIREMENTS.md",
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+resolution_note = "Resolved by extracting shared video-frame materialization into utils.video_frames and moving SO(3) projection into interfaces.transforms."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0038"
+title = "Lock in the current Rerun pose direction with a world-space round-trip regression test"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0036",
+]
+loc_min = 20
+loc_expected = 45
+loc_max = 110
+files = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+]
+acceptance = [
+    "The current `ParentFromChild` logging path remains the single repo-owned pose-direction implementation.",
+    "A focused visualization regression test round-trips a known camera-local point through a known `T_world_camera` pose and fails if world placement becomes mirrored, inverted, or displaced.",
+    "The sink/helper path, not removed pre-Ray runner files, is the surface covered by the regression test.",
+    "Existing streaming visualization tests continue to cover entity layout and timeline behavior.",
+]
+sources = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "tests/test_streaming_visualization.py",
+    "src/prml_vslam/visualization/README.md",
+]
+previous_status = "pending"
+resolved_on = "2026-04-16"
+resolution_note = "Resolved by adding focused Rerun transform-direction regression coverage with ParentFromChild assertions and world-space point checks."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0039"
+title = "Make the live Rerun sink consume RGB, depth, and intrinsics handles end-to-end"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0037",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 50
+loc_expected = 120
+loc_max = 260
+files = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/events.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/pipeline/ray_actors.py",
+    "tests/test_methods.py",
+    "tests/test_streaming_visualization.py",
+]
+acceptance = [
+    "The explicit live event path carries camera intrinsics together with RGB and metric depth handles all the way into the repo-owned Rerun sink.",
+    "`RerunEventSink.observe()` logs `Pinhole`, raw RGB, and `DepthImage` when those payloads are available, while keeping diagnostic preview imagery separate.",
+    "The end-to-end visualization tests cover camera-complete payload handling through the sink and handle resolver instead of only the no-op path without Rerun.",
+    "The resulting viewer tree supports frustum-aligned debugging of camera-local pointmaps against depth and intrinsics for live keyframes.",
+]
+sources = [
+    "src/prml_vslam/methods/updates.py",
+    "src/prml_vslam/methods/events.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/pipeline/ray_actors.py",
+    "tests/test_methods.py",
+    "tests/test_streaming_visualization.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-16"
+
+[[resolved_todos]]
+id = "TODO-0044"
+title = "Collapse duplicate SE(3) conversion logic onto the frame-labeled transform contract"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0042",
+]
+loc_min = 30
+loc_expected = 80
+loc_max = 180
+files = [
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/transforms.py",
+    "docs/architecture/interfaces-and-contracts.md",
+]
+acceptance = [
+    "Only one canonical repo-owned pose or transform DTO owns matrix, quaternion, and TUM conversion semantics for shared boundaries.",
+    "Any remaining camera-specific pose helper is either deleted or narrowed so it no longer duplicates `FrameTransform` behavior.",
+    "Docs and package guidance describe one authoritative contract for pose-like data instead of two overlapping ones.",
+]
+sources = [
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/AGENTS.md",
+    "docs/architecture/interfaces-and-contracts.md",
+]
+previous_status = "pending"
+resolved_on = "2026-04-17"
+resolution_note = "Deleted SE3Pose, stopped exporting it from prml_vslam.interfaces, and updated focused tests to assert the exclusive FrameTransform surface."
 source_collection = "todos"
