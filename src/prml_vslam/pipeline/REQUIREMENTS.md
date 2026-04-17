@@ -10,15 +10,15 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   internal `contracts/` package rather than one monolithic `contracts.py`.
 - The package exposes a true offline path and a streaming path through
   `OfflineRunner`, `StreamingRunner`, and `RunService`.
-- The current executable slice remains `ingest`, `slam`, and `summary`.
+- The current executable slice is `ingest`, `slam`, optional
+  `trajectory_evaluation`, and `summary`.
 
 ## Responsibilities
 
 - own run requests, plans, manifests, artifacts, runner snapshots, and summary
   persistence
 - own offline canonical ingest and execution orchestration
-- remain separate from benchmark policy, evaluation execution, app state, and
-  method-wrapper internals
+- remain separate from benchmark policy, app state, and method-wrapper internals
 
 ## Non-Negotiable Requirements
 
@@ -29,6 +29,9 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   a compatibility import hub.
 - The package must not re-export method protocols through the pipeline root.
 - The executable slice must remain linear and deterministic.
+- Trajectory evaluation may run only from prepared benchmark inputs and
+  normalized SLAM artifacts; reference reconstruction, cloud evaluation, and
+  efficiency stages remain unsupported by the current runners.
 
 ## Validation
 

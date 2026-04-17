@@ -49,9 +49,11 @@ labels at package boundaries.
 ## Wrapper Implications
 
 - ViSTA-SLAM offline integration consumes a normalized `SequenceManifest`
-  containing canonical `rgb_dir` and sidecar metadata.
-- Method-specific preparation such as resizing, workspace layout, or native
-  output import stays in `methods/vista`, not in shared ingest.
-- Native upstream `.rrd` recordings may be preserved as visualization-owned
-  artifacts, but the repo does not currently ship a separate canonical
-  repo-owned `.rrd` exporter.
+    containing canonical `rgb_dir` and sidecar metadata.
+  - Method-specific preparation such as resizing, workspace layout, or native
+    output import stays in `methods/vista`, not in shared ingest.
+  - The repository ships a canonical repo-owned `.rrd` exporter in
+    `prml_vslam.visualization.rerun` that captures poses, point clouds, and
+    preview images in a normalized format. Native upstream `.rrd` recordings
+    may still be preserved as additional visualization-owned artifacts.
+

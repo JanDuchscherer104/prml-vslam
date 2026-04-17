@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable, Sequence
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
+import cv2
 import numpy as np
 import streamlit as st
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket
 
 LiveMetric: TypeAlias = tuple[str, str]
+ImageWidth: TypeAlias = int | Literal["content", "stretch"]
+
+_LIVE_IMAGE_MAX_WIDTH_PX = 730
+_LIVE_IMAGE_JPEG_QUALITY = 90
 
 
 def _build_live_trajectory_figure(
@@ -31,6 +37,89 @@ def render_live_fragment(*, run_every: float | None, render_body: Callable[[], N
         render_body()
 
     _render_fragment()
+
+
+def live_image_data_url(
+    image: np.ndarray,
+    *,
+    channels: Literal["RGB", "BGR"] = "RGB",
+    clamp: bool = True,
+) -> str:
+    """Encode one live preview image as a data URL.
+
+    Streamlit stores array-backed ``st.image`` payloads in its in-memory media manager.
+    High-frequency live previews can then leave the browser requesting an old
+    ``/media/<hash>.jpg`` URL after Streamlit has already pruned it. Data URLs keep
+    live preview frames out of that manager while preserving normal ``st.image``
+    rendering.
+    """
+    display_image = _prepare_live_image_array(image, channels=channels, clamp=clamp)
+    extension = ".png" if display_image.ndim == 3 and display_image.shape[-1] == 4 else ".jpg"
+    mime_type = "image/png" if extension == ".png" else "image/jpeg"
+    encode_params = [] if extension == ".png" else [int(cv2.IMWRITE_JPEG_QUALITY), _LIVE_IMAGE_JPEG_QUALITY]
+    ok, encoded = cv2.imencode(extension, display_image, encode_params)
+    if not ok:
+        raise RuntimeError("Failed to encode live preview image.")
+    encoded_base64 = base64.b64encode(encoded.tobytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded_base64}"
+
+
+def render_live_image(
+    image: np.ndarray,
+    *,
+    channels: Literal["RGB", "BGR"] = "RGB",
+    clamp: bool = True,
+    width: ImageWidth = "stretch",
+) -> None:
+    """Render one high-churn live image without using Streamlit's media endpoint."""
+    st.image(live_image_data_url(image, channels=channels, clamp=clamp), width=width)
+
+
+def _prepare_live_image_array(
+    image: np.ndarray,
+    *,
+    channels: Literal["RGB", "BGR"],
+    clamp: bool,
+) -> np.ndarray:
+    array = np.asarray(image)
+    if array.ndim == 3 and array.shape[-1] == 1:
+        array = array[..., 0]
+    if array.ndim == 2:
+        display_image = _to_uint8_image(array, clamp=clamp)
+    elif array.ndim == 3 and array.shape[-1] in {3, 4}:
+        display_image = _to_uint8_image(array, clamp=clamp)
+    else:
+        raise ValueError("Live preview images must have shape HxW, HxWx1, HxWx3, or HxWx4.")
+
+    if display_image.shape[1] > _LIVE_IMAGE_MAX_WIDTH_PX:
+        height_px = max(1, round(display_image.shape[0] * _LIVE_IMAGE_MAX_WIDTH_PX / display_image.shape[1]))
+        display_image = cv2.resize(
+            display_image,
+            (_LIVE_IMAGE_MAX_WIDTH_PX, height_px),
+            interpolation=cv2.INTER_AREA,
+        )
+
+    if display_image.ndim == 2:
+        return display_image
+    if display_image.shape[-1] == 4:
+        return display_image[..., [2, 1, 0, 3]] if channels == "RGB" else display_image
+    return display_image[..., ::-1] if channels == "RGB" else display_image
+
+
+def _to_uint8_image(image: np.ndarray, *, clamp: bool) -> np.ndarray:
+    if np.issubdtype(image.dtype, np.floating):
+        if not np.isfinite(image).all():
+            raise ValueError("Live preview images must contain finite values.")
+        if clamp:
+            image = np.clip(image, 0.0, 1.0)
+        elif np.amin(image) < 0.0 or np.amax(image) > 1.0:
+            raise ValueError("Live preview float images must be in [0.0, 1.0] unless clamp is enabled.")
+        return np.asarray(image * 255.0, dtype=np.uint8)
+    if clamp:
+        image = np.clip(image, 0, 255)
+    elif np.amin(image) < 0 or np.amax(image) > 255:
+        raise ValueError("Live preview integer images must be in [0, 255] unless clamp is enabled.")
+    return np.asarray(image, dtype=np.uint8)
 
 
 def live_poll_interval(*, is_active: bool, interval_seconds: float) -> float | None:
@@ -160,9 +249,11 @@ __all__ = [
     "render_camera_intrinsics",
     "render_live_action_slot",
     "render_live_fragment",
+    "render_live_image",
     "render_live_packet_tabs",
     "render_live_session_shell",
     "render_live_trajectory",
     "render_metric_row",
     "rerun_after_action",
+    "live_image_data_url",
 ]

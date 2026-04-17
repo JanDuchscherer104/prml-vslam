@@ -27,7 +27,7 @@ def build_advio_demo_request(
 ) -> RunRequest:
     """Build the canonical bounded ADVIO demo request shared by app and CLI."""
     return RunRequest(
-        experiment_name=f"advio-{mode.value}-{sequence_id}-{method.value}",
+        experiment_name=f"{sequence_id}-{mode.value}-{method.value}",
         mode=mode,
         output_dir=path_config.artifacts_dir,
         source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id),

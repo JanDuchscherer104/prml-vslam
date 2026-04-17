@@ -16,7 +16,6 @@ from prml_vslam.benchmark import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
     EfficiencyBenchmarkConfig,
-    ReferenceSource,
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.datasets.advio import AdvioPoseSource
@@ -28,12 +27,7 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import StageManifest
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    LiveTransportId,
-    Record3DLiveSourceSpec,
-    SlamStageConfig,
-)
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SlamStageConfig
 from prml_vslam.pipeline.demo import load_run_request_toml
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.plotting import build_evo_ape_colormap_figure
@@ -48,6 +42,7 @@ from ..live_session import (
     render_camera_intrinsics,
     render_live_action_slot,
     render_live_fragment,
+    render_live_image,
     render_live_session_shell,
     render_live_trajectory,
     rerun_after_action,
@@ -67,7 +62,20 @@ if TYPE_CHECKING:
 
 _ACTIVE_SESSION_STATES = frozenset({RunState.PREPARING, RunState.RUNNING})
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
-_SUPPORTED_APP_STAGE_IDS = frozenset({RunPlanStageId.INGEST, RunPlanStageId.SLAM, RunPlanStageId.SUMMARY})
+_SUPPORTED_APP_STAGE_IDS = frozenset(
+    {
+        RunPlanStageId.INGEST,
+        RunPlanStageId.SLAM,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
+        RunPlanStageId.SUMMARY,
+    }
+)
+_MOCK_METHOD_LABEL = "Mock Preview"
+_VISTA_POINTMAP_EMPTY_MESSAGE = (
+    "ViSTA-SLAM has not produced a renderable preview artifact for the current keyframe yet."
+)
+_VISTA_TRAJECTORY_EMPTY_MESSAGE = "ViSTA-SLAM has not accepted a keyframe pose yet, so no live trajectory is available."
+_VISTA_PREVIEW_CURRENT_MESSAGE = "Current keyframe artifact."
 
 
 class PipelinePageAction(PipelinePageState):
@@ -89,6 +97,37 @@ class PipelineEvoPreview(BaseData):
     stats: MetricStats
 
 
+def _pipeline_method_label(method: MethodId) -> str:
+    """Return the app-facing method label used by the bounded pipeline demo."""
+    return method.display_name
+
+
+def _pipeline_method_help(method: MethodId) -> str:
+    """Explain the current streaming-preview semantics for the selected method."""
+    if method is MethodId.MOCK:
+        return "Repository-local mock backend that emits live pose and pointmap telemetry for UI validation."
+    if method is MethodId.MAST3R:
+        return "MASt3R-SLAM is retained as a method id, but this repository has no executable MASt3R backend yet."
+    return (
+        "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs show packet FPS, accepted "
+        "keyframe FPS, and live previews only when the backend produces a new keyframe artifact."
+    )
+
+
+def _streaming_pointmap_empty_message(snapshot: StreamingRunSnapshot) -> str:
+    """Return the current pointmap empty-state message for the streaming page."""
+    if snapshot.plan is not None and snapshot.plan.method is MethodId.VISTA:
+        return _VISTA_POINTMAP_EMPTY_MESSAGE
+    return "No pointmap preview is available for the current frame."
+
+
+def _streaming_trajectory_empty_message(snapshot: StreamingRunSnapshot) -> str:
+    """Return the current trajectory empty-state message for the streaming page."""
+    if snapshot.plan is not None and snapshot.plan.method is MethodId.VISTA:
+        return _VISTA_TRAJECTORY_EMPTY_MESSAGE
+    return "The selected SLAM backend has not produced any trajectory points yet."
+
+
 def render(context: AppContext) -> None:
     """Render the interactive ADVIO replay demo."""
     render_page_intro(
@@ -96,7 +135,7 @@ def render(context: AppContext) -> None:
         title="Pipeline Demo",
         body=(
             "Select a persisted pipeline request template, edit the bounded in-app source and stage settings, "
-            "then run the current mock pipeline slice and inspect frames, trajectory, plans, and artifacts."
+            "then run the current pipeline slice and inspect frames, trajectory, plans, and artifacts."
         ),
     )
     statuses = context.advio_service.local_scene_statuses()
@@ -219,7 +258,6 @@ def _render_request_editor(
         mode,
         method,
         slam_max_frames,
-        slam_config_path,
         identity_input_error,
     ) = _render_request_identity_controls(
         page_state=page_state,
@@ -248,6 +286,8 @@ def _render_request_editor(
         trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
+        connect_live_viewer,
+        export_viewer_rrd,
     ) = _render_stage_settings(page_state)
     return (
         PipelinePageAction.model_validate(
@@ -260,13 +300,14 @@ def _render_request_editor(
                 "mode": mode,
                 "method": method,
                 "slam_max_frames": slam_max_frames,
-                "slam_config_path": slam_config_path,
                 "emit_dense_points": emit_dense_points,
                 "emit_sparse_points": emit_sparse_points,
                 "reference_enabled": reference_enabled,
                 "trajectory_eval_enabled": trajectory_eval_enabled,
                 "evaluate_cloud": evaluate_cloud,
                 "evaluate_efficiency": evaluate_efficiency,
+                "connect_live_viewer": connect_live_viewer,
+                "export_viewer_rrd": export_viewer_rrd,
                 "record3d_transport": record3d_transport,
                 "record3d_usb_device_index": record3d_usb_device_index,
                 "record3d_wifi_device_address": record3d_wifi_device_address,
@@ -289,7 +330,7 @@ def _render_request_identity_controls(
     page_state: PipelinePageState,
     path_config: PathConfig,
     source_kind: PipelineSourceId,
-) -> tuple[str, PipelineMode, MethodId, int | None, Path | None, str | None]:
+) -> tuple[str, PipelineMode, MethodId, int | None, str | None]:
     left, _ = st.columns(2, gap="large")
     with left:
         experiment_name = st.text_input("Experiment Name", value=page_state.experiment_name).strip()
@@ -302,11 +343,12 @@ def _render_request_identity_controls(
             format_func=lambda item: item.label,
         )
         method = st.selectbox(
-            "Mock Method",
+            "VSLAM Method",
             options=list(MethodId),
             index=list(MethodId).index(page_state.method),
-            format_func=lambda item: item.display_name,
+            format_func=_pipeline_method_label,
         )
+        st.caption(_pipeline_method_help(method))
         slam_max_frames_raw = st.text_input(
             "SLAM Max Frames",
             value="" if page_state.slam_max_frames is None else str(page_state.slam_max_frames),
@@ -316,15 +358,7 @@ def _render_request_identity_controls(
             raw_value=slam_max_frames_raw,
             field_label="SLAM Max Frames",
         )
-        slam_config_path = _parse_optional_repo_path(
-            path_config,
-            st.text_input(
-                "SLAM Config Path",
-                value=_display_repo_relative_path(path_config, page_state.slam_config_path),
-                placeholder=".configs/methods/vista/demo.toml",
-            ).strip(),
-        )
-    return experiment_name, mode, method, slam_max_frames, slam_config_path, slam_max_frames_error
+    return experiment_name, mode, method, slam_max_frames, slam_max_frames_error
 
 
 def _render_source_settings(
@@ -430,13 +464,18 @@ def _render_record3d_source_settings(
 
 def _render_stage_settings(
     page_state: PipelinePageState,
-) -> tuple[bool, bool, bool, bool, bool, bool]:
+) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool]:
     stage_left, stage_right = st.columns(2, gap="large")
     with stage_left:
         st.markdown("**SLAM Stage**")
         emit_sparse_points = st.toggle("Emit sparse geometry", value=page_state.emit_sparse_points)
         emit_dense_points = st.toggle("Emit dense geometry", value=page_state.emit_dense_points)
         reference_enabled = st.toggle("Plan reference reconstruction", value=page_state.reference_enabled)
+
+        st.markdown("**Visualization**")
+        connect_live_viewer = st.toggle("Connect live Rerun viewer", value=page_state.connect_live_viewer)
+        export_viewer_rrd = st.toggle("Export viewer .rrd artifact", value=page_state.export_viewer_rrd)
+
     with stage_right:
         st.markdown("**Evaluation Stages**")
         trajectory_eval_enabled = st.toggle("Plan trajectory evaluation", value=page_state.trajectory_eval_enabled)
@@ -449,6 +488,8 @@ def _render_stage_settings(
         trajectory_eval_enabled,
         evaluate_cloud,
         evaluate_efficiency,
+        connect_live_viewer,
+        export_viewer_rrd,
     )
 
 
@@ -496,13 +537,15 @@ def _sync_pipeline_page_state_from_template(
         mode=request.mode,
         method=request.slam.method,
         slam_max_frames=request.slam.backend.max_frames,
-        slam_config_path=request.slam.backend.config_path,
+        slam_backend_payload=request.slam.backend.model_dump(mode="python", exclude_none=True),
         emit_dense_points=request.slam.outputs.emit_dense_points,
         emit_sparse_points=request.slam.outputs.emit_sparse_points,
         reference_enabled=request.benchmark.reference.enabled,
         trajectory_eval_enabled=request.benchmark.trajectory.enabled,
         evaluate_cloud=request.benchmark.cloud.enabled,
         evaluate_efficiency=request.benchmark.efficiency.enabled,
+        connect_live_viewer=request.visualization.connect_live_viewer,
+        export_viewer_rrd=request.visualization.export_viewer_rrd,
         **source_updates,
     )
 
@@ -511,7 +554,7 @@ def _record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLiv
     """Build the typed Record3D live source contract from one pipeline action."""
     return Record3DLiveSourceSpec(
         persist_capture=action.record3d_persist_capture,
-        transport=LiveTransportId(action.record3d_transport.value),
+        transport=action.record3d_transport,
         device_index=action.record3d_usb_device_index if action.record3d_transport is Record3DTransportId.USB else None,
         device_address=action.record3d_wifi_device_address
         if action.record3d_transport is Record3DTransportId.WIFI
@@ -523,7 +566,7 @@ def _record3d_page_updates_from_source(source: Record3DLiveSourceSpec) -> dict[s
     """Build pipeline page-state updates from a typed Record3D live source contract."""
     return {
         "source_kind": PipelineSourceId.RECORD3D,
-        "record3d_transport": Record3DTransportId(source.transport.value),
+        "record3d_transport": source.transport,
         "record3d_usb_device_index": 0 if source.device_index is None else source.device_index,
         "record3d_wifi_device_address": source.device_address,
         "record3d_persist_capture": source.persist_capture,
@@ -552,10 +595,7 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
                     "emit_dense_points": action.emit_dense_points,
                     "emit_sparse_points": action.emit_sparse_points,
                 },
-                backend={
-                    "max_frames": action.slam_max_frames,
-                    "config_path": action.slam_config_path,
-                },
+                backend=_backend_payload_from_action(action),
             ),
             benchmark=BenchmarkConfig(
                 reference={"enabled": action.reference_enabled},
@@ -563,7 +603,10 @@ def _build_request_from_action(context: AppContext, action: PipelinePageAction) 
                 cloud=CloudBenchmarkConfig(enabled=action.evaluate_cloud),
                 efficiency=EfficiencyBenchmarkConfig(enabled=action.evaluate_efficiency),
             ),
-            visualization=VisualizationConfig(connect_live_viewer=False),
+            visualization=VisualizationConfig(
+                export_viewer_rrd=action.export_viewer_rrd,
+                connect_live_viewer=action.connect_live_viewer,
+            ),
         )
         return request, None
     except Exception as exc:
@@ -587,10 +630,13 @@ def _request_support_error(
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
+    if request.slam.method is MethodId.MAST3R:
+        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
     unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
-        return "The current app demo can execute only ingest, slam, and summary stages. Disable: " + ", ".join(
-            unsupported_stage_ids
+        return (
+            "The current app demo can execute only ingest, slam, trajectory evaluation, and summary stages. Disable: "
+            + ", ".join(unsupported_stage_ids)
         )
     match request.source:
         case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
@@ -619,13 +665,17 @@ def _source_input_error(action: PipelinePageAction) -> str | None:
 def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[LiveMetric, ...]:
     received_frames = snapshot.received_frames if isinstance(snapshot, StreamingRunSnapshot) else 0
     measured_fps = snapshot.measured_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
+    accepted_keyframes = snapshot.accepted_keyframes if isinstance(snapshot, StreamingRunSnapshot) else 0
+    backend_fps = snapshot.backend_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
     num_sparse_points = snapshot.num_sparse_points if isinstance(snapshot, StreamingRunSnapshot) else 0
     num_dense_points = snapshot.num_dense_points if isinstance(snapshot, StreamingRunSnapshot) else 0
     return (
         ("Status", snapshot.state.value.upper()),
         ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.label),
         ("Received Frames", str(received_frames)),
-        ("Frame Rate", f"{measured_fps:.2f} fps"),
+        ("Packet FPS", f"{measured_fps:.2f} fps"),
+        ("Accepted Keyframes", str(accepted_keyframes)),
+        ("Keyframe FPS", f"{backend_fps:.2f} fps"),
         ("Sparse Points", str(num_sparse_points)),
         ("Dense Points", str(num_dense_points)),
     )
@@ -636,7 +686,7 @@ def _pipeline_caption(snapshot: RunSnapshot) -> str | None:
         return None
     return (
         f"Run Id: `{snapshot.plan.run_id}` · Artifact Root: `{snapshot.plan.artifact_root}`"
-        f" · Method: {snapshot.plan.method.display_name}"
+        f" · Method: {_pipeline_method_label(snapshot.plan.method)}"
     )
 
 
@@ -659,17 +709,21 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
         if packet is None:
             st.info("No frame has been processed yet.")
         else:
-            pointmap = snapshot.latest_slam_update.pointmap if snapshot.latest_slam_update is not None else None
+            preview_update = snapshot.latest_preview_update
+            pointmap_preview = _preview_image_from_update(preview_update)
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
                 st.markdown("**RGB Frame**")
-                st.image(packet.rgb, channels="RGB", clamp=True, width="stretch")
+                render_live_image(packet.rgb, channels="RGB", clamp=True, width="stretch")
             with preview_right:
-                st.markdown("**Pointmap Depth**")
-                if pointmap is None:
-                    st.info("No pointmap preview is available for the current frame.")
+                st.markdown("**ViSTA Preview Artifact**")
+                if pointmap_preview is None:
+                    st.info(_streaming_pointmap_empty_message(snapshot))
                 else:
-                    st.image(_pointmap_depth_preview(pointmap), clamp=True, width="stretch")
+                    render_live_image(pointmap_preview, clamp=True, width="stretch")
+                    preview_status_message = _preview_status_message(snapshot)
+                    if preview_status_message is not None:
+                        st.caption(preview_status_message)
             details_left, details_right = st.columns((1.0, 1.0), gap="large")
             with details_left:
                 st.markdown("**SLAM Update**")
@@ -678,8 +732,15 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
                 else:
                     st.json(
                         {
-                            **snapshot.latest_slam_update.model_dump(mode="json", exclude={"pointmap"}),
-                            "pointmap_shape": None if pointmap is None else list(pointmap.shape),
+                            **snapshot.latest_slam_update.model_dump(mode="json", exclude={"pointmap", "preview_rgb"}),
+                            "pointmap_shape": None
+                            if snapshot.latest_slam_update.pointmap is None
+                            else list(snapshot.latest_slam_update.pointmap.shape),
+                            "preview_shape": None
+                            if snapshot.latest_slam_update.preview_rgb is None
+                            else list(snapshot.latest_slam_update.preview_rgb.shape),
+                            "accepted_keyframes": snapshot.accepted_keyframes,
+                            "keyframe_fps": snapshot.backend_fps,
                         },
                         expanded=False,
                     )
@@ -702,7 +763,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
         render_live_trajectory(
             positions_xyz=snapshot.trajectory_positions_xyz,
             timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
-            empty_message="The mock SLAM backend has not produced any trajectory points yet.",
+            empty_message=_streaming_trajectory_empty_message(snapshot),
         )
         st.markdown("**Evo APE Colormap**")
         show_evo_preview = st.toggle(
@@ -794,17 +855,17 @@ def _render_pipeline_notice(snapshot: RunSnapshot) -> None:
                 "Select a request template, configure the supported source and stages, then start the pipeline demo."
             )
         case RunState.PREPARING:
-            st.info("Preparing the sequence manifest and starting the mock SLAM backend.")
+            st.info("Preparing the sequence manifest and starting the selected SLAM backend.")
         case RunState.RUNNING:
             if _is_offline_pipeline_run(snapshot):
                 st.success("Processing the bounded offline slice and materializing artifacts.")
             else:
-                st.success("Processing frames through the mock SLAM backend.")
+                st.success("Processing frames through the selected SLAM backend.")
         case RunState.COMPLETED:
             if _is_offline_pipeline_run(snapshot):
                 st.success("The bounded offline demo finished and wrote artifacts.")
             else:
-                st.success("The bounded demo finished and wrote mock SLAM artifacts.")
+                st.success("The bounded demo finished and wrote SLAM artifacts.")
         case RunState.STOPPED:
             if _is_offline_pipeline_run(snapshot):
                 st.warning("The offline demo stopped. The written artifacts remain visible below.")
@@ -927,21 +988,6 @@ def _parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None
         return None, f"Enter a whole number for `{field_label}` or leave the field blank."
 
 
-def _parse_optional_repo_path(path_config: PathConfig, raw_value: str) -> Path | None:
-    return None if raw_value == "" else path_config.resolve_repo_path(raw_value)
-
-
-def _display_repo_relative_path(path_config: PathConfig, path: Path | None) -> str:
-    if path is None:
-        return ""
-    resolved = path if path.is_absolute() else path_config.resolve_repo_path(path)
-    return (
-        str(resolved.relative_to(path_config.root))
-        if resolved.is_relative_to(path_config.root)
-        else resolved.as_posix()
-    )
-
-
 def _request_summary_payload(request: RunRequest) -> dict[str, object]:
     payload = {
         "experiment_name": request.experiment_name,
@@ -949,10 +995,7 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
         "output_dir": request.output_dir.as_posix(),
         "slam": {
             "method": request.slam.method.value,
-            "config_path": None
-            if request.slam.backend.config_path is None
-            else request.slam.backend.config_path.as_posix(),
-            "max_frames": request.slam.backend.max_frames,
+            "backend": request.slam.backend.model_dump(mode="json", exclude_none=True),
             "emit_dense_points": request.slam.outputs.emit_dense_points,
             "emit_sparse_points": request.slam.outputs.emit_sparse_points,
         },
@@ -971,25 +1014,90 @@ def _request_summary_payload(request: RunRequest) -> dict[str, object]:
     return payload
 
 
-def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:
-    return normalize_grayscale_image(np.asarray(pointmap[..., 2], dtype=np.float32))
+def _backend_payload_from_action(action: PipelinePageAction) -> dict[str, object]:
+    if action.method is not MethodId.VISTA:
+        return {"max_frames": action.slam_max_frames}
+    payload = dict(action.slam_backend_payload)
+    payload["max_frames"] = action.slam_max_frames
+    return payload
+
+
+def _pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
+    """Return a renderable preview image for one ViSTA preview artifact."""
+    if pointmap is None:
+        return None
+    preview_array = np.asarray(pointmap)
+    if preview_array.size == 0:
+        return None
+    if preview_array.ndim == 2:
+        return normalize_grayscale_image(np.asarray(preview_array, dtype=np.float32))
+    if preview_array.ndim != 3:
+        return None
+    if preview_array.shape[-1] == 1:
+        return normalize_grayscale_image(np.asarray(preview_array[..., 0], dtype=np.float32))
+    if preview_array.shape[-1] in {3, 4} and (
+        np.issubdtype(preview_array.dtype, np.integer)
+        or (np.isfinite(preview_array).all() and np.nanmin(preview_array) >= 0.0 and np.nanmax(preview_array) <= 1.0)
+    ):
+        return np.asarray(preview_array)
+    magnitude = np.linalg.norm(np.asarray(preview_array, dtype=np.float32), axis=-1)
+    return normalize_grayscale_image(magnitude)
+
+
+def _preview_image_from_update(update: object) -> np.ndarray | None:
+    """Return the retained preview image for one streaming SLAM update."""
+    if update is None:
+        return None
+    preview_rgb = getattr(update, "preview_rgb", None)
+    if preview_rgb is not None and np.asarray(preview_rgb).size > 0:
+        return np.asarray(preview_rgb)
+    return _pointmap_preview_image(getattr(update, "pointmap", None))
+
+
+def _preview_status_message(snapshot: StreamingRunSnapshot) -> str | None:
+    """Return the retained-preview status line for the current streaming snapshot."""
+    preview_update = snapshot.latest_preview_update
+    if preview_update is None:
+        return None
+    latest_update = snapshot.latest_slam_update
+    if latest_update is not None and _updates_share_preview_identity(latest_update, preview_update):
+        return _VISTA_PREVIEW_CURRENT_MESSAGE
+    keyframe_label = _preview_keyframe_label(preview_update)
+    return f"Showing last valid keyframe artifact from {keyframe_label}."
+
+
+def _updates_share_preview_identity(left: object, right: object) -> bool:
+    """Return whether two updates refer to the same preview-bearing keyframe."""
+    return (
+        getattr(left, "seq", None) == getattr(right, "seq", None)
+        and getattr(left, "timestamp_ns", None) == getattr(right, "timestamp_ns", None)
+        and getattr(left, "keyframe_index", None) == getattr(right, "keyframe_index", None)
+        and _preview_image_from_update(left) is not None
+    )
+
+
+def _preview_keyframe_label(update: object) -> str:
+    """Return a human-readable keyframe label for one retained preview update."""
+    keyframe_index = getattr(update, "keyframe_index", None)
+    if keyframe_index is not None:
+        return f"keyframe {keyframe_index}"
+    seq = getattr(update, "seq", None)
+    if seq is not None:
+        return f"frame {seq}"
+    return "the last available frame"
 
 
 def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:
-    if snapshot.slam is None:
+    if (
+        snapshot.slam is None
+        or snapshot.slam.trajectory_tum is None
+        or snapshot.benchmark_inputs is None
+        or not snapshot.benchmark_inputs.reference_trajectories
+    ):
         return None, None
-    reference_path = (
-        None
-        if snapshot.benchmark_inputs is None
-        else (
-            None
-            if (reference := snapshot.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)) is None
-            else reference.path
-        )
-    )
+
+    reference_path = snapshot.benchmark_inputs.reference_trajectories[0].path
     estimate_path = snapshot.slam.trajectory_tum.path
-    if reference_path is None:
-        return None, "No `ground_truth.tum` reference is available for this ADVIO slice."
     if not reference_path.exists() or not estimate_path.exists():
         return None, None
     try:

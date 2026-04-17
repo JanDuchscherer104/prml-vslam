@@ -6,11 +6,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from prml_vslam.benchmark import BenchmarkConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.vista.config import VistaSlamBackendConfig
 from prml_vslam.utils import BaseConfig, PathConfig
 from prml_vslam.visualization import VisualizationConfig
 
@@ -85,6 +86,7 @@ class Record3DLiveSourceSpec(BaseConfig):
 
 
 SourceSpec = VideoSourceSpec | DatasetSourceSpec | Record3DLiveSourceSpec
+BackendConfig = SlamBackendConfig | VistaSlamBackendConfig
 
 
 class SlamStageConfig(BaseConfig):
@@ -96,8 +98,38 @@ class SlamStageConfig(BaseConfig):
     outputs: SlamOutputPolicy = Field(default_factory=SlamOutputPolicy)
     """Output materialization wishes for the selected backend."""
 
-    backend: SlamBackendConfig = Field(default_factory=SlamBackendConfig)
+    backend: BackendConfig = Field(default_factory=SlamBackendConfig)
     """Backend-private runtime or wrapper controls."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_backend_by_method(cls, raw_data: object) -> object:
+        if not isinstance(raw_data, dict):
+            return raw_data
+        method = raw_data.get("method")
+        if method is None:
+            return raw_data
+        backend = raw_data.get("backend")
+        if backend is None:
+            return raw_data
+        method_id = method if isinstance(method, MethodId) else MethodId(method)
+        payload = dict(raw_data)
+        backend_payload = backend.model_dump(mode="python") if isinstance(backend, SlamBackendConfig) else backend
+        if method_id is MethodId.VISTA:
+            payload["backend"] = VistaSlamBackendConfig.model_validate(backend_payload)
+        elif isinstance(backend, VistaSlamBackendConfig):
+            payload["backend"] = SlamBackendConfig.model_validate({"max_frames": backend.max_frames})
+        else:
+            payload["backend"] = SlamBackendConfig.model_validate(backend_payload)
+        return payload
+
+    @model_validator(mode="after")
+    def _normalize_backend_default(self) -> SlamStageConfig:
+        if self.method is MethodId.VISTA and not isinstance(self.backend, VistaSlamBackendConfig):
+            self.backend = VistaSlamBackendConfig.model_validate(self.backend.model_dump(mode="python"))
+        if self.method is not MethodId.VISTA and isinstance(self.backend, VistaSlamBackendConfig):
+            self.backend = SlamBackendConfig.model_validate({"max_frames": self.backend.max_frames})
+        return self
 
 
 class RunRequest(BaseConfig):
@@ -133,6 +165,7 @@ class RunRequest(BaseConfig):
 
 __all__ = [
     "DatasetSourceSpec",
+    "BackendConfig",
     "LiveTransportId",
     "PipelineMode",
     "Record3DLiveSourceSpec",

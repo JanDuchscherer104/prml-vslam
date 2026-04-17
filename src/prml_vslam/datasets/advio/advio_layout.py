@@ -48,7 +48,8 @@ class _ModalitySpec:
 
 
 _CALIBRATION = _RelativePathSpec(("calibration",), scene_attr="calibration_name")
-_GROUND_TRUTH = _RelativePathSpec(("ground-truth",), names=("poses.csv", "pose.csv"))
+_GROUND_TRUTH_POSE = _RelativePathSpec(("ground-truth",), names=("poses.csv", "pose.csv"))
+_GROUND_TRUTH_FIXPOINTS = _RelativePathSpec(("ground-truth",), names=("fixpoints.csv",))
 _IPHONE_FRAMES_MOV = _RelativePathSpec(("iphone",), names=("frames.mov",))
 _IPHONE_FRAMES_CSV = _RelativePathSpec(("iphone",), names=("frames.csv",))
 _IPHONE_PLATFORM_LOCATION = _RelativePathSpec(("iphone",), names=("platform-location.csv", "platform-locations.csv"))
@@ -67,7 +68,10 @@ _TANGO_ARCHIVE = _RelativePathSpec(("tango",), recurse=True)
 
 _MODALITY_SPECS = {
     AdvioModality.CALIBRATION: _ModalitySpec(dataset_specs=(_CALIBRATION,)),
-    AdvioModality.GROUND_TRUTH: _ModalitySpec(sequence_specs=(_GROUND_TRUTH,), archive_specs=(_GROUND_TRUTH,)),
+    AdvioModality.GROUND_TRUTH: _ModalitySpec(
+        sequence_specs=(_GROUND_TRUTH_POSE, _GROUND_TRUTH_FIXPOINTS),
+        archive_specs=(_GROUND_TRUTH_POSE, _GROUND_TRUTH_FIXPOINTS),
+    ),
     AdvioModality.IPHONE_VIDEO: _ModalitySpec(
         sequence_specs=(_IPHONE_FRAMES_MOV, _IPHONE_FRAMES_CSV),
         archive_specs=(_IPHONE_FRAMES_MOV, _IPHONE_FRAMES_CSV),
@@ -163,7 +167,7 @@ def resolve_calibration_path(dataset_root: Path, scene: AdvioSceneMetadata) -> P
 
 
 def resolve_ground_truth_csv(sequence_dir: Path, scene: AdvioSceneMetadata) -> Path:
-    return _require_path(sequence_dir, scene, _GROUND_TRUTH, "ground-truth pose CSV")
+    return _require_path(sequence_dir, scene, _GROUND_TRUTH_POSE, "ground-truth pose CSV")
 
 
 def resolve_optional_arkit_csv(sequence_dir: Path, scene: AdvioSceneMetadata) -> Path | None:

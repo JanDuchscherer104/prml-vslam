@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
+
+from pydantic import ConfigDict
 
 from prml_vslam.utils import BaseConfig
 
@@ -13,6 +14,7 @@ class MethodId(StrEnum):
 
     VISTA = "vista"
     MAST3R = "mast3r"
+    MOCK = "mock"
 
     @property
     def display_name(self) -> str:
@@ -22,6 +24,8 @@ class MethodId(StrEnum):
                 return "ViSTA-SLAM"
             case MethodId.MAST3R:
                 return "MASt3R-SLAM"
+            case MethodId.MOCK:
+                return "Mock Preview"
 
 
 class SlamOutputPolicy(BaseConfig):
@@ -37,11 +41,10 @@ class SlamOutputPolicy(BaseConfig):
 class SlamBackendConfig(BaseConfig):
     """Method-owned backend controls."""
 
+    model_config = ConfigDict(extra="forbid")
+
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
-
-    config_path: Path | None = None
-    """Optional explicit backend config path."""
 
 
 __all__ = ["MethodId", "SlamBackendConfig", "SlamOutputPolicy"]
