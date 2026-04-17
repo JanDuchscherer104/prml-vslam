@@ -151,13 +151,13 @@ def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
     packet = record3d_wifi_packet_from_video_frame(FakeVideoFrame(), metadata=metadata, seq=0)
 
     assert isinstance(packet, FramePacket)
-    assert packet.metadata["transport"] == Record3DTransportId.WIFI.value
+    assert packet.provenance.transport is Record3DTransportId.WIFI
     assert packet.rgb.shape == (2, 2, 3)
     assert packet.depth.shape == (2, 2)
     assert packet.confidence is None
     assert packet.intrinsics is not None
     assert packet.intrinsics.fx == 100.0
-    assert packet.metadata["device_address"] == "http://myiPhone.local"
+    assert packet.provenance.device_address == "http://myiPhone.local"
 
 
 def test_record3d_wifi_preview_stream_config_keeps_manual_device_address() -> None:

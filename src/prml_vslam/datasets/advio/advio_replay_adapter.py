@@ -7,7 +7,7 @@ import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
 from prml_vslam.io.cv2_producer import Cv2ProducerConfig, Cv2ReplayMode, open_cv2_replay_stream
 from prml_vslam.protocols import FramePacketStream
 
@@ -45,12 +45,13 @@ def open_advio_stream(
             poses_by_frame=_poses_for_frame_timestamps(
                 frame_timestamps_ns, _load_pose_trajectory(paths, scene, pose_source)
             ),
-            static_metadata={
-                "dataset": "ADVIO",
-                "sequence_id": scene.sequence_id,
-                "sequence_name": scene.sequence_slug,
-                "pose_source": pose_source.value,
-            },
+            base_provenance=FramePacketProvenance(
+                source_id="advio",
+                dataset_id="advio",
+                sequence_id=str(scene.sequence_id),
+                sequence_name=scene.sequence_slug,
+                pose_source=pose_source.value,
+            ),
         )
     )
     return _wrap_with_advio_video_rotation(stream, video_path=paths.video_path) if respect_video_rotation else stream
@@ -135,7 +136,7 @@ class _RotatedVideoStream:
             update={
                 "rgb": _rotate_rgb(packet.rgb, self._rotation_degrees),
                 "intrinsics": _rotate_intrinsics(packet.intrinsics, self._rotation_degrees),
-                "metadata": {**packet.metadata, "video_rotation_degrees": self._rotation_degrees},
+                "provenance": packet.provenance.model_copy(update={"video_rotation_degrees": self._rotation_degrees}),
             }
         )
 

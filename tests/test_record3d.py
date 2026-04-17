@@ -119,8 +119,8 @@ def test_record3d_stream_wait_for_packet_returns_shared_contract(monkeypatch: py
     packet = stream.wait_for_packet()
 
     assert connected.product_id == 202
-    assert packet.metadata["transport"] == Record3DTransportId.USB.value
-    assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
+    assert packet.provenance.transport is Record3DTransportId.USB
+    assert packet.provenance.device_type == Record3DDeviceType.LIDAR.name.lower()
     assert packet.rgb.shape == (2, 2, 3)
     assert packet.depth.shape == (2, 2)
     assert packet.intrinsics is not None
@@ -143,11 +143,11 @@ def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: 
     packet = stream.wait_for_packet()
 
     assert device.udid == "device-202"
-    assert packet.metadata["transport"] == Record3DTransportId.USB.value
+    assert packet.provenance.transport is Record3DTransportId.USB
     assert packet.rgb.shape == (2, 2, 3)
     assert packet.depth.shape == (2, 2)
     assert packet.intrinsics is not None
-    assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
+    assert packet.provenance.device_type == Record3DDeviceType.LIDAR.name.lower()
 
 
 def test_usb_packet_stream_disconnect_stops_active_stream(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -192,12 +192,12 @@ def test_build_record3d_frame_details_falls_back_to_packet_timestamp() -> None:
         seq=0,
         timestamp_ns=2_000_000_000,
         arrival_timestamp_s=None,
-        metadata={"original_size": [960, 720]},
+        provenance=record3d_module.FramePacketProvenance(original_width=960, original_height=720),
     )
 
     assert build_record3d_frame_details(packet, source_label="USB device #1") == {
         "arrival_timestamp_s": 2.0,
         "source": "USB device #1",
         "original_size": [960, 720],
-        "metadata": {"original_size": [960, 720]},
+        "provenance": {"original_width": 960, "original_height": 720},
     }

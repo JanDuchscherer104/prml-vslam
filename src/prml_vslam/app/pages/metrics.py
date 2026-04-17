@@ -204,6 +204,10 @@ def _render_provenance(
     ]
     if evaluation is not None:
         lines += [
+            f"- Metric: `{evaluation.semantics.metric_id.value}`",
+            f"- Pose relation: `{evaluation.semantics.pose_relation}`",
+            f"- Alignment: `{evaluation.semantics.alignment_mode.value}`",
+            f"- Sync max diff (s): `{evaluation.semantics.sync_max_diff_s:.3f}`",
             f"- Matched pairs: `{evaluation.matched_pairs}`",
             f"- Persisted result: `{evaluation.path}`",
         ]

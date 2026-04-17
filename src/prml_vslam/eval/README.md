@@ -7,8 +7,14 @@ artifacts.
 
 - discover normalized run artifacts
 - resolve reference and estimate trajectories
-- run explicit `evo` APE trajectory evaluation
+- run explicit `evo` trajectory evaluation, currently centered on translation APE
 - persist and reload evaluation results
+
+Persisted trajectory results now carry explicit metric semantics such as metric
+id, pose relation, alignment mode, and sync tolerance. The current evaluator
+still computes translation APE only, but the contract now provides a typed
+place to extend into drift-oriented RPE work without redesigning the payload
+again.
 
 ## Boundary
 

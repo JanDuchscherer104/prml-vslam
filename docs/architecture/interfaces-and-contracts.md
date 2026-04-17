@@ -13,7 +13,7 @@ contract split after the offline/streaming refactor.
     `StreamingSequenceSource`, and `FramePacketStream`
 - `prml_vslam.pipeline`
   - run requests, plans, normalized sequence manifests, stage artifacts,
-    provenance, runner snapshots, and execution orchestration
+    provenance, runtime events, projected snapshots, and execution orchestration
 - `prml_vslam.methods`
   - method ids, backend-private config, output policy, runtime updates, and
     thin wrapper integration around external SLAM systems
@@ -25,16 +25,29 @@ contract split after the offline/streaming refactor.
 
 ## Pipeline Center
 
-The architectural center is an artifact-first pipeline with two execution
-strategies:
+The architectural center is an artifact-first pipeline with one public
+orchestration model and two stage-execution strategies:
 
-- offline: batch execution over a materialized `SequenceManifest`
-- streaming: incremental execution over `FramePacket` updates
+- batch/offline stage execution over a materialized `SequenceManifest`
+- streaming stage execution over incremental `FramePacket` updates
+
+The runtime truth is event-first:
+
+- `RunEvent`
+  - append-only semantic runtime record
+- `RunSnapshot`
+  - projection of those events
+- `PipelineBackend`
+  - execution substrate boundary consumed by CLI and Streamlit
+
+The default execution substrate is Ray, but Ray does not own the public
+contracts.
 
 The shared offline boundary stays `SequenceManifest`. Canonical scientific
 artifacts remain TUM trajectories, PLY clouds, manifests, and stage summaries.
 Normalized `.rrd` recordings are viewer/export artifacts, not the scientific
-source of truth.
+source of truth. Bulk arrays stay out of persisted/public contracts and move
+through repo-owned opaque handles instead.
 
 ## Pose And Transform Ownership
 
@@ -52,8 +65,6 @@ labels at package boundaries.
     containing canonical `rgb_dir` and sidecar metadata.
   - Method-specific preparation such as resizing, workspace layout, or native
     output import stays in `methods/vista`, not in shared ingest.
-  - The repository ships a canonical repo-owned `.rrd` exporter in
-    `prml_vslam.visualization.rerun` that captures poses, point clouds, and
-    preview images in a normalized format. Native upstream `.rrd` recordings
-    may still be preserved as additional visualization-owned artifacts.
-
+  - The repository ships repo-owned observer sinks for JSONL events and Rerun
+    output. Native upstream `.rrd` recordings may still be preserved as
+    additional visualization-owned artifacts.

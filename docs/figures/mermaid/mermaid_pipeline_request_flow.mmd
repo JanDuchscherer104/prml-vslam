@@ -12,28 +12,27 @@ flowchart TD
         plan["RunPlan"]
     end
 
-    subgraph launch["Launch and normalization"]
+    subgraph launch["Launch and coordination"]
         runsvc["RunService.start_run()"]
-        session["PipelineSessionService.start()"]
-        prep["prepare_sequence_manifest()"]
+        backend["RayPipelineBackend.submit_run()"]
+        coord["RunCoordinatorActor.start()"]
+        ingest["IngestStageActor.run()"]
         manifest["SequenceManifest"]
-        open["open_stream()"]
-        stream["FramePacketStream"]
-        start["start_session()"]
-        slam_session["SlamSession"]
+        source["PacketSourceActor.start_stream()"]
+        slam_start["StreamingSlamStageActor.start_stage()"]
     end
 
     subgraph hotpath["Streaming SLAM hot path"]
-        frame["FramePacket"]
-        step["SlamSession.step()"]
-        update["SlamUpdate"]
-        snapshot["Live snapshot and runtime metrics"]
+        frame["PacketObserved event"]
+        step["StreamingSlamStageActor.push_frame()"]
+        update["BackendNoticeReceived event"]
+        snapshot["Projected snapshot and runtime metrics"]
     end
 
     subgraph finalize["Finalization"]
-        close["close()"]
+        close["StreamingSlamStageActor.close_stage()"]
         artifacts["SlamArtifacts"]
-        summary["RunSummary and StageManifest[]"]
+        summary["SummaryStageActor -> RunSummary and StageManifest[]"]
     end
 
     user -->|"choose request"| surface
@@ -46,20 +45,19 @@ flowchart TD
     plan -->|"preview only"| preview
     plan -->|"bounded execution"| runsvc
 
-    runsvc --> session
-    session --> prep
-    prep --> manifest
-    session --> open
-    open --> stream
-    session --> start
-    start --> slam_session
+    runsvc --> backend
+    backend --> coord
+    coord --> ingest
+    ingest --> manifest
+    coord --> source
+    coord --> slam_start
 
-    stream -->|"for each packet"| frame
+    source -->|"for each packet"| frame
     frame --> step
     step --> update
     update --> snapshot
 
-    slam_session -->|"terminal close"| close
+    slam_start -->|"terminal close"| close
     close --> artifacts
     manifest --> summary
     artifacts --> summary

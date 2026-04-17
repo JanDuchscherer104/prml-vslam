@@ -46,7 +46,9 @@ Use this file for package-root ownership rules and cross-package contract constr
   - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend` and `SlamSession`
   - does not own pipeline planning or evaluation policy
 - `pipeline`
-  - owns orchestration, run contracts, artifact layout, stage planning, manifests, summaries, one SLAM-stage config and one SLAM artifact bundle per backend, and pipeline-owned session/runtime coordination
+  - owns orchestration, run contracts, artifact layout, stage planning, events,
+    projected snapshots, manifests, summaries, one SLAM-stage config and one
+    SLAM artifact bundle per backend, and pipeline-owned Ray coordination
   - does not own transport decoding, app rendering, or benchmark metrics logic
 - `plotting`
   - owns reusable figure construction helpers
@@ -75,6 +77,9 @@ Use this file for package-root ownership rules and cross-package contract constr
 - The app must stay a launch and monitoring surface rather than a second pipeline implementation.
 - The pipeline owns one SLAM-stage request and one SLAM artifact bundle per backend; backend-private config and output
   policy belong in `methods`.
+- The pipeline owns public runtime events, projected snapshots, stage registry
+  semantics, and backend placement policy; Ray-specific refs and mailboxes stay
+  backend-private.
 - External-method wrappers must stay thin and normalize into repo-owned pipeline artifacts instead of inventing parallel public result shapes.
 - Record3D live pipeline requests must use a transport-aware typed source contract instead of encoding USB or Wi-Fi details into ad hoc `source_id` strings alone.
 - `PathConfig` remains the single owner of repo-owned path semantics.

@@ -11,9 +11,11 @@ from typing import TYPE_CHECKING, Protocol
 
 import cv2
 import numpy as np
+import open3d as o3d
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
+from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.methods.updates import SlamUpdate
@@ -21,6 +23,7 @@ from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
+from prml_vslam.utils.video_frames import extract_video_frames
 
 from .config import VistaSlamBackendConfig
 
@@ -29,14 +32,6 @@ if TYPE_CHECKING:
 
 _VISTA_INPUT_RESOLUTION = (224, 224)
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
-
-
-def _import_open3d() -> object:
-    try:
-        import open3d as o3d
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("ViSTA point-cloud artifact import requires the optional Open3D dependency.") from exc
-    return o3d
 
 
 class _FlowTracker(Protocol):
@@ -290,6 +285,9 @@ class VistaSlamBackend(SlamBackend):
         self._vista_dir = self._path_config.resolve_repo_path(config.vista_slam_dir)
         self._checkpoint_path = self._path_config.resolve_repo_path(config.checkpoint_path)
         self._vocab_path = self._path_config.resolve_repo_path(config.vocab_path)
+        self._vocab_cache_path = self._path_config.resolve_repo_path(
+            Path(".artifacts/cache/vista") / f"{self._vocab_path.stem}.dbow3.bin"
+        )
 
     def start_session(
         self,
@@ -297,29 +295,12 @@ class VistaSlamBackend(SlamBackend):
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamSession:
-        """Load upstream OnlineSLAM and return a ready multiprocess streaming session."""
-        from prml_vslam.methods.multiprocess import MultiprocessSlamSession  # noqa: PLC0415
-
-        factory = self.streaming_session_factory(backend_config, output_policy, artifact_root)
-        session = MultiprocessSlamSession(
-            session_factory=factory,
-            console=self._console,
-        )
-        self._console.info("OnlineSLAM worker process launched; session ready.")
-        return session
-
-    def streaming_session_factory(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> _VistaSessionFactory:
-        """Return a picklable streaming session factory for process-backed pipeline execution."""
+        """Load upstream OnlineSLAM and return a ready in-process session."""
         del backend_config
-        return _VistaSessionFactory(
-            config=self._cfg,
+        return self._build_session(
             output_policy=output_policy,
             artifact_root=artifact_root,
+            live_mode=True,
         )
 
     def run_sequence(
@@ -386,39 +367,46 @@ class VistaSlamBackend(SlamBackend):
         self._inject_sys_path()
         self._preload_dbow3_shared_library()
 
-        try:
-            import torch  # noqa: PLC0415
-            from vista_slam.datasets.slam_images_only import SLAM_image_only  # noqa: PLC0415
-            from vista_slam.flow_tracker import FlowTracker  # noqa: PLC0415
-            from vista_slam.slam import OnlineSLAM  # noqa: PLC0415
-        except Exception as exc:  # pragma: no cover - environment-dependent runtime guard
-            raise RuntimeError(
-                "Failed to import ViSTA-SLAM runtime dependencies. "
-                "Verify the active environment satisfies external/vista-slam requirements "
-                "(torch/xformers/CUDA stack and ViSTA python deps)."
-            ) from exc
+        import DBoW3Py as dbow  # noqa: PLC0415
+        import torch  # noqa: PLC0415
+        from vista_slam.datasets.slam_images_only import SLAM_image_only  # noqa: PLC0415
+        from vista_slam.flow_tracker import FlowTracker  # noqa: PLC0415
+        from vista_slam.slam import OnlineSLAM, STA  # noqa: PLC0415
 
-        torch.manual_seed(self._cfg.slam.random_seed)
+        torch.manual_seed(self._cfg.random_seed)
+        vocab_path = self._resolve_vocab_path(dbow)
         if live_mode:
             self._console.info(
                 "Forcing upstream live defaults: max_view_num=1000, neighbor_edge_num=2, loop_edge_num=2, pgo_every=50."
             )
-        slam = OnlineSLAM(
+
+        class _FastOnlineSLAM(OnlineSLAM):
+            def load_frontend(self, ckpt_path: str):  # type: ignore[override]
+                with torch.device("meta"):
+                    frontend = STA()
+                checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=True, mmap=True)
+                frontend.load_state_dict(checkpoint["model"], strict=True, assign=True)
+                del checkpoint
+                frontend.to(self.device)
+                frontend.eval()
+                return frontend
+
+        slam = _FastOnlineSLAM(
             ckpt_path=str(self._checkpoint_path),
-            vocab_path=str(self._vocab_path),
-            max_view_num=1000 if live_mode else self._cfg.slam.max_view_num,
-            neighbor_edge_num=2 if live_mode else self._cfg.slam.neighbor_edge_num,
-            loop_edge_num=2 if live_mode else self._cfg.slam.loop_edge_num,
-            loop_dist_min=self._cfg.slam.loop_dist_min,
-            loop_nms=self._cfg.slam.loop_nms,
-            loop_cand_thresh_neighbor=self._cfg.slam.loop_cand_thresh_neighbor,
-            conf_thres=self._cfg.slam.point_conf_thres,
-            rel_pose_thres=self._cfg.slam.rel_pose_thres,
-            flow_thres=self._cfg.slam.flow_thres,
-            pgo_every=50 if live_mode else self._cfg.slam.pgo_every,
+            vocab_path=str(vocab_path),
+            max_view_num=1000 if live_mode else self._cfg.max_view_num,
+            neighbor_edge_num=2 if live_mode else self._cfg.neighbor_edge_num,
+            loop_edge_num=2 if live_mode else self._cfg.loop_edge_num,
+            loop_dist_min=self._cfg.loop_dist_min,
+            loop_nms=self._cfg.loop_nms,
+            loop_cand_thresh_neighbor=self._cfg.loop_cand_thresh_neighbor,
+            conf_thres=self._cfg.point_conf_thres,
+            rel_pose_thres=self._cfg.rel_pose_thres,
+            flow_thres=self._cfg.flow_thres,
+            pgo_every=50 if live_mode else self._cfg.pgo_every,
             live_mode=live_mode,
         )
-        flow_tracker = FlowTracker(self._cfg.slam.flow_thres)
+        flow_tracker = FlowTracker(self._cfg.flow_thres)
         frame_preprocessor = _UpstreamVistaFramePreprocessor(
             image_dataset=SLAM_image_only([], resolution=_VISTA_INPUT_RESOLUTION)
         )
@@ -430,6 +418,23 @@ class VistaSlamBackend(SlamBackend):
             output_policy=output_policy,
             console=self._console,
         )
+
+    def _resolve_vocab_path(self, dbow: object) -> Path:
+        if self._vocab_path.suffix != ".txt":
+            return self._vocab_path
+        if self._vocab_cache_path.exists():
+            return self._vocab_cache_path
+        self._console.info(
+            "Building binary DBoW3 vocabulary cache at '%s'. This is a one-time startup cost.",
+            self._vocab_cache_path,
+        )
+        vocabulary = dbow.Vocabulary()
+        vocabulary.load(str(self._vocab_path))
+        self._vocab_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self._vocab_cache_path.with_suffix(f"{self._vocab_cache_path.suffix}.tmp")
+        vocabulary.save(str(tmp_path), True)
+        tmp_path.replace(self._vocab_cache_path)
+        return self._vocab_cache_path
 
     def _preload_dbow3_shared_library(self) -> None:
         """Load the bundled DBoW3 shared library before importing DBoW3Py."""
@@ -465,35 +470,15 @@ class VistaSlamBackend(SlamBackend):
                 "SequenceManifest has no usable frame source: set `rgb_dir` or provide an existing `video_path`."
             )
         frames_dir = RunArtifactPaths.build(artifact_root).input_frames_dir
-        return self._extract_video_frames(sequence.video_path, frames_dir, backend_config.max_frames)
-
-    def _extract_video_frames(self, video_path: Path, output_dir: Path, max_frames: int | None) -> Path:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        existing_frames = sorted(output_dir.glob("*.png"))
-        if existing_frames and (max_frames is None or len(existing_frames) >= max_frames):
-            self._console.info("Reusing %d pre-extracted frames in '%s'.", len(existing_frames), output_dir)
-            return output_dir
-
-        for stale_frame in output_dir.glob("*.png"):
-            stale_frame.unlink()
-
-        capture = cv2.VideoCapture(str(video_path))
-        if not capture.isOpened():
-            raise RuntimeError(f"OpenCV could not open video '{video_path}'.")
-        written = 0
-        self._console.info("Extracting frames from '%s' …", video_path)
-        while True:
-            ok, frame = capture.read()
-            if not ok:
-                break
-            if max_frames is not None and written >= max_frames:
-                break
-            if not cv2.imwrite(str(output_dir / f"{written:06d}.png"), frame):
-                raise RuntimeError(f"Failed to write extracted frame #{written} to '{output_dir}'.")
-            written += 1
-        capture.release()
-        self._console.info("Extracted %d frames to '%s'.", written, output_dir)
-        return output_dir.resolve()
+        self._console.info("Extracting frames from '%s' …", sequence.video_path)
+        extracted = extract_video_frames(
+            video_path=sequence.video_path,
+            output_dir=frames_dir,
+            max_frames=backend_config.max_frames,
+            clear_output=True,
+        )
+        self._console.info("Extracted %d frames to '%s'.", len(extracted.timestamps_ns), frames_dir)
+        return extracted.rgb_dir
 
 
 def _build_artifacts(
@@ -515,7 +500,6 @@ def _build_artifacts(
     dense_points_ref: ArtifactRef | None = None
     pointcloud_ply = native_output_dir / "pointcloud.ply"
     if pointcloud_ply.exists() and (output_policy.emit_sparse_points or output_policy.emit_dense_points):
-        o3d = _import_open3d()
         point_cloud = o3d.io.read_point_cloud(str(pointcloud_ply))
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
         run_paths = RunArtifactPaths.build(artifact_root)
@@ -577,30 +561,11 @@ def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:
     if not np.allclose(matrix_array[3], np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64), atol=1e-6):
         raise ValueError("ViSTA pose matrices must have a final row of [0, 0, 0, 1].")
     normalized = matrix_array.copy()
-    normalized[:3, :3] = _project_rotation_to_so3(normalized[:3, :3])
+    normalized[:3, :3] = project_rotation_to_so3(
+        normalized[:3, :3],
+        max_frobenius_error=_VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR,
+    )
     return FrameTransform.from_matrix(normalized)
-
-
-# TODO: this is a generic helper that should not be defined here!
-def _project_rotation_to_so3(rotation: np.ndarray) -> np.ndarray:
-    """Project one near-rotation matrix to the closest valid SO(3) matrix."""
-    rotation_array = np.asarray(rotation, dtype=np.float64)
-    if rotation_array.shape != (3, 3):
-        raise ValueError(f"Expected a 3x3 rotation matrix, got shape {rotation_array.shape}.")
-    if not np.all(np.isfinite(rotation_array)):
-        raise ValueError("ViSTA rotation matrices must contain only finite values.")
-    u, _, vh = np.linalg.svd(rotation_array)
-    projected = u @ vh
-    if np.linalg.det(projected) < 0.0:
-        u[:, -1] *= -1.0
-        projected = u @ vh
-    projection_error = np.linalg.norm(rotation_array - projected, ord="fro")
-    if not np.isfinite(projection_error) or projection_error > _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR:
-        raise ValueError(
-            "ViSTA emitted a rotation matrix that is too far from SO(3) to normalize safely. "
-            f"Frobenius error: {projection_error:.6f}."
-        )
-    return projected
 
 
 def _count_valid_pointmap_points(pointmap: np.ndarray | None) -> int:
@@ -609,31 +574,6 @@ def _count_valid_pointmap_points(pointmap: np.ndarray | None) -> int:
         return 0
     depth = np.asarray(pointmap[..., 2], dtype=np.float32)
     return int(np.count_nonzero(np.isfinite(depth) & (depth > 0.0)))
-
-
-class _VistaSessionFactory:
-    """Pickleable factory for ViSTA-SLAM sessions used by multiprocessing."""
-
-    def __init__(
-        self,
-        config: VistaSlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> None:
-        self.config = config
-        self.output_policy = output_policy
-        self.artifact_root = artifact_root
-
-    def __call__(self) -> VistaSlamSession:
-        # Re-instantiate the backend logic in the child process.
-        from .adapter import VistaSlamBackend  # noqa: PLC0415
-
-        backend = VistaSlamBackend(config=self.config)
-        return backend._build_session(
-            artifact_root=self.artifact_root,
-            output_policy=self.output_policy,
-            live_mode=True,
-        )
 
 
 __all__ = ["VistaSlamBackend", "VistaSlamSession"]

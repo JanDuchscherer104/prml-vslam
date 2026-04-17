@@ -1,0 +1,37 @@
+"""Repo-owned placement policy translation for the Ray backend."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.pipeline.contracts.request import RunRequest
+from prml_vslam.pipeline.contracts.stages import StageKey
+
+
+def actor_options_for_stage(
+    *,
+    stage_key: StageKey | str,
+    request: RunRequest,
+    backend: BackendDescriptor,
+    default_num_cpus: float = 1.0,
+    default_num_gpus: float = 0.0,
+    restartable: bool = False,
+    inherit_backend_defaults: bool = False,
+) -> dict[str, Any]:
+    """Translate one repo-owned placement policy into Ray actor options."""
+    placement_key = stage_key.value if isinstance(stage_key, StageKey) else stage_key
+    placement = request.placement.by_stage.get(placement_key)
+    resources = dict(backend.default_resources) if inherit_backend_defaults else {}
+    if placement is not None:
+        resources.update(placement.resources)
+    return {
+        "num_cpus": float(resources.pop("CPU", default_num_cpus)),
+        "num_gpus": float(resources.pop("GPU", default_num_gpus)),
+        "resources": resources or None,
+        "max_restarts": -1 if restartable else 0,
+        "max_task_retries": 1 if restartable else 0,
+    }
+
+
+__all__ = ["actor_options_for_stage"]

@@ -25,6 +25,9 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
   - App-specific Streamlit rules: `src/prml_vslam/app/AGENTS.md`
   - Documentation and Typst rules: `docs/AGENTS.md`
 - Stay within the requested task scope. Do not implement adjacent features or speculative improvements without explicit approval.
+- Prefer direct, version-targeted API usage over compatibility shims.
+  - Do not add `getattr`/`hasattr`/similar reflective fallbacks for known attributes when the repository already pins or otherwise targets a concrete external API version.
+  - Before adding any workaround for an external dependency, check the exact version used by the repo and implement against that version directly unless the task explicitly requires multi-version support.
 - Use conventional commits with concise, focused messages. Split larger changes into multiple logical commits when appropriate.
 - Before creating a commit, run `make ci`.
 - Do not use destructive git commands unless explicitly requested. This includes `git restore`, `git reset --hard`, and similar commands.

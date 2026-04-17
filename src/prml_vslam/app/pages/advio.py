@@ -314,7 +314,7 @@ def _render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:
 
 def _preview_metrics(snapshot: AdvioPreviewSnapshot) -> tuple[LiveMetric, ...]:
     packet = snapshot.latest_packet
-    loop_index = 0 if packet is None else int(packet.metadata.get("loop_index", 0))
+    loop_index = 0 if packet is None else int(packet.provenance.loop_index)
     return (
         ("Status", snapshot.state.value.upper()),
         ("Received Frames", str(snapshot.received_frames)),
@@ -370,9 +370,9 @@ def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: FramePacket) 
         "pose_source": None if snapshot.pose_source is None else snapshot.pose_source.value,
         "frame_index": packet.seq,
         "timestamp_ns": packet.timestamp_ns,
-        "source_frame_index": packet.metadata.get("source_frame_index"),
-        "loop_index": packet.metadata.get("loop_index", 0),
-        "video_rotation_degrees": packet.metadata.get("video_rotation_degrees", 0),
+        "source_frame_index": packet.provenance.source_frame_index,
+        "loop_index": packet.provenance.loop_index,
+        "video_rotation_degrees": packet.provenance.video_rotation_degrees,
         "pose": pose,
-        "metadata": packet.metadata,
+        "provenance": packet.provenance.compact_payload(),
     }

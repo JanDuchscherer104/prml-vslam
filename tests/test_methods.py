@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pickle
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,9 +12,8 @@ import pytest
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.protocols import ProcessStreamingSlamBackend
 from prml_vslam.pipeline import SequenceManifest
-from prml_vslam.utils import Console
+from prml_vslam.utils import Console, PathConfig
 
 
 def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -142,20 +140,76 @@ def test_methods_package_exports_vista_backend_surfaces() -> None:
     assert VistaSlamBackend is not None
 
 
-def test_vista_backend_exposes_picklable_streaming_session_factory(tmp_path: Path) -> None:
+def test_vista_backend_starts_direct_streaming_session(tmp_path: Path) -> None:
     backend = VistaSlamBackendConfig().setup_target()
     assert backend is not None
+    backend._build_session = lambda **_: SimpleNamespace(  # type: ignore[method-assign]
+        step=lambda *_args, **_kwargs: None,
+        try_get_updates=lambda: [],
+        close=lambda: None,
+    )
 
-    factory = backend.streaming_session_factory(
+    session = backend.start_session(
         SlamBackendConfig(),
         SlamOutputPolicy(),
         tmp_path / "vista-stream",
     )
 
-    assert isinstance(backend, ProcessStreamingSlamBackend)
-    assert callable(factory)
-    pickle.dumps(factory)
-    assert VistaSlamBackendConfig is not None
+    assert callable(session.step)
+    assert callable(session.try_get_updates)
+    assert callable(session.close)
+
+
+def test_vista_backend_builds_binary_vocab_cache_once(tmp_path: Path) -> None:
+    pretrains_dir = tmp_path / "external" / "vista-slam" / "pretrains"
+    pretrains_dir.mkdir(parents=True)
+    vocab_path = pretrains_dir / "ORBvoc.txt"
+    vocab_path.write_text("stub vocab")
+
+    backend = VistaSlamBackend(
+        VistaSlamBackendConfig(vocab_path=Path("external/vista-slam/pretrains/ORBvoc.txt")),
+        path_config=PathConfig(root=tmp_path),
+    )
+    calls: list[tuple[str, object]] = []
+
+    class FakeVocabulary:
+        def load(self, path: str) -> None:
+            calls.append(("load", path))
+
+        def save(self, path: str, binary_compressed: bool = True) -> None:
+            calls.append(("save", path, binary_compressed))
+            Path(path).write_text("binary vocab")
+
+    cache_path = backend._resolve_vocab_path(SimpleNamespace(Vocabulary=FakeVocabulary))
+
+    assert cache_path == tmp_path / ".artifacts" / "cache" / "vista" / "ORBvoc.dbow3.bin"
+    assert cache_path.read_text() == "binary vocab"
+    assert calls == [
+        ("load", str(vocab_path)),
+        ("save", str(cache_path.with_suffix(".bin.tmp")), True),
+    ]
+
+
+def test_vista_backend_reuses_existing_binary_vocab_cache(tmp_path: Path) -> None:
+    pretrains_dir = tmp_path / "external" / "vista-slam" / "pretrains"
+    pretrains_dir.mkdir(parents=True)
+    (pretrains_dir / "ORBvoc.txt").write_text("stub vocab")
+    cache_path = tmp_path / ".artifacts" / "cache" / "vista" / "ORBvoc.dbow3.bin"
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_text("cached")
+
+    backend = VistaSlamBackend(
+        VistaSlamBackendConfig(vocab_path=Path("external/vista-slam/pretrains/ORBvoc.txt")),
+        path_config=PathConfig(root=tmp_path),
+    )
+
+    class ExplodingVocabulary:
+        def __init__(self) -> None:
+            raise AssertionError("existing vocab cache should prevent DBoW3 vocabulary rebuild")
+
+    resolved = backend._resolve_vocab_path(SimpleNamespace(Vocabulary=ExplodingVocabulary))
+
+    assert resolved == cache_path
 
 
 def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(

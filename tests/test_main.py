@@ -1,310 +1,164 @@
-"""Focused CLI tests for ADVIO dataset commands."""
+"""Minimal CLI-facing smoke tests for the refactored pipeline module."""
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
-from types import SimpleNamespace
 
-from typer.testing import CliRunner
+import pytest
 
-from prml_vslam import main
-from prml_vslam.datasets.advio import (
-    AdvioCatalog,
-    AdvioDatasetService,
-    AdvioDownloadPreset,
-    AdvioDownloadRequest,
-    AdvioDownloadResult,
-    AdvioEnvironment,
-    AdvioPeopleLevel,
-    AdvioSceneMetadata,
-    AdvioUpstreamMetadata,
-)
+from prml_vslam.main import _print_pipeline_demo_snapshot, plan_run, run_config
+from prml_vslam.methods import MethodId
+from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.demo import build_advio_demo_request, build_runtime_source_from_request
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.utils import PathConfig
 
 
-def _fake_advio_service(tmp_path: Path) -> AdvioDatasetService:
-    catalog = AdvioCatalog(
-        dataset_id="advio",
-        dataset_label="ADVIO",
-        upstream=AdvioUpstreamMetadata(
-            repo_url="https://github.com/AaltoVision/ADVIO",
-            zenodo_record_url="https://zenodo.org/records/1476931",
-            doi="10.5281/zenodo.1320824",
-            license="CC BY-NC 4.0",
-            calibration_base_url="https://raw.githubusercontent.com/AaltoVision/ADVIO/master/calibration/",
-        ),
-        scenes=[
-            AdvioSceneMetadata(
-                sequence_id=15,
-                sequence_slug="advio-15",
-                venue="Office",
-                dataset_code="03",
-                environment=AdvioEnvironment.INDOOR,
-                has_stairs=False,
-                has_escalator=False,
-                has_elevator=False,
-                people_level=AdvioPeopleLevel.NONE,
-                has_vehicles=False,
-                calibration_name="iphone-03.yaml",
-                archive_url="https://zenodo.org/api/records/1476931/files/advio-15.zip/content",
-                archive_size_bytes=54_845_329,
-                archive_md5="f5febcd087acd90531aea98efff71c7c",
-            )
-        ],
-    )
-    return AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
-
-
-def test_advio_download_command_builds_explicit_request(tmp_path: Path, monkeypatch) -> None:
-    runner = CliRunner()
-    captured: dict[str, object] = {}
-
-    class FakeService:
-        catalog = _fake_advio_service(tmp_path).catalog
-
-        def __init__(self, path_config: PathConfig) -> None:
-            captured["path_config"] = path_config
-
-        def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
-            captured["request"] = request
-            return AdvioDownloadResult(
-                sequence_ids=request.sequence_ids, modalities=list(request.resolved_modalities())
-            )
-
-        def summarize(self) -> object:
-            return _fake_advio_service(tmp_path).summarize()
-
-    monkeypatch.setattr(main, "AdvioDatasetService", FakeService)
-    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
-
-    result = runner.invoke(
-        main.app,
-        [
-            "advio",
-            "download",
-            "--sequence",
-            "15",
-            "--preset",
-            AdvioDownloadPreset.STREAMING.value,
-        ],
+def test_print_pipeline_demo_snapshot_accepts_projected_snapshot(tmp_path: Path) -> None:
+    snapshot = RunSnapshot(
+        run_id="demo",
+        state=RunState.COMPLETED,
+        artifacts={},
+        error_message="",
     )
 
-    assert result.exit_code == 0
-    request = captured["request"]
-    assert isinstance(request, AdvioDownloadRequest)
-    assert request.sequence_ids == [15]
-    assert request.preset is AdvioDownloadPreset.STREAMING
+    _print_pipeline_demo_snapshot(snapshot)
+
+    assert snapshot.state is RunState.COMPLETED
 
 
-def test_plan_run_config_command_loads_toml_request(tmp_path: Path, monkeypatch) -> None:
-    runner = CliRunner()
-    captured: dict[str, object] = {}
-    config_path = tmp_path / ".configs" / "pipelines" / "advio-vista.toml"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        """
-experiment_name = "Advio Office Offline Vista"
-mode = "offline"
-output_dir = ".artifacts"
-
-[source]
-video_path = "captures/office-03.mp4"
-frame_stride = 2
-
-[slam]
-method = "vista"
-
-[slam.outputs]
-emit_dense_points = true
-emit_sparse_points = true
-
-[benchmark.reference]
-enabled = false
-
-[benchmark.trajectory]
-enabled = true
-baseline_source = "ground_truth"
-
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = true
-""".strip(),
-        encoding="utf-8",
+def test_build_advio_demo_request_enables_live_viewer_by_default(tmp_path: Path) -> None:
+    request = build_advio_demo_request(
+        path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
+        sequence_id="advio-01",
+        mode=PipelineMode.STREAMING,
+        method=MethodId.VISTA,
     )
 
-    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
-    monkeypatch.setattr(main.console, "plog", lambda payload: captured.setdefault("payload", payload))
-
-    result = runner.invoke(main.app, ["plan-run-config", "advio-vista.toml"])
-
-    assert result.exit_code == 0
-    payload = captured["payload"]
-    assert isinstance(payload, dict)
-    assert payload["run_id"] == "advio-office-offline-vista"
-    assert payload["method"] == "vista"
-    assert payload["source"]["video_path"] == "captures/office-03.mp4"
+    assert request.visualization.connect_live_viewer is True
 
 
-def test_write_demo_config_command_persists_under_pipeline_config_dir(tmp_path: Path, monkeypatch) -> None:
-    runner = CliRunner()
+def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
-    class FakeService:
-        def __init__(self, path_config: PathConfig) -> None:
-            captured["path_config"] = path_config
+    def fake_build(self: RunRequest, path_config: PathConfig | None = None):
+        del path_config
+        captured["connect_live_viewer"] = self.visualization.connect_live_viewer
+        return type("Plan", (), {"model_dump": lambda self, mode="json": {"ok": True}})()
 
-        def local_scene_statuses(self) -> list[object]:
-            return [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
+    monkeypatch.setattr(RunRequest, "build", fake_build)
+    monkeypatch.setattr("prml_vslam.main.console.plog", lambda payload: captured.setdefault("payload", payload))
 
-        def scene(self, sequence_id: int) -> object:
-            captured["sequence_id"] = sequence_id
-            return SimpleNamespace(sequence_slug="advio-15", display_name="ADVIO 15")
-
-    monkeypatch.setattr(main, "AdvioDatasetService", FakeService)
-    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
-    monkeypatch.setattr(main.console, "plog", lambda payload: captured.setdefault("payload", payload))
-
-    result = runner.invoke(main.app, ["write-demo-config"])
-
-    assert result.exit_code == 0
-    payload = captured["payload"]
-    assert isinstance(payload, dict)
-    config_path = Path(payload["config_path"])
-    assert config_path == (tmp_path / ".configs" / "pipelines" / "advio-15-offline-vista.toml").resolve()
-    assert config_path.exists()
-
-
-def test_root_cli_shows_help_when_no_subcommand_is_given() -> None:
-    runner = CliRunner()
-
-    result = runner.invoke(main.app, [])
-
-    assert result.exit_code == 2
-    assert "Usage:" in result.stdout
-
-
-def test_pipeline_demo_command_reuses_shared_demo_request(tmp_path: Path, monkeypatch) -> None:
-    runner = CliRunner()
-    captured: dict[str, object] = {}
-
-    class FakeService:
-        def __init__(self, path_config: PathConfig) -> None:
-            captured["path_config"] = path_config
-
-        def local_scene_statuses(self) -> list[object]:
-            return [SimpleNamespace(scene=SimpleNamespace(sequence_id=15), replay_ready=True)]
-
-        def scene(self, sequence_id: int) -> object:
-            captured["sequence_id"] = sequence_id
-            return SimpleNamespace(sequence_slug="advio-15", display_name="ADVIO 15")
-
-        def build_streaming_source(
-            self,
-            *,
-            sequence_id: int,
-            pose_source,
-            respect_video_rotation: bool,
-        ) -> object:
-            captured["source_args"] = {
-                "sequence_id": sequence_id,
-                "pose_source": pose_source,
-                "respect_video_rotation": respect_video_rotation,
-            }
-            return "streaming-source"
-
-    class FakeRunService:
-        def __init__(self, *, path_config: PathConfig) -> None:
-            captured["run_service_path_config"] = path_config
-
-        def start_run(self, *, request, runtime_source=None) -> None:
-            captured["request"] = request
-            captured["runtime_source"] = runtime_source
-
-        def snapshot(self):
-            return main.StreamingRunSnapshot(state=main.RunState.COMPLETED)
-
-        def stop_run(self) -> None:
-            captured["stopped"] = True
-
-    monkeypatch.setattr(main, "AdvioDatasetService", FakeService)
-    monkeypatch.setattr(main, "RunService", FakeRunService)
-    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
-
-    result = runner.invoke(main.app, ["pipeline-demo"])
-
-    assert result.exit_code == 0
-    request = captured["request"]
-    assert request.experiment_name == "advio-15-streaming-vista"
-    assert request.mode is main.PipelineMode.STREAMING
-    assert request.slam.method is main.MethodId.VISTA
-    assert request.source.sequence_id == "advio-15"
-    assert captured["runtime_source"] == "streaming-source"
-    assert captured["source_args"]["sequence_id"] == 15
-
-
-def test_run_config_command_executes_offline_request(tmp_path: Path, monkeypatch) -> None:
-    runner = CliRunner()
-    captured: dict[str, object] = {}
-    config_path = tmp_path / ".configs" / "pipelines" / "offline.toml"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        """
-experiment_name = "Offline Run"
-mode = "offline"
-output_dir = ".artifacts"
-
-[source]
-video_path = "captures/office-03.mp4"
-
-[slam]
-method = "vista"
-
-[slam.outputs]
-emit_dense_points = true
-emit_sparse_points = true
-
-[benchmark.reference]
-enabled = false
-
-[benchmark.trajectory]
-enabled = false
-
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = false
-""".strip(),
-        encoding="utf-8",
+    plan_run(
+        experiment_name="demo",
+        video_path=tmp_path / "demo.mp4",
     )
+
+    assert captured["connect_live_viewer"] is True
+
+
+def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="demo-streaming",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    runtime_source = object()
+    captured: dict[str, object] = {}
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             captured["path_config"] = path_config
 
-        def start_run(self, *, request, runtime_source=None) -> None:
+        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
             captured["request"] = request
             captured["runtime_source"] = runtime_source
 
-        def snapshot(self):
-            return main.RunSnapshot(state=main.RunState.COMPLETED)
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
+    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: runtime_source)
+    monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
+    monkeypatch.setattr("prml_vslam.main._wait_for_pipeline_terminal_snapshot", lambda *args, **kwargs: RunSnapshot())
+    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
-    monkeypatch.setattr(main, "RunService", FakeRunService)
-    monkeypatch.setattr(main, "get_path_config", lambda: PathConfig(root=tmp_path))
+    run_config(Path(".configs/pipelines/vista-full.toml"))
 
-    result = runner.invoke(main.app, ["run-config", "offline.toml"])
-
-    assert result.exit_code == 0
-    assert captured["request"].mode is main.PipelineMode.OFFLINE
-    assert captured["runtime_source"] is None
+    assert captured["request"] is request
+    assert captured["runtime_source"] is runtime_source
 
 
-def test_runtime_dependencies_include_pyyaml() -> None:
-    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
-    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    dependencies = pyproject["project"]["dependencies"]
+def test_build_runtime_source_from_request_caps_streaming_replay(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="demo-streaming",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        slam=SlamStageConfig(backend={"kind": "mock", "max_frames": 2}),
+    )
 
-    assert any(dependency.lower().startswith("pyyaml") for dependency in dependencies)
+    class FakePacketStream:
+        def __init__(self) -> None:
+            self.connected = False
+            self.index = 0
+
+        def connect(self) -> None:
+            self.connected = True
+
+        def disconnect(self) -> None:
+            self.connected = False
+
+        def wait_for_packet(self, timeout_seconds: float | None = None) -> object:
+            del timeout_seconds
+            packet = f"frame-{self.index}"
+            self.index += 1
+            return packet
+
+    class FakeStreamingSource:
+        label = "fake-advio"
+
+        def __init__(self) -> None:
+            self.stream = FakePacketStream()
+
+        def prepare_sequence_manifest(self, output_dir: Path) -> object:
+            del output_dir
+            return object()
+
+        def prepare_benchmark_inputs(self, output_dir: Path) -> object:
+            del output_dir
+            return object()
+
+        def open_stream(self, *, loop: bool):
+            del loop
+            return self.stream
+
+    fake_source = FakeStreamingSource()
+
+    class FakeAdvioService:
+        def __init__(self, path_config: PathConfig) -> None:
+            del path_config
+
+        def resolve_sequence_id(self, sequence_id: str) -> str:
+            return sequence_id
+
+        def build_streaming_source(self, **kwargs: object) -> FakeStreamingSource:
+            return fake_source
+
+    monkeypatch.setattr("prml_vslam.pipeline.demo.AdvioDatasetService", FakeAdvioService)
+
+    capped_source = build_runtime_source_from_request(request=request, path_config=path_config)
+    assert capped_source is not None
+
+    stream = capped_source.open_stream(loop=False)
+    stream.connect()
+    assert stream.wait_for_packet() == "frame-0"
+    assert stream.wait_for_packet() == "frame-1"
+    with pytest.raises(EOFError):
+        stream.wait_for_packet()

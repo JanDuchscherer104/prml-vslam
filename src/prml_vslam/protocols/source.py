@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 from .runtime import FramePacketStream
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 
 @runtime_checkable

@@ -13,7 +13,7 @@ from .base_config import BaseConfig
 from .base_data import BaseData
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+    from prml_vslam.pipeline.contracts.stages import StageKey
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
@@ -111,11 +111,11 @@ class RunArtifactPaths(BaseData):
         """Return the path to the repo-owned viewer recording."""
         return (self.artifact_root / "visualization" / "viewer_recording.rrd").resolve()
 
-    def stage_manifest_path(self, stage_id: str | RunPlanStageId) -> Path:
+    def stage_manifest_path(self, stage_id: str | StageKey) -> Path:
         """Return the canonical path to one stage manifest."""
-        from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+        from prml_vslam.pipeline.contracts.stages import StageKey
 
-        stage_slug = stage_id.value if isinstance(stage_id, RunPlanStageId) else str(stage_id)
+        stage_slug = stage_id.value if isinstance(stage_id, StageKey) else str(stage_id)
         return (self.artifact_root / stage_slug / "stage_manifest.json").resolve()
 
 

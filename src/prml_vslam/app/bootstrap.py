@@ -12,8 +12,8 @@ import streamlit as st
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.eval import TrajectoryEvaluationService
+from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.state import RunState
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState
@@ -114,14 +114,13 @@ def _load_page_module(page_module: str) -> ModuleType:
 
 def _enter_page(context: AppContext, page_id: AppPageId) -> None:
     state_changed = False
-    for active_page_id, runtime, page_state, field_name in (
-        (AppPageId.RECORD3D, context.record3d_runtime, context.state.record3d, "is_running"),
-        (AppPageId.ADVIO, context.advio_runtime, context.state.advio, "preview_is_running"),
-    ):
-        if page_id is active_page_id or not getattr(page_state, field_name):
-            continue
-        runtime.stop()
-        setattr(page_state, field_name, False)
+    if page_id is not AppPageId.RECORD3D and context.state.record3d.is_running:
+        context.record3d_runtime.stop()
+        context.state.record3d.is_running = False
+        state_changed = True
+    if page_id is not AppPageId.ADVIO and context.state.advio.preview_is_running:
+        context.advio_runtime.stop()
+        context.state.advio.preview_is_running = False
         state_changed = True
     if state_changed:
         context.store.save(context.state)

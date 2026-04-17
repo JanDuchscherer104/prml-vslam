@@ -21,9 +21,10 @@ sequenceDiagram
 
     box rgb(255, 244, 229) Pipeline runtime
         participant Runtime as pipeline.run_service<br/>RunService
-        participant Session as pipeline.session<br/>PipelineSessionService
-        participant Source as protocols.source<br/>StreamingSequenceSource<br/>and FramePacketStream
-        participant Slam as methods.protocols<br/>StreamingSlamBackend<br/>and SlamSession
+        participant Backend as pipeline.backend_ray<br/>RayPipelineBackend
+        participant Coord as pipeline.ray_runtime.coordinator<br/>RunCoordinatorActor
+        participant Source as pipeline.ray_runtime.stage_actors<br/>PacketSourceActor
+        participant Slam as pipeline.ray_runtime.stage_actors<br/>StreamingSlamStageActor
     end
 
     User->>Surface: choose request
@@ -38,20 +39,17 @@ sequenceDiagram
         Surface->>Runtime: start_run(request, source)
         Runtime->>Planner: build_run_plan(request)
         Planner-->>Runtime: plan: RunPlan
-        Runtime->>Session: start(request, plan, source, slam_backend)
-        Session->>Source: prepare_sequence_manifest(output_dir)
-        Source-->>Session: sequence: SequenceManifest
-        Session->>Source: open_stream(loop)
-        Source-->>Session: stream ready
-        Session->>Slam: start_session(cfg, artifact_root)
-        Slam-->>Session: slam session ready
+        Runtime->>Backend: submit_run(request, source)
+        Backend->>Coord: start(request, plan, source)
+        Coord->>Source: start_stream(source, credits)
+        Coord->>Slam: start_stage(request, plan)
         loop each packet
-            Source-->>Session: frame: FramePacket
-            Session->>Slam: step(frame)
-            Slam-->>Session: update: SlamUpdate
+            Source-->>Coord: packet observed
+            Coord->>Slam: push_frame(...)
+            Slam-->>Coord: backend notices
         end
-        Session->>Slam: close()
-        Slam-->>Session: slam: SlamArtifacts
-        Session-->>Surface: summary: RunSummary + StageManifest[]
+        Coord->>Slam: close_stage()
+        Slam-->>Coord: slam: SlamArtifacts
+        Runtime-->>Surface: summary: RunSummary + StageManifest[]
         Surface-->>User: inspect artifacts and summary
     end
