@@ -41,7 +41,6 @@ def default_rerun_modalities() -> list[RerunModality]:
         RerunModality.CAMERA_POSE,
         RerunModality.CAMERA_INTRINSICS,
         RerunModality.KEYFRAME_RGB,
-        RerunModality.KEYFRAME_DEPTH,
         RerunModality.POINTMAPS,
         RerunModality.DIAGNOSTIC_PREVIEW,
     ]

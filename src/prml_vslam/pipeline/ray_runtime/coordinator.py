@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import threading
 from collections import deque
 from typing import Any, TypeAlias
@@ -28,6 +27,7 @@ from prml_vslam.pipeline.contracts.events import (
     RunStopRequested,
     RunSubmitted,
     StageCompleted,
+    StageFailed,
     StageOutcome,
     StageQueued,
     StageStarted,
@@ -37,9 +37,10 @@ from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
@@ -64,18 +65,19 @@ from prml_vslam.pipeline.ray_runtime.stage_actors import (
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
-from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationArtifacts
 
-_LOGGER = logging.getLogger(__name__)
 HandlePayload: TypeAlias = ray.ObjectRef[Any] | np.ndarray
+_TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 
 
-@ray.remote(num_cpus=1, max_restarts=-1, max_task_retries=1)
+@ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0)
 class RunCoordinatorActor:
     """Authoritative per-run state owner and event projector."""
 
     def __init__(self, *, run_id: str, namespace: str) -> None:
+        self._console = Console(__name__).child(self.__class__.__name__).child(run_id)
         self._run_id = run_id
         self._namespace = namespace
         self._snapshot: RunSnapshot = RunSnapshot(run_id=run_id)
@@ -110,6 +112,12 @@ class RunCoordinatorActor:
     ) -> None:
         if self._worker is not None and self._worker.is_alive():
             raise RuntimeError(f"Run '{self._run_id}' is already active.")
+        self._console.info(
+            "Starting run '%s' in %s mode with %d planned stages.",
+            plan.run_id,
+            plan.mode.value,
+            len(plan.stages),
+        )
         self._request = request
         self._plan = plan
         self._snapshot = (
@@ -130,11 +138,19 @@ class RunCoordinatorActor:
         self._worker.start()
 
     def stop(self) -> None:
+        if self._snapshot.state in _TERMINAL_STATES:
+            self._console.debug(
+                "Ignoring stop request for terminal run '%s' with state '%s'.",
+                self._run_id,
+                self._snapshot.state.value,
+            )
+            return
+        self._console.warning("Stop requested for run '%s'.", self._run_id)
         self._stop_requested = True
         self._record_event(RunStopRequested(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
         if self._source_actor is not None:
             self._source_actor.stop.remote()
-        if self._streaming_done.is_set():
+        if self._streaming_done.is_set() and self._snapshot.state not in {RunState.COMPLETED, RunState.FAILED}:
             self._record_event(RunStopped(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
 
     def snapshot(self) -> RunSnapshot:
@@ -154,6 +170,7 @@ class RunCoordinatorActor:
         return self._resolve_handle_payload(self._handle_refs.get(handle_id))
 
     def shutdown(self) -> None:
+        self._console.info("Shutting down run '%s'.", self._run_id)
         self._stop_requested = True
         if self._source_actor is not None:
             try:
@@ -242,11 +259,13 @@ class RunCoordinatorActor:
             self._finalize_streaming()
 
     def on_source_eof(self) -> None:
+        self._console.info("Streaming source reached EOF for run '%s'.", self._run_id)
         self._source_finished = True
         if self._in_flight_frames == 0:
             self._finalize_streaming()
 
     def on_source_error(self, error_message: str) -> None:
+        self._console.error("Streaming source failed for run '%s': %s", self._run_id, error_message)
         self._streaming_error = error_message
         self._source_finished = True
         if self._in_flight_frames == 0:
@@ -282,6 +301,13 @@ class RunCoordinatorActor:
                 )
                 self._streaming_done.wait()
         except Exception as exc:
+            stage_key = self._current_stage_key()
+            if stage_key is not None:
+                self._record_stage_failure(
+                    stage_key=stage_key,
+                    outcome=self._failure_outcome(stage_key=stage_key, error_message=str(exc)),
+                )
+            self._console.exception("Run '%s' failed: %s", self._run_id, exc)
             self._record_event(
                 RunFailed(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns(), error_message=str(exc))
             )
@@ -317,6 +343,8 @@ class RunCoordinatorActor:
                 slam=slam.slam,
             )
         self._run_summary_stage(request=request, plan=plan, run_paths=run_paths)
+        terminal_state = "stopped" if self._stop_requested else "completed"
+        self._console.info("Offline run '%s' %s.", self._run_id, terminal_state)
         self._record_event(
             RunStopped(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns())
             if self._stop_requested
@@ -350,15 +378,22 @@ class RunCoordinatorActor:
         )
         ray.get(self._slam_actor.start_stage.remote(request=request, plan=plan, path_config=path_config))
         self._source_actor = PacketSourceActor.options(
-            **self._stage_actor_options(
-                stage_key="packet_source",
-                request=request,
-                default_num_cpus=1.0,
-                default_num_gpus=0.0,
+            **clean_actor_options(
+                {
+                    "num_cpus": 1.0,
+                    "num_gpus": 0.0,
+                    "max_restarts": 0,
+                    "max_task_retries": 0,
+                }
             )
         ).remote(
             coordinator_name=coordinator_actor_name(plan.run_id),
             namespace=self._namespace,
+        )
+        self._console.info(
+            "Streaming run '%s' started with %d in-flight frame credits.",
+            self._run_id,
+            DEFAULT_MAX_FRAMES_IN_FLIGHT,
         )
         self._source_actor.start_stream.remote(
             source=runtime_source,
@@ -376,15 +411,27 @@ class RunCoordinatorActor:
             run_paths = RunArtifactPaths.build(plan.artifact_root)
             if self._slam_actor is not None:
                 slam_result = ray.get(self._slam_actor.close_stage.remote(request=request, plan=plan))
-                if self._stop_requested:
-                    slam_result.outcome.status = StageStatus.STOPPED
-                self._slam_artifacts = slam_result.slam
-                self._record_stage_completion(
-                    stage_key=StageKey.SLAM,
-                    outcome=slam_result.outcome,
-                    slam=slam_result.slam,
-                    visualization=slam_result.visualization,
-                )
+                if self._streaming_error is not None:
+                    self._slam_artifacts = slam_result.slam
+                    self._record_stage_failure(
+                        stage_key=StageKey.SLAM,
+                        outcome=slam_result.outcome.model_copy(
+                            update={
+                                "status": StageStatus.FAILED,
+                                "error_message": self._streaming_error,
+                            }
+                        ),
+                    )
+                else:
+                    if self._stop_requested:
+                        slam_result.outcome.status = StageStatus.STOPPED
+                    self._slam_artifacts = slam_result.slam
+                    self._record_stage_completion(
+                        stage_key=StageKey.SLAM,
+                        outcome=slam_result.outcome,
+                        slam=slam_result.slam,
+                        visualization=slam_result.visualization,
+                    )
             if self._streaming_error is None and request.benchmark.trajectory.enabled and not self._stop_requested:
                 self._run_trajectory_stage(
                     request=request,
@@ -395,6 +442,7 @@ class RunCoordinatorActor:
                 )
             self._run_summary_stage(request=request, plan=plan, run_paths=run_paths)
             if self._streaming_error is not None:
+                self._console.error("Streaming run '%s' failed: %s", self._run_id, self._streaming_error)
                 self._record_event(
                     RunFailed(
                         event_id=self._next_event_id(),
@@ -404,8 +452,10 @@ class RunCoordinatorActor:
                     )
                 )
             elif self._stop_requested:
+                self._console.warning("Streaming run '%s' stopped.", self._run_id)
                 self._record_event(RunStopped(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
             else:
+                self._console.info("Streaming run '%s' completed.", self._run_id)
                 self._record_event(RunCompleted(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
         finally:
             self._streaming_done.set()
@@ -553,7 +603,7 @@ class RunCoordinatorActor:
     def _stage_actor_options(
         self,
         *,
-        stage_key: StageKey | str,
+        stage_key: StageKey,
         request: RunRequest,
         default_num_cpus: float,
         default_num_gpus: float,
@@ -573,6 +623,7 @@ class RunCoordinatorActor:
         )
 
     def _emit_stage_started(self, stage_key: StageKey) -> None:
+        self._console.info("Stage '%s' started for run '%s'.", stage_key.value, self._run_id)
         self._record_event(
             StageQueued(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns(), stage_key=stage_key)
         )
@@ -604,6 +655,13 @@ class RunCoordinatorActor:
                 )
             )
         self._stage_outcomes.append(outcome)
+        self._console.info(
+            "Stage '%s' finished for run '%s' with status '%s' and %d artifacts.",
+            stage_key.value,
+            self._run_id,
+            outcome.status.value,
+            len(outcome.artifacts),
+        )
         self._record_event(
             StageCompleted(
                 event_id=self._next_event_id(),
@@ -617,6 +675,41 @@ class RunCoordinatorActor:
                 visualization=visualization,
                 summary=summary,
                 stage_manifests=[] if stage_manifests is None else stage_manifests,
+            )
+        )
+
+    def _record_stage_failure(self, *, stage_key: StageKey, outcome: StageOutcome) -> None:
+        if self._snapshot.stage_status.get(stage_key) in {
+            StageStatus.COMPLETED,
+            StageStatus.FAILED,
+            StageStatus.STOPPED,
+        }:
+            return
+        for artifact_key, artifact in outcome.artifacts.items():
+            self._record_event(
+                ArtifactRegistered(
+                    event_id=self._next_event_id(),
+                    run_id=self._run_id,
+                    ts_ns=ts_ns(),
+                    stage_key=stage_key,
+                    artifact_key=artifact_key,
+                    artifact=artifact,
+                )
+            )
+        self._stage_outcomes.append(outcome)
+        self._console.error(
+            "Stage '%s' failed for run '%s': %s",
+            stage_key.value,
+            self._run_id,
+            outcome.error_message or "unknown error",
+        )
+        self._record_event(
+            StageFailed(
+                event_id=self._next_event_id(),
+                run_id=self._run_id,
+                ts_ns=ts_ns(),
+                stage_key=stage_key,
+                outcome=outcome,
             )
         )
 
@@ -640,7 +733,7 @@ class RunCoordinatorActor:
                     bindings=[] if bindings is None else bindings,
                 )
             except Exception as exc:  # pragma: no cover - best-effort sidecar submission
-                _LOGGER.warning("Failed to submit Rerun sink event '%s': %s", getattr(event, "kind", event), exc)
+                self._console.warning("Failed to submit Rerun sink event '%s': %s", getattr(event, "kind", event), exc)
 
     def _remember_handle(self, handle_id: str, payload: HandlePayload) -> None:
         self._handle_refs[handle_id] = payload
@@ -673,7 +766,7 @@ class RunCoordinatorActor:
             self._rerun_sink_last_call = self._rerun_sink.close.remote()
             ray.get(self._rerun_sink_last_call)
         except Exception as exc:  # pragma: no cover - best-effort sidecar cleanup
-            _LOGGER.warning("Failed to close Rerun sink actor for run '%s': %s", self._run_id, exc)
+            self._console.warning("Failed to close Rerun sink actor for run '%s': %s", self._run_id, exc)
         finally:
             try:
                 ray.kill(self._rerun_sink, no_restart=True)
@@ -706,6 +799,58 @@ class RunCoordinatorActor:
         if self._slam_artifacts is None:
             raise RuntimeError("SLAM artifacts are not available.")
         return self._slam_artifacts
+
+    def _current_stage_key(self) -> StageKey | None:
+        return self._snapshot.current_stage_key
+
+    def _failure_outcome(self, *, stage_key: StageKey, error_message: str) -> StageOutcome:
+        return StageOutcome(
+            stage_key=stage_key,
+            status=StageStatus.FAILED,
+            config_hash=self._stage_config_hash(stage_key),
+            input_fingerprint=self._stage_input_fingerprint(stage_key),
+            error_message=error_message,
+        )
+
+    def _stage_config_hash(self, stage_key: StageKey) -> str:
+        request = self._request
+        if request is None:
+            return stable_hash({"run_id": self._run_id, "stage_key": stage_key.value})
+        match stage_key:
+            case StageKey.INGEST:
+                return stable_hash(request.source)
+            case StageKey.SLAM:
+                return stable_hash(request.slam)
+            case StageKey.TRAJECTORY_EVALUATION:
+                return stable_hash(request.benchmark.trajectory)
+            case StageKey.SUMMARY:
+                return stable_hash({"experiment_name": request.experiment_name, "mode": request.mode.value})
+            case _:
+                return stable_hash({"run_id": self._run_id, "stage_key": stage_key.value})
+
+    def _stage_input_fingerprint(self, stage_key: StageKey) -> str:
+        match stage_key:
+            case StageKey.INGEST:
+                return stable_hash(self._request.source if self._request is not None else {"run_id": self._run_id})
+            case StageKey.SLAM:
+                return stable_hash(
+                    self._sequence_manifest
+                    if self._sequence_manifest is not None
+                    else {"run_id": self._run_id, "stage_key": stage_key.value}
+                )
+            case StageKey.TRAJECTORY_EVALUATION:
+                return stable_hash(
+                    {
+                        "benchmark_inputs": self._benchmark_inputs,
+                        "slam_trajectory": None
+                        if self._slam_artifacts is None
+                        else self._slam_artifacts.trajectory_tum,
+                    }
+                )
+            case StageKey.SUMMARY:
+                return stable_hash(self._stage_outcomes)
+            case _:
+                return stable_hash({"run_id": self._run_id, "stage_key": stage_key.value})
 
 
 __all__ = ["RunCoordinatorActor"]

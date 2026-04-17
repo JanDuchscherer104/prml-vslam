@@ -11,7 +11,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 
 def actor_options_for_stage(
     *,
-    stage_key: StageKey | str,
+    stage_key: StageKey,
     request: RunRequest,
     backend: BackendDescriptor,
     default_num_cpus: float = 1.0,
@@ -20,8 +20,7 @@ def actor_options_for_stage(
     inherit_backend_defaults: bool = False,
 ) -> dict[str, Any]:
     """Translate one repo-owned placement policy into Ray actor options."""
-    placement_key = stage_key.value if isinstance(stage_key, StageKey) else stage_key
-    placement = request.placement.by_stage.get(placement_key)
+    placement = request.placement.by_stage.get(stage_key)
     resources = dict(backend.default_resources) if inherit_backend_defaults else {}
     if placement is not None:
         resources.update(placement.resources)

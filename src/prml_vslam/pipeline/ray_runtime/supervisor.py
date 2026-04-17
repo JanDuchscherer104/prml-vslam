@@ -13,7 +13,7 @@ from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.ray_runtime.common import coordinator_actor_name
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
-from prml_vslam.utils import PathConfig
+from prml_vslam.utils import Console, PathConfig
 
 
 @ray.remote(num_cpus=1, max_restarts=-1, max_task_retries=1)
@@ -21,6 +21,7 @@ class PipelineSupervisorActor:
     """Deployment-level root actor that owns run coordinators."""
 
     def __init__(self, *, namespace: str) -> None:
+        self._console = Console(__name__).child(self.__class__.__name__).child(namespace)
         self._namespace = namespace
         self._coordinators: dict[str, Any] = {}
 
@@ -33,6 +34,7 @@ class PipelineSupervisorActor:
         runtime_source: object | None = None,
     ) -> str:
         run_id = plan.run_id
+        self._console.info("Submitting run '%s' into namespace '%s'.", run_id, self._namespace)
         self.shutdown_run(run_id)
         coordinator = RunCoordinatorActor.options(
             name=coordinator_actor_name(run_id),
@@ -43,6 +45,7 @@ class PipelineSupervisorActor:
         return run_id
 
     def stop_run(self, run_id: str) -> None:
+        self._console.warning("Forwarding stop request for run '%s'.", run_id)
         self._coordinator_for(run_id).stop.remote()
 
     def get_snapshot(self, run_id: str) -> RunSnapshot:
@@ -55,6 +58,7 @@ class PipelineSupervisorActor:
         return ray.get(self._coordinator_for(run_id).read_array.remote(handle_id))
 
     def shutdown_run(self, run_id: str) -> None:
+        self._console.info("Shutting down coordinator for run '%s'.", run_id)
         coordinator = self._coordinators.pop(run_id, None)
         if coordinator is None:
             try:
@@ -76,6 +80,7 @@ class PipelineSupervisorActor:
         raise RuntimeError(f"Timed out waiting for coordinator '{coordinator_actor_name(run_id)}' to shut down.")
 
     def shutdown(self) -> None:
+        self._console.info("Shutting down supervisor namespace '%s'.", self._namespace)
         for run_id in list(self._coordinators):
             self.shutdown_run(run_id)
 

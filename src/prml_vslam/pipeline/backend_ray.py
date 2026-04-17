@@ -23,7 +23,7 @@ from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.ray_runtime import PipelineSupervisorActor
 from prml_vslam.pipeline.services import RunPlannerService
-from prml_vslam.utils import PathConfig
+from prml_vslam.utils import Console, PathConfig
 
 _DEFAULT_NAMESPACE = "prml_vslam.local"
 _DEFAULT_LOCAL_HEAD_PORT = 25001
@@ -49,6 +49,7 @@ class RayPipelineBackend(PipelineBackend):
     def __init__(self, *, path_config: PathConfig | None = None, namespace: str | None = None) -> None:
         self._path_config = PathConfig() if path_config is None else path_config
         self._namespace = namespace or os.getenv("PRML_VSLAM_RAY_NAMESPACE", _DEFAULT_NAMESPACE)
+        self._console = Console(__name__).child(self.__class__.__name__).child(self._namespace)
         self._supervisor = None
         self._local_head_process: subprocess.Popen[str] | None = None
         self._local_head_address: str | None = None
@@ -62,6 +63,7 @@ class RayPipelineBackend(PipelineBackend):
         if unavailable:
             reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."
             raise RuntimeError(reason)
+        self._console.info("Submitting run '%s' through Ray backend.", plan.run_id)
         run_id = ray.get(
             supervisor.submit_run.remote(
                 request=request,
@@ -73,6 +75,7 @@ class RayPipelineBackend(PipelineBackend):
         return run_id
 
     def stop_run(self, run_id: str) -> None:
+        self._console.warning("Stopping run '%s' through Ray backend.", run_id)
         self._ensure_supervisor().stop_run.remote(run_id)
 
     def get_snapshot(self, run_id: str) -> RunSnapshot:
@@ -93,6 +96,7 @@ class RayPipelineBackend(PipelineBackend):
         return ray.get(self._ensure_supervisor().read_array.remote(run_id, handle.handle_id))
 
     def shutdown(self) -> None:
+        self._console.info("Shutting down Ray backend for namespace '%s'.", self._namespace)
         if not ray.is_initialized():
             self._shutdown_local_head()
             return
@@ -121,6 +125,7 @@ class RayPipelineBackend(PipelineBackend):
             if not self._namespace.startswith("pytest-"):
                 options["lifetime"] = "detached"
             self._supervisor = PipelineSupervisorActor.options(**options).remote(namespace=self._namespace)
+            self._console.info("Created supervisor '%s' in namespace '%s'.", _SUPERVISOR_NAME, self._namespace)
         return self._supervisor
 
     def _ensure_ray(self) -> None:
@@ -137,10 +142,12 @@ class RayPipelineBackend(PipelineBackend):
             "_skip_env_hook": True,
         }
         if address:
+            self._console.info("Connecting Ray backend to configured address '%s'.", address)
             init_kwargs["address"] = address
             ray.init(**init_kwargs)
             return
         if self._namespace.startswith("pytest-"):
+            self._console.debug("Initializing in-process Ray runtime for pytest namespace '%s'.", self._namespace)
             ray.init(**init_kwargs)
             return
         local_address = self._ensure_local_head_address()
@@ -166,7 +173,11 @@ class RayPipelineBackend(PipelineBackend):
         os.environ.setdefault("RAY_ENABLE_UV_RUN_RUNTIME_ENV", "0")
 
     def _ensure_local_head_address(self) -> str:
-        if self._local_head_process is not None and self._local_head_process.poll() is None and self._local_head_address is not None:
+        if (
+            self._local_head_process is not None
+            and self._local_head_process.poll() is None
+            and self._local_head_address is not None
+        ):
             return self._local_head_address
         ray_bin = str(Path(sys.executable).with_name("ray"))
         subprocess.run(
@@ -177,6 +188,7 @@ class RayPipelineBackend(PipelineBackend):
         )
         time.sleep(1.0)
         address = self._pick_local_head_address()
+        self._console.info("Starting local Ray head on '%s'.", address)
         logs_dir = self._path_config.resolve_logs_dir(create=True)
         self._local_head_log_path = logs_dir / "ray-local-head.log"
         log_handle = self._local_head_log_path.open("a", encoding="utf-8")
