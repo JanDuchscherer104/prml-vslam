@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.methods import MockSlamBackendConfig
-from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackendConfig
+from prml_vslam.methods.contracts import MethodId, SlamBackendConfig
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlanStageId
 from prml_vslam.pipeline.contracts.request import (
@@ -35,6 +36,7 @@ _SUPPORTED_STAGE_IDS = frozenset(
     {
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
         RunPlanStageId.SUMMARY,
     }
 )
@@ -125,7 +127,12 @@ class RunService:
             self._runner_for_mode(request.mode).set_failed_start(plan=plan, error_message=error_message)
             raise RuntimeError(error_message)
 
-        backend = self._slam_backend_factory(request.slam.method)
+        backend = _invoke_slam_backend_factory(
+            self._slam_backend_factory,
+            method_id=request.slam.method,
+            backend_config=request.slam.backend,
+            path_config=self.path_config,
+        )
         if request.mode is PipelineMode.OFFLINE:
             if runtime_source is not None:
                 raise RuntimeError("Offline runs do not accept an injected streaming source.")
@@ -158,12 +165,51 @@ class RunService:
         return self._offline_runner if mode is PipelineMode.OFFLINE else self._streaming_runner
 
 
-def _default_slam_backend_factory(method_id: MethodId) -> object:
-    """Build the repository-local mock backend for one selected method."""
-    backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+def _default_slam_backend_factory(
+    method_id: MethodId,
+    backend_config: SlamBackendConfig | None = None,
+    path_config: PathConfig | None = None,
+) -> object:
+    """Build the repository-local backend for one selected method."""
+    if method_id is MethodId.VISTA:
+        vista_backend_config = (
+            backend_config if isinstance(backend_config, VistaSlamBackendConfig) else VistaSlamBackendConfig()
+        )
+        backend = vista_backend_config.setup_target(path_config=path_config)
+    elif method_id is MethodId.MOCK:
+        backend = MockSlamBackendConfig(method_id=method_id).setup_target()
+    else:
+        raise RuntimeError(f"Backend '{method_id.value}' does not support execution yet.")
+
     if backend is None:
-        raise RuntimeError(f"Failed to initialize the mock SLAM backend for method '{method_id.value}'.")
+        raise RuntimeError(f"Failed to initialize the SLAM backend for method '{method_id.value}'.")
     return backend
+
+
+def _invoke_slam_backend_factory(
+    factory: object,
+    *,
+    method_id: MethodId,
+    backend_config: SlamBackendConfig,
+    path_config: PathConfig,
+) -> object:
+    """Call one backend factory while preserving compatibility with older test doubles."""
+    signature = inspect.signature(factory)
+    parameters = list(signature.parameters.values())
+    if any(parameter.kind is inspect.Parameter.VAR_POSITIONAL for parameter in parameters):
+        return factory(method_id, backend_config, path_config)  # type: ignore[misc]
+    positional_count = len(
+        [
+            parameter
+            for parameter in parameters
+            if parameter.kind in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+        ]
+    )
+    if positional_count >= 3:
+        return factory(method_id, backend_config, path_config)  # type: ignore[misc]
+    if positional_count == 2:
+        return factory(method_id, backend_config)  # type: ignore[misc]
+    return factory(method_id)  # type: ignore[misc]
 
 
 __all__ = ["OfflineSourceResolver", "RunService", "VideoOfflineSequenceSource"]

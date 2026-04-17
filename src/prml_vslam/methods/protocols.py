@@ -17,8 +17,11 @@ from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 class SlamSession(Protocol):
     """Protocol for a live SLAM session that consumes incremental frames."""
 
-    def step(self, frame: FramePacket) -> SlamUpdate:
-        """Consume one frame and return an incremental SLAM update."""
+    def step(self, frame: FramePacket) -> None:
+        """Consume one frame and prepare an incremental SLAM update."""
+
+    def try_get_updates(self) -> list[SlamUpdate]:
+        """Retrieve any pending incremental SLAM updates non-blockingly."""
 
     def close(self) -> SlamArtifacts:
         """Finalize the session and return the persisted SLAM artifacts."""

@@ -5,11 +5,15 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict, Field, ValidationInfo, field_validator
 
 from .base_config import BaseConfig
 from .base_data import BaseData
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.contracts.plan import RunPlanStageId
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
@@ -40,6 +44,8 @@ class RunArtifactPaths(BaseData):
     """Path to prepared benchmark-side input metadata."""
     trajectory_path: Path
     """Path to the exported trajectory."""
+    point_cloud_path: Path
+    """Path to the canonical exported point cloud."""
     sparse_points_path: Path
     """Path to the exported sparse point cloud."""
     dense_points_path: Path
@@ -77,6 +83,7 @@ class RunArtifactPaths(BaseData):
             sequence_manifest_path=(resolved_root / "input" / "sequence_manifest.json").resolve(),
             benchmark_inputs_path=(resolved_root / "benchmark" / "inputs.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
+            point_cloud_path=(resolved_root / "slam" / "point_cloud.ply").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),
@@ -93,6 +100,23 @@ class RunArtifactPaths(BaseData):
     def plotly_scene_path(self, method_slug: str) -> Path:
         """Return the canonical Plotly scene path for one method run."""
         return (self.artifact_root / "visualization" / f"{method_slug}_scene.html").resolve()
+
+    @property
+    def rgb_dir(self) -> Path:
+        """Alias for input_frames_dir used in early scaffold versions."""
+        return self.input_frames_dir
+
+    @property
+    def viewer_rrd_path(self) -> Path:
+        """Return the path to the repo-owned viewer recording."""
+        return (self.artifact_root / "visualization" / "viewer_recording.rrd").resolve()
+
+    def stage_manifest_path(self, stage_id: str | RunPlanStageId) -> Path:
+        """Return the canonical path to one stage manifest."""
+        from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+
+        stage_slug = stage_id.value if isinstance(stage_id, RunPlanStageId) else str(stage_id)
+        return (self.artifact_root / stage_slug / "stage_manifest.json").resolve()
 
 
 class PathConfig(BaseConfig):

@@ -167,13 +167,13 @@ class PipelinePageState(BaseData):
     """Selected pipeline mode."""
 
     method: MethodId = MethodId.VISTA
-    """Selected mock SLAM backend label."""
+    """Selected SLAM backend label."""
 
     slam_max_frames: int | None = None
     """Optional frame cap for the current request."""
 
-    slam_config_path: Path | None = None
-    """Optional backend config path for the current request."""
+    slam_backend_payload: dict[str, object] = Field(default_factory=dict)
+    """Full backend payload preserved from the selected request template."""
 
     emit_dense_points: bool = True
     """Whether dense geometry artifacts should be emitted."""
@@ -192,6 +192,12 @@ class PipelinePageState(BaseData):
 
     evaluate_efficiency: bool = False
     """Whether efficiency evaluation should be planned."""
+
+    connect_live_viewer: bool = False
+    """Whether to connect the Rerun live viewer via gRPC."""
+
+    export_viewer_rrd: bool = False
+    """Whether to export the Rerun `.rrd` viewer artifact."""
 
     record3d_usb_device_index: int = 0
     """Zero-based USB device index used by the bounded pipeline page."""

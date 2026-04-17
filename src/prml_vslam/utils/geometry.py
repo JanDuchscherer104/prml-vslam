@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Self
 
 import numpy as np
-import open3d as o3d
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 from pydantic import ConfigDict
@@ -101,27 +100,22 @@ def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     if positions.ndim != 2 or positions.shape[1] != 3:
         raise ValueError(f"Expected point cloud shape (N, 3), got {positions.shape}.")
     path.parent.mkdir(parents=True, exist_ok=True)
+    header = "\n".join(
+        [
+            "ply",
+            "format ascii 1.0",
+            f"element vertex {len(positions)}",
+            "property double x",
+            "property double y",
+            "property double z",
+            "end_header",
+        ]
+    )
     if len(positions) == 0:
-        path.write_text(
-            "\n".join(
-                [
-                    "ply",
-                    "format ascii 1.0",
-                    "element vertex 0",
-                    "property double x",
-                    "property double y",
-                    "property double z",
-                    "end_header",
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
+        path.write_text(f"{header}\n", encoding="utf-8")
         return path.resolve()
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points = o3d.utility.Vector3dVector(positions)
-    if not o3d.io.write_point_cloud(str(path), point_cloud, write_ascii=True):
-        raise RuntimeError(f"Open3D failed to write point cloud to '{path}'.")
+    rows = "\n".join(f"{x:.17g} {y:.17g} {z:.17g}" for x, y, z in positions)
+    path.write_text(f"{header}\n{rows}\n", encoding="utf-8")
     return path.resolve()
 
 

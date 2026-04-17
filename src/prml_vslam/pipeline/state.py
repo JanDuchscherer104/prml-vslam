@@ -73,11 +73,20 @@ class StreamingRunSnapshot(RunSnapshot):
     latest_slam_update: SlamUpdate | None = None
     """Most recent incremental SLAM update."""
 
+    latest_preview_update: SlamUpdate | None = None
+    """Most recent keyframe update that still has a renderable preview payload."""
+
     received_frames: int = 0
     """Number of processed packets since the current session started."""
 
     measured_fps: float = 0.0
     """Rolling measured packet rate."""
+
+    accepted_keyframes: int = 0
+    """Number of frames accepted as keyframes by the backend."""
+
+    backend_fps: float = 0.0
+    """Rolling measured backend processing rate."""
 
     trajectory_positions_xyz: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_POSITIONS_XYZ.copy)
     """Bounded trajectory history in world coordinates."""

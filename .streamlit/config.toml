@@ -1,2 +1,9 @@
 [server]
 headless = true
+folderWatchBlacklist = [
+  "external",
+  "graphify-out",
+  ".artifacts",
+  ".cache",
+  ".data",
+]

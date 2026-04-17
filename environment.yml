@@ -1,0 +1,13 @@
+name: prml-vslam
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - cmake=3.31.2
+  - cuda-cudart-dev=12.4
+  - cuda-nvcc=12.4
+  - gcc_linux-64=11.4.0
+  - gxx_linux-64=11.4.0
+  - libopencv=4.12.0
+  - pip
+  - uv
