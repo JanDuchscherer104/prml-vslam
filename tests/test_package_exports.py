@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 import prml_vslam.io as io_package
 import prml_vslam.methods as methods_package
 import prml_vslam.pipeline as pipeline_package
@@ -50,3 +52,16 @@ def test_methods_package_exports_slam_surfaces() -> None:
         "VistaSlamBackendConfig",
     ]
     assert not hasattr(methods_package, "MockMethodConfig")
+
+
+def test_vista_package_is_the_only_canonical_vista_surface() -> None:
+    vista_package = importlib.import_module("prml_vslam.methods.vista")
+
+    assert vista_package.__all__ == [
+        "VistaSlamBackend",
+        "VistaSlamBackendConfig",
+        "VistaSlamConfig",
+        "VistaSlamSession",
+    ]
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("prml_vslam.methods.vista_slam")

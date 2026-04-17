@@ -7,14 +7,14 @@ from queue import Empty, Queue
 from threading import Event, Thread, current_thread
 
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.utils import BaseConfig, Console
+from prml_vslam.utils import BaseConfig, Console, FactoryConfig
 
 from .wifi_packets import Record3DWiFiMetadata
 from .wifi_receiver import _Record3DWiFiReceiverRuntime
 from .wifi_signaling import Record3DWiFiSignalingClient
 
 
-class Record3DWiFiPreviewStreamConfig(BaseConfig):
+class Record3DWiFiPreviewStreamConfig(BaseConfig, FactoryConfig["Record3DWiFiPreviewStreamSession"]):
     """Configuration for the optional Python-side Record3D Wi-Fi preview receiver."""
 
     device_address: str = ""

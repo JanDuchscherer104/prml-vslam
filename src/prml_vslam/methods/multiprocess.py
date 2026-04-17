@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-import pickle
 import queue
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.utils import Console
 
 if TYPE_CHECKING:
-    from prml_vslam.interfaces import FramePacket
     from prml_vslam.methods.protocols import SlamSession
     from prml_vslam.methods.updates import SlamUpdate
     from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
@@ -36,7 +35,6 @@ class _DoneMessage:
 
 _WORKER_CLOSE_TIMEOUT_SECONDS = 30.0
 _WORKER_POLL_INTERVAL_SECONDS = 0.05
-_FramePacketPayload = dict[str, Any]
 
 
 class MultiprocessSlamSession:
@@ -69,7 +67,7 @@ class MultiprocessSlamSession:
 
     def step(self, frame: FramePacket) -> None:
         """Push one frame to the background worker, blocking if the queue is full (backpressure)."""
-        serialized_frame = _serialize_frame_packet(frame)
+        serialized_frame = frame.to_ipc_bytes()
         while True:
             self._poll_worker_state()
             self._raise_worker_error()
@@ -202,7 +200,7 @@ def _session_worker(
                 break
 
             try:
-                packet = _deserialize_frame_packet(packet_payload)
+                packet = FramePacket.from_ipc_bytes(packet_payload)
                 session.step(packet)
                 for update in session.try_get_updates():
                     output_queue.put(_UpdateMessage(update=update))
@@ -227,55 +225,4 @@ def _session_worker(
         output_queue.close()
 
 
-def _serialize_frame_packet(frame: FramePacket) -> bytes:
-    """Return a multiprocessing-safe serialized frame payload."""
-    payload: _FramePacketPayload = {
-        "seq": frame.seq,
-        "timestamp_ns": frame.timestamp_ns,
-        "arrival_timestamp_s": frame.arrival_timestamp_s,
-        "rgb": frame.rgb,
-        "depth": frame.depth,
-        "confidence": frame.confidence,
-        "intrinsics": None if frame.intrinsics is None else frame.intrinsics.model_dump(mode="python"),
-        "pose": None if frame.pose is None else frame.pose.model_dump(mode="python"),
-        "metadata": _pickle_stable_metadata(frame.metadata),
-    }
-    return pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def _deserialize_frame_packet(serialized_frame: bytes) -> FramePacket:
-    """Rebuild one frame packet in the receiving process."""
-    from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform  # noqa: PLC0415
-
-    payload: _FramePacketPayload = pickle.loads(serialized_frame)
-    intrinsics_payload = payload["intrinsics"]
-    pose_payload = payload["pose"]
-    return FramePacket(
-        seq=payload["seq"],
-        timestamp_ns=payload["timestamp_ns"],
-        arrival_timestamp_s=payload["arrival_timestamp_s"],
-        rgb=payload["rgb"],
-        depth=payload["depth"],
-        confidence=payload["confidence"],
-        intrinsics=None if intrinsics_payload is None else CameraIntrinsics.model_validate(intrinsics_payload),
-        pose=None if pose_payload is None else FrameTransform.model_validate(pose_payload),
-        metadata=payload["metadata"],
-    )
-
-
-def _pickle_stable_metadata(value: Any) -> Any:
-    """Normalize metadata values that commonly carry module-bound classes."""
-    from enum import Enum
-    from pathlib import Path
-
-    if isinstance(value, dict):
-        return {str(key): _pickle_stable_metadata(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_pickle_stable_metadata(item) for item in value]
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, Path):
-        return str(value)
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="python")
-    return value
+__all__ = ["MultiprocessSlamSession"]

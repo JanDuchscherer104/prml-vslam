@@ -37,11 +37,47 @@ class ReferenceTrajectoryRef(BaseData):
     """Filesystem path to the normalized TUM trajectory."""
 
 
+class ReferenceCloudSource(StrEnum):
+    """Typed source identifier for one available reference cloud."""
+
+    TANGO_RAW = "tango_raw"
+    TANGO_AREA_LEARNING = "tango_area_learning"
+
+
+class ReferenceCloudCoordinateStatus(StrEnum):
+    """Coordinate status for one prepared reference cloud."""
+
+    SOURCE_NATIVE = "source_native"
+    ALIGNED = "aligned"
+
+
+class ReferenceCloudRef(BaseData):
+    """One prepared reference cloud available to a benchmark run."""
+
+    source: ReferenceCloudSource
+    """Typed source that produced the cloud."""
+
+    path: Path
+    """Filesystem path to the normalized point cloud artifact."""
+
+    metadata_path: Path
+    """Filesystem path to the side metadata describing the cloud."""
+
+    target_frame: str
+    """Target frame represented by the point coordinates."""
+
+    coordinate_status: ReferenceCloudCoordinateStatus
+    """Whether the cloud remains source-native or was aligned into repo space."""
+
+
 class PreparedBenchmarkInputs(BaseData):
     """Prepared benchmark-side inputs discovered for one normalized sequence."""
 
     reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
     """Available normalized reference trajectories keyed by source."""
+
+    reference_clouds: list[ReferenceCloudRef] = Field(default_factory=list)
+    """Available normalized reference clouds keyed by source and coordinate status."""
 
     def trajectory_for_source(self, source: ReferenceSource) -> ReferenceTrajectoryRef | None:
         """Return the prepared reference trajectory for one requested source."""
@@ -100,6 +136,9 @@ __all__ = [
     "CloudBenchmarkConfig",
     "EfficiencyBenchmarkConfig",
     "PreparedBenchmarkInputs",
+    "ReferenceCloudCoordinateStatus",
+    "ReferenceCloudRef",
+    "ReferenceCloudSource",
     "ReferenceSource",
     "ReferenceReconstructionConfig",
     "ReferenceTrajectoryRef",

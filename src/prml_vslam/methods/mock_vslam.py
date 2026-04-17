@@ -15,7 +15,7 @@ from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseConfig, FactoryConfig
 from prml_vslam.utils.geometry import (
     pointmap_from_depth,
     transform_points_world_camera,
@@ -29,7 +29,7 @@ _POINTMAP_BASE_DEPTH_M = 1.5
 _POINTMAP_DEPTH_SPAN_M = 1.0
 
 
-class MockSlamBackendConfig(BaseConfig):
+class MockSlamBackendConfig(BaseConfig, FactoryConfig["MockSlamBackend"]):
     """Config that builds the repository-local mock SLAM backend."""
 
     method_id: MethodId = MethodId.MOCK
@@ -117,6 +117,9 @@ class MockSlamSession(SlamSession):
             pose=pose,
             used_source_pose=frame.pose is not None,
             pointmap=pointmap,
+            camera_intrinsics=frame.intrinsics,
+            image_rgb=frame.rgb,
+            depth_map=None if frame.depth is None else np.asarray(frame.depth, dtype=np.float32),
         )
         self._pending_updates.append(update)
 
@@ -187,6 +190,9 @@ class MockSlamSession(SlamSession):
         pose: FrameTransform,
         used_source_pose: bool,
         pointmap: NDArray[np.float32] | None = None,
+        camera_intrinsics: CameraIntrinsics | None = None,
+        image_rgb: NDArray[np.uint8] | None = None,
+        depth_map: NDArray[np.float32] | None = None,
     ) -> SlamUpdate:
         """Record one pose sample and return the matching SLAM update."""
         timestamp_s = self._normalize_timestamp_seconds(timestamp_ns / 1e9)
@@ -209,6 +215,9 @@ class MockSlamSession(SlamSession):
             num_sparse_points=num_sparse_points,
             num_dense_points=self._num_dense_points,
             pointmap=pointmap,
+            camera_intrinsics=camera_intrinsics,
+            image_rgb=image_rgb,
+            depth_map=depth_map,
         )
 
     def _append_dense_points(self, points_xyz_world: NDArray[np.float64] | None) -> None:
