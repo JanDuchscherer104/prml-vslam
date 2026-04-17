@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackendConfig
+from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackendConfig, Mast3rSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.plan import RunPlanStageId
@@ -176,6 +176,14 @@ def _default_slam_backend_factory(
             backend_config if isinstance(backend_config, VistaSlamBackendConfig) else VistaSlamBackendConfig()
         )
         backend = vista_backend_config.setup_target(path_config=path_config)
+    elif method_id is MethodId.MAST3R:
+        from prml_vslam.methods import Mast3rSlamBackendConfig
+        mast3r_backend_config = (
+            backend_config
+            if isinstance(backend_config, Mast3rSlamBackendConfig)
+            else Mast3rSlamBackendConfig()
+        )
+        backend = mast3r_backend_config.setup_target(path_config=path_config)
     elif method_id is MethodId.MOCK:
         backend = MockSlamBackendConfig(method_id=method_id).setup_target()
     else:
