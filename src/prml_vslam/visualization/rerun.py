@@ -24,6 +24,7 @@ def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> 
         ),
     )
     stream.send_blueprint(blueprint)
+    stream.log("world", rr.ViewCoordinates.RDF, static=True)
     return stream
 
 
@@ -83,6 +84,26 @@ def log_pinhole(
             camera_xyz=rr.ViewCoordinates.RDF,
         ),
     )
+
+
+def log_rgb_image(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    image_rgb: np.ndarray,
+) -> None:
+    """Log one RGB image to the viewer."""
+    recording_stream.log(entity_path, rr.Image(np.asarray(image_rgb)))
+
+
+def log_depth_image(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    depth_m: np.ndarray,
+) -> None:
+    """Log one metric depth image to the viewer."""
+    recording_stream.log(entity_path, rr.DepthImage(np.asarray(depth_m, dtype=np.float32), meter=1.0))
 
 
 def log_pointcloud(
@@ -159,8 +180,10 @@ __all__ = [
     "attach_recording_sinks",
     "collect_native_visualization_artifacts",
     "create_recording_stream",
+    "log_depth_image",
     "log_pinhole",
     "log_pointcloud",
     "log_points3d",
+    "log_rgb_image",
     "log_transform",
 ]

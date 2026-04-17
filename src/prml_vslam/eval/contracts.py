@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,20 @@ from pydantic import Field
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseData
+
+
+class TrajectoryMetricId(StrEnum):
+    """Trajectory metric identifiers supported or planned through the evo seam."""
+
+    APE_TRANSLATION = "ape.translation"
+    RPE_TRANSLATION = "rpe.translation"
+
+
+class TrajectoryAlignmentMode(StrEnum):
+    """Alignment semantics applied before computing trajectory metrics."""
+
+    TIMESTAMP_ASSOCIATED_ONLY = "timestamp_associated_only"
+    SE3_UMeyama = "se3_umeyama"
 
 
 class MetricStats(BaseData):
@@ -63,6 +78,18 @@ class TrajectoryEvaluationPreview(BaseData):
     stats: MetricStats
 
 
+class TrajectoryEvaluationSemantics(BaseData):
+    """Explicit metric semantics persisted with one trajectory evaluation result."""
+
+    metric_id: TrajectoryMetricId = TrajectoryMetricId.APE_TRANSLATION
+    pose_relation: str = "translation_part"
+    alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
+    sync_max_diff_s: float
+    candidate_next_metrics: list[TrajectoryMetricId] = Field(
+        default_factory=lambda: [TrajectoryMetricId.RPE_TRANSLATION]
+    )
+
+
 class EvaluationArtifact(BaseData):
     """Loaded or freshly computed persisted `evo` result."""
 
@@ -72,6 +99,7 @@ class EvaluationArtifact(BaseData):
     stats: MetricStats
     reference_path: Path
     estimate_path: Path
+    semantics: TrajectoryEvaluationSemantics
     trajectories: list[TrajectorySeries] = Field(default_factory=list)
     error_series: ErrorSeries | None = None
 
@@ -92,6 +120,7 @@ class EvaluationArtifact(BaseData):
             title=str(payload["title"]),
             matched_pairs=int(payload["matched_pairs"]),
             stats=MetricStats.model_validate(payload["stats"]),
+            semantics=TrajectoryEvaluationSemantics.model_validate(payload["semantics"]),
             reference_path=reference_path,
             estimate_path=estimate_path,
             trajectories=[reference_trajectory, estimate_trajectory],
@@ -219,6 +248,9 @@ __all__ = [
     "EfficiencyEvaluationSelection",
     "MetricStats",
     "SelectionSnapshot",
+    "TrajectoryAlignmentMode",
     "TrajectoryEvaluationPreview",
+    "TrajectoryEvaluationSemantics",
+    "TrajectoryMetricId",
     "TrajectorySeries",
 ]

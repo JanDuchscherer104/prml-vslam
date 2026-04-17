@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 
 from pydantic import Field
@@ -11,26 +10,13 @@ from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseData
 
 from .request import PipelineMode, SourceSpec
-
-
-class RunPlanStageId(StrEnum):
-    """Canonical stage identifiers in the benchmark planner."""
-
-    INGEST = "ingest"
-    SLAM = "slam"
-    BENCHMARK = "benchmark"
-    """Alias for trajectory_evaluation used in early scaffold versions."""
-    REFERENCE_RECONSTRUCTION = "reference_reconstruction"
-    TRAJECTORY_EVALUATION = "trajectory_evaluation"
-    CLOUD_EVALUATION = "cloud_evaluation"
-    EFFICIENCY_EVALUATION = "efficiency_evaluation"
-    SUMMARY = "summary"
+from .stages import StageExecutorKind, StageKey
 
 
 class RunPlanStage(BaseData):
     """One typed stage in a benchmark run plan."""
 
-    id: RunPlanStageId
+    key: StageKey
     """Stable identifier for the stage."""
 
     title: str
@@ -41,6 +27,18 @@ class RunPlanStage(BaseData):
 
     outputs: list[Path] = Field(default_factory=list)
     """Expected artifact paths for the stage."""
+
+    executor_kind: StageExecutorKind
+    """Executor kind used by the active backend/runtime."""
+
+    available: bool = True
+    """Whether the selected backend can execute the stage."""
+
+    availability_reason: str | None = None
+    """Why the stage is unavailable, when it is merely a placeholder."""
+
+    failure_modes: list[str] = Field(default_factory=list)
+    """Declared terminal failure modes for the stage."""
 
 
 class RunPlan(BaseData):
@@ -69,11 +67,12 @@ class RunPlan(BaseData):
         return [
             {
                 "Stage": stage.title,
-                "Id": stage.id.value,
+                "Id": stage.key.value,
+                "Available": "yes" if stage.available else "no",
                 "Outputs": ", ".join(path.name for path in stage.outputs),
             }
             for stage in self.stages
         ]
 
 
-__all__ = ["RunPlan", "RunPlanStage", "RunPlanStageId"]
+__all__ = ["RunPlan", "RunPlanStage"]

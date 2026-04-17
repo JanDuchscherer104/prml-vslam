@@ -7,7 +7,12 @@ from typing import Self
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import ConfigDict
-from pytransform3d.rotations import matrix_from_quaternion, quaternion_from_matrix
+from pytransform3d.rotations import (
+    check_matrix,
+    matrix_from_quaternion,
+    quaternion_from_matrix,
+    robust_polar_decomposition,
+)
 from pytransform3d.transformations import transform_from
 
 from prml_vslam.utils import BaseData
@@ -104,4 +109,20 @@ class FrameTransform(BaseData):
         return (self.tx, self.ty, self.tz, float(qx), float(qy), float(qz), float(qw))
 
 
-__all__ = ["FrameTransform"]
+def project_rotation_to_so3(rotation: NDArray[np.float64], *, max_frobenius_error: float = 1e-3) -> NDArray[np.float64]:
+    """Project one near-rotation matrix to the closest valid SO(3) matrix."""
+    rotation_array = np.asarray(rotation, dtype=np.float64)
+    if rotation_array.shape != (3, 3):
+        raise ValueError(f"Expected a 3x3 rotation matrix, got shape {rotation_array.shape}.")
+    if not np.all(np.isfinite(rotation_array)):
+        raise ValueError("Rotation matrices must contain only finite values.")
+    projected = robust_polar_decomposition(rotation_array)
+    projection_error = np.linalg.norm(rotation_array - projected, ord="fro")
+    if not np.isfinite(projection_error) or projection_error > max_frobenius_error:
+        raise ValueError(
+            f"Rotation matrix is too far from SO(3) to normalize safely. Frobenius error: {projection_error:.6f}."
+        )
+    return check_matrix(projected)
+
+
+__all__ = ["FrameTransform", "project_rotation_to_so3"]

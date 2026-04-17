@@ -25,10 +25,15 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
-from prml_vslam.pipeline.demo import build_advio_demo_request, load_run_request_toml, persist_advio_demo_request
+from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec, build_backend_spec
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.demo import (
+    build_advio_demo_request,
+    build_runtime_source_from_request,
+    load_run_request_toml,
+    persist_advio_demo_request,
+)
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import get_path_config
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -111,7 +116,7 @@ def plan_run(
         output_dir=output_dir,
         source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
         slam=SlamStageConfig(
-            method=method,
+            backend=build_backend_spec(method=method),
             outputs={"emit_dense_points": emit_dense_points, "emit_sparse_points": emit_sparse_points},
         ),
         benchmark=BenchmarkConfig(
@@ -120,7 +125,7 @@ def plan_run(
             cloud=CloudBenchmarkConfig(enabled=emit_dense_points and reference_reconstruction),
             efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
         ),
-        visualization=VisualizationConfig(connect_live_viewer=False),
+        visualization=VisualizationConfig(connect_live_viewer=True),
     )
     plan = request.build()
     console.plog(plan.model_dump(mode="json"))
@@ -155,14 +160,13 @@ def run_config(
         ),
     ],
 ) -> None:
-    """Run one offline pipeline request from a TOML config file."""
+    """Run one offline or streaming pipeline request from a TOML config file."""
     path_config = get_path_config()
     try:
         request = load_run_request_toml(path_config=path_config, config_path=config_path)
-        if request.mode is not PipelineMode.OFFLINE:
-            raise RuntimeError("`run-config` currently supports only `offline` requests.")
+        runtime_source = build_runtime_source_from_request(request=request, path_config=path_config)
         run_service = RunService(path_config=path_config)
-        run_service.start_run(request=request)
+        run_service.start_run(request=request, runtime_source=runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
     except Exception as exc:
         console.error(str(exc))

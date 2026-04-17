@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -62,26 +61,12 @@ class StreamingSlamBackend(Protocol):
 
 
 @runtime_checkable
-class ProcessStreamingSlamBackend(StreamingSlamBackend, Protocol):
-    """Protocol for backends that can provide a picklable streaming-session factory."""
-
-    def streaming_session_factory(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> Callable[[], SlamSession]:
-        """Return a picklable factory that builds one streaming SLAM session."""
-
-
-@runtime_checkable
 class SlamBackend(OfflineSlamBackend, StreamingSlamBackend, Protocol):
     """Protocol for backends that implement both offline and streaming SLAM."""
 
 
 __all__ = [
     "OfflineSlamBackend",
-    "ProcessStreamingSlamBackend",
     "SlamBackend",
     "SlamSession",
     "StreamingSlamBackend",

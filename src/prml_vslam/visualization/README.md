@@ -14,13 +14,16 @@ and stage summaries remain the scientific and provenance source of truth.
   - `VisualizationArtifacts`: preserved native viewer artifacts plus repo-owned
     `.rrd` outputs
 - [`rerun.py`](./rerun.py)
-  - thin wrappers around the pinned `rerun-sdk==0.24.1` API
-- [`../pipeline/streaming.py`](../pipeline/streaming.py)
-  - viewer-specific pose adaptation hooks
-- [`../pipeline/streaming_coordinator.py`](../pipeline/streaming_coordinator.py)
-  - live logging call sites and entity-path policy
+  - thin wrappers around the pinned `rerun-sdk==0.24.1` API plus native
+    visualization-artifact collection
+- [`../pipeline/sinks/rerun.py`](../pipeline/sinks/rerun.py)
+  - event-driven live logging sink that wires pipeline events into the Rerun
+    helper API
+- [`../pipeline/ray_runtime/`](../pipeline/ray_runtime/)
+  - stage/runtime ownership for native visualization artifact collection and
+    sink lifecycle
 - [`../methods/vista/adapter.py`](../methods/vista/adapter.py)
-  - conversion of upstream ViSTA payloads into repo-owned telemetry
+  - conversion of upstream ViSTA payloads into repo-owned live telemetry
 
 ## Quick Start
 
@@ -61,7 +64,8 @@ uv run rerun \
 ```
 
 `connect_live_viewer` and `export_viewer_rrd` can be enabled together. The
-streaming runner attaches both sinks to the same explicit recording stream.
+pipeline Rerun event sink attaches both sinks to the same explicit recording
+stream.
 
 ## Primary References
 
@@ -241,13 +245,17 @@ Important consequences:
 
 The current implementation is intentionally thin but incomplete:
 
-- [`rerun.py`](./rerun.py) creates recordings, attaches sinks, logs a world
-  `ViewCoordinates`, logs transforms, pinhole cameras, RGB images, depth
-  images, and `Points3D`, and preserves native `.rrd` artifacts.
-- [`../pipeline/streaming_coordinator.py`](../pipeline/streaming_coordinator.py)
-  logs reference clouds, the live camera pose, per-keyframe poses, camera
-  intrinsics, actual camera images, diagnostic previews, depth images, and
-  pointmaps.
+- [`rerun.py`](./rerun.py) creates recordings, attaches sinks, logs transforms,
+  pinhole cameras, RGB images, depth images, and `Points3D`, and preserves
+  native `.rrd` artifacts.
+- [`../pipeline/sinks/rerun.py`](../pipeline/sinks/rerun.py) is the current
+  repo-owned live sink surface; it consumes pipeline events plus opaque array
+  handles and logs the current live source image, live and keyed camera
+  branches, and camera-local pointmaps under posed pointmap entities.
+- [`../methods/vista/adapter.py`](../methods/vista/adapter.py) converts
+  upstream ViSTA views into canonical `SlamUpdate` payloads, including camera
+  intrinsics, metric depth, preview imagery, and camera-local pointmaps for the
+  downstream sink/helper path.
 - Offline runs currently preserve native upstream visualization artifacts but do
   not synthesize a repo-owned offline `.rrd`.
 
@@ -284,9 +292,9 @@ on the camera transform to place it in the scene.
 The repo stores camera poses as `T_world_camera`, so the Rerun helper must log
 them with parent-from-child semantics.
 
-The repo-owned path now uses explicit `ParentFromChild` semantics and keeps the
-same world/frame orientation as upstream ViSTA instead of remapping ViSTA into a
-repo-specific Y-up viewer world.
+The repo-owned path now uses explicit `ParentFromChild` semantics and keeps
+ViSTA's native world semantics instead of remapping ViSTA into a repo-specific
+viewer basis.
 
 If future pointmaps look mirrored or displaced again, inspect transform
 relations before touching basis-conversion code.

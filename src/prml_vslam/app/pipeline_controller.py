@@ -12,6 +12,7 @@ from prml_vslam.benchmark import (
     EfficiencyBenchmarkConfig,
     TrajectoryBenchmarkConfig,
 )
+from prml_vslam.datasets.advio import AdvioLocalSceneStatus
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import TrajectoryEvaluationPreview
 from prml_vslam.eval.services import compute_trajectory_ape_preview
@@ -19,15 +20,16 @@ from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
+from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
-    LiveTransportId,
     Record3DLiveSourceSpec,
     SlamStageConfig,
+    build_backend_spec,
 )
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import load_run_request_toml
-from prml_vslam.pipeline.state import RunSnapshot
 from prml_vslam.utils import PathConfig
 from prml_vslam.visualization.contracts import VisualizationConfig
 
@@ -40,10 +42,10 @@ if TYPE_CHECKING:
 
 _SUPPORTED_APP_STAGE_IDS = frozenset(
     {
-        RunPlanStageId.INGEST,
-        RunPlanStageId.SLAM,
-        RunPlanStageId.TRAJECTORY_EVALUATION,
-        RunPlanStageId.SUMMARY,
+        StageKey.INGEST,
+        StageKey.SLAM,
+        StageKey.TRAJECTORY_EVALUATION,
+        StageKey.SUMMARY,
     }
 )
 
@@ -68,7 +70,7 @@ def sync_pipeline_page_state_from_template(
     context: AppContext,
     config_path: Path,
     request: RunRequest,
-    statuses: list[object],
+    statuses: list[AdvioLocalSceneStatus],
 ) -> None:
     """Hydrate Pipeline page state from a newly selected request template."""
     page_state = context.state.pipeline
@@ -104,9 +106,9 @@ def sync_pipeline_page_state_from_template(
         config_path=config_path,
         experiment_name=request.experiment_name,
         mode=request.mode,
-        method=request.slam.method,
+        method=MethodId(request.slam.backend.kind),
         slam_max_frames=request.slam.backend.max_frames,
-        slam_backend_payload=request.slam.backend.model_dump(mode="python", exclude_none=True),
+        slam_backend_payload=request.slam.backend.model_dump(mode="json", exclude_none=True),
         emit_dense_points=request.slam.outputs.emit_dense_points,
         emit_sparse_points=request.slam.outputs.emit_sparse_points,
         reference_enabled=request.benchmark.reference.enabled,
@@ -115,6 +117,7 @@ def sync_pipeline_page_state_from_template(
         evaluate_efficiency=request.benchmark.efficiency.enabled,
         connect_live_viewer=request.visualization.connect_live_viewer,
         export_viewer_rrd=request.visualization.export_viewer_rrd,
+        rerun_modalities=list(request.visualization.rerun_modalities),
         **source_updates,
     )
 
@@ -137,12 +140,15 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             output_dir=context.path_config.artifacts_dir,
             source=source,
             slam=SlamStageConfig(
-                method=action.method,
+                backend=build_backend_spec(
+                    method=action.method,
+                    max_frames=action.slam_max_frames,
+                    overrides=backend_payload_from_action(action),
+                ),
                 outputs={
                     "emit_dense_points": action.emit_dense_points,
                     "emit_sparse_points": action.emit_sparse_points,
                 },
-                backend=backend_payload_from_action(action),
             ),
             benchmark=BenchmarkConfig(
                 reference={"enabled": action.reference_enabled},
@@ -153,6 +159,7 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             visualization=VisualizationConfig(
                 export_viewer_rrd=action.export_viewer_rrd,
                 connect_live_viewer=action.connect_live_viewer,
+                rerun_modalities=list(action.rerun_modalities),
             ),
         )
         return request, None
@@ -172,16 +179,21 @@ def request_support_error(
     *,
     request: RunRequest | None,
     plan: RunPlan | None,
-    previewable_statuses: list[object],
+    previewable_statuses: list[AdvioLocalSceneStatus],
 ) -> str | None:
     """Return why the Pipeline app page cannot execute the current request."""
     if request is None:
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
-    if request.slam.method is MethodId.MAST3R:
+    if request.slam.backend.kind == MethodId.MAST3R.value:
         return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
-    unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
+    unavailable_stages = [stage for stage in plan.stages if not stage.available]
+    if unavailable_stages:
+        return unavailable_stages[0].availability_reason or (
+            f"Stage '{unavailable_stages[0].key.value}' is not executable in the current pipeline."
+        )
+    unsupported_stage_ids = [stage.key.value for stage in plan.stages if stage.key not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
         return (
             "The current app demo can execute only ingest, slam, trajectory evaluation, and summary stages. Disable: "
@@ -334,13 +346,16 @@ def _compute_evo_preview(
     return compute_trajectory_ape_preview(reference_path=reference_path, estimate_path=estimate_path)
 
 
-def resolve_advio_sequence_id(*, sequence_slug: str, statuses: list[object]) -> tuple[int | None, str | None]:
+def resolve_advio_sequence_id(
+    *,
+    sequence_slug: str,
+    statuses: list[AdvioLocalSceneStatus],
+) -> tuple[int | None, str | None]:
     """Resolve one ADVIO sequence id and matching error message."""
     sequence_id = None
     for status in statuses:
-        scene = getattr(status, "scene", None)
-        if scene is not None and getattr(scene, "sequence_slug", None) == sequence_slug:
-            sequence_id = int(scene.sequence_id)
+        if status.scene.sequence_slug == sequence_slug:
+            sequence_id = int(status.scene.sequence_id)
             break
     if sequence_id is None and sequence_slug.startswith("advio-"):
         suffix = sequence_slug.split("-", maxsplit=1)[1]
@@ -367,7 +382,6 @@ def request_summary_payload(request: RunRequest) -> dict[str, object]:
         "mode": request.mode.value,
         "output_dir": request.output_dir.as_posix(),
         "slam": {
-            "method": request.slam.method.value,
             "backend": request.slam.backend.model_dump(mode="json", exclude_none=True),
             "emit_dense_points": request.slam.outputs.emit_dense_points,
             "emit_sparse_points": request.slam.outputs.emit_sparse_points,
@@ -391,7 +405,7 @@ def record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLive
     """Build the typed Record3D live source contract from one pipeline action."""
     return Record3DLiveSourceSpec(
         persist_capture=action.record3d_persist_capture,
-        transport=LiveTransportId(action.record3d_transport.value),
+        transport=Record3DTransportId(action.record3d_transport.value),
         device_index=action.record3d_usb_device_index if action.record3d_transport is Record3DTransportId.USB else None,
         device_address=action.record3d_wifi_device_address
         if action.record3d_transport is Record3DTransportId.WIFI
@@ -401,8 +415,7 @@ def record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLive
 
 def backend_payload_from_action(action: PipelinePageAction) -> dict[str, object]:
     """Return backend config payload for one action."""
-    if action.method is not MethodId.VISTA:
-        return {"max_frames": action.slam_max_frames}
     payload = dict(action.slam_backend_payload)
-    payload["max_frames"] = action.slam_max_frames
+    payload.pop("kind", None)
+    payload.pop("max_frames", None)
     return payload

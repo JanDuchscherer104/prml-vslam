@@ -5,43 +5,20 @@ from __future__ import annotations
 import importlib
 import time
 from collections.abc import Iterator
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from threading import Event
 from typing import Any
 
 import numpy as np
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
+from prml_vslam.interfaces import (
+    CameraIntrinsics,
+    FramePacket,
+    FramePacketProvenance,
+    FrameTransform,
+    Record3DTransportId,
+)
 from prml_vslam.utils import BaseConfig, BaseData, Console, FactoryConfig
-
-
-class Record3DTransportId(StrEnum):
-    """Stable transport identifiers used by the app preview and capture layers."""
-
-    USB = "usb"
-    WIFI = "wifi"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing transport label."""
-        return "Wi-Fi Preview" if self is Record3DTransportId.WIFI else self.value.upper()
-
-    def stream_hint(self) -> str:
-        """Return the short transport-specific helper text."""
-        match self:
-            case Record3DTransportId.USB:
-                return (
-                    "USB capture uses the native `record3d` Python bindings and is the canonical programmatic ingress "
-                    "for Record3D in this repo. It can expose RGB, depth, intrinsics, pose, and confidence."
-                )
-            case Record3DTransportId.WIFI:
-                return (
-                    "Wi-Fi Preview uses a Python-side WebRTC receiver. It is an optional lower-fidelity preview path "
-                    "for the app, not the canonical ingestion boundary. Enter the device address shown in the iPhone "
-                    "app."
-                )
-            case _:
-                raise ValueError(f"Unsupported Record3D transport: {self}")
 
 
 class Record3DDeviceType(IntEnum):
@@ -196,10 +173,11 @@ class Record3DUSBPacketStream:
             intrinsics=self._intrinsics_from_binding(stream.get_intrinsic_mat()),
             pose=self._camera_pose_from_binding(stream.get_camera_pose()),
             confidence=confidence.astype(np.float32) if confidence.size else None,
-            metadata={
-                "transport": Record3DTransportId.USB.value,
-                "device_type": device_type.value,
-            },
+            provenance=FramePacketProvenance(
+                source_id="record3d",
+                transport=Record3DTransportId.USB,
+                device_type=device_type.name.lower(),
+            ),
         )
 
     def _on_new_frame(self) -> None:
@@ -262,10 +240,11 @@ def build_record3d_frame_details(packet: FramePacket, *, source_label: str = "")
     details: dict[str, object] = {"arrival_timestamp_s": round(arrival_timestamp_s, 3)}
     if source_label:
         details["source"] = source_label
-    if "original_size" in packet.metadata:
-        details["original_size"] = packet.metadata["original_size"]
-    if packet.metadata:
-        details["metadata"] = packet.metadata
+    if packet.provenance.original_width is not None and packet.provenance.original_height is not None:
+        details["original_size"] = [packet.provenance.original_width, packet.provenance.original_height]
+    provenance_payload = packet.provenance.compact_payload()
+    if provenance_payload:
+        details["provenance"] = provenance_payload
     return details
 
 

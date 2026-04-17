@@ -15,6 +15,7 @@ dependencies = [
   "plotly>=6.6.0,<7",
   "evo>=1.31,<2",
   "pydantic>=2.11,<3",
+  "ray>=2.40,<3",
   "rich>=13.7,<15",
   "seaborn>=0.13,<1",
   "streamlit>=1.35,<2",
@@ -85,6 +86,7 @@ addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 no-build-isolation-package = ["dbow3py"]
 
   [tool.uv.extra-build-dependencies]
+  dbow3py = ["setuptools"]
   xformers = ["torch==2.5.1"]
 
   [tool.uv.sources]
@@ -99,8 +101,12 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
 
   [[tool.mypy.overrides]]
   module = [
+    "cv2",
+    "cv2.*",
     "numpy",
     "numpy.*",
+    "open3d",
+    "open3d.*",
     "pydantic",
     "pydantic.*",
     "pytest",
@@ -109,6 +115,8 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
     "streamlit.*",
     "tomli_w",
     "tomli_w.*",
+    "torch",
+    "torch.*",
   ]
   ignore_missing_imports = true
 

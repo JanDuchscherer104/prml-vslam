@@ -90,14 +90,4 @@ def pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
     return normalize_grayscale_image(magnitude)
 
 
-def preview_image_from_update(update: object) -> np.ndarray | None:
-    """Return the retained preview image for one streaming SLAM update-like object."""
-    if update is None:
-        return None
-    preview_rgb = getattr(update, "preview_rgb", None)
-    if preview_rgb is not None and np.asarray(preview_rgb).size > 0:
-        return np.asarray(preview_rgb)
-    return pointmap_preview_image(getattr(update, "pointmap", None))
-
-
-__all__ = ["build_evo_ape_colormap_figure", "pointmap_preview_image", "preview_image_from_update"]
+__all__ = ["build_evo_ape_colormap_figure", "pointmap_preview_image"]

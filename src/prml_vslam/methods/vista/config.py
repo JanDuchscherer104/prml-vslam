@@ -1,23 +1,32 @@
-"""Config classes for the canonical ViSTA backend."""
+"""Config class for the canonical ViSTA backend."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict
 
 from prml_vslam.methods.contracts import SlamBackendConfig
-from prml_vslam.utils import BaseConfig, FactoryConfig
+from prml_vslam.utils import FactoryConfig
 
 if TYPE_CHECKING:
     from .adapter import VistaSlamBackend
 
 
-class VistaSlamConfig(BaseConfig):
-    """Algorithm-level hyperparameters forwarded to upstream OnlineSLAM."""
+class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"]):
+    """Factory config that builds the canonical ViSTA backend."""
 
     model_config = ConfigDict(extra="forbid")
+
+    vista_slam_dir: Path = Path("external/vista-slam")
+    """Path to the ViSTA repository (submodule root)."""
+
+    checkpoint_path: Path = Path("external/vista-slam/pretrains/frontend_sta_weights.pth")
+    """Path to the STA frontend pretrained weights."""
+
+    vocab_path: Path = Path("external/vista-slam/pretrains/ORBvoc.txt")
+    """Path to the ORB vocabulary file used by loop detection."""
 
     device: str = "cuda"
     """Torch device string used for model inference."""
@@ -61,24 +70,6 @@ class VistaSlamConfig(BaseConfig):
     random_seed: int = 43
     """Random seed set before model initialisation for reproducibility."""
 
-
-class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"]):
-    """Factory config that builds the canonical ViSTA backend."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    vista_slam_dir: Path = Path("external/vista-slam")
-    """Path to the ViSTA repository (submodule root)."""
-
-    checkpoint_path: Path = Path("external/vista-slam/pretrains/frontend_sta_weights.pth")
-    """Path to the STA frontend pretrained weights."""
-
-    vocab_path: Path = Path("external/vista-slam/pretrains/ORBvoc.txt")
-    """Path to the ORB vocabulary file used by loop detection."""
-
-    slam: VistaSlamConfig = Field(default_factory=VistaSlamConfig)
-    """Algorithm-level hyperparameters forwarded to upstream OnlineSLAM."""
-
     @property
     def target_type(self) -> type[VistaSlamBackend]:
         """Return the backend type instantiated by :meth:`setup_target`."""
@@ -87,4 +78,4 @@ class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"
         return VistaSlamBackend
 
 
-__all__ = ["VistaSlamBackendConfig", "VistaSlamConfig"]
+__all__ = ["VistaSlamBackendConfig"]

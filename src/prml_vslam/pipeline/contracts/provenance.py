@@ -9,21 +9,25 @@ from pydantic import Field
 
 from prml_vslam.utils import BaseData
 
-from .plan import RunPlanStageId
+from .stages import StageKey
 
 
-class StageExecutionStatus(StrEnum):
-    """Execution status stored in one stage manifest."""
+class StageStatus(StrEnum):
+    """Shared stage status for runtime snapshots and persisted provenance."""
 
-    HIT = "hit"
-    RAN = "ran"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
     FAILED = "failed"
+    STOPPED = "stopped"
+    SKIPPED = "skipped"
+    BLOCKED = "blocked"
 
 
 class StageManifest(BaseData):
     """Cache and provenance record for one executed stage."""
 
-    stage_id: RunPlanStageId
+    stage_id: StageKey
     """Stage identity."""
 
     config_hash: str
@@ -35,8 +39,8 @@ class StageManifest(BaseData):
     output_paths: dict[str, Path] = Field(default_factory=dict)
     """Named materialized outputs produced or reused by the stage."""
 
-    status: StageExecutionStatus
-    """Whether the stage was reused, executed, or failed."""
+    status: StageStatus
+    """Final stage status for this manifest."""
 
     @staticmethod
     def table_rows(stage_manifests: list[StageManifest]) -> list[dict[str, str]]:
@@ -61,8 +65,8 @@ class RunSummary(BaseData):
     artifact_root: Path
     """Root directory that owns all run artifacts."""
 
-    stage_status: dict[RunPlanStageId, StageExecutionStatus] = Field(default_factory=dict)
+    stage_status: dict[StageKey, StageStatus] = Field(default_factory=dict)
     """Final status per stage."""
 
 
-__all__ = ["RunSummary", "StageExecutionStatus", "StageManifest"]
+__all__ = ["RunSummary", "StageManifest", "StageStatus"]

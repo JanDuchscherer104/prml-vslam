@@ -22,6 +22,7 @@ from prml_vslam.datasets.advio import (
     AdvioSceneMetadata,
     AdvioSequence,
     AdvioSequenceConfig,
+    AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
     list_advio_sequence_ids,
     load_advio_sequence,
@@ -237,9 +238,9 @@ def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path
     assert packet_0.pose.tx == 1.0
     assert packet_2.pose is not None
     assert packet_2.pose.tz == 4.0
-    assert packet_3.metadata["loop_index"] == 1
-    assert packet_0.metadata["dataset"] == "ADVIO"
-    assert packet_0.metadata["pose_source"] == AdvioPoseSource.GROUND_TRUTH.value
+    assert packet_3.provenance.loop_index == 1
+    assert packet_0.provenance.dataset_id == "advio"
+    assert packet_0.provenance.pose_source == AdvioPoseSource.GROUND_TRUTH.value
 
 
 def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path: Path) -> None:
@@ -309,7 +310,7 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
     stream.disconnect()
 
     assert packet.rgb.shape == (64, 48, 3)
-    assert packet.metadata["video_rotation_degrees"] == 90
+    assert packet.provenance.video_rotation_degrees == 90
     assert packet.intrinsics is not None
     assert packet.intrinsics.width_px == 48
     assert packet.intrinsics.height_px == 64
@@ -361,6 +362,26 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert benchmark_inputs.reference_trajectories[0].path.exists()
     assert benchmark_inputs.reference_trajectories[1].path.exists()
     assert benchmark_inputs.reference_trajectories[2].path.exists()
+
+
+def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path)
+
+    source = AdvioStreamingSourceConfig(
+        dataset_root=tmp_path,
+        sequence_id=15,
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        frame_stride=1,
+    ).setup_target()
+
+    assert source is not None
+    assert source.prepare_sequence_manifest(tmp_path / "manifest").sequence_id == "advio-15"
+    stream = source.open_stream(loop=False)
+    stream.connect()
+    packet = stream.wait_for_packet()
+    stream.disconnect()
+    assert packet.pose is not None
+    assert packet.pose.tx == 1.0
 
 
 def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> None:

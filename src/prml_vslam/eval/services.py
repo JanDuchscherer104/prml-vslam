@@ -16,7 +16,10 @@ from prml_vslam.eval.contracts import (
     EvaluationSelection,
     MetricStats,
     SelectionSnapshot,
+    TrajectoryAlignmentMode,
     TrajectoryEvaluationPreview,
+    TrajectoryEvaluationSemantics,
+    TrajectoryMetricId,
     TrajectorySeries,
 )
 from prml_vslam.eval.protocols import TrajectoryEvaluator
@@ -141,6 +144,12 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             "stats": preview.stats.model_dump(mode="python"),
             "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
             "error_values": preview.error_series.values.tolist(),
+            "semantics": TrajectoryEvaluationSemantics(
+                metric_id=TrajectoryMetricId.APE_TRANSLATION,
+                pose_relation="translation_part",
+                alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
+                sync_max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+            ).model_dump(mode="python"),
         }
         result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return EvaluationArtifact.from_payload(

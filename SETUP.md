@@ -39,6 +39,16 @@ ordinary Python wheels do not provide:
 - `cuda-nvcc` and `cuda-cudart-dev`, which provide the CUDA compiler and runtime
   headers used by cuROPE
 
+Important:
+
+- When using anything under the `vista` extra, work inside the `prml-vslam`
+  conda environment.
+- This applies to `uv sync --all-extras`, `uv sync --extra vista`, ViSTA smoke
+  runs, and the Streamlit workbench when launched with `--extra vista`.
+- If the active shell is not inside the `prml-vslam` conda env, expect native
+  build or runtime failures such as missing `cmake`, missing OpenCV CMake
+  config, or missing CUDA toolchain components.
+
 Primary fresh-environment flow:
 
 ```bash
@@ -51,6 +61,18 @@ export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 uv sync --all-extras
 # uv sync --extra dev --extra vista --extra streaming
 ```
+
+Quick sanity check before installing or running ViSTA surfaces:
+
+```bash
+conda activate prml-vslam
+echo "$CONDA_PREFIX"
+which python
+which cmake
+```
+
+`$CONDA_PREFIX` and `python` should point at the `prml-vslam` conda env before
+you use any `vista` extra commands.
 
 Build the optional CUDA RoPE2D extension after activating the conda environment; do not install it manually from the submodule:
 
@@ -117,5 +139,6 @@ For the Streamlit app with ViSTA and Rerun support, complete the ViSTA/CUDA setu
 above, then run:
 
 ```bash
+conda activate prml-vslam
 uv run --extra vista --extra streaming streamlit run streamlit_app.py
 ```
