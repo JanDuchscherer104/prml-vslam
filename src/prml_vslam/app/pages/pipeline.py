@@ -107,7 +107,7 @@ def _pipeline_method_help(method: MethodId) -> str:
     if method is MethodId.MOCK:
         return "Repository-local mock backend that emits live pose and pointmap telemetry for UI validation."
     if method is MethodId.MAST3R:
-        return "MASt3R-SLAM is retained as a method id, but this repository has no executable MASt3R backend yet."
+        return "MASt3R-SLAM backend — stub; full integration in progress."
     return (
         "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs show packet FPS, accepted "
         "keyframe FPS, and live previews only when the backend produces a new keyframe artifact."
@@ -630,8 +630,8 @@ def _request_support_error(
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
-    if request.slam.method is MethodId.MAST3R:
-        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
+    """ if request.slam.method is MethodId.MAST3R:
+        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page." """
     unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
         return (

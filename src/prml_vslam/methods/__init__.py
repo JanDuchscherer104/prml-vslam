@@ -17,6 +17,13 @@ def __getattr__(name: str) -> object:
         from .vista.config import VistaSlamBackendConfig
 
         return VistaSlamBackendConfig
+
+    if name == "Mast3rSlamBackend":
+        from .mast3r.adapter import Mast3rSlamBackend
+        return Mast3rSlamBackend
+    if name == "Mast3rSlamBackendConfig":
+        from .mast3r.config import Mast3rSlamBackendConfig
+        return Mast3rSlamBackendConfig
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -25,4 +32,6 @@ __all__ = [
     "MockSlamBackendConfig",
     "VistaSlamBackend",
     "VistaSlamBackendConfig",
+    "Mast3rSlamBackend", 
+    "Mast3rSlamBackendConfig"
 ]
