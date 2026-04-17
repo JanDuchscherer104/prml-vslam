@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.utils import BaseConfig, BaseData, Console
+from prml_vslam.utils import BaseConfig, BaseData, Console, FactoryConfig
 
 
 class Record3DTransportId(StrEnum):
@@ -73,7 +73,7 @@ def _import_record3d_module() -> Any:
         ) from exc
 
 
-class Record3DStreamConfig(BaseConfig):
+class Record3DStreamConfig(BaseConfig, FactoryConfig["Record3DUSBPacketStream"]):
     """Configuration for a USB Record3D streaming session."""
 
     device_index: int = 0

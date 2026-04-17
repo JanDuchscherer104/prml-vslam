@@ -11,12 +11,13 @@ from prml_vslam.eval.contracts import DiscoveredRun, EvaluationArtifact, Selecti
 from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
+from prml_vslam.pipeline.contracts.execution import StageExecutionKey, StageResult
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageExecutionStatus, StageManifest
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
-from prml_vslam.visualization import VisualizationArtifacts
+from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
 def finalize_run_outputs(
@@ -230,6 +231,94 @@ def build_summary_manifest(
     )
 
 
+def finalize_stage_results(
+    *,
+    request: RunRequest,
+    plan: RunPlan,
+    run_paths: RunArtifactPaths,
+    stage_results: list[StageResult],
+    error_message: str,
+) -> StageResult:
+    """Persist summary artifacts from explicit stage results."""
+    planned_ids = {stage.id for stage in plan.stages}
+    non_summary_manifests = [
+        result.to_stage_manifest()
+        for result in stage_results
+        if result.stage_id in planned_ids and result.stage_id is not RunPlanStageId.SUMMARY
+    ]
+    stage_status = _stage_status_from_results(stage_results, planned_ids)
+    summary_manifest = build_summary_manifest_from_stage_results(
+        request=request,
+        run_paths=run_paths,
+        stage_results=stage_results,
+        stage_status=stage_status,
+        existing_stage_manifests=non_summary_manifests,
+        error_message=error_message,
+    )
+    stage_manifests = [*non_summary_manifests, summary_manifest]
+    summary = RunSummary(
+        run_id=plan.run_id,
+        artifact_root=plan.artifact_root,
+        stage_status={**stage_status, RunPlanStageId.SUMMARY: StageExecutionStatus.RAN},
+    )
+    write_json(run_paths.summary_path, summary)
+    write_json(run_paths.stage_manifests_path, stage_manifests)
+    return StageResult(
+        stage_id=RunPlanStageId.SUMMARY,
+        execution_key=StageExecutionKey.SUMMARY,
+        status=StageExecutionStatus.RAN,
+        config_hash=summary_manifest.config_hash,
+        input_fingerprint=summary_manifest.input_fingerprint,
+        output_paths=summary_manifest.output_paths,
+        summary=summary,
+        stage_manifests=stage_manifests,
+    )
+
+
+def build_summary_manifest_from_stage_results(
+    *,
+    request: RunRequest,
+    run_paths: RunArtifactPaths,
+    stage_results: list[StageResult],
+    stage_status: dict[RunPlanStageId, StageExecutionStatus],
+    existing_stage_manifests: list[StageManifest],
+    error_message: str,
+) -> StageManifest:
+    """Build the summary manifest from explicit stage results."""
+    return StageManifest(
+        stage_id=RunPlanStageId.SUMMARY,
+        config_hash=stable_hash({"experiment_name": request.experiment_name, "mode": request.mode}),
+        input_fingerprint=stable_hash(
+            {
+                "stage_results": stage_results,
+                "stage_status": stage_status,
+                "stage_manifests": existing_stage_manifests,
+                "error_message": error_message,
+            }
+        ),
+        output_paths={
+            "run_summary": run_paths.summary_path,
+            "stage_manifests": run_paths.stage_manifests_path,
+        },
+        status=StageExecutionStatus.RAN,
+    )
+
+
+def _stage_status_from_results(
+    stage_results: list[StageResult],
+    planned_ids: set[RunPlanStageId],
+) -> dict[RunPlanStageId, StageExecutionStatus]:
+    stage_status: dict[RunPlanStageId, StageExecutionStatus] = {}
+    for result in stage_results:
+        if result.stage_id not in planned_ids:
+            continue
+        if result.status is StageExecutionStatus.FAILED:
+            stage_status[result.stage_id] = StageExecutionStatus.FAILED
+        elif result.stage_id not in stage_status:
+            stage_status[result.stage_id] = result.status
+    return stage_status
+
+
 def stable_hash(payload: object) -> str:
     """Compute a stable SHA-256 hash for repo-owned JSON-friendly payloads."""
     normalized_payload = BaseConfig.to_jsonable(payload)
@@ -281,6 +370,7 @@ __all__ = [
     "build_stage_status",
     "build_summary_manifest",
     "compute_trajectory_evaluation",
+    "finalize_stage_results",
     "finalize_run_outputs",
     "stable_hash",
     "write_json",

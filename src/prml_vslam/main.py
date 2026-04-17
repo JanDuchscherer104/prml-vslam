@@ -31,7 +31,7 @@ from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import get_path_config
-from prml_vslam.visualization import VisualizationConfig
+from prml_vslam.visualization.contracts import VisualizationConfig
 
 app = typer.Typer(
     add_completion=False,

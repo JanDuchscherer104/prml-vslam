@@ -54,6 +54,15 @@ class ErrorSeries(BaseData):
     values: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
 
 
+class TrajectoryEvaluationPreview(BaseData):
+    """In-memory trajectory APE result shared by app previews and persisted evaluation."""
+
+    reference: TrajectorySeries
+    estimate: TrajectorySeries
+    error_series: ErrorSeries
+    stats: MetricStats
+
+
 class EvaluationArtifact(BaseData):
     """Loaded or freshly computed persisted `evo` result."""
 
@@ -210,5 +219,6 @@ __all__ = [
     "EfficiencyEvaluationSelection",
     "MetricStats",
     "SelectionSnapshot",
+    "TrajectoryEvaluationPreview",
     "TrajectorySeries",
 ]

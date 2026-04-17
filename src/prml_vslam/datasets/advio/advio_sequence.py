@@ -92,6 +92,11 @@ class AdvioSequence(BaseData):
     config: AdvioSequenceConfig
     catalog: AdvioCatalog | None = None
 
+    @classmethod
+    def setup_target(cls, config: AdvioSequenceConfig, **kwargs: object) -> AdvioSequence:
+        """Build one sequence runtime from its validated config."""
+        return cls(config=config, **kwargs)
+
     def _resolve_paths(self, *, require_arcore: bool = True) -> AdvioSequencePaths:
         return AdvioSequencePaths.resolve(self.config, self.scene, require_arcore=require_arcore)
 

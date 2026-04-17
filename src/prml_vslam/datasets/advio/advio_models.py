@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import Field, field_validator
 
-from prml_vslam.utils import BaseConfig, BaseData
+from prml_vslam.utils import BaseConfig, BaseData, FactoryConfig
+
+if TYPE_CHECKING:
+    from prml_vslam.datasets.advio.advio_sequence import AdvioSequence
 
 ADVIO_SEQUENCE_COUNT = 23
 
@@ -215,7 +219,7 @@ class AdvioDatasetSummary(BaseData):
     total_remote_archive_bytes: int
 
 
-class AdvioSequenceConfig(BaseConfig):
+class AdvioSequenceConfig(BaseConfig, FactoryConfig["AdvioSequence"]):
     """Config describing one local ADVIO sequence."""
 
     dataset_root: Path = Path(".data/advio")
@@ -237,3 +241,10 @@ class AdvioSequenceConfig(BaseConfig):
             msg = "dataset_root must not be blank"
             raise ValueError(msg)
         return value
+
+    @property
+    def target_type(self) -> type[AdvioSequence]:
+        """Return the expected sequence type for the config."""
+        from prml_vslam.datasets.advio.advio_sequence import AdvioSequence
+
+        return AdvioSequence

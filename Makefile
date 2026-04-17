@@ -13,6 +13,11 @@ PARALLEL_MAKE ?= $(MAKE) -j$(CPU_COUNT)
 AGENTS_DB ?= $(UV_RUN) python .agents/scripts/agents_db.py
 AGENTS_ARGS ?= rank
 LOC_ARGS ?=
+GRAPHIFY_DIR ?= graphify-out
+GRAPHIFY_REPORT ?= $(GRAPHIFY_DIR)/GRAPH_REPORT.md
+GRAPHIFY_GRAPH ?= $(GRAPHIFY_DIR)/graph.json
+GRAPHIFY_HTML ?= $(GRAPHIFY_DIR)/graph.html
+GRAPHIFY_PYTHON ?= $(UV_RUN) --group dev python
 
 BIB_FILE ?= docs/references.bib
 BIB_CACHE_DIR ?= .cache/bib
@@ -38,7 +43,7 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py
+.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py graphify graphify-status graphify-report graphify-rebuild graphify-view
 
 lint: ## Auto-format Python files and apply Ruff fixes
 	$(RUFF) format .
@@ -69,6 +74,30 @@ loc-py: ## Print Python LOC for src/ and tests/ (example: make loc LOC_ARGS="--m
 
 loc: ## Alias for loc-py (pass flags with LOC_ARGS="--modules --module-depth 2 --diff")
 	$(MAKE) loc-py
+
+graphify: graphify-status graphify-report ## Show graphify status and report summary
+
+graphify-status: ## Check graphify artifacts and Python runtime availability
+	@test -d "$(GRAPHIFY_DIR)" || { echo "Missing graphify directory: $(GRAPHIFY_DIR)"; exit 1; }
+	@test -f "$(GRAPHIFY_REPORT)" || { echo "Missing graphify report: $(GRAPHIFY_REPORT)"; exit 1; }
+	@test -f "$(GRAPHIFY_GRAPH)" || { echo "Missing graphify graph data: $(GRAPHIFY_GRAPH)"; exit 1; }
+	@printf "graphify artifacts: %s\n" "$(GRAPHIFY_DIR)"
+	@printf "report: %s\n" "$(GRAPHIFY_REPORT)"
+	@printf "graph data: %s\n" "$(GRAPHIFY_GRAPH)"
+	@test ! -f "$(GRAPHIFY_HTML)" || printf "viewer: %s\n" "$(GRAPHIFY_HTML)"
+	@$(GRAPHIFY_PYTHON) -c "import importlib.util; parent = importlib.util.find_spec('graphify'); spec = importlib.util.find_spec('graphify.watch') if parent else None; print('runtime: ' + ('available' if spec else 'missing'))"
+
+graphify-report: ## Print the top of the graphify report
+	@test -f "$(GRAPHIFY_REPORT)" || { echo "Missing graphify report: $(GRAPHIFY_REPORT)"; exit 1; }
+	@sed -n '1,80p' "$(GRAPHIFY_REPORT)"
+
+graphify-rebuild: ## Rebuild graphify code artifacts for this repository
+	@$(GRAPHIFY_PYTHON) -c "import importlib.util, sys; parent = importlib.util.find_spec('graphify'); spec = importlib.util.find_spec('graphify.watch') if parent else None; sys.exit(0 if spec else 1)" || { echo "Missing graphify runtime. Install the package that provides graphify.watch or set GRAPHIFY_PYTHON."; exit 1; }
+	$(GRAPHIFY_PYTHON) -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"
+
+graphify-view: ## Print the graphify HTML viewer path
+	@test -f "$(GRAPHIFY_HTML)" || { echo "Missing graphify viewer: $(GRAPHIFY_HTML)"; exit 1; }
+	@printf "%s\n" "$(GRAPHIFY_HTML)"
 
 bib-check: ## Run strict source-backed bibliography verification
 	mkdir -p $(BIB_CACHE_DIR)

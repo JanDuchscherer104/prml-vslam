@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from pydantic import ConfigDict, Field
 
 from prml_vslam.methods.contracts import SlamBackendConfig
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseConfig, FactoryConfig
 
 if TYPE_CHECKING:
     from .adapter import VistaSlamBackend
@@ -62,7 +62,7 @@ class VistaSlamConfig(BaseConfig):
     """Random seed set before model initialisation for reproducibility."""
 
 
-class VistaSlamBackendConfig(SlamBackendConfig):
+class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"]):
     """Factory config that builds the canonical ViSTA backend."""
 
     model_config = ConfigDict(extra="forbid")

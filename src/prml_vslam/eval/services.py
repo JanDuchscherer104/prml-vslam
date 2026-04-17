@@ -11,10 +11,12 @@ from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.eval.contracts import (
     DiscoveredRun,
+    ErrorSeries,
     EvaluationArtifact,
     EvaluationSelection,
     MetricStats,
     SelectionSnapshot,
+    TrajectoryEvaluationPreview,
     TrajectorySeries,
 )
 from prml_vslam.eval.protocols import TrajectoryEvaluator
@@ -22,7 +24,7 @@ from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.path_config import PathConfig
 
-__all__ = ["TrajectoryEvaluationService"]
+__all__ = ["TrajectoryEvaluationService", "compute_trajectory_ape_preview"]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 
@@ -127,37 +129,18 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         if reference_path is None:
             raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
 
-        reference_series, reference_trajectory = _load_trajectory_input(reference_path, "Reference")
-        estimate_series, estimate_trajectory = _load_trajectory_input(selection.run.estimate_path, "Estimate")
-        trajectories = (reference_series, estimate_series)
-        try:
-            associated_reference, associated_estimate = sync.associate_trajectories(
-                reference_trajectory,
-                estimate_trajectory,
-                max_diff=_EVO_ASSOCIATION_MAX_DIFF_S,
-            )
-        except sync.SyncException as exc:
-            raise ValueError(
-                "No matching trajectory timestamps were found for evo APE "
-                f"(max_diff={_EVO_ASSOCIATION_MAX_DIFF_S:.3f}s)."
-            ) from exc
-
-        metric = metrics.APE(metrics.PoseRelation.translation_part)
-        metric.process_data((associated_reference, associated_estimate))
-        error_values = np.asarray(metric.error, dtype=np.float64)
-        matched_pairs = int(error_values.size)
-        if matched_pairs == 0:
-            raise ValueError("evo APE produced zero matched trajectory pairs.")
-
+        preview = compute_trajectory_ape_preview(
+            reference_path=reference_path,
+            estimate_path=selection.run.estimate_path,
+        )
         result_path = self.result_path(selection.run.artifact_root)
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        stats = MetricStats.from_error_values(error_values)
         payload = {
             "title": "Trajectory APE (evo)",
-            "matched_pairs": matched_pairs,
-            "stats": stats.model_dump(mode="python"),
-            "error_timestamps_s": associated_reference.timestamps.tolist(),
-            "error_values": error_values.tolist(),
+            "matched_pairs": len(preview.error_series.values),
+            "stats": preview.stats.model_dump(mode="python"),
+            "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
+            "error_values": preview.error_series.values.tolist(),
         }
         result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return EvaluationArtifact.from_payload(
@@ -165,7 +148,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             payload=payload,
             reference_path=reference_path,
             estimate_path=selection.run.estimate_path,
-            trajectories=trajectories,
+            trajectories=(preview.reference, preview.estimate),
         )
 
     @staticmethod
@@ -177,13 +160,50 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
 def _load_trajectory_input(path: Path, name: str) -> tuple[TrajectorySeries, PoseTrajectory3D]:
     """Load one TUM trajectory as both plotting series and evo-native trajectory."""
     trajectory = load_tum_trajectory(path)
-    return (
-        TrajectorySeries(
-            name=name,
-            timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
-            positions_xyz=trajectory.positions_xyz,
+    return _series_from_trajectory(name, trajectory), trajectory
+
+
+def compute_trajectory_ape_preview(
+    *,
+    reference_path: Path,
+    estimate_path: Path,
+    max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
+) -> TrajectoryEvaluationPreview:
+    """Compute in-memory translation APE for two TUM trajectory artifacts."""
+    _, reference_trajectory = _load_trajectory_input(reference_path, "Reference")
+    _, estimate_trajectory = _load_trajectory_input(estimate_path, "Estimate")
+    try:
+        associated_reference, associated_estimate = sync.associate_trajectories(
+            reference_trajectory,
+            estimate_trajectory,
+            max_diff=max_diff_s,
+        )
+    except sync.SyncException as exc:
+        raise ValueError(
+            f"No matching trajectory timestamps were found for evo APE (max_diff={max_diff_s:.3f}s)."
+        ) from exc
+
+    metric = metrics.APE(metrics.PoseRelation.translation_part)
+    metric.process_data((associated_reference, associated_estimate))
+    error_values = np.asarray(metric.error, dtype=np.float64)
+    if error_values.size == 0:
+        raise ValueError("evo APE produced zero matched trajectory pairs.")
+    return TrajectoryEvaluationPreview(
+        reference=_series_from_trajectory("Reference", associated_reference),
+        estimate=_series_from_trajectory("Estimate", associated_estimate),
+        error_series=ErrorSeries(
+            timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
+            values=error_values,
         ),
-        trajectory,
+        stats=MetricStats.from_error_values(error_values),
+    )
+
+
+def _series_from_trajectory(name: str, trajectory: PoseTrajectory3D) -> TrajectorySeries:
+    return TrajectorySeries(
+        name=name,
+        timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
+        positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
     )
 
 

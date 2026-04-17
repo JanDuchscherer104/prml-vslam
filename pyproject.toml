@@ -111,3 +111,8 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
     "tomli_w.*",
   ]
   ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+  "graphifyy>=0.4.18",
+]

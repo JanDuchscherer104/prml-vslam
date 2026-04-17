@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import site
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -12,7 +13,7 @@ import cv2
 import numpy as np
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
-from prml_vslam.interfaces import FramePacket, FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.methods.updates import SlamUpdate
@@ -45,6 +46,57 @@ class _FlowTracker(Protocol):
         """Return whether the current frame should become a new keyframe."""
 
 
+@dataclass(slots=True)
+class _PreparedVistaFrame:
+    """One RGB frame prepared for upstream ViSTA ingestion."""
+
+    image_rgb: np.ndarray
+    gray_u8: np.ndarray
+    rgb_tensor: object
+
+
+class _VistaFramePreprocessor(Protocol):
+    """Prepare one repo RGB frame for upstream ViSTA ingestion."""
+
+    def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> _PreparedVistaFrame:
+        """Return the upstream-ready frame payload."""
+
+
+class _SimpleVistaFramePreprocessor:
+    """Local fallback preprocessor used by direct session tests."""
+
+    def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> _PreparedVistaFrame:
+        del view_name
+        height_px, width_px = _VISTA_INPUT_RESOLUTION
+        resized_rgb = cv2.resize(rgb_image, (width_px, height_px), interpolation=cv2.INTER_LINEAR)
+
+        import torch  # noqa: PLC0415
+
+        gray_u8 = cv2.cvtColor(resized_rgb, cv2.COLOR_RGB2GRAY)
+        rgb_tensor = torch.from_numpy(resized_rgb).permute(2, 0, 1).float() / 255.0
+        return _PreparedVistaFrame(image_rgb=resized_rgb, gray_u8=gray_u8, rgb_tensor=rgb_tensor)
+
+
+class _UpstreamVistaFramePreprocessor:
+    """Thin adapter around upstream `SLAM_image_only.process_image()` semantics."""
+
+    def __init__(self, *, image_dataset: object) -> None:
+        self._image_dataset = image_dataset
+
+    def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> _PreparedVistaFrame:
+        processed_image = self._image_dataset._crop_resize_if_necessary_image_only(
+            rgb_image,
+            self._image_dataset.resolution,
+            w_edge=10,
+            h_edge=10,
+        )
+        gray_tensor = self._image_dataset.ImgGray(processed_image)
+        rgb_tensor = self._image_dataset.ImgNorm(processed_image)
+        gray_u8 = (_vista_numpy_array(gray_tensor, dtype=np.float32).squeeze(0) * 255.0).astype(np.uint8)
+        image_rgb = np.asarray(processed_image, dtype=np.uint8)
+        return _PreparedVistaFrame(image_rgb=image_rgb, gray_u8=gray_u8, rgb_tensor=rgb_tensor)
+
+
 class VistaSlamSession:
     """Stateful streaming session that forwards frames to upstream OnlineSLAM."""
 
@@ -53,12 +105,14 @@ class VistaSlamSession:
         *,
         slam: object,
         flow_tracker: _FlowTracker,
+        frame_preprocessor: _VistaFramePreprocessor | None = None,
         artifact_root: Path,
         output_policy: SlamOutputPolicy,
         console: Console,
     ) -> None:
         self._slam = slam
         self._flow_tracker = flow_tracker
+        self._frame_preprocessor = frame_preprocessor or _SimpleVistaFramePreprocessor()
         self._artifact_root = artifact_root
         self._output_policy = output_policy
         self._console = console
@@ -85,9 +139,11 @@ class VistaSlamSession:
             self._pending_updates.append(update)
             return
 
-        height_px, width_px = _VISTA_INPUT_RESOLUTION
-        resized_rgb = cv2.resize(frame.rgb, (width_px, height_px), interpolation=cv2.INTER_LINEAR)
-        grayscale = cv2.cvtColor(resized_rgb, cv2.COLOR_RGB2GRAY)
+        prepared_frame = self._frame_preprocessor.prepare(
+            frame.rgb,
+            view_name=f"frame_{self._accepted_keyframe_count:06d}",
+        )
+        grayscale = prepared_frame.gray_u8
         is_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
         if not is_keyframe:
             update = SlamUpdate(
@@ -104,10 +160,9 @@ class VistaSlamSession:
 
         import torch  # noqa: PLC0415
 
-        rgb_float = torch.from_numpy(resized_rgb).permute(2, 0, 1).float() / 255.0
         value = {
-            "rgb": rgb_float.unsqueeze(0).to(self._slam.device),
-            "shape": torch.tensor(rgb_float.shape[1:3]).unsqueeze(0),
+            "rgb": prepared_frame.rgb_tensor.unsqueeze(0).to(self._slam.device),
+            "shape": torch.tensor(prepared_frame.rgb_tensor.shape[1:3]).unsqueeze(0),
             "gray": grayscale,
             "view_name": f"frame_{self._accepted_keyframe_count:06d}",
         }
@@ -116,6 +171,7 @@ class VistaSlamSession:
             seq=frame.seq,
             timestamp_ns=frame.timestamp_ns,
             view_index=self._accepted_keyframe_count,
+            image_rgb=prepared_frame.image_rgb,
         )
         update.is_keyframe = True
         update.keyframe_index = self._accepted_keyframe_count
@@ -159,6 +215,7 @@ class VistaSlamSession:
         seq: int,
         timestamp_ns: int,
         view_index: int,
+        image_rgb: np.ndarray,
     ) -> SlamUpdate:
         """Read the latest upstream view state and convert it into live repo telemetry."""
         try:
@@ -183,7 +240,13 @@ class VistaSlamSession:
                 num_sparse_points=0,
                 num_dense_points=self._num_dense_points,
             )
-        pose = _frame_transform_from_vista_pose(np.asarray(view.pose, dtype=np.float64))
+        pose = _frame_transform_from_vista_pose(_vista_numpy_array(view.pose, dtype=np.float64))
+        depth_map = _vista_numpy_array(view.depth, dtype=np.float32)
+        camera_intrinsics = CameraIntrinsics.from_matrix(
+            _vista_numpy_array(view.intri, dtype=np.float64),
+            width_px=int(image_rgb.shape[1]),
+            height_px=int(image_rgb.shape[0]),
+        )
         try:
             preview_rgb, pointmap = self._slam.get_pointmap_vis(view_index)
         except (IndexError, KeyError, ValueError):
@@ -204,7 +267,10 @@ class VistaSlamSession:
             num_sparse_points=0,
             num_dense_points=self._num_dense_points,
             pointmap=pointmap if self._output_policy.emit_dense_points else None,
-            preview_rgb=preview_rgb,
+            camera_intrinsics=camera_intrinsics,
+            image_rgb=np.asarray(image_rgb, dtype=np.uint8).copy(),
+            depth_map=depth_map,
+            preview_rgb=None if preview_rgb is None else np.asarray(preview_rgb, dtype=np.uint8),
         )
 
 
@@ -234,20 +300,27 @@ class VistaSlamBackend(SlamBackend):
         """Load upstream OnlineSLAM and return a ready multiprocess streaming session."""
         from prml_vslam.methods.multiprocess import MultiprocessSlamSession  # noqa: PLC0415
 
-        # We use a partial or a top-level function-like object to ensure it's pickleable
-        # when using the 'spawn' multiprocessing context.
-        factory = _VistaSessionFactory(
-            config=self._cfg,
-            output_policy=output_policy,
-            artifact_root=artifact_root,
-        )
-
+        factory = self.streaming_session_factory(backend_config, output_policy, artifact_root)
         session = MultiprocessSlamSession(
             session_factory=factory,
             console=self._console,
         )
         self._console.info("OnlineSLAM worker process launched; session ready.")
         return session
+
+    def streaming_session_factory(
+        self,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> _VistaSessionFactory:
+        """Return a picklable streaming session factory for process-backed pipeline execution."""
+        del backend_config
+        return _VistaSessionFactory(
+            config=self._cfg,
+            output_policy=output_policy,
+            artifact_root=artifact_root,
+        )
 
     def run_sequence(
         self,
@@ -315,6 +388,7 @@ class VistaSlamBackend(SlamBackend):
 
         try:
             import torch  # noqa: PLC0415
+            from vista_slam.datasets.slam_images_only import SLAM_image_only  # noqa: PLC0415
             from vista_slam.flow_tracker import FlowTracker  # noqa: PLC0415
             from vista_slam.slam import OnlineSLAM  # noqa: PLC0415
         except Exception as exc:  # pragma: no cover - environment-dependent runtime guard
@@ -345,9 +419,13 @@ class VistaSlamBackend(SlamBackend):
             live_mode=live_mode,
         )
         flow_tracker = FlowTracker(self._cfg.slam.flow_thres)
+        frame_preprocessor = _UpstreamVistaFramePreprocessor(
+            image_dataset=SLAM_image_only([], resolution=_VISTA_INPUT_RESOLUTION)
+        )
         return VistaSlamSession(
             slam=slam,
             flow_tracker=flow_tracker,
+            frame_preprocessor=frame_preprocessor,
             artifact_root=artifact_root,
             output_policy=output_policy,
             console=self._console,
@@ -477,7 +555,18 @@ def _build_live_pointmap(view: object) -> np.ndarray | None:
     """Convert one upstream pointcloud payload into the repository-local dtype."""
     if view is None:
         return None
-    return np.asarray(view, dtype=np.float32)
+    return _vista_numpy_array(view, dtype=np.float32)
+
+
+def _vista_numpy_array(value: object, *, dtype: np.dtype[np.generic] | type[np.generic]) -> np.ndarray:
+    """Convert one upstream ViSTA array-like payload into a numpy array."""
+    if hasattr(value, "detach"):
+        value = value.detach()
+    if hasattr(value, "cpu"):
+        value = value.cpu()
+    if hasattr(value, "numpy"):
+        return np.asarray(value.numpy(), dtype=dtype)
+    return np.asarray(value, dtype=dtype)
 
 
 def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:

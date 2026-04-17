@@ -15,7 +15,7 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
 from prml_vslam.utils import PathConfig
-from prml_vslam.visualization import VisualizationConfig
+from prml_vslam.visualization.contracts import VisualizationConfig
 
 
 def build_advio_demo_request(

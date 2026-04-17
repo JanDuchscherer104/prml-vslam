@@ -10,6 +10,7 @@ import pytest
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils.geometry import (
+    load_point_cloud_ply,
     load_tum_trajectory,
     pointmap_from_depth,
     transform_points_world_camera,
@@ -102,9 +103,12 @@ def test_transform_points_world_camera_applies_pose_translation() -> None:
     assert np.allclose(points_world, np.array([[10.0, 20.0, 31.0], [11.0, 22.0, 33.0]], dtype=np.float64))
 
 
-def test_write_point_cloud_ply_materializes_vertex_count(tmp_path: Path) -> None:
-    path = write_point_cloud_ply(tmp_path / "points.ply", np.array([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]))
+def test_point_cloud_ply_roundtrips_through_open3d_helpers(tmp_path: Path) -> None:
+    points_xyz = np.array([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=np.float64)
 
-    lines = path.read_text(encoding="utf-8").splitlines()
+    path = write_point_cloud_ply(tmp_path / "points.ply", points_xyz)
+    restored = load_point_cloud_ply(path)
 
-    assert "element vertex 2" in lines
+    assert restored.dtype == np.float64
+    assert restored.shape == (2, 3)
+    np.testing.assert_allclose(restored, points_xyz)
