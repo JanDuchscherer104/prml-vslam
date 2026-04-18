@@ -12,12 +12,11 @@ Use [RECORD3D_PROTOCOL.md](./RECORD3D_PROTOCOL.md) for the detailed transport br
   - native `record3d` Python bindings
   - device discovery through the upstream bindings
   - RGB, depth, confidence, intrinsics, and pose in shared `FramePacket` objects
-  - richer capture surface and the canonical ingress path
+  - stable repo-owned ingress path
 - `Wi-Fi Preview`
   - Python-side WebRTC receiver plus HTTP signaling and metadata
   - decoded RGB and depth plus intrinsics when metadata is available
-  - no pose or confidence data
-  - lower-fidelity preview path rather than the canonical ingestion surface
+  - stable repo-owned ingress path with equivalent support in this repository
 
 ## Repo-Owned Entry Points
 

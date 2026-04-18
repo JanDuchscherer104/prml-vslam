@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
 from pydantic import Field
 
 from prml_vslam.benchmark import BenchmarkConfig
+from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import Record3DTransportId
 from prml_vslam.methods.contracts import MethodId, SlamOutputPolicy
@@ -54,6 +55,12 @@ class DatasetSourceSpec(BaseConfig):
 
     sequence_id: str
     """Dataset-specific sequence identifier."""
+
+    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
+    """Replay pose source used when this dataset source is executed in streaming mode."""
+
+    respect_video_rotation: bool = False
+    """Whether ADVIO replay should honor video rotation metadata when available."""
 
 
 class Record3DLiveSourceSpec(BaseConfig):
@@ -121,6 +128,9 @@ BackendSpec = Annotated[
     Field(discriminator="kind"),
 ]
 
+BackendConfigValue: TypeAlias = Path | str | int | float | bool | None
+BackendConfigPayload: TypeAlias = dict[str, BackendConfigValue]
+
 
 class StagePlacement(BaseConfig):
     """Repo-owned placement preference for one stage."""
@@ -182,7 +192,7 @@ def build_backend_spec(
     *,
     method: MethodId,
     max_frames: int | None = None,
-    overrides: dict[str, object] | None = None,
+    overrides: BackendConfigPayload | None = None,
 ) -> BackendSpec:
     """Build one explicit backend spec from a user-selected method and overrides."""
     payload = {"max_frames": max_frames}
@@ -199,7 +209,7 @@ def build_backend_spec(
             return Mast3rBackendSpec.model_validate({"kind": "mast3r", **payload})
 
 
-def _normalize_backend_payload(model_type: type[TransportModel], payload: dict[str, object]) -> dict[str, object]:
+def _normalize_backend_payload(model_type: type[TransportModel], payload: BackendConfigPayload) -> BackendConfigPayload:
     """Coerce strict config payloads back into their declared scalar field types."""
     normalized = dict(payload)
     for field_name, field in model_type.model_fields.items():
@@ -213,6 +223,7 @@ def _normalize_backend_payload(model_type: type[TransportModel], payload: dict[s
 
 __all__ = [
     "BackendSpec",
+    "BackendConfigPayload",
     "build_backend_spec",
     "DatasetSourceSpec",
     "Mast3rBackendSpec",

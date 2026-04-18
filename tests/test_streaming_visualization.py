@@ -15,7 +15,6 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks import rerun as rerun_sink_module
 from prml_vslam.pipeline.sinks.rerun import RerunEventSink, RerunSinkActor
 from prml_vslam.utils.geometry import transform_points_world_camera
-from prml_vslam.visualization.contracts import RerunModality
 
 
 class _FakeRecordingStream:
@@ -52,7 +51,7 @@ def test_rerun_sink_is_noop_when_handles_are_unavailable(tmp_path: Path) -> None
     sink.observe(event, resolve_handle=lambda _handle_id: None)
 
 
-def test_rerun_sink_logs_only_selected_modalities(tmp_path: Path, monkeypatch) -> None:
+def test_rerun_sink_logs_fixed_camera_complete_branches(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, str, int | None]] = []
 
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
@@ -85,11 +84,17 @@ def test_rerun_sink_logs_only_selected_modalities(tmp_path: Path, monkeypatch) -
             ("pose", entity_path, stream.current_timeline("keyframe"))
         ),
     )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_pointcloud",
+        lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+            ("points", entity_path, stream.current_timeline("keyframe"))
+        ),
+    )
 
     sink = RerunEventSink(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        modalities=[RerunModality.KEYFRAME_RGB, RerunModality.KEYFRAME_DEPTH],
     )
 
     event = BackendNoticeReceived(
@@ -127,10 +132,16 @@ def test_rerun_sink_logs_only_selected_modalities(tmp_path: Path, monkeypatch) -
         ("pinhole", "world/live/camera/cam", None),
         ("rgb", "world/live/camera/cam", None),
         ("depth", "world/live/camera/cam/depth", None),
+        ("rgb", "world/live/camera/preview", None),
+        ("pose", "world/live/pointmap", None),
+        ("points", "world/live/pointmap/points", None),
         ("pose", "world/est/cameras/cam_000003", 3),
         ("pinhole", "world/est/cameras/cam_000003/cam", 3),
         ("rgb", "world/est/cameras/cam_000003/cam", 3),
         ("depth", "world/est/cameras/cam_000003/cam/depth", 3),
+        ("rgb", "world/est/cameras/cam_000003/preview", 3),
+        ("pose", "world/est/pointmaps/cam_000003", 3),
+        ("points", "world/est/pointmaps/cam_000003/points", 3),
     ]
 
 
@@ -161,7 +172,6 @@ def test_rerun_sink_logs_pointmaps_under_live_and_keyframe_entities(tmp_path: Pa
     sink = RerunEventSink(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        modalities=[RerunModality.POINTMAPS],
     )
 
     event = BackendNoticeReceived(
@@ -206,7 +216,7 @@ def test_rerun_sink_logs_pointmaps_under_live_and_keyframe_entities(tmp_path: Pa
     np.testing.assert_allclose(world_points[0], np.array([1.5, 2.0, 3.0]))
 
 
-def test_rerun_sink_can_limit_output_to_source_rgb(tmp_path: Path, monkeypatch) -> None:
+def test_rerun_sink_logs_source_rgb_and_live_pose(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, str, int | None]] = []
 
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
@@ -229,7 +239,6 @@ def test_rerun_sink_can_limit_output_to_source_rgb(tmp_path: Path, monkeypatch) 
     sink = RerunEventSink(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        modalities=[RerunModality.SOURCE_RGB],
     )
 
     packet_event = PacketObserved(
@@ -256,7 +265,10 @@ def test_rerun_sink_can_limit_output_to_source_rgb(tmp_path: Path, monkeypatch) 
     sink.observe(packet_event, resolve_handle=lambda _handle_id: np.zeros((2, 2, 3), dtype=np.uint8))
     sink.observe(pose_event, resolve_handle=lambda _handle_id: None)
 
-    assert calls == [("rgb", "world/live/source/rgb", None)]
+    assert calls == [
+        ("rgb", "world/live/source/rgb", None),
+        ("pose", "world/live/camera", None),
+    ]
 
 
 def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypatch) -> None:
@@ -275,7 +287,6 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
     sink = RerunEventSink(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        modalities=[RerunModality.CAMERA_POSE],
     )
     sink.observe(
         BackendNoticeReceived(
@@ -312,7 +323,6 @@ def test_rerun_sink_clears_stale_keyframe_timeline_before_pose_estimate(tmp_path
     sink = RerunEventSink(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        modalities=[RerunModality.CAMERA_POSE],
     )
     sink._stream.set_time("keyframe", sequence=7)  # type: ignore[union-attr]
 
@@ -350,7 +360,6 @@ def test_rerun_sink_clears_stale_keyframe_timeline_after_keyframe_visualization(
     sink = RerunEventSink(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        modalities=[RerunModality.CAMERA_POSE, RerunModality.POINTMAPS],
     )
     sink.observe(
         BackendNoticeReceived(
@@ -408,7 +417,6 @@ def test_rerun_sink_actor_forwards_materialized_bindings_to_local_sink(tmp_path:
     actor = actor_cls(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        modalities=[RerunModality.SOURCE_RGB],
         recording_id="demo",
     )
     actor.observe_event(

@@ -9,7 +9,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 ## Current State
 
 - The app currently exposes four top-level pages: `Record3D`, `ADVIO`, `Pipeline`, and `Metrics`.
-- The `Record3D` page supports both the canonical `USB` transport and the optional `Wi-Fi Preview` transport through one selector.
+- The `Record3D` page supports both the `USB` transport and the `Wi-Fi Preview` transport through one selector.
 - The `Pipeline` page can show example request shapes, a generated `RunPlan`, one mock executed run, and the current offline plus bounded streaming demo surface.
 - The `Pipeline` page may run offline ADVIO requests plus bounded Record3D live flows through pipeline-owned services.
 - The `Pipeline` page currently renders an explicit `evo` APE preview when both reference and estimate TUM trajectories are available for the bounded demo result.

@@ -5,14 +5,15 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeAlias
 
 import numpy as np
 import ray
 
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, PacketObserved, RunEvent
-from prml_vslam.visualization.contracts import RerunModality, default_rerun_modalities
+from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.ray_runtime.common import HandlePayload
 from prml_vslam.visualization.rerun import (
     attach_recording_sinks,
     create_recording_stream,
@@ -34,11 +35,9 @@ class RerunEventSink:
         *,
         grpc_url: str | None,
         target_path: Path | None,
-        modalities: list[RerunModality] | None = None,
         recording_id: str | None = None,
     ) -> None:
         self._stream = None
-        self._modalities = frozenset(default_rerun_modalities() if modalities is None else modalities)
         if grpc_url is None and target_path is None:
             return
         self._log_pinhole = log_pinhole
@@ -54,21 +53,19 @@ class RerunEventSink:
             return
         match event:
             case PacketObserved(frame=frame) if frame is not None:
-                if RerunModality.SOURCE_RGB in self._modalities:
-                    self._clear_keyframe_timeline()
-                    image = resolve_handle(frame.handle_id)
-                    if image is not None:
-                        self._log_rgb_image(self._stream, entity_path="world/live/source/rgb", image_rgb=image)
+                self._clear_keyframe_timeline()
+                image = resolve_handle(frame.handle_id)
+                if image is not None:
+                    self._log_rgb_image(self._stream, entity_path="world/live/source/rgb", image_rgb=image)
             case BackendNoticeReceived(notice=notice):
                 match notice:
                     case PoseEstimated(pose=pose):
-                        if RerunModality.CAMERA_POSE in self._modalities:
-                            self._clear_keyframe_timeline()
-                            self._log_transform(
-                                self._stream,
-                                entity_path="world/live/camera",
-                                transform=pose,
-                            )
+                        self._clear_keyframe_timeline()
+                        self._log_transform(
+                            self._stream,
+                            entity_path="world/live/camera",
+                            transform=pose,
+                        )
                     case KeyframeVisualizationReady() as keyframe_notice:
                         self._log_keyframe_visualization(keyframe_notice, resolve_handle=resolve_handle)
                     case _:
@@ -98,22 +95,22 @@ class RerunEventSink:
         rgb = self._resolve_optional_array(
             notice.image,
             resolve_handle=resolve_handle,
-            enabled=RerunModality.KEYFRAME_RGB in self._modalities,
+            enabled=True,
         )
         depth_image = self._resolve_optional_array(
             notice.depth,
             resolve_handle=resolve_handle,
-            enabled=RerunModality.KEYFRAME_DEPTH in self._modalities,
+            enabled=True,
         )
         preview_image = self._resolve_optional_array(
             notice.preview,
             resolve_handle=resolve_handle,
-            enabled=RerunModality.DIAGNOSTIC_PREVIEW in self._modalities,
+            enabled=True,
         )
         pointmap = self._resolve_optional_array(
             notice.pointmap,
             resolve_handle=resolve_handle,
-            enabled=RerunModality.POINTMAPS in self._modalities,
+            enabled=True,
         )
 
         self._log_live_branch(
@@ -143,11 +140,11 @@ class RerunEventSink:
     def _log_live_branch(
         self,
         *,
-        pose: object,
+        pose: FrameTransform,
         camera_entity: str,
         camera_image_entity: str,
         pointmap_entity: str,
-        intrinsics: object,
+        intrinsics: CameraIntrinsics | None,
         rgb: np.ndarray | None,
         depth_image: np.ndarray | None,
         preview_image: np.ndarray | None,
@@ -169,11 +166,11 @@ class RerunEventSink:
         self,
         *,
         keyframe_index: int,
-        pose: object,
+        pose: FrameTransform,
         camera_entity: str,
         camera_image_entity: str,
         pointmap_entity: str,
-        intrinsics: object,
+        intrinsics: CameraIntrinsics | None,
         rgb: np.ndarray | None,
         depth_image: np.ndarray | None,
         preview_image: np.ndarray | None,
@@ -196,7 +193,7 @@ class RerunEventSink:
         *,
         camera_entity: str,
         camera_image_entity: str,
-        intrinsics: object,
+        intrinsics: CameraIntrinsics | None,
         rgb: np.ndarray | None,
         depth_image: np.ndarray | None,
         preview_image: np.ndarray | None,
@@ -204,24 +201,24 @@ class RerunEventSink:
         if intrinsics is not None and self._should_log_camera_pinhole(image=rgb, depth=depth_image):
             self._log_pinhole(self._stream, entity_path=camera_image_entity, intrinsics=intrinsics)
 
-        if rgb is not None and RerunModality.KEYFRAME_RGB in self._modalities:
+        if rgb is not None:
             self._log_rgb_image(self._stream, entity_path=camera_image_entity, image_rgb=rgb)
 
-        if depth_image is not None and RerunModality.KEYFRAME_DEPTH in self._modalities:
+        if depth_image is not None:
             self._log_depth_image(self._stream, entity_path=f"{camera_image_entity}/depth", depth_m=depth_image)
 
-        if preview_image is not None and RerunModality.DIAGNOSTIC_PREVIEW in self._modalities:
+        if preview_image is not None:
             self._log_rgb_image(self._stream, entity_path=f"{camera_entity}/preview", image_rgb=preview_image)
 
     def _log_pointmap_branch(
         self,
         *,
         pointmap_entity: str,
-        pose: object,
+        pose: FrameTransform,
         pointmap: np.ndarray | None,
         rgb: np.ndarray | None,
     ) -> None:
-        if pointmap is None or RerunModality.POINTMAPS not in self._modalities:
+        if pointmap is None:
             return
         self._log_transform(
             self._stream,
@@ -229,7 +226,7 @@ class RerunEventSink:
             transform=pose,
             axis_length=0.0,
         )
-        point_colors = rgb if rgb is not None and RerunModality.KEYFRAME_RGB in self._modalities else None
+        point_colors = rgb
         self._log_pointcloud(
             self._stream,
             entity_path=f"{pointmap_entity}/points",
@@ -244,7 +241,7 @@ class RerunEventSink:
 
     @staticmethod
     def _resolve_optional_array(
-        handle: object,
+        handle: ArrayHandle | PreviewHandle | None,
         *,
         resolve_handle: Callable[[str], np.ndarray | None],
         enabled: bool,
@@ -253,36 +250,24 @@ class RerunEventSink:
             return None
         return resolve_handle(handle.handle_id)
 
-    def _should_log_camera_pinhole(self, *, image: object, depth: object) -> bool:
-        return any(
-            modality in self._modalities
-            for modality in (
-                RerunModality.CAMERA_INTRINSICS,
-                RerunModality.KEYFRAME_RGB if image is not None else None,
-                RerunModality.KEYFRAME_DEPTH if depth is not None else None,
-            )
-            if modality is not None
-        )
+    def _should_log_camera_pinhole(self, *, image: np.ndarray | None, depth: np.ndarray | None) -> bool:
+        return image is not None or depth is not None
 
 
 @ray.remote(num_cpus=0.25, max_restarts=0, max_task_retries=0)
 class RerunSinkActor:
     """Best-effort Ray sidecar that owns one Rerun recording stream."""
 
-    HandlePayload: TypeAlias = ray.ObjectRef[Any] | np.ndarray
-
     def __init__(
         self,
         *,
         grpc_url: str | None,
         target_path: Path | None,
-        modalities: list[RerunModality] | None = None,
         recording_id: str | None = None,
     ) -> None:
         self._sink = RerunEventSink(
             grpc_url=grpc_url,
             target_path=target_path,
-            modalities=modalities,
             recording_id=recording_id,
         )
 

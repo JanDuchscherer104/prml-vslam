@@ -1,5 +1,3 @@
 """Ray runtime package for pipeline execution actors."""
 
-from .supervisor import PipelineSupervisorActor
-
-__all__ = ["PipelineSupervisorActor"]
+__all__: list[str] = []

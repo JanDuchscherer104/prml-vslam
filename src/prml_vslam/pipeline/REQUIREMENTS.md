@@ -18,7 +18,7 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - own run requests, plans, events, projected snapshots, manifests, artifacts,
   and summary persistence
 - own offline canonical ingest and execution orchestration through the Ray
-  coordinator and stage actors
+  coordinator plus only the remaining stateful execution actors
 - remain separate from benchmark policy, app state, and method-wrapper internals
 
 ## Non-Negotiable Requirements

@@ -7,23 +7,25 @@ from typing import Protocol
 from prml_vslam.methods import MockSlamBackendConfig, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId
 from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
+from prml_vslam.methods.protocols import SlamBackend
+from prml_vslam.pipeline.contracts.request import BackendConfigPayload, BackendSpec
 from prml_vslam.utils import PathConfig
 
 
 class BackendFactoryProtocol(Protocol):
     """Factory surface consumed by the pipeline."""
 
-    def describe(self, backend_spec: object) -> BackendDescriptor:
+    def describe(self, backend_spec: BackendSpec) -> BackendDescriptor:
         """Return the descriptor for one backend spec."""
 
-    def build(self, backend_spec: object, *, path_config: PathConfig | None = None) -> object:
+    def build(self, backend_spec: BackendSpec, *, path_config: PathConfig | None = None) -> SlamBackend:
         """Instantiate one executable backend from its typed spec."""
 
 
 class BackendFactory(BackendFactoryProtocol):
     """Repository-local backend factory."""
 
-    def describe(self, backend_spec: object) -> BackendDescriptor:
+    def describe(self, backend_spec: BackendSpec) -> BackendDescriptor:
         kind = backend_spec.kind
         match kind:
             case MethodId.MOCK.value:
@@ -73,7 +75,7 @@ class BackendFactory(BackendFactoryProtocol):
             case _:
                 raise RuntimeError(f"Unsupported backend kind: {kind}")
 
-    def build(self, backend_spec: object, *, path_config: PathConfig | None = None) -> object:
+    def build(self, backend_spec: BackendSpec, *, path_config: PathConfig | None = None) -> SlamBackend:
         kind = backend_spec.kind
         match kind:
             case MethodId.MOCK.value:
@@ -91,7 +93,7 @@ class BackendFactory(BackendFactoryProtocol):
         return backend
 
 
-def _backend_config_payload(backend_spec: object) -> dict[str, object]:
+def _backend_config_payload(backend_spec: BackendSpec) -> BackendConfigPayload:
     payload = backend_spec.model_dump(mode="python")
     payload.pop("kind")
     return payload

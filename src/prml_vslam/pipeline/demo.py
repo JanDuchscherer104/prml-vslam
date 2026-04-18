@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from prml_vslam.benchmark import (
     BenchmarkConfig,
@@ -16,6 +15,7 @@ from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
     Record3DLiveSourceSpec,
@@ -34,7 +34,7 @@ class _CappedPacketStream(FramePacketStream):
         self._max_frames = max_frames
         self._seen_frames = 0
 
-    def connect(self) -> Any:
+    def connect(self) -> object:
         return self._stream.connect()
 
     def disconnect(self) -> None:
@@ -82,13 +82,20 @@ def build_advio_demo_request(
     sequence_id: str,
     mode: PipelineMode,
     method: MethodId,
+    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
+    respect_video_rotation: bool = False,
 ) -> RunRequest:
     """Build the canonical bounded ADVIO demo request shared by app and CLI."""
     return RunRequest(
         experiment_name=f"{sequence_id}-{mode.value}-{method.value}",
         mode=mode,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id),
+        source=DatasetSourceSpec(
+            dataset_id=DatasetId.ADVIO,
+            sequence_id=sequence_id,
+            pose_source=pose_source,
+            respect_video_rotation=respect_video_rotation,
+        ),
         slam=SlamStageConfig(backend=build_backend_spec(method=method)),
         benchmark=BenchmarkConfig(
             reference={"enabled": False},
@@ -110,13 +117,12 @@ def build_runtime_source_from_request(
     *,
     request: RunRequest,
     path_config: PathConfig,
-) -> StreamingSequenceSource | None:
+) -> PipelineRuntimeSource:
     """Build the runtime source required by one persisted run request.
 
-    Offline requests return `None`. Streaming dataset requests use the same
-    bounded defaults as the Streamlit Pipeline page when the persisted request
-    does not encode extra replay controls: ground-truth pose overlays and no
-    video-rotation compensation.
+    Offline requests return `None`. Streaming requests are executed from the
+    persisted request contract directly, so CLI and Streamlit share the same
+    replay controls, capture settings, and backend frame cap.
     """
     if request.mode is PipelineMode.OFFLINE:
         return None
@@ -126,8 +132,8 @@ def build_runtime_source_from_request(
             return _apply_streaming_frame_cap(
                 service.build_streaming_source(
                     sequence_id=service.resolve_sequence_id(sequence_id),
-                    pose_source=AdvioPoseSource.GROUND_TRUTH,
-                    respect_video_rotation=False,
+                    pose_source=request.source.pose_source,
+                    respect_video_rotation=request.source.respect_video_rotation,
                 ),
                 max_frames=request.slam.backend.max_frames,
             )

@@ -13,8 +13,8 @@ three core layers:
 
 - a registry-backed planner that compiles deterministic stage sequences
 - an event-first runtime where `RunSnapshot` is projected from `RunEvent`s
-- a Ray-backed execution substrate with a named supervisor actor and one
-  authoritative run coordinator per run
+- a Ray-backed execution substrate with one authoritative run coordinator per
+  run plus only the actors that still need stateful or ordered execution
 
 The executable stage slice is:
 
@@ -52,7 +52,7 @@ The main package surfaces are:
 - `backend.py` / `backend_ray.py`
   - the repo-owned backend protocol and Ray implementation
 - `ray_runtime/`
-  - supervisor, coordinator, and stage actors
+  - coordinator, remaining execution actors, and shared runtime helpers
 - `sinks/`
   - JSONL and Rerun observers
 - `run_service.py`
@@ -82,11 +82,10 @@ flowchart LR
     app["App / CLI launch surface"] --> service["RunService"]
     service --> backend["PipelineBackend"]
     backend --> planner["RunPlannerService + StageRegistry"]
-    backend --> supervisor["PipelineSupervisorActor"]
-    supervisor --> coord["RunCoordinatorActor"]
+    backend --> coord["RunCoordinatorActor"]
     coord --> sinks["JSONL / Rerun sinks"]
-    coord --> batch["Batch stage actors"]
-    coord --> stream["PacketSourceActor + StreamingSlamStageActor"]
+    coord --> helpers["Ingest / Eval / Summary helpers"]
+    coord --> stream["OfflineSlamStageActor + PacketSourceActor + StreamingSlamStageActor"]
 ```
 
 ## Execution Modes
@@ -119,14 +118,10 @@ running ordered artifact stages.
 ```mermaid
 sequenceDiagram
     participant Coord as RunCoordinatorActor
-    participant Ingest as IngestStageActor
     participant Source as PacketSourceActor
     participant Slam as StreamingSlamStageActor
-    participant Eval as TrajectoryEvaluationStageActor
-    participant Summary as SummaryStageActor
 
-    Coord->>Ingest: run(request, source, run_paths)
-    Ingest-->>Coord: IngestStageResult
+    Coord->>Coord: materialize ingest outputs
     par streaming hot path
         Coord->>Source: start_stream(source, credits)
         Source-->>Coord: PacketObserved events
@@ -136,10 +131,8 @@ sequenceDiagram
         Slam-->>Coord: BackendNoticeReceived events
         Slam-->>Coord: SlamStageResult
     end
-    Coord->>Eval: run(...) if planned
-    Eval-->>Coord: TrajectoryEvaluationStageResult
-    Coord->>Summary: run(stage_outcomes)
-    Summary-->>Coord: SummaryStageResult
+    Coord->>Coord: compute trajectory evaluation if planned
+    Coord->>Coord: project summary from stage outcomes
 ```
 
 ## Ray Execution
@@ -147,12 +140,12 @@ sequenceDiagram
 The active backend is Ray. The repository owns the contracts and event model;
 Ray only executes them.
 
-- `PipelineSupervisorActor`
-  - named, detached, namespace-scoped control-plane root
 - `RunCoordinatorActor`
   - authoritative owner of run state, event projection, and handle bookkeeping
-- batch stage actors
-  - ingest, offline SLAM, trajectory evaluation, and summary projection
+- stateful execution actors
+  - offline SLAM, packet source, and ordered streaming SLAM execution
+- pure stage helpers
+  - ingest materialization, trajectory evaluation, and summary projection
 - streaming stage actors
   - packet source and ordered streaming SLAM execution
 
@@ -229,7 +222,7 @@ Add planning support and runtime support together:
 2. Add request config only if the stage is user-configurable.
 3. Add canonical output paths through `RunArtifactPaths`.
 4. Extend `StageRegistry` so the stage appears deterministically.
-5. Add a stage actor or executor path in the true owning package.
+5. Add an executor path in the true owning package, using a stateful actor only when ordering or persistent stage state actually require one.
 6. Return a `StageOutcome` and persist a `StageManifest`.
 7. Add tests for planning, TOML hydration, execution, failure, event
    projection, and summary

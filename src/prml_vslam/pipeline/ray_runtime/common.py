@@ -6,12 +6,13 @@ import time
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import TypeAlias
 
 import numpy as np
 import ray
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs
+from prml_vslam.methods.contracts import SlamBackendConfig
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
@@ -19,6 +20,7 @@ from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.finalization import stable_hash
+from prml_vslam.pipeline.placement import RayActorOptions
 from prml_vslam.utils import BaseData
 from prml_vslam.visualization.contracts import VisualizationArtifacts
 
@@ -26,6 +28,7 @@ EVENT_RING_LIMIT = 400
 HANDLE_LIMIT = 256
 FPS_WINDOW = 20
 DEFAULT_MAX_FRAMES_IN_FLIGHT = 2
+HandlePayload: TypeAlias = ray.ObjectRef[np.ndarray] | np.ndarray
 
 
 class IngestStageResult(BaseData):
@@ -55,7 +58,7 @@ def coordinator_actor_name(run_id: str) -> str:
     return f"prml-vslam-run-{run_id}"
 
 
-def put_array_handle(array: object | None) -> tuple[ArrayHandle | None, ray.ObjectRef[Any] | None]:
+def put_array_handle(array: np.ndarray | None) -> tuple[ArrayHandle | None, ray.ObjectRef[np.ndarray] | None]:
     """Store one array payload in Ray and return the public handle."""
     if array is None:
         return None, None
@@ -68,7 +71,7 @@ def put_array_handle(array: object | None) -> tuple[ArrayHandle | None, ray.Obje
     return handle, ray.put(payload)
 
 
-def put_preview_handle(array: object | None) -> tuple[PreviewHandle | None, ray.ObjectRef[Any] | None]:
+def put_preview_handle(array: np.ndarray | None) -> tuple[PreviewHandle | None, ray.ObjectRef[np.ndarray] | None]:
     """Store one preview image payload in Ray and return the public handle."""
     if array is None:
         return None, None
@@ -129,7 +132,7 @@ def visualization_artifact_map(visualization: VisualizationArtifacts | None) -> 
     return artifacts
 
 
-def backend_config_payload(request: RunRequest) -> Any:
+def backend_config_payload(request: RunRequest) -> SlamBackendConfig:
     """Build the executable backend-config model expected by current backends."""
     if request.slam.backend.kind == "vista":
         from prml_vslam.methods import VistaSlamBackendConfig
@@ -142,7 +145,7 @@ def backend_config_payload(request: RunRequest) -> Any:
     return SlamBackendConfig(max_frames=request.slam.backend.max_frames)
 
 
-def clean_actor_options(options: dict[str, Any]) -> dict[str, Any]:
+def clean_actor_options(options: RayActorOptions) -> RayActorOptions:
     """Remove empty Ray actor options before `.options(...)`."""
     return {key: value for key, value in options.items() if value is not None and value != {}}
 
@@ -157,6 +160,7 @@ __all__ = [
     "EVENT_RING_LIMIT",
     "FPS_WINDOW",
     "HANDLE_LIMIT",
+    "HandlePayload",
     "IngestStageResult",
     "SlamStageResult",
     "SummaryStageResult",

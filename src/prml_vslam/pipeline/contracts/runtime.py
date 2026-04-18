@@ -52,7 +52,6 @@ class RunSnapshot(TransportModel):
     latest_packet: FramePacketSummary | None = None
     latest_frame: ArrayHandle | None = None
     latest_preview: PreviewHandle | None = None
-    latest_backend_event: dict[str, object] | None = None
 
 
 class StreamingRunSnapshot(RunSnapshot):

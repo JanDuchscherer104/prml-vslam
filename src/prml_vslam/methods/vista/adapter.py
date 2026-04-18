@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import ctypes
-import site
+import importlib
 import sys
 from dataclasses import dataclass
+from importlib.machinery import ModuleSpec
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, Protocol
 
 import cv2
@@ -28,6 +29,8 @@ from prml_vslam.utils.video_frames import extract_video_frames
 from .config import VistaSlamBackendConfig
 
 if TYPE_CHECKING:
+    import torch
+
     from prml_vslam.methods.protocols import SlamSession
 
 _VISTA_INPUT_RESOLUTION = (224, 224)
@@ -41,13 +44,78 @@ class _FlowTracker(Protocol):
         """Return whether the current frame should become a new keyframe."""
 
 
+class _VistaImageDataset(Protocol):
+    """Subset of the upstream image dataset API used by the adapter."""
+
+    resolution: tuple[int, int]
+
+    def ImgGray(self, image: np.ndarray) -> np.ndarray | torch.Tensor:
+        """Return the grayscale image payload expected by upstream ViSTA."""
+
+    def ImgNorm(self, image: np.ndarray) -> torch.Tensor:
+        """Return the normalized RGB tensor expected by upstream ViSTA."""
+
+
+class _VistaView(Protocol):
+    """Subset of the upstream live-view payload used for incremental updates."""
+
+    pose: np.ndarray | torch.Tensor
+    depth: np.ndarray | torch.Tensor
+    intri: np.ndarray | torch.Tensor
+
+
+class _VistaOnlineSlam(Protocol):
+    """Subset of the upstream OnlineSLAM API used by the adapter."""
+
+    device: torch.device | str
+
+    def step(self, value: dict[str, torch.Tensor | np.ndarray | str]) -> None:
+        """Consume one prepared keyframe."""
+
+    def save_data_all(self, output_dir: str, *, save_images: bool, save_depths: bool) -> None:
+        """Persist native ViSTA outputs for later normalization."""
+
+    def get_view(
+        self,
+        view_index: int,
+        *,
+        filter_outlier: bool,
+        return_pose: bool,
+        return_depth: bool,
+        return_intri: bool,
+    ) -> _VistaView:
+        """Return one live view payload from the upstream pose graph."""
+
+    def get_pointmap_vis(
+        self, view_index: int
+    ) -> tuple[np.ndarray | torch.Tensor | None, np.ndarray | torch.Tensor | None]:
+        """Return preview RGB and dense pointmap payloads for one live view."""
+
+
+class _DbowVocabulary(Protocol):
+    """Subset of the DBoW vocabulary API used for binary cache generation."""
+
+    def load(self, path: str) -> None:
+        """Load the text vocabulary from disk."""
+
+    def save(self, path: str, binary: bool) -> None:
+        """Write the vocabulary back to disk in the requested format."""
+
+
+class _DbowModule(Protocol):
+    """Subset of the imported DBoW module used by this adapter."""
+
+    def Vocabulary(self) -> _DbowVocabulary:
+        """Construct one vocabulary instance."""
+
+
 @dataclass(slots=True)
 class _PreparedVistaFrame:
     """One RGB frame prepared for upstream ViSTA ingestion."""
 
     image_rgb: np.ndarray
     gray_u8: np.ndarray
-    rgb_tensor: object
+    rgb_tensor: torch.Tensor
 
 
 class _VistaFramePreprocessor(Protocol):
@@ -75,16 +143,13 @@ class _SimpleVistaFramePreprocessor:
 class _UpstreamVistaFramePreprocessor:
     """Thin adapter around upstream `SLAM_image_only.process_image()` semantics."""
 
-    def __init__(self, *, image_dataset: object) -> None:
+    def __init__(self, *, image_dataset: _VistaImageDataset) -> None:
         self._image_dataset = image_dataset
 
     def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> _PreparedVistaFrame:
-        processed_image = self._image_dataset._crop_resize_if_necessary_image_only(
-            rgb_image,
-            self._image_dataset.resolution,
-            w_edge=10,
-            h_edge=10,
-        )
+        del view_name
+        height_px, width_px = self._image_dataset.resolution
+        processed_image = cv2.resize(rgb_image, (width_px, height_px), interpolation=cv2.INTER_LINEAR)
         gray_tensor = self._image_dataset.ImgGray(processed_image)
         rgb_tensor = self._image_dataset.ImgNorm(processed_image)
         gray_u8 = (_vista_numpy_array(gray_tensor, dtype=np.float32).squeeze(0) * 255.0).astype(np.uint8)
@@ -98,7 +163,7 @@ class VistaSlamSession:
     def __init__(
         self,
         *,
-        slam: object,
+        slam: _VistaOnlineSlam,
         flow_tracker: _FlowTracker,
         frame_preprocessor: _VistaFramePreprocessor | None = None,
         artifact_root: Path,
@@ -349,11 +414,36 @@ class VistaSlamBackend(SlamBackend):
                 "ViSTA-SLAM prerequisites not satisfied:\n" + "\n".join(f"  • {item}" for item in missing)
             )
 
-    def _inject_sys_path(self) -> None:
-        """Ensure the ViSTA submodule root is importable."""
-        vista_root = str(self._vista_dir)
-        if vista_root not in sys.path:
-            sys.path.insert(0, vista_root)
+    def _ensure_vista_namespace_package(self) -> None:
+        """Register the upstream `vista_slam` checkout as an explicit namespace package."""
+        package_name = "vista_slam"
+        package_root = self._vista_dir / package_name
+        if not package_root.exists():
+            raise RuntimeError(f"ViSTA package root not found at '{package_root}'.")
+        existing = sys.modules.get(package_name)
+        if existing is not None:
+            existing_paths = [str(path) for path in getattr(existing, "__path__", [])]
+            if str(package_root) not in existing_paths:
+                raise RuntimeError(
+                    f"`{package_name}` is already imported from a different location: {existing_paths!r}."
+                )
+            return
+        package = ModuleType(package_name)
+        spec = ModuleSpec(name=package_name, loader=None, is_package=True)
+        spec.submodule_search_locations = [str(package_root)]
+        package.__spec__ = spec
+        package.__package__ = package_name
+        package.__path__ = [str(package_root)]  # type: ignore[attr-defined]
+        sys.modules[package_name] = package
+
+    def _require_dbow_module(self) -> ModuleType:
+        """Import the installed `DBoW3Py` dependency with an actionable error."""
+        try:
+            return importlib.import_module("DBoW3Py")
+        except ImportError as exc:
+            raise RuntimeError(
+                "DBoW3Py is not importable. Install the declared vista extra or fix the local dependency build."
+            ) from exc
 
     def _build_session(
         self,
@@ -364,14 +454,15 @@ class VistaSlamBackend(SlamBackend):
     ) -> VistaSlamSession:
         """Create one configured upstream OnlineSLAM session."""
         self._validate_prerequisites()
-        self._inject_sys_path()
-        self._preload_dbow3_shared_library()
-
-        import DBoW3Py as dbow  # noqa: PLC0415
+        self._ensure_vista_namespace_package()
+        dbow = self._require_dbow_module()
         import torch  # noqa: PLC0415
-        from vista_slam.datasets.slam_images_only import SLAM_image_only  # noqa: PLC0415
-        from vista_slam.flow_tracker import FlowTracker  # noqa: PLC0415
-        from vista_slam.slam import OnlineSLAM, STA  # noqa: PLC0415
+
+        SLAM_image_only = importlib.import_module("vista_slam.datasets.slam_images_only").SLAM_image_only
+        FlowTracker = importlib.import_module("vista_slam.flow_tracker").FlowTracker
+        vista_slam_module = importlib.import_module("vista_slam.slam")
+        STA = vista_slam_module.STA
+        OnlineSLAM = vista_slam_module.OnlineSLAM
 
         torch.manual_seed(self._cfg.random_seed)
         vocab_path = self._resolve_vocab_path(dbow)
@@ -419,7 +510,7 @@ class VistaSlamBackend(SlamBackend):
             console=self._console,
         )
 
-    def _resolve_vocab_path(self, dbow: object) -> Path:
+    def _resolve_vocab_path(self, dbow: _DbowModule) -> Path:
         if self._vocab_path.suffix != ".txt":
             return self._vocab_path
         if self._vocab_cache_path.exists():
@@ -435,24 +526,6 @@ class VistaSlamBackend(SlamBackend):
         vocabulary.save(str(tmp_path), True)
         tmp_path.replace(self._vocab_cache_path)
         return self._vocab_cache_path
-
-    def _preload_dbow3_shared_library(self) -> None:
-        """Load the bundled DBoW3 shared library before importing DBoW3Py."""
-        candidates = [
-            Path(package_dir) / "libDBoW3.so.0.0"
-            for package_dir in (
-                *site.getsitepackages(),
-                site.getusersitepackages(),
-            )
-        ]
-        candidates.extend(self._vista_dir.glob("DBoW3Py/build/**/libDBoW3.so.0.0"))
-        for candidate in candidates:
-            if candidate.exists():
-                try:
-                    ctypes.CDLL(str(candidate), mode=ctypes.RTLD_GLOBAL)
-                except OSError:
-                    continue
-                return
 
     def _resolve_frames(
         self,
@@ -535,22 +608,22 @@ def _build_artifacts(
     )
 
 
-def _build_live_pointmap(view: object) -> np.ndarray | None:
+def _build_live_pointmap(view: np.ndarray | torch.Tensor | None) -> np.ndarray | None:
     """Convert one upstream pointcloud payload into the repository-local dtype."""
     if view is None:
         return None
     return _vista_numpy_array(view, dtype=np.float32)
 
 
-def _vista_numpy_array(value: object, *, dtype: np.dtype[np.generic] | type[np.generic]) -> np.ndarray:
+def _vista_numpy_array(
+    value: np.ndarray | torch.Tensor,
+    *,
+    dtype: np.dtype[np.generic] | type[np.generic],
+) -> np.ndarray:
     """Convert one upstream ViSTA array-like payload into a numpy array."""
-    if hasattr(value, "detach"):
-        value = value.detach()
-    if hasattr(value, "cpu"):
-        value = value.cpu()
-    if hasattr(value, "numpy"):
-        return np.asarray(value.numpy(), dtype=dtype)
-    return np.asarray(value, dtype=dtype)
+    if isinstance(value, np.ndarray):
+        return np.asarray(value, dtype=dtype)
+    return np.asarray(value.detach().cpu().numpy(), dtype=dtype)
 
 
 def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:

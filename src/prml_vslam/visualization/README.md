@@ -67,6 +67,11 @@ uv run rerun \
 pipeline Rerun event sink attaches both sinks to the same explicit recording
 stream.
 
+The repo-owned live sink now logs one fixed minimal surface when enabled:
+source RGB, live camera pose, keyed camera pose, keyed intrinsics, keyed RGB,
+keyed metric depth, keyed pointmaps, and diagnostic previews. This behavior is
+not configured through per-modality request toggles anymore.
+
 ## Primary References
 
 - Rerun Python API index:

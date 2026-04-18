@@ -53,7 +53,7 @@ def load_advio_trajectory(path: Path) -> PoseTrajectory3D:
 
 def load_advio_calibration(path: Path) -> AdvioCalibration:
     """Parse an official ADVIO calibration YAML into a typed camera model."""
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    payload = yaml.safe_load(path.read_text(encoding="utf-8").expandtabs())
     if not isinstance(payload, dict):
         msg = f"Expected a YAML mapping in {path}"
         raise ValueError(msg)

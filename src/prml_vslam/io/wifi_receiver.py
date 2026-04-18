@@ -27,7 +27,7 @@ def _import_aiortc_modules() -> tuple[type[Any], type[Any]]:
 
 
 class _Record3DWiFiReceiverRuntime:
-    """Async receiver runtime used by the preview-only Wi-Fi session wrapper."""
+    """Async receiver runtime used by the Record3D Wi-Fi session wrapper."""
 
     def __init__(
         self,

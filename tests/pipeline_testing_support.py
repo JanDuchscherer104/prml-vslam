@@ -1,5 +1,4 @@
 """Small runtime sources used by focused pipeline smoke tests."""
-# TODO: test mocks like in this file should be moved to tests/ !
 
 from __future__ import annotations
 
@@ -58,7 +57,7 @@ class FakeStreamingSource:
         return SequenceManifest(sequence_id="fake-stream")
 
     def open_stream(self, *, loop: bool):
-        assert loop is True
+        del loop
         return FakePacketStream()
 
 

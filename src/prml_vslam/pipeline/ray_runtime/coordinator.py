@@ -4,23 +4,26 @@ from __future__ import annotations
 
 import threading
 from collections import deque
-from typing import Any, TypeAlias
 
 import numpy as np
 import ray
+from ray.actor import ActorHandle
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs
-from prml_vslam.interfaces import FramePacketProvenance
+from prml_vslam.eval.services import TrajectoryEvaluationService
+from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.methods.events import BackendError, BackendEvent
 from prml_vslam.methods.factory import BackendFactory
-from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
+from prml_vslam.pipeline.backend import PipelineRuntimeSource
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import (
     ArtifactRegistered,
     BackendNoticeReceived,
     FramePacketSummary,
     PacketObserved,
     RunCompleted,
+    RunEvent,
     RunFailed,
     RunStarted,
     RunStopped,
@@ -40,35 +43,35 @@ from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.pipeline.placement import actor_options_for_stage
+from prml_vslam.pipeline.finalization import project_summary, stable_hash, write_json
+from prml_vslam.pipeline.ingest import materialize_offline_manifest
+from prml_vslam.pipeline.placement import RayActorOptions, actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     EVENT_RING_LIMIT,
     HANDLE_LIMIT,
+    HandlePayload,
     IngestStageResult,
     SlamStageResult,
     SummaryStageResult,
     TrajectoryEvaluationStageResult,
+    artifact_ref,
     clean_actor_options,
     coordinator_actor_name,
     ts_ns,
 )
 from prml_vslam.pipeline.ray_runtime.stage_actors import (
-    IngestStageActor,
     OfflineSlamStageActor,
     PacketSourceActor,
     StreamingSlamStageActor,
-    SummaryStageActor,
-    TrajectoryEvaluationStageActor,
 )
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
+from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationArtifacts
 
-HandlePayload: TypeAlias = ray.ObjectRef[Any] | np.ndarray
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 
 
@@ -83,7 +86,7 @@ class RunCoordinatorActor:
         self._snapshot: RunSnapshot = RunSnapshot(run_id=run_id)
         self._projector = SnapshotProjector()
         self._event_counter = 0
-        self._events: list[object] = []
+        self._events: list[RunEvent] = []
         self._handle_refs: dict[str, HandlePayload] = {}
         self._handle_order: deque[str] = deque()
         self._lock = threading.Lock()
@@ -93,8 +96,8 @@ class RunCoordinatorActor:
         self._in_flight_frames = 0
         self._streaming_done = threading.Event()
         self._jsonl_sink: JsonlEventSink | None = None
-        self._rerun_sink: object | None = None
-        self._rerun_sink_last_call = None
+        self._rerun_sink: ActorHandle | None = None
+        self._rerun_sink_last_call: ray.ObjectRef[None] | None = None
         self._worker: threading.Thread | None = None
         self._source_actor = None
         self._slam_actor = None
@@ -108,7 +111,7 @@ class RunCoordinatorActor:
         self._streaming_error: str | None = None
 
     def start(
-        self, *, request: RunRequest, plan: RunPlan, path_config: PathConfig, runtime_source: object | None
+        self, *, request: RunRequest, plan: RunPlan, path_config: PathConfig, runtime_source: PipelineRuntimeSource
     ) -> None:
         if self._worker is not None and self._worker.is_alive():
             raise RuntimeError(f"Run '{self._run_id}' is already active.")
@@ -157,7 +160,7 @@ class RunCoordinatorActor:
         with self._lock:
             return self._snapshot.model_copy(deep=True)
 
-    def events(self, after_event_id: str | None = None, limit: int = 200) -> list[object]:
+    def events(self, after_event_id: str | None = None, limit: int = 200) -> list[RunEvent]:
         with self._lock:
             events = list(self._events)
         if after_event_id is not None:
@@ -195,8 +198,8 @@ class RunCoordinatorActor:
         frame_ref: HandlePayload | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
-        intrinsics: object,
-        pose: object,
+        intrinsics: CameraIntrinsics | None,
+        pose: FrameTransform | None,
         provenance: FramePacketProvenance,
         received_frames: int,
         measured_fps: float,
@@ -276,7 +279,7 @@ class RunCoordinatorActor:
         request: RunRequest,
         plan: RunPlan,
         path_config: PathConfig,
-        runtime_source: object | None,
+        runtime_source: PipelineRuntimeSource,
     ) -> None:
         try:
             self._record_event(RunStarted(event_id=self._next_event_id(), run_id=plan.run_id, ts_ns=ts_ns()))
@@ -320,11 +323,11 @@ class RunCoordinatorActor:
         request: RunRequest,
         plan: RunPlan,
         path_config: PathConfig,
-        runtime_source: object | None,
+        runtime_source: OfflineSequenceSource | None,
     ) -> None:
-        source = runtime_source
-        if source is None:
-            source = OfflineSourceResolver(path_config).resolve(request.source)
+        source: OfflineSequenceSource = (
+            OfflineSourceResolver(path_config).resolve(request.source) if runtime_source is None else runtime_source
+        )
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         ingest = self._run_ingest_stage(request=request, source=source, run_paths=run_paths)
         slam = self._run_offline_slam_stage(
@@ -357,7 +360,7 @@ class RunCoordinatorActor:
         request: RunRequest,
         plan: RunPlan,
         path_config: PathConfig,
-        runtime_source: object | None,
+        runtime_source: StreamingSequenceSource | None,
     ) -> None:
         if runtime_source is None:
             raise RuntimeError("Streaming runs require an explicit runtime source.")
@@ -464,20 +467,48 @@ class RunCoordinatorActor:
         self,
         *,
         request: RunRequest,
-        source: object,
+        source: OfflineSequenceSource,
         run_paths: RunArtifactPaths,
     ) -> IngestStageResult:
         self._emit_stage_started(StageKey.INGEST)
-        actor = IngestStageActor.options(
-            **self._stage_actor_options(
+        prepared_manifest = source.prepare_sequence_manifest(run_paths.sequence_manifest_path.parent)
+        benchmark_inputs = None
+        if isinstance(source, BenchmarkInputSource):
+            benchmark_inputs = source.prepare_benchmark_inputs(run_paths.benchmark_inputs_path.parent)
+            if benchmark_inputs is not None:
+                write_json(run_paths.benchmark_inputs_path, benchmark_inputs)
+        sequence_manifest = materialize_offline_manifest(
+            request=request,
+            prepared_manifest=prepared_manifest,
+            run_paths=run_paths,
+        )
+        write_json(run_paths.sequence_manifest_path, sequence_manifest)
+        artifacts = {
+            "sequence_manifest": artifact_ref(run_paths.sequence_manifest_path, kind="json"),
+        }
+        if sequence_manifest.rgb_dir is not None:
+            artifacts["rgb_dir"] = artifact_ref(sequence_manifest.rgb_dir, kind="dir")
+        if sequence_manifest.timestamps_path is not None:
+            artifacts["timestamps"] = artifact_ref(sequence_manifest.timestamps_path, kind="json")
+        if sequence_manifest.intrinsics_path is not None:
+            artifacts["intrinsics"] = artifact_ref(sequence_manifest.intrinsics_path, kind="yaml")
+        if sequence_manifest.rotation_metadata_path is not None:
+            artifacts["rotation_metadata"] = artifact_ref(sequence_manifest.rotation_metadata_path, kind="json")
+        if benchmark_inputs is not None:
+            artifacts["benchmark_inputs"] = artifact_ref(run_paths.benchmark_inputs_path, kind="json")
+            for reference in benchmark_inputs.reference_trajectories:
+                artifacts[f"reference_tum:{reference.source.value}"] = artifact_ref(reference.path, kind="tum")
+        result = IngestStageResult(
+            outcome=StageOutcome(
                 stage_key=StageKey.INGEST,
-                request=request,
-                default_num_cpus=1.0,
-                default_num_gpus=0.0,
-                restartable=True,
-            )
-        ).remote()
-        result = ray.get(actor.run.remote(request=request, source=source, run_paths=run_paths))
+                status=StageStatus.COMPLETED,
+                config_hash=stable_hash(request.source),
+                input_fingerprint=stable_hash(request.source),
+                artifacts=artifacts,
+            ),
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=benchmark_inputs,
+        )
         self._sequence_manifest = result.sequence_manifest
         self._benchmark_inputs = result.benchmark_inputs
         self._record_stage_completion(
@@ -534,22 +565,34 @@ class RunCoordinatorActor:
         slam: SlamArtifacts,
     ) -> TrajectoryEvaluationStageResult:
         self._emit_stage_started(StageKey.TRAJECTORY_EVALUATION)
-        actor = TrajectoryEvaluationStageActor.options(
-            **self._stage_actor_options(
+        artifact = TrajectoryEvaluationService(
+            PathConfig(artifacts_dir=request.output_dir)
+        ).compute_pipeline_evaluation(
+            request=request,
+            plan=plan,
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=benchmark_inputs,
+            slam=slam,
+        )
+        artifacts: dict[str, ArtifactRef] = {}
+        if artifact is not None:
+            artifacts = {
+                "trajectory_metrics": artifact_ref(artifact.path, kind="json"),
+                "reference_tum": artifact_ref(artifact.reference_path, kind="tum"),
+                "estimate_tum": artifact_ref(artifact.estimate_path, kind="tum"),
+            }
+        result = TrajectoryEvaluationStageResult(
+            outcome=StageOutcome(
                 stage_key=StageKey.TRAJECTORY_EVALUATION,
-                request=request,
-                default_num_cpus=1.0,
-                default_num_gpus=0.0,
-                restartable=True,
-            )
-        ).remote()
-        result = ray.get(
-            actor.run.remote(
-                request=request,
-                plan=plan,
-                sequence_manifest=sequence_manifest,
-                benchmark_inputs=benchmark_inputs,
-                slam=slam,
+                status=StageStatus.COMPLETED,
+                config_hash=stable_hash(request.benchmark.trajectory),
+                input_fingerprint=stable_hash(
+                    {
+                        "benchmark_inputs": benchmark_inputs,
+                        "slam_trajectory": slam.trajectory_tum,
+                    }
+                ),
+                artifacts=artifacts,
             )
         )
         self._record_stage_completion(stage_key=StageKey.TRAJECTORY_EVALUATION, outcome=result.outcome)
@@ -563,22 +606,16 @@ class RunCoordinatorActor:
         run_paths: RunArtifactPaths,
     ) -> SummaryStageResult:
         self._emit_stage_started(StageKey.SUMMARY)
-        actor = SummaryStageActor.options(
-            **self._stage_actor_options(
-                stage_key=StageKey.SUMMARY,
-                request=request,
-                default_num_cpus=1.0,
-                default_num_gpus=0.0,
-                restartable=True,
-            )
-        ).remote()
-        result = ray.get(
-            actor.run.remote(
-                request=request,
-                plan=plan,
-                run_paths=run_paths,
-                stage_outcomes=self._stage_outcomes,
-            )
+        summary, stage_manifests, outcome = project_summary(
+            request=request,
+            plan=plan,
+            run_paths=run_paths,
+            stage_outcomes=self._stage_outcomes,
+        )
+        result = SummaryStageResult(
+            outcome=outcome,
+            summary=summary,
+            stage_manifests=stage_manifests,
         )
         self._record_stage_completion(
             stage_key=StageKey.SUMMARY,
@@ -588,7 +625,7 @@ class RunCoordinatorActor:
         )
         return result
 
-    def _build_rerun_sink(self, *, request: RunRequest, run_paths: RunArtifactPaths) -> object | None:
+    def _build_rerun_sink(self, *, request: RunRequest, run_paths: RunArtifactPaths) -> ActorHandle | None:
         if not (request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd):
             return None
         from prml_vslam.pipeline.sinks.rerun import RerunSinkActor
@@ -596,7 +633,6 @@ class RunCoordinatorActor:
         return RerunSinkActor.remote(
             grpc_url=request.visualization.grpc_url if request.visualization.connect_live_viewer else None,
             target_path=run_paths.viewer_rrd_path if request.visualization.export_viewer_rrd else None,
-            modalities=list(request.visualization.rerun_modalities),
             recording_id=self._run_id,
         )
 
@@ -609,7 +645,7 @@ class RunCoordinatorActor:
         default_num_gpus: float,
         restartable: bool = False,
         inherit_backend_defaults: bool = False,
-    ) -> dict[str, Any]:
+    ) -> RayActorOptions:
         return clean_actor_options(
             actor_options_for_stage(
                 stage_key=stage_key,
@@ -715,7 +751,7 @@ class RunCoordinatorActor:
 
     def _record_event(
         self,
-        event: object,
+        event: RunEvent,
         *,
         bindings: list[tuple[str, HandlePayload]] | None = None,
     ) -> None:

@@ -12,9 +12,9 @@ from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.contracts.request import BackendSpec
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.packet_session import PacketSessionSnapshot
-from prml_vslam.visualization.contracts import RerunModality, default_rerun_modalities
 
 
 class AppPageId(StrEnum):
@@ -173,8 +173,8 @@ class PipelinePageState(BaseData):
     slam_max_frames: int | None = None
     """Optional frame cap for the current request."""
 
-    slam_backend_payload: dict[str, object] = Field(default_factory=dict)
-    """JSON-friendly backend payload preserved from the selected request template."""
+    slam_backend_spec: BackendSpec | None = None
+    """Typed backend spec preserved from the selected request template."""
 
     emit_dense_points: bool = True
     """Whether dense geometry artifacts should be emitted."""
@@ -199,9 +199,6 @@ class PipelinePageState(BaseData):
 
     export_viewer_rrd: bool = False
     """Whether to export the Rerun `.rrd` viewer artifact."""
-
-    rerun_modalities: list[RerunModality] = Field(default_factory=default_rerun_modalities)
-    """Selected live payload types sent to the repo-owned Rerun sink."""
 
     record3d_usb_device_index: int = 0
     """Zero-based USB device index used by the bounded pipeline page."""

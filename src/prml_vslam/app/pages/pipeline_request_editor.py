@@ -7,11 +7,10 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.advio import AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseSource
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.visualization.contracts import RerunModality
 
 from ..models import PipelinePageState, PipelineSourceId
 from ..pipeline_controller import PipelinePageAction, parse_optional_int
@@ -26,7 +25,7 @@ def render_request_editor(
     context: AppContext,
     page_state: PipelinePageState,
     selected_config_path: Path,
-    previewable_statuses: list[object],
+    previewable_statuses: list[AdvioLocalSceneStatus],
 ) -> tuple[PipelinePageAction, str | None, str | None]:
     """Render the request editor and return the resolved action payload."""
     source_options = [PipelineSourceId.ADVIO, PipelineSourceId.RECORD3D]
@@ -68,7 +67,6 @@ def render_request_editor(
         evaluate_efficiency,
         connect_live_viewer,
         export_viewer_rrd,
-        rerun_modalities,
     ) = _render_stage_settings(page_state)
     return (
         PipelinePageAction.model_validate(
@@ -89,7 +87,6 @@ def render_request_editor(
                 "evaluate_efficiency": evaluate_efficiency,
                 "connect_live_viewer": connect_live_viewer,
                 "export_viewer_rrd": export_viewer_rrd,
-                "rerun_modalities": rerun_modalities,
                 "record3d_transport": record3d_transport,
                 "record3d_usb_device_index": record3d_usb_device_index,
                 "record3d_wifi_device_address": record3d_wifi_device_address,
@@ -155,7 +152,7 @@ def _render_source_settings(
     context: AppContext,
     page_state: PipelinePageState,
     source_kind: PipelineSourceId,
-    previewable_statuses: list[object],
+    previewable_statuses: list[AdvioLocalSceneStatus],
 ) -> tuple[int | None, Record3DTransportId, int, str, bool, AdvioPoseSource, bool, str | None]:
     _, right = st.columns(2, gap="large")
     with right:
@@ -198,7 +195,7 @@ def _render_advio_source_settings(
     *,
     context: AppContext,
     page_state: PipelinePageState,
-    previewable_statuses: list[object],
+    previewable_statuses: list[AdvioLocalSceneStatus],
 ) -> tuple[int | None, AdvioPoseSource, bool]:
     previewable_ids = [status.scene.sequence_id for status in previewable_statuses]
     if previewable_ids:
@@ -251,9 +248,7 @@ def _render_record3d_source_settings(
     )
 
 
-def _render_stage_settings(
-    page_state: PipelinePageState,
-) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool, list[RerunModality]]:
+def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool]:
     stage_left, stage_right = st.columns(2, gap="large")
     with stage_left:
         st.markdown("**SLAM Stage**")
@@ -264,12 +259,6 @@ def _render_stage_settings(
         st.markdown("**Visualization**")
         connect_live_viewer = st.toggle("Connect live Rerun viewer", value=page_state.connect_live_viewer)
         export_viewer_rrd = st.toggle("Export viewer .rrd artifact", value=page_state.export_viewer_rrd)
-        rerun_modalities = st.multiselect(
-            "Rerun Modalities",
-            options=list(RerunModality),
-            default=page_state.rerun_modalities,
-            format_func=lambda item: item.label,
-        )
 
     with stage_right:
         st.markdown("**Evaluation Stages**")
@@ -285,7 +274,6 @@ def _render_stage_settings(
         evaluate_efficiency,
         connect_live_viewer,
         export_viewer_rrd,
-        list(rerun_modalities),
     )
 
 

@@ -14,9 +14,8 @@ from prml_vslam.app.pipeline_controller import (
 )
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
 from prml_vslam.utils import PathConfig
-from prml_vslam.visualization.contracts import RerunModality
 
 
 def test_build_request_from_action_derives_backend_kind(tmp_path: Path) -> None:
@@ -40,7 +39,7 @@ def test_build_request_from_action_derives_backend_kind(tmp_path: Path) -> None:
         mode=PipelineMode.OFFLINE,
         method=MethodId.VISTA,
         slam_max_frames=12,
-        slam_backend_payload={},
+        slam_backend_spec=None,
         emit_dense_points=True,
         emit_sparse_points=False,
         reference_enabled=False,
@@ -80,25 +79,30 @@ def test_build_request_from_action_accepts_stringified_vista_paths(tmp_path: Pat
         mode=PipelineMode.OFFLINE,
         method=MethodId.VISTA,
         slam_max_frames=12,
-        slam_backend_payload={
-            "vista_slam_dir": "external/vista-slam",
-            "checkpoint_path": "external/vista-slam/pretrains/frontend_sta_weights.pth",
-            "vocab_path": "external/vista-slam/pretrains/ORBvoc.txt",
-        },
+        slam_backend_spec=build_backend_spec(
+            method=MethodId.VISTA,
+            overrides={
+                "vista_slam_dir": Path("external/vista-slam"),
+                "checkpoint_path": Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
+                "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
+            },
+        ),
+        pose_source="ground_truth",
+        respect_video_rotation=True,
         connect_live_viewer=False,
         export_viewer_rrd=False,
-        rerun_modalities=[RerunModality.SOURCE_RGB],
     )
 
     request, error = build_request_from_action(context, action)
 
     assert error is None
     assert isinstance(request, RunRequest)
-    assert request.visualization.rerun_modalities == [RerunModality.SOURCE_RGB]
+    assert request.source.pose_source.value == "ground_truth"
+    assert request.source.respect_video_rotation is True
     assert request.slam.backend.vista_slam_dir == Path("external/vista-slam")
 
 
-def test_sync_pipeline_template_preserves_json_friendly_vista_payload(tmp_path: Path) -> None:
+def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path) -> None:
     class _Store:
         def save(self, state: AppState) -> None:
             self.payload = state.model_dump(mode="json")
@@ -121,7 +125,12 @@ def test_sync_pipeline_template_preserves_json_friendly_vista_payload(tmp_path: 
         experiment_name="vista-page",
         mode=PipelineMode.OFFLINE,
         output_dir=context.path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            pose_source="ground_truth",
+            respect_video_rotation=True,
+        ),
         slam=SlamStageConfig(
             backend={
                 "kind": "vista",
@@ -139,14 +148,19 @@ def test_sync_pipeline_template_preserves_json_friendly_vista_payload(tmp_path: 
         statuses=[],
     )
 
-    payload = context.state.pipeline.slam_backend_payload
-    assert payload["vista_slam_dir"] == "external/vista-slam"
+    backend_spec = context.state.pipeline.slam_backend_spec
+    assert backend_spec is not None
+    assert backend_spec.kind == "vista"
+    assert backend_spec.vista_slam_dir == Path("external/vista-slam")
+    assert context.state.pipeline.pose_source.value == "ground_truth"
+    assert context.state.pipeline.respect_video_rotation is True
     action = action_from_page_state(context.state.pipeline, Path(".configs/pipelines/vista-full.toml"))
     rebuilt_request, error = build_request_from_action(context, action)
 
     assert error is None
     assert isinstance(rebuilt_request, RunRequest)
     assert rebuilt_request.slam.backend.vista_slam_dir == Path("external/vista-slam")
+    assert rebuilt_request.source.respect_video_rotation is True
 
 
 def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) -> None:

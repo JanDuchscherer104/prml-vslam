@@ -5,32 +5,26 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from typing import Any
 
 import numpy as np
 import ray
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs
-from prml_vslam.interfaces import FramePacketProvenance
+from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.methods.events import BackendEvent, translate_slam_update
 from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import compute_trajectory_evaluation, project_summary, stable_hash, write_json
-from prml_vslam.pipeline.ingest import materialize_offline_manifest
+from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     FPS_WINDOW,
-    IngestStageResult,
+    HandlePayload,
     SlamStageResult,
-    SummaryStageResult,
-    TrajectoryEvaluationStageResult,
-    artifact_ref,
     backend_config_payload,
     put_array_handle,
     put_preview_handle,
@@ -38,53 +32,8 @@ from prml_vslam.pipeline.ray_runtime.common import (
     slam_artifacts_map,
     visualization_artifact_map,
 )
-from prml_vslam.protocols.source import BenchmarkInputSource
+from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import PathConfig, RunArtifactPaths
-
-
-@ray.remote(num_cpus=1, max_restarts=1, max_task_retries=1)
-class IngestStageActor:
-    """Materialize the normalized input boundary and benchmark inputs."""
-
-    def run(self, *, request: RunRequest, source: object, run_paths: RunArtifactPaths) -> IngestStageResult:
-        prepared_manifest = source.prepare_sequence_manifest(run_paths.sequence_manifest_path.parent)
-        benchmark_inputs = None
-        if isinstance(source, BenchmarkInputSource):
-            benchmark_inputs = source.prepare_benchmark_inputs(run_paths.benchmark_inputs_path.parent)
-            if benchmark_inputs is not None:
-                write_json(run_paths.benchmark_inputs_path, benchmark_inputs)
-        sequence_manifest = materialize_offline_manifest(
-            request=request,
-            prepared_manifest=prepared_manifest,
-            run_paths=run_paths,
-        )
-        write_json(run_paths.sequence_manifest_path, sequence_manifest)
-        artifacts = {
-            "sequence_manifest": artifact_ref(run_paths.sequence_manifest_path, kind="json"),
-        }
-        if sequence_manifest.rgb_dir is not None:
-            artifacts["rgb_dir"] = artifact_ref(sequence_manifest.rgb_dir, kind="dir")
-        if sequence_manifest.timestamps_path is not None:
-            artifacts["timestamps"] = artifact_ref(sequence_manifest.timestamps_path, kind="json")
-        if sequence_manifest.intrinsics_path is not None:
-            artifacts["intrinsics"] = artifact_ref(sequence_manifest.intrinsics_path, kind="yaml")
-        if sequence_manifest.rotation_metadata_path is not None:
-            artifacts["rotation_metadata"] = artifact_ref(sequence_manifest.rotation_metadata_path, kind="json")
-        if benchmark_inputs is not None:
-            artifacts["benchmark_inputs"] = artifact_ref(run_paths.benchmark_inputs_path, kind="json")
-            for reference in benchmark_inputs.reference_trajectories:
-                artifacts[f"reference_tum:{reference.source.value}"] = artifact_ref(reference.path, kind="tum")
-        return IngestStageResult(
-            outcome=StageOutcome(
-                stage_key=StageKey.INGEST,
-                status=StageStatus.COMPLETED,
-                config_hash=stable_hash(request.source),
-                input_fingerprint=stable_hash(request.source),
-                artifacts=artifacts,
-            ),
-            sequence_manifest=sequence_manifest,
-            benchmark_inputs=benchmark_inputs,
-        )
 
 
 @ray.remote(num_cpus=2, max_restarts=0, max_task_retries=0)
@@ -131,70 +80,6 @@ class OfflineSlamStageActor:
         )
 
 
-@ray.remote(num_cpus=1, max_restarts=1, max_task_retries=1)
-class TrajectoryEvaluationStageActor:
-    """Run explicit trajectory evaluation from normalized artifacts."""
-
-    def run(
-        self,
-        *,
-        request: RunRequest,
-        plan: RunPlan,
-        sequence_manifest: SequenceManifest,
-        benchmark_inputs: PreparedBenchmarkInputs | None,
-        slam: SlamArtifacts,
-    ) -> TrajectoryEvaluationStageResult:
-        artifact = compute_trajectory_evaluation(
-            request=request,
-            plan=plan,
-            sequence_manifest=sequence_manifest,
-            benchmark_inputs=benchmark_inputs,
-            slam=slam,
-        )
-        artifacts: dict[str, ArtifactRef] = {}
-        if artifact is not None:
-            artifacts = {
-                "trajectory_metrics": artifact_ref(artifact.path, kind="json"),
-                "reference_tum": artifact_ref(artifact.reference_path, kind="tum"),
-                "estimate_tum": artifact_ref(artifact.estimate_path, kind="tum"),
-            }
-        return TrajectoryEvaluationStageResult(
-            outcome=StageOutcome(
-                stage_key=StageKey.TRAJECTORY_EVALUATION,
-                status=StageStatus.COMPLETED,
-                config_hash=stable_hash(request.benchmark.trajectory),
-                input_fingerprint=stable_hash(
-                    {
-                        "benchmark_inputs": benchmark_inputs,
-                        "slam_trajectory": slam.trajectory_tum,
-                    }
-                ),
-                artifacts=artifacts,
-            )
-        )
-
-
-@ray.remote(num_cpus=1, max_restarts=1, max_task_retries=1)
-class SummaryStageActor:
-    """Project summary artifacts from prior stage outcomes."""
-
-    def run(
-        self,
-        *,
-        request: RunRequest,
-        plan: RunPlan,
-        run_paths: RunArtifactPaths,
-        stage_outcomes: list[StageOutcome],
-    ) -> SummaryStageResult:
-        summary, stage_manifests, outcome = project_summary(
-            request=request,
-            plan=plan,
-            run_paths=run_paths,
-            stage_outcomes=stage_outcomes,
-        )
-        return SummaryStageResult(outcome=outcome, summary=summary, stage_manifests=stage_manifests)
-
-
 @ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0)
 class PacketSourceActor:
     """Read packets from one streaming source with coordinator-owned credits."""
@@ -212,7 +97,7 @@ class PacketSourceActor:
     def start_stream(
         self,
         *,
-        source: object,
+        source: StreamingSequenceSource,
         initial_credits: int = DEFAULT_MAX_FRAMES_IN_FLIGHT,
         loop: bool = False,
     ) -> None:
@@ -235,7 +120,7 @@ class PacketSourceActor:
         if self._thread is not None:
             self._thread.join(timeout=5.0)
 
-    def _run_source(self, source: object, loop: bool) -> None:
+    def _run_source(self, source: StreamingSequenceSource, loop: bool) -> None:
         stream = source.open_stream(loop=loop)
         try:
             stream.connect()
@@ -306,8 +191,8 @@ class StreamingSlamStageActor:
         frame_ref: ray.ObjectRef | np.ndarray | None,
         depth_ref: ray.ObjectRef | np.ndarray | None,
         confidence_ref: ray.ObjectRef | np.ndarray | None,
-        intrinsics: object,
-        pose: object,
+        intrinsics: CameraIntrinsics | None,
+        pose: FrameTransform | None,
         provenance: FramePacketProvenance,
     ) -> None:
         if self._session is None:
@@ -330,7 +215,7 @@ class StreamingSlamStageActor:
             )
         )
         notices: list[BackendEvent] = []
-        bindings: list[tuple[str, ray.ObjectRef[Any]]] = []
+        bindings: list[tuple[str, HandlePayload]] = []
         now = time.monotonic()
         for update in self._session.try_get_updates():
             preview_handle, preview_ref = put_preview_handle(update.preview_rgb)
@@ -398,10 +283,7 @@ class StreamingSlamStageActor:
 
 
 __all__ = [
-    "IngestStageActor",
     "OfflineSlamStageActor",
     "PacketSourceActor",
     "StreamingSlamStageActor",
-    "SummaryStageActor",
-    "TrajectoryEvaluationStageActor",
 ]

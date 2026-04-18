@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
+from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
 from prml_vslam.eval.contracts import (
     EvaluationArtifact,
     MetricStats,
@@ -14,6 +15,15 @@ from prml_vslam.eval.contracts import (
     TrajectoryMetricId,
     TrajectorySeries,
 )
+from prml_vslam.eval.services import TrajectoryEvaluationService
+from prml_vslam.interfaces import FrameTransform
+from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.utils import PathConfig
+from prml_vslam.utils.geometry import write_tum_trajectory
 
 
 def test_evaluation_artifact_round_trips_explicit_semantics(tmp_path: Path) -> None:
@@ -61,3 +71,62 @@ def test_evaluation_artifact_round_trips_explicit_semantics(tmp_path: Path) -> N
     assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
     assert artifact.semantics.alignment_mode is TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
     assert artifact.semantics.candidate_next_metrics == [TrajectoryMetricId.RPE_TRANSLATION]
+
+
+def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path: Path) -> None:
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+        ],
+        timestamps=[0.0, 1.0],
+    )
+    estimate_path = write_tum_trajectory(
+        tmp_path / "estimate.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.1, ty=0.0, tz=0.0),
+        ],
+        timestamps=[0.0, 1.0],
+    )
+    artifact_root = tmp_path / "run"
+    request = RunRequest(
+        experiment_name="trajectory-stage",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path,
+        source=VideoSourceSpec(video_path=tmp_path / "demo.mp4"),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+        benchmark={"trajectory": {"enabled": True, "baseline_source": ReferenceSource.GROUND_TRUTH}},
+    )
+    plan = RunPlan(
+        run_id="trajectory-stage",
+        mode=PipelineMode.OFFLINE,
+        method="mock",
+        artifact_root=artifact_root,
+        source=request.source,
+    )
+    benchmark_inputs = PreparedBenchmarkInputs(
+        reference_trajectories=[
+            ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path),
+        ]
+    )
+    slam = SlamArtifacts(
+        trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="estimate"),
+    )
+
+    artifact = TrajectoryEvaluationService(
+        PathConfig(root=tmp_path, artifacts_dir=tmp_path)
+    ).compute_pipeline_evaluation(
+        request=request,
+        plan=plan,
+        sequence_manifest=SequenceManifest(sequence_id="demo-sequence"),
+        benchmark_inputs=benchmark_inputs,
+        slam=slam,
+    )
+
+    assert artifact is not None
+    assert artifact.path == artifact_root / "evaluation" / "trajectory_metrics.json"
+    assert artifact.reference_path == reference_path
+    assert artifact.estimate_path == estimate_path
+    assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION

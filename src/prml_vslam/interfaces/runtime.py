@@ -30,14 +30,13 @@ class Record3DTransportId(StrEnum):
         match self:
             case Record3DTransportId.USB:
                 return (
-                    "USB capture uses the native `record3d` Python bindings and is the canonical programmatic ingress "
-                    "for Record3D in this repo. It can expose RGB, depth, intrinsics, pose, and confidence."
+                    "USB capture uses the native `record3d` Python bindings. It can expose RGB, depth, intrinsics, "
+                    "pose, and confidence."
                 )
             case Record3DTransportId.WIFI:
                 return (
-                    "Wi-Fi Preview uses a Python-side WebRTC receiver. It is an optional lower-fidelity preview path "
-                    "for the app, not the canonical ingestion boundary. Enter the device address shown in the iPhone "
-                    "app."
+                    "Wi-Fi Preview uses a Python-side WebRTC receiver. It is a supported repo transport. Enter the "
+                    "device address shown in the iPhone app."
                 )
             case _:
                 raise ValueError(f"Unsupported Record3D transport: {self}")
