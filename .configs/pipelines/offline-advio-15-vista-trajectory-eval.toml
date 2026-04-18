@@ -1,0 +1,31 @@
+experiment_name = "advio-offline-advio-15-vista-trajectory-eval"
+mode = "offline"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-15"
+
+[slam]
+method = "vista"
+
+[slam.outputs]
+emit_dense_points = true
+emit_sparse_points = true
+
+[benchmark.reference]
+enabled = false
+
+[benchmark.trajectory]
+enabled = true
+baseline_source = "ground_truth"
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = false
+
+[visualization]
+connect_live_viewer = false
+preserve_native_rerun = true
