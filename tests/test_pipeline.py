@@ -11,7 +11,12 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.benchmark import BenchmarkConfig
+from prml_vslam.benchmark import (
+    BenchmarkConfig,
+    PreparedBenchmarkInputs,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+)
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.io.record3d import Record3DTransportId
@@ -309,6 +314,75 @@ def test_offline_runner_completes_and_persists_outputs(tmp_path: Path) -> None:
     assert snapshot.slam.trajectory_tum.path.exists()
 
 
+def test_offline_runner_executes_trajectory_evaluation_when_enabled(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.OFFLINE)
+    request = request.model_copy(update={"benchmark": BenchmarkConfig(trajectory={"enabled": True})})
+    plan = request.build(path_config)
+    run_paths = path_config.plan_run_paths(
+        experiment_name=request.experiment_name,
+        method_slug=request.slam.method.value,
+        output_dir=request.output_dir,
+    )
+    sequence_manifest = _prepared_offline_manifest(tmp_path)
+    reference_path = tmp_path / "ground_truth.tum"
+    write_tum_trajectory(
+        reference_path,
+        [
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+        ],
+        [0.0, 1.0],
+    )
+    source = FakeBenchmarkOfflineSource(
+        sequence_manifest=sequence_manifest,
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_trajectories=[
+                ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path),
+            ]
+        ),
+    )
+    backend = MockSlamBackendConfig().setup_target()
+    assert backend is not None
+    runner = OfflineRunner()
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=backend)
+    snapshot = _wait_for_terminal_snapshot(runner)
+
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.summary is not None
+    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION] is StageExecutionStatus.RAN
+    assert run_paths.trajectory_metrics_path.exists()
+    payload = json.loads(run_paths.trajectory_metrics_path.read_text(encoding="utf-8"))
+    assert payload["title"] == "Trajectory APE (evo)"
+    assert int(payload["matched_pairs"]) > 0
+    trajectory_stage = next(
+        manifest for manifest in snapshot.stage_manifests if manifest.stage_id is RunPlanStageId.TRAJECTORY_EVALUATION
+    )
+    assert trajectory_stage.status is StageExecutionStatus.RAN
+    assert trajectory_stage.output_paths["trajectory_metrics"] == run_paths.trajectory_metrics_path
+
+
+def test_offline_runner_fails_trajectory_evaluation_without_reference_inputs(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
+    request = _build_request(path_config, mode=PipelineMode.OFFLINE)
+    request = request.model_copy(update={"benchmark": BenchmarkConfig(trajectory={"enabled": True})})
+    plan = request.build(path_config)
+    sequence_manifest = _prepared_offline_manifest(tmp_path)
+    source = FakeOfflineSource(sequence_manifest=sequence_manifest)
+    backend = MockSlamBackendConfig().setup_target()
+    assert backend is not None
+    runner = OfflineRunner()
+
+    runner.start(request=request, plan=plan, source=source, slam_backend=backend)
+    snapshot = _wait_for_terminal_snapshot(runner)
+
+    assert snapshot.state is RunState.FAILED
+    assert snapshot.summary is not None
+    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION] is StageExecutionStatus.FAILED
+    assert "reference trajectories" in snapshot.error_message
+
+
 def test_streaming_runner_completes_and_persists_outputs(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
     request = _build_request(path_config, mode=PipelineMode.STREAMING)
@@ -416,6 +490,26 @@ class FakeStreamingSource(FakeOfflineSource):
     def open_stream(self, *, loop: bool):
         self.open_calls.append(loop)
         return self._stream
+
+
+class FakeBenchmarkOfflineSource(FakeOfflineSource):
+    """Offline source stand-in that also exposes prepared benchmark inputs."""
+
+    def __init__(
+        self,
+        *,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs,
+        label: str = "advio-15 · Office 03",
+    ) -> None:
+        super().__init__(sequence_manifest=sequence_manifest, label=label)
+        self._benchmark_inputs = benchmark_inputs
+        self.prepare_benchmark_calls = 0
+
+    def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
+        self.prepare_benchmark_calls += 1
+        del output_dir
+        return self._benchmark_inputs
 
 
 class FinitePacketStream:

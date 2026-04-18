@@ -21,7 +21,14 @@ from prml_vslam.benchmark import (
 )
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.eval.contracts import ErrorSeries, MetricStats, TrajectorySeries
+from prml_vslam.eval.contracts import (
+    DiscoveredRun,
+    ErrorSeries,
+    EvaluationArtifact,
+    MetricStats,
+    SelectionSnapshot,
+    TrajectorySeries,
+)
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
@@ -67,7 +74,14 @@ if TYPE_CHECKING:
 
 _ACTIVE_SESSION_STATES = frozenset({RunState.PREPARING, RunState.RUNNING})
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
-_SUPPORTED_APP_STAGE_IDS = frozenset({RunPlanStageId.INGEST, RunPlanStageId.SLAM, RunPlanStageId.SUMMARY})
+_SUPPORTED_APP_STAGE_IDS = frozenset(
+    {
+        RunPlanStageId.INGEST,
+        RunPlanStageId.SLAM,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
+        RunPlanStageId.SUMMARY,
+    }
+)
 
 
 class PipelinePageAction(PipelinePageState):
@@ -192,7 +206,7 @@ def render(context: AppContext) -> None:
             st.error(error_message)
         render_live_fragment(
             run_every=live_poll_interval(is_active=snapshot.state in _ACTIVE_SESSION_STATES, interval_seconds=0.2),
-            render_body=lambda: _render_pipeline_snapshot(context.run_service.snapshot()),
+            render_body=lambda: _render_pipeline_snapshot(context, context.run_service.snapshot()),
         )
 
 
@@ -452,13 +466,13 @@ def _render_stage_settings(
     )
 
 
-def _render_pipeline_snapshot(snapshot: RunSnapshot) -> None:
+def _render_pipeline_snapshot(context: AppContext, snapshot: RunSnapshot) -> None:
     render_live_session_shell(
         title=None,
         status_renderer=lambda: _render_pipeline_notice(snapshot),
         metrics=_pipeline_metrics(snapshot),
         caption=_pipeline_caption(snapshot),
-        body_renderer=lambda: _render_pipeline_tabs(snapshot),
+        body_renderer=lambda: _render_pipeline_tabs(context, snapshot),
     )
 
 
@@ -589,8 +603,9 @@ def _request_support_error(
         return "The current request failed validation and could not be planned."
     unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
-        return "The current app demo can execute only ingest, slam, and summary stages. Disable: " + ", ".join(
-            unsupported_stage_ids
+        return (
+            "The current app demo can execute only ingest, slam, trajectory_evaluation, and summary stages. Disable: "
+            + ", ".join(unsupported_stage_ids)
         )
     match request.source:
         case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
@@ -640,7 +655,7 @@ def _pipeline_caption(snapshot: RunSnapshot) -> str | None:
     )
 
 
-def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
+def _render_pipeline_tabs(context: AppContext, snapshot: RunSnapshot) -> None:
     if _is_offline_pipeline_run(snapshot):
         st.caption("Offline runs skip the live replay panels and focus on stage progress plus persisted outputs.")
         tabs = st.tabs(["Plan", "Artifacts"])
@@ -713,7 +728,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot) -> None:
         if not show_evo_preview:
             st.caption("Enable the toggle to run explicit evo APE preview for the current demo slice.")
         else:
-            evo_preview, evo_error = _resolve_evo_preview(snapshot)
+            evo_preview, evo_error = _resolve_evo_preview(snapshot, context=context)
             if evo_error is not None:
                 st.warning(evo_error)
             elif evo_preview is None:
@@ -975,7 +990,11 @@ def _pointmap_depth_preview(pointmap: np.ndarray) -> np.ndarray:
     return normalize_grayscale_image(np.asarray(pointmap[..., 2], dtype=np.float32))
 
 
-def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | None, str | None]:
+def _resolve_evo_preview(
+    snapshot: RunSnapshot,
+    *,
+    context: AppContext | None = None,
+) -> tuple[PipelineEvoPreview | None, str | None]:
     if snapshot.slam is None:
         return None, None
     reference_path = (
@@ -992,6 +1011,24 @@ def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | No
         return None, "No `ground_truth.tum` reference is available for this ADVIO slice."
     if not reference_path.exists() or not estimate_path.exists():
         return None, None
+    if context is not None and snapshot.plan is not None:
+        selection = SelectionSnapshot(
+            sequence_slug=snapshot.sequence_manifest.sequence_id if snapshot.sequence_manifest is not None else "run",
+            reference_path=reference_path,
+            run=DiscoveredRun(
+                artifact_root=snapshot.plan.artifact_root,
+                estimate_path=estimate_path,
+                method=snapshot.plan.method,
+                label=snapshot.plan.method.display_name,
+            ),
+        )
+        try:
+            evaluation = context.evaluation_service.load_evaluation(selection=selection)
+            if evaluation is None:
+                evaluation = context.evaluation_service.compute_evaluation(selection=selection)
+            return _preview_from_evaluation(evaluation), None
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return None, str(exc)
     try:
         return (
             _compute_evo_preview(
@@ -1004,6 +1041,17 @@ def _resolve_evo_preview(snapshot: RunSnapshot) -> tuple[PipelineEvoPreview | No
         )
     except (RuntimeError, ValueError) as exc:
         return None, str(exc)
+
+
+def _preview_from_evaluation(evaluation: EvaluationArtifact) -> PipelineEvoPreview | None:
+    if evaluation.error_series is None or len(evaluation.trajectories) < 2:
+        return None
+    return PipelineEvoPreview(
+        reference=evaluation.trajectories[0],
+        estimate=evaluation.trajectories[1],
+        error_series=evaluation.error_series,
+        stats=evaluation.stats,
+    )
 
 
 @lru_cache(maxsize=32)

@@ -21,6 +21,7 @@ from prml_vslam.visualization.rerun import (
     log_transform,
 )
 
+from .evaluation import TrajectoryEvaluationExecution, execute_trajectory_evaluation
 from .finalization import finalize_run_outputs, write_json
 from .runner_runtime import RunnerRuntime
 
@@ -102,6 +103,7 @@ class StreamingRunner:
         benchmark_inputs: PreparedBenchmarkInputs | None = None
         slam_artifacts = None
         visualization_artifacts: VisualizationArtifacts | None = None
+        trajectory_evaluation = TrajectoryEvaluationExecution()
         summary = None
         stage_manifests = []
         ingest_started = False
@@ -198,6 +200,18 @@ class StreamingRunner:
                 native_output_dir=run_paths.native_output_dir,
                 preserve_native_rerun=request.visualization.preserve_native_rerun,
             )
+            if not stop_event.is_set():
+                trajectory_evaluation = execute_trajectory_evaluation(
+                    request=request,
+                    plan=plan,
+                    sequence_manifest=sequence_manifest,
+                    benchmark_inputs=benchmark_inputs,
+                    slam=slam_artifacts,
+                )
+                if trajectory_evaluation.started and trajectory_evaluation.error_message:
+                    final_state = RunState.FAILED
+                    pipeline_failed = True
+                    error_message = trajectory_evaluation.error_message
             try:
                 summary, stage_manifests = finalize_run_outputs(
                     request=request,
@@ -206,6 +220,7 @@ class StreamingRunner:
                     sequence_manifest=sequence_manifest,
                     benchmark_inputs=benchmark_inputs,
                     slam=slam_artifacts,
+                    trajectory_evaluation=trajectory_evaluation,
                     visualization=visualization_artifacts,
                     ingest_started=ingest_started,
                     slam_started=slam_started,

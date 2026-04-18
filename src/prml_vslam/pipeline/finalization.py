@@ -12,6 +12,7 @@ from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageExecutionStatus, StageManifest
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.pipeline.evaluation import TrajectoryEvaluationExecution
 from prml_vslam.utils import BaseConfig, RunArtifactPaths
 from prml_vslam.visualization import VisualizationArtifacts
 
@@ -24,6 +25,7 @@ def finalize_run_outputs(
     sequence_manifest: SequenceManifest | None,
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
+    trajectory_evaluation: TrajectoryEvaluationExecution,
     visualization: VisualizationArtifacts | None,
     ingest_started: bool,
     slam_started: bool,
@@ -35,6 +37,7 @@ def finalize_run_outputs(
         plan=plan,
         sequence_manifest=sequence_manifest,
         slam=slam,
+        trajectory_evaluation=trajectory_evaluation,
         ingest_started=ingest_started,
         slam_started=slam_started,
         pipeline_failed=pipeline_failed,
@@ -46,6 +49,7 @@ def finalize_run_outputs(
         sequence_manifest=sequence_manifest,
         benchmark_inputs=benchmark_inputs,
         slam=slam,
+        trajectory_evaluation=trajectory_evaluation,
         visualization=visualization,
         stage_status=stage_status,
     )
@@ -55,6 +59,7 @@ def finalize_run_outputs(
         sequence_manifest=sequence_manifest,
         benchmark_inputs=benchmark_inputs,
         slam=slam,
+        trajectory_evaluation=trajectory_evaluation,
         visualization=visualization,
         stage_status=stage_status,
         existing_stage_manifests=non_summary_manifests,
@@ -76,6 +81,7 @@ def build_stage_status(
     plan: RunPlan,
     sequence_manifest: SequenceManifest | None,
     slam: SlamArtifacts | None,
+    trajectory_evaluation: TrajectoryEvaluationExecution,
     ingest_started: bool,
     slam_started: bool,
     pipeline_failed: bool,
@@ -91,6 +97,12 @@ def build_stage_status(
         stage_status[RunPlanStageId.SLAM] = (
             StageExecutionStatus.RAN if slam is not None and not pipeline_failed else StageExecutionStatus.FAILED
         )
+    if RunPlanStageId.TRAJECTORY_EVALUATION in planned_ids and trajectory_evaluation.started:
+        stage_status[RunPlanStageId.TRAJECTORY_EVALUATION] = (
+            StageExecutionStatus.RAN
+            if trajectory_evaluation.artifact is not None and not trajectory_evaluation.error_message
+            else StageExecutionStatus.FAILED
+        )
     return stage_status
 
 
@@ -102,6 +114,7 @@ def build_stage_manifests(
     sequence_manifest: SequenceManifest | None,
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
+    trajectory_evaluation: TrajectoryEvaluationExecution,
     visualization: VisualizationArtifacts | None,
     stage_status: dict[RunPlanStageId, StageExecutionStatus],
 ) -> list[StageManifest]:
@@ -157,6 +170,29 @@ def build_stage_manifests(
                 status=stage_status[RunPlanStageId.SLAM],
             )
         )
+    if RunPlanStageId.TRAJECTORY_EVALUATION in stage_status:
+        output_paths: dict[str, Path] = {}
+        if trajectory_evaluation.reference_path is not None:
+            output_paths["reference_tum"] = trajectory_evaluation.reference_path
+        if trajectory_evaluation.estimate_path is not None:
+            output_paths["estimate_tum"] = trajectory_evaluation.estimate_path
+        if trajectory_evaluation.artifact is not None:
+            output_paths["trajectory_metrics"] = trajectory_evaluation.artifact.path
+        manifests.append(
+            StageManifest(
+                stage_id=RunPlanStageId.TRAJECTORY_EVALUATION,
+                config_hash=stable_hash(request.benchmark.trajectory),
+                input_fingerprint=stable_hash(
+                    {
+                        "baseline_source": request.benchmark.trajectory.baseline_source,
+                        "reference_path": trajectory_evaluation.reference_path,
+                        "estimate_path": trajectory_evaluation.estimate_path,
+                    }
+                ),
+                output_paths=output_paths,
+                status=stage_status[RunPlanStageId.TRAJECTORY_EVALUATION],
+            )
+        )
     planned_ids = {stage.id for stage in plan.stages}
     return [manifest for manifest in manifests if manifest.stage_id in planned_ids]
 
@@ -168,6 +204,7 @@ def build_summary_manifest(
     sequence_manifest: SequenceManifest | None,
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
+    trajectory_evaluation: TrajectoryEvaluationExecution,
     visualization: VisualizationArtifacts | None,
     stage_status: dict[RunPlanStageId, StageExecutionStatus],
     existing_stage_manifests: list[StageManifest],
@@ -182,6 +219,7 @@ def build_summary_manifest(
                 "sequence_manifest": sequence_manifest,
                 "benchmark_inputs": benchmark_inputs,
                 "slam": slam,
+                "trajectory_evaluation": trajectory_evaluation,
                 "visualization": visualization,
                 "stage_status": stage_status,
                 "stage_manifests": existing_stage_manifests,

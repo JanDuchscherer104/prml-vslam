@@ -35,6 +35,7 @@ _SUPPORTED_STAGE_IDS = frozenset(
     {
         RunPlanStageId.INGEST,
         RunPlanStageId.SLAM,
+        RunPlanStageId.TRAJECTORY_EVALUATION,
         RunPlanStageId.SUMMARY,
     }
 )

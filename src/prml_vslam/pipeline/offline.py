@@ -14,6 +14,7 @@ from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.visualization import VisualizationArtifacts
 from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
 
+from .evaluation import TrajectoryEvaluationExecution, execute_trajectory_evaluation
 from .finalization import finalize_run_outputs, write_json
 from .ingest import materialize_offline_manifest
 from .runner_runtime import RunnerRuntime
@@ -80,6 +81,7 @@ class OfflineRunner:
         benchmark_inputs: PreparedBenchmarkInputs | None = None
         slam_artifacts = None
         visualization_artifacts: VisualizationArtifacts | None = None
+        trajectory_evaluation = TrajectoryEvaluationExecution()
         summary = None
         stage_manifests = []
         ingest_started = False
@@ -124,6 +126,17 @@ class OfflineRunner:
                     native_output_dir=run_paths.native_output_dir,
                     preserve_native_rerun=request.visualization.preserve_native_rerun,
                 )
+                trajectory_evaluation = execute_trajectory_evaluation(
+                    request=request,
+                    plan=plan,
+                    sequence_manifest=sequence_manifest,
+                    benchmark_inputs=benchmark_inputs,
+                    slam=slam_artifacts,
+                )
+                if trajectory_evaluation.started and trajectory_evaluation.error_message:
+                    final_state = RunState.FAILED
+                    pipeline_failed = True
+                    error_message = trajectory_evaluation.error_message
         except Exception as exc:
             final_state = RunState.FAILED
             pipeline_failed = True
@@ -140,6 +153,7 @@ class OfflineRunner:
                     sequence_manifest=sequence_manifest,
                     benchmark_inputs=benchmark_inputs,
                     slam=slam_artifacts,
+                    trajectory_evaluation=trajectory_evaluation,
                     visualization=visualization_artifacts,
                     ingest_started=ingest_started,
                     slam_started=slam_started,
