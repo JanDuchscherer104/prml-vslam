@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rerun SLAM Integration"
+  short_description: "Python Rerun patterns for SLAM and RGB-D"
+  default_prompt: "Use $rerun-slam-integration to guide Python Rerun integration for SLAM, RGB-D, transforms, pinhole cameras, depth, point clouds, timelines, blueprints, and example-driven debugging."

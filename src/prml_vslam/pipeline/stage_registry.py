@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from prml_vslam.benchmark import ReferenceSource
@@ -23,15 +22,22 @@ from prml_vslam.pipeline.contracts.stages import (
     StageExecutorKind,
     StageKey,
 )
-from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils import BaseData, PathConfig, RunArtifactPaths
 
+EnabledFn = Callable[[RunRequest], bool]
 AvailabilityFn = Callable[[RunRequest, BackendDescriptor], StageAvailability]
+SummaryFn = Callable[[RunRequest], str]
+OutputsFn = Callable[[RunRequest, RunArtifactPaths], list[Path]]
+ExecutorKindFn = Callable[[RunRequest], StageExecutorKind]
 
 
-@dataclass(slots=True)
-class _RegistryEntry:
+class _RegistryEntry(BaseData):
     definition: StageDefinition
+    enabled_fn: EnabledFn
     availability_fn: AvailabilityFn
+    summary_fn: SummaryFn
+    outputs_fn: OutputsFn
+    executor_kind_fn: ExecutorKindFn
 
 
 class StageRegistry:
@@ -40,9 +46,27 @@ class StageRegistry:
     def __init__(self) -> None:
         self._entries: dict[StageKey, _RegistryEntry] = {}
 
-    def register(self, definition: StageDefinition, availability_fn: AvailabilityFn) -> None:
+    def register(
+        self,
+        definition: StageDefinition,
+        availability_fn: AvailabilityFn,
+        *,
+        enabled_fn: EnabledFn | None = None,
+        summary_fn: SummaryFn | None = None,
+        outputs_fn: OutputsFn | None = None,
+        executor_kind_fn: ExecutorKindFn | None = None,
+    ) -> None:
         """Register one stage definition and its availability function."""
-        self._entries[definition.key] = _RegistryEntry(definition=definition, availability_fn=availability_fn)
+        self._entries[definition.key] = _RegistryEntry(
+            definition=definition,
+            enabled_fn=_always_enabled if enabled_fn is None else enabled_fn,
+            availability_fn=availability_fn,
+            summary_fn=(_description_summary(definition.description) if summary_fn is None else summary_fn),
+            outputs_fn=_no_outputs if outputs_fn is None else outputs_fn,
+            executor_kind_fn=(
+                _fixed_executor_kind(definition.executor_kind) if executor_kind_fn is None else executor_kind_fn
+            ),
+        )
 
     def get(self, key: StageKey) -> StageDefinition:
         """Return one registered stage definition."""
@@ -59,16 +83,8 @@ class StageRegistry:
             method_slug=request.slam.backend.kind,
             output_dir=request.output_dir,
         )
-        planned_keys = [StageKey.INGEST, StageKey.SLAM]
-        if request.benchmark.reference.enabled:
-            planned_keys.append(StageKey.REFERENCE_RECONSTRUCTION)
-        if request.benchmark.trajectory.enabled:
-            planned_keys.append(StageKey.TRAJECTORY_EVALUATION)
-        if request.benchmark.cloud.enabled:
-            planned_keys.append(StageKey.CLOUD_EVALUATION)
-        if request.benchmark.efficiency.enabled:
-            planned_keys.append(StageKey.EFFICIENCY_EVALUATION)
-        planned_keys.append(StageKey.SUMMARY)
+        resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
+        active_entries = [entry for entry in self._entries.values() if entry.enabled_fn(request)]
 
         return RunPlan(
             run_id=path_config.slugify_experiment_name(request.experiment_name),
@@ -77,32 +93,32 @@ class StageRegistry:
             artifact_root=run_paths.artifact_root,
             source=request.source,
             stages=[
-                self._stage_for_key(
-                    key=key,
+                self._stage_for_entry(
+                    entry=entry,
                     request=request,
                     backend=backend,
-                    run_paths=RunArtifactPaths.build(run_paths.artifact_root),
+                    run_paths=resolved_run_paths,
                 )
-                for key in planned_keys
+                for entry in active_entries
             ],
         )
 
-    def _stage_for_key(
+    def _stage_for_entry(
         self,
         *,
-        key: StageKey,
+        entry: _RegistryEntry,
         request: RunRequest,
         backend: BackendDescriptor,
         run_paths: RunArtifactPaths,
     ) -> RunPlanStage:
-        definition = self.get(key)
-        availability = self.availability(key, request, backend)
+        definition = entry.definition
+        availability = entry.availability_fn(request, backend)
         return RunPlanStage(
             key=definition.key,
             title=definition.title,
-            summary=_stage_summary(key=key, request=request),
-            outputs=_stage_outputs(key=key, request=request, run_paths=run_paths),
-            executor_kind=_executor_kind_for_stage(key=key, request=request),
+            summary=entry.summary_fn(request),
+            outputs=entry.outputs_fn(request, run_paths),
+            executor_kind=entry.executor_kind_fn(request),
             available=availability.available,
             availability_reason=availability.reason,
             failure_modes=definition.failure_modes,
@@ -123,6 +139,8 @@ class StageRegistry:
                 failure_modes=["source_open_failed", "normalization_failed"],
             ),
             lambda _request, _backend: StageAvailability(available=True),
+            summary_fn=_ingest_summary,
+            outputs_fn=_ingest_outputs,
         )
         registry.register(
             StageDefinition(
@@ -135,6 +153,9 @@ class StageRegistry:
                 failure_modes=["backend_init_failed", "backend_execution_failed"],
             ),
             _slam_stage_availability,
+            summary_fn=_slam_summary,
+            outputs_fn=_slam_outputs,
+            executor_kind_fn=_slam_executor_kind,
         )
         registry.register(
             StageDefinition(
@@ -147,6 +168,9 @@ class StageRegistry:
                 failure_modes=["missing_reference", "evaluation_failed"],
             ),
             _trajectory_stage_availability,
+            enabled_fn=lambda request: request.benchmark.trajectory.enabled,
+            summary_fn=_trajectory_stage_summary,
+            outputs_fn=lambda _request, run_paths: [run_paths.trajectory_metrics_path],
         )
         registry.register(
             StageDefinition(
@@ -162,6 +186,8 @@ class StageRegistry:
                 available=False,
                 reason="Reference reconstruction remains a planned placeholder in this refactor.",
             ),
+            enabled_fn=lambda request: request.benchmark.reference.enabled,
+            outputs_fn=lambda _request, run_paths: [run_paths.reference_cloud_path],
         )
         registry.register(
             StageDefinition(
@@ -177,6 +203,8 @@ class StageRegistry:
                 available=False,
                 reason="Dense-cloud evaluation remains a planned placeholder in this refactor.",
             ),
+            enabled_fn=lambda request: request.benchmark.cloud.enabled,
+            outputs_fn=lambda _request, run_paths: [run_paths.cloud_metrics_path],
         )
         registry.register(
             StageDefinition(
@@ -192,6 +220,8 @@ class StageRegistry:
                 available=False,
                 reason="Efficiency evaluation remains a planned placeholder in this refactor.",
             ),
+            enabled_fn=lambda request: request.benchmark.efficiency.enabled,
+            outputs_fn=lambda _request, run_paths: [run_paths.efficiency_metrics_path],
         )
         registry.register(
             StageDefinition(
@@ -204,8 +234,25 @@ class StageRegistry:
                 failure_modes=["summary_projection_failed"],
             ),
             lambda _request, _backend: StageAvailability(available=True),
+            outputs_fn=lambda _request, run_paths: [run_paths.summary_path, run_paths.stage_manifests_path],
         )
         return registry
+
+
+def _always_enabled(_request: RunRequest) -> bool:
+    return True
+
+
+def _no_outputs(_request: RunRequest, _run_paths: RunArtifactPaths) -> list[Path]:
+    return []
+
+
+def _description_summary(description: str) -> SummaryFn:
+    return lambda _request: description
+
+
+def _fixed_executor_kind(kind: StageExecutorKind) -> ExecutorKindFn:
+    return lambda _request: kind
 
 
 def _slam_stage_availability(request: RunRequest, backend: BackendDescriptor) -> StageAvailability:
@@ -228,91 +275,70 @@ def _trajectory_stage_availability(_request: RunRequest, backend: BackendDescrip
     return StageAvailability(available=True)
 
 
-def _executor_kind_for_stage(*, key: StageKey, request: RunRequest) -> StageExecutorKind:
-    if key is StageKey.SLAM and request.mode.value == "streaming":
+def _slam_executor_kind(request: RunRequest) -> StageExecutorKind:
+    if request.mode.value == "streaming":
         return StageExecutorKind.STREAMING
-    if key is StageKey.SUMMARY:
-        return StageExecutorKind.PROJECTION
     return StageExecutorKind.BATCH
 
 
-def _stage_outputs(*, key: StageKey, request: RunRequest, run_paths: RunArtifactPaths) -> list[Path]:
-    match key:
-        case StageKey.INGEST:
-            return [run_paths.sequence_manifest_path, run_paths.benchmark_inputs_path]
-        case StageKey.SLAM:
-            outputs = [run_paths.trajectory_path]
-            if request.slam.backend.kind == MethodId.VISTA.value:
-                if request.slam.outputs.emit_sparse_points or request.slam.outputs.emit_dense_points:
-                    outputs.append(run_paths.point_cloud_path)
-            else:
-                if request.slam.outputs.emit_sparse_points:
-                    outputs.append(run_paths.sparse_points_path)
-                if request.slam.outputs.emit_dense_points:
-                    outputs.append(run_paths.dense_points_path)
-            return outputs
-        case StageKey.TRAJECTORY_EVALUATION:
-            return [run_paths.trajectory_metrics_path]
-        case StageKey.REFERENCE_RECONSTRUCTION:
-            return [run_paths.reference_cloud_path]
-        case StageKey.CLOUD_EVALUATION:
-            return [run_paths.cloud_metrics_path]
-        case StageKey.EFFICIENCY_EVALUATION:
-            return [run_paths.efficiency_metrics_path]
-        case StageKey.SUMMARY:
-            return [run_paths.summary_path, run_paths.stage_manifests_path]
+def _ingest_outputs(_request: RunRequest, run_paths: RunArtifactPaths) -> list[Path]:
+    return [run_paths.sequence_manifest_path, run_paths.benchmark_inputs_path]
 
 
-def _stage_summary(*, key: StageKey, request: RunRequest) -> str:
-    match key:
-        case StageKey.INGEST:
-            match request.source:
-                case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
-                    return (
-                        f"Decode '{video_path}' at stride {frame_stride} and materialize a normalized sequence "
-                        "manifest."
-                    )
-                case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id):
-                    return f"Normalize ADVIO sequence '{sequence_id}' into the shared sequence-manifest boundary."
-                case Record3DLiveSourceSpec(
-                    transport=transport,
-                    persist_capture=persist_capture,
-                    device_index=device_index,
-                    device_address=device_address,
-                ):
-                    persistence = "with persistence" if persist_capture else "without persistence"
-                    source_label = (
-                        f"USB device #{device_index}"
-                        if transport.value == "usb" and device_index is not None
-                        else device_address or transport.value
-                    )
-                    return f"Capture the Record3D source '{source_label}' {persistence} into the shared boundary."
-        case StageKey.SLAM:
-            artifact_names = ["trajectory"]
-            if request.slam.backend.kind == MethodId.VISTA.value:
-                if request.slam.outputs.emit_sparse_points or request.slam.outputs.emit_dense_points:
-                    artifact_names.append("point-cloud geometry")
-            else:
-                if request.slam.outputs.emit_sparse_points:
-                    artifact_names.append("sparse geometry")
-                if request.slam.outputs.emit_dense_points:
-                    artifact_names.append("dense geometry")
-            return f"Run the {MethodId(request.slam.backend.kind).display_name} backend and export {', '.join(artifact_names)} artifacts."
-        case StageKey.TRAJECTORY_EVALUATION:
-            baseline_label = {
-                ReferenceSource.GROUND_TRUTH: "ground-truth trajectory",
-                ReferenceSource.ARCORE: "ARCore baseline",
-                ReferenceSource.ARKIT: "ARKit baseline",
-            }[request.benchmark.trajectory.baseline_source]
-            return f"Evaluate the estimated trajectory against the selected {baseline_label}."
-        case StageKey.REFERENCE_RECONSTRUCTION:
-            return "Placeholder reference reconstruction stage retained in the vocabulary."
-        case StageKey.CLOUD_EVALUATION:
-            return "Placeholder dense-cloud evaluation stage retained in the vocabulary."
-        case StageKey.EFFICIENCY_EVALUATION:
-            return "Placeholder efficiency-evaluation stage retained in the vocabulary."
-        case StageKey.SUMMARY:
-            return "Persist run summary and stage manifests from the executed stage outcomes."
+def _slam_outputs(request: RunRequest, run_paths: RunArtifactPaths) -> list[Path]:
+    outputs = [run_paths.trajectory_path]
+    if request.slam.backend.kind == MethodId.VISTA.value:
+        if request.slam.outputs.emit_sparse_points or request.slam.outputs.emit_dense_points:
+            outputs.append(run_paths.point_cloud_path)
+        return outputs
+    if request.slam.outputs.emit_sparse_points:
+        outputs.append(run_paths.sparse_points_path)
+    if request.slam.outputs.emit_dense_points:
+        outputs.append(run_paths.dense_points_path)
+    return outputs
+
+
+def _ingest_summary(request: RunRequest) -> str:
+    match request.source:
+        case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
+            return f"Decode '{video_path}' at stride {frame_stride} and materialize a normalized sequence manifest."
+        case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id):
+            return f"Normalize ADVIO sequence '{sequence_id}' into the shared sequence-manifest boundary."
+        case Record3DLiveSourceSpec(
+            transport=transport,
+            persist_capture=persist_capture,
+            device_index=device_index,
+            device_address=device_address,
+        ):
+            persistence = "with persistence" if persist_capture else "without persistence"
+            source_label = (
+                f"USB device #{device_index}"
+                if transport.value == "usb" and device_index is not None
+                else device_address or transport.value
+            )
+            return f"Capture the Record3D source '{source_label}' {persistence} into the shared boundary."
+
+
+def _slam_summary(request: RunRequest) -> str:
+    artifact_names = ["trajectory"]
+    if request.slam.backend.kind == MethodId.VISTA.value:
+        if request.slam.outputs.emit_sparse_points or request.slam.outputs.emit_dense_points:
+            artifact_names.append("point-cloud geometry")
+    else:
+        if request.slam.outputs.emit_sparse_points:
+            artifact_names.append("sparse geometry")
+        if request.slam.outputs.emit_dense_points:
+            artifact_names.append("dense geometry")
+    return f"Run the {MethodId(request.slam.backend.kind).display_name} backend and export {', '.join(artifact_names)} artifacts."
+
+
+def _trajectory_stage_summary(request: RunRequest) -> str:
+    baseline_label = {
+        ReferenceSource.GROUND_TRUTH: "ground-truth trajectory",
+        ReferenceSource.ARCORE: "ARCore baseline",
+        ReferenceSource.ARKIT: "ARKit baseline",
+    }[request.benchmark.trajectory.baseline_source]
+    return f"Evaluate the estimated trajectory against the selected {baseline_label}."
 
 
 __all__ = ["StageRegistry"]

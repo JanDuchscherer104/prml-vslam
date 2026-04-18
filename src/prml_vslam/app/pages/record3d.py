@@ -34,9 +34,8 @@ def render(context: AppContext) -> None:
         eyebrow="Live Capture",
         title="Record3D Stream",
         body=(
-            "Capture from the official USB bindings or use the optional Wi-Fi preview fallback, inspect RGBD "
-            "frames, and monitor a live session without leaving the workbench. USB remains the canonical "
-            "programmatic path, while the preview panel refreshes independently."
+            "Capture from the official USB bindings or the Wi-Fi transport, inspect RGBD frames, and monitor a "
+            "live session without leaving the workbench."
         ),
     )
     action = _render_sidebar_controls(context)
@@ -50,7 +49,7 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
     page_state = context.state.record3d
     with st.sidebar:
         st.subheader("Stream Controls")
-        st.caption("Choose a source, then start or restart the active stream. USB is the recommended capture path.")
+        st.caption("Choose a source, then start or restart the active stream.")
         selection = render_record3d_transport_controls(
             transport=page_state.transport,
             usb_device_index=page_state.usb_device_index,

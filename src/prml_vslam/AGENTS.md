@@ -16,6 +16,7 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Config classes should inherit from `prml_vslam.utils.BaseConfig` where appropriate.
 - Runtime objects should be instantiated from config objects via `.setup_target()`, not from loose dicts or long argument lists.
 - All signatures must be typed; prefer modern builtins such as `list[str]` and `dict[str, Any]`.
+- Never use `object` in type annotations. Replace it with a concrete repo-owned protocol, discriminated union, typed payload model, or other explicit boundary type instead of treating `object` as a generic escape hatch.
 - Use `TYPE_CHECKING` guards for imports that are only needed for annotations.
 - Use `Literal` for constrained string values when it improves clarity.
 - Use `pathlib.Path` for path handling.

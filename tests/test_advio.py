@@ -28,6 +28,7 @@ from prml_vslam.datasets.advio import (
     load_advio_sequence,
 )
 from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tum
+from prml_vslam.datasets.advio.advio_loading import load_advio_calibration
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.utils import PathConfig
 
@@ -207,6 +208,40 @@ def test_advio_sequence_uses_catalog_calibration_metadata(tmp_path: Path) -> Non
     sample = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog).load_local_sample(15)
 
     assert sample.paths.calibration_path == tmp_path / ".data" / "advio" / "calibration" / "iphone-custom.yaml"
+
+
+def test_load_advio_calibration_tolerates_tab_indentation(tmp_path: Path) -> None:
+    calibration_path = tmp_path / "iphone-tabs.yaml"
+    calibration_path.write_text(
+        "\n".join(
+            [
+                "cameras:",
+                "- camera:",
+                "\timage_height: 48",
+                "\timage_width: 64",
+                "\ttype: pinhole",
+                "\tintrinsics:",
+                "\t  data: [100.0, 101.0, 32.0, 24.0]",
+                "\tdistortion:",
+                "\t  type: radial-tangential",
+                "\t  parameters:",
+                "\t    data: [0.1, 0.01, 0.0, 0.0]",
+                "\tT_cam_imu:",
+                "\t  data:",
+                "\t  - [1.0, 0.0, 0.0, 0.01]",
+                "\t  - [0.0, 1.0, 0.0, 0.02]",
+                "\t  - [0.0, 0.0, 1.0, 0.03]",
+                "\t  - [0.0, 0.0, 0.0, 1.0]\t\t",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calibration = load_advio_calibration(calibration_path)
+
+    assert calibration.intrinsics.fx == 100.0
+    assert calibration.intrinsics.height_px == 48
+    assert calibration.t_cam_imu.tx == 0.01
 
 
 def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path) -> None:

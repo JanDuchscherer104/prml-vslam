@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 from prml_vslam.benchmark import (
     BenchmarkConfig,
@@ -12,16 +12,19 @@ from prml_vslam.benchmark import (
     EfficiencyBenchmarkConfig,
     TrajectoryBenchmarkConfig,
 )
-from prml_vslam.datasets.advio import AdvioLocalSceneStatus
+from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import TrajectoryEvaluationPreview
 from prml_vslam.eval.services import compute_trajectory_ape_preview
+from prml_vslam.interfaces import CameraIntrinsics
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
+from prml_vslam.methods.events import KeyframeVisualizationReady
 from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.contracts.events import BackendNoticeReceived
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import (
+    BackendConfigPayload,
     DatasetSourceSpec,
     Record3DLiveSourceSpec,
     SlamStageConfig,
@@ -29,8 +32,9 @@ from prml_vslam.pipeline.contracts.request import (
 )
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.demo import load_run_request_toml
-from prml_vslam.utils import PathConfig
+from prml_vslam.pipeline.demo import build_runtime_source_from_request, load_run_request_toml
+from prml_vslam.utils import BaseData, PathConfig
+from prml_vslam.utils.json_types import JsonObject
 from prml_vslam.visualization.contracts import VisualizationConfig
 
 from .models import PipelinePageState, PipelineSourceId
@@ -38,6 +42,8 @@ from .record3d_controls import record3d_transport_input_error
 from .state import save_model_updates
 
 if TYPE_CHECKING:
+    from prml_vslam.pipeline.run_service import RunService
+
     from .bootstrap import AppContext
 
 _SUPPORTED_APP_STAGE_IDS = frozenset(
@@ -49,6 +55,11 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
     }
 )
 
+PipelinePageStateUpdateValue: TypeAlias = (
+    PipelineSourceId | AdvioPoseSource | Record3DTransportId | int | str | bool | None
+)
+PipelinePageStateUpdates: TypeAlias = dict[str, PipelinePageStateUpdateValue]
+
 
 class PipelinePageAction(PipelinePageState):
     """Typed action payload for the pipeline page controls."""
@@ -58,6 +69,14 @@ class PipelinePageAction(PipelinePageState):
 
     stop_requested: bool = False
     """Whether the user requested the current run to stop."""
+
+
+class PipelineBackendNoticeView(BaseData):
+    """App-facing projection of the latest backend notice."""
+
+    kind: str
+    payload: JsonObject
+    camera_intrinsics: CameraIntrinsics | None = None
 
 
 def action_from_page_state(page_state: PipelinePageState, config_path: Path) -> PipelinePageAction:
@@ -76,7 +95,7 @@ def sync_pipeline_page_state_from_template(
     page_state = context.state.pipeline
     if page_state.config_path == config_path:
         return
-    source_updates: dict[str, object] = {
+    source_updates: PipelinePageStateUpdates = {
         "source_kind": page_state.source_kind,
         "advio_sequence_id": page_state.advio_sequence_id,
     }
@@ -86,6 +105,8 @@ def sync_pipeline_page_state_from_template(
             source_updates = {
                 "source_kind": PipelineSourceId.ADVIO,
                 "advio_sequence_id": advio_sequence_id,
+                "pose_source": request.source.pose_source,
+                "respect_video_rotation": request.source.respect_video_rotation,
             }
         case Record3DLiveSourceSpec() as record3d_source:
             source_updates = {
@@ -108,7 +129,7 @@ def sync_pipeline_page_state_from_template(
         mode=request.mode,
         method=MethodId(request.slam.backend.kind),
         slam_max_frames=request.slam.backend.max_frames,
-        slam_backend_payload=request.slam.backend.model_dump(mode="json", exclude_none=True),
+        slam_backend_spec=request.slam.backend.model_copy(deep=True),
         emit_dense_points=request.slam.outputs.emit_dense_points,
         emit_sparse_points=request.slam.outputs.emit_sparse_points,
         reference_enabled=request.benchmark.reference.enabled,
@@ -117,7 +138,6 @@ def sync_pipeline_page_state_from_template(
         evaluate_efficiency=request.benchmark.efficiency.enabled,
         connect_live_viewer=request.visualization.connect_live_viewer,
         export_viewer_rrd=request.visualization.export_viewer_rrd,
-        rerun_modalities=list(request.visualization.rerun_modalities),
         **source_updates,
     )
 
@@ -131,6 +151,8 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             source = DatasetSourceSpec(
                 dataset_id=DatasetId.ADVIO,
                 sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
+                pose_source=action.pose_source,
+                respect_video_rotation=action.respect_video_rotation,
             )
         else:
             source = record3d_source_spec_from_action(action)
@@ -159,7 +181,6 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             visualization=VisualizationConfig(
                 export_viewer_rrd=action.export_viewer_rrd,
                 connect_live_viewer=action.connect_live_viewer,
-                rerun_modalities=list(action.rerun_modalities),
             ),
         )
         return request, None
@@ -242,7 +263,9 @@ def handle_pipeline_page_action(context: AppContext, action: PipelinePageAction)
         if request is None:
             raise ValueError(request_error or "Failed to build the current request.")
         runtime_source = (
-            None if request.mode is PipelineMode.OFFLINE else build_streaming_source_from_action(context, action)
+            None
+            if request.mode is PipelineMode.OFFLINE
+            else build_runtime_source_from_request(request=request, path_config=context.path_config)
         )
         context.run_service.start_run(request=request, runtime_source=runtime_source)
         return None
@@ -279,33 +302,6 @@ def load_pipeline_request(path_config: PathConfig, config_path: Path) -> tuple[R
         return None, str(exc)
 
 
-def build_streaming_source_from_action(context: AppContext, action: PipelinePageAction) -> object:
-    """Build the runtime streaming source selected by one page action."""
-    if action.source_kind is PipelineSourceId.ADVIO:
-        if action.advio_sequence_id is None:
-            raise ValueError("Select a replay-ready ADVIO scene.")
-        return context.advio_service.build_streaming_source(
-            sequence_id=action.advio_sequence_id,
-            pose_source=action.pose_source,
-            respect_video_rotation=action.respect_video_rotation,
-        )
-    transport_input_error = record3d_transport_input_error(
-        transport=action.record3d_transport,
-        wifi_device_address=action.record3d_wifi_device_address,
-    )
-    if transport_input_error is not None:
-        raise ValueError(transport_input_error)
-    record3d_source = record3d_source_spec_from_action(action)
-    source = Record3DStreamingSourceConfig(
-        transport=Record3DTransportId(record3d_source.transport.value),
-        device_index=0 if record3d_source.device_index is None else record3d_source.device_index,
-        device_address=record3d_source.device_address,
-    ).setup_target()
-    if source is None:
-        raise RuntimeError("Failed to initialize the Record3D streaming source.")
-    return source
-
-
 def resolve_evo_preview(snapshot: RunSnapshot) -> tuple[TrajectoryEvaluationPreview | None, str | None]:
     """Resolve a cached in-memory evo APE preview for a completed pipeline snapshot."""
     if (
@@ -332,6 +328,26 @@ def resolve_evo_preview(snapshot: RunSnapshot) -> tuple[TrajectoryEvaluationPrev
         )
     except (RuntimeError, ValueError) as exc:
         return None, str(exc)
+
+
+def latest_backend_notice_view(
+    run_service: RunService,
+    *,
+    limit: int = 25,
+) -> PipelineBackendNoticeView | None:
+    """Return the latest typed backend notice for the pipeline UI."""
+    for event in reversed(run_service.tail_events(limit=limit)):
+        if not isinstance(event, BackendNoticeReceived):
+            continue
+        camera_intrinsics = None
+        if isinstance(event.notice, KeyframeVisualizationReady):
+            camera_intrinsics = event.notice.camera_intrinsics
+        return PipelineBackendNoticeView(
+            kind=event.notice.kind,
+            payload=event.notice.model_dump(mode="json"),
+            camera_intrinsics=camera_intrinsics,
+        )
+    return None
 
 
 @lru_cache(maxsize=32)
@@ -375,9 +391,9 @@ def parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None,
         return None, f"Enter a whole number for `{field_label}` or leave the field blank."
 
 
-def request_summary_payload(request: RunRequest) -> dict[str, object]:
+def request_summary_payload(request: RunRequest) -> JsonObject:
     """Return the compact JSON payload rendered by the Pipeline request preview."""
-    payload: dict[str, object] = {
+    payload: JsonObject = {
         "experiment_name": request.experiment_name,
         "mode": request.mode.value,
         "output_dir": request.output_dir.as_posix(),
@@ -390,11 +406,18 @@ def request_summary_payload(request: RunRequest) -> dict[str, object]:
         "visualization": request.visualization.model_dump(mode="json"),
     }
     match request.source:
-        case DatasetSourceSpec(dataset_id=dataset_id, sequence_id=sequence_id):
+        case DatasetSourceSpec(
+            dataset_id=dataset_id,
+            sequence_id=sequence_id,
+            pose_source=pose_source,
+            respect_video_rotation=respect_video_rotation,
+        ):
             payload["source"] = {
                 "kind": "dataset",
                 "dataset_id": dataset_id.value,
                 "sequence_id": sequence_id,
+                "pose_source": pose_source.value,
+                "respect_video_rotation": respect_video_rotation,
             }
         case _:
             payload["source"] = request.source.model_dump(mode="json")
@@ -413,9 +436,12 @@ def record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLive
     )
 
 
-def backend_payload_from_action(action: PipelinePageAction) -> dict[str, object]:
-    """Return backend config payload for one action."""
-    payload = dict(action.slam_backend_payload)
+def backend_payload_from_action(action: PipelinePageAction) -> BackendConfigPayload:
+    """Return backend config overrides for one action."""
+    backend_spec = action.slam_backend_spec
+    if backend_spec is None or backend_spec.kind != action.method.value:
+        return {}
+    payload = backend_spec.model_dump(mode="python")
     payload.pop("kind", None)
     payload.pop("max_frames", None)
     return payload

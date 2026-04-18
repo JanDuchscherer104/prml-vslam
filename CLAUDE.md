@@ -32,10 +32,13 @@ relevant `SKILL.md` when the task falls in that domain:
 - **Pydantic** — `.agents/skills/pydantic/SKILL.md`
   Read when writing or reviewing Pydantic models or settings.
 
-- **Agents DB and simplification** — `.agents/skills/agents-db-and-simplification/SKILL.md`
+- **Agents DB** — `.agents/skills/agents-db/SKILL.md`
   Read when interacting with `.agents/issues.toml`, `.agents/todos.toml`,
-  `.agents/resolved.toml`, `make agents-db`, or when doing simplification,
-  pruning, or LOC-reduction work.
+  `.agents/resolved.toml`, or `make agents-db`.
+
+- **Simplification** — `.agents/skills/simplification/SKILL.md`
+  Read when doing simplification, pruning, redundancy reduction, or
+  LOC-reduction work. Pair it with **Agents DB** when the task is backlog-guided.
 
 - **Streamlit architecture** — `.agents/skills/understanding-streamlit-architecture/SKILL.md`
   Read when debugging cross-layer Streamlit issues or planning architectural

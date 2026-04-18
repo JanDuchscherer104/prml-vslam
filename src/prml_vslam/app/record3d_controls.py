@@ -116,8 +116,6 @@ def render_record3d_transport_details(selection: Record3DTransportSelection) -> 
             st.warning(selection.usb_error_message)
         elif selection.transport is Record3DTransportId.USB and not selection.usb_devices:
             st.info("No USB Record3D devices are currently connected.")
-        elif selection.transport is Record3DTransportId.WIFI:
-            st.info("Wi-Fi Preview is optional and lower fidelity than the official USB integration.")
 
 
 def _render_usb_selector(

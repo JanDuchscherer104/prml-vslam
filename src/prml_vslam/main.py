@@ -303,12 +303,10 @@ def pipeline_demo(
         sequence_id=scene.sequence_slug,
         mode=PipelineMode.STREAMING,
         method=method,
-    )
-    source = advio_service.build_streaming_source(
-        sequence_id=resolved_sequence_id,
         pose_source=pose_source,
         respect_video_rotation=respect_video_rotation,
     )
+    source = build_runtime_source_from_request(request=request, path_config=path_config)
     run_service = RunService(path_config=path_config)
     console.info(
         "Starting pipeline demo for %s (%s, %s).",

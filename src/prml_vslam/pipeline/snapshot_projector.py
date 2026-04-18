@@ -76,7 +76,6 @@ class SnapshotProjector:
                     if updated.state is not RunState.STOPPED:
                         updated.state = RunState.RUNNING
             case BackendNoticeReceived(notice=notice):
-                updated.latest_backend_event = notice.model_dump(mode="python")
                 if isinstance(updated, StreamingRunSnapshot):
                     match notice:
                         case PoseEstimated(pose=pose, timestamp_ns=timestamp_ns):

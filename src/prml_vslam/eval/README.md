@@ -9,6 +9,7 @@ artifacts.
 - resolve reference and estimate trajectories
 - run explicit `evo` trajectory evaluation, currently centered on translation APE
 - persist and reload evaluation results
+- provide the repository-owned trajectory-evaluation stage execution seam used by the pipeline
 
 Persisted trajectory results now carry explicit metric semantics such as metric
 id, pose relation, alignment mode, and sync tolerance. The current evaluator

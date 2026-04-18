@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 import numpy as np
 import streamlit as st
@@ -21,7 +22,10 @@ from ..live_session import (
     render_live_session_shell,
     render_live_trajectory,
 )
-from ..pipeline_controller import resolve_evo_preview
+from ..pipeline_controller import latest_backend_notice_view, resolve_evo_preview
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.run_service import RunService
 
 _VISTA_POINTMAP_EMPTY_MESSAGE = (
     "ViSTA-SLAM has not produced a renderable preview artifact for the current keyframe yet."
@@ -30,7 +34,7 @@ _VISTA_TRAJECTORY_EMPTY_MESSAGE = "ViSTA-SLAM has not accepted a keyframe pose y
 _VISTA_PREVIEW_CURRENT_MESSAGE = "Current keyframe artifact."
 
 
-def render_pipeline_snapshot(snapshot: RunSnapshot, run_service: object) -> None:
+def render_pipeline_snapshot(snapshot: RunSnapshot, run_service: RunService) -> None:
     """Render the current pipeline run snapshot."""
     render_live_session_shell(
         title=None,
@@ -83,7 +87,7 @@ def _pipeline_caption(snapshot: RunSnapshot) -> str | None:
     )
 
 
-def _render_pipeline_tabs(snapshot: RunSnapshot, run_service: object) -> None:
+def _render_pipeline_tabs(snapshot: RunSnapshot, run_service: RunService) -> None:
     if _is_offline_pipeline_run(snapshot):
         st.caption("Offline runs skip the live replay panels and focus on stage progress plus persisted outputs.")
         tabs = st.tabs(["Plan", "Artifacts"])
@@ -97,6 +101,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot, run_service: object) -> None:
         st.info("Streaming telemetry is not available for this run.")
         return
     packet = snapshot.latest_packet
+    backend_notice = latest_backend_notice_view(run_service)
     tabs = st.tabs(["Frames", "Trajectory", "Plan", "Artifacts"])
     with tabs[0]:
         if packet is None:
@@ -123,10 +128,10 @@ def _render_pipeline_tabs(snapshot: RunSnapshot, run_service: object) -> None:
             details_left, details_right = st.columns((1.0, 1.0), gap="large")
             with details_left:
                 st.markdown("**Latest Backend Event**")
-                if snapshot.latest_backend_event is None:
+                if backend_notice is None:
                     st.info("No SLAM update is available yet.")
                 else:
-                    st.json(BaseConfig.to_jsonable(snapshot.latest_backend_event), expanded=False)
+                    st.json(BaseConfig.to_jsonable(backend_notice.payload), expanded=False)
             with details_right:
                 st.markdown("**Frame Metadata**")
                 st.json(
@@ -137,11 +142,10 @@ def _render_pipeline_tabs(snapshot: RunSnapshot, run_service: object) -> None:
                     },
                     expanded=False,
                 )
-                if snapshot.latest_backend_event is not None:
-                    intrinsics_payload = snapshot.latest_backend_event.get("camera_intrinsics")
+                if backend_notice is not None:
                     st.markdown("**Camera Intrinsics**")
                     render_camera_intrinsics(
-                        intrinsics=None if intrinsics_payload is None else intrinsics_payload,
+                        intrinsics=backend_notice.camera_intrinsics,
                         missing_message="Camera intrinsics are not available for the current packet.",
                     )
     with tabs[1]:
@@ -188,7 +192,7 @@ def _render_pipeline_tabs(snapshot: RunSnapshot, run_service: object) -> None:
         _render_pipeline_artifacts_tab(snapshot)
 
 
-def _render_pipeline_plan_tab(snapshot: RunSnapshot, run_service: object) -> None:
+def _render_pipeline_plan_tab(snapshot: RunSnapshot, run_service: RunService) -> None:
     if snapshot.plan is None:
         st.info("Start a run to inspect the generated plan and execution records.")
         return

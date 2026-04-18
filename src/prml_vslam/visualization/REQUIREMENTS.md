@@ -30,6 +30,7 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - preserve upstream-native `.rrd` files when requested
 - export repo-owned `.rrd` files from repo-owned contracts when enabled
 - stay separate from Streamlit widgets, runner orchestration, and method math
+- keep the repo-owned live sink on a fixed minimal output surface rather than a growing per-modality configuration API
 
 ## Required Frame Conventions
 

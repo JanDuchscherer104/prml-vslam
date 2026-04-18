@@ -15,20 +15,21 @@ os.environ.setdefault("RAY_ENABLE_UV_RUN_RUNTIME_ENV", "0")
 
 import numpy as np
 import ray
+from ray.actor import ActorHandle
 
-from prml_vslam.pipeline.backend import PipelineBackend
+from prml_vslam.pipeline.backend import PipelineBackend, PipelineRuntimeSource
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
-from prml_vslam.pipeline.ray_runtime import PipelineSupervisorActor
+from prml_vslam.pipeline.ray_runtime.common import coordinator_actor_name
+from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.services import RunPlannerService
 from prml_vslam.utils import Console, PathConfig
 
 _DEFAULT_NAMESPACE = "prml_vslam.local"
 _DEFAULT_LOCAL_HEAD_PORT = 25001
 _MAX_LOCAL_HEAD_INIT_ATTEMPTS = 5
-_SUPERVISOR_NAME = "prml-vslam-supervisor"
 _RAY_RUNTIME_EXCLUDES = [
     ".git",
     ".venv",
@@ -41,6 +42,13 @@ _RAY_RUNTIME_EXCLUDES = [
     "external/vista-slam/media/**",
     "external/vista-slam/DBoW3Py/DBoW3/orbvoc.dbow3",
 ]
+_RAY_NATIVE_THREAD_ENV = {
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "UV_NUM_THREADS": "1",
+}
+RayRuntimeEnvValue = list[str] | dict[str, str] | str
 
 
 class RayPipelineBackend(PipelineBackend):
@@ -50,36 +58,34 @@ class RayPipelineBackend(PipelineBackend):
         self._path_config = PathConfig() if path_config is None else path_config
         self._namespace = namespace or os.getenv("PRML_VSLAM_RAY_NAMESPACE", _DEFAULT_NAMESPACE)
         self._console = Console(__name__).child(self.__class__.__name__).child(self._namespace)
-        self._supervisor = None
+        self._coordinators: dict[str, ActorHandle] = {}
         self._local_head_process: subprocess.Popen[str] | None = None
         self._local_head_address: str | None = None
         self._local_head_log_path: Path | None = None
 
-    def submit_run(self, *, request: RunRequest, runtime_source: object | None = None) -> str:
+    def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
         self._ensure_ray()
-        supervisor = self._ensure_supervisor()
         plan = RunPlannerService().build_run_plan(request=request, path_config=self._path_config)
         unavailable = [stage for stage in plan.stages if not stage.available]
         if unavailable:
             reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."
             raise RuntimeError(reason)
         self._console.info("Submitting run '%s' through Ray backend.", plan.run_id)
-        run_id = ray.get(
-            supervisor.submit_run.remote(
-                request=request,
-                plan=plan,
-                path_config=self._path_config,
-                runtime_source=runtime_source,
-            )
+        coordinator = self._create_coordinator(plan.run_id)
+        coordinator.start.remote(
+            request=request,
+            plan=plan,
+            path_config=self._path_config,
+            runtime_source=runtime_source,
         )
-        return run_id
+        return plan.run_id
 
     def stop_run(self, run_id: str) -> None:
         self._console.warning("Stopping run '%s' through Ray backend.", run_id)
-        self._ensure_supervisor().stop_run.remote(run_id)
+        self._coordinator_for(run_id).stop.remote()
 
     def get_snapshot(self, run_id: str) -> RunSnapshot:
-        return ray.get(self._ensure_supervisor().get_snapshot.remote(run_id))
+        return ray.get(self._coordinator_for(run_id).snapshot.remote())
 
     def get_events(
         self,
@@ -88,45 +94,68 @@ class RayPipelineBackend(PipelineBackend):
         after_event_id: str | None = None,
         limit: int = 200,
     ) -> list[RunEvent]:
-        return ray.get(self._ensure_supervisor().get_events.remote(run_id, after_event_id, limit))
+        return ray.get(self._coordinator_for(run_id).events.remote(after_event_id, limit))
 
     def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
         if handle is None:
             return None
-        return ray.get(self._ensure_supervisor().read_array.remote(run_id, handle.handle_id))
+        return ray.get(self._coordinator_for(run_id).read_array.remote(handle.handle_id))
 
     def shutdown(self) -> None:
         self._console.info("Shutting down Ray backend for namespace '%s'.", self._namespace)
         if not ray.is_initialized():
             self._shutdown_local_head()
             return
-        if self._supervisor is not None:
-            try:
-                self._supervisor.shutdown.remote()
-            except Exception:
-                pass
-            try:
-                ray.kill(self._supervisor, no_restart=True)
-            except Exception:
-                pass
+        for run_id in list(self._coordinators):
+            self._shutdown_run(run_id)
         ray.shutdown()
         self._shutdown_local_head()
 
-    def _ensure_supervisor(self):
-        if self._supervisor is not None:
-            return self._supervisor
+    def _create_coordinator(self, run_id: str):
+        self._shutdown_run(run_id)
+        options = {"name": coordinator_actor_name(run_id), "namespace": self._namespace}
+        if not self._namespace.startswith("pytest-"):
+            options["lifetime"] = "detached"
+        coordinator = RunCoordinatorActor.options(**options).remote(run_id=run_id, namespace=self._namespace)
+        self._coordinators[run_id] = coordinator
+        self._console.info("Created coordinator for run '%s' in namespace '%s'.", run_id, self._namespace)
+        return coordinator
+
+    def _coordinator_for(self, run_id: str):
+        coordinator = self._coordinators.get(run_id)
+        if coordinator is not None:
+            return coordinator
         self._ensure_ray()
-        if self._should_refresh_local_supervisor():
-            self._drop_existing_supervisor()
         try:
-            self._supervisor = ray.get_actor(_SUPERVISOR_NAME, namespace=self._namespace)
+            coordinator = ray.get_actor(coordinator_actor_name(run_id), namespace=self._namespace)
         except ValueError:
-            options = {"name": _SUPERVISOR_NAME, "namespace": self._namespace}
-            if not self._namespace.startswith("pytest-"):
-                options["lifetime"] = "detached"
-            self._supervisor = PipelineSupervisorActor.options(**options).remote(namespace=self._namespace)
-            self._console.info("Created supervisor '%s' in namespace '%s'.", _SUPERVISOR_NAME, self._namespace)
-        return self._supervisor
+            raise RuntimeError(f"Coordinator for run '{run_id}' is not available.") from None
+        self._coordinators[run_id] = coordinator
+        return coordinator
+
+    def _shutdown_run(self, run_id: str) -> None:
+        coordinator = self._coordinators.pop(run_id, None)
+        if coordinator is None:
+            try:
+                coordinator = ray.get_actor(coordinator_actor_name(run_id), namespace=self._namespace)
+            except ValueError:
+                return
+        try:
+            coordinator.shutdown.remote()
+        except Exception:
+            pass
+        try:
+            ray.kill(coordinator, no_restart=True)
+        except Exception:
+            pass
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            try:
+                ray.get_actor(coordinator_actor_name(run_id), namespace=self._namespace)
+            except ValueError:
+                return
+            time.sleep(0.1)
+        raise RuntimeError(f"Timed out waiting for coordinator '{coordinator_actor_name(run_id)}' to shut down.")
 
     def _ensure_ray(self) -> None:
         if ray.is_initialized():
@@ -138,9 +167,10 @@ class RayPipelineBackend(PipelineBackend):
             "ignore_reinit_error": True,
             "log_to_driver": False,
             "include_dashboard": False,
-            "runtime_env": self._build_runtime_env(address=address),
             "_skip_env_hook": True,
         }
+        if not self._namespace.startswith("pytest-"):
+            init_kwargs["runtime_env"] = self._build_runtime_env(address=address)
         if address:
             self._console.info("Connecting Ray backend to configured address '%s'.", address)
             init_kwargs["address"] = address
@@ -162,8 +192,11 @@ class RayPipelineBackend(PipelineBackend):
                 time.sleep(2.0)
 
     @staticmethod
-    def _build_runtime_env(*, address: str | None) -> dict[str, object]:
-        runtime_env: dict[str, object] = {"excludes": _RAY_RUNTIME_EXCLUDES}
+    def _build_runtime_env(*, address: str | None) -> dict[str, RayRuntimeEnvValue]:
+        runtime_env: dict[str, RayRuntimeEnvValue] = {
+            "excludes": _RAY_RUNTIME_EXCLUDES,
+            "env_vars": dict(_RAY_NATIVE_THREAD_ENV),
+        }
         if not address:
             runtime_env["py_executable"] = sys.executable
         return runtime_env
@@ -254,24 +287,6 @@ class RayPipelineBackend(PipelineBackend):
         except OSError:
             return ""
         return "\n".join(lines[-80:])
-
-    def _should_refresh_local_supervisor(self) -> bool:
-        return os.getenv("PRML_VSLAM_RAY_ADDRESS") is None and not self._namespace.startswith("pytest-")
-
-    def _drop_existing_supervisor(self) -> None:
-        try:
-            supervisor = ray.get_actor(_SUPERVISOR_NAME, namespace=self._namespace)
-        except ValueError:
-            return
-        ray.kill(supervisor, no_restart=True)
-        deadline = time.time() + 5.0
-        while time.time() < deadline:
-            try:
-                ray.get_actor(_SUPERVISOR_NAME, namespace=self._namespace)
-            except ValueError:
-                return
-            time.sleep(0.1)
-        raise RuntimeError(f"Timed out waiting for supervisor '{_SUPERVISOR_NAME}' to shut down.")
 
     @staticmethod
     def _local_node_ip_address() -> str:

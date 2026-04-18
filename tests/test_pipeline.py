@@ -44,12 +44,11 @@ from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import backend_config_payload, clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.stage_actors import StreamingSlamStageActor
-from prml_vslam.pipeline.ray_runtime.supervisor import PipelineSupervisorActor
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.stage_registry import StageRegistry
-from prml_vslam.pipeline.testing_support import FakeOfflineSource, FakeStreamingSource
 from prml_vslam.utils import PathConfig
+from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
 
 @pytest.fixture(autouse=True)
@@ -381,27 +380,6 @@ def test_streaming_slam_stage_resolves_materialized_payloads_without_ray_get() -
     assert np.array_equal(resolved, payload)
 
 
-def test_pipeline_supervisor_read_array_returns_coordinator_array_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    supervisor_cls = PipelineSupervisorActor.__ray_metadata__.modified_class
-    supervisor = supervisor_cls(namespace="pytest-unit")
-    payload = np.zeros((2, 2, 3), dtype=np.uint8)
-
-    class FakeReadArrayRemote:
-        def remote(self, handle_id: str) -> np.ndarray:
-            assert handle_id == "frame-1"
-            return payload
-
-    fake_coordinator = SimpleNamespace(read_array=FakeReadArrayRemote())
-
-    monkeypatch.setattr(supervisor, "_coordinator_for", lambda run_id: fake_coordinator)
-    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.supervisor.ray.get", lambda value: value)
-
-    resolved = supervisor.read_array("demo", "frame-1")
-
-    assert resolved is not None
-    assert np.array_equal(resolved, payload)
-
-
 def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
     request = RunRequest.model_validate(
         {
@@ -437,6 +415,10 @@ def test_ray_backend_uses_current_python_for_local_runtime_env() -> None:
 
     assert runtime_env["py_executable"] == sys.executable
     assert "excludes" in runtime_env
+    assert runtime_env["env_vars"]["OMP_NUM_THREADS"] == "1"
+    assert runtime_env["env_vars"]["MKL_NUM_THREADS"] == "1"
+    assert runtime_env["env_vars"]["OPENBLAS_NUM_THREADS"] == "1"
+    assert runtime_env["env_vars"]["UV_NUM_THREADS"] == "1"
 
 
 def test_ray_backend_does_not_force_local_python_for_remote_address() -> None:
@@ -444,6 +426,7 @@ def test_ray_backend_does_not_force_local_python_for_remote_address() -> None:
 
     assert "py_executable" not in runtime_env
     assert "excludes" in runtime_env
+    assert runtime_env["env_vars"]["OMP_NUM_THREADS"] == "1"
 
 
 def test_ray_backend_disables_uv_runtime_env_replication_by_default(
@@ -504,7 +487,7 @@ def test_ray_backend_keeps_inprocess_init_for_pytest_namespaces(
     assert captured["_skip_env_hook"] is True
 
 
-def test_ray_backend_submits_via_supervisor_and_reads_via_supervisor(
+def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -525,24 +508,25 @@ def test_ray_backend_submits_via_supervisor_and_reads_via_supervisor(
         def __init__(self, fn):
             self.remote = fn
 
-    fake_supervisor = type(
-        "Supervisor",
+    fake_coordinator = type(
+        "Coordinator",
         (),
         {
-            "submit_run": _Remote(
-                lambda **kwargs: submitted.append((kwargs["plan"].run_id, kwargs.get("runtime_source")))
-                or "backend-unit"
+            "start": _Remote(
+                lambda **kwargs: submitted.append((kwargs["plan"].run_id, kwargs.get("runtime_source"))) or None
             ),
-            "stop_run": _Remote(lambda run_id: stopped.append(run_id)),
-            "get_snapshot": _Remote(lambda run_id: snapshot),
-            "get_events": _Remote(lambda run_id, after_event_id, limit: []),
-            "read_array": _Remote(lambda run_id, handle_id: np.ones((2, 2, 3), dtype=np.uint8)),
+            "stop": _Remote(lambda: stopped.append("backend-unit")),
+            "snapshot": _Remote(lambda: snapshot),
+            "events": _Remote(lambda after_event_id, limit: []),
+            "read_array": _Remote(lambda handle_id: np.ones((2, 2, 3), dtype=np.uint8)),
+            "shutdown": _Remote(lambda: None),
         },
     )()
 
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get", lambda value: value)
     monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
-    monkeypatch.setattr(backend, "_ensure_supervisor", lambda: fake_supervisor)
+    monkeypatch.setattr(backend, "_create_coordinator", lambda run_id: fake_coordinator)
+    monkeypatch.setattr(backend, "_coordinator_for", lambda run_id: fake_coordinator)
 
     run_id = backend.submit_run(request=request, runtime_source="runtime")
 
