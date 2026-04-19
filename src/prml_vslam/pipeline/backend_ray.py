@@ -25,7 +25,6 @@ from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.ray_runtime.common import coordinator_actor_name
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
-from prml_vslam.pipeline.services import RunPlannerService
 from prml_vslam.utils import Console, PathConfig
 
 _DEFAULT_NAMESPACE = "prml_vslam.local"
@@ -69,7 +68,7 @@ class RayPipelineBackend(PipelineBackend):
     def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
         self._reuse_local_head = request.runtime.ray.local_head_lifecycle == "reusable"
         self._ensure_ray()
-        plan = RunPlannerService().build_run_plan(request=request, path_config=self._path_config)
+        plan = request.build(self._path_config)
         unavailable = [stage for stage in plan.stages if not stage.available]
         if unavailable:
             reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."

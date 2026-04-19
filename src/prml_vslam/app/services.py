@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from threading import Event
+from typing import TypeVar
 
 from prml_vslam.datasets.advio import AdvioPoseSource
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.io.record3d import (
     Record3DDevice,
     Record3DTransportId,
@@ -18,15 +21,90 @@ from prml_vslam.protocols import FramePacketStream
 
 from .models import (
     AdvioPreviewSnapshot,
+    PreviewSessionSnapshot,
     PreviewStreamState,
     Record3DStreamSnapshot,
 )
 from .preview_runtime import PacketSessionMetrics, PacketSessionRuntime, extract_pose_position
 
+SnapshotT = TypeVar("SnapshotT", bound=PreviewSessionSnapshot)
+
+
+@dataclass(frozen=True, slots=True)
+class _PacketObservation:
+    """One packet plus the timing metadata needed by shared preview metrics."""
+
+    packet: FramePacket
+    arrival_time_s: float
+    trajectory_time_s: float | None
+
 
 def _is_record3d_frame_timeout(error: RuntimeError) -> bool:
     message = str(error)
     return message.startswith("Timed out waiting ") and "Record3D" in message and " frame." in message
+
+
+def _disconnect_snapshot(snapshot: SnapshotT) -> SnapshotT:
+    """Drop live packet fields while preserving the last non-live session summary."""
+    return snapshot.model_copy(
+        update={
+            "state": PreviewStreamState.DISCONNECTED
+            if snapshot.state is PreviewStreamState.STREAMING
+            else snapshot.state,
+            "latest_packet": None,
+            "received_frames": 0,
+            "measured_fps": 0.0,
+        }
+    )
+
+
+def _run_packet_stream_worker(
+    runtime: PacketSessionRuntime[SnapshotT],
+    *,
+    stop_event: Event,
+    stream_factory: Callable[[], FramePacketStream],
+    fps_window_size: int,
+    trajectory_window_size: int,
+    connect_snapshot: Callable[[SnapshotT, FramePacketStream], SnapshotT],
+    read_observation: Callable[[FramePacketStream], _PacketObservation | None],
+    streaming_snapshot: Callable[[SnapshotT, _PacketObservation, PacketSessionMetrics], SnapshotT],
+    failure_snapshot: Callable[[SnapshotT, str], SnapshotT],
+    empty_snapshot: Callable[[], SnapshotT],
+) -> None:
+    """Run the shared threaded preview loop used by app-owned packet consumers."""
+    metrics = PacketSessionMetrics(
+        fps_window_size=fps_window_size,
+        trajectory_window_size=trajectory_window_size,
+    )
+    try:
+        stream = stream_factory()
+        runtime.register_stream(stop_event=stop_event, stream=stream)
+        runtime.update_snapshot(lambda snapshot: connect_snapshot(snapshot, stream))
+        while not stop_event.is_set():
+            observation = read_observation(stream)
+            if observation is None:
+                continue
+            metrics.record(
+                arrival_time_s=observation.arrival_time_s,
+                position_xyz=extract_pose_position(observation.packet),
+                trajectory_time_s=observation.trajectory_time_s,
+            )
+            runtime.update_snapshot(
+                lambda snapshot, observation=observation: streaming_snapshot(snapshot, observation, metrics)
+            )
+    except Exception as exc:
+        if not stop_event.is_set():
+            error_message = str(exc)
+            runtime.update_snapshot(
+                lambda snapshot, error_message=error_message: failure_snapshot(snapshot, error_message)
+            )
+    finally:
+        runtime.finalize(
+            stop_event=stop_event,
+            snapshot_update=lambda snapshot: empty_snapshot()
+            if stop_event.is_set()
+            else _disconnect_snapshot(snapshot),
+        )
 
 
 class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
@@ -79,93 +157,71 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         stream: FramePacketStream,
         stop_event: Event,
     ) -> None:
-        metrics = PacketSessionMetrics(
-            fps_window_size=self.fps_window_size,
-            trajectory_window_size=self.trajectory_window_size,
-        )
         first_packet_timestamp_ns: int | None = None
 
-        def _consume_packet(active_stream: FramePacketStream) -> None:
+        def _connect_snapshot(snapshot: AdvioPreviewSnapshot, active_stream: FramePacketStream) -> AdvioPreviewSnapshot:
+            active_stream.connect()
+            return snapshot.model_copy(
+                update={
+                    "state": PreviewStreamState.STREAMING,
+                    "sequence_id": sequence_id,
+                    "sequence_label": sequence_label,
+                    "pose_source": pose_source,
+                    "error_message": "",
+                }
+            )
+
+        def _read_observation(active_stream: FramePacketStream) -> _PacketObservation:
             nonlocal first_packet_timestamp_ns
             packet = active_stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
             if first_packet_timestamp_ns is None:
                 first_packet_timestamp_ns = packet.timestamp_ns
-            camera_position = extract_pose_position(packet)
-            metrics.record(
+            return _PacketObservation(
+                packet=packet,
                 arrival_time_s=time.monotonic(),
-                position_xyz=camera_position,
-                trajectory_time_s=(
-                    None
-                    if first_packet_timestamp_ns is None
-                    else max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9
-                ),
-            )
-            self.update_snapshot(
-                lambda snapshot: snapshot.model_copy(
-                    update={
-                        "state": PreviewStreamState.STREAMING,
-                        "sequence_id": sequence_id,
-                        "sequence_label": sequence_label,
-                        "pose_source": pose_source,
-                        "latest_packet": packet,
-                        "error_message": "",
-                        **metrics.snapshot_fields(),
-                    }
-                )
+                trajectory_time_s=max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9,
             )
 
-        try:
-            self.register_stream(stop_event=stop_event, stream=stream)
-            stream.connect()
-            (
-                self.update_snapshot(
-                    lambda snapshot: snapshot.model_copy(
-                        update={
-                            "state": PreviewStreamState.STREAMING,
-                            "sequence_id": sequence_id,
-                            "sequence_label": sequence_label,
-                            "pose_source": pose_source,
-                            "error_message": "",
-                        }
-                    )
-                ),
+        def _streaming_snapshot(
+            snapshot: AdvioPreviewSnapshot,
+            observation: _PacketObservation,
+            metrics: PacketSessionMetrics,
+        ) -> AdvioPreviewSnapshot:
+            return snapshot.model_copy(
+                update={
+                    "state": PreviewStreamState.STREAMING,
+                    "sequence_id": sequence_id,
+                    "sequence_label": sequence_label,
+                    "pose_source": pose_source,
+                    "latest_packet": observation.packet,
+                    "error_message": "",
+                    **metrics.snapshot_fields(),
+                }
             )
-            while not stop_event.is_set():
-                _consume_packet(stream)
-        except Exception as exc:
-            if not stop_event.is_set():
-                error_message = str(exc)
-                self.update_snapshot(
-                    lambda snapshot: snapshot.model_copy(
-                        update={
-                            "state": PreviewStreamState.FAILED,
-                            "sequence_id": sequence_id,
-                            "sequence_label": sequence_label,
-                            "pose_source": pose_source,
-                            "error_message": error_message,
-                        }
-                    )
-                )
-        finally:
-            self.finalize(
-                stop_event=stop_event,
-                snapshot_update=lambda snapshot: (
-                    AdvioPreviewSnapshot()
-                    if stop_event.is_set()
-                    else snapshot.model_copy(
-                        update={
-                            "state": (
-                                PreviewStreamState.DISCONNECTED
-                                if snapshot.state is PreviewStreamState.STREAMING
-                                else snapshot.state
-                            ),
-                            "latest_packet": None,
-                            "received_frames": 0,
-                            "measured_fps": 0.0,
-                        }
-                    )
-                ),
+
+        def _failure_snapshot(snapshot: AdvioPreviewSnapshot, error_message: str) -> AdvioPreviewSnapshot:
+            return snapshot.model_copy(
+                update={
+                    "state": PreviewStreamState.FAILED,
+                    "sequence_id": sequence_id,
+                    "sequence_label": sequence_label,
+                    "pose_source": pose_source,
+                    "error_message": error_message,
+                }
             )
+
+        _run_packet_stream_worker(
+            self,
+            stop_event=stop_event,
+            stream_factory=lambda: stream,
+            fps_window_size=self.fps_window_size,
+            trajectory_window_size=self.trajectory_window_size,
+            connect_snapshot=_connect_snapshot,
+            read_observation=_read_observation,
+            streaming_snapshot=_streaming_snapshot,
+            failure_snapshot=_failure_snapshot,
+            empty_snapshot=AdvioPreviewSnapshot,
+        )
 
 
 class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapshot]):
@@ -238,13 +294,25 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         stop_event: Event,
         stream_factory: Callable[[], FramePacketStream],
     ) -> None:
-        metrics = PacketSessionMetrics(
-            fps_window_size=self.fps_window_size,
-            trajectory_window_size=self.trajectory_window_size,
-        )
-        source_label = source_descriptor
+        def _connect_snapshot(
+            snapshot: Record3DStreamSnapshot,
+            active_stream: FramePacketStream,
+        ) -> Record3DStreamSnapshot:
+            connected_target = active_stream.connect()
+            return snapshot.model_copy(
+                update={
+                    "transport": transport,
+                    "state": PreviewStreamState.STREAMING,
+                    "source_label": self._format_source_label(
+                        transport=transport,
+                        source_descriptor=source_descriptor,
+                        connected_target=connected_target,
+                    ),
+                    "error_message": "",
+                }
+            )
 
-        def _consume_packet(active_stream: FramePacketStream) -> None:
+        def _read_observation(active_stream: FramePacketStream) -> _PacketObservation | None:
             try:
                 packet = active_stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
             except RuntimeError as exc:
@@ -252,79 +320,51 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                     return
                 raise
             arrival_time_s = packet.arrival_timestamp_s if packet.arrival_timestamp_s is not None else time.time()
-            camera_position = extract_pose_position(packet)
-            metrics.record(
+            trajectory_time_s = arrival_time_s if extract_pose_position(packet) is not None else None
+            return _PacketObservation(
+                packet=packet,
                 arrival_time_s=arrival_time_s,
-                position_xyz=camera_position,
-                trajectory_time_s=arrival_time_s if camera_position is not None else None,
-            )
-            self.update_snapshot(
-                lambda snapshot: snapshot.model_copy(
-                    update={
-                        "transport": transport,
-                        "state": PreviewStreamState.STREAMING,
-                        "source_label": source_label,
-                        "latest_packet": packet,
-                        "error_message": "",
-                        **metrics.snapshot_fields(),
-                    }
-                )
+                trajectory_time_s=trajectory_time_s,
             )
 
-        try:
-            stream = stream_factory()
-            self.register_stream(stop_event=stop_event, stream=stream)
-            connected_target = stream.connect()
-            source_label = self._format_source_label(
-                transport=transport,
-                source_descriptor=source_descriptor,
-                connected_target=connected_target,
+        def _streaming_snapshot(
+            snapshot: Record3DStreamSnapshot,
+            observation: _PacketObservation,
+            metrics: PacketSessionMetrics,
+        ) -> Record3DStreamSnapshot:
+            return snapshot.model_copy(
+                update={
+                    "transport": transport,
+                    "state": PreviewStreamState.STREAMING,
+                    "source_label": snapshot.source_label or source_descriptor,
+                    "latest_packet": observation.packet,
+                    "error_message": "",
+                    **metrics.snapshot_fields(),
+                }
             )
-            self.update_snapshot(
-                lambda snapshot: snapshot.model_copy(
-                    update={
-                        "transport": transport,
-                        "state": PreviewStreamState.STREAMING,
-                        "source_label": source_label,
-                        "error_message": "",
-                    }
-                )
+
+        def _failure_snapshot(snapshot: Record3DStreamSnapshot, error_message: str) -> Record3DStreamSnapshot:
+            return snapshot.model_copy(
+                update={
+                    "transport": transport,
+                    "state": PreviewStreamState.FAILED,
+                    "source_label": source_descriptor,
+                    "error_message": error_message,
+                }
             )
-            while not stop_event.is_set():
-                _consume_packet(stream)
-        except Exception as exc:
-            if not stop_event.is_set():
-                error_message = str(exc)
-                self.update_snapshot(
-                    lambda snapshot: snapshot.model_copy(
-                        update={
-                            "transport": transport,
-                            "state": PreviewStreamState.FAILED,
-                            "source_label": source_descriptor,
-                            "error_message": error_message,
-                        }
-                    )
-                )
-        finally:
-            self.finalize(
-                stop_event=stop_event,
-                snapshot_update=lambda snapshot: (
-                    Record3DStreamSnapshot()
-                    if stop_event.is_set()
-                    else snapshot.model_copy(
-                        update={
-                            "state": (
-                                PreviewStreamState.DISCONNECTED
-                                if snapshot.state is PreviewStreamState.STREAMING
-                                else snapshot.state
-                            ),
-                            "latest_packet": None,
-                            "received_frames": 0,
-                            "measured_fps": 0.0,
-                        }
-                    )
-                ),
-            )
+
+        _run_packet_stream_worker(
+            self,
+            stop_event=stop_event,
+            stream_factory=stream_factory,
+            fps_window_size=self.fps_window_size,
+            trajectory_window_size=self.trajectory_window_size,
+            connect_snapshot=_connect_snapshot,
+            read_observation=_read_observation,
+            streaming_snapshot=_streaming_snapshot,
+            failure_snapshot=_failure_snapshot,
+            empty_snapshot=Record3DStreamSnapshot,
+        )
 
     @staticmethod
     def _format_source_label(
