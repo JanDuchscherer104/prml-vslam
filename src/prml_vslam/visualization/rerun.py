@@ -15,7 +15,11 @@ from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 ROOT_WORLD_ENTITY_PATH = "world"
 """Canonical root entity path for repo-owned Rerun recordings."""
-POINT_CLOUD_RADII = 0.01
+ROOT_WORLD_AXIS_LENGTH = 1.0
+"""Visible axis length for the static root-world transform marker."""
+MODEL_RGB_2D_ENTITY_PATH = "world/live/model/diag/rgb"
+"""Dedicated 2D-only live model RGB entity, separate from the 3D camera branch."""
+POINT_CLOUD_RADII = 0.02
 """Default point cloud radii for repo-owned Rerun recordings."""
 TRAJECTORY_LINE_RADII = 0.01
 """Default trajectory line radii for repo-owned Rerun recordings."""
@@ -47,8 +51,8 @@ def build_default_blueprint() -> rrb.Blueprint:
                     name="Source RGB",
                 ),
                 rrb.Spatial2DView(
-                    origin="world/live/model/camera/image",
-                    contents="world/live/model/camera/image",
+                    origin=MODEL_RGB_2D_ENTITY_PATH,
+                    contents=MODEL_RGB_2D_ENTITY_PATH,
                     name="Model RGB",
                 ),
                 rrb.Spatial2DView(
@@ -79,13 +83,18 @@ def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> 
 def log_root_world_transform(recording_stream: rr.RecordingStream) -> None:
     """Declare one explicit ViSTA-aligned world root for repo-owned recordings.
 
-    The root stays geometrically neutral via ``Transform3D()``, but it also
-    declares ``world`` as ``ViewCoordinates.RDF`` so the 3D viewer/grid uses
-    the same right/down/forward semantics as the logged ViSTA-native scene.
-    This does not rotate or normalize the data; it only makes the existing
-    world basis explicit to the viewer.
+    The root stays geometrically neutral via an identity ``Transform3D`` while
+    using ``axis_length`` to keep one visible world-frame marker at the origin.
+    It also declares ``world`` as ``ViewCoordinates.RDF`` so the 3D viewer/grid
+    uses the same right/down/forward semantics as the logged ViSTA-native
+    scene. This does not rotate or normalize the data; it only makes the
+    existing world basis explicit to the viewer.
     """
-    recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.Transform3D(), static=True)
+    recording_stream.log(
+        ROOT_WORLD_ENTITY_PATH,
+        rr.Transform3D(axis_length=ROOT_WORLD_AXIS_LENGTH),
+        static=True,
+    )
     recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.ViewCoordinates.RDF, static=True)
 
 
@@ -101,6 +110,8 @@ def attach_recording_sinks(
         sinks.append(rr.GrpcSink(grpc_url))
     if target_path is not None:
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists():
+            target_path.unlink()
         sinks.append(rr.FileSink(str(target_path)))
     if not sinks:
         return

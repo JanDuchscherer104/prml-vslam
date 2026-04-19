@@ -34,6 +34,7 @@ from ..live_session import (
     render_camera_intrinsics,
     render_live_action_slot,
     render_live_fragment,
+    render_live_image,
     render_live_packet_tabs,
     render_live_session_shell,
     rerun_after_action,
@@ -332,7 +333,7 @@ def _preview_caption(snapshot: AdvioPreviewSnapshot) -> str | None:
 
 def _render_preview_frame(packet: FramePacket) -> None:
     st.markdown("**RGB Frame**")
-    st.image(packet.rgb, channels="RGB", clamp=True)
+    render_live_image(packet.rgb, channels="RGB", clamp=True)
 
 
 def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:

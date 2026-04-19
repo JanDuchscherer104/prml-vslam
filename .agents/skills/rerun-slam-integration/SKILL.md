@@ -53,6 +53,57 @@ source of truth.
   - Use when comparing a local SLAM integration against the repo-local
     ViSTA-SLAM reference and the current PRML wrapper.
 
+## Helper Scripts
+
+Use the local scripts below before reaching for ad hoc one-off snippets. They
+are meant to answer exactly the sort of questions that come up when an `.rrd`
+looks visually wrong:
+
+- `scripts/rrd_entity_inventory.py`
+  - Fast schema-level inventory of entity paths and component columns in one
+    recording.
+- `scripts/rrd_component_arrivals.py`
+  - Targeted dataframe probe for "when does component X first appear on entity
+    Y on timeline Z?"
+- `scripts/rrd_chunk_order.py`
+  - Streams `rerun rrd print` and filters chunk headers by entity substring so
+    you can inspect storage order without decoding everything.
+- `scripts/run_event_timeline.py`
+  - Parses the companion `summary/run-events.jsonl` file to correlate packet
+    ingestion, keyframe acceptance, pose notices, and visualization-ready
+    notices.
+
+Run them with the repo environment, for example:
+
+```bash
+uv run --extra vista python .agents/skills/rerun-slam-integration/scripts/rrd_entity_inventory.py \
+  .artifacts/<run>/visualization/viewer_recording.rrd
+```
+
+```bash
+uv run --extra vista python .agents/skills/rerun-slam-integration/scripts/rrd_component_arrivals.py \
+  .artifacts/<run>/visualization/viewer_recording.rrd \
+  --index frame \
+  --contents /world/live/model/camera/image \
+  --from-seq 300 \
+  --to-seq 430 \
+  --component-substring ImageBuffer \
+  --component-substring Pinhole
+```
+
+```bash
+uv run --extra vista python .agents/skills/rerun-slam-integration/scripts/run_event_timeline.py \
+  .artifacts/<run>/summary/run-events.jsonl \
+  --limit 30
+```
+
+Prefer this order on large recordings:
+
+1. `rrd_entity_inventory.py` to see what exists.
+2. `run_event_timeline.py` to learn when logical events happened.
+3. `rrd_component_arrivals.py` on a narrow entity path and frame window.
+4. `rrd_chunk_order.py` when you suspect append/replay/multi-run storage order issues.
+
 ## Guardrails
 
 - Prefer official docs and official examples over recollection.

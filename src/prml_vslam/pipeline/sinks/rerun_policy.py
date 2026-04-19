@@ -13,6 +13,7 @@ from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, PacketObserved, RunEvent
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.visualization.rerun import MODEL_RGB_2D_ENTITY_PATH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,7 +67,12 @@ class RerunLoggingPolicy:
                 match notice:
                     case PoseEstimated(pose=pose, seq=seq, source_seq=source_seq):
                         self._set_frame_time(stream, source_seq if source_seq is not None else seq)
-                        self.log_transform(stream, entity_path="world/live/tracking/camera", transform=pose)
+                        self.log_transform(
+                            stream,
+                            entity_path="world/live/tracking/camera",
+                            transform=pose,
+                            axis_length=0.0,
+                        )
                         self._log_tracking_trajectory(stream, pose=pose)
                     case KeyframeVisualizationReady() as keyframe_notice:
                         self._log_keyframe_visualization(stream, keyframe_notice, payloads=resolved_payloads)
@@ -137,7 +143,9 @@ class RerunLoggingPolicy:
         stays camera-local and inherits world placement from `root_entity`.
         """
         self._set_frame_time(stream, frame_index)
-        self.log_transform(stream, entity_path=root_entity, transform=pose)
+        self.log_transform(stream, entity_path=root_entity, transform=pose, axis_length=0.0)
+        if rgb is not None:
+            self.log_rgb_image(stream, entity_path=MODEL_RGB_2D_ENTITY_PATH, image_rgb=rgb)
         self._log_camera_payloads(
             stream,
             camera_image_entity=f"{root_entity}/camera/image",
@@ -181,7 +189,7 @@ class RerunLoggingPolicy:
         """
         del keyframe_index
         self._set_frame_time(stream, frame_index)
-        self.log_transform(stream, entity_path=camera_root_entity, transform=pose)
+        self.log_transform(stream, entity_path=camera_root_entity, transform=pose, axis_length=0.0)
         self.log_transform(stream, entity_path=points_root_entity, transform=pose, axis_length=0.0)
         self._log_camera_payloads(
             stream,
@@ -211,14 +219,21 @@ class RerunLoggingPolicy:
         preview_image: np.ndarray | None,
     ) -> None:
         viewer_intrinsics = self._resolve_viewer_intrinsics(intrinsics=intrinsics, rgb=rgb, depth_image=depth_image)
-        if viewer_intrinsics is not None and (rgb is not None or depth_image is not None):
-            self.log_pinhole(stream, entity_path=camera_image_entity, intrinsics=viewer_intrinsics)
+        if viewer_intrinsics is None:
+            if rgb is not None or depth_image is not None:
+                _LOGGER.warning(
+                    "Skipping 3D camera payloads for '%s' until pinhole intrinsics are available.",
+                    camera_image_entity,
+                )
+        else:
+            if rgb is not None or depth_image is not None:
+                self.log_pinhole(stream, entity_path=camera_image_entity, intrinsics=viewer_intrinsics)
 
-        if rgb is not None:
-            self.log_rgb_image(stream, entity_path=camera_image_entity, image_rgb=rgb)
+            if rgb is not None:
+                self.log_rgb_image(stream, entity_path=camera_image_entity, image_rgb=rgb)
 
-        if depth_image is not None:
-            self.log_depth_image(stream, entity_path=f"{camera_image_entity}/depth", depth_m=depth_image)
+            if depth_image is not None:
+                self.log_depth_image(stream, entity_path=f"{camera_image_entity}/depth", depth_m=depth_image)
 
         if preview_image is not None:
             self.log_rgb_image(stream, entity_path=preview_entity, image_rgb=preview_image)
