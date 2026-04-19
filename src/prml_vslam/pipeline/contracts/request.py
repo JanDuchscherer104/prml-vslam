@@ -198,9 +198,14 @@ class RunRequest(BaseConfig):
 
     def build(self, path_config: PathConfig | None = None) -> RunPlan:
         """Materialize the canonical run plan for this request."""
-        from prml_vslam.pipeline.services import RunPlannerService
+        from prml_vslam.methods.factory import BackendFactory
+        from prml_vslam.pipeline.stage_registry import StageRegistry
 
-        return RunPlannerService().build_run_plan(request=self, path_config=path_config)
+        if self.benchmark.cloud.enabled and not self.slam.outputs.emit_dense_points:
+            raise ValueError("Cloud evaluation requires `slam.outputs.emit_dense_points=True`.")
+        config = PathConfig() if path_config is None else path_config
+        backend_descriptor = BackendFactory().describe(self.slam.backend)
+        return StageRegistry.default().compile(request=self, backend=backend_descriptor, path_config=config)
 
 
 def build_backend_spec(
