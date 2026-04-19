@@ -48,7 +48,7 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - frame-labelled transforms crossing into visualization must keep explicit source
   and target frame names
 - the live ViSTA-aligned viewer path must preserve upstream ViSTA world orientation instead of applying a viewer-only basis remap
-- the ViSTA-aligned sink should declare `world` with a neutral identity `rr.Transform3D()` plus a static root `rr.ViewCoordinates.RDF` so the viewer grid/axes match ViSTA-native RDF semantics without rotating the data
+- the ViSTA-aligned sink should declare `world` with a neutral identity `rr.Transform3D(axis_length=1.0)` plus a static root `rr.ViewCoordinates.RDF` so the viewer grid/axes match ViSTA-native RDF semantics without rotating the data
 - `rr.Pinhole.image_from_camera` uses row-major intrinsics with `X = Right`, `Y = Down`, `Z = Forward`
 - camera entities should use `camera_xyz = rr.ViewCoordinates.RDF` unless a different camera basis is explicitly documented
 - method-native live exports should keep their native world semantics unless a dedicated normalization layer is introduced
