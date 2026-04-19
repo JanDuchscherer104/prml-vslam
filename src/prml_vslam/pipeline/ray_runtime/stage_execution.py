@@ -1,4 +1,10 @@
-"""Typed batch-stage execution helpers for the Ray coordinator."""
+"""Bounded stage helpers executed under coordinator control.
+
+These helpers implement stage bodies that do not need their own long-lived
+actor. They convert normalized inputs into typed stage results and artifact
+maps, leaving stage ordering and event recording to the coordinator and
+:class:`RuntimeStageProgram`.
+"""
 
 from __future__ import annotations
 
@@ -33,7 +39,16 @@ from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 @dataclass(frozen=True, slots=True)
 class StageExecutionContext:
-    """Immutable run-scoped context shared by the batch-stage helpers."""
+    """Immutable run-scoped execution context shared by bounded stage helpers.
+
+    Attributes:
+        request: Original run request.
+        plan: Compiled deterministic run plan.
+        path_config: Repo path configuration used for runtime resolution.
+        run_paths: Canonical artifact layout for the run.
+        backend_descriptor: Capability and resource metadata for the selected
+            backend.
+    """
 
     request: RunRequest
     plan: RunPlan
@@ -43,7 +58,11 @@ class StageExecutionContext:
 
 
 def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceSource) -> IngestStageResult:
-    """Execute the ingest stage against one offline-capable source."""
+    """Materialize the canonical ingest boundary from one offline source.
+
+    The helper persists the normalized :class:`SequenceManifest` and any
+    prepared benchmark-side inputs before returning the ingest stage outcome.
+    """
     prepared_manifest = source.prepare_sequence_manifest(context.run_paths.sequence_manifest_path.parent)
     benchmark_inputs = None
     if isinstance(source, BenchmarkInputSource):
@@ -90,7 +109,7 @@ def run_offline_slam_stage(
     sequence_manifest: SequenceManifest,
     benchmark_inputs: PreparedBenchmarkInputs | None,
 ) -> SlamStageResult:
-    """Execute the offline SLAM stage through the existing stage actor."""
+    """Execute offline SLAM through the dedicated stage actor boundary."""
     actor = OfflineSlamStageActor.options(
         **clean_actor_options(
             actor_options_for_stage(
@@ -120,7 +139,7 @@ def run_trajectory_evaluation_stage(
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts,
 ) -> TrajectoryEvaluationStageResult:
-    """Execute the explicit trajectory-evaluation stage."""
+    """Evaluate the normalized SLAM trajectory against prepared references."""
     artifact = TrajectoryEvaluationService(
         PathConfig(artifacts_dir=context.request.output_dir)
     ).compute_pipeline_evaluation(
@@ -158,7 +177,7 @@ def run_summary_stage(
     context: StageExecutionContext,
     stage_outcomes: list[StageOutcome],
 ) -> SummaryStageResult:
-    """Execute summary projection from the accumulated stage outcomes."""
+    """Project durable run summary artifacts from terminal stage outcomes."""
     summary, stage_manifests, outcome = project_summary(
         request=context.request,
         plan=context.plan,
