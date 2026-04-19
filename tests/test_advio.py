@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import prml_vslam.datasets.advio.advio_replay_adapter as advio_replay_module
+import prml_vslam.datasets.advio.advio_sequence as advio_sequence_module
 from prml_vslam.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
@@ -24,10 +25,8 @@ from prml_vslam.datasets.advio import (
     AdvioSequenceConfig,
     AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
-    list_advio_sequence_ids,
-    load_advio_sequence,
 )
-from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tum
+from prml_vslam.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
 from prml_vslam.datasets.advio.advio_loading import load_advio_calibration
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.utils import PathConfig
@@ -185,7 +184,7 @@ def _build_fake_catalog(tmp_path: Path, *, sequence_id: int = 15) -> AdvioCatalo
 def test_load_advio_sequence_returns_offline_sample(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
 
-    sample = load_advio_sequence(AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+    sample = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15)).load_offline_sample()
 
     assert sample.sequence_name == "advio-15"
     assert sample.paths.video_path == sequence_dir / "iphone" / "frames.mov"
@@ -337,7 +336,7 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
 ) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-    monkeypatch.setattr(advio_replay_module, "read_advio_video_rotation_degrees", lambda path: 90)
+    monkeypatch.setattr(advio_sequence_module, "read_advio_video_rotation_degrees", lambda path: 90)
 
     stream = sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
     stream.connect()
@@ -423,7 +422,7 @@ def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> 
     _write_advio_sequence(tmp_path, sequence_id=7, nested_layout=True)
     _write_advio_sequence(tmp_path, sequence_id=15)
 
-    assert list_advio_sequence_ids(tmp_path) == [7, 15]
+    assert list_local_sequence_ids(tmp_path) == [7, 15]
 
 
 def test_resolve_existing_advio_reference_tum_only_uses_existing_tum(tmp_path: Path) -> None:

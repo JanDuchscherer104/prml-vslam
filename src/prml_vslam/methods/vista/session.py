@@ -1,4 +1,11 @@
-"""Streaming session wrapper for ViSTA-SLAM."""
+"""Streaming session wrapper for ViSTA-SLAM.
+
+This module exposes the upstream `OnlineSLAM` live path through repo-owned
+runtime contracts without changing ViSTA's native world semantics. The key
+distinction is that live updates expose scaled camera-local pointmaps on the
+ViSTA model raster, while end-of-run export produces a separately fused
+world-space dense cloud in the preserved native output directory.
+"""
 
 from __future__ import annotations
 
@@ -12,14 +19,25 @@ from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
-from .artifacts import _frame_transform_from_vista_pose, _vista_numpy_array, build_vista_artifacts
+from .artifacts import _frame_transform_from_vista_pose, build_vista_artifacts
 from .config import VistaSlamBackendConfig
-from .preprocess import VistaFramePreprocessor
+from .preprocess import VistaFramePreprocessor, vista_numpy_array
 from .runtime import VistaFlowTracker, VistaOnlineSlam, build_vista_runtime_components
 
 
 class VistaSlamSession:
-    """Stateful streaming session that forwards frames to upstream OnlineSLAM."""
+    """Stateful streaming session that forwards frames to upstream OnlineSLAM.
+
+    The session preserves two different visualization surfaces:
+
+    - source frames arrive as repo `FramePacket.rgb` payloads and can be logged
+      independently by the repo-owned Rerun sink;
+    - ViSTA model outputs (`image_rgb`, `depth_map`, `camera_intrinsics`,
+      `pointmap`, `preview_rgb`) all live on the preprocessed ViSTA raster.
+
+    The session does not normalize ViSTA's RDF-like world orientation into a
+    separate repo/world-up basis.
+    """
 
     def __init__(
         self,
@@ -143,7 +161,18 @@ class VistaSlamSession:
         view_index: int,
         image_rgb: np.ndarray,
     ) -> SlamUpdate:
-        """Read the latest upstream view state and convert it into live repo telemetry."""
+        """Read one upstream view and convert it into live repo telemetry.
+
+        The returned update intentionally keeps ViSTA's native semantics:
+
+        - `pose` is the upstream `T_world_camera` estimate;
+        - `depth_map` is the scaled depth image from `get_view(...)`;
+        - `pointmap` is the scaled camera-local pointmap from
+          `get_pointmap_vis(...)`;
+        - `image_rgb`, `depth_map`, `camera_intrinsics`, and `pointmap` all
+          share the ViSTA-preprocessed model raster instead of the original
+          source-frame raster.
+        """
         try:
             view = self._slam.get_view(
                 view_index,
@@ -166,10 +195,10 @@ class VistaSlamSession:
                 num_sparse_points=0,
                 num_dense_points=self._num_dense_points,
             )
-        pose = _frame_transform_from_vista_pose(_vista_numpy_array(view.pose, dtype=np.float64))
-        depth_map = _vista_numpy_array(view.depth, dtype=np.float32)
+        pose = _frame_transform_from_vista_pose(vista_numpy_array(view.pose, dtype=np.float64))
+        depth_map = vista_numpy_array(view.depth, dtype=np.float32)
         camera_intrinsics = CameraIntrinsics.from_matrix(
-            _vista_numpy_array(view.intri, dtype=np.float64),
+            vista_numpy_array(view.intri, dtype=np.float64),
             width_px=int(image_rgb.shape[1]),
             height_px=int(image_rgb.shape[0]),
         )
@@ -210,10 +239,14 @@ class VistaSlamSession:
 
 
 def _build_live_pointmap(view: np.ndarray | None) -> np.ndarray | None:
-    """Convert one upstream pointcloud payload into the repository-local dtype."""
+    """Normalize one upstream ViSTA pointmap payload without changing semantics.
+
+    The returned array is still a scaled camera-local pointmap in ViSTA's RDF
+    camera basis. This helper performs dtype normalization only.
+    """
     if view is None:
         return None
-    return _vista_numpy_array(view, dtype=np.float32)
+    return vista_numpy_array(view, dtype=np.float32)
 
 
 def _count_valid_pointmap_points(pointmap: np.ndarray | None) -> int:

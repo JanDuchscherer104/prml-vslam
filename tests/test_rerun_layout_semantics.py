@@ -85,7 +85,6 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
     assert live_intrinsics.cy == 1.5
     assert live_intrinsics.width_px == 4
     assert live_intrinsics.height_px == 3
-    assert sum("synthetic viewer intrinsics" in record.message for record in caplog.records) == 1
 
 
 def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
@@ -171,10 +170,17 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
         def __init__(self) -> None:
             self.identity = True
 
+    class FakeViewCoordinates:
+        RDF = "rdf"
+
     monkeypatch.setattr(
         rerun_helpers,
         "rr",
-        SimpleNamespace(RecordingStream=FakeRecordingStream, Transform3D=FakeTransform3D),
+        SimpleNamespace(
+            RecordingStream=FakeRecordingStream,
+            Transform3D=FakeTransform3D,
+            ViewCoordinates=FakeViewCoordinates,
+        ),
     )
     monkeypatch.setattr(
         rerun_helpers,
@@ -202,7 +208,10 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
         "+ world/keyframes/points/**",
         "+ world/trajectory/tracking",
     ]
-    assert len(logged_entities) == 1
+    assert len(logged_entities) == 2
     assert logged_entities[0][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert isinstance(logged_entities[0][1], FakeTransform3D)
     assert logged_entities[0][2] is True
+    assert logged_entities[1][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
+    assert logged_entities[1][1] == FakeViewCoordinates.RDF
+    assert logged_entities[1][2] is True

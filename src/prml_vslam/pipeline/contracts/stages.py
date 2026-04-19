@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field
-
 from .transport import TransportModel
 
 
@@ -20,13 +18,18 @@ class StageKey(StrEnum):
     EFFICIENCY_EVALUATION = "efficiency.evaluate"
     SUMMARY = "summary"
 
-
-class StageExecutorKind(StrEnum):
-    """Execution strategy used to run one stage."""
-
-    BATCH = "batch"
-    STREAMING = "streaming"
-    PROJECTION = "projection"
+    @property
+    def label(self) -> str:
+        """Return the human-readable label shown in plan previews."""
+        return {
+            StageKey.INGEST: "Normalize Input Sequence",
+            StageKey.SLAM: "Run SLAM Backend",
+            StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
+            StageKey.REFERENCE_RECONSTRUCTION: "Build Reference Reconstruction",
+            StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
+            StageKey.EFFICIENCY_EVALUATION: "Measure Efficiency",
+            StageKey.SUMMARY: "Write Run Summary",
+        }[self]
 
 
 class StageAvailability(TransportModel):
@@ -40,17 +43,10 @@ class StageDefinition(TransportModel):
     """Registry entry for one supported pipeline stage."""
 
     key: StageKey
-    title: str
-    depends_on: list[StageKey] = Field(default_factory=list)
-    output_keys: list[str] = Field(default_factory=list)
-    executor_kind: StageExecutorKind
-    description: str
-    failure_modes: list[str] = Field(default_factory=list)
 
 
 __all__ = [
     "StageAvailability",
     "StageDefinition",
-    "StageExecutorKind",
     "StageKey",
 ]

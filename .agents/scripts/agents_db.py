@@ -9,13 +9,14 @@ from typing import Any, Literal
 
 import tomli_w
 
-Kind = Literal["issue", "todo"]
+Kind = Literal["issue", "todo", "refactor"]
 Format = Literal["text", "json"]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = REPO_ROOT / ".agents"
 ISSUES_PATH = AGENTS_DIR / "issues.toml"
 TODOS_PATH = AGENTS_DIR / "todos.toml"
+REFACTORS_PATH = AGENTS_DIR / "refactors.toml"
 RESOLVED_PATH = AGENTS_DIR / "resolved.toml"
 
 PRIORITY_ORDER = {
@@ -32,6 +33,12 @@ ISSUE_STATUS_ORDER = {
 }
 TODO_STATUS_ORDER = {
     "pending": 3,
+    "in_progress": 2,
+    "blocked": 1,
+    "done": 0,
+}
+REFACTOR_STATUS_ORDER = {
+    "suggested": 3,
     "in_progress": 2,
     "blocked": 1,
     "done": 0,
@@ -62,21 +69,27 @@ def _todo_status_value(status: str) -> int:
     return TODO_STATUS_ORDER.get(status, 0)
 
 
-def validate_todo_record(todo: dict[str, Any]) -> None:
-    """Validate required LOC estimates on a todo record."""
+def _refactor_status_value(status: str) -> int:
+    return REFACTOR_STATUS_ORDER.get(status, 0)
+
+
+def validate_loc_record(record: dict[str, Any], *, kind_label: str) -> None:
+    """Validate required LOC estimates on a todo- or refactor-like record."""
     required_fields = ("loc_min", "loc_expected", "loc_max")
-    missing_fields = [field for field in required_fields if field not in todo]
+    missing_fields = [field for field in required_fields if field not in record]
     if missing_fields:
         missing = ", ".join(missing_fields)
-        raise ValueError(f"Todo {todo.get('id', '<unknown>')} is missing required LOC fields: {missing}")
+        raise ValueError(f"{kind_label} {record.get('id', '<unknown>')} is missing required LOC fields: {missing}")
 
-    loc_min = todo["loc_min"]
-    loc_expected = todo["loc_expected"]
-    loc_max = todo["loc_max"]
+    loc_min = record["loc_min"]
+    loc_expected = record["loc_expected"]
+    loc_max = record["loc_max"]
     if not all(isinstance(value, int) for value in (loc_min, loc_expected, loc_max)):
-        raise ValueError(f"Todo {todo.get('id', '<unknown>')} must use integer LOC estimates.")
+        raise ValueError(f"{kind_label} {record.get('id', '<unknown>')} must use integer LOC estimates.")
     if not (0 <= loc_min <= loc_expected <= loc_max):
-        raise ValueError(f"Todo {todo.get('id', '<unknown>')} must satisfy 0 <= loc_min <= loc_expected <= loc_max.")
+        raise ValueError(
+            f"{kind_label} {record.get('id', '<unknown>')} must satisfy 0 <= loc_min <= loc_expected <= loc_max."
+        )
 
 
 def rank_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -94,7 +107,7 @@ def rank_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def rank_todos(todos: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return active todos ordered by priority, status, and expected LOC."""
     for todo in todos:
-        validate_todo_record(todo)
+        validate_loc_record(todo, kind_label="Todo")
     return sorted(
         todos,
         key=lambda todo: (
@@ -107,17 +120,36 @@ def rank_todos(todos: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+def rank_refactors(refactors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return suggested refactors ordered by priority, status, and expected LOC."""
+    for refactor in refactors:
+        validate_loc_record(refactor, kind_label="Refactor")
+    return sorted(
+        refactors,
+        key=lambda refactor: (
+            -_priority_value(str(refactor.get("priority", ""))),
+            -_refactor_status_value(str(refactor.get("status", ""))),
+            int(refactor["loc_expected"]),
+            int(refactor["loc_min"]),
+            str(refactor.get("id", "")),
+        ),
+    )
+
+
 def build_ranked_view(
     *,
     issues_path: Path = ISSUES_PATH,
     todos_path: Path = TODOS_PATH,
+    refactors_path: Path = REFACTORS_PATH,
 ) -> dict[str, list[dict[str, Any]]]:
     """Build the ranked active backlog view."""
     issues_data = load_toml(issues_path)
     todos_data = load_toml(todos_path)
+    refactors_data = load_toml(refactors_path)
     issues = rank_issues(list(issues_data.get("issues", [])))
     todos = rank_todos(list(todos_data.get("todos", [])))
-    return {"issues": issues, "todos": todos}
+    refactors = rank_refactors(list(refactors_data.get("refactors", [])))
+    return {"issues": issues, "todos": todos, "refactors": refactors}
 
 
 def render_ranked_text(kind: str, ranked: dict[str, list[dict[str, Any]]], limit: int | None) -> str:
@@ -142,19 +174,36 @@ def render_ranked_text(kind: str, ranked: dict[str, list[dict[str, Any]]], limit
             )
             linked_issues = ", ".join(todo.get("issue_ids", []))
             lines.append(f"   issues={linked_issues}")
+
+    if kind in {"refactors", "all"}:
+        if lines:
+            lines.append("")
+        lines.append("Refactors")
+        refactor_items = ranked["refactors"][:limit] if limit is not None else ranked["refactors"]
+        for index, refactor in enumerate(refactor_items, start=1):
+            loc_triplet = f"{refactor['loc_min']}/{refactor['loc_expected']}/{refactor['loc_max']}"
+            lines.append(
+                f"{index}. {refactor['id']} [{refactor['priority']}/{refactor['status']}] "
+                f"loc={loc_triplet} {refactor['title']}"
+            )
+            lines.append(f"   {refactor['summary']}")
     return "\n".join(lines)
 
 
 def _active_collection_key(kind: Kind) -> str:
-    return "issues" if kind == "issue" else "todos"
+    return {"issue": "issues", "todo": "todos", "refactor": "refactors"}[kind]
 
 
 def _resolved_collection_key(kind: Kind) -> str:
-    return "resolved_issues" if kind == "issue" else "resolved_todos"
+    return {
+        "issue": "resolved_issues",
+        "todo": "resolved_todos",
+        "refactor": "resolved_refactors",
+    }[kind]
 
 
-def _active_path(kind: Kind, *, issues_path: Path, todos_path: Path) -> Path:
-    return issues_path if kind == "issue" else todos_path
+def _active_path(kind: Kind, *, issues_path: Path, todos_path: Path, refactors_path: Path) -> Path:
+    return {"issue": issues_path, "todo": todos_path, "refactor": refactors_path}[kind]
 
 
 def resolve_record(
@@ -165,12 +214,18 @@ def resolve_record(
     resolved_on: str | None = None,
     issues_path: Path = ISSUES_PATH,
     todos_path: Path = TODOS_PATH,
+    refactors_path: Path = REFACTORS_PATH,
     resolved_path: Path = RESOLVED_PATH,
 ) -> dict[str, Any]:
     """Move an active issue or todo into the resolved collection."""
     resolved_stamp = resolved_on or date.today().isoformat()
 
-    active_path = _active_path(kind, issues_path=issues_path, todos_path=todos_path)
+    active_path = _active_path(
+        kind,
+        issues_path=issues_path,
+        todos_path=todos_path,
+        refactors_path=refactors_path,
+    )
     active_data = load_toml(active_path)
     resolved_data = load_toml(resolved_path)
 
@@ -203,16 +258,16 @@ def resolve_record(
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Manage the local .agents issue and todo databases.")
+    parser = argparse.ArgumentParser(description="Manage the local .agents issue, todo, and refactor databases.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     rank_parser = subparsers.add_parser("rank", help="Show ranked active issues and todos.")
-    rank_parser.add_argument("--kind", choices=("issues", "todos", "all"), default="all")
+    rank_parser.add_argument("--kind", choices=("issues", "todos", "refactors", "all"), default="all")
     rank_parser.add_argument("--format", choices=("text", "json"), default="text")
     rank_parser.add_argument("--limit", type=int, default=None)
 
     resolve_parser = subparsers.add_parser("resolve", help="Move an issue or todo into the resolved collection.")
-    resolve_parser.add_argument("kind", choices=("issue", "todo"))
+    resolve_parser.add_argument("kind", choices=("issue", "todo", "refactor"))
     resolve_parser.add_argument("record_id")
     resolve_parser.add_argument("--note", required=True, help="Short resolution note.")
     resolve_parser.add_argument(

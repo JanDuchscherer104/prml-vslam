@@ -27,7 +27,15 @@ source of truth.
 5. If the task is repo-local and symptoms look integration-specific, compare the
    local wrapper against the ViSTA reference after grounding in official Rerun
    patterns.
-6. If a Context7 MCP server is available in the session, use the
+6. For repo-local regressions, inspect every touched `rr.` call site across the
+   full logging path, not just the most obvious sink module.
+7. Compare against both the upstream ViSTA reference and the last known good
+   repo-local commit before recommending basis flips, root-world declarations,
+   or other frame-normalization changes.
+8. Keep coordinate normalization and method-specific basis handling at explicit
+   method or stage boundaries; do not move viewer-only fixes into the
+   coordinator hot path.
+9. If a Context7 MCP server is available in the session, use the
    `/rerun-io/rerun` queries from the reference files. If no Context7 MCP is
    configured, open the direct example page link first and then follow its
    Python source link as needed.
@@ -48,6 +56,8 @@ source of truth.
 ## Guardrails
 
 - Prefer official docs and official examples over recollection.
+- In this repo, treat Rerun as an observer sink or sidecar, not as a stage or
+  coordinator-owned semantic boundary.
 - Treat `Transform3D` relation semantics as a first-class design choice.
 - Keep camera-local geometry and world-space geometry distinct.
 - Do not call a pseudo-colored pointmap preview a depth image.

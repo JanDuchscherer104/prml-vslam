@@ -10,13 +10,26 @@ from numpy.typing import NDArray
 from pydantic import Field
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.interfaces import FramePacketProvenance
 from prml_vslam.io import Cv2ReplayMode
+from prml_vslam.io.cv2_producer import Cv2FrameProducer, Cv2ProducerConfig
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
 
 from . import advio_layout, advio_loading
-from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioPoseSource, AdvioSceneMetadata, AdvioSequenceConfig
-from .advio_replay_adapter import open_advio_stream
+from .advio_models import (
+    ADVIO_SEQUENCE_COUNT,
+    AdvioCatalog,
+    AdvioPoseSource,
+    AdvioSceneMetadata,
+    AdvioSequenceConfig,
+)
+from .advio_replay_adapter import (
+    _load_pose_trajectory,
+    _poses_for_frame_timestamps,
+    _RotatedVideoStream,
+    read_advio_video_rotation_degrees,
+)
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts.sequence import SequenceManifest
@@ -174,14 +187,35 @@ class AdvioSequence(BaseData):
         replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
         respect_video_rotation: bool = False,
     ) -> FramePacketStream:
-        return open_advio_stream(
-            self,
-            pose_source=pose_source,
-            stride=stride,
-            loop=loop,
-            replay_mode=replay_mode,
-            respect_video_rotation=respect_video_rotation,
+        scene = self.scene
+        paths = self._resolve_paths(require_arcore=False)
+        frame_timestamps_ns = advio_loading.load_advio_frame_timestamps_ns(paths.frame_timestamps_path)
+        calibration = advio_loading.load_advio_calibration(paths.calibration_path)
+        stream: FramePacketStream = Cv2FrameProducer(
+            Cv2ProducerConfig(
+                video_path=paths.video_path,
+                frame_timestamps_ns=frame_timestamps_ns.tolist(),
+                stride=stride,
+                loop=loop,
+                replay_mode=replay_mode,
+                intrinsics=calibration.intrinsics,
+                poses_by_frame=_poses_for_frame_timestamps(
+                    frame_timestamps_ns,
+                    _load_pose_trajectory(paths, scene, pose_source),
+                ),
+                base_provenance=FramePacketProvenance(
+                    source_id="advio",
+                    dataset_id="advio",
+                    sequence_id=str(scene.sequence_id),
+                    sequence_name=scene.sequence_slug,
+                    pose_source=pose_source.value,
+                ),
+            )
         )
+        if not respect_video_rotation:
+            return stream
+        rotation_degrees = read_advio_video_rotation_degrees(paths.video_path)
+        return stream if rotation_degrees == 0 else _RotatedVideoStream(stream, rotation_degrees)
 
     def write_ground_truth_tum(self, target_path: Path) -> Path:
         return advio_loading.write_advio_pose_tum(
@@ -197,14 +231,6 @@ class AdvioSequence(BaseData):
         if (arkit_path := self._resolve_paths(require_arcore=False).arkit_csv_path) is None:
             raise FileNotFoundError(f"Sequence {self.scene.sequence_slug} does not include an ARKit baseline CSV.")
         return advio_loading.write_advio_pose_tum(arkit_path, target_path)
-
-
-def load_advio_sequence(config: AdvioSequenceConfig) -> AdvioOfflineSample:
-    return AdvioSequence(config=config).load_offline_sample()
-
-
-def list_advio_sequence_ids(dataset_root: Path) -> list[int]:
-    return advio_layout.list_local_sequence_ids(dataset_root)
 
 
 def _ensure_tum(write_tum: Callable[[Path], Path], target_path: Path) -> Path:

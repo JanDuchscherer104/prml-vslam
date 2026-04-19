@@ -354,12 +354,12 @@ def test_repo_owned_recording_matches_vista_style_world_point_placement_across_k
         previous_world_point = repo_keyframe_world_points[0]
 
 
-def test_repo_owned_recording_declares_neutral_root_world_without_view_coordinates(tmp_path: Path) -> None:
+def test_repo_owned_recording_declares_neutral_root_world_with_rdf_view_coordinates(tmp_path: Path) -> None:
     recording = _build_repo_owned_recording(tmp_path=tmp_path, payloads=_synthetic_keyframe_payloads())
 
     world_columns = [column for column in _component_columns(recording) if column.entity_path == "/world"]
     assert any(column.component == "Transform3D:translation" and column.is_static for column in world_columns)
-    assert not any(
+    assert any(
         "ViewCoordinates" in column.component or "ViewCoordinates" in column.archetype for column in world_columns
     )
 

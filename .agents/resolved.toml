@@ -1,8 +1,180 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-17"
+updated_on = "2026-04-18"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
+
+[[resolved_issues]]
+id = "ISSUE-0033"
+title = "The internal backlog archive overstates completion for some still-open review themes"
+status = "resolved"
+priority = "low"
+category = "process"
+summary = "The backlog re-triage pass is complete: stale imported findings that no longer reproduce on the current tree are now represented only in the resolved archive, and the active backlog no longer carries deleted-supervisor wording."
+files = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+notes = [
+    "The active Ray smoke issue and todo no longer refer to the removed supervisor actor path.",
+    "Previously stale findings such as coordinator restart, missing StageFailed, late RunStopped, latest_backend_event, PlacementPolicy overpromise, Rerun timeline leakage, and keyframe depth logging remain archived as resolved instead of lingering in the active queue.",
+    "The active backlog now describes only debt that still reproduces on the current tree.",
+]
+sources = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after backlog re-triage removed stale supervisor-era wording from the active records and aligned the active backlog with the current code."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0035"
+title = "Re-triage partially addressed resolved records against the current code"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0033",
+]
+loc_min = 10
+loc_expected = 25
+loc_max = 60
+files = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+acceptance = [
+    "Resolved archive entries that are only partially addressed are either amended with narrower resolution notes or reopened as active issues.",
+    "The active backlog and resolved archive no longer imply that today’s still-open findings are fully closed.",
+    "`make agents-db` reflects the intended active work after the re-triage pass.",
+]
+sources = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after the active backlog was re-triaged against the current tree and stale supervisor-era wording was removed from the remaining active Ray smoke records."
+source_collection = "todos"
+
+[[resolved_issues]]
+id = "ISSUE-0049"
+title = "Pipeline finalization still carries trivial one-shot projection wrappers"
+status = "resolved"
+priority = "low"
+category = "maintainability"
+summary = "The single-use summary-projection wrapper is gone; `project_summary()` now constructs stage manifests directly without the extra forwarding hop."
+files = [
+    "src/prml_vslam/pipeline/finalization.py",
+]
+notes = [
+    "The finalization module now builds `StageManifest` rows inline inside `project_summary()`.",
+    "No helper layer remains between `StageOutcome` values and the persisted stage-manifest payload.",
+    "The persisted summary and stage-manifest outputs are unchanged by that simplification.",
+]
+sources = [
+    "src/prml_vslam/pipeline/finalization.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after simplifying summary projection down to one direct manifest-construction path."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0050"
+title = "Trajectory evaluation execution currently lives in the pipeline package instead of eval"
+status = "resolved"
+priority = "medium"
+category = "architecture"
+summary = "The explicit evo-backed trajectory evaluation implementation now lives under `prml_vslam.eval`, while the coordinator only dispatches the stage and records its typed result."
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
+    "src/prml_vslam/pipeline/finalization.py",
+]
+notes = [
+    "The coordinator now delegates trajectory evaluation through a typed batch-stage executor seam instead of inlining evo-specific work.",
+    "The evaluation service owns the method label and persisted metrics artifact construction for pipeline-triggered evaluations.",
+    "The finalization module no longer owns a pipeline-local trajectory evaluation helper.",
+]
+sources = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
+    "src/prml_vslam/pipeline/finalization.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after moving trajectory evaluation ownership fully behind the eval package seam and leaving the pipeline with orchestration only."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0051"
+title = "Inline `stage_manifest_from_outcome()` into `project_summary()`"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0049",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 3
+loc_expected = 8
+loc_max = 18
+files = [
+    "src/prml_vslam/pipeline/finalization.py",
+]
+acceptance = [
+    "`project_summary()` constructs `StageManifest` entries directly or otherwise removes the single-use wrapper.",
+    "`stage_manifest_from_outcome()` is deleted unless a second real caller or stronger abstraction need exists.",
+    "The persisted stage-manifest payload remains unchanged after the simplification.",
+]
+sources = [
+    "src/prml_vslam/pipeline/finalization.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after collapsing summary projection to the direct manifest-construction path."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0052"
+title = "Move `compute_trajectory_evaluation()` behind the eval package seam"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0050",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 30
+loc_expected = 70
+loc_max = 140
+files = [
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+acceptance = [
+    "The evo-specific trajectory evaluation implementation lives under `prml_vslam.eval` rather than `prml_vslam.pipeline.finalization`.",
+    "The pipeline stage keeps only the orchestration needed to call the evaluation seam and attach resulting artifacts.",
+    "The persisted trajectory metrics payload and stage outputs remain behaviorally unchanged after the ownership move.",
+]
+sources = [
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after routing the pipeline trajectory-evaluation stage through the eval-owned implementation seam."
+source_collection = "todos"
 
 [[resolved_issues]]
 id = "ISSUE-PR15-0001"
@@ -1342,6 +1514,345 @@ resolved_on = "2026-04-17"
 resolution_note = "Removed SE3Pose and kept FrameTransform as the sole shared pose/transform DTO."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0044"
+title = "Run coordinator restart policy is unsafe without event-log restore"
+status = "resolved"
+priority = "high"
+category = "orchestration"
+summary = "The Ray run coordinator is restartable even though it still rebuilds empty in-memory state after crashes and cannot restore from the durable JSONL event log, so a restart can silently fork the semantic truth for an active run."
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/supervisor.py",
+    ".agents/work/pipeline-refactor/10-agent_context_ray_pipeline.md",
+    ".agents/work/pipeline-refactor/13-codex-plan.md",
+]
+notes = [
+    "The frozen plan explicitly allowed the supervisor actor to be restartable first, but deferred coordinator restarts until checkpoint/projection restore exists.",
+    "The current coordinator constructor recreates snapshot, event, handle, and stage-outcome state from scratch and `start()` seeds a fresh run instead of replaying the durable event log.",
+    "A coordinator crash during an active run would therefore revive a new empty state owner behind the same logical run id and violate the event-projected truth model.",
+]
+sources = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/supervisor.py",
+    ".agents/work/pipeline-refactor/10-agent_context_ray_pipeline.md",
+    ".agents/work/pipeline-refactor/13-codex-plan.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "Coordinator restart-without-restore is closed for the active runtime path because RunCoordinatorActor is no longer restartable."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0045"
+title = "Terminal stage errors still bypass the `stage.failed` event path"
+status = "resolved"
+priority = "high"
+category = "orchestration"
+summary = "The runtime defines a stage-scoped failure event, but terminal exceptions still collapse directly into `run.failed`, so failing stage outcomes, registry failure modes, and stage-level provenance are not represented in the durable event stream."
+files = [
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/stage_registry.py",
+    ".agents/work/pipeline-refactor/13-codex-plan.md",
+]
+notes = [
+    "The top-level coordinator exception path still emits only `RunFailed`, and the streaming finalization path does the same when `_streaming_error` is set.",
+    "That leaves the declared `StageFailed` contract unused by the active runtime even though stage keys, failure modes, and `StageOutcome` already exist.",
+    "Without a durable stage-scoped terminal event, the event log cannot explain which stage failed or preserve the same provenance shape as successful stages.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/stage_registry.py",
+    ".agents/work/pipeline-refactor/13-codex-plan.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "Terminal stage failures are now represented by StageFailed events before run-level failure, and snapshot projection/tests reflect the stage-scoped terminal outcome."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0046"
+title = "Late stop requests can still rewrite completed streaming runs to STOPPED"
+status = "resolved"
+priority = "medium"
+category = "orchestration"
+summary = "A completed streaming run can still be mutated to `STOPPED` because `stop()` appends `run.stopped` after the worker finishes and the snapshot projector applies that terminal state unconditionally."
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/snapshot_projector.py",
+    "src/prml_vslam/pipeline/run_service.py",
+]
+notes = [
+    "`RunService.start_run()` stops the previous run before launching the next one, so this is not only a manual-stop corner case.",
+    "The projector correctly guards `RunStopRequested` from overwriting `COMPLETED` or `FAILED`, but `RunStopped` still forces `STOPPED` even after successful completion.",
+    "That means terminal state history for streaming runs is still mutable after completion and can disagree with what actually happened.",
+]
+sources = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/snapshot_projector.py",
+    "src/prml_vslam/pipeline/run_service.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "Late stop requests no longer rewrite completed or failed streaming runs because both coordinator and snapshot projector preserve terminal state immutability."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0047"
+title = "PlacementPolicy still advertises semantics the Ray translator does not honor"
+status = "resolved"
+priority = "medium"
+category = "architecture"
+summary = "The placement contract already advertises pools, colocation, spread, and stage-owned placement keys, but the current Ray translation still consumes only resource numbers and still relies on free-form stage strings."
+files = [
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/placement.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/README.md",
+    ".agents/work/pipeline-refactor/13-codex-plan.md",
+]
+notes = [
+    "The frozen refactor plan called for a repo-owned `PlacementPolicy` translated into resources and placement groups by the Ray backend only.",
+    "The current translator ignores `pool`, `colocate_with`, and `spread`, and the runtime still uses ad hoc string keys such as `\"packet_source\"` instead of a typed stage-owned key set.",
+    "Until either the contract shrinks or the implementation catches up, the public request shape overpromises what the backend can actually honor.",
+]
+sources = [
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/placement.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/README.md",
+    ".agents/work/pipeline-refactor/13-codex-plan.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "The placement contract now matches the implemented Ray translator: typed stage keys plus resource overrides only, with no latent colocation/spread semantics."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0048"
+title = "The repo-owned Rerun sink does not keep live telemetry on an explicit timeline"
+status = "resolved"
+priority = "medium"
+category = "visualization"
+summary = "The latest keyframe-visualization event now sets a keyframe sequence timeline, but later live packet and pose logs do not establish their own time context, so sticky Rerun timeline state can attach non-keyframe telemetry to stale keyframe indices."
+files = [
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/methods/events.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+    "tests/test_streaming_visualization.py",
+]
+notes = [
+    "The new `KeyframeVisualizationReady` event makes per-keyframe visualization ownership clearer, but it also introduced the first explicit `set_time(\"keyframe\", ...)` call in the repo-owned sink.",
+    "Rerun stream time context is sticky, so later `PacketObserved` RGB logs and `PoseEstimated` camera-pose logs need their own explicit timeline semantics if they should not inherit the last keyframe sequence.",
+    "The current sink tests validate entity paths and payload routing, but they do not yet cover interleaved keyframe and live telemetry on separate timelines.",
+]
+sources = [
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/methods/events.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+    "tests/test_streaming_visualization.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "Live Rerun telemetry now establishes explicit timeline semantics for live packet/pose logging, and the sink tests cover the stale-keyframe-timeline regression path."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0043"
+title = "Leaf modules still mix rendering, orchestration, and test-only ownership"
+status = "resolved"
+priority = "medium"
+category = "maintainability"
+summary = "Several leaf modules still own responsibilities that should live in thinner controllers, shared seams, or test-only packages, which keeps small modules deceptively busy and blurs package ownership."
+files = [
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/state.py",
+    "src/prml_vslam/pipeline/source_resolver.py",
+    "src/prml_vslam/pipeline/testing_support.py",
+]
+notes = [
+    "The pipeline snapshot view still combines rendering with controller-like work such as tailing events, reading cached arrays, selecting plan-tab event payloads, and triggering evo-preview resolution.",
+    "Session-state loading still carries a dead `required_methods` parameter that is immediately discarded, which signals an abstraction that no longer enforces what it advertises.",
+    "The next ownership cut is to move snapshot-derived view data and preview resolution behind `pipeline_controller.py` so the page module becomes renderer-only.",
+    "The pipeline package still ships test doubles under `src/`, and `source_resolver.py` already carries an inline TODO questioning whether its ownership is correct.",
+]
+sources = [
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/state.py",
+    "src/prml_vslam/pipeline/source_resolver.py",
+    "src/prml_vslam/pipeline/testing_support.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "This slice removed the most concrete current drift by moving test-only helpers out of src/ and pushing raw backend-notice shaping behind the controller helper used by the pipeline snapshot page."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0039"
+title = "Pipeline page request state still needs an explicit JSON-friendly replay seam after the page split"
+status = "resolved"
+priority = "high"
+category = "app"
+summary = "The Pipeline page is now smaller, but the request replay seam is still split across page helpers, controller code, and JSON-friendly metadata bags, so strict backend-spec rebuilds are not yet controller-owned end to end."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+files = [
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+notes = [
+    "The Pipeline page is being split into request-editor and snapshot-view helpers so the top-level page stops owning all rendering branches directly.",
+    "The controller now persists the backend payload in JSON mode, which keeps the session-state boundary explicit instead of depending on mixed in-memory Python objects.",
+    "The page surface still leaks replay logic because `build_streaming_source_from_action()` returns an untyped runtime object and `handle_pipeline_page_action()` still bridges page state directly into the run-service seam.",
+    "The app-side request-edit path still carries partial type erasure such as `PipelinePageState.slam_backend_payload: dict[str, object]` and `previewable_statuses: list[object]` in the request editor.",
+    "The remaining work is to keep the controller-owned request rebuild path and its focused tests authoritative as the page surface continues to shrink.",
+]
+sources = [
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "The bounded Pipeline page now keeps the JSON-friendly request-edit path but executes from one authoritative request contract, with runtime-source construction shared with the CLI through build_runtime_source_from_request."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0041"
+title = "The ViSTA adapter still relies on global import-path mutation and private upstream APIs"
+status = "resolved"
+priority = "high"
+category = "integration"
+summary = "The ViSTA integration no longer mutates `sys.path`, no longer probes global site-package locations for DBoW3 shared libraries, and no longer depends on the private upstream `_crop_resize_if_necessary_image_only` helper."
+files = [
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/vista/config.py",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/AGENTS.md",
+]
+notes = [
+    "The adapter now installs an explicit `vista_slam` namespace package rooted at the checked-out upstream repo instead of mutating global `sys.path`.",
+    "It imports `DBoW3Py` as a declared dependency and fails with an actionable error if that dependency is not importable, rather than probing site-packages and build directories for a shared library.",
+    "The upstream frame preprocessor now uses an explicit local resize boundary instead of the private `_crop_resize_if_necessary_image_only` helper.",
+    "The remaining wrapper logic still converts upstream poses and intrinsics back into `FrameTransform`, `CameraIntrinsics`, and `SlamArtifacts`, so the behavior stays aligned with the pipeline contracts while the import boundary is cleaner.",
+]
+sources = [
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/vista/config.py",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/AGENTS.md",
+]
+previous_status = "resolved"
+resolved_on = "2026-04-18"
+resolution_note = "The ViSTA wrapper now uses an explicit upstream namespace-package boundary, no longer mutates sys.path, no longer probes site-packages for DBoW3 shared libraries, and no longer depends on the private upstream image-preprocessing helper."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0032"
+title = "Record3D Wi-Fi preview remains a large repo-owned subsystem for a preview-only path"
+status = "resolved"
+priority = "medium"
+category = "maintainability"
+summary = "USB is documented as the canonical Record3D integration, but the repo still carries a bespoke Wi-Fi signaling, WebRTC receiver, packet-decoding, and session stack for the optional preview fallback."
+files = [
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/io/wifi_packets.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+    "src/prml_vslam/io/README.md",
+    "README.md",
+]
+notes = [
+    "The current Wi-Fi implementation is intentionally preview-only, lower fidelity, and missing the full pose/confidence surfaces available on USB.",
+    "Even with that limited role, the path still owns custom signaling, worker, and decoding logic that materially increases the size of `io/`.",
+    "This remains a relevant LOC-reduction target from the older reviews, even though the current docs already scope it correctly.",
+]
+sources = [
+    "README.md",
+    "src/prml_vslam/io/README.md",
+    "src/prml_vslam/io/wifi_session.py",
+    "src/prml_vslam/io/wifi_receiver.py",
+    "src/prml_vslam/io/wifi_packets.py",
+    "src/prml_vslam/io/wifi_signaling.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-18"
+resolution_note = "Retired after user clarified that Record3D Wi-Fi is stable and equivalent to the USB path, so the preview-only/lower-fidelity premise was incorrect."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0040"
+title = "Typed pipeline and method seams still degrade to object-typed boundaries"
+status = "resolved"
+priority = "high"
+category = "architecture"
+summary = "The repo already defines protocol seams and discriminated backend specs, but the main orchestration path still widens them back to `object` or `Any` across pipeline, Ray, factory, controller, and app seams, which weakens language-server guidance and makes the declared typed boundaries largely decorative."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+files = [
+    "src/prml_vslam/protocols/source.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
+    "src/prml_vslam/pipeline/ray_runtime/supervisor.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/methods/factory.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/pages/record3d.py",
+]
+notes = [
+    "The repo already owns `OfflineSequenceSource`, `StreamingSequenceSource`, and the `BackendSpec` union, so most of these `object` surfaces are not expressing a genuinely open-ended contract.",
+    "Recent cleanup removed several of the original drift points: `PipelineRuntimeSource` is now typed, the public snapshot no longer carries `latest_backend_event`, Streamlit now resolves runtime sources through the shared request-to-source path, and the old supervisor layer is gone.",
+    "The remaining active seams are smaller but still real: `slam_backend_payload: dict[str, object]` in app state, a few `object`-typed pose/intrinsics parameters inside the repo-owned Rerun sink, and helper/test surfaces that still use broad `dict[str, object]` payloads for convenience.",
+    "This is the clearest remaining anti-pattern relative to the new package guidance because it blocks static discovery of exactly the seams the codebase already declared.",
+]
+sources = [
+    "src/prml_vslam/protocols/source.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
+    "src/prml_vslam/pipeline/ray_runtime/supervisor.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/methods/factory.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/advio.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/pages/record3d.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Resolved the remaining main-orchestration typed-seam debt: the Pipeline page now preserves a typed BackendSpec instead of a raw payload bag, backend-spec overrides stay typed through request and factory helpers, the Ray backend/coordinator/sink handles use concrete types, and the ADVIO pipeline-demo CLI now executes from the same request-to-runtime-source path as run-config and Streamlit."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0002"
 title = "Declare PyYAML explicitly for ADVIO calibration loading"
@@ -1389,42 +1900,6 @@ acceptance = [
 previous_status = "pending"
 resolved_on = "2026-04-05"
 resolution_note = "Implemented plan-run-config TOML entrypoint and documented TOML-first run planning in README."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0008"
-title = "Replace mock metrics persistence with a thin explicit evo adapter"
-status = "resolved"
-priority = "high"
-issue_ids = [
-    "ISSUE-0008",
-]
-loc_min = 70
-loc_expected = 170
-loc_max = 320
-files = [
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/eval/contracts.py",
-    "src/prml_vslam/app/pages/metrics.py",
-    "src/prml_vslam/eval/README.md",
-    "src/prml_vslam/eval/REQUIREMENTS.md",
-]
-acceptance = [
-    "The explicit compute action runs an `evo`-backed evaluation flow instead of the current local L2 mock.",
-    "Persisted evaluation results no longer use the `mock_metrics.json` contract name.",
-    "The app, package README, and requirements describe the same evaluation semantics.",
-]
-sources = [
-    "README.md",
-    "src/prml_vslam/app/REQUIREMENTS.md",
-    "src/prml_vslam/eval/README.md",
-    "src/prml_vslam/eval/REQUIREMENTS.md",
-    "src/prml_vslam/eval/services.py",
-    "https://github.com/MichaelGrupp/evo",
-]
-previous_status = "pending"
-resolved_on = "2026-04-05"
-resolution_note = "Switched metrics service to explicit evo APE flow and canonical trajectory_metrics.json persistence."
 source_collection = "todos"
 
 [[resolved_todos]]
@@ -1498,6 +1973,62 @@ sources = [
 previous_status = "pending"
 resolved_on = "2026-04-05"
 resolution_note = "Updated the contracts, TOML example, and tests to the simplified config surfaces; full make ci passed."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0015"
+title = "Factor SessionStateStore runtime loading through one generic helper"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0007",
+    "ISSUE-0015",
+]
+loc_min = 25
+loc_expected = 55
+loc_max = 120
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "One shared helper handles session-state lookup, compatibility validation, stale-runtime shutdown, and replacement.",
+    "Record3D, ADVIO, and Pipeline runtime loads configure that helper instead of reimplementing the same control flow.",
+    "Focused tests cover the preserved stale-runtime replacement behavior after the refactor.",
+]
+sources = [
+    "src/prml_vslam/app/REQUIREMENTS.md",
+    "src/prml_vslam/app/AGENTS.md",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "Factored SessionStateStore runtime loading through a shared helper and added focused stale-runtime replacement coverage in tests/test_app.py."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0007"
+title = "Add focused tests for stale runtime replacement in SessionStateStore"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0007",
+]
+loc_min = 25
+loc_expected = 60
+loc_max = 120
+files = [
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "Tests cover incompatible runtime replacement for record3d, advio, and pipeline adapters.",
+    "Tests assert stale runtimes are shut down exactly once before replacement.",
+]
+previous_status = "pending"
+resolved_on = "2026-04-05"
+resolution_note = "Added focused SessionStateStore replacement tests for record3d, ADVIO, and pipeline runtimes, asserting stale runtimes are stopped exactly once before replacement."
 source_collection = "todos"
 
 [[resolved_todos]]
@@ -2132,521 +2663,173 @@ files = [
     "src/prml_vslam/app/pages/pipeline.py",
     "src/prml_vslam/app/pages/metrics.py",
 ]
-acceptance = [
-    "AdvioPoseSource owns the user-facing label used by the app.",
-    "The ADVIO page, pipeline page, and metrics launcher stop duplicating or deriving pose-source display labels locally.",
-    "The focused ADVIO/app tests and full make ci continue to pass while Python LOC decreases.",
-]
-sources = [
-    "src/prml_vslam/datasets/advio/advio_models.py",
-    "src/prml_vslam/app/pages/advio.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-    "src/prml_vslam/app/pages/metrics.py",
-]
-previous_status = "pending"
-resolved_on = "2026-04-06"
-resolution_note = "Kept trial 10 after reducing LOC and preserving ADVIO/app behavior under the frozen harness plus full make ci."
-source_collection = "todos"
 
 [[resolved_todos]]
-id = "TODO-0025"
-title = "Move pipeline mode labels onto PipelineMode"
+id = "TODO-0050"
+title = "Give repo-owned Rerun live telemetry explicit time semantics"
 status = "resolved"
-priority = "low"
+priority = "medium"
 issue_ids = [
-    "ISSUE-0025",
-]
-loc_min = 4
-loc_expected = 8
-loc_max = 16
-files = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-]
-acceptance = [
-    "PipelineMode owns its user-facing label instead of relying on a page-local helper.",
-    "The pipeline page drops the local mode-label helper and any similarly trivial one-line wrapper that no longer buys clarity.",
-    "Focused pipeline/app tests and full make ci continue to pass while Python LOC decreases.",
-]
-sources = [
-    "src/prml_vslam/pipeline/contracts.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-]
-previous_status = "pending"
-resolved_on = "2026-04-06"
-resolution_note = "Kept trial 11 after reducing LOC and preserving pipeline page behavior under the frozen harness plus full make ci."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0026"
-title = "Simplify ADVIO-only DatasetId helpers"
-status = "resolved"
-priority = "low"
-issue_ids = [
-    "ISSUE-0026",
-]
-loc_min = 4
-loc_expected = 8
-loc_max = 16
-files = [
-    "src/prml_vslam/datasets/contracts.py",
-]
-acceptance = [
-    "DatasetId no longer uses single-case dispatch for label, local sequence listing, or reference-path resolution.",
-    "The ADVIO dataset contract behavior remains unchanged under the frozen dataset/pipeline-focused test harness.",
-    "Focused tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
-]
-sources = [
-    "src/prml_vslam/datasets/contracts.py",
-]
-previous_status = "pending"
-resolved_on = "2026-04-06"
-resolution_note = "Kept trial 12 after reducing LOC and preserving dataset-facing behavior under the frozen harness plus full make ci."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0027"
-title = "Collapse mostly-derived enum label mappings"
-status = "resolved"
-priority = "low"
-issue_ids = [
-    "ISSUE-0027",
-]
-loc_min = 6
-loc_expected = 10
-loc_max = 18
-files = [
-    "src/prml_vslam/app/models.py",
-    "src/prml_vslam/datasets/advio/advio_models.py",
-    "src/prml_vslam/io/record3d.py",
-]
-acceptance = [
-    "AppPageId, AdvioDownloadPreset, and Record3DTransportId stop using full mapping tables where only a small special case remains.",
-    "The user-facing labels shown in the app and CLI remain unchanged.",
-    "Focused tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
-]
-sources = [
-    "src/prml_vslam/app/models.py",
-    "src/prml_vslam/datasets/advio/advio_models.py",
-    "src/prml_vslam/io/record3d.py",
-]
-previous_status = "pending"
-resolved_on = "2026-04-06"
-resolution_note = "Kept trial 13 after reducing LOC and preserving app-facing enum labels under the frozen harness plus full make ci."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0028"
-title = "Remove MethodId.artifact_slug"
-status = "resolved"
-priority = "low"
-issue_ids = [
-    "ISSUE-0028",
-]
-loc_min = 4
-loc_expected = 8
-loc_max = 14
-files = [
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/pipeline/services.py",
-    "src/prml_vslam/eval/services.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "MethodId no longer exposes an identity artifact-slug helper.",
-    "Pipeline planning and evaluation run discovery use the enum value directly without changing artifact layout behavior.",
-    "Focused planner/metrics tests, make ci, and make loc confirm the simplification is a LOC-negative keep.",
-]
-sources = [
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/pipeline/services.py",
-    "src/prml_vslam/eval/services.py",
-    "tests/test_pipeline.py",
-]
-previous_status = "pending"
-resolved_on = "2026-04-06"
-resolution_note = "Kept trial 14 after reducing LOC and preserving planner and run-discovery behavior under the frozen harness plus full make ci."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0029"
-title = "Route all Streamlit demo run launches through one shared facade"
-status = "resolved"
-priority = "high"
-issue_ids = [
-    "ISSUE-0029",
+    "ISSUE-0048",
 ]
 loc_min = 20
 loc_expected = 55
-loc_max = 120
+loc_max = 140
 files = [
-    "src/prml_vslam/app/pipeline_demo.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-    "src/prml_vslam/app/pages/metrics.py",
-    "src/prml_vslam/app/bootstrap.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/README.md",
+    "tests/test_streaming_visualization.py",
 ]
 acceptance = [
-    "The `Pipeline` and `Metrics` pages use the same run-launch helper or facade instead of duplicating start logic.",
-    "Page modules keep selector persistence and rendering, but they no longer define launch semantics independently.",
-    "The shared helper makes the bounded demo scope explicit in one place.",
+    "Live packet and pose logs establish their own timeline semantics instead of implicitly inheriting the last keyframe sequence.",
+    "Keyframe visualization logs remain scoped to the keyframe timeline without tainting later live telemetry.",
+    "Focused sink tests cover interleaved keyframe, live RGB, and live pose logging on explicit timelines.",
 ]
 sources = [
-    "src/prml_vslam/app/pipeline_demo.py",
-    "src/prml_vslam/app/pages/pipeline.py",
-    "src/prml_vslam/app/pages/metrics.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/README.md",
+    "tests/test_streaming_visualization.py",
 ]
 previous_status = "pending"
-resolved_on = "2026-04-06"
-resolution_note = "Pipeline and app launch semantics now flow through RunService, and the Metrics page no longer launches demo runs."
+resolved_on = "2026-04-18"
+resolution_note = "The repo-owned Rerun sink now clears stale keyframe timeline state for live telemetry and retains keyframe depth logging with focused sink tests."
 source_collection = "todos"
 
 [[resolved_todos]]
-id = "TODO-0030"
-title = "Reduce PipelineSessionService to bounded session ownership instead of runner orchestration"
+id = "TODO-0041"
+title = "Keep the split Pipeline page on a controller-owned JSON replay path"
 status = "resolved"
 priority = "high"
 issue_ids = [
-    "ISSUE-0029",
+    "ISSUE-0039",
 ]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 20
+loc_expected = 55
+loc_max = 130
+files = [
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "The top-level Pipeline page remains a thin coordinator over dedicated request-editor and snapshot-view helpers instead of collapsing back into one large page module.",
+    "The page-state payload for ViSTA backend overrides stays JSON-friendly across app persistence and rebuilds back into a strict backend spec through the controller seam.",
+    "Runtime-source construction for the bounded streaming demo also stays controller-owned instead of leaking back into page-local glue or mixed object payloads.",
+    "Focused tests cover the template-sync plus request-rebuild path so the ViSTA replay surface does not silently regress.",
+]
+sources = [
+    "src/prml_vslam/app/pages/pipeline.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/state.py",
+    "tests/test_app.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "The Pipeline page now rebuilds one authoritative RunRequest including ADVIO replay controls, and both app and CLI resolve runtime sources through build_runtime_source_from_request instead of separate page-local source assembly."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0043"
+title = "Make the ViSTA wrapper import and dependency boundary explicit"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0041",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
 loc_min = 70
-loc_expected = 160
+loc_expected = 150
 loc_max = 320
 files = [
-    "src/prml_vslam/pipeline/session.py",
-    "src/prml_vslam/pipeline/protocols.py",
-    "src/prml_vslam/pipeline/services.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "`PipelineSessionService` no longer hard-codes the mock backend through its default factory.",
-    "The service owns active session lifecycle and runtime snapshots, but broader run orchestration is pushed behind a higher-level pipeline facade.",
-    "Tests cover the new separation between session lifecycle and run-launch behavior.",
-]
-sources = [
-    "src/prml_vslam/pipeline/session.py",
-    "src/prml_vslam/pipeline/REQUIREMENTS.md",
-    "tests/test_pipeline.py",
-]
-previous_status = "pending"
-resolved_on = "2026-04-06"
-resolution_note = "PipelineSessionService now consumes a pre-built plan plus resolved backend, while RunService owns planning, stage validation, and backend resolution."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0031"
-title = "Resolve stale issue wording and references for the trajectory-evaluation config split"
-status = "resolved"
-priority = "low"
-issue_ids = [
-    "ISSUE-0030",
-]
-loc_min = 10
-loc_expected = 20
-loc_max = 40
-files = [
-    ".agents/issues.toml",
-    ".agents/todos.toml",
-]
-acceptance = [
-    "Active issue and todo wording no longer claims that trajectory-evaluation enablement is still conflated with baseline selection.",
-    "Stale file references such as `pipeline/contracts.py` are replaced with current module paths.",
-]
-sources = [
-    ".agents/issues.toml",
-    ".agents/todos.toml",
-    "src/prml_vslam/benchmark/contracts.py",
-]
-previous_status = "completed"
-resolved_on = "2026-04-16"
-resolution_note = "Already implemented: benchmark.trajectory.enabled is separated from baseline_source; active issue wording was narrowed to the remaining evaluation-semantics debt."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0036"
-title = "Extend stage-result execution to offline and remaining planned stages"
-status = "resolved"
-priority = "high"
-issue_ids = [
-    "ISSUE-0034",
-]
-loc_min = 80
-loc_expected = 180
-loc_max = 380
-files = [
-    "src/prml_vslam/pipeline/contracts/execution.py",
-    "src/prml_vslam/pipeline/offline.py",
-    "src/prml_vslam/pipeline/finalization.py",
-    "src/prml_vslam/pipeline/run_service.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "Streaming mode keeps the process-capable stage-result execution path already implemented.",
-    "Offline execution stops depending on `ingest_started`/`slam_started` booleans and consumes explicit stage results to build manifests and summaries.",
-    "Reference reconstruction, cloud evaluation, and efficiency stages either remain explicitly unsupported or gain real executors with typed stage results.",
-    "Stage manifests and run summaries are built from explicit stage results across every executable mode.",
-]
-sources = [
-    "src/prml_vslam/pipeline/REQUIREMENTS.md",
-    "src/prml_vslam/pipeline/contracts/execution.py",
-    "src/prml_vslam/pipeline/offline.py",
-    "src/prml_vslam/pipeline/finalization.py",
-    "src/prml_vslam/pipeline/run_service.py",
-]
-previous_status = "pending"
-resolved_on = "2026-04-16"
-resolution_note = "Superseded by the Ray-backed pipeline refactor; the legacy execution.py/offline.py/finalization.py stage-result extension task no longer matches the active architecture."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0038"
-title = "Fix Rerun pose-direction logging and add a world-space round-trip geometry test"
-status = "resolved"
-priority = "high"
-issue_ids = [
-    "ISSUE-0036",
-]
-loc_min = 20
-loc_expected = 60
-loc_max = 140
-files = [
-    "src/prml_vslam/visualization/rerun.py",
-    "src/prml_vslam/pipeline/streaming.py",
-    "tests/test_streaming_visualization.py",
-    "src/prml_vslam/visualization/README.md",
-    "src/prml_vslam/visualization/REQUIREMENTS.md",
-]
-acceptance = [
-    "Repo `T_world_camera` poses are logged with parent-from-child semantics or an explicitly equivalent inverted-transform path.",
-    "The ViSTA viewer-basis adapter remains explicit and singular instead of compensating for a wrong transform relation downstream.",
-    "A focused visualization test round-trips a known camera-local point through a known pose and fails if world placement is mirrored, inverted, or displaced.",
-    "Existing streaming visualization tests continue to cover entity layout and timeline behavior.",
-]
-sources = [
-    "src/prml_vslam/visualization/rerun.py",
-    "src/prml_vslam/pipeline/streaming.py",
-    "tests/test_streaming_visualization.py",
-    "src/prml_vslam/visualization/README.md",
-]
-previous_status = "pending"
-resolved_on = "2026-04-16"
-resolution_note = "The original transform-direction bug is fixed. Any remaining visualization coverage work should be tracked as a narrower follow-up rather than this stale fix task."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0040"
-title = "Remove residual post-cutover compatibility shims and stale runner-era docs"
-status = "resolved"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0038",
-]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 25
-loc_expected = 70
-loc_max = 160
-files = [
-    "src/prml_vslam/pipeline/state.py",
-    "src/prml_vslam/pipeline/contracts/plan.py",
     "src/prml_vslam/methods/vista/adapter.py",
-    "src/prml_vslam/visualization/README.md",
-    ".agents/AGENTS_INTERNAL_DB.md",
+    "src/prml_vslam/methods/vista/config.py",
+    "src/prml_vslam/methods/README.md",
+    "src/prml_vslam/methods/vista/README.md",
 ]
 acceptance = [
-    "The repo either removes `pipeline.state` as a compatibility re-export or documents and tests it as an intentional public surface.",
-    "`RunPlan` no longer carries redundant backend identity once the authoritative field is chosen.",
-    "Dead process-era ViSTA session-factory code and the adjacent generic-helper TODO are removed or moved to a still-live owner.",
-    "Docs and internal DB facts stop referencing removed runner/session surfaces from the pre-Ray architecture.",
+    "The ViSTA adapter no longer mutates `sys.path` at runtime just to make the upstream checkout importable.",
+    "Wrapper setup documents and isolates external prerequisites such as DBoW3 availability instead of probing multiple global locations with ad hoc runtime logic.",
+    "The integration avoids the private upstream image-preprocessing helper where a stable explicit boundary can be defined or documented in the wrapper-owned setup path.",
+    "The remaining wrapper logic stays thin: validate prerequisites, import explicit upstream entry points, and normalize outputs back into repo-owned `FrameTransform`, `CameraIntrinsics`, and `SlamArtifacts` contracts.",
 ]
 sources = [
-    "src/prml_vslam/pipeline/state.py",
-    "src/prml_vslam/pipeline/contracts/plan.py",
     "src/prml_vslam/methods/vista/adapter.py",
-    "src/prml_vslam/visualization/README.md",
-    ".agents/AGENTS_INTERNAL_DB.md",
-]
-previous_status = "in_progress"
-resolved_on = "2026-04-16"
-resolution_note = "Removed the pipeline.state compatibility surface, dropped the redundant RunPlan.backend_kind field, deleted the dead ViSTA _VistaSessionFactory path, and updated pipeline/visualization docs plus AGENTS_INTERNAL_DB to the current Ray-backed architecture."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0033"
-title = "Replace generic packet metadata and duplicate transport enums with typed provenance"
-status = "resolved"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0031",
-]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 40
-loc_expected = 95
-loc_max = 190
-files = [
-    "src/prml_vslam/interfaces/runtime.py",
-    "src/prml_vslam/io/cv2_producer.py",
-    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
-    "src/prml_vslam/pipeline/contracts/request.py",
-    "src/prml_vslam/app/pipeline_controller.py",
-    "tests/test_app.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "`FramePacket` no longer exposes a generic provenance `metadata` dict on the shared hot path.",
-    "Replay, dataset, rotation, and transport provenance remain available through typed fields or dedicated runtime-event data.",
-    "Pipeline and app/io stop duplicating Record3D transport identity across separate enums when one shared transport type would suffice.",
-]
-sources = [
-    "src/prml_vslam/interfaces/runtime.py",
-    "src/prml_vslam/io/cv2_producer.py",
-    "src/prml_vslam/datasets/advio/advio_replay_adapter.py",
-    "src/prml_vslam/pipeline/contracts/request.py",
-]
-previous_status = "in_progress"
-resolved_on = "2026-04-16"
-resolution_note = "Resolved by replacing FramePacket metadata with typed FramePacketProvenance and centralizing Record3D transport identity in the shared runtime contract."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0037"
-title = "Consolidate remaining reusable frame-materialization helpers out of method-wrapper files"
-status = "resolved"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0035",
-]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 25
-loc_expected = 65
-loc_max = 140
-files = [
-    "src/prml_vslam/pipeline/ingest.py",
-    "src/prml_vslam/methods/vista/adapter.py",
-    "tests/test_pipeline.py",
-    "tests/test_methods.py",
-]
-acceptance = [
-    "Generic video-frame materialization is owned once and reused by offline ingest and method adapters where fallback extraction remains necessary.",
-    "The Pipeline page helper cleanup is treated as already done unless new drift appears; request/source helpers are app-controller owned and evo/pointmap preview helpers are eval/plotting owned.",
-    "Python LOC decreases or stays neutral while focused tests continue covering the moved behavior.",
-]
-sources = [
-    "src/prml_vslam/utils/REQUIREMENTS.md",
-    "src/prml_vslam/pipeline/ingest.py",
-    "src/prml_vslam/methods/vista/adapter.py",
-]
-previous_status = "in_progress"
-resolved_on = "2026-04-16"
-resolution_note = "Resolved by extracting shared video-frame materialization into utils.video_frames and moving SO(3) projection into interfaces.transforms."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0038"
-title = "Lock in the current Rerun pose direction with a world-space round-trip regression test"
-status = "resolved"
-priority = "high"
-issue_ids = [
-    "ISSUE-0036",
-]
-loc_min = 20
-loc_expected = 45
-loc_max = 110
-files = [
-    "src/prml_vslam/visualization/rerun.py",
-    "src/prml_vslam/pipeline/sinks/rerun.py",
-    "tests/test_streaming_visualization.py",
-    "src/prml_vslam/visualization/README.md",
-    "src/prml_vslam/visualization/REQUIREMENTS.md",
-]
-acceptance = [
-    "The current `ParentFromChild` logging path remains the single repo-owned pose-direction implementation.",
-    "A focused visualization regression test round-trips a known camera-local point through a known `T_world_camera` pose and fails if world placement becomes mirrored, inverted, or displaced.",
-    "The sink/helper path, not removed pre-Ray runner files, is the surface covered by the regression test.",
-    "Existing streaming visualization tests continue to cover entity layout and timeline behavior.",
-]
-sources = [
-    "src/prml_vslam/visualization/rerun.py",
-    "src/prml_vslam/pipeline/sinks/rerun.py",
-    "tests/test_streaming_visualization.py",
-    "src/prml_vslam/visualization/README.md",
-]
-previous_status = "pending"
-resolved_on = "2026-04-16"
-resolution_note = "Resolved by adding focused Rerun transform-direction regression coverage with ParentFromChild assertions and world-space point checks."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0039"
-title = "Make the live Rerun sink consume RGB, depth, and intrinsics handles end-to-end"
-status = "resolved"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0037",
-]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 50
-loc_expected = 120
-loc_max = 260
-files = [
-    "src/prml_vslam/methods/updates.py",
-    "src/prml_vslam/methods/events.py",
-    "src/prml_vslam/methods/vista/adapter.py",
-    "src/prml_vslam/visualization/rerun.py",
-    "src/prml_vslam/pipeline/sinks/rerun.py",
-    "src/prml_vslam/pipeline/ray_actors.py",
-    "tests/test_methods.py",
-    "tests/test_streaming_visualization.py",
-]
-acceptance = [
-    "The explicit live event path carries camera intrinsics together with RGB and metric depth handles all the way into the repo-owned Rerun sink.",
-    "`RerunEventSink.observe()` logs `Pinhole`, raw RGB, and `DepthImage` when those payloads are available, while keeping diagnostic preview imagery separate.",
-    "The end-to-end visualization tests cover camera-complete payload handling through the sink and handle resolver instead of only the no-op path without Rerun.",
-    "The resulting viewer tree supports frustum-aligned debugging of camera-local pointmaps against depth and intrinsics for live keyframes.",
-]
-sources = [
-    "src/prml_vslam/methods/updates.py",
-    "src/prml_vslam/methods/events.py",
-    "src/prml_vslam/methods/vista/adapter.py",
-    "src/prml_vslam/visualization/rerun.py",
-    "src/prml_vslam/pipeline/sinks/rerun.py",
-    "src/prml_vslam/pipeline/ray_actors.py",
-    "tests/test_methods.py",
-    "tests/test_streaming_visualization.py",
-]
-previous_status = "in_progress"
-resolved_on = "2026-04-16"
-
-[[resolved_todos]]
-id = "TODO-0044"
-title = "Collapse duplicate SE(3) conversion logic onto the frame-labeled transform contract"
-status = "resolved"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0042",
-]
-loc_min = 30
-loc_expected = 80
-loc_max = 180
-files = [
-    "src/prml_vslam/interfaces/camera.py",
-    "src/prml_vslam/interfaces/transforms.py",
-    "docs/architecture/interfaces-and-contracts.md",
-]
-acceptance = [
-    "Only one canonical repo-owned pose or transform DTO owns matrix, quaternion, and TUM conversion semantics for shared boundaries.",
-    "Any remaining camera-specific pose helper is either deleted or narrowed so it no longer duplicates `FrameTransform` behavior.",
-    "Docs and package guidance describe one authoritative contract for pose-like data instead of two overlapping ones.",
-]
-sources = [
-    "src/prml_vslam/interfaces/camera.py",
-    "src/prml_vslam/interfaces/transforms.py",
+    "src/prml_vslam/methods/vista/config.py",
+    "src/prml_vslam/methods/README.md",
     "src/prml_vslam/AGENTS.md",
-    "docs/architecture/interfaces-and-contracts.md",
 ]
-previous_status = "pending"
-resolved_on = "2026-04-17"
-resolution_note = "Deleted SE3Pose, stopped exporting it from prml_vslam.interfaces, and updated focused tests to assert the exclusive FrameTransform surface."
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Replaced the ViSTA wrapper\\s sys.path mutation and site-package shared-library probing with an explicit namespace-package loader, direct DBoW3Py import requirement, and a non-private frame-preprocessing boundary."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0042"
+title = "Replace object-typed orchestration seams with the repo-owned protocols and unions"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0040",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 110
+loc_expected = 260
+loc_max = 460
+files = [
+    "src/prml_vslam/protocols/source.py",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
+    "src/prml_vslam/pipeline/ray_runtime/supervisor.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/methods/factory.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+]
+acceptance = [
+    "Pipeline and app seams stop using `object` for sources, backends, and run-service dependencies where the repo already owns a concrete protocol or discriminated union.",
+    "The Ray control plane uses concrete types for coordinator handles, events, and packet sources, leaving only narrowly justified `object` seams where external library payloads are still intentionally generic.",
+    "The public runtime snapshot stops exposing ad hoc/raw telemetry such as `latest_backend_event: dict[str, object] | None` while retaining the explicitly approved trajectory history fields.",
+    "The backend factory accepts `BackendSpec` and returns the repo-owned SLAM backend protocol instead of erasing both sides to `object`.",
+    "The app/controller path uses the shared request-to-runtime-source resolver instead of a separate page-local streaming source builder, and no longer depends on `previewable_statuses: list[object]`.",
+    "The language server can follow backend-spec, source, and run-service surfaces end-to-end without dynamic type erasure at the main orchestration boundaries.",
+]
+sources = [
+    "src/prml_vslam/protocols/source.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
+    "src/prml_vslam/pipeline/ray_runtime/supervisor.py",
+    "src/prml_vslam/pipeline/sinks/rerun.py",
+    "src/prml_vslam/methods/factory.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pages/pipeline_snapshot_view.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after replacing the remaining repo-owned object-typed orchestration seams with concrete backend-spec, JSON, Ray-handle, and event-sink types; the remaining generic payloads are either external-library adapter boundaries or view-only helpers outside the pipeline orchestration seam."
 source_collection = "todos"

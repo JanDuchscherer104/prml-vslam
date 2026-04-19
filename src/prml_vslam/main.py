@@ -8,13 +8,7 @@ from typing import Annotated
 
 import typer
 
-from prml_vslam.benchmark import (
-    BenchmarkConfig,
-    CloudBenchmarkConfig,
-    EfficiencyBenchmarkConfig,
-    ReferenceSource,
-    TrajectoryBenchmarkConfig,
-)
+from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadPreset,
@@ -25,7 +19,7 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec, build_backend_spec
+from prml_vslam.pipeline.contracts.request import VideoSourceSpec, build_run_request
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.demo import (
     build_advio_demo_request,
@@ -36,7 +30,6 @@ from prml_vslam.pipeline.demo import (
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import get_path_config
-from prml_vslam.visualization.contracts import VisualizationConfig
 
 app = typer.Typer(
     add_completion=False,
@@ -111,21 +104,19 @@ def plan_run(
     ] = False,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
-    request = RunRequest(
+    request = build_run_request(
         experiment_name=experiment_name,
         output_dir=output_dir,
         source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
-        slam=SlamStageConfig(
-            backend=build_backend_spec(method=method),
-            outputs={"emit_dense_points": emit_dense_points, "emit_sparse_points": emit_sparse_points},
-        ),
-        benchmark=BenchmarkConfig(
-            reference={"enabled": reference_reconstruction},
-            trajectory=TrajectoryBenchmarkConfig(enabled=trajectory_evaluation, baseline_source=trajectory_baseline),
-            cloud=CloudBenchmarkConfig(enabled=emit_dense_points and reference_reconstruction),
-            efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
-        ),
-        visualization=VisualizationConfig(connect_live_viewer=True),
+        method=method,
+        emit_dense_points=emit_dense_points,
+        emit_sparse_points=emit_sparse_points,
+        reference_enabled=reference_reconstruction,
+        trajectory_eval_enabled=trajectory_evaluation,
+        trajectory_baseline=trajectory_baseline,
+        evaluate_cloud=emit_dense_points and reference_reconstruction,
+        evaluate_efficiency=evaluate_efficiency,
+        connect_live_viewer=True,
     )
     plan = request.build()
     console.plog(plan.model_dump(mode="json"))

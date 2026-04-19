@@ -48,16 +48,34 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         if sequence_slug is None:
             return []
         return [
-            run
-            for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum"))
-            if (
-                run := _discover_run(
-                    trajectory_path=trajectory_path,
-                    artifacts_dir=self.path_config.artifacts_dir,
-                    sequence_slug=sequence_slug,
-                )
+            DiscoveredRun(
+                artifact_root=run_root,
+                estimate_path=trajectory_path,
+                method=method,
+                label=label if not visible_parts else f"{label} · {' / '.join(visible_parts)}",
             )
-            is not None
+            for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum"))
+            if sequence_slug
+            in (
+                relative_parts := (run_root := trajectory_path.parent.parent)
+                .relative_to(self.path_config.artifacts_dir)
+                .parts
+            )
+            or sequence_slug in run_root.name
+            for method in [
+                next(
+                    (method for part in reversed(relative_parts) for method in MethodId if part == method.value),
+                    None,
+                )
+            ]
+            for visible_parts in [
+                [
+                    part
+                    for part in relative_parts
+                    if part not in ({sequence_slug, "slam"} | ({method.value} if method is not None else set()))
+                ]
+            ]
+            for label in [method.display_name if method is not None else relative_parts[-1]]
         ]
 
     def resolve_selection(
@@ -116,8 +134,8 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         if reference_path is None or not result_path.exists():
             return None
         payload = json.loads(result_path.read_text(encoding="utf-8"))
-        reference_series, _ = _load_trajectory_input(reference_path, "Reference")
-        estimate_series, _ = _load_trajectory_input(selection.run.estimate_path, "Estimate")
+        reference_series = _series_from_trajectory("Reference", load_tum_trajectory(reference_path))
+        estimate_series = _series_from_trajectory("Estimate", load_tum_trajectory(selection.run.estimate_path))
         trajectories = (reference_series, estimate_series)
         return EvaluationArtifact.from_payload(
             path=result_path,
@@ -206,12 +224,6 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         return run_root / "evaluation" / "trajectory_metrics.json"
 
 
-def _load_trajectory_input(path: Path, name: str) -> tuple[TrajectorySeries, PoseTrajectory3D]:
-    """Load one TUM trajectory as both plotting series and evo-native trajectory."""
-    trajectory = load_tum_trajectory(path)
-    return _series_from_trajectory(name, trajectory), trajectory
-
-
 def compute_trajectory_ape_preview(
     *,
     reference_path: Path,
@@ -219,8 +231,8 @@ def compute_trajectory_ape_preview(
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
 ) -> TrajectoryEvaluationPreview:
     """Compute in-memory translation APE for two TUM trajectory artifacts."""
-    _, reference_trajectory = _load_trajectory_input(reference_path, "Reference")
-    _, estimate_trajectory = _load_trajectory_input(estimate_path, "Estimate")
+    reference_trajectory = load_tum_trajectory(reference_path)
+    estimate_trajectory = load_tum_trajectory(estimate_path)
     try:
         associated_reference, associated_estimate = sync.associate_trajectories(
             reference_trajectory,
@@ -253,25 +265,4 @@ def _series_from_trajectory(name: str, trajectory: PoseTrajectory3D) -> Trajecto
         name=name,
         timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
         positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
-    )
-
-
-def _discover_run(*, trajectory_path: Path, artifacts_dir: Path, sequence_slug: str) -> DiscoveredRun | None:
-    run_root = trajectory_path.parent.parent
-    relative_parts = run_root.relative_to(artifacts_dir).parts
-    if sequence_slug not in relative_parts and sequence_slug not in run_root.name:
-        return None
-
-    method = next(
-        (method for part in reversed(relative_parts) for method in MethodId if part == method.value),
-        None,
-    )
-    hidden_tokens = {sequence_slug, "slam"} | ({method.value} if method is not None else set())
-    visible_parts = [part for part in relative_parts if part not in hidden_tokens]
-    label = method.display_name if method is not None else relative_parts[-1]
-    return DiscoveredRun(
-        artifact_root=run_root,
-        estimate_path=trajectory_path,
-        method=method,
-        label=label if not visible_parts else f"{label} · {' / '.join(visible_parts)}",
     )

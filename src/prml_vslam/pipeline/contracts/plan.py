@@ -9,7 +9,7 @@ from pydantic import Field
 from prml_vslam.utils import BaseData
 
 from .request import PipelineMode, SourceSpec
-from .stages import StageExecutorKind, StageKey
+from .stages import StageKey
 
 
 class RunPlanStage(BaseData):
@@ -18,26 +18,14 @@ class RunPlanStage(BaseData):
     key: StageKey
     """Stable identifier for the stage."""
 
-    title: str
-    """Short human-readable stage title."""
-
-    summary: str
-    """Short description of the stage intent."""
-
     outputs: list[Path] = Field(default_factory=list)
     """Expected artifact paths for the stage."""
-
-    executor_kind: StageExecutorKind
-    """Executor kind used by the active backend/runtime."""
 
     available: bool = True
     """Whether the selected backend can execute the stage."""
 
     availability_reason: str | None = None
     """Why the stage is unavailable, when it is merely a placeholder."""
-
-    failure_modes: list[str] = Field(default_factory=list)
-    """Declared terminal failure modes for the stage."""
 
 
 class RunPlan(BaseData):
@@ -62,7 +50,7 @@ class RunPlan(BaseData):
         """Return compact tabular rows for plan summaries."""
         return [
             {
-                "Stage": stage.title,
+                "Stage": stage.key.label,
                 "Id": stage.key.value,
                 "Available": "yes" if stage.available else "no",
                 "Outputs": ", ".join(path.name for path in stage.outputs),

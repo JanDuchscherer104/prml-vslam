@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simplification"
+  short_description: "Behavior-preserving pruning and LOC-aware refactoring"
+  default_prompt: "Use $simplification to reduce redundancy, boilerplate, dead code, or Python LOC through behavior-preserving cleanup in this repo."

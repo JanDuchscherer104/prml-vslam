@@ -132,6 +132,14 @@ sequenceDiagram
   - Record3D-only app glue.
   - `Record3DStreamRuntimeController` owns the live stream worker thread and maintains the latest `Record3DStreamSnapshot`.
 
+- [pipeline_controls.py](pipeline_controls.py)
+  - Pipeline-page request editing, template syncing, validation, and run-launch helpers.
+  - Keeps request construction and action handling out of the render-only page module.
+
+- [pipeline_controller.py](pipeline_controller.py)
+  - Pipeline snapshot presentation and app-facing render-model shaping.
+  - Re-exports the Pipeline page control helpers for a stable app-local import surface.
+
 - [ui.py](ui.py)
   - Shared app UI helpers only.
   - Currently provides lightweight page-header rendering and the style hook.

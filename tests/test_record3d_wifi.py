@@ -21,7 +21,7 @@ from prml_vslam.io.wifi_receiver import (
     _Record3DWiFiReceiverRuntime,
     _should_suppress_record3d_async_exception,
 )
-from prml_vslam.io.wifi_session import Record3DWiFiPreviewStreamConfig, open_record3d_wifi_preview_stream
+from prml_vslam.io.wifi_session import Record3DWiFiPreviewStreamConfig
 from prml_vslam.io.wifi_signaling import (
     Record3DWiFiSignalingClient,
     build_record3d_answer_request_payload,
@@ -161,10 +161,15 @@ def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
 
 
 def test_record3d_wifi_preview_stream_config_keeps_manual_device_address() -> None:
-    config = Record3DWiFiPreviewStreamConfig(device_address="myiPhone.local")
+    config = Record3DWiFiPreviewStreamConfig(
+        device_address="myiPhone.local",
+        frame_timeout_seconds=max(1.0, 0.5),
+        signaling_timeout_seconds=10.0,
+        setup_timeout_seconds=12.0,
+    )
 
     assert config.device_address == "myiPhone.local"
-    session = open_record3d_wifi_preview_stream(device_address="myiPhone.local", frame_timeout_seconds=0.5)
+    session = config.setup_target()
     assert session.config.device_address == "myiPhone.local"
     assert session.config.frame_timeout_seconds == 1.0
     assert session.config.signaling_timeout_seconds == 10.0
@@ -269,11 +274,17 @@ def test_record3d_wifi_metadata_failure_is_non_fatal() -> None:
 def test_record3d_wifi_streaming_source_satisfies_shared_source_protocol(monkeypatch, tmp_path) -> None:
     sentinel_stream = object()
     monkeypatch.setattr(
-        wifi_session_module,
-        "open_record3d_wifi_preview_stream",
-        lambda *, device_address, frame_timeout_seconds: (
-            sentinel_stream if (device_address, frame_timeout_seconds) == ("myiPhone.local", 0.5) else None
-        ),
+        wifi_session_module.Record3DWiFiPreviewStreamConfig,
+        "setup_target",
+        lambda self: sentinel_stream
+        if (
+            self.device_address,
+            self.frame_timeout_seconds,
+            self.signaling_timeout_seconds,
+            self.setup_timeout_seconds,
+        )
+        == ("myiPhone.local", 1.0, 10.0, 12.0)
+        else None,
     )
 
     source = Record3DStreamingSourceConfig(

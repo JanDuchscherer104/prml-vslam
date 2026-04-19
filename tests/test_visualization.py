@@ -93,10 +93,17 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
         def __init__(self) -> None:
             self.identity = True
 
+    class FakeViewCoordinates:
+        RDF = "rdf"
+
     monkeypatch.setattr(
         rerun_helpers,
         "rr",
-        SimpleNamespace(RecordingStream=FakeRecordingStream, Transform3D=FakeTransform3D),
+        SimpleNamespace(
+            RecordingStream=FakeRecordingStream,
+            Transform3D=FakeTransform3D,
+            ViewCoordinates=FakeViewCoordinates,
+        ),
     )
     monkeypatch.setattr(
         rerun_helpers,
@@ -134,10 +141,14 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
         "world/live/model/camera/image",
         "world/live/model/diag/preview",
     ]
-    assert len(logged_entities) == 1
+    assert len(logged_entities) == 2
     entity_path, payload, static = logged_entities[0]
     assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert isinstance(payload, FakeTransform3D)
+    assert static is True
+    entity_path, payload, static = logged_entities[1]
+    assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
+    assert payload == FakeViewCoordinates.RDF
     assert static is True
 
 

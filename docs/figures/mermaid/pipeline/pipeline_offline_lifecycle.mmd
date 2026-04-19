@@ -1,0 +1,44 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "actorFontSize": "16px",
+    "messageFontSize": "15px",
+    "noteFontSize": "14px",
+    "sequenceNumberFontSize": "13px"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    participant Caller as App / CLI
+    participant Service as RunService
+    participant Backend as RayPipelineBackend
+    participant Coord as RunCoordinatorActor
+    participant Program as RuntimeStageProgram
+    participant Source as OfflineSequenceSource
+    participant Slam as OfflineSlamStageActor
+    participant Eval as TrajectoryEvaluationService
+    participant Summary as project_summary()
+
+    Caller->>Service: start_run(request)
+    Service->>Backend: submit_run(request)
+    Backend->>Backend: request.build(path_config)
+    Backend->>Coord: start(request, plan, path_config)
+    Coord->>Coord: record run.submitted and run.started
+    Coord->>Program: execute_offline(...)
+    Program->>Source: prepare_sequence_manifest(...)
+    Source-->>Program: prepared SequenceManifest
+    Program-->>Coord: ingest StageCompletionPayload
+    Program->>Slam: run(request, plan, sequence_manifest, benchmark_inputs)
+    Slam-->>Program: SlamStageResult
+    Program-->>Coord: slam StageCompletionPayload
+    opt trajectory evaluation enabled
+        Program->>Eval: compute_pipeline_evaluation(...)
+        Eval-->>Program: TrajectoryEvaluationStageResult
+        Program-->>Coord: trajectory StageCompletionPayload
+    end
+    Program->>Summary: project_summary(stage_outcomes)
+    Summary-->>Program: RunSummary + StageManifest[] + summary StageOutcome
+    Program-->>Coord: summary StageCompletionPayload
+    Coord->>Coord: persist durable events and artifacts

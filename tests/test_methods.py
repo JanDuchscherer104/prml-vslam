@@ -484,6 +484,80 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
     assert update.depth_map.shape == (4, 6)
 
 
+def test_vista_session_live_outputs_follow_model_raster_not_source_raster(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.preprocess import PreparedVistaFrame
+    from prml_vslam.methods.vista.session import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
+
+    class FakeSlam:
+        def __init__(self) -> None:
+            self.device = "cpu"
+
+        def step(self, value: dict[str, object]) -> None:
+            del value
+
+        def get_view(self, view_index: int, **kwargs: object) -> object:
+            del view_index, kwargs
+            return SimpleNamespace(
+                pose=np.eye(4, dtype=np.float64),
+                depth=np.ones((5, 7), dtype=np.float32),
+                intri=np.array(
+                    [
+                        [3.0, 0.0, 1.5],
+                        [0.0, 4.0, 2.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    dtype=np.float64,
+                ),
+            )
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, np.ndarray]:
+            del view_index
+            return np.zeros((5, 7, 3), dtype=np.uint8), np.ones((5, 7, 3), dtype=np.float32)
+
+    class FakePreprocessor:
+        def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> PreparedVistaFrame:
+            del rgb_image, view_name
+            torch = sys.modules["torch"]
+            image_rgb = np.full((5, 7, 3), fill_value=17, dtype=np.uint8)
+            gray_u8 = np.full((5, 7), fill_value=9, dtype=np.uint8)
+            rgb_tensor = torch.from_numpy(image_rgb).permute(2, 0, 1).float() / 255.0
+            return PreparedVistaFrame(image_rgb=image_rgb, gray_u8=gray_u8, rgb_tensor=rgb_tensor)
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=FakePreprocessor(),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    source_rgb = np.zeros((11, 13, 3), dtype=np.uint8)
+    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=source_rgb))
+    update = session.try_get_updates()[0]
+
+    assert update.image_rgb is not None
+    assert update.image_rgb.shape == (5, 7, 3)
+    assert update.image_rgb.shape != source_rgb.shape
+    assert update.depth_map is not None
+    assert update.depth_map.shape == (5, 7)
+    assert update.pointmap is not None
+    assert update.pointmap.shape == (5, 7, 3)
+    assert update.camera_intrinsics == CameraIntrinsics(
+        fx=3.0,
+        fy=4.0,
+        cx=1.5,
+        cy=2.0,
+        width_px=7,
+        height_px=5,
+    )
+
+
 def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_conversion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -658,6 +732,56 @@ def test_vista_session_warns_when_dense_pointmap_has_no_valid_points(
     assert update.backend_warnings == [
         "ViSTA-SLAM accepted a keyframe whose dense pointmap contained no valid finite z>0 points for source_seq=13, keyframe_index=0."
     ]
+
+
+def test_vista_session_accepts_tensor_backed_live_pointmap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.session import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
+    torch = sys.modules["torch"]
+
+    class FakeSlam:
+        def get_view(self, *args: object, **kwargs: object) -> object:
+            return SimpleNamespace(pose=np.eye(4), depth=np.ones((2, 2)), intri=np.eye(3))
+
+        def get_pointmap_vis(self, view_index: int):
+            del view_index
+            pointmap = torch.from_numpy(
+                np.array(
+                    [
+                        [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]],
+                        [[0.0, 0.0, 3.0], [0.0, 0.0, 4.0]],
+                    ],
+                    dtype=np.float32,
+                )
+            )
+            return np.zeros((2, 2, 3), dtype=np.uint8), pointmap
+
+        @property
+        def device(self) -> str:
+            return "cpu"
+
+        def step(self, value: object) -> None:
+            del value
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    session.step(FramePacket(seq=17, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    update = session.try_get_updates()[0]
+
+    assert update.pointmap is not None
+    assert update.pointmap.dtype == np.float32
+    assert np.allclose(update.pointmap[..., 2], np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32))
 
 
 def test_vista_session_keyframe_gates_streaming_updates_before_step(

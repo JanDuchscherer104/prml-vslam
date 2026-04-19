@@ -19,7 +19,16 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class RerunLoggingPolicy:
-    """Own Rerun entity layout, timelines, and branch logging semantics."""
+    """Own Rerun entity layout, timelines, and branch logging semantics.
+
+    The current ViSTA-aligned policy keeps upstream-native world semantics:
+
+    - source RGB stays on its own source-frame branch;
+    - model RGB, depth, intrinsics, preview, and pointmap stay on the
+      ViSTA-preprocessed model raster;
+    - pointmaps remain camera-local and are composed into world only through
+      their posed parent entity.
+    """
 
     log_pinhole: Callable[..., None]
     log_pointcloud: Callable[..., None]
@@ -35,7 +44,16 @@ class RerunLoggingPolicy:
     _trajectory_positions_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
 
     def observe(self, stream, event: RunEvent, *, payloads: Mapping[str, np.ndarray] | None = None) -> None:
-        """Log one pipeline event according to the current Rerun layout policy."""
+        """Log one pipeline event according to the current Rerun layout policy.
+
+        `PacketObserved` and `KeyframeVisualizationReady` intentionally feed
+        different image surfaces:
+
+        - `PacketObserved.frame` logs the original source raster on
+          `world/live/source/rgb`;
+        - `KeyframeVisualizationReady` logs ViSTA model-raster payloads on the
+          live/model and keyed-history branches.
+        """
         resolved_payloads = {} if payloads is None else payloads
         match event:
             case PacketObserved(packet=packet, frame=frame) if frame is not None:
@@ -114,6 +132,9 @@ class RerunLoggingPolicy:
         This branch is intentionally ephemeral. It should represent only the
         newest accepted keyframe bundle and is useful for current-state
         debugging, not for accumulated world-map rendering.
+
+        The payloads on this branch share the ViSTA model raster. The pointmap
+        stays camera-local and inherits world placement from `root_entity`.
         """
         self._set_frame_time(stream, frame_index)
         self.log_transform(stream, entity_path=root_entity, transform=pose)
@@ -154,6 +175,9 @@ class RerunLoggingPolicy:
         comes from unique entity paths plus latest-at frame queries. Logging the
         branch on the source-frame timeline keeps the keyed history visible at
         the active frame cursor and avoids detached leaf inspection rows.
+
+        This branch preserves camera-local pointmaps as posed descendants. It
+        is not a fused world-space dense cloud export.
         """
         del keyframe_index
         self._set_frame_time(stream, frame_index)

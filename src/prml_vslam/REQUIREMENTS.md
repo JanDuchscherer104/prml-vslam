@@ -48,7 +48,8 @@ Use this file for package-root ownership rules and cross-package contract constr
 - `pipeline`
   - owns orchestration, run contracts, artifact layout, stage planning, events,
     projected snapshots, manifests, summaries, one SLAM-stage config and one
-    SLAM artifact bundle per backend, and pipeline-owned Ray coordination
+    SLAM artifact bundle per backend, pipeline-owned Ray coordination, and
+    repo-local execution-lifecycle policy on `RunRequest`
   - does not own transport decoding, app rendering, or benchmark metrics logic
 - `plotting`
   - owns reusable figure construction helpers

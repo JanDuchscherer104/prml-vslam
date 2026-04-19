@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.eval.contracts import EvaluationArtifact, EvaluationSelection, SelectionSnapshot
+from prml_vslam.eval.contracts import EvaluationArtifact, SelectionSnapshot
 from prml_vslam.plotting import build_error_figure, build_trajectory_figure
 
 from ..state import save_model_updates
@@ -14,6 +14,7 @@ from ..ui import render_page_intro
 
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
+
 EVALUATION_ERRORS = (FileNotFoundError, RuntimeError, ValueError)
 
 
@@ -31,8 +32,7 @@ def render(context: AppContext) -> None:
         dataset = st.selectbox(
             "Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label
         )
-        selection_state = _resolve_selection(
-            context,
+        selection_state = context.evaluation_service.resolve_selection(
             dataset=dataset,
             preferred_sequence_slug=metrics.sequence_slug,
             preferred_run_root=metrics.run_root,
@@ -44,10 +44,11 @@ def render(context: AppContext) -> None:
         sequence_slug = st.selectbox(
             "Sequence",
             options=selection_state.sequence_slugs,
-            index=selection_state.sequence_slugs.index(_selected_sequence_slug(selection_state)),
+            index=selection_state.sequence_slugs.index(
+                selection_state.sequence_slug or selection_state.sequence_slugs[0]
+            ),
         )
-        selection_state = _resolve_selection(
-            context,
+        selection_state = context.evaluation_service.resolve_selection(
             dataset=dataset,
             preferred_sequence_slug=sequence_slug,
             preferred_run_root=metrics.run_root,
@@ -68,13 +69,12 @@ def render(context: AppContext) -> None:
         st.caption(
             "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted `evo` result."
         )
-    selection_state = _resolve_selection(
-        context,
+    selection = context.evaluation_service.resolve_selection(
         dataset=dataset,
         preferred_sequence_slug=sequence_slug,
         preferred_run_root=run.artifact_root,
     )
-    selection = selection_state.selection
+    selection = selection.selection
     if selection is None:
         st.error("Could not resolve the selected benchmark slice.")
         return
@@ -148,47 +148,6 @@ def render(context: AppContext) -> None:
         _render_provenance(dataset=dataset, selection=selection, evaluation=evaluation)
 
 
-def _save_state(
-    context: AppContext,
-    *,
-    dataset: DatasetId,
-    sequence_slug: str | None = None,
-    run_root: Path | None = None,
-    result_path: Path | None = None,
-) -> None:
-    save_model_updates(
-        context.store,
-        context.state,
-        context.state.metrics,
-        dataset=dataset,
-        sequence_slug=sequence_slug,
-        run_root=run_root,
-        result_path=result_path,
-    )
-
-
-def _resolve_selection(
-    context: AppContext,
-    *,
-    dataset: DatasetId,
-    preferred_sequence_slug: str | None,
-    preferred_run_root: Path | None,
-) -> EvaluationSelection:
-    """Resolve dataset discovery and run selection through the evaluation service."""
-    return context.evaluation_service.resolve_selection(
-        dataset=dataset,
-        preferred_sequence_slug=preferred_sequence_slug,
-        preferred_run_root=preferred_run_root,
-    )
-
-
-def _selected_sequence_slug(selection_state: EvaluationSelection) -> str:
-    """Return the current sequence selection or the first available sequence."""
-    if selection_state.sequence_slug is not None:
-        return selection_state.sequence_slug
-    return selection_state.sequence_slugs[0]
-
-
 def _render_provenance(
     *,
     dataset: DatasetId,
@@ -214,3 +173,22 @@ def _render_provenance(
     with st.container(border=True):
         st.subheader("Provenance")
         st.markdown("\n".join(lines))
+
+
+def _save_state(
+    context: AppContext,
+    *,
+    dataset: DatasetId,
+    sequence_slug: str | None = None,
+    run_root: Path | None = None,
+    result_path: Path | None = None,
+) -> None:
+    save_model_updates(
+        context.store,
+        context.state,
+        context.state.metrics,
+        dataset=dataset,
+        sequence_slug=sequence_slug,
+        run_root=run_root,
+        result_path=result_path,
+    )
