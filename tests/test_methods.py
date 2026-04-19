@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.pipeline import SequenceManifest
-from prml_vslam.utils import Console, PathConfig
+from prml_vslam.utils import Console
 
 
 def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -41,6 +43,15 @@ def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
             del device
             return self
 
+        def detach(self) -> FakeTensor:
+            return self
+
+        def cpu(self) -> FakeTensor:
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return np.asarray(self._value)
+
         def __truediv__(self, scalar: float) -> FakeTensor:
             self._value = self._value / scalar
             return self
@@ -54,6 +65,44 @@ def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
             manual_seed=lambda seed: None,
         ),
     )
+
+
+def _write_normalized_timestamps(path: Path, timestamps_ns: list[int]) -> Path:
+    path.write_text(json.dumps({"timestamps_ns": timestamps_ns}), encoding="utf-8")
+    return path
+
+
+def _make_fake_frame_preprocessor(
+    *,
+    image_rgb: np.ndarray | None = None,
+    gray_u8: np.ndarray | None = None,
+):
+    from prml_vslam.methods.vista.preprocess import PreparedVistaFrame
+
+    resolved_image_rgb = (
+        np.zeros((224, 224, 3), dtype=np.uint8) if image_rgb is None else np.asarray(image_rgb, dtype=np.uint8)
+    )
+    resolved_gray_u8 = (
+        np.zeros(resolved_image_rgb.shape[:2], dtype=np.uint8)
+        if gray_u8 is None
+        else np.asarray(gray_u8, dtype=np.uint8)
+    )
+
+    class FakePreprocessor:
+        def __init__(self) -> None:
+            self.calls: list[tuple[tuple[int, ...], str]] = []
+
+        def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> PreparedVistaFrame:
+            self.calls.append((rgb_image.shape, view_name))
+            torch = sys.modules["torch"]
+            rgb_tensor = torch.from_numpy(resolved_image_rgb.copy()).permute(2, 0, 1).float() / 255.0
+            return PreparedVistaFrame(
+                image_rgb=resolved_image_rgb.copy(),
+                gray_u8=resolved_gray_u8.copy(),
+                rgb_tensor=rgb_tensor,
+            )
+
+    return FakePreprocessor()
 
 
 def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tmp_path: Path) -> None:
@@ -140,13 +189,19 @@ def test_methods_package_exports_vista_backend_surfaces() -> None:
     assert VistaSlamBackend is not None
 
 
-def test_vista_backend_starts_direct_streaming_session(tmp_path: Path) -> None:
+def test_vista_backend_starts_direct_streaming_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import prml_vslam.methods.vista.adapter as vista_adapter
+
     backend = VistaSlamBackendConfig().setup_target()
     assert backend is not None
-    backend._build_session = lambda **_: SimpleNamespace(  # type: ignore[method-assign]
-        step=lambda *_args, **_kwargs: None,
-        try_get_updates=lambda: [],
-        close=lambda: None,
+    monkeypatch.setattr(
+        vista_adapter,
+        "create_vista_session",
+        lambda **_: SimpleNamespace(
+            step=lambda *_args, **_kwargs: None,
+            try_get_updates=lambda: [],
+            close=lambda: None,
+        ),
     )
 
     session = backend.start_session(
@@ -161,16 +216,14 @@ def test_vista_backend_starts_direct_streaming_session(tmp_path: Path) -> None:
 
 
 def test_vista_backend_builds_binary_vocab_cache_once(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.runtime import resolve_vocab_path
+
     pretrains_dir = tmp_path / "external" / "vista-slam" / "pretrains"
     pretrains_dir.mkdir(parents=True)
     vocab_path = pretrains_dir / "ORBvoc.txt"
     vocab_path.write_text("stub vocab")
-
-    backend = VistaSlamBackend(
-        VistaSlamBackendConfig(vocab_path=Path("external/vista-slam/pretrains/ORBvoc.txt")),
-        path_config=PathConfig(root=tmp_path),
-    )
     calls: list[tuple[str, object]] = []
+    cache_path = tmp_path / ".artifacts" / "cache" / "vista" / "ORBvoc.dbow3.bin"
 
     class FakeVocabulary:
         def load(self, path: str) -> None:
@@ -180,10 +233,15 @@ def test_vista_backend_builds_binary_vocab_cache_once(tmp_path: Path) -> None:
             calls.append(("save", path, binary_compressed))
             Path(path).write_text("binary vocab")
 
-    cache_path = backend._resolve_vocab_path(SimpleNamespace(Vocabulary=FakeVocabulary))
+    resolved = resolve_vocab_path(
+        dbow=SimpleNamespace(Vocabulary=FakeVocabulary),
+        vocab_path=vocab_path,
+        vocab_cache_path=cache_path,
+        console=Console(__name__).child("vista-test"),
+    )
 
-    assert cache_path == tmp_path / ".artifacts" / "cache" / "vista" / "ORBvoc.dbow3.bin"
-    assert cache_path.read_text() == "binary vocab"
+    assert resolved == cache_path
+    assert resolved.read_text() == "binary vocab"
     assert calls == [
         ("load", str(vocab_path)),
         ("save", str(cache_path.with_suffix(".bin.tmp")), True),
@@ -191,6 +249,8 @@ def test_vista_backend_builds_binary_vocab_cache_once(tmp_path: Path) -> None:
 
 
 def test_vista_backend_reuses_existing_binary_vocab_cache(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.runtime import resolve_vocab_path
+
     pretrains_dir = tmp_path / "external" / "vista-slam" / "pretrains"
     pretrains_dir.mkdir(parents=True)
     (pretrains_dir / "ORBvoc.txt").write_text("stub vocab")
@@ -198,25 +258,69 @@ def test_vista_backend_reuses_existing_binary_vocab_cache(tmp_path: Path) -> Non
     cache_path.parent.mkdir(parents=True)
     cache_path.write_text("cached")
 
-    backend = VistaSlamBackend(
-        VistaSlamBackendConfig(vocab_path=Path("external/vista-slam/pretrains/ORBvoc.txt")),
-        path_config=PathConfig(root=tmp_path),
-    )
-
     class ExplodingVocabulary:
         def __init__(self) -> None:
             raise AssertionError("existing vocab cache should prevent DBoW3 vocabulary rebuild")
 
-    resolved = backend._resolve_vocab_path(SimpleNamespace(Vocabulary=ExplodingVocabulary))
+    resolved = resolve_vocab_path(
+        dbow=SimpleNamespace(Vocabulary=ExplodingVocabulary),
+        vocab_path=pretrains_dir / "ORBvoc.txt",
+        vocab_cache_path=cache_path,
+        console=Console(__name__).child("vista-test"),
+    )
 
     assert resolved == cache_path
+
+
+def test_upstream_vista_frame_preprocessor_uses_crop_resize_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.preprocess import UpstreamVistaFramePreprocessor
+
+    _install_fake_torch(monkeypatch)
+    calls: list[tuple[tuple[int, ...], tuple[int, int], int, int, str | None]] = []
+    processed_image = np.full((6, 4, 3), fill_value=23, dtype=np.uint8)
+
+    class FakeDataset:
+        resolution = (224, 224)
+
+        def _crop_resize_if_necessary_image_only(
+            self,
+            image: np.ndarray,
+            resolution: tuple[int, int],
+            *,
+            h_edge: int = 0,
+            w_edge: int = 0,
+            rng: np.random.Generator | None = None,
+            info: str | None = None,
+        ) -> np.ndarray:
+            del rng
+            calls.append((image.shape, resolution, h_edge, w_edge, info))
+            return processed_image
+
+        def ImgGray(self, image: np.ndarray) -> np.ndarray:
+            assert np.array_equal(np.asarray(image), processed_image)
+            return np.ones((1, 6, 4), dtype=np.float32)
+
+        def ImgNorm(self, image: np.ndarray):
+            assert np.array_equal(np.asarray(image), processed_image)
+            torch = sys.modules["torch"]
+            return torch.from_numpy(np.asarray(image)).permute(2, 0, 1).float() / 255.0
+
+    preprocessor = UpstreamVistaFramePreprocessor(image_dataset=FakeDataset())
+    prepared = preprocessor.prepare(np.zeros((12, 8, 3), dtype=np.uint8), view_name="portrait_frame")
+
+    assert calls == [((12, 8, 3), (224, 224), 10, 10, "portrait_frame")]
+    assert prepared.image_rgb.shape == (6, 4, 3)
+    assert prepared.gray_u8.shape == (6, 4)
+    assert prepared.rgb_tensor.shape == (3, 6, 4)
 
 
 def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.adapter import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamSession
 
     _install_fake_torch(monkeypatch)
 
@@ -277,6 +381,7 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
     session = VistaSlamSession(
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
+        frame_preprocessor=_make_fake_frame_preprocessor(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -317,7 +422,8 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.adapter import VistaSlamSession, _PreparedVistaFrame
+    from prml_vslam.methods.vista.preprocess import PreparedVistaFrame
+    from prml_vslam.methods.vista.session import VistaSlamSession
 
     _install_fake_torch(monkeypatch)
 
@@ -345,13 +451,13 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
         def __init__(self) -> None:
             self.calls: list[tuple[tuple[int, ...], str]] = []
 
-        def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> _PreparedVistaFrame:
+        def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> PreparedVistaFrame:
             self.calls.append((rgb_image.shape, view_name))
             torch = sys.modules["torch"]
             image_rgb = np.full((4, 6, 3), fill_value=7, dtype=np.uint8)
             gray_u8 = np.full((4, 6), fill_value=11, dtype=np.uint8)
             rgb_tensor = torch.from_numpy(image_rgb).permute(2, 0, 1).float() / 255.0
-            return _PreparedVistaFrame(image_rgb=image_rgb, gray_u8=gray_u8, rgb_tensor=rgb_tensor)
+            return PreparedVistaFrame(image_rgb=image_rgb, gray_u8=gray_u8, rgb_tensor=rgb_tensor)
 
     fake_preprocessor = FakePreprocessor()
     slam = FakeSlam()
@@ -382,7 +488,7 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.adapter import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamSession
 
     _install_fake_torch(monkeypatch)
 
@@ -414,6 +520,7 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
     session = VistaSlamSession(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -433,7 +540,7 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.adapter import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamSession
 
     _install_fake_torch(monkeypatch)
 
@@ -454,6 +561,7 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
     session = VistaSlamSession(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(emit_dense_points=False),
         console=Console(__name__).child("vista-test"),
@@ -467,13 +575,96 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
     assert update.is_keyframe is True
     assert update.pointmap is None
     assert update.preview_rgb is not None
+    assert update.backend_warnings == []
+
+
+def test_vista_session_warns_when_dense_pointmap_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.session import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
+
+    class FakeSlam:
+        def get_view(self, *args: object, **kwargs: object) -> object:
+            return SimpleNamespace(pose=np.eye(4), depth=np.ones((2, 2)), intri=np.eye(3))
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, None]:
+            del view_index
+            return np.zeros((2, 2, 3), dtype=np.uint8), None
+
+        @property
+        def device(self) -> str:
+            return "cpu"
+
+        def step(self, value: object) -> None:
+            del value
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    session.step(FramePacket(seq=11, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    update = session.try_get_updates()[0]
+
+    assert update.pointmap is None
+    assert update.backend_warnings == [
+        "ViSTA-SLAM accepted a keyframe without a dense pointmap for source_seq=11, keyframe_index=0."
+    ]
+
+
+def test_vista_session_warns_when_dense_pointmap_has_no_valid_points(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.session import VistaSlamSession
+
+    _install_fake_torch(monkeypatch)
+
+    class FakeSlam:
+        def get_view(self, *args: object, **kwargs: object) -> object:
+            return SimpleNamespace(pose=np.eye(4), depth=np.ones((2, 2)), intri=np.eye(3))
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, np.ndarray]:
+            del view_index
+            return np.zeros((2, 2, 3), dtype=np.uint8), np.zeros((2, 2, 3), dtype=np.float32)
+
+        @property
+        def device(self) -> str:
+            return "cpu"
+
+        def step(self, value: object) -> None:
+            del value
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    session.step(FramePacket(seq=13, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    update = session.try_get_updates()[0]
+
+    assert update.pointmap is not None
+    assert update.backend_warnings == [
+        "ViSTA-SLAM accepted a keyframe whose dense pointmap contained no valid finite z>0 points for source_seq=13, keyframe_index=0."
+    ]
 
 
 def test_vista_session_keyframe_gates_streaming_updates_before_step(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.adapter import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamSession
 
     _install_fake_torch(monkeypatch)
 
@@ -528,6 +719,7 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(
     session = VistaSlamSession(
         slam=slam,
         flow_tracker=FakeFlowTracker(),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -558,7 +750,7 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.adapter import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamSession
 
     _install_fake_torch(monkeypatch)
 
@@ -585,6 +777,7 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
     session = VistaSlamSession(
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -602,8 +795,108 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
     assert update.keyframe_index == 0
 
 
+def test_vista_session_close_exports_accepted_keyframe_source_timestamps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.utils.geometry import load_tum_trajectory
+
+    _install_fake_torch(monkeypatch)
+
+    class FakeFlowTracker:
+        def __init__(self) -> None:
+            self._outcomes = iter([True, False, True])
+
+        def compute_disparity(self, image: np.ndarray, visualize: bool = False) -> bool:
+            del image, visualize
+            return next(self._outcomes)
+
+    class FakeSlam:
+        def __init__(self) -> None:
+            self.device = "cpu"
+
+        def step(self, value: dict[str, object]) -> None:
+            del value
+
+        def get_view(self, view_index: int, **kwargs: object) -> object:
+            del kwargs
+            pose = np.eye(4, dtype=np.float64)
+            pose[0, 3] = float(view_index)
+            return SimpleNamespace(
+                pose=pose,
+                depth=np.ones((2, 2), dtype=np.float32),
+                intri=np.eye(3, dtype=np.float64),
+            )
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, np.ndarray]:
+            del view_index
+            return np.zeros((2, 2, 3), dtype=np.uint8), np.ones((2, 2, 3), dtype=np.float32)
+
+        def save_data_all(self, output_dir: str, *, save_images: bool, save_depths: bool) -> None:
+            del save_images, save_depths
+            trajectory = np.repeat(np.eye(4, dtype=np.float64)[None, :, :], repeats=2, axis=0)
+            trajectory[1, 0, 3] = 1.0
+            np.save(Path(output_dir) / "trajectory.npy", trajectory)
+
+    session = VistaSlamSession(
+        slam=FakeSlam(),
+        flow_tracker=FakeFlowTracker(),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    session.step(FramePacket(seq=0, timestamp_ns=100_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=1, timestamp_ns=250_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(FramePacket(seq=2, timestamp_ns=400_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    artifacts = session.close()
+
+    trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
+    assert trajectory.timestamps.tolist() == [0.1, 0.4]
+
+
+def test_vista_backend_offline_run_requires_normalized_rgb_dir(tmp_path: Path) -> None:
+    from prml_vslam.benchmark import ReferenceSource
+
+    backend = VistaSlamBackendConfig().setup_target()
+    assert backend is not None
+    timestamps_path = _write_normalized_timestamps(tmp_path / "timestamps.json", [100_000_000])
+
+    with pytest.raises(RuntimeError, match="SequenceManifest\\.rgb_dir"):
+        backend.run_sequence(
+            sequence=SequenceManifest(sequence_id="advio-15", timestamps_path=timestamps_path),
+            benchmark_inputs=None,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            backend_config=VistaSlamBackendConfig(),
+            output_policy=SlamOutputPolicy(),
+            artifact_root=tmp_path / "vista-offline",
+        )
+
+
+def test_vista_backend_offline_run_requires_normalized_timestamps_path(tmp_path: Path) -> None:
+    from prml_vslam.benchmark import ReferenceSource
+
+    backend = VistaSlamBackendConfig().setup_target()
+    assert backend is not None
+    frames_dir = tmp_path / "frames"
+    frames_dir.mkdir(parents=True)
+
+    with pytest.raises(RuntimeError, match="SequenceManifest\\.timestamps_path"):
+        backend.run_sequence(
+            sequence=SequenceManifest(sequence_id="advio-15", rgb_dir=frames_dir),
+            benchmark_inputs=None,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            backend_config=VistaSlamBackendConfig(),
+            output_policy=SlamOutputPolicy(),
+            artifact_root=tmp_path / "vista-offline",
+        )
+
+
 def test_vista_artifact_builder_projects_near_orthonormal_trajectory_rotations(tmp_path: Path) -> None:
-    from prml_vslam.methods.vista.adapter import _build_artifacts
+    from prml_vslam.methods.vista.artifacts import build_vista_artifacts
+    from prml_vslam.utils.geometry import load_tum_trajectory
 
     native_output_dir = tmp_path / "native"
     native_output_dir.mkdir(parents=True, exist_ok=True)
@@ -619,17 +912,19 @@ def test_vista_artifact_builder_projects_near_orthonormal_trajectory_rotations(t
     trajectory[1, :3, 3] = np.array([0.5, 0.0, 0.0], dtype=np.float64)
     np.save(native_output_dir / "trajectory.npy", trajectory)
 
-    artifacts = _build_artifacts(
+    artifacts = build_vista_artifacts(
         native_output_dir=native_output_dir,
         artifact_root=tmp_path / "artifacts",
         output_policy=SlamOutputPolicy(),
+        timestamps_s=[0.0, 0.25],
     )
 
     assert artifacts.trajectory_tum.path.exists()
+    assert load_tum_trajectory(artifacts.trajectory_tum.path).timestamps.tolist() == [0.0, 0.25]
 
 
 def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(tmp_path: Path) -> None:
-    from prml_vslam.methods.vista.adapter import _build_artifacts
+    from prml_vslam.methods.vista.artifacts import build_vista_artifacts
 
     native_output_dir = tmp_path / "native"
     native_output_dir.mkdir(parents=True, exist_ok=True)
@@ -652,10 +947,11 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
         encoding="utf-8",
     )
 
-    artifacts = _build_artifacts(
+    artifacts = build_vista_artifacts(
         native_output_dir=native_output_dir,
         artifact_root=tmp_path / "artifacts",
         output_policy=SlamOutputPolicy(),
+        timestamps_s=[0.0],
     )
 
     assert artifacts.sparse_points_ply is not None
@@ -668,7 +964,7 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
 
 
 def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
-    from prml_vslam.methods.vista.adapter import _frame_transform_from_vista_pose
+    from prml_vslam.methods.vista.artifacts import _frame_transform_from_vista_pose
 
     pose = np.eye(4, dtype=np.float64)
     pose[:3, :3] = np.array(
@@ -682,3 +978,17 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
 
     with pytest.raises(ValueError, match="too far from SO\\(3\\)"):
         _frame_transform_from_vista_pose(pose)
+
+
+def test_vista_config_models_reject_removed_dead_knobs() -> None:
+    from prml_vslam.pipeline.contracts.request import VistaBackendSpec
+
+    for payload in (
+        {"device": "cpu"},
+        {"stride": 5},
+        {"keyframe_detection": "stride"},
+    ):
+        with pytest.raises(ValidationError):
+            VistaSlamBackendConfig.model_validate(payload)
+        with pytest.raises(ValidationError):
+            VistaBackendSpec.model_validate({"kind": "vista", **payload})

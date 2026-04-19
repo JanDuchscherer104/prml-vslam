@@ -11,6 +11,7 @@ from prml_vslam.pipeline.contracts.runtime import RunState
 from ..live_session import live_poll_interval, render_live_action_slot, render_live_fragment, rerun_after_action
 from ..pipeline_controller import (
     action_from_page_state,
+    build_pipeline_snapshot_render_model,
     build_preview_plan,
     build_request_from_action,
     discover_pipeline_config_paths,
@@ -134,9 +135,20 @@ def render(context: AppContext) -> None:
         snapshot = context.run_service.snapshot()
         if error_message:
             st.error(error_message)
+
+        def _render_pipeline_snapshot_body() -> None:
+            current_snapshot = context.run_service.snapshot()
+            render_model = build_pipeline_snapshot_render_model(
+                current_snapshot,
+                context.run_service,
+                method=context.state.pipeline.method,
+                show_evo_preview=bool(st.session_state.get("pipeline_show_evo_preview", False)),
+            )
+            render_pipeline_snapshot(render_model)
+
         render_live_fragment(
             run_every=live_poll_interval(is_active=snapshot.state in _ACTIVE_SESSION_STATES, interval_seconds=0.2),
-            render_body=lambda: render_pipeline_snapshot(context.run_service.snapshot(), context.run_service),
+            render_body=_render_pipeline_snapshot_body,
         )
 
 

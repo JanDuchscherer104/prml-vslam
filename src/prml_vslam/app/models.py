@@ -14,7 +14,8 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.request import BackendSpec
 from prml_vslam.utils import BaseData
-from prml_vslam.utils.packet_session import PacketSessionSnapshot
+
+from .preview_runtime import PacketSessionSnapshot
 
 
 class AppPageId(StrEnum):

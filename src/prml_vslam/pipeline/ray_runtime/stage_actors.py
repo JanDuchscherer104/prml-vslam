@@ -145,6 +145,13 @@ class PacketSourceActor:
                     ),
                     frame_handle=frame_handle,
                     frame_ref=frame_ref,
+                    rerun_bindings=(
+                        []
+                        if packet.rgb is None
+                        else [(frame_handle.handle_id, np.asarray(packet.rgb))]
+                        if frame_handle is not None
+                        else []
+                    ),
                     depth_ref=depth_ref,
                     confidence_ref=confidence_ref,
                     intrinsics=packet.intrinsics,
@@ -216,6 +223,7 @@ class StreamingSlamStageActor:
         )
         notices: list[BackendEvent] = []
         bindings: list[tuple[str, HandlePayload]] = []
+        rerun_bindings: list[tuple[str, np.ndarray]] = []
         now = time.monotonic()
         for update in self._session.try_get_updates():
             preview_handle, preview_ref = put_preview_handle(update.preview_rgb)
@@ -230,6 +238,14 @@ class StreamingSlamStageActor:
             ):
                 if handle is not None and ref is not None:
                     bindings.append((handle.handle_id, ref))
+            for handle, payload in (
+                (preview_handle, update.preview_rgb),
+                (image_handle, update.image_rgb),
+                (depth_handle, update.depth_map),
+                (pointmap_handle, update.pointmap),
+            ):
+                if handle is not None and payload is not None:
+                    rerun_bindings.append((handle.handle_id, np.asarray(payload)))
             if update.is_keyframe:
                 self._accepted_keyframes += 1
                 self._keyframe_timestamps.append(now)
@@ -247,6 +263,7 @@ class StreamingSlamStageActor:
         self._coordinator.on_slam_notices.remote(
             notices=notices,
             bindings=bindings,
+            rerun_bindings=rerun_bindings,
             released_credits=1,
         )
 

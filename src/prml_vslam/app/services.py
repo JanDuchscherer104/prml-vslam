@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from threading import Event
-from typing import Any
 
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.io.record3d import (
@@ -13,19 +12,16 @@ from prml_vslam.io.record3d import (
     Record3DTransportId,
     open_record3d_usb_packet_stream,
 )
+from prml_vslam.io.wifi_packets import Record3DWiFiMetadata
 from prml_vslam.io.wifi_session import open_record3d_wifi_preview_stream
 from prml_vslam.protocols import FramePacketStream
-from prml_vslam.utils.packet_session import (
-    PacketSessionMetrics,
-    PacketSessionRuntime,
-    extract_pose_position,
-)
 
 from .models import (
     AdvioPreviewSnapshot,
     PreviewStreamState,
     Record3DStreamSnapshot,
 )
+from .preview_runtime import PacketSessionMetrics, PacketSessionRuntime, extract_pose_position
 
 
 def _is_record3d_frame_timeout(error: RuntimeError) -> bool:
@@ -104,38 +100,51 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
                     else max(packet.timestamp_ns - first_packet_timestamp_ns, 0) / 1e9
                 ),
             )
-            self.update_fields(
-                state=PreviewStreamState.STREAMING,
-                sequence_id=sequence_id,
-                sequence_label=sequence_label,
-                pose_source=pose_source,
-                latest_packet=packet,
-                error_message="",
-                **metrics.snapshot_fields(),
+            self.update_snapshot(
+                lambda snapshot: snapshot.model_copy(
+                    update={
+                        "state": PreviewStreamState.STREAMING,
+                        "sequence_id": sequence_id,
+                        "sequence_label": sequence_label,
+                        "pose_source": pose_source,
+                        "latest_packet": packet,
+                        "error_message": "",
+                        **metrics.snapshot_fields(),
+                    }
+                )
             )
 
         try:
             self.register_stream(stop_event=stop_event, stream=stream)
             stream.connect()
             (
-                self.update_fields(
-                    state=PreviewStreamState.STREAMING,
-                    sequence_id=sequence_id,
-                    sequence_label=sequence_label,
-                    pose_source=pose_source,
-                    error_message="",
+                self.update_snapshot(
+                    lambda snapshot: snapshot.model_copy(
+                        update={
+                            "state": PreviewStreamState.STREAMING,
+                            "sequence_id": sequence_id,
+                            "sequence_label": sequence_label,
+                            "pose_source": pose_source,
+                            "error_message": "",
+                        }
+                    )
                 ),
             )
             while not stop_event.is_set():
                 _consume_packet(stream)
         except Exception as exc:
             if not stop_event.is_set():
-                self.update_fields(
-                    state=PreviewStreamState.FAILED,
-                    sequence_id=sequence_id,
-                    sequence_label=sequence_label,
-                    pose_source=pose_source,
-                    error_message=str(exc),
+                error_message = str(exc)
+                self.update_snapshot(
+                    lambda snapshot: snapshot.model_copy(
+                        update={
+                            "state": PreviewStreamState.FAILED,
+                            "sequence_id": sequence_id,
+                            "sequence_label": sequence_label,
+                            "pose_source": pose_source,
+                            "error_message": error_message,
+                        }
+                    )
                 )
         finally:
             self.finalize(
@@ -249,13 +258,17 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                 position_xyz=camera_position,
                 trajectory_time_s=arrival_time_s if camera_position is not None else None,
             )
-            self.update_fields(
-                transport=transport,
-                state=PreviewStreamState.STREAMING,
-                source_label=source_label,
-                latest_packet=packet,
-                error_message="",
-                **metrics.snapshot_fields(),
+            self.update_snapshot(
+                lambda snapshot: snapshot.model_copy(
+                    update={
+                        "transport": transport,
+                        "state": PreviewStreamState.STREAMING,
+                        "source_label": source_label,
+                        "latest_packet": packet,
+                        "error_message": "",
+                        **metrics.snapshot_fields(),
+                    }
+                )
             )
 
         try:
@@ -267,21 +280,30 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                 source_descriptor=source_descriptor,
                 connected_target=connected_target,
             )
-            self.update_fields(
-                transport=transport,
-                state=PreviewStreamState.STREAMING,
-                source_label=source_label,
-                error_message="",
+            self.update_snapshot(
+                lambda snapshot: snapshot.model_copy(
+                    update={
+                        "transport": transport,
+                        "state": PreviewStreamState.STREAMING,
+                        "source_label": source_label,
+                        "error_message": "",
+                    }
+                )
             )
             while not stop_event.is_set():
                 _consume_packet(stream)
         except Exception as exc:
             if not stop_event.is_set():
-                self.update_fields(
-                    transport=transport,
-                    state=PreviewStreamState.FAILED,
-                    source_label=source_descriptor,
-                    error_message=str(exc),
+                error_message = str(exc)
+                self.update_snapshot(
+                    lambda snapshot: snapshot.model_copy(
+                        update={
+                            "transport": transport,
+                            "state": PreviewStreamState.FAILED,
+                            "source_label": source_descriptor,
+                            "error_message": error_message,
+                        }
+                    )
                 )
         finally:
             self.finalize(
@@ -309,12 +331,12 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         *,
         transport: Record3DTransportId,
         source_descriptor: str,
-        connected_target: Any,
+        connected_target: Record3DDevice | Record3DWiFiMetadata | None,
     ) -> str:
         if transport is Record3DTransportId.USB and isinstance(connected_target, Record3DDevice):
             return f"{connected_target.udid} ({connected_target.product_id})"
-        if hasattr(connected_target, "device_address"):
-            return str(connected_target.device_address)
+        if transport is Record3DTransportId.WIFI and isinstance(connected_target, Record3DWiFiMetadata):
+            return connected_target.device_address
         return source_descriptor
 
 
