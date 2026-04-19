@@ -1,4 +1,10 @@
-"""Ray-backed pipeline execution backend."""
+"""Ray-backed backend for plan execution and run attachment.
+
+This module owns substrate-specific concerns that the rest of
+:mod:`prml_vslam.pipeline` should not need to understand: Ray initialization,
+local head lifecycle, runtime environment setup, coordinator actor discovery,
+and conversion from opaque runtime handles back into local NumPy arrays.
+"""
 
 from __future__ import annotations
 
@@ -53,7 +59,13 @@ RayRuntimeEnvValue = list[str] | dict[str, str] | str
 
 
 class RayPipelineBackend(PipelineBackend):
-    """Ray-backed execution substrate for the pipeline."""
+    """Execute pipeline runs through detached per-run coordinator actors.
+
+    The backend is responsible for turning a validated :class:`RunRequest` into
+    a running Ray topology. The :class:`RunCoordinatorActor` remains the
+    authoritative owner of one run's state; this backend only manages how the
+    caller reaches that coordinator.
+    """
 
     def __init__(self, *, path_config: PathConfig | None = None, namespace: str | None = None) -> None:
         self._path_config = PathConfig() if path_config is None else path_config
@@ -66,6 +78,7 @@ class RayPipelineBackend(PipelineBackend):
         self._reuse_local_head = False
 
     def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
+        """Build the plan, ensure Ray is available, and boot one coordinator."""
         self._reuse_local_head = request.runtime.ray.local_head_lifecycle == "reusable"
         self._ensure_ray()
         plan = request.build(self._path_config)
@@ -84,10 +97,12 @@ class RayPipelineBackend(PipelineBackend):
         return plan.run_id
 
     def stop_run(self, run_id: str) -> None:
+        """Forward a stop request to the named coordinator actor."""
         self._console.warning("Stopping run '%s' through Ray backend.", run_id)
         self._coordinator_for(run_id).stop.remote()
 
     def get_snapshot(self, run_id: str) -> RunSnapshot:
+        """Fetch the latest projected snapshot from the coordinator actor."""
         return ray.get(self._coordinator_for(run_id).snapshot.remote())
 
     def get_events(
@@ -97,14 +112,17 @@ class RayPipelineBackend(PipelineBackend):
         after_event_id: str | None = None,
         limit: int = 200,
     ) -> list[RunEvent]:
+        """Fetch trailing events from the coordinator actor."""
         return ray.get(self._coordinator_for(run_id).events.remote(after_event_id, limit))
 
     def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
+        """Resolve one coordinator-owned live payload handle."""
         if handle is None:
             return None
         return ray.get(self._coordinator_for(run_id).read_array.remote(handle.handle_id))
 
     def shutdown(self, *, preserve_local_head: bool = False) -> None:
+        """Detach from Ray and stop any backend-owned shared infrastructure."""
         self._console.info("Shutting down Ray backend for namespace '%s'.", self._namespace)
         if not ray.is_initialized():
             if not preserve_local_head:
@@ -198,6 +216,7 @@ class RayPipelineBackend(PipelineBackend):
 
     @staticmethod
     def _build_runtime_env(*, address: str | None) -> dict[str, RayRuntimeEnvValue]:
+        """Build the process-wide Ray runtime environment for this backend."""
         runtime_env: dict[str, RayRuntimeEnvValue] = {
             "excludes": _RAY_RUNTIME_EXCLUDES,
             "env_vars": dict(_RAY_NATIVE_THREAD_ENV),
@@ -208,6 +227,7 @@ class RayPipelineBackend(PipelineBackend):
 
     @staticmethod
     def _prepare_ray_environment() -> None:
+        """Set environment flags that Ray snapshots at import and init time."""
         os.environ.setdefault("RAY_ENABLE_UV_RUN_RUNTIME_ENV", "0")
 
     def _ensure_local_head_address(self) -> str:
@@ -236,21 +256,24 @@ class RayPipelineBackend(PipelineBackend):
         logs_dir = self._path_config.resolve_logs_dir(create=True)
         self._local_head_log_path = logs_dir / "ray-local-head.log"
         log_handle = self._local_head_log_path.open("a", encoding="utf-8")
-        self._local_head_process = subprocess.Popen(
-            [
-                ray_bin,
-                "start",
-                "--head",
-                f"--node-ip-address={address.rsplit(':', maxsplit=1)[0]}",
-                f"--port={address.rsplit(':', maxsplit=1)[1]}",
-                "--include-dashboard=false",
-                "--disable-usage-stats",
-                "--block",
-            ],
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        try:
+            self._local_head_process = subprocess.Popen(
+                [
+                    ray_bin,
+                    "start",
+                    "--head",
+                    f"--node-ip-address={address.rsplit(':', maxsplit=1)[0]}",
+                    f"--port={address.rsplit(':', maxsplit=1)[1]}",
+                    "--include-dashboard=false",
+                    "--disable-usage-stats",
+                    "--block",
+                ],
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        finally:
+            log_handle.close()
         if self._wait_until_connectable(address):
             self._local_head_address = address
             self._write_local_head_metadata(address=address, pid=self._local_head_process.pid)
