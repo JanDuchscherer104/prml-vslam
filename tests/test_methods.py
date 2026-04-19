@@ -15,6 +15,7 @@ from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.pipeline import SequenceManifest
+from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import Console
 
 
@@ -1045,6 +1046,9 @@ def test_vista_artifact_builder_projects_near_orthonormal_trajectory_rotations(t
 
     assert artifacts.trajectory_tum.path.exists()
     assert load_tum_trajectory(artifacts.trajectory_tum.path).timestamps.tolist() == [0.0, 0.25]
+    assert artifacts.trajectory_tum.fingerprint == stable_hash(
+        {"path": str(artifacts.trajectory_tum.path.resolve()), "kind": "tum"}
+    )
 
 
 def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(tmp_path: Path) -> None:
@@ -1054,6 +1058,8 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
     native_output_dir.mkdir(parents=True, exist_ok=True)
     np.save(native_output_dir / "trajectory.npy", np.eye(4, dtype=np.float64)[None, :, :])
     (native_output_dir / "rerun_recording.rrd").write_bytes(b"native-rerun")
+    extra_path = native_output_dir / "session.json"
+    extra_path.write_text('{"session": "vista"}', encoding="utf-8")
     (native_output_dir / "pointcloud.ply").write_text(
         "\n".join(
             [
@@ -1082,9 +1088,15 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
     assert artifacts.dense_points_ply is not None
     assert artifacts.sparse_points_ply.path == artifacts.dense_points_ply.path
     assert artifacts.sparse_points_ply.path.name == "point_cloud.ply"
+    assert artifacts.sparse_points_ply.fingerprint == stable_hash(
+        {"path": str(artifacts.sparse_points_ply.path.resolve()), "kind": "ply"}
+    )
     assert not hasattr(artifacts, "native_rerun_rrd")
     assert not hasattr(artifacts, "native_output_dir")
     assert "rerun_recording.rrd" not in artifacts.extras
+    assert artifacts.extras["session.json"].fingerprint == stable_hash(
+        {"path": str(extra_path.resolve()), "kind": "json"}
+    )
 
 
 def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:

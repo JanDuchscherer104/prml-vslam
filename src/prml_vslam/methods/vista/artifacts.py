@@ -18,10 +18,21 @@ from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.methods.contracts import SlamOutputPolicy
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
+
+
+def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
+    """Build one stable artifact reference for a normalized ViSTA output."""
+    resolved_path = path.resolve()
+    return ArtifactRef(
+        path=resolved_path,
+        kind=kind,
+        fingerprint=stable_hash({"path": str(resolved_path), "kind": kind}),
+    )
 
 
 def build_vista_artifacts(
@@ -58,31 +69,19 @@ def build_vista_artifacts(
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
         run_paths = RunArtifactPaths.build(artifact_root)
         point_cloud_path = write_point_cloud_ply(run_paths.point_cloud_path, points_xyz)
-        canonical_ref = ArtifactRef(
-            path=point_cloud_path,
-            kind="ply",
-            fingerprint=f"vista-point-cloud-{len(points_xyz)}",
-        )
+        canonical_ref = _artifact_ref(point_cloud_path, kind="ply")
         if output_policy.emit_sparse_points:
             sparse_points_ref = canonical_ref
         if output_policy.emit_dense_points:
             dense_points_ref = canonical_ref
 
     extras = {
-        path.name: ArtifactRef(
-            path=path.resolve(),
-            kind=path.suffix.lstrip(".") or "file",
-            fingerprint=f"vista-extra-{path.name}",
-        )
+        path.name: _artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
         for path in sorted(native_output_dir.glob("*"))
         if path.is_file() and path.name not in {"trajectory.npy", "pointcloud.ply", "rerun_recording.rrd"}
     }
     return SlamArtifacts(
-        trajectory_tum=ArtifactRef(
-            path=trajectory_path,
-            kind="tum",
-            fingerprint=f"vista-traj-{len(trajectory_se3)}",
-        ),
+        trajectory_tum=_artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=sparse_points_ref,
         dense_points_ply=dense_points_ref,
         extras=extras,

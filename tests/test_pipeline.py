@@ -986,6 +986,51 @@ def test_ray_backend_replaces_stale_local_head_metadata(tmp_path: Path, monkeypa
     assert backend._read_local_head_metadata() == {"address": "127.0.0.1:25002", "pid": 456}
 
 
+def test_ray_backend_closes_parent_log_handle_after_spawn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
+    )
+    backend._reuse_local_head = True
+    monkeypatch.setattr(backend, "_pick_local_head_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(backend, "_wait_until_connectable", lambda address: address == "127.0.0.1:25002")
+
+    captured: dict[str, Any] = {}
+
+    class FakeLogHandle:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class FakePopen:
+        pid = 789
+
+        def poll(self) -> None:
+            return None
+
+    fake_log_handle = FakeLogHandle()
+    original_open = Path.open
+
+    def fake_open(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if path.name == "ray-local-head.log":
+            return fake_log_handle
+        return original_open(path, *args, **kwargs)
+
+    def fake_popen(*args: Any, **kwargs: Any) -> FakePopen:
+        captured["stdout"] = kwargs["stdout"]
+        return FakePopen()
+
+    monkeypatch.setattr(Path, "open", fake_open)
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.subprocess.Popen", fake_popen)
+
+    assert backend._ensure_local_head_address() == "127.0.0.1:25002"
+    assert captured["stdout"] is fake_log_handle
+    assert fake_log_handle.closed
+    assert backend._read_local_head_metadata() == {"address": "127.0.0.1:25002", "pid": 789}
+
+
 def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = RayPipelineBackend(namespace="prml_vslam.local")
     backend._coordinators = {"run-1": object()}  # type: ignore[assignment]
