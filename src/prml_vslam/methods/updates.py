@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from numpy.typing import NDArray
+from pydantic import Field
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils import BaseData
@@ -56,6 +57,9 @@ class SlamUpdate(BaseData):
 
     pose_updated: bool = False
     """Whether the pose in this update is a fresh result from a new backend step."""
+
+    backend_warnings: list[str] = Field(default_factory=list)
+    """Non-fatal backend warnings associated with this update."""
 
 
 __all__ = ["SlamUpdate"]

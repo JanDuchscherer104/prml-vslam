@@ -194,8 +194,8 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 run=DiscoveredRun(
                     artifact_root=plan.artifact_root,
                     estimate_path=slam.trajectory_tum.path,
-                    method=plan.method,
-                    label=plan.method.display_name,
+                    method=MethodId(request.slam.backend.kind),
+                    label=MethodId(request.slam.backend.kind).display_name,
                 ),
             )
         )

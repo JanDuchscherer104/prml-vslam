@@ -48,7 +48,7 @@ def test_attach_recording_sinks_configures_grpc_and_file_together(
     assert configured_sinks[1].path == str(tmp_path / "viewer_recording.rrd")
 
 
-def test_create_recording_stream_uses_world_based_default_blueprint(monkeypatch) -> None:
+def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatch) -> None:
     sent_blueprints: list[object] = []
     logged_entities: list[tuple[str, object, bool]] = []
 
@@ -65,27 +65,38 @@ def test_create_recording_stream_uses_world_based_default_blueprint(monkeypatch)
             logged_entities.append((entity_path, payload, static))
 
     class FakeSpatial3DView:
-        def __init__(self, *, origin: str, name: str) -> None:
+        def __init__(self, *, origin: str, contents=None, name: str) -> None:
             self.origin = origin
+            self.contents = contents
             self.name = name
 
     class FakeSpatial2DView:
-        def __init__(self, *, origin: str, name: str) -> None:
+        def __init__(self, *, origin: str, contents=None, name: str) -> None:
             self.origin = origin
+            self.contents = contents
             self.name = name
 
     class FakeHorizontal:
         def __init__(self, *views: object) -> None:
             self.views = views
 
+    class FakeTabs:
+        def __init__(self, *views: object, name: str | None = None) -> None:
+            self.views = views
+            self.name = name
+
     class FakeBlueprint:
         def __init__(self, layout: object) -> None:
             self.layout = layout
 
+    class FakeTransform3D:
+        def __init__(self) -> None:
+            self.identity = True
+
     monkeypatch.setattr(
         rerun_helpers,
         "rr",
-        SimpleNamespace(RecordingStream=FakeRecordingStream, ViewCoordinates=SimpleNamespace(RDF="rdf")),
+        SimpleNamespace(RecordingStream=FakeRecordingStream, Transform3D=FakeTransform3D),
     )
     monkeypatch.setattr(
         rerun_helpers,
@@ -95,6 +106,7 @@ def test_create_recording_stream_uses_world_based_default_blueprint(monkeypatch)
             Horizontal=FakeHorizontal,
             Spatial3DView=FakeSpatial3DView,
             Spatial2DView=FakeSpatial2DView,
+            Tabs=FakeTabs,
         ),
     )
 
@@ -104,8 +116,29 @@ def test_create_recording_stream_uses_world_based_default_blueprint(monkeypatch)
     assert len(sent_blueprints) == 1
     layout = sent_blueprints[0].layout
     assert layout.views[0].origin == "world"
-    assert layout.views[1].origin == "world/live/camera/cam"
-    assert logged_entities == [("world", "rdf", True)]
+    assert layout.views[0].contents == [
+        "+ world/live/tracking/**",
+        "+ world/live/model/camera/**",
+        "- world/live/model/camera/image/depth",
+        "- world/live/model/camera/image/depth/**",
+        "- world/live/model/points",
+        "- world/live/model/points/**",
+        "- world/keyframes/cameras/**",
+        "+ world/keyframes/points/**",
+        "+ world/trajectory/tracking",
+    ]
+    assert layout.views[1].name == "2D Views"
+    assert [view.origin for view in layout.views[1].views] == [
+        "world/live/source/rgb",
+        "world/live/model/camera/image",
+        "world/live/model/camera/image",
+        "world/live/model/diag/preview",
+    ]
+    assert len(logged_entities) == 1
+    entity_path, payload, static = logged_entities[0]
+    assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
+    assert isinstance(payload, FakeTransform3D)
+    assert static is True
 
 
 def test_log_transform_uses_parent_from_child_relation(monkeypatch) -> None:
@@ -148,3 +181,55 @@ def test_log_transform_uses_parent_from_child_relation(monkeypatch) -> None:
     assert payload.relation == FakeTransformRelation.ParentFromChild
     world_point = transform.as_matrix() @ np.array([0.0, 0.0, 1.0, 1.0], dtype=np.float64)
     assert np.allclose(world_point[:3], np.array([1.0, 2.0, 4.0], dtype=np.float64))
+
+
+def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
+    logged: list[tuple[str, object]] = []
+
+    class FakeLineStrips3D:
+        def __init__(self, strips, radii) -> None:
+            self.strips = strips
+            self.radii = radii
+
+    class FakeRecordingStream:
+        def log(self, entity_path: str, payload: object) -> None:
+            logged.append((entity_path, payload))
+
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(LineStrips3D=FakeLineStrips3D))
+
+    rerun_helpers.log_line_strip3d(
+        FakeRecordingStream(),
+        entity_path="world/trajectory/tracking",
+        positions_xyz=np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]], dtype=np.float32),
+    )
+
+    assert len(logged) == 1
+    entity_path, payload = logged[0]
+    assert entity_path == "world/trajectory/tracking"
+    assert len(payload.strips) == 1
+    assert np.array_equal(payload.strips[0], np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]], dtype=np.float32))
+
+
+def test_log_clear_logs_recursive_clear(monkeypatch) -> None:
+    logged: list[tuple[str, object]] = []
+
+    class FakeClear:
+        def __init__(self, *, recursive: bool) -> None:
+            self.recursive = recursive
+
+    class FakeRecordingStream:
+        def log(self, entity_path: str, payload: object) -> None:
+            logged.append((entity_path, payload))
+
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(Clear=FakeClear))
+
+    rerun_helpers.log_clear(
+        FakeRecordingStream(),
+        entity_path="world/keyframes/cameras/000001",
+        recursive=True,
+    )
+
+    assert len(logged) == 1
+    entity_path, payload = logged[0]
+    assert entity_path == "world/keyframes/cameras/000001"
+    assert payload.recursive is True

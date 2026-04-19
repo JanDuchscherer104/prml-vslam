@@ -28,20 +28,11 @@ class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"
     vocab_path: Path = Path("external/vista-slam/pretrains/ORBvoc.txt")
     """Path to the ORB vocabulary file used by loop detection."""
 
-    device: str = "cuda"
-    """Torch device string used for model inference."""
-
     max_view_num: int = 400
     """Maximum number of keyframes the pose graph may hold."""
 
-    stride: int = 25
-    """Keyframe stride fallback used by upstream keyframe selection."""
-
     flow_thres: float = 5.0
     """Optical-flow magnitude threshold that triggers a new keyframe."""
-
-    keyframe_detection: str = "flow_stride"
-    """Keyframe-selection strategy passed to the upstream frontend."""
 
     neighbor_edge_num: int = 3
     """Number of temporal-neighbor edges per keyframe in the pose graph."""

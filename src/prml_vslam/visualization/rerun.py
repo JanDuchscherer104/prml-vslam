@@ -13,19 +13,72 @@ from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
 from prml_vslam.visualization.contracts import VisualizationArtifacts
 
+ROOT_WORLD_ENTITY_PATH = "world"
+"""Canonical root entity path for repo-owned Rerun recordings."""
+POINT_CLOUD_RADII = 0.05
+"""Default point cloud radii for repo-owned Rerun recordings."""
+TRAJECTORY_LINE_RADII = 0.01
+"""Default trajectory line radii for repo-owned Rerun recordings."""
+
+
+def build_default_blueprint() -> rrb.Blueprint:
+    """Build the default repo-owned Rerun blueprint."""
+    return rrb.Blueprint(
+        rrb.Horizontal(
+            rrb.Spatial3DView(
+                origin="world",
+                name="3D Scene",
+                contents=[
+                    "+ world/live/tracking/**",
+                    "+ world/live/model/camera/**",
+                    "- world/live/model/camera/image/depth",
+                    "- world/live/model/camera/image/depth/**",
+                    "- world/live/model/points",
+                    "- world/live/model/points/**",
+                    "- world/keyframes/cameras/**",
+                    "+ world/keyframes/points/**",
+                    "+ world/trajectory/tracking",
+                ],
+            ),
+            rrb.Tabs(
+                rrb.Spatial2DView(
+                    origin="world/live/source/rgb",
+                    contents="world/live/source/rgb",
+                    name="Source RGB",
+                ),
+                rrb.Spatial2DView(
+                    origin="world/live/model/camera/image",
+                    contents="world/live/model/camera/image",
+                    name="Model RGB",
+                ),
+                rrb.Spatial2DView(
+                    origin="world/live/model/camera/image",
+                    contents="world/live/model/camera/image/depth",
+                    name="Model Depth",
+                ),
+                rrb.Spatial2DView(
+                    origin="world/live/model/diag/preview",
+                    contents="world/live/model/diag/preview",
+                    name="Preview",
+                ),
+                name="2D Views",
+            ),
+        ),
+    )
+
 
 def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> rr.RecordingStream:
     """Create one explicit Rerun recording stream."""
     stream = rr.RecordingStream(application_id=app_id, recording_id=recording_id)
-    blueprint = rrb.Blueprint(
-        rrb.Horizontal(
-            rrb.Spatial3DView(origin="world", name="3D Scene"),
-            rrb.Spatial2DView(origin="world/live/camera/cam", name="Live Camera"),
-        ),
-    )
+    blueprint = build_default_blueprint()
     stream.send_blueprint(blueprint)
-    stream.log("world", rr.ViewCoordinates.RDF, static=True)
+    log_root_world_transform(stream)
     return stream
+
+
+def log_root_world_transform(recording_stream: rr.RecordingStream) -> None:
+    """Declare one explicit neutral world root for ViSTA-aligned recordings."""
+    recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.Transform3D(), static=True)
 
 
 def attach_recording_sinks(
@@ -112,6 +165,7 @@ def log_pointcloud(
     entity_path: str,
     pointmap: np.ndarray,
     colors: np.ndarray | None = None,
+    point_cloud_radii: float = POINT_CLOUD_RADII,
 ) -> None:
     """Log a point cloud (and optionally colors) to the viewer."""
     positions = np.asarray(pointmap).reshape(-1, 3)
@@ -129,8 +183,27 @@ def log_pointcloud(
 
     recording_stream.log(
         entity_path,
-        rr.Points3D(positions=valid_positions, colors=valid_colors, radii=0.05),
+        rr.Points3D(positions=valid_positions, colors=valid_colors, radii=point_cloud_radii),
     )
+
+
+def log_line_strip3d(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    positions_xyz: np.ndarray,
+    radii: float = TRAJECTORY_LINE_RADII,
+) -> None:
+    """Log one 3D line strip to the viewer."""
+    positions = np.asarray(positions_xyz, dtype=np.float32).reshape(-1, 3)
+    if len(positions) == 0:
+        return
+    recording_stream.log(entity_path, rr.LineStrips3D([positions], radii=[radii]))
+
+
+def log_clear(recording_stream: rr.RecordingStream, *, entity_path: str, recursive: bool) -> None:
+    """Clear one entity subtree from latest-at viewer queries."""
+    recording_stream.log(entity_path, rr.Clear(recursive=recursive))
 
 
 def log_points3d(
@@ -139,7 +212,7 @@ def log_points3d(
     entity_path: str,
     points_xyz: np.ndarray,
     colors: np.ndarray | None = None,
-    radii: float = 0.05,
+    radii: float = POINT_CLOUD_RADII,
 ) -> None:
     """Log explicit XYZ rows to the viewer."""
     positions = np.asarray(points_xyz, dtype=np.float32).reshape(-1, 3)
@@ -178,12 +251,17 @@ def collect_native_visualization_artifacts(
 
 __all__ = [
     "attach_recording_sinks",
+    "build_default_blueprint",
     "collect_native_visualization_artifacts",
     "create_recording_stream",
     "log_depth_image",
+    "log_clear",
+    "log_line_strip3d",
     "log_pinhole",
     "log_pointcloud",
     "log_points3d",
     "log_rgb_image",
+    "log_root_world_transform",
     "log_transform",
+    "ROOT_WORLD_ENTITY_PATH",
 ]

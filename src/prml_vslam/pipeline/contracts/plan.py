@@ -6,7 +6,6 @@ from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseData
 
 from .request import PipelineMode, SourceSpec
@@ -49,9 +48,6 @@ class RunPlan(BaseData):
 
     mode: PipelineMode
     """Selected pipeline mode."""
-
-    method: MethodId
-    """External backend chosen for the run."""
 
     artifact_root: Path
     """Root directory for all run artifacts."""

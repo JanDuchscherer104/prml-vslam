@@ -116,6 +116,14 @@ def translate_slam_update(
     source_seq = update.source_seq
     source_timestamp_ns = update.source_timestamp_ns
     pose = update.pose
+    for message in update.backend_warnings:
+        events.append(
+            BackendWarning(
+                message=message,
+                seq=seq,
+                timestamp_ns=timestamp_ns,
+            )
+        )
     if pose is not None:
         events.append(
             PoseEstimated(

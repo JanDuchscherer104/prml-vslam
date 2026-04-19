@@ -102,7 +102,6 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     plan = RunPlan(
         run_id="trajectory-stage",
         mode=PipelineMode.OFFLINE,
-        method="mock",
         artifact_root=artifact_root,
         source=request.source,
     )

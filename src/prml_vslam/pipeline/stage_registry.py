@@ -33,11 +33,11 @@ ExecutorKindFn = Callable[[RunRequest], StageExecutorKind]
 
 class _RegistryEntry(BaseData):
     definition: StageDefinition
-    enabled_fn: EnabledFn
+    enabled_fn: EnabledFn | None = None
     availability_fn: AvailabilityFn
-    summary_fn: SummaryFn
-    outputs_fn: OutputsFn
-    executor_kind_fn: ExecutorKindFn
+    summary_fn: SummaryFn | None = None
+    outputs_fn: OutputsFn | None = None
+    executor_kind_fn: ExecutorKindFn | None = None
 
 
 class StageRegistry:
@@ -59,13 +59,11 @@ class StageRegistry:
         """Register one stage definition and its availability function."""
         self._entries[definition.key] = _RegistryEntry(
             definition=definition,
-            enabled_fn=_always_enabled if enabled_fn is None else enabled_fn,
+            enabled_fn=enabled_fn,
             availability_fn=availability_fn,
-            summary_fn=(_description_summary(definition.description) if summary_fn is None else summary_fn),
-            outputs_fn=_no_outputs if outputs_fn is None else outputs_fn,
-            executor_kind_fn=(
-                _fixed_executor_kind(definition.executor_kind) if executor_kind_fn is None else executor_kind_fn
-            ),
+            summary_fn=summary_fn,
+            outputs_fn=outputs_fn,
+            executor_kind_fn=executor_kind_fn,
         )
 
     def get(self, key: StageKey) -> StageDefinition:
@@ -84,12 +82,13 @@ class StageRegistry:
             output_dir=request.output_dir,
         )
         resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
-        active_entries = [entry for entry in self._entries.values() if entry.enabled_fn(request)]
+        active_entries = [
+            entry for entry in self._entries.values() if entry.enabled_fn is None or entry.enabled_fn(request)
+        ]
 
         return RunPlan(
             run_id=path_config.slugify_experiment_name(request.experiment_name),
             mode=request.mode,
-            method=MethodId(request.slam.backend.kind),
             artifact_root=run_paths.artifact_root,
             source=request.source,
             stages=[
@@ -116,9 +115,11 @@ class StageRegistry:
         return RunPlanStage(
             key=definition.key,
             title=definition.title,
-            summary=entry.summary_fn(request),
-            outputs=entry.outputs_fn(request, run_paths),
-            executor_kind=entry.executor_kind_fn(request),
+            summary=definition.description if entry.summary_fn is None else entry.summary_fn(request),
+            outputs=[] if entry.outputs_fn is None else entry.outputs_fn(request, run_paths),
+            executor_kind=(
+                definition.executor_kind if entry.executor_kind_fn is None else entry.executor_kind_fn(request)
+            ),
             available=availability.available,
             availability_reason=availability.reason,
             failure_modes=definition.failure_modes,
@@ -237,22 +238,6 @@ class StageRegistry:
             outputs_fn=lambda _request, run_paths: [run_paths.summary_path, run_paths.stage_manifests_path],
         )
         return registry
-
-
-def _always_enabled(_request: RunRequest) -> bool:
-    return True
-
-
-def _no_outputs(_request: RunRequest, _run_paths: RunArtifactPaths) -> list[Path]:
-    return []
-
-
-def _description_summary(description: str) -> SummaryFn:
-    return lambda _request: description
-
-
-def _fixed_executor_kind(kind: StageExecutorKind) -> ExecutorKindFn:
-    return lambda _request: kind
 
 
 def _slam_stage_availability(request: RunRequest, backend: BackendDescriptor) -> StageAvailability:

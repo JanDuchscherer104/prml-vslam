@@ -1,0 +1,181 @@
+"""Typed batch-stage execution helpers for the Ray coordinator."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import ray
+
+from prml_vslam.benchmark import PreparedBenchmarkInputs
+from prml_vslam.eval.services import TrajectoryEvaluationService
+from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
+from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.request import RunRequest
+from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.finalization import project_summary, stable_hash, write_json
+from prml_vslam.pipeline.ingest import materialize_offline_manifest
+from prml_vslam.pipeline.placement import actor_options_for_stage
+from prml_vslam.pipeline.ray_runtime.common import (
+    IngestStageResult,
+    SlamStageResult,
+    SummaryStageResult,
+    TrajectoryEvaluationStageResult,
+    artifact_ref,
+    clean_actor_options,
+)
+from prml_vslam.pipeline.ray_runtime.stage_actors import OfflineSlamStageActor
+from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
+from prml_vslam.utils import PathConfig, RunArtifactPaths
+
+
+@dataclass(frozen=True, slots=True)
+class StageExecutionContext:
+    """Immutable run-scoped context shared by the batch-stage helpers."""
+
+    request: RunRequest
+    plan: RunPlan
+    path_config: PathConfig
+    run_paths: RunArtifactPaths
+    backend_descriptor: BackendDescriptor
+
+
+def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceSource) -> IngestStageResult:
+    """Execute the ingest stage against one offline-capable source."""
+    prepared_manifest = source.prepare_sequence_manifest(context.run_paths.sequence_manifest_path.parent)
+    benchmark_inputs = None
+    if isinstance(source, BenchmarkInputSource):
+        benchmark_inputs = source.prepare_benchmark_inputs(context.run_paths.benchmark_inputs_path.parent)
+        if benchmark_inputs is not None:
+            write_json(context.run_paths.benchmark_inputs_path, benchmark_inputs)
+    sequence_manifest = materialize_offline_manifest(
+        request=context.request,
+        prepared_manifest=prepared_manifest,
+        run_paths=context.run_paths,
+    )
+    write_json(context.run_paths.sequence_manifest_path, sequence_manifest)
+    artifacts = {
+        "sequence_manifest": artifact_ref(context.run_paths.sequence_manifest_path, kind="json"),
+    }
+    if sequence_manifest.rgb_dir is not None:
+        artifacts["rgb_dir"] = artifact_ref(sequence_manifest.rgb_dir, kind="dir")
+    if sequence_manifest.timestamps_path is not None:
+        artifacts["timestamps"] = artifact_ref(sequence_manifest.timestamps_path, kind="json")
+    if sequence_manifest.intrinsics_path is not None:
+        artifacts["intrinsics"] = artifact_ref(sequence_manifest.intrinsics_path, kind="yaml")
+    if sequence_manifest.rotation_metadata_path is not None:
+        artifacts["rotation_metadata"] = artifact_ref(sequence_manifest.rotation_metadata_path, kind="json")
+    if benchmark_inputs is not None:
+        artifacts["benchmark_inputs"] = artifact_ref(context.run_paths.benchmark_inputs_path, kind="json")
+        for reference in benchmark_inputs.reference_trajectories:
+            artifacts[f"reference_tum:{reference.source.value}"] = artifact_ref(reference.path, kind="tum")
+    return IngestStageResult(
+        outcome=StageOutcome(
+            stage_key=StageKey.INGEST,
+            status=StageStatus.COMPLETED,
+            config_hash=stable_hash(context.request.source),
+            input_fingerprint=stable_hash(context.request.source),
+            artifacts=artifacts,
+        ),
+        sequence_manifest=sequence_manifest,
+        benchmark_inputs=benchmark_inputs,
+    )
+
+
+def run_offline_slam_stage(
+    *,
+    context: StageExecutionContext,
+    sequence_manifest: SequenceManifest,
+    benchmark_inputs: PreparedBenchmarkInputs | None,
+) -> SlamStageResult:
+    """Execute the offline SLAM stage through the existing stage actor."""
+    actor = OfflineSlamStageActor.options(
+        **clean_actor_options(
+            actor_options_for_stage(
+                stage_key=StageKey.SLAM,
+                request=context.request,
+                backend=context.backend_descriptor,
+                default_num_cpus=2.0,
+                default_num_gpus=1.0,
+            )
+        )
+    ).remote()
+    return ray.get(
+        actor.run.remote(
+            request=context.request,
+            plan=context.plan,
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=benchmark_inputs,
+            path_config=context.path_config,
+        )
+    )
+
+
+def run_trajectory_evaluation_stage(
+    *,
+    context: StageExecutionContext,
+    sequence_manifest: SequenceManifest,
+    benchmark_inputs: PreparedBenchmarkInputs | None,
+    slam: SlamArtifacts,
+) -> TrajectoryEvaluationStageResult:
+    """Execute the explicit trajectory-evaluation stage."""
+    artifact = TrajectoryEvaluationService(
+        PathConfig(artifacts_dir=context.request.output_dir)
+    ).compute_pipeline_evaluation(
+        request=context.request,
+        plan=context.plan,
+        sequence_manifest=sequence_manifest,
+        benchmark_inputs=benchmark_inputs,
+        slam=slam,
+    )
+    artifacts: dict[str, ArtifactRef] = {}
+    if artifact is not None:
+        artifacts = {
+            "trajectory_metrics": artifact_ref(artifact.path, kind="json"),
+            "reference_tum": artifact_ref(artifact.reference_path, kind="tum"),
+            "estimate_tum": artifact_ref(artifact.estimate_path, kind="tum"),
+        }
+    return TrajectoryEvaluationStageResult(
+        outcome=StageOutcome(
+            stage_key=StageKey.TRAJECTORY_EVALUATION,
+            status=StageStatus.COMPLETED,
+            config_hash=stable_hash(context.request.benchmark.trajectory),
+            input_fingerprint=stable_hash(
+                {
+                    "benchmark_inputs": benchmark_inputs,
+                    "slam_trajectory": slam.trajectory_tum,
+                }
+            ),
+            artifacts=artifacts,
+        )
+    )
+
+
+def run_summary_stage(
+    *,
+    context: StageExecutionContext,
+    stage_outcomes: list[StageOutcome],
+) -> SummaryStageResult:
+    """Execute summary projection from the accumulated stage outcomes."""
+    summary, stage_manifests, outcome = project_summary(
+        request=context.request,
+        plan=context.plan,
+        run_paths=context.run_paths,
+        stage_outcomes=stage_outcomes,
+    )
+    return SummaryStageResult(
+        outcome=outcome,
+        summary=summary,
+        stage_manifests=stage_manifests,
+    )
+
+
+__all__ = [
+    "StageExecutionContext",
+    "run_ingest_stage",
+    "run_offline_slam_stage",
+    "run_summary_stage",
+    "run_trajectory_evaluation_stage",
+]

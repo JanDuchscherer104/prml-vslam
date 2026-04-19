@@ -1,5 +1,4 @@
-# TODO: Desn't this file belong into IO module?
-"""Pipeline-owned source resolution helpers."""
+"""Pipeline-local offline source adapters used by orchestration."""
 
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from prml_vslam.utils import PathConfig
 
 
 class VideoOfflineSequenceSource:
-    """Video-backed offline source resolved by the pipeline."""
+    """Video-backed offline source adapter owned by pipeline orchestration."""
 
     def __init__(self, *, path_config: PathConfig, video_path: Path, frame_stride: int) -> None:
         self._path_config = path_config
@@ -37,7 +36,7 @@ class VideoOfflineSequenceSource:
 
 @dataclass(slots=True)
 class OfflineSourceResolver:
-    """Resolve offline-capable sources for the pipeline."""
+    """Resolve offline-capable source adapters for pipeline orchestration."""
 
     path_config: PathConfig
 

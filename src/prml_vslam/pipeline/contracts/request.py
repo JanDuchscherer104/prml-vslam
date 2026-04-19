@@ -107,11 +107,8 @@ class VistaBackendSpec(TransportModel):
     vista_slam_dir: Path = Path("external/vista-slam")
     checkpoint_path: Path = Path("external/vista-slam/pretrains/frontend_sta_weights.pth")
     vocab_path: Path = Path("external/vista-slam/pretrains/ORBvoc.txt")
-    device: str = "cuda"
     max_view_num: int = 400
-    stride: int = 25
     flow_thres: float = 5.0
-    keyframe_detection: str = "flow_stride"
     neighbor_edge_num: int = 3
     loop_edge_num: int = 3
     loop_dist_min: int = 40

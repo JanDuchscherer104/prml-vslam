@@ -4,17 +4,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from prml_vslam.app.models import AppState, PipelineSourceId
 from prml_vslam.app.pipeline_controller import (
     PipelinePageAction,
     action_from_page_state,
+    build_pipeline_snapshot_render_model,
     build_request_from_action,
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
+from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.methods import MethodId
+from prml_vslam.methods.events import KeyframeVisualizationReady
 from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, FramePacketSummary, RunStarted
+from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.provenance import StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
+from prml_vslam.pipeline.contracts.runtime import RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.utils import PathConfig
 
 
@@ -179,3 +190,176 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
 
     assert error is not None
     assert "placeholder" in error
+
+
+def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path) -> None:
+    request = RunRequest(
+        experiment_name="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        slam=SlamStageConfig(backend={"kind": "vista"}),
+    )
+    plan = RunPlan(
+        run_id="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        artifact_root=tmp_path / "streaming-demo",
+        source=request.source,
+    )
+    snapshot = StreamingRunSnapshot(
+        run_id="streaming-demo",
+        state=RunState.RUNNING,
+        plan=plan,
+        latest_packet=FramePacketSummary(seq=4, timestamp_ns=44, provenance=FramePacketProvenance(source_id="demo")),
+        latest_frame=ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8"),
+        latest_preview=PreviewHandle(handle_id="preview", width=2, height=2, channels=3, dtype="uint8"),
+        received_frames=4,
+        measured_fps=20.0,
+        accepted_keyframes=2,
+        backend_fps=5.0,
+        num_sparse_points=7,
+        num_dense_points=9,
+        trajectory_positions_xyz=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
+        trajectory_timestamps_s=[0.0, 1.0],
+        stage_manifests=[
+            StageManifest(
+                stage_id="slam",
+                config_hash="cfg",
+                input_fingerprint="inp",
+                status=StageStatus.COMPLETED,
+            )
+        ],
+    )
+    notice_event = BackendNoticeReceived(
+        event_id="2",
+        run_id="streaming-demo",
+        ts_ns=2,
+        stage_key=StageKey.SLAM,
+        notice=KeyframeVisualizationReady(
+            seq=4,
+            timestamp_ns=44,
+            source_seq=4,
+            source_timestamp_ns=44,
+            keyframe_index=1,
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            camera_intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
+        ),
+    )
+
+    class FakeRunService:
+        def read_array(self, handle):
+            if handle is None:
+                return None
+            return {
+                "frame": np.ones((2, 2, 3), dtype=np.uint8),
+                "preview": np.zeros((2, 2, 3), dtype=np.uint8),
+            }[handle.handle_id]
+
+        def tail_events(self, *, limit: int = 200, after_event_id: str | None = None):
+            del limit, after_event_id
+            return [
+                RunStarted(event_id="1", run_id="streaming-demo", ts_ns=1),
+                notice_event,
+            ]
+
+    model = build_pipeline_snapshot_render_model(
+        snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
+    )
+
+    assert model.caption is not None
+    assert "ViSTA-SLAM" in model.caption
+    assert model.streaming is not None
+    assert model.streaming.frame_image is not None
+    assert model.streaming.preview_image is not None
+    assert model.streaming.packet_metadata == {
+        "seq": 4,
+        "timestamp_ns": 44,
+        "provenance": {"source_id": "demo"},
+    }
+    assert model.streaming.backend_notice is not None
+    assert model.streaming.backend_notice.camera_intrinsics is not None
+    assert model.stage_manifest_rows[0]["Stage"] == "slam"
+    assert model.recent_events[-1]["kind"] == "backend.notice"
+
+
+def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path) -> None:
+    request = RunRequest(
+        experiment_name="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        slam=SlamStageConfig(backend={"kind": "vista"}),
+    )
+    plan = RunPlan(
+        run_id="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        artifact_root=tmp_path / "streaming-demo",
+        source=request.source,
+    )
+    snapshot = StreamingRunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
+
+    class FakeRunService:
+        def read_array(self, handle):
+            del handle
+            return None
+
+        def tail_events(self, *, limit: int = 200, after_event_id: str | None = None):
+            del limit, after_event_id
+            return []
+
+    model = build_pipeline_snapshot_render_model(
+        snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
+    )
+
+    assert model.streaming is not None
+    assert "ViSTA-SLAM has not produced" in model.streaming.preview_empty_message
+    assert "ViSTA-SLAM has not accepted" in model.streaming.trajectory_empty_message
+
+
+def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = RunRequest(
+        experiment_name="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    plan = RunPlan(
+        run_id="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        artifact_root=tmp_path / "streaming-demo",
+        source=request.source,
+    )
+    snapshot = StreamingRunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
+    calls = {"count": 0}
+
+    def fake_resolve_evo_preview(_snapshot):
+        calls["count"] += 1
+        return None, "preview boom"
+
+    class FakeRunService:
+        def read_array(self, handle):
+            del handle
+            return None
+
+        def tail_events(self, *, limit: int = 200, after_event_id: str | None = None):
+            del limit, after_event_id
+            return []
+
+    monkeypatch.setattr("prml_vslam.app.pipeline_controller.resolve_evo_preview", fake_resolve_evo_preview)
+
+    disabled = build_pipeline_snapshot_render_model(
+        snapshot, FakeRunService(), method=MethodId.MOCK, show_evo_preview=False
+    )
+    enabled = build_pipeline_snapshot_render_model(
+        snapshot, FakeRunService(), method=MethodId.MOCK, show_evo_preview=True
+    )
+
+    assert disabled.streaming is not None
+    assert disabled.streaming.evo_error is None
+    assert enabled.streaming is not None
+    assert enabled.streaming.evo_error == "preview boom"
+    assert calls["count"] == 1

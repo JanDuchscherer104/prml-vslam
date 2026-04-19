@@ -23,6 +23,15 @@ class VisualizationConfig(BaseConfig):
     preserve_native_rerun: bool = True
     """Whether native upstream `.rrd` recordings should be preserved as method artifacts."""
 
+    frusta_history_window_streaming: int = Field(default=20, gt=0)
+    """Bounded keyed-camera/frusta window applied by the streaming sink."""
+
+    frusta_history_window_offline: int | None = Field(default=None, gt=0)
+    """Future offline frusta-history window; `None` keeps full history."""
+
+    show_tracking_trajectory: bool = True
+    """Whether the repo-owned sink should log the full tracking trajectory polyline."""
+
 
 class VisualizationArtifacts(BaseData):
     """Viewer artifacts associated with one run."""
