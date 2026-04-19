@@ -140,13 +140,13 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
         ("depth", "world/live/model/camera/image/depth", 8, None),
         ("rgb", "world/live/model/diag/preview", 8, None),
         ("points", "world/live/model/points", 8, None),
-        ("pose", "world/keyframes/cameras/000003", None, None),
-        ("pose", "world/keyframes/points/000003", None, None),
-        ("pinhole", "world/keyframes/cameras/000003/image", None, None),
-        ("rgb", "world/keyframes/cameras/000003/image", None, None),
-        ("depth", "world/keyframes/cameras/000003/image/depth", None, None),
-        ("rgb", "world/keyframes/cameras/000003/diag/preview", None, None),
-        ("points", "world/keyframes/points/000003/points", None, None),
+        ("pose", "world/keyframes/cameras/000003", 8, None),
+        ("pose", "world/keyframes/points/000003", 8, None),
+        ("pinhole", "world/keyframes/cameras/000003/image", 8, None),
+        ("rgb", "world/keyframes/cameras/000003/image", 8, None),
+        ("depth", "world/keyframes/cameras/000003/image/depth", 8, None),
+        ("rgb", "world/keyframes/cameras/000003/diag/preview", 8, None),
+        ("points", "world/keyframes/points/000003/points", 8, None),
     ]
 
 
@@ -202,9 +202,9 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
     assert calls == [
         ("pose", "world/live/model", 4, None),
         ("points", "world/live/model/points", 4, None),
-        ("pose", "world/keyframes/cameras/000000", None, None),
-        ("pose", "world/keyframes/points/000000", None, None),
-        ("points", "world/keyframes/points/000000/points", None, None),
+        ("pose", "world/keyframes/cameras/000000", 4, None),
+        ("pose", "world/keyframes/points/000000", 4, None),
+        ("points", "world/keyframes/points/000000/points", 4, None),
     ]
 
     live_world_points = transform_points_world_camera(
@@ -414,10 +414,10 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
         ("pose", "world/live/model", 8, None),
         ("pinhole", "world/live/model/camera/image", 8, None),
         ("rgb", "world/live/model/camera/image", 8, None),
-        ("pose", "world/keyframes/cameras/000003", None, None),
-        ("pose", "world/keyframes/points/000003", None, None),
-        ("pinhole", "world/keyframes/cameras/000003/image", None, None),
-        ("rgb", "world/keyframes/cameras/000003/image", None, None),
+        ("pose", "world/keyframes/cameras/000003", 8, None),
+        ("pose", "world/keyframes/points/000003", 8, None),
+        ("pinhole", "world/keyframes/cameras/000003/image", 8, None),
+        ("rgb", "world/keyframes/cameras/000003/image", 8, None),
     ]
 
 

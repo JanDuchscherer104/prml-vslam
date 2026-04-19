@@ -275,7 +275,13 @@ class StreamingSlamStageActor:
             return np.asarray(ref)
         return np.asarray(ray.get(ref))
 
-    def close_stage(self, *, request: RunRequest, plan: RunPlan) -> SlamStageResult:
+    def close_stage(
+        self,
+        *,
+        request: RunRequest,
+        plan: RunPlan,
+        sequence_manifest: SequenceManifest,
+    ) -> SlamStageResult:
         if self._session is None:
             raise RuntimeError("Streaming SLAM actor has not been started.")
         slam = self._session.close()
@@ -291,7 +297,7 @@ class StreamingSlamStageActor:
                 stage_key=StageKey.SLAM,
                 status=StageStatus.COMPLETED,
                 config_hash=stable_hash(request.slam),
-                input_fingerprint=stable_hash({"run_id": plan.run_id, "mode": plan.mode.value}),
+                input_fingerprint=stable_hash(sequence_manifest),
                 artifacts=slam_artifacts_map(slam) | visualization_artifact_map(visualization),
             ),
             slam=slam,

@@ -83,6 +83,10 @@ def _rows_for_log_tick(recording: rdf.Recording) -> list[dict[str, object]]:
     return _rows_for_index(recording, index_name="log_tick")
 
 
+def _rows_for_frame(recording: rdf.Recording) -> list[dict[str, object]]:
+    return _rows_for_index(recording, index_name="frame")
+
+
 def _unwrap_component(value: object | None) -> np.ndarray | None:
     if value is None:
         return None
@@ -165,6 +169,15 @@ def _row_for_points_entity_any_log_tick(recording: rdf.Recording, *, points_enti
         if _points_array(row.get(points_column)).size > 0:
             return row
     raise AssertionError(f"No row found for entity '{points_entity}' on any log_tick row.")
+
+
+def _row_for_points_entity_any_frame(recording: rdf.Recording, *, points_entity: str) -> dict[str, object]:
+    normalized_points_entity = _normalize_entity_path(points_entity)
+    points_column = f"{normalized_points_entity}:Points3D:positions"
+    for row in _rows_for_frame(recording):
+        if _points_array(row.get(points_column)).size > 0:
+            return row
+    raise AssertionError(f"No row found for entity '{points_entity}' on any frame row.")
 
 
 def _world_points_for(recording: rdf.Recording, *, index_name: str, index_value: int, points_entity: str) -> np.ndarray:
@@ -307,14 +320,14 @@ def test_repo_owned_recording_matches_vista_style_world_point_placement_across_k
             index_value=payload.frame_index,
             points_entity="world/live/model/points",
         )
-        repo_keyframe_row = _row_for_points_entity_any_log_tick(
+        repo_keyframe_row = _row_for_points_entity_any_frame(
             repo_recording,
             points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         repo_keyframe_world_points = _world_points_for(
             repo_recording,
-            index_name="log_tick",
-            index_value=repo_keyframe_row["log_tick"],
+            index_name="frame",
+            index_value=repo_keyframe_row["frame"],
             points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         vista_frame_world_points = _world_points_for(
@@ -323,14 +336,14 @@ def test_repo_owned_recording_matches_vista_style_world_point_placement_across_k
             index_value=payload.frame_index,
             points_entity=f"world/est/ref_frame_{payload.frame_index:06d}/points",
         )
-        vista_keyframe_row = _row_for_points_entity_any_log_tick(
+        vista_keyframe_row = _row_for_points_entity_any_frame(
             vista_recording,
             points_entity=f"world/est/ref_keyframe_{payload.keyframe_index:06d}/points",
         )
         vista_keyframe_world_points = _world_points_for(
             vista_recording,
-            index_name="log_tick",
-            index_value=vista_keyframe_row["log_tick"],
+            index_name="frame",
+            index_value=vista_keyframe_row["frame"],
             points_entity=f"world/est/ref_keyframe_{payload.keyframe_index:06d}/points",
         )
 
@@ -362,18 +375,14 @@ def test_repo_owned_recording_points_always_have_matching_parent_transform(tmp_p
             index_value=payload.frame_index,
             points_entity="world/live/model/points",
         )
-        keyframe_row = _row_for_points_entity_any_log_tick(
+        keyframe_row = _row_for_points_entity_any_frame(
             recording,
             points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
 
         assert _transform_matrix_from_row(live_row, entity_path="world/live/model") is not None
         assert (
-            _latest_transform_matrix_before_or_at_log_tick(
-                recording,
-                entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}",
-                log_tick=keyframe_row["log_tick"],
-            )
+            _transform_matrix_from_row(keyframe_row, entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}")
             is not None
         )
 
@@ -389,7 +398,7 @@ def test_repo_owned_recording_keeps_transform_and_points_on_the_same_index(tmp_p
             index_value=payload.frame_index,
             points_entity="world/live/model/points",
         )
-        keyframe_row = _row_for_points_entity_any_log_tick(
+        keyframe_row = _row_for_points_entity_any_frame(
             recording,
             points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
@@ -397,14 +406,10 @@ def test_repo_owned_recording_keeps_transform_and_points_on_the_same_index(tmp_p
         assert live_row["frame"] == payload.frame_index
         assert "/world/live/model:Transform3D:translation" in live_row
         assert "/world/live/model/points:Points3D:positions" in live_row
-        assert "keyframe" not in keyframe_row or keyframe_row["keyframe"] is None
+        assert keyframe_row["frame"] == payload.frame_index
         assert f"/world/keyframes/points/{payload.keyframe_index:06d}/points:Points3D:positions" in keyframe_row
         assert (
-            _latest_transform_matrix_before_or_at_log_tick(
-                recording,
-                entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}",
-                log_tick=keyframe_row["log_tick"],
-            )
+            _transform_matrix_from_row(keyframe_row, entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}")
             is not None
         )
 
@@ -422,11 +427,11 @@ def test_repo_owned_recording_keeps_keyed_history_while_reusing_live_model_point
 
     assert [row["frame"] for row in live_rows] == [payload.frame_index for payload in payloads]
     for payload in payloads:
-        keyframe_row = _row_for_points_entity_any_log_tick(
+        keyframe_row = _row_for_points_entity_any_frame(
             recording,
             points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
-        assert "keyframe" not in keyframe_row or keyframe_row["keyframe"] is None
+        assert keyframe_row["frame"] == payload.frame_index
 
 
 def test_repo_owned_recording_separates_keyframe_camera_and_point_subtrees(tmp_path: Path) -> None:

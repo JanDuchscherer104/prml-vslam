@@ -83,6 +83,7 @@ class RerunLoggingPolicy:
         )
         self._log_keyframe_branch(
             stream,
+            frame_index=frame_index,
             keyframe_index=notice.keyframe_index,
             camera_root_entity=f"world/keyframes/cameras/{notice.keyframe_index:06d}",
             points_root_entity=f"world/keyframes/points/{notice.keyframe_index:06d}",
@@ -136,6 +137,7 @@ class RerunLoggingPolicy:
         self,
         stream,
         *,
+        frame_index: int,
         keyframe_index: int,
         camera_root_entity: str,
         points_root_entity: str,
@@ -146,15 +148,15 @@ class RerunLoggingPolicy:
         preview_image: np.ndarray | None,
         pointmap: np.ndarray | None,
     ) -> None:
-        """Log one persistent historical keyframe bundle on a stable untimed path.
+        """Log one persistent historical keyframe bundle on the frame axis.
 
-        This matches the persistence model used by ViSTA's live viewer path:
-        each historical keyframe gets its own entity subtree, and persistence
-        comes from unique entity paths rather than from a separate history
-        timeline inside the default 3D scene.
+        Each historical keyframe gets its own entity subtree, and persistence
+        comes from unique entity paths plus latest-at frame queries. Logging the
+        branch on the source-frame timeline keeps the keyed history visible at
+        the active frame cursor and avoids detached leaf inspection rows.
         """
         del keyframe_index
-        stream.reset_time()
+        self._set_frame_time(stream, frame_index)
         self.log_transform(stream, entity_path=camera_root_entity, transform=pose)
         self.log_transform(stream, entity_path=points_root_entity, transform=pose, axis_length=0.0)
         self._log_camera_payloads(

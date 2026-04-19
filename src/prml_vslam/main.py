@@ -162,15 +162,31 @@ def run_config(
 ) -> None:
     """Run one offline or streaming pipeline request from a TOML config file."""
     path_config = get_path_config()
+    run_service: RunService | None = None
+    request: RunRequest | None = None
+    snapshot = RunSnapshot()
+    preserve_local_head = False
     try:
         request = load_run_request_toml(path_config=path_config, config_path=config_path)
         runtime_source = build_runtime_source_from_request(request=request, path_config=path_config)
         run_service = RunService(path_config=path_config)
         run_service.start_run(request=request, runtime_source=runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
+        preserve_local_head = (
+            snapshot.state is RunState.COMPLETED and request.runtime.ray.local_head_lifecycle == "reusable"
+        )
+    except KeyboardInterrupt as exc:
+        if run_service is not None:
+            run_service.stop_run()
+            snapshot = run_service.snapshot()
+            _print_pipeline_demo_snapshot(snapshot)
+        raise typer.Exit(code=130) from exc
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
+    finally:
+        if run_service is not None:
+            run_service.shutdown(preserve_local_head=preserve_local_head)
     _print_pipeline_demo_snapshot(snapshot)
     if snapshot.state is RunState.FAILED:
         raise typer.Exit(code=1)

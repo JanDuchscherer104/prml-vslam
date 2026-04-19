@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+import typer
 
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.main import _print_pipeline_demo_snapshot, plan_run, run_config
@@ -100,6 +101,9 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
             captured["request"] = request
             captured["runtime_source"] = runtime_source
 
+        def shutdown(self, *, preserve_local_head: bool = False) -> None:
+            captured["preserve_local_head"] = preserve_local_head
+
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
     monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
     monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: runtime_source)
@@ -111,6 +115,7 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
 
     assert captured["request"] is request
     assert captured["runtime_source"] is runtime_source
+    assert captured["preserve_local_head"] is False
 
 
 def test_run_config_vista_full_toml_smoke_with_mock_backend(
@@ -147,8 +152,8 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
             del run_id, handle
             return None
 
-        def shutdown(self) -> None:
-            captured["shutdown"] = True
+        def shutdown(self, *, preserve_local_head: bool = False) -> None:
+            captured["shutdown"] = preserve_local_head
 
     class CapturingRunService(RunService):
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -187,6 +192,94 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
     assert request.slam.backend.kind == "mock"
     assert request.visualization.connect_live_viewer is False
     assert request.visualization.export_viewer_rrd is False
+    assert captured["shutdown"] is True
+
+
+def test_run_config_preserves_local_head_for_reusable_completed_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest.model_validate(
+        {
+            "experiment_name": "demo-streaming",
+            "mode": "streaming",
+            "output_dir": str(path_config.artifacts_dir),
+            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "slam": {"backend": {"kind": "mock"}},
+            "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
+        }
+    )
+    captured: dict[str, object] = {}
+
+    class FakeRunService:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            captured["path_config"] = path_config
+
+        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
+            captured["request"] = request
+            captured["runtime_source"] = runtime_source
+
+        def shutdown(self, *, preserve_local_head: bool = False) -> None:
+            captured["preserve_local_head"] = preserve_local_head
+
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
+    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
+    monkeypatch.setattr(
+        "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
+        lambda *args, **kwargs: RunSnapshot(state=RunState.COMPLETED),
+    )
+    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
+
+    run_config(Path(".configs/pipelines/vista-full.toml"))
+
+    assert captured["preserve_local_head"] is True
+
+
+def test_run_config_does_not_preserve_local_head_for_reusable_failed_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest.model_validate(
+        {
+            "experiment_name": "demo-streaming",
+            "mode": "streaming",
+            "output_dir": str(path_config.artifacts_dir),
+            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "slam": {"backend": {"kind": "mock"}},
+            "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
+        }
+    )
+    captured: dict[str, object] = {}
+
+    class FakeRunService:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            captured["path_config"] = path_config
+
+        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
+            captured["request"] = request
+            captured["runtime_source"] = runtime_source
+
+        def shutdown(self, *, preserve_local_head: bool = False) -> None:
+            captured["preserve_local_head"] = preserve_local_head
+
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
+    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
+    monkeypatch.setattr(
+        "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
+        lambda *args, **kwargs: RunSnapshot(state=RunState.FAILED),
+    )
+    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
+
+    with pytest.raises(typer.Exit):
+        run_config(Path(".configs/pipelines/vista-full.toml"))
+
+    assert captured["preserve_local_head"] is False
 
 
 def test_build_runtime_source_from_request_caps_streaming_replay(

@@ -330,28 +330,48 @@ def _keyed_point_cloud_snapshots(
     selected_entities = point_entities if max_keyed_clouds is None else point_entities[-max_keyed_clouds:]
     for points_entity in selected_entities:
         parent_entity = points_entity.removesuffix("/points")
-        rows = _rows_for_index(recording, index_name="log_tick", contents=f"{parent_entity}/**")
+        frame_rows = _rows_for_index(recording, index_name="frame", contents=f"{parent_entity}/**")
         latest_row: dict[str, object] | None = None
         latest_world_points: np.ndarray | None = None
-        for row in rows:
-            if row.get("log_tick") is None:
+        latest_index_name = "frame"
+        latest_index_value: int | None = None
+
+        for row in frame_rows:
+            frame_value = row.get("frame")
+            if frame_value is None:
                 continue
-            world_points = _world_points_for_row(
-                row,
-                points_entity=points_entity,
-                log_tick_rows=rows,
-            )
+            world_points = _world_points_for_row(row, points_entity=points_entity)
             if len(world_points) == 0:
                 continue
             latest_row = row
             latest_world_points = world_points
+            latest_index_value = int(frame_value)
+
         if latest_row is None or latest_world_points is None:
+            log_tick_rows = _rows_for_index(recording, index_name="log_tick", contents=f"{parent_entity}/**")
+            for row in log_tick_rows:
+                if row.get("log_tick") is None:
+                    continue
+                world_points = _world_points_for_row(
+                    row,
+                    points_entity=points_entity,
+                    log_tick_rows=log_tick_rows,
+                )
+                if len(world_points) == 0:
+                    continue
+                latest_row = row
+                latest_world_points = world_points
+                latest_index_name = "log_tick"
+                latest_index_value = int(row["log_tick"])
+
+        if latest_row is None or latest_world_points is None or latest_index_value is None:
             continue
+
         snapshots.append(
             _point_cloud_snapshot(
                 entity_path=points_entity,
-                index_name="log_tick",
-                index_value=int(latest_row["log_tick"]),
+                index_name=latest_index_name,
+                index_value=latest_index_value,
                 world_points=latest_world_points,
             )
         )

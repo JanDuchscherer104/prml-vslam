@@ -39,7 +39,7 @@ class PipelineBackend(Protocol):
     def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
         """Resolve one array-like handle into a local NumPy array."""
 
-    def shutdown(self) -> None:
+    def shutdown(self, *, preserve_local_head: bool = False) -> None:
         """Shut down backend-owned resources."""
 
 
