@@ -359,9 +359,13 @@ def test_repo_owned_recording_declares_neutral_root_world_with_rdf_view_coordina
 
     world_columns = [column for column in _component_columns(recording) if column.entity_path == "/world"]
     assert any(column.component == "Transform3D:translation" and column.is_static for column in world_columns)
+    assert any(column.component == "Transform3D:axis_length" and column.is_static for column in world_columns)
     assert any(
         "ViewCoordinates" in column.component or "ViewCoordinates" in column.archetype for column in world_columns
     )
+    first_frame_row = _rows_for_frame(recording)[0]
+    root_axis_length = float(np.asarray(first_frame_row["/world:Transform3D:axis_length"]).reshape(-1)[0])
+    assert root_axis_length > 0.0
 
 
 def test_repo_owned_recording_points_always_have_matching_parent_transform(tmp_path: Path) -> None:

@@ -48,6 +48,25 @@ def test_attach_recording_sinks_configures_grpc_and_file_together(
     assert configured_sinks[1].path == str(tmp_path / "viewer_recording.rrd")
 
 
+def test_attach_recording_sinks_replaces_stale_rrd_file(tmp_path: Path, monkeypatch) -> None:
+    stale_path = tmp_path / "viewer_recording.rrd"
+    stale_path.write_bytes(b"stale")
+
+    class FakeFileSink:
+        def __init__(self, path: str) -> None:
+            self.path = path
+
+    class FakeRecordingStream:
+        def set_sinks(self, *sinks: object) -> None:
+            del sinks
+
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(FileSink=FakeFileSink))
+
+    rerun_helpers.attach_recording_sinks(FakeRecordingStream(), target_path=stale_path)
+
+    assert not stale_path.exists()
+
+
 def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatch) -> None:
     sent_blueprints: list[object] = []
     logged_entities: list[tuple[str, object, bool]] = []
@@ -90,8 +109,9 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
             self.layout = layout
 
     class FakeTransform3D:
-        def __init__(self) -> None:
+        def __init__(self, *, axis_length: float) -> None:
             self.identity = True
+            self.axis_length = axis_length
 
     class FakeViewCoordinates:
         RDF = "rdf"
@@ -137,7 +157,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[1].name == "2D Views"
     assert [view.origin for view in layout.views[1].views] == [
         "world/live/source/rgb",
-        "world/live/model/camera/image",
+        rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
         "world/live/model/camera/image",
         "world/live/model/diag/preview",
     ]
@@ -145,6 +165,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     entity_path, payload, static = logged_entities[0]
     assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert isinstance(payload, FakeTransform3D)
+    assert payload.axis_length == rerun_helpers.ROOT_WORLD_AXIS_LENGTH
     assert static is True
     entity_path, payload, static = logged_entities[1]
     assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH

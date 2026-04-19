@@ -60,6 +60,7 @@ def test_rerun_sink_is_noop_when_handles_are_unavailable(tmp_path: Path) -> None
 
 def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, str, int | None, int | None]] = []
+    transform_axis_lengths: dict[str, float | None] = {}
 
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
@@ -81,8 +82,9 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
     monkeypatch.setattr(
         rerun_sink_module,
         "log_transform",
-        lambda stream, *, entity_path, transform, axis_length=None: calls.append(
-            ("pose", entity_path, *_timeline_state(stream))
+        lambda stream, *, entity_path, transform, axis_length=None: (
+            calls.append(("pose", entity_path, *_timeline_state(stream))),
+            transform_axis_lengths.__setitem__(entity_path, axis_length),
         ),
     )
     monkeypatch.setattr(
@@ -135,6 +137,7 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
 
     assert calls == [
         ("pose", "world/live/model", 8, None),
+        ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, 8, None),
         ("pinhole", "world/live/model/camera/image", 8, None),
         ("rgb", "world/live/model/camera/image", 8, None),
         ("depth", "world/live/model/camera/image/depth", 8, None),
@@ -148,6 +151,9 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
         ("rgb", "world/keyframes/cameras/000003/diag/preview", 8, None),
         ("points", "world/keyframes/points/000003/points", 8, None),
     ]
+    assert transform_axis_lengths["world/live/model"] == 0.0
+    assert transform_axis_lengths["world/keyframes/cameras/000003"] == 0.0
+    assert transform_axis_lengths["world/keyframes/points/000003"] == 0.0
 
 
 def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tmp_path: Path, monkeypatch) -> None:
@@ -222,6 +228,7 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
 
 def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, str, int | None, int | None]] = []
+    tracking_axis_lengths: dict[str, float | None] = {}
 
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
@@ -233,8 +240,9 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     monkeypatch.setattr(
         rerun_sink_module,
         "log_transform",
-        lambda stream, *, entity_path, transform, axis_length=None: calls.append(
-            ("pose", entity_path, *_timeline_state(stream))
+        lambda stream, *, entity_path, transform, axis_length=None: (
+            calls.append(("pose", entity_path, *_timeline_state(stream))),
+            tracking_axis_lengths.__setitem__(entity_path, axis_length),
         ),
     )
     monkeypatch.setattr(
@@ -278,6 +286,7 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
         ("pose", "world/live/tracking/camera", 7, None),
         ("trajectory", "world/trajectory/tracking", 7, None),
     ]
+    assert tracking_axis_lengths["world/live/tracking/camera"] == 0.0
 
 
 def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_path: Path, monkeypatch) -> None:
@@ -352,6 +361,7 @@ def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_pat
 
     assert calls == [
         ("rgb", "world/live/source/rgb", (11, 13, 3), 1, None),
+        ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, (5, 7, 3), 1, None),
         ("pinhole", "world/live/model/camera/image", (5, 7), 1, None),
         ("rgb", "world/live/model/camera/image", (5, 7, 3), 1, None),
         ("depth", "world/live/model/camera/image/depth", (5, 7), 1, None),
@@ -495,6 +505,7 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
 
     assert calls == [
         ("pose", "world/live/model", 8, None),
+        ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, 8, None),
         ("pinhole", "world/live/model/camera/image", 8, None),
         ("rgb", "world/live/model/camera/image", 8, None),
         ("pose", "world/keyframes/cameras/000003", 8, None),

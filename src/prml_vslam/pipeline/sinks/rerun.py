@@ -11,6 +11,7 @@ import ray
 
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.visualization.rerun import (
+    MODEL_RGB_2D_ENTITY_PATH,
     attach_recording_sinks,
     create_recording_stream,
     log_clear,
@@ -107,4 +108,4 @@ class RerunSinkActor:
         self._sink.close()
 
 
-__all__ = ["RerunEventSink", "RerunSinkActor"]
+__all__ = ["MODEL_RGB_2D_ENTITY_PATH", "RerunEventSink", "RerunSinkActor"]
