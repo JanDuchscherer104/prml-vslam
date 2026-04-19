@@ -88,7 +88,7 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_events() ->
     ]
 
 
-def test_policy_logs_live_model_on_frame_timeline_and_history_on_stable_untimed_paths() -> None:
+def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
     stream = _StrictFakeRecordingStream()
     calls: list[tuple[str, str, int | None, int | None]] = []
     policy = RerunLoggingPolicy(
@@ -144,4 +144,4 @@ def test_policy_logs_live_model_on_frame_timeline_and_history_on_stable_untimed_
     history_calls = [call for call in calls if call[1].startswith("world/keyframes/")]
 
     assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in live_calls)
-    assert all(frame is None and keyframe is None for _, _, frame, keyframe in history_calls)
+    assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in history_calls)

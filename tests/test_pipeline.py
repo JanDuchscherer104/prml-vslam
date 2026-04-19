@@ -39,12 +39,13 @@ from prml_vslam.pipeline.contracts.events import (
     StageStatus,
 )
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
-from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.contracts.stages import StageExecutorKind, StageKey
+from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ingest import _max_frames_for_request
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
@@ -97,6 +98,46 @@ def test_run_request_accepts_explicit_backend_spec() -> None:
 
     assert request.slam.backend.kind == "vista"
     assert request.slam.backend.max_frames == 9
+
+
+def test_run_request_defaults_to_ephemeral_local_head_lifecycle() -> None:
+    request = RunRequest.model_validate(
+        {
+            "experiment_name": "demo",
+            "mode": "offline",
+            "output_dir": ".artifacts",
+            "source": {"video_path": "captures/demo.mp4"},
+            "slam": {"backend": {"kind": "vista"}},
+        }
+    )
+
+    assert request.runtime.ray.local_head_lifecycle == "ephemeral"
+
+
+def test_run_request_from_toml_accepts_runtime_ray_policy(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.toml"
+    config_path.write_text(
+        """
+experiment_name = "demo"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-01"
+
+[slam.backend]
+kind = "mock"
+
+[runtime.ray]
+local_head_lifecycle = "reusable"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    request = RunRequest.from_toml(config_path)
+
+    assert request.runtime.ray.local_head_lifecycle == "reusable"
 
 
 def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> None:
@@ -389,7 +430,84 @@ def test_run_coordinator_records_stage_failed_events() -> None:
     assert any(event.kind == "stage.failed" for event in coordinator.events())
 
 
-def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path) -> None:
+def test_run_coordinator_emits_ingest_stage_failure_before_run_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="ingest-failure",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+        benchmark={"trajectory": {"enabled": False}},
+    )
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id=request.experiment_name, namespace="pytest-unit")
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
+    )
+
+    coordinator._request = request
+    coordinator._plan = plan
+    coordinator._path_config = path_config
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_program.run_ingest_stage",
+        lambda *, context, source: (_ for _ in ()).throw(RuntimeError("ingest boom")),
+    )
+
+    coordinator._run(request=request, plan=plan, path_config=path_config, runtime_source=FakeOfflineSource())
+
+    events = coordinator.events()
+    assert [event.kind for event in events] == [
+        "run.started",
+        "stage.queued",
+        "stage.started",
+        "stage.failed",
+        "run.failed",
+    ]
+    failed_event = next(event for event in events if isinstance(event, StageFailed))
+    assert failed_event.stage_key is StageKey.INGEST
+    assert failed_event.outcome.config_hash == stable_hash(request.source)
+    assert failed_event.outcome.input_fingerprint == stable_hash(request.source)
+    assert failed_event.outcome.error_message == "ingest boom"
+
+
+def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = RunRequest(
+        experiment_name="missing-runtime-stage",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id=request.experiment_name, namespace="pytest-unit")
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.INGEST, StageKey.CLOUD_EVALUATION, StageKey.SUMMARY],
+    )
+
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.coordinator.BackendFactory.describe",
+        lambda self, backend: _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0),
+    )
+
+    coordinator._run(request=request, plan=plan, path_config=path_config, runtime_source=FakeOfflineSource())
+
+    failed_event = next(event for event in coordinator.events() if event.kind == "run.failed")
+    assert "cloud.evaluate" in failed_event.error_message
+
+
+def test_run_coordinator_offline_dispatches_batch_stage_executors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
@@ -401,24 +519,22 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
         slam=SlamStageConfig(backend={"kind": "mock"}),
         benchmark={"trajectory": {"enabled": False}},
     )
-    plan = RunPlan(
-        run_id="dispatch-demo",
-        mode=PipelineMode.OFFLINE,
-        artifact_root=tmp_path / "dispatch-demo",
-        source=request.source,
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
     )
-    calls: list[tuple[str, StageKey]] = []
+    calls: list[str] = []
     sequence_manifest = SequenceManifest(sequence_id="demo-sequence")
     slam_artifacts = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),
     )
 
     coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
-    monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.coordinator.run_ingest_stage",
+        "prml_vslam.pipeline.ray_runtime.stage_program.run_ingest_stage",
         lambda *, context, source: (
-            calls.append(("ingest", context.plan.stages[0].key if context.plan.stages else StageKey.INGEST))
+            calls.append("ingest")
             or IngestStageResult(
                 outcome=StageOutcome(
                     stage_key=StageKey.INGEST,
@@ -432,9 +548,9 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
         ),
     )
     monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.coordinator.run_offline_slam_stage",
+        "prml_vslam.pipeline.ray_runtime.stage_program.run_offline_slam_stage",
         lambda *, context, sequence_manifest, benchmark_inputs: (
-            calls.append(("slam", context.plan.stages[1].key if len(context.plan.stages) > 1 else StageKey.SLAM))
+            calls.append("slam")
             or SlamStageResult(
                 outcome=StageOutcome(
                     stage_key=StageKey.SLAM,
@@ -449,10 +565,10 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
         ),
     )
     monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.coordinator.run_summary_stage",
+        "prml_vslam.pipeline.ray_runtime.stage_program.run_summary_stage",
         lambda *, context, stage_outcomes: (
             len(stage_outcomes) == 2
-            and calls.append(("summary", StageKey.SUMMARY))
+            and calls.append("summary")
             or SummaryStageResult(
                 outcome=StageOutcome(
                     stage_key=StageKey.SUMMARY,
@@ -477,12 +593,11 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
         runtime_source=FakeOfflineSource(),
     )
 
-    assert [name for name, _ in calls] == ["ingest", "slam", "summary"]
+    assert calls == ["ingest", "slam", "summary"]
     snapshot = coordinator.snapshot()
     assert snapshot.sequence_manifest == sequence_manifest
     assert snapshot.slam == slam_artifacts
     assert snapshot.state is RunState.COMPLETED
-    monkeypatch.undo()
 
 
 def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
@@ -499,11 +614,15 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
         slam=SlamStageConfig(backend={"kind": "mock"}),
         benchmark={"trajectory": {"enabled": True}},
     )
-    plan = RunPlan(
-        run_id="streaming-dispatch",
-        mode=PipelineMode.STREAMING,
-        artifact_root=tmp_path / "streaming-dispatch",
-        source=request.source,
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[
+            StageKey.INGEST,
+            StageKey.SLAM,
+            StageKey.TRAJECTORY_EVALUATION,
+            StageKey.SUMMARY,
+        ],
     )
     sequence_manifest = SequenceManifest(sequence_id="stream-sequence")
     slam_artifacts = SlamArtifacts(
@@ -534,9 +653,9 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
 
     monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.get", lambda value: value)
     monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.coordinator.run_trajectory_evaluation_stage",
+        "prml_vslam.pipeline.ray_runtime.stage_program.run_trajectory_evaluation_stage",
         lambda *, context, sequence_manifest, benchmark_inputs, slam: (
-            sequence_manifest == coordinator._sequence_manifest
+            sequence_manifest == coordinator._runtime_state.sequence_manifest
             and benchmark_inputs is None
             and slam == slam_artifacts
             and calls.append("trajectory")
@@ -555,7 +674,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
         ),
     )
     monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.coordinator.run_summary_stage",
+        "prml_vslam.pipeline.ray_runtime.stage_program.run_summary_stage",
         lambda *, context, stage_outcomes: (
             len(stage_outcomes) == 2
             and calls.append("summary")
@@ -583,7 +702,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
     coordinator._path_config = path_config
     coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
     coordinator._snapshot = StreamingRunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
-    coordinator._sequence_manifest = sequence_manifest
+    coordinator._runtime_state.sequence_manifest = sequence_manifest
     coordinator._slam_actor = FakeSlamActor()
 
     coordinator._finalize_streaming()
@@ -592,6 +711,40 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
     snapshot = coordinator.snapshot()
     assert snapshot.slam == slam_artifacts
     assert snapshot.state is RunState.COMPLETED
+
+
+def test_streaming_slam_close_stage_fingerprints_normalized_sequence_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_cls = StreamingSlamStageActor.__ray_metadata__.modified_class
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.stage_actors.ray.get_actor", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "prml_vslam.visualization.rerun.collect_native_visualization_artifacts",
+        lambda **kwargs: None,
+    )
+    actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
+    trajectory_artifact = ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")
+    actor._session = SimpleNamespace(
+        close=lambda: SlamArtifacts(trajectory_tum=trajectory_artifact),
+    )
+    request = RunRequest(
+        experiment_name="streaming-fingerprint",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
+    )
+    sequence_manifest = SequenceManifest(sequence_id="normalized-sequence")
+
+    result = actor.close_stage(request=request, plan=plan, sequence_manifest=sequence_manifest)
+
+    assert result.outcome.input_fingerprint == stable_hash(sequence_manifest)
 
 
 def test_streaming_slam_stage_resolves_materialized_payloads_without_ray_get() -> None:
@@ -708,6 +861,60 @@ def test_ray_backend_keeps_inprocess_init_for_pytest_namespaces(
 
     assert "address" not in captured
     assert captured["_skip_env_hook"] is True
+
+
+def test_ray_backend_reuses_healthy_local_head_metadata(tmp_path: Path) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
+    )
+    backend._reuse_local_head = True
+    metadata_path = backend._local_head_metadata_path()
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
+    backend._can_connect = lambda address: address == "127.0.0.1:25001"  # type: ignore[method-assign]
+
+    assert backend._ensure_local_head_address() == "127.0.0.1:25001"
+
+
+def test_ray_backend_replaces_stale_local_head_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
+    )
+    backend._reuse_local_head = True
+    metadata_path = backend._local_head_metadata_path()
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
+    backend._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
+    monkeypatch.setattr(backend, "_pick_local_head_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(backend, "_wait_until_connectable", lambda address: address == "127.0.0.1:25002")
+
+    class FakePopen:
+        pid = 456
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.subprocess.Popen", lambda *args, **kwargs: FakePopen())
+
+    assert backend._ensure_local_head_address() == "127.0.0.1:25002"
+    assert backend._read_local_head_metadata() == {"address": "127.0.0.1:25002", "pid": 456}
+
+
+def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(namespace="prml_vslam.local")
+    backend._coordinators = {"run-1": object()}  # type: ignore[assignment]
+    shutdowns: list[str] = []
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: True)
+    monkeypatch.setattr(backend, "_shutdown_run", lambda run_id: shutdowns.append(run_id))
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.shutdown", lambda: shutdowns.append("ray"))
+    monkeypatch.setattr(backend, "_shutdown_local_head", lambda: shutdowns.append("head"))
+
+    backend.shutdown(preserve_local_head=True)
+
+    assert shutdowns == ["run-1", "ray"]
 
 
 def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
@@ -827,6 +1034,37 @@ def _wait_for_terminal_snapshot(service: RunService, *, timeout_seconds: float =
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def _plan_with_stages(
+    *,
+    tmp_path: Path,
+    request: RunRequest,
+    stage_keys: list[StageKey],
+) -> RunPlan:
+    return RunPlan(
+        run_id=request.experiment_name,
+        mode=request.mode,
+        artifact_root=tmp_path / request.experiment_name,
+        source=request.source,
+        stages=[
+            RunPlanStage(
+                key=stage_key,
+                title=stage_key.value,
+                summary=stage_key.value,
+                executor_kind=_executor_kind_for_test(stage_key=stage_key, mode=request.mode),
+            )
+            for stage_key in stage_keys
+        ],
+    )
+
+
+def _executor_kind_for_test(*, stage_key: StageKey, mode: PipelineMode) -> StageExecutorKind:
+    if stage_key is StageKey.SUMMARY:
+        return StageExecutorKind.PROJECTION
+    if stage_key is StageKey.SLAM and mode is PipelineMode.STREAMING:
+        return StageExecutorKind.STREAMING
+    return StageExecutorKind.BATCH
 
 
 def _placement_request(*, placement: dict[str, dict[str, dict[str, float]]] | None = None) -> RunRequest:

@@ -9,7 +9,6 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.methods.events import BackendError, BackendEvent
@@ -37,12 +36,10 @@ from prml_vslam.pipeline.contracts.events import (
 )
 from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions, actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
@@ -53,23 +50,18 @@ from prml_vslam.pipeline.ray_runtime.common import (
     coordinator_actor_name,
     ts_ns,
 )
-from prml_vslam.pipeline.ray_runtime.stage_actors import (
-    PacketSourceActor,
-    StreamingSlamStageActor,
-)
-from prml_vslam.pipeline.ray_runtime.stage_execution import (
-    StageExecutionContext,
-    run_ingest_stage,
-    run_offline_slam_stage,
-    run_summary_stage,
-    run_trajectory_evaluation_stage,
+from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, StreamingSlamStageActor
+from prml_vslam.pipeline.ray_runtime.stage_execution import StageExecutionContext
+from prml_vslam.pipeline.ray_runtime.stage_program import (
+    RuntimeExecutionState,
+    RuntimeStageProgram,
+    StageCompletionPayload,
 )
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
-from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 
@@ -103,10 +95,8 @@ class RunCoordinatorActor:
         self._request: RunRequest | None = None
         self._plan: RunPlan | None = None
         self._backend_descriptor: BackendDescriptor | None = None
-        self._stage_outcomes: list[StageOutcome] = []
-        self._sequence_manifest: SequenceManifest | None = None
-        self._benchmark_inputs: PreparedBenchmarkInputs | None = None
-        self._slam_artifacts: SlamArtifacts | None = None
+        self._runtime_state = RuntimeExecutionState()
+        self._stage_program = RuntimeStageProgram.default()
         self._streaming_error: str | None = None
         self._path_config: PathConfig | None = None
 
@@ -124,6 +114,15 @@ class RunCoordinatorActor:
         self._request = request
         self._plan = plan
         self._path_config = path_config
+        self._runtime_state = RuntimeExecutionState()
+        self._stop_requested = False
+        self._source_finished = False
+        self._streaming_finalized = False
+        self._in_flight_frames = 0
+        self._streaming_done = threading.Event()
+        self._source_actor = None
+        self._slam_actor = None
+        self._streaming_error = None
         self._snapshot = (
             StreamingRunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
             if plan.mode is PipelineMode.STREAMING
@@ -307,12 +306,6 @@ class RunCoordinatorActor:
                 )
                 self._streaming_done.wait()
         except Exception as exc:
-            stage_key = self._current_stage_key()
-            if stage_key is not None:
-                self._record_stage_failure(
-                    stage_key=stage_key,
-                    outcome=self._failure_outcome(stage_key=stage_key, error_message=str(exc)),
-                )
             self._console.exception("Run '%s' failed: %s", self._run_id, exc)
             self._record_event(
                 RunFailed(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns(), error_message=str(exc))
@@ -332,50 +325,15 @@ class RunCoordinatorActor:
             OfflineSourceResolver(path_config).resolve(request.source) if runtime_source is None else runtime_source
         )
         context = self._stage_execution_context(request=request, plan=plan, path_config=path_config)
-        ingest = run_ingest_stage(
+        self._stage_program.execute_offline(
+            plan=plan,
             context=context,
+            state=self._runtime_state,
             source=source,
-        )
-        self._sequence_manifest = ingest.sequence_manifest
-        self._benchmark_inputs = ingest.benchmark_inputs
-        self._record_stage_completion(
-            stage_key=StageKey.INGEST,
-            outcome=ingest.outcome,
-            sequence_manifest=ingest.sequence_manifest,
-            benchmark_inputs=ingest.benchmark_inputs,
-        )
-        self._emit_stage_started(StageKey.SLAM)
-        slam = run_offline_slam_stage(
-            context=context,
-            sequence_manifest=ingest.sequence_manifest,
-            benchmark_inputs=ingest.benchmark_inputs,
-        )
-        self._slam_artifacts = slam.slam
-        self._record_stage_completion(
-            stage_key=StageKey.SLAM,
-            outcome=slam.outcome,
-            slam=slam.slam,
-            visualization=slam.visualization,
-        )
-        if request.benchmark.trajectory.enabled and not self._stop_requested:
-            self._emit_stage_started(StageKey.TRAJECTORY_EVALUATION)
-            trajectory = run_trajectory_evaluation_stage(
-                context=context,
-                sequence_manifest=ingest.sequence_manifest,
-                benchmark_inputs=ingest.benchmark_inputs,
-                slam=slam.slam,
-            )
-            self._record_stage_completion(stage_key=StageKey.TRAJECTORY_EVALUATION, outcome=trajectory.outcome)
-        self._emit_stage_started(StageKey.SUMMARY)
-        summary = run_summary_stage(
-            context=context,
-            stage_outcomes=list(self._stage_outcomes),
-        )
-        self._record_stage_completion(
-            stage_key=StageKey.SUMMARY,
-            outcome=summary.outcome,
-            summary=summary.summary,
-            stage_manifests=summary.stage_manifests,
+            driver=self,
+            emit_stage_started=self._emit_stage_started,
+            record_stage_completion=self._record_stage_completion,
+            record_stage_failure=self._record_stage_failure,
         )
         terminal_state = "stopped" if self._stop_requested else "completed"
         self._console.info("Offline run '%s' %s.", self._run_id, terminal_state)
@@ -396,32 +354,16 @@ class RunCoordinatorActor:
         if runtime_source is None:
             raise RuntimeError("Streaming runs require an explicit runtime source.")
         context = self._stage_execution_context(request=request, plan=plan, path_config=path_config)
-        ingest = run_ingest_stage(
+        self._stage_program.execute_streaming_prepare(
+            plan=plan,
             context=context,
+            state=self._runtime_state,
             source=runtime_source,
+            driver=self,
+            emit_stage_started=self._emit_stage_started,
+            record_stage_completion=self._record_stage_completion,
+            record_stage_failure=self._record_stage_failure,
         )
-        self._sequence_manifest = ingest.sequence_manifest
-        self._benchmark_inputs = ingest.benchmark_inputs
-        self._record_stage_completion(
-            stage_key=StageKey.INGEST,
-            outcome=ingest.outcome,
-            sequence_manifest=ingest.sequence_manifest,
-            benchmark_inputs=ingest.benchmark_inputs,
-        )
-        self._emit_stage_started(StageKey.SLAM)
-        self._slam_actor = StreamingSlamStageActor.options(
-            **self._stage_actor_options(
-                stage_key=StageKey.SLAM,
-                request=request,
-                default_num_cpus=2.0,
-                default_num_gpus=0.0,
-                inherit_backend_defaults=True,
-            )
-        ).remote(
-            coordinator_name=coordinator_actor_name(plan.run_id),
-            namespace=self._namespace,
-        )
-        ray.get(self._slam_actor.start_stage.remote(request=request, plan=plan, path_config=path_config))
         self._source_actor = PacketSourceActor.options(
             **clean_actor_options(
                 {
@@ -454,48 +396,14 @@ class RunCoordinatorActor:
             request = self._require_request()
             plan = self._require_plan()
             context = self._stage_execution_context(request=request, plan=plan)
-            if self._slam_actor is not None:
-                slam_result = ray.get(self._slam_actor.close_stage.remote(request=request, plan=plan))
-                if self._streaming_error is not None:
-                    self._slam_artifacts = slam_result.slam
-                    self._record_stage_failure(
-                        stage_key=StageKey.SLAM,
-                        outcome=slam_result.outcome.model_copy(
-                            update={
-                                "status": StageStatus.FAILED,
-                                "error_message": self._streaming_error,
-                            }
-                        ),
-                    )
-                else:
-                    if self._stop_requested:
-                        slam_result.outcome.status = StageStatus.STOPPED
-                    self._slam_artifacts = slam_result.slam
-                    self._record_stage_completion(
-                        stage_key=StageKey.SLAM,
-                        outcome=slam_result.outcome,
-                        slam=slam_result.slam,
-                        visualization=slam_result.visualization,
-                    )
-            if self._streaming_error is None and request.benchmark.trajectory.enabled and not self._stop_requested:
-                self._emit_stage_started(StageKey.TRAJECTORY_EVALUATION)
-                trajectory = run_trajectory_evaluation_stage(
-                    context=context,
-                    sequence_manifest=self._require_sequence_manifest(),
-                    benchmark_inputs=self._benchmark_inputs,
-                    slam=self._require_slam_artifacts(),
-                )
-                self._record_stage_completion(stage_key=StageKey.TRAJECTORY_EVALUATION, outcome=trajectory.outcome)
-            self._emit_stage_started(StageKey.SUMMARY)
-            summary = run_summary_stage(
+            self._stage_program.execute_streaming_finalize(
+                plan=plan,
                 context=context,
-                stage_outcomes=list(self._stage_outcomes),
-            )
-            self._record_stage_completion(
-                stage_key=StageKey.SUMMARY,
-                outcome=summary.outcome,
-                summary=summary.summary,
-                stage_manifests=summary.stage_manifests,
+                state=self._runtime_state,
+                driver=self,
+                emit_stage_started=self._emit_stage_started,
+                record_stage_completion=self._record_stage_completion,
+                record_stage_failure=self._record_stage_failure,
             )
             if self._streaming_error is not None:
                 self._console.error("Streaming run '%s' failed: %s", self._run_id, self._streaming_error)
@@ -515,6 +423,65 @@ class RunCoordinatorActor:
                 self._record_event(RunCompleted(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
         finally:
             self._streaming_done.set()
+
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_requested
+
+    @property
+    def streaming_error(self) -> str | None:
+        return self._streaming_error
+
+    def start_streaming_slam_stage(self, *, context: StageExecutionContext) -> None:
+        self._slam_actor = StreamingSlamStageActor.options(
+            **self._stage_actor_options(
+                stage_key=StageKey.SLAM,
+                request=context.request,
+                default_num_cpus=2.0,
+                default_num_gpus=0.0,
+                inherit_backend_defaults=True,
+            )
+        ).remote(
+            coordinator_name=coordinator_actor_name(context.plan.run_id),
+            namespace=self._namespace,
+        )
+        try:
+            ray.get(
+                self._slam_actor.start_stage.remote(
+                    request=context.request,
+                    plan=context.plan,
+                    path_config=context.path_config,
+                )
+            )
+        except Exception:
+            if self._slam_actor is not None:
+                try:
+                    ray.kill(self._slam_actor, no_restart=True)
+                except Exception:
+                    pass
+                self._slam_actor = None
+            raise
+
+    def close_streaming_slam_stage(
+        self,
+        *,
+        context: StageExecutionContext,
+        sequence_manifest: SequenceManifest,
+    ) -> StageCompletionPayload:
+        if self._slam_actor is None:
+            raise RuntimeError("Streaming SLAM actor has not been started.")
+        result = ray.get(
+            self._slam_actor.close_stage.remote(
+                request=context.request,
+                plan=context.plan,
+                sequence_manifest=sequence_manifest,
+            )
+        )
+        return StageCompletionPayload(
+            outcome=result.outcome,
+            slam=result.slam,
+            visualization=result.visualization,
+        )
 
     def _build_rerun_sink(self, *, request: RunRequest, run_paths: RunArtifactPaths) -> ActorHandle | None:
         if not (request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd):
@@ -560,19 +527,8 @@ class RunCoordinatorActor:
             StageStarted(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns(), stage_key=stage_key)
         )
 
-    def _record_stage_completion(
-        self,
-        *,
-        stage_key: StageKey,
-        outcome: StageOutcome,
-        sequence_manifest: SequenceManifest | None = None,
-        benchmark_inputs: PreparedBenchmarkInputs | None = None,
-        slam: SlamArtifacts | None = None,
-        visualization: VisualizationArtifacts | None = None,
-        summary: RunSummary | None = None,
-        stage_manifests: list[StageManifest] | None = None,
-    ) -> None:
-        for artifact_key, artifact in outcome.artifacts.items():
+    def _record_stage_completion(self, stage_key: StageKey, payload: StageCompletionPayload) -> None:
+        for artifact_key, artifact in payload.outcome.artifacts.items():
             self._record_event(
                 ArtifactRegistered(
                     event_id=self._next_event_id(),
@@ -583,13 +539,12 @@ class RunCoordinatorActor:
                     artifact=artifact,
                 )
             )
-        self._stage_outcomes.append(outcome)
         self._console.info(
             "Stage '%s' finished for run '%s' with status '%s' and %d artifacts.",
             stage_key.value,
             self._run_id,
-            outcome.status.value,
-            len(outcome.artifacts),
+            payload.outcome.status.value,
+            len(payload.outcome.artifacts),
         )
         self._record_event(
             StageCompleted(
@@ -597,17 +552,17 @@ class RunCoordinatorActor:
                 run_id=self._run_id,
                 ts_ns=ts_ns(),
                 stage_key=stage_key,
-                outcome=outcome,
-                sequence_manifest=sequence_manifest,
-                benchmark_inputs=benchmark_inputs,
-                slam=slam,
-                visualization=visualization,
-                summary=summary,
-                stage_manifests=[] if stage_manifests is None else stage_manifests,
+                outcome=payload.outcome,
+                sequence_manifest=payload.sequence_manifest,
+                benchmark_inputs=payload.benchmark_inputs,
+                slam=payload.slam,
+                visualization=payload.visualization,
+                summary=payload.summary,
+                stage_manifests=payload.stage_manifests,
             )
         )
 
-    def _record_stage_failure(self, *, stage_key: StageKey, outcome: StageOutcome) -> None:
+    def _record_stage_failure(self, stage_key: StageKey, outcome: StageOutcome) -> None:
         if self._snapshot.stage_status.get(stage_key) in {
             StageStatus.COMPLETED,
             StageStatus.FAILED,
@@ -625,7 +580,6 @@ class RunCoordinatorActor:
                     artifact=artifact,
                 )
             )
-        self._stage_outcomes.append(outcome)
         self._console.error(
             "Stage '%s' failed for run '%s': %s",
             stage_key.value,
@@ -725,17 +679,14 @@ class RunCoordinatorActor:
         return self._path_config
 
     def _require_sequence_manifest(self) -> SequenceManifest:
-        if self._sequence_manifest is None:
+        if self._runtime_state.sequence_manifest is None:
             raise RuntimeError("Sequence manifest is not available.")
-        return self._sequence_manifest
+        return self._runtime_state.sequence_manifest
 
     def _require_slam_artifacts(self) -> SlamArtifacts:
-        if self._slam_artifacts is None:
+        if self._runtime_state.slam is None:
             raise RuntimeError("SLAM artifacts are not available.")
-        return self._slam_artifacts
-
-    def _current_stage_key(self) -> StageKey | None:
-        return self._snapshot.current_stage_key
+        return self._runtime_state.slam
 
     def _stage_execution_context(
         self,
@@ -751,55 +702,6 @@ class RunCoordinatorActor:
             run_paths=RunArtifactPaths.build(plan.artifact_root),
             backend_descriptor=self._require_backend_descriptor(),
         )
-
-    def _failure_outcome(self, *, stage_key: StageKey, error_message: str) -> StageOutcome:
-        return StageOutcome(
-            stage_key=stage_key,
-            status=StageStatus.FAILED,
-            config_hash=self._stage_config_hash(stage_key),
-            input_fingerprint=self._stage_input_fingerprint(stage_key),
-            error_message=error_message,
-        )
-
-    def _stage_config_hash(self, stage_key: StageKey) -> str:
-        request = self._request
-        if request is None:
-            return stable_hash({"run_id": self._run_id, "stage_key": stage_key.value})
-        match stage_key:
-            case StageKey.INGEST:
-                return stable_hash(request.source)
-            case StageKey.SLAM:
-                return stable_hash(request.slam)
-            case StageKey.TRAJECTORY_EVALUATION:
-                return stable_hash(request.benchmark.trajectory)
-            case StageKey.SUMMARY:
-                return stable_hash({"experiment_name": request.experiment_name, "mode": request.mode.value})
-            case _:
-                return stable_hash({"run_id": self._run_id, "stage_key": stage_key.value})
-
-    def _stage_input_fingerprint(self, stage_key: StageKey) -> str:
-        match stage_key:
-            case StageKey.INGEST:
-                return stable_hash(self._request.source if self._request is not None else {"run_id": self._run_id})
-            case StageKey.SLAM:
-                return stable_hash(
-                    self._sequence_manifest
-                    if self._sequence_manifest is not None
-                    else {"run_id": self._run_id, "stage_key": stage_key.value}
-                )
-            case StageKey.TRAJECTORY_EVALUATION:
-                return stable_hash(
-                    {
-                        "benchmark_inputs": self._benchmark_inputs,
-                        "slam_trajectory": None
-                        if self._slam_artifacts is None
-                        else self._slam_artifacts.trajectory_tum,
-                    }
-                )
-            case StageKey.SUMMARY:
-                return stable_hash(self._stage_outcomes)
-            case _:
-                return stable_hash({"run_id": self._run_id, "stage_key": stage_key.value})
 
 
 __all__ = ["RunCoordinatorActor"]

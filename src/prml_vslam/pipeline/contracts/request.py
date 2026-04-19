@@ -127,6 +127,7 @@ BackendSpec = Annotated[
 
 BackendConfigValue: TypeAlias = Path | str | int | float | bool | None
 BackendConfigPayload: TypeAlias = dict[str, BackendConfigValue]
+RayLocalHeadLifecycle: TypeAlias = Literal["ephemeral", "reusable"]
 
 
 class StagePlacement(BaseConfig):
@@ -139,6 +140,20 @@ class PlacementPolicy(BaseConfig):
     """Repo-owned placement policy translated by the backend layer only."""
 
     by_stage: dict[StageKey, StagePlacement] = Field(default_factory=dict)
+
+
+class RayRuntimeConfig(BaseConfig):
+    """Repo-owned local Ray runtime policy."""
+
+    local_head_lifecycle: RayLocalHeadLifecycle = "ephemeral"
+    """Whether the auto-started local Ray head is torn down or preserved after a run."""
+
+
+class RunRuntimeConfig(BaseConfig):
+    """Repo-owned execution-lifecycle policy."""
+
+    ray: RayRuntimeConfig = Field(default_factory=RayRuntimeConfig)
+    """Local Ray runtime policy translated by the backend layer."""
 
 
 class SlamStageConfig(BaseConfig):
@@ -177,6 +192,9 @@ class RunRequest(BaseConfig):
 
     placement: PlacementPolicy = Field(default_factory=PlacementPolicy)
     """Placement policy translated into backend-specific scheduling controls."""
+
+    runtime: RunRuntimeConfig = Field(default_factory=RunRuntimeConfig)
+    """Repo-owned execution-lifecycle policy for the selected run."""
 
     def build(self, path_config: PathConfig | None = None) -> RunPlan:
         """Materialize the canonical run plan for this request."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -30,6 +31,7 @@ from prml_vslam.utils import Console, PathConfig
 _DEFAULT_NAMESPACE = "prml_vslam.local"
 _DEFAULT_LOCAL_HEAD_PORT = 25001
 _MAX_LOCAL_HEAD_INIT_ATTEMPTS = 5
+_LOCAL_HEAD_METADATA_FILE = "ray-local-head.json"
 _RAY_RUNTIME_EXCLUDES = [
     ".git",
     ".venv",
@@ -62,8 +64,10 @@ class RayPipelineBackend(PipelineBackend):
         self._local_head_process: subprocess.Popen[str] | None = None
         self._local_head_address: str | None = None
         self._local_head_log_path: Path | None = None
+        self._reuse_local_head = False
 
     def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
+        self._reuse_local_head = request.runtime.ray.local_head_lifecycle == "reusable"
         self._ensure_ray()
         plan = RunPlannerService().build_run_plan(request=request, path_config=self._path_config)
         unavailable = [stage for stage in plan.stages if not stage.available]
@@ -101,15 +105,17 @@ class RayPipelineBackend(PipelineBackend):
             return None
         return ray.get(self._coordinator_for(run_id).read_array.remote(handle.handle_id))
 
-    def shutdown(self) -> None:
+    def shutdown(self, *, preserve_local_head: bool = False) -> None:
         self._console.info("Shutting down Ray backend for namespace '%s'.", self._namespace)
         if not ray.is_initialized():
-            self._shutdown_local_head()
+            if not preserve_local_head:
+                self._shutdown_local_head()
             return
         for run_id in list(self._coordinators):
             self._shutdown_run(run_id)
         ray.shutdown()
-        self._shutdown_local_head()
+        if not preserve_local_head:
+            self._shutdown_local_head()
 
     def _create_coordinator(self, run_id: str):
         self._shutdown_run(run_id)
@@ -212,14 +218,20 @@ class RayPipelineBackend(PipelineBackend):
             and self._local_head_address is not None
         ):
             return self._local_head_address
+        if self._reuse_local_head:
+            reused_address = self._reuse_local_head_address_if_available()
+            if reused_address is not None:
+                self._local_head_address = reused_address
+                return reused_address
         ray_bin = str(Path(sys.executable).with_name("ray"))
-        subprocess.run(
-            [ray_bin, "stop", "--force"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        time.sleep(1.0)
+        if not self._reuse_local_head:
+            subprocess.run(
+                [ray_bin, "stop", "--force"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            time.sleep(1.0)
         address = self._pick_local_head_address()
         self._console.info("Starting local Ray head on '%s'.", address)
         logs_dir = self._path_config.resolve_logs_dir(create=True)
@@ -242,6 +254,7 @@ class RayPipelineBackend(PipelineBackend):
         )
         if self._wait_until_connectable(address):
             self._local_head_address = address
+            self._write_local_head_metadata(address=address, pid=self._local_head_process.pid)
             return address
         if self._local_head_process.poll() is not None:
             raise RuntimeError(self._read_local_head_log())
@@ -267,17 +280,64 @@ class RayPipelineBackend(PipelineBackend):
         return self._can_connect(address)
 
     def _shutdown_local_head(self) -> None:
-        if self._local_head_process is None:
-            return
-        if self._local_head_process.poll() is None:
+        metadata = self._read_local_head_metadata()
+        self._clear_local_head_metadata()
+        if self._local_head_process is not None and self._local_head_process.poll() is None:
             self._local_head_process.terminate()
             try:
                 self._local_head_process.wait(timeout=5.0)
             except subprocess.TimeoutExpired:
                 self._local_head_process.kill()
                 self._local_head_process.wait(timeout=5.0)
+        elif self._local_head_address is not None or metadata is not None:
+            ray_bin = str(Path(sys.executable).with_name("ray"))
+            subprocess.run(
+                [ray_bin, "stop", "--force"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
         self._local_head_process = None
         self._local_head_address = None
+
+    def _local_head_metadata_path(self) -> Path:
+        return self._path_config.resolve_logs_dir(create=True) / _LOCAL_HEAD_METADATA_FILE
+
+    def _read_local_head_metadata(self) -> dict[str, str | int] | None:
+        path = self._local_head_metadata_path()
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        address = payload.get("address")
+        pid = payload.get("pid")
+        if not isinstance(address, str) or not isinstance(pid, int):
+            return None
+        return {"address": address, "pid": pid}
+
+    def _write_local_head_metadata(self, *, address: str, pid: int) -> None:
+        self._local_head_metadata_path().write_text(
+            json.dumps({"address": address, "pid": pid}, indent=2),
+            encoding="utf-8",
+        )
+
+    def _clear_local_head_metadata(self) -> None:
+        try:
+            self._local_head_metadata_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _reuse_local_head_address_if_available(self) -> str | None:
+        metadata = self._read_local_head_metadata()
+        if metadata is None:
+            return None
+        address = metadata["address"]
+        if isinstance(address, str) and self._can_connect(address):
+            return address
+        self._clear_local_head_metadata()
+        return None
 
     def _read_local_head_log(self) -> str:
         if self._local_head_log_path is None or not self._local_head_log_path.exists():

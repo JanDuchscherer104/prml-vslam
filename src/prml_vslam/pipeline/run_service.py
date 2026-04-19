@@ -51,10 +51,10 @@ class RunService:
             return None
         return self._require_backend().read_array(self._run_id, handle)
 
-    def shutdown(self) -> None:
+    def shutdown(self, *, preserve_local_head: bool = False) -> None:
         if self._backend is None:
             return
-        self._backend.shutdown()
+        self._backend.shutdown(preserve_local_head=preserve_local_head)
 
     def _require_backend(self) -> PipelineBackend:
         if self._backend is None:
