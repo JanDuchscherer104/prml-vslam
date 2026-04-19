@@ -49,6 +49,41 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# In-process manager shim.
+#
+# MultiprocessSlamSession runs us inside a *daemonic* subprocess, and Python
+# forbids daemonic processes from spawning children — so mp.Manager() (which
+# spawns its own helper process) is off-limits here. Since our backend is a
+# thread in the same process, we don't actually need cross-process sharing;
+# threading primitives are enough. This shim matches the small subset of the
+# Manager API that upstream SharedKeyframes/SharedStates actually call.
+# ---------------------------------------------------------------------------
+
+
+class _InProcessValue:
+    """Stand-in for ``mp.Manager().Value`` without a helper subprocess."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, typecode: str, initial: Any) -> None:  # noqa: ARG002
+        self.value = initial
+
+
+class _InProcessManager:
+    """Drop-in substitute for ``mp.Manager()`` usable from daemonic workers."""
+
+    def RLock(self):  # noqa: N802 — match mp.Manager API
+        return threading.RLock()
+
+    def Value(self, typecode: str, initial: Any):  # noqa: N802
+        return _InProcessValue(typecode, initial)
+
+    def list(self):  # noqa: A003
+        return []
+
+
+
 class Mast3rSlamSession:
     """Stateful streaming session over the upstream MASt3R-SLAM runtime."""
 
@@ -121,45 +156,6 @@ class Mast3rSlamSession:
         self._model = load_mast3r(path=checkpoint, device=self._device)
         self._model.share_memory()
 
-        # We need h/w for SharedKeyframes/SharedStates allocation. MASt3R's
-        # resize_img normalises aspect ratio; we derive the final (h, w) from
-        # a zero-image roundtrip — this matches what dataloader.get_img_shape does.
-        """ from mast3r_slam.mast3r_utils import resize_img  # noqa: PLC0415
-
-        probe = resize_img(np.zeros((480, 640, 3), dtype=np.float32), self._img_size)
-        # probe["img"] shape: 1 x 3 x H x W
-        self._h, self._w = int(probe["img"].shape[2]), int(probe["img"].shape[3])
-        self._console.info("MASt3R encoder image size resolved to (h=%d, w=%d).", self._h, self._w) """
-
-        # Shared state + keyframes. Upstream uses mp.Manager so SharedKeyframes
-        # locks work across processes; we only use threads here, but the Manager
-        # construction is part of the __init__ contract so we keep it.
-        """ import multiprocessing as mp  # noqa: PLC0415
-
-        self._manager = mp.Manager()
-        from mast3r_slam.frame import SharedKeyframes, SharedStates  # noqa: PLC0415
-
-        self._keyframes = SharedKeyframes(self._manager, self._h, self._w, device=self._device)
-        self._states = SharedStates(self._manager, self._h, self._w, device=self._device) """
-
-        # Intrinsics (only used when use_calib=True). Upstream expects K_frame,
-        # the intrinsics already rescaled to the resized-image resolution. In the
-        # streaming path we would fill this from FramePacket.intrinsics on the
-        # first frame; for now we leave it None and the first step() will populate.
-        self._K = None
-
-        # Tracker lives on the main (calling) thread — frontend.
-        """ from mast3r_slam.tracker import FrameTracker  # noqa: PLC0415
-
-        self._tracker = FrameTracker(self._model, self._keyframes, self._device) """
-
-        # Spawn backend thread. It owns its own FactorGraph and RetrievalDatabase.
-        """ self._backend_stop.clear()
-        self._backend_thread = threading.Thread(
-            target=self._backend_loop, name="mast3r-backend", daemon=True
-        )
-        self._backend_thread.start() """
-        self._console.info("MASt3R backend thread started.")
 
     # ---- streaming step -------------------------------------------------
 
@@ -173,7 +169,6 @@ class Mast3rSlamSession:
             from mast3r_slam.mast3r_utils import resize_img
             from mast3r_slam.frame import SharedKeyframes, SharedStates
             from mast3r_slam.tracker import FrameTracker
-            import multiprocessing as mp
 
             # 1. Tatsächliche Größe aus dem ersten Bild ermitteln
             img_f32_dummy = frame.rgb.astype(np.float32) / 255.0
@@ -181,7 +176,7 @@ class Mast3rSlamSession:
             self._h, self._w = int(probe["img"].shape[2]), int(probe["img"].shape[3])
             
             # 2. Puffer und Tracker mit korrekten Maßen erstellen
-            self._manager = mp.Manager()
+            self._manager = _InProcessManager()
             self._keyframes = SharedKeyframes(self._manager, self._h, self._w, device=self._device)
             self._states = SharedStates(self._manager, self._h, self._w, device=self._device)
             self._tracker = FrameTracker(self._model, self._keyframes, self._device)
