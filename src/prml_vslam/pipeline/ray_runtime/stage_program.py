@@ -1,4 +1,10 @@
-"""Internal runtime stage program for the linear Ray-backed pipeline."""
+"""Phase-aware stage executor for the linear Ray-backed pipeline.
+
+This module binds stage keys to concrete runtime implementations and decides
+whether they run during offline execution, streaming prepare, or streaming
+finalize. It keeps stage order aligned with the compiled :class:`RunPlan`
+instead of letting the coordinator hardcode stage sequencing itself.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +34,18 @@ from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 @dataclass(slots=True)
 class RuntimeExecutionState:
+    """Mutable cross-stage state accumulated during one run.
+
+    Attributes:
+        sequence_manifest: Normalized ingest boundary once ingest succeeds.
+        benchmark_inputs: Prepared benchmark-side reference data, when the
+            source provides it.
+        slam: Normalized SLAM outputs once the SLAM stage completes.
+        visualization: Optional viewer-owned artifacts emitted by the backend.
+        stage_outcomes: Terminal outcomes in execution order. This list is the
+            direct input to :func:`project_summary`.
+    """
+
     sequence_manifest: SequenceManifest | None = None
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     slam: SlamArtifacts | None = None
@@ -37,6 +55,12 @@ class RuntimeExecutionState:
 
 @dataclass(frozen=True, slots=True)
 class StageCompletionPayload:
+    """Bundle returned by one successful stage implementation.
+
+    The payload carries the terminal :class:`StageOutcome` plus any typed state
+    that downstream stages or the projected snapshot need to retain.
+    """
+
     outcome: StageOutcome
     sequence_manifest: SequenceManifest | None = None
     benchmark_inputs: PreparedBenchmarkInputs | None = None
@@ -47,6 +71,8 @@ class StageCompletionPayload:
 
 
 class RuntimeStageDriver(Protocol):
+    """Coordinator-facing hooks required by streaming-capable stages."""
+
     stop_requested: bool
     streaming_error: str | None
 
@@ -80,6 +106,8 @@ FailureOutcomeFn = Callable[
 
 @dataclass(frozen=True, slots=True)
 class StageRuntimeSpec:
+    """Bind one :class:`StageKey` to its executable runtime entrypoints."""
+
     key: StageKey
     run_offline: OfflineStageFn | None = None
     run_streaming_prepare: StreamingPrepareStageFn | None = None
@@ -92,11 +120,14 @@ StageSkipFn = Callable[[StageRuntimeSpec], bool]
 
 
 class RuntimeStageProgram:
+    """Execute planned stages in offline and streaming-specific phases."""
+
     def __init__(self, specs: list[StageRuntimeSpec]) -> None:
         self._specs = {spec.key: spec for spec in specs}
 
     @classmethod
     def default(cls) -> RuntimeStageProgram:
+        """Build the repository-owned runtime bindings for executable stages."""
         return cls(
             [
                 StageRuntimeSpec(
@@ -163,6 +194,7 @@ class RuntimeStageProgram:
         record_stage_completion: Callable[[StageKey, StageCompletionPayload], None],
         record_stage_failure: Callable[[StageKey, StageOutcome], None],
     ) -> None:
+        """Execute all offline-capable planned stages in plan order."""
         self._execute_phase(
             plan=plan,
             context=context,
@@ -187,6 +219,7 @@ class RuntimeStageProgram:
         record_stage_completion: Callable[[StageKey, StageCompletionPayload], None],
         record_stage_failure: Callable[[StageKey, StageOutcome], None],
     ) -> None:
+        """Execute the non-hot-path prefix of a streaming run."""
         self._execute_phase(
             plan=plan,
             context=context,
@@ -209,6 +242,7 @@ class RuntimeStageProgram:
         record_stage_completion: Callable[[StageKey, StageCompletionPayload], None],
         record_stage_failure: Callable[[StageKey, StageOutcome], None],
     ) -> None:
+        """Execute the post-stream suffix of a streaming run."""
         self._execute_phase(
             plan=plan,
             context=context,

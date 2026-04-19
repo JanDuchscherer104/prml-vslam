@@ -1,4 +1,9 @@
-"""Deterministic snapshot projection over runtime events."""
+"""Project append-only runtime events into live metadata snapshots.
+
+The projector is intentionally pure and deterministic. It does not own runtime
+state; it only applies :class:`RunEvent` values to a previous
+:class:`RunSnapshot` to derive the next projected view shown by the app or CLI.
+"""
 
 from __future__ import annotations
 
@@ -35,15 +40,25 @@ _TRAJECTORY_HISTORY_LIMIT = 100
 
 
 class SnapshotProjector:
-    """Apply runtime events to a projected snapshot."""
+    """Derive one snapshot state from one or more runtime events."""
 
     def project(self, snapshot: RunSnapshot, events: Iterable[RunEvent]) -> RunSnapshot:
+        """Apply a sequence of events in order and return the final snapshot."""
         current = snapshot
         for event in events:
             current = self.apply(current, event)
         return current
 
     def apply(self, snapshot: RunSnapshot, event: RunEvent) -> RunSnapshot:
+        """Apply one event to one snapshot.
+
+        Args:
+            snapshot: Previous projected state for one run.
+            event: New event emitted for that same run.
+
+        Returns:
+            A deep-copied updated snapshot. The input snapshot is never mutated.
+        """
         if snapshot.run_id and event.run_id != snapshot.run_id:
             raise ValueError(f"Event run id mismatch: {event.run_id} != {snapshot.run_id}")
 

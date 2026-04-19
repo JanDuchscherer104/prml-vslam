@@ -1,4 +1,10 @@
-"""Stage registry and registry-backed execution-plan compiler."""
+"""Registry-backed compiler for the linear pipeline stage vocabulary.
+
+The registry is the planning-time source of truth for stage order, request
+gating, backend availability, and canonical output ownership. Runtime
+execution should consume the resulting :class:`RunPlan` rather than re-derive
+stage order independently.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +31,7 @@ class _RegistryEntry(BaseData):
 
 
 class StageRegistry:
-    """Single source of truth for the linear pipeline vocabulary."""
+    """Collect stage metadata and compile deterministic run plans."""
 
     def __init__(self) -> None:
         self._entries: dict[StageKey, _RegistryEntry] = {}
@@ -38,7 +44,16 @@ class StageRegistry:
         enabled_fn: EnabledFn | None = None,
         outputs_fn: OutputsFn | None = None,
     ) -> None:
-        """Register one stage definition and its availability function."""
+        """Register one stage and the rules that make it plan-visible.
+
+        Args:
+            definition: Stable stage identity.
+            availability_fn: Backend-aware availability decision.
+            enabled_fn: Optional request gate that removes the stage entirely
+                from the compiled plan when it evaluates to ``False``.
+            outputs_fn: Optional canonical output-path builder used for plan
+                previews and artifact ownership.
+        """
         self._entries[definition.key] = _RegistryEntry(
             definition=definition,
             enabled_fn=enabled_fn,
@@ -47,15 +62,20 @@ class StageRegistry:
         )
 
     def get(self, key: StageKey) -> StageDefinition:
-        """Return one registered stage definition."""
+        """Return the registered definition for one stage key."""
         return self._entries[key].definition
 
     def availability(self, key: StageKey, request: RunRequest, backend: BackendDescriptor) -> StageAvailability:
-        """Return whether one stage is executable for the request/backend pair."""
+        """Return whether the stage is executable for one request/backend pair."""
         return self._entries[key].availability_fn(request, backend)
 
     def compile(self, *, request: RunRequest, backend: BackendDescriptor, path_config: PathConfig) -> RunPlan:
-        """Compile one deterministic run plan from the stage registry."""
+        """Compile one deterministic :class:`RunPlan` from registry entries.
+
+        Planning is intentionally side-effect free: the registry decides stage
+        order, availability, and expected outputs without opening sources or
+        booting runtime actors.
+        """
         run_paths = path_config.plan_run_paths(
             experiment_name=request.experiment_name,
             method_slug=request.slam.backend.kind,
@@ -101,7 +121,7 @@ class StageRegistry:
 
     @classmethod
     def default(cls) -> StageRegistry:
-        """Build the repository default stage registry."""
+        """Build the repository-owned default stage vocabulary."""
         registry = cls()
         registry.register(
             StageDefinition(key=StageKey.INGEST),

@@ -1,4 +1,10 @@
-"""Pure helpers for hashing and summary projection."""
+"""Pure helpers for summary projection and stable artifact serialization.
+
+These helpers turn executed :class:`StageOutcome` values into durable pipeline
+provenance without reaching back into runtime actors. They are intentionally
+side-effect light and deterministic apart from the explicit JSON writes they
+perform.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +28,12 @@ def project_summary(
     run_paths: RunArtifactPaths,
     stage_outcomes: list[StageOutcome],
 ) -> tuple[RunSummary, list[StageManifest], StageOutcome]:
-    """Project run summary and stage manifests from executed stage outcomes."""
+    """Project persisted provenance from terminal stage outcomes.
+
+    Returns:
+        The run-level summary, the per-stage manifests derived from the passed
+        outcomes, and the summary stage's own :class:`StageOutcome`.
+    """
     stage_manifests = [
         StageManifest(
             stage_id=outcome.stage_key,
@@ -63,7 +74,7 @@ def project_summary(
 
 
 def stable_hash(payload: object) -> str:
-    """Compute a stable SHA-256 hash for repo-owned JSON-friendly payloads."""
+    """Compute a stable SHA-256 fingerprint for JSON-normalizable payloads."""
     normalized_payload = BaseConfig.to_jsonable(payload)
     encoded = json.dumps(normalized_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -71,7 +82,7 @@ def stable_hash(payload: object) -> str:
 
 # TODO: should be handle dby BaseConfig or via native BaseModel functionalities!
 def write_json(path: Path, payload: object) -> None:
-    """Persist one JSON artifact with stable formatting."""
+    """Persist one JSON artifact with deterministic formatting."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(BaseConfig.to_jsonable(payload), indent=2, sort_keys=True), encoding="utf-8")
 

@@ -1,4 +1,11 @@
-"""Authoritative per-run Ray coordinator actor."""
+"""Authoritative per-run coordinator for event-first execution.
+
+The coordinator owns the runtime truth for one run: it records
+:class:`RunEvent` values, projects the live snapshot, manages bounded transient
+payload handles, fans events out to sinks, and coordinates the streaming credit
+loop. Stage helpers and stage actors do work, but this actor decides how that
+work is sequenced and observed.
+"""
 
 from __future__ import annotations
 
@@ -68,7 +75,7 @@ _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 
 @ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0)
 class RunCoordinatorActor:
-    """Authoritative per-run state owner and event projector."""
+    """Own one run's state, event log, and live execution coordination."""
 
     def __init__(self, *, run_id: str, namespace: str) -> None:
         self._console = Console(__name__).child(self.__class__.__name__).child(run_id)
@@ -103,6 +110,7 @@ class RunCoordinatorActor:
     def start(
         self, *, request: RunRequest, plan: RunPlan, path_config: PathConfig, runtime_source: PipelineRuntimeSource
     ) -> None:
+        """Initialize run-scoped state and spawn the worker thread."""
         if self._worker is not None and self._worker.is_alive():
             raise RuntimeError(f"Run '{self._run_id}' is already active.")
         self._console.info(
@@ -141,6 +149,7 @@ class RunCoordinatorActor:
         self._worker.start()
 
     def stop(self) -> None:
+        """Request graceful stop for the active run."""
         if self._snapshot.state in _TERMINAL_STATES:
             self._console.debug(
                 "Ignoring stop request for terminal run '%s' with state '%s'.",
@@ -157,10 +166,12 @@ class RunCoordinatorActor:
             self._record_event(RunStopped(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
 
     def snapshot(self) -> RunSnapshot:
+        """Return a deep-copied projected snapshot for external readers."""
         with self._lock:
             return self._snapshot.model_copy(deep=True)
 
     def events(self, after_event_id: str | None = None, limit: int = 200) -> list[RunEvent]:
+        """Return a bounded trailing slice of the in-memory event ring."""
         with self._lock:
             events = list(self._events)
         if after_event_id is not None:
@@ -170,9 +181,11 @@ class RunCoordinatorActor:
         return events[-limit:]
 
     def read_array(self, handle_id: str) -> np.ndarray | None:
+        """Resolve one coordinator-owned transient payload handle locally."""
         return self._resolve_handle_payload(self._handle_refs.get(handle_id))
 
     def shutdown(self) -> None:
+        """Stop worker-owned activity and close observer sidecars."""
         self._console.info("Shutting down run '%s'.", self._run_id)
         self._stop_requested = True
         if self._source_actor is not None:
@@ -205,6 +218,11 @@ class RunCoordinatorActor:
         received_frames: int,
         measured_fps: float,
     ) -> None:
+        """Record one observed packet and forward it to streaming SLAM.
+
+        The packet metadata becomes telemetry immediately, while the payload
+        itself remains behind coordinator-owned handles or Ray object refs.
+        """
         bindings: list[tuple[str, HandlePayload]] = []
         if frame_handle is not None and frame_ref is not None:
             self._remember_handle(frame_handle.handle_id, frame_ref)
@@ -242,6 +260,7 @@ class RunCoordinatorActor:
         rerun_bindings: list[tuple[str, np.ndarray]],
         released_credits: int,
     ) -> None:
+        """Record translated backend notices and release packet credits."""
         for handle_id, ref in bindings:
             self._remember_handle(handle_id, ref)
         for notice in notices:
@@ -264,12 +283,14 @@ class RunCoordinatorActor:
             self._finalize_streaming()
 
     def on_source_eof(self) -> None:
+        """Mark the streaming source as exhausted and finalize if drained."""
         self._console.info("Streaming source reached EOF for run '%s'.", self._run_id)
         self._source_finished = True
         if self._in_flight_frames == 0:
             self._finalize_streaming()
 
     def on_source_error(self, error_message: str) -> None:
+        """Record a streaming-source failure and finalize once in-flight work drains."""
         self._console.error("Streaming source failed for run '%s': %s", self._run_id, error_message)
         self._streaming_error = error_message
         self._source_finished = True
@@ -433,6 +454,7 @@ class RunCoordinatorActor:
         return self._streaming_error
 
     def start_streaming_slam_stage(self, *, context: StageExecutionContext) -> None:
+        """Construct and start the ordered streaming SLAM actor for this run."""
         self._slam_actor = StreamingSlamStageActor.options(
             **self._stage_actor_options(
                 stage_key=StageKey.SLAM,
@@ -468,6 +490,7 @@ class RunCoordinatorActor:
         context: StageExecutionContext,
         sequence_manifest: SequenceManifest,
     ) -> StageCompletionPayload:
+        """Close the streaming SLAM actor and adapt its result for the stage program."""
         if self._slam_actor is None:
             raise RuntimeError("Streaming SLAM actor has not been started.")
         result = ray.get(
