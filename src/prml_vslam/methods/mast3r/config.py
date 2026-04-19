@@ -1,4 +1,4 @@
-"""Config class for the MASt3R-SLAM backend."""
+"""Config classes for the canonical MASt3R-SLAM backend."""
 
 from __future__ import annotations
 
@@ -14,7 +14,13 @@ if TYPE_CHECKING:
 
 
 class Mast3rSlamBackendConfig(SlamBackendConfig):
-    """Factory config that builds the MASt3R-SLAM backend."""
+    """Factory config that builds the MASt3R-SLAM backend.
+
+    Hyperparameters for tracking / retrieval / local-opt / reloc are
+    loaded from the upstream ``yaml_config_path``. If you need to deviate
+    from upstream defaults, edit ``config/base.yaml`` in the submodule or
+    point ``yaml_config_path`` at a repo-local override.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -31,11 +37,26 @@ class Mast3rSlamBackendConfig(SlamBackendConfig):
     )
     """Path to the retrieval weights used for loop closure."""
 
-    yaml_config_path: Path = Path("external/mast3r-slam/config/calib.yaml")
-    """Path to the upstream YAML hyperparameter config."""
+    yaml_config_path: Path = Path("external/mast3r-slam/config/base.yaml")
+    """Path to the upstream YAML hyperparameter config (use ``calib.yaml`` for use_calib=True presets)."""
 
     c_conf_threshold: float = 1.5
     """Confidence threshold applied when exporting the dense point cloud."""
+
+    device: str = "cuda:0"
+    """Torch device used for model inference and CUDA kernels."""
+
+    img_size: int = 512
+    """Image long-edge size for the MASt3R encoder (512 is upstream default; 224 also supported)."""
+
+    use_calib: bool | None = None
+    """Override the YAML 'use_calib' flag. None = respect YAML; True/False = force it."""
+
+    backend_poll_interval_s: float = 0.01
+    """Sleep between iterations of the backend optimisation thread when idle."""
+
+    backend_join_timeout_s: float = 30.0
+    """Max seconds to wait for the backend thread to exit on close()."""
 
     @property
     def target_type(self) -> type[Mast3rSlamBackend]:
