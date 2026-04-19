@@ -15,7 +15,7 @@ from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 ROOT_WORLD_ENTITY_PATH = "world"
 """Canonical root entity path for repo-owned Rerun recordings."""
-POINT_CLOUD_RADII = 0.05
+POINT_CLOUD_RADII = 0.01
 """Default point cloud radii for repo-owned Rerun recordings."""
 TRAJECTORY_LINE_RADII = 0.01
 """Default trajectory line radii for repo-owned Rerun recordings."""
@@ -77,8 +77,16 @@ def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> 
 
 
 def log_root_world_transform(recording_stream: rr.RecordingStream) -> None:
-    """Declare one explicit neutral world root for ViSTA-aligned recordings."""
+    """Declare one explicit ViSTA-aligned world root for repo-owned recordings.
+
+    The root stays geometrically neutral via ``Transform3D()``, but it also
+    declares ``world`` as ``ViewCoordinates.RDF`` so the 3D viewer/grid uses
+    the same right/down/forward semantics as the logged ViSTA-native scene.
+    This does not rotate or normalize the data; it only makes the existing
+    world basis explicit to the viewer.
+    """
     recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.Transform3D(), static=True)
+    recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.ViewCoordinates.RDF, static=True)
 
 
 def attach_recording_sinks(
@@ -167,7 +175,14 @@ def log_pointcloud(
     colors: np.ndarray | None = None,
     point_cloud_radii: float = POINT_CLOUD_RADII,
 ) -> None:
-    """Log a point cloud (and optionally colors) to the viewer."""
+    """Log one point cloud payload without reinterpreting its frame semantics.
+
+    The current ViSTA live path uses this helper for camera-local pointmaps
+    that inherit world placement from a posed parent entity. Exported
+    world-space dense clouds are a different product surface and should be
+    logged on world-space branches directly instead of being treated as the same
+    payload type.
+    """
     positions = np.asarray(pointmap).reshape(-1, 3)
     valid_mask = (positions[:, 2] > 0) & np.isfinite(positions[:, 2])
     valid_positions = positions[valid_mask]

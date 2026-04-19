@@ -29,7 +29,6 @@ def test_io_package_exports_only_minimal_public_surface() -> None:
         "Cv2ProducerConfig",
         "Cv2ReplayMode",
         "Record3DStreamConfig",
-        "open_cv2_replay_stream",
     ]
     assert not hasattr(io_package, "Record3DStreamSnapshot")
     assert not hasattr(io_package, "Record3DWifiSession")

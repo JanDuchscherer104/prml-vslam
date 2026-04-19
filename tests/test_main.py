@@ -192,7 +192,7 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
     assert request.slam.backend.kind == "mock"
     assert request.visualization.connect_live_viewer is False
     assert request.visualization.export_viewer_rrd is False
-    assert captured["shutdown"] is True
+    assert captured["shutdown"] is False
 
 
 def test_run_config_preserves_local_head_for_reusable_completed_run(

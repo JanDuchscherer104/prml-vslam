@@ -11,7 +11,6 @@ import numpy as np
 from pydantic import Field
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
-from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseConfig
 
 
@@ -167,14 +166,8 @@ class Cv2FrameProducer:
         return poses_by_frame[frame_index]
 
 
-def open_cv2_replay_stream(config: Cv2ProducerConfig) -> FramePacketStream:
-    """Return a ready-to-use replay stream for `config`."""
-    return Cv2FrameProducer(config)
-
-
 __all__ = [
     "Cv2FrameProducer",
     "Cv2ProducerConfig",
     "Cv2ReplayMode",
-    "open_cv2_replay_stream",
 ]

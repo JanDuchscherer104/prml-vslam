@@ -7,54 +7,15 @@ import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
-from prml_vslam.io.cv2_producer import Cv2ProducerConfig, Cv2ReplayMode, open_cv2_replay_stream
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.protocols import FramePacketStream
 
-from .advio_loading import load_advio_calibration, load_advio_frame_timestamps_ns, load_advio_trajectory
+from .advio_loading import load_advio_trajectory
 from .advio_models import AdvioPoseSource
 
 if TYPE_CHECKING:
     from .advio_models import AdvioSceneMetadata
-    from .advio_sequence import AdvioSequence, AdvioSequencePaths
-
-
-def open_advio_stream(
-    sequence: AdvioSequence,
-    *,
-    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
-    stride: int = 1,
-    loop: bool = True,
-    replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
-    respect_video_rotation: bool = False,
-) -> FramePacketStream:
     from .advio_sequence import AdvioSequencePaths
-
-    scene = sequence.scene
-    paths = AdvioSequencePaths.resolve(sequence.config, scene, require_arcore=False)
-    frame_timestamps_ns = load_advio_frame_timestamps_ns(paths.frame_timestamps_path)
-    calibration = load_advio_calibration(paths.calibration_path)
-    stream = open_cv2_replay_stream(
-        Cv2ProducerConfig(
-            video_path=paths.video_path,
-            frame_timestamps_ns=frame_timestamps_ns.tolist(),
-            stride=stride,
-            loop=loop,
-            replay_mode=replay_mode,
-            intrinsics=calibration.intrinsics,
-            poses_by_frame=_poses_for_frame_timestamps(
-                frame_timestamps_ns, _load_pose_trajectory(paths, scene, pose_source)
-            ),
-            base_provenance=FramePacketProvenance(
-                source_id="advio",
-                dataset_id="advio",
-                sequence_id=str(scene.sequence_id),
-                sequence_name=scene.sequence_slug,
-                pose_source=pose_source.value,
-            ),
-        )
-    )
-    return _wrap_with_advio_video_rotation(stream, video_path=paths.video_path) if respect_video_rotation else stream
 
 
 def _load_pose_trajectory(
@@ -112,11 +73,6 @@ def _poses_for_frame_timestamps(
             )
         )
     return poses
-
-
-def _wrap_with_advio_video_rotation(stream: FramePacketStream, *, video_path: Path) -> FramePacketStream:
-    rotation_degrees = read_advio_video_rotation_degrees(video_path)
-    return stream if rotation_degrees == 0 else _RotatedVideoStream(stream, rotation_degrees)
 
 
 class _RotatedVideoStream:

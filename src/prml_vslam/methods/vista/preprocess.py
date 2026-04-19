@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
-from .artifacts import _vista_numpy_array
-
 if TYPE_CHECKING:
     import torch
 
@@ -69,9 +67,20 @@ class UpstreamVistaFramePreprocessor:
         )
         gray_tensor = self._image_dataset.ImgGray(processed_image)
         rgb_tensor = self._image_dataset.ImgNorm(processed_image)
-        gray_u8 = (_vista_numpy_array(gray_tensor, dtype=np.float32).squeeze(0) * 255.0).astype(np.uint8)
+        gray_u8 = (vista_numpy_array(gray_tensor, dtype=np.float32).squeeze(0) * 255.0).astype(np.uint8)
         image_rgb = np.asarray(processed_image, dtype=np.uint8)
         return PreparedVistaFrame(image_rgb=image_rgb, gray_u8=gray_u8, rgb_tensor=rgb_tensor)
 
 
-__all__ = ["PreparedVistaFrame", "UpstreamVistaFramePreprocessor", "VistaFramePreprocessor"]
+def vista_numpy_array(
+    value: np.ndarray | torch.Tensor,
+    *,
+    dtype: np.dtype[np.generic] | type[np.generic],
+) -> np.ndarray:
+    """Convert one upstream ViSTA array-like payload into a numpy array."""
+    if isinstance(value, np.ndarray):
+        return np.asarray(value, dtype=dtype)
+    return np.asarray(value.detach().cpu().numpy(), dtype=dtype)
+
+
+__all__ = ["PreparedVistaFrame", "UpstreamVistaFramePreprocessor", "VistaFramePreprocessor", "vista_numpy_array"]

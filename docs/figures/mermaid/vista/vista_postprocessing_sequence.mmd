@@ -1,0 +1,49 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "24px",
+    "actorFontSize": "24px",
+    "messageFontSize": "20px",
+    "noteFontSize": "18px",
+    "sequenceNumberFontSize": "18px"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    box rgb(232, 241, 255) Repo wrapper
+        participant Caller as VistaSlamSession
+        participant Normalize as build_vista_artifacts
+        participant Writers as repo geometry writers
+    end
+
+    box rgb(255, 244, 229) Upstream ViSTA outputs
+        participant Slam as OnlineSLAM
+        participant Export as save_data_all
+    end
+
+    Note over Caller,Slam: Live readback after an accepted keyframe
+    Caller->>Slam: get_view(view_index, pose/depth/intri)
+    Slam-->>Caller: pose, scaled depth, intrinsics
+    Caller-->>Caller: FrameTransform + CameraIntrinsics + depth_map
+    Caller->>Slam: get_pointmap_vis(view_index)
+    Slam->>Slam: get_view(filter_outlier=False)
+    Slam->>Slam: compute_local_pointclouds(scaled_depth, intri)
+    Slam-->>Caller: preview_rgb, scaled camera-local pointmap
+    Caller-->>Caller: _build_live_pointmap() + count valid z > 0
+    Caller-->>Caller: emit SlamUpdate(pose, depth_map, pointmap, preview_rgb)
+
+    Note over Caller,Export: End-of-run export and repo normalization
+    Caller->>Slam: save_data_all(native_output_dir, save_images=False, save_depths=False)
+    Slam->>Export: collect best-node poses, depths, scales, confs, intrinsics
+    Export->>Export: write view_graph.npz, trajectory.npy, scales.npy, confs.npz, intrinsics.npy
+    Export->>Export: scaled_depths = depths * scales
+    Export->>Export: compute_local_pointclouds(scaled_depths, intrinsics)
+    Export->>Export: transform local points with T_world_camera
+    Export-->>Caller: pointcloud.ply and native files
+    Caller->>Normalize: build_vista_artifacts(native_output_dir, artifact_root, output_policy, timestamps_s)
+    Normalize->>Writers: write_tum_trajectory(slam/trajectory.tum)
+    opt point cloud requested by output policy
+        Normalize->>Writers: write_point_cloud_ply(slam/point_cloud.ply)
+    end
+    Normalize-->>Caller: SlamArtifacts(trajectory, point cloud refs, extras)

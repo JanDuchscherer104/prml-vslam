@@ -10,7 +10,7 @@ output_dir      = ".artifacts"
 
 [source]
 dataset_id  = "advio"
-sequence_id = "advio-13"
+sequence_id = "advio-20"
 
 [slam]
     [slam.outputs]
@@ -23,22 +23,13 @@ sequence_id = "advio-13"
     # Frame cap to stop the backend after N frames.
     max_frames = 1000
 
-    # Torch device string used for model inference.
-    # device = "cuda"
-
     # Maximum number of keyframes the pose graph may hold.
-    max_view_num = 300
-
-    # Keyframe stride fallback used by upstream keyframe selection.
-    stride = 75
+    max_view_num = 250
 
     # Optical-flow magnitude threshold that triggers a new keyframe.
     # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
     # and test true backpressure.
-    flow_thres = 5.0
-
-    # Keyframe-selection strategy passed to the upstream frontend.
-    keyframe_detection = "flow_stride"
+    flow_thres = 20
 
     # Number of temporal-neighbor edges per keyframe in the pose graph.
     neighbor_edge_num = 3
@@ -79,6 +70,9 @@ enabled = false
 [benchmark.efficiency]
 enabled = false
 
+[runtime.ray]
+local_head_lifecycle = "ephemeral"
+
 # ------------------------------------------
 # Visualization Configuration
 # ------------------------------------------
@@ -91,3 +85,9 @@ export_viewer_rrd = true
 
 # Rerun gRPC endpoint used when `connect_live_viewer` is enabled.
 grpc_url = "rerun+http://127.0.0.1:9876/proxy"
+
+# Keep only a few recent frusta visible in the streaming viewer.
+frusta_history_window_streaming = 5
+
+# Keep the full tracking trajectory visible.
+show_tracking_trajectory = true

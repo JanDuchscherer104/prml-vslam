@@ -8,7 +8,13 @@ from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
 from pydantic import Field
 
-from prml_vslam.benchmark import BenchmarkConfig
+from prml_vslam.benchmark import (
+    BenchmarkConfig,
+    CloudBenchmarkConfig,
+    EfficiencyBenchmarkConfig,
+    ReferenceSource,
+    TrajectoryBenchmarkConfig,
+)
 from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import Record3DTransportId
@@ -229,6 +235,54 @@ def build_backend_spec(
             return Mast3rBackendSpec.model_validate({"kind": "mast3r", **payload})
 
 
+def build_run_request(
+    *,
+    experiment_name: str,
+    mode: PipelineMode = PipelineMode.OFFLINE,
+    output_dir: Path,
+    source: SourceSpec,
+    method: MethodId,
+    max_frames: int | None = None,
+    backend_overrides: BackendConfigPayload | None = None,
+    emit_dense_points: bool = True,
+    emit_sparse_points: bool = True,
+    reference_enabled: bool = False,
+    trajectory_eval_enabled: bool = False,
+    trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    evaluate_cloud: bool = False,
+    evaluate_efficiency: bool = False,
+    connect_live_viewer: bool = False,
+    export_viewer_rrd: bool = False,
+) -> RunRequest:
+    """Build one canonical run request from source, backend, and policy selections."""
+    return RunRequest(
+        experiment_name=experiment_name,
+        mode=mode,
+        output_dir=output_dir,
+        source=source,
+        slam=SlamStageConfig(
+            backend=build_backend_spec(method=method, max_frames=max_frames, overrides=backend_overrides),
+            outputs={
+                "emit_dense_points": emit_dense_points,
+                "emit_sparse_points": emit_sparse_points,
+            },
+        ),
+        benchmark=BenchmarkConfig(
+            reference={"enabled": reference_enabled},
+            trajectory=TrajectoryBenchmarkConfig(
+                enabled=trajectory_eval_enabled,
+                baseline_source=trajectory_baseline,
+            ),
+            cloud=CloudBenchmarkConfig(enabled=evaluate_cloud),
+            efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
+        ),
+        visualization=VisualizationConfig(
+            connect_live_viewer=connect_live_viewer,
+            export_viewer_rrd=export_viewer_rrd,
+        ),
+    )
+
+
 def _normalize_backend_payload(model_type: type[TransportModel], payload: BackendConfigPayload) -> BackendConfigPayload:
     """Coerce strict config payloads back into their declared scalar field types."""
     normalized = dict(payload)
@@ -245,6 +299,7 @@ __all__ = [
     "BackendSpec",
     "BackendConfigPayload",
     "build_backend_spec",
+    "build_run_request",
     "DatasetSourceSpec",
     "Mast3rBackendSpec",
     "MockBackendSpec",

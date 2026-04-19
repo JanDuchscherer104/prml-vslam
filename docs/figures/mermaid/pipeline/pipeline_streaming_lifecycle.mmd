@@ -1,0 +1,53 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "actorFontSize": "16px",
+    "messageFontSize": "15px",
+    "noteFontSize": "14px",
+    "sequenceNumberFontSize": "13px"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    participant Caller as App / CLI
+    participant Service as RunService
+    participant Backend as RayPipelineBackend
+    participant Coord as RunCoordinatorActor
+    participant Program as RuntimeStageProgram
+    participant Source as StreamingSequenceSource
+    participant Packet as PacketSourceActor
+    participant Slam as StreamingSlamStageActor
+    participant Summary as project_summary()
+
+    Caller->>Service: start_run(request, runtime_source)
+    Service->>Backend: submit_run(request, runtime_source)
+    Backend->>Backend: request.build(path_config)
+    Backend->>Coord: start(request, plan, path_config, runtime_source)
+    Coord->>Program: execute_streaming_prepare(...)
+    Program->>Source: prepare_sequence_manifest(...)
+    Source-->>Program: prepared SequenceManifest
+    Program-->>Coord: ingest StageCompletionPayload
+    Coord->>Slam: start_stage(request, plan, path_config)
+    Coord->>Packet: start_stream(source, initial_credits)
+    loop packet credit loop
+        Packet->>Source: wait_for_packet()
+        Source-->>Packet: FramePacket
+        Packet-->>Coord: on_packet(packet summary, frame handle)
+        Coord->>Slam: push_frame(...)
+        Slam-->>Coord: on_slam_notices(..., released_credits=1)
+        Coord->>Packet: grant_credit(1)
+    end
+    alt source EOF or error
+        Packet-->>Coord: on_source_eof() / on_source_error()
+    end
+    Coord->>Program: execute_streaming_finalize(...)
+    Program->>Slam: close_stage(request, plan, sequence_manifest)
+    Slam-->>Program: SlamStageResult
+    opt trajectory evaluation enabled and no stop/error
+        Program->>Program: run_trajectory_evaluation_stage(...)
+    end
+    Program->>Summary: project_summary(stage_outcomes)
+    Summary-->>Coord: RunSummary + StageManifest[] + summary StageOutcome
+    Coord->>Coord: emit run.completed / run.failed / run.stopped

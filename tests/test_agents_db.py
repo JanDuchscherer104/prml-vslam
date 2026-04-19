@@ -78,9 +78,53 @@ def test_rank_todos_requires_loc_triplet() -> None:
         AGENTS_DB.rank_todos(todos)
 
 
+def test_rank_refactors_uses_priority_then_expected_loc() -> None:
+    refactors = [
+        {
+            "id": "REFACTOR-0003",
+            "title": "Medium priority cleanup",
+            "status": "suggested",
+            "priority": "medium",
+            "summary": "A medium-priority cleanup candidate.",
+            "loc_min": 5,
+            "loc_expected": 20,
+            "loc_max": 40,
+        },
+        {
+            "id": "REFACTOR-0001",
+            "title": "High priority larger cleanup",
+            "status": "suggested",
+            "priority": "high",
+            "summary": "A larger high-priority cleanup candidate.",
+            "loc_min": 30,
+            "loc_expected": 70,
+            "loc_max": 120,
+        },
+        {
+            "id": "REFACTOR-0002",
+            "title": "High priority smaller cleanup",
+            "status": "suggested",
+            "priority": "high",
+            "summary": "A smaller high-priority cleanup candidate.",
+            "loc_min": 8,
+            "loc_expected": 25,
+            "loc_max": 60,
+        },
+    ]
+
+    ranked = AGENTS_DB.rank_refactors(refactors)
+
+    assert [refactor["id"] for refactor in ranked] == [
+        "REFACTOR-0002",
+        "REFACTOR-0001",
+        "REFACTOR-0003",
+    ]
+
+
 def test_resolve_todo_moves_record_to_resolved_collection(tmp_path: Path) -> None:
     issues_path = tmp_path / "issues.toml"
     todos_path = tmp_path / "todos.toml"
+    refactors_path = tmp_path / "refactors.toml"
     resolved_path = tmp_path / "resolved.toml"
 
     _write_toml(
@@ -109,6 +153,13 @@ def test_resolve_todo_moves_record_to_resolved_collection(tmp_path: Path) -> Non
         },
     )
     _write_toml(
+        refactors_path,
+        {
+            "meta": {"schema_version": 3, "updated_on": "2026-04-05"},
+            "refactors": [],
+        },
+    )
+    _write_toml(
         resolved_path,
         {
             "meta": {"schema_version": 1, "updated_on": "2026-04-05"},
@@ -122,6 +173,7 @@ def test_resolve_todo_moves_record_to_resolved_collection(tmp_path: Path) -> Non
         resolved_on="2026-04-06",
         issues_path=issues_path,
         todos_path=todos_path,
+        refactors_path=refactors_path,
         resolved_path=resolved_path,
     )
 
@@ -141,6 +193,7 @@ def test_resolve_todo_moves_record_to_resolved_collection(tmp_path: Path) -> Non
 def test_resolve_issue_moves_record_to_resolved_collection(tmp_path: Path) -> None:
     issues_path = tmp_path / "issues.toml"
     todos_path = tmp_path / "todos.toml"
+    refactors_path = tmp_path / "refactors.toml"
     resolved_path = tmp_path / "resolved.toml"
 
     _write_toml(
@@ -166,6 +219,13 @@ def test_resolve_issue_moves_record_to_resolved_collection(tmp_path: Path) -> No
         },
     )
     _write_toml(
+        refactors_path,
+        {
+            "meta": {"schema_version": 3, "updated_on": "2026-04-05"},
+            "refactors": [],
+        },
+    )
+    _write_toml(
         resolved_path,
         {
             "meta": {"schema_version": 1, "updated_on": "2026-04-05"},
@@ -179,6 +239,7 @@ def test_resolve_issue_moves_record_to_resolved_collection(tmp_path: Path) -> No
         resolved_on="2026-04-07",
         issues_path=issues_path,
         todos_path=todos_path,
+        refactors_path=refactors_path,
         resolved_path=resolved_path,
     )
 
@@ -192,3 +253,71 @@ def test_resolve_issue_moves_record_to_resolved_collection(tmp_path: Path) -> No
     assert updated_resolved["resolved_issues"][0]["status"] == "resolved"
     assert updated_resolved["resolved_issues"][0]["previous_status"] == "open"
     assert updated_resolved["resolved_issues"][0]["resolved_on"] == "2026-04-07"
+
+
+def test_resolve_refactor_moves_record_to_resolved_collection(tmp_path: Path) -> None:
+    issues_path = tmp_path / "issues.toml"
+    todos_path = tmp_path / "todos.toml"
+    refactors_path = tmp_path / "refactors.toml"
+    resolved_path = tmp_path / "resolved.toml"
+
+    _write_toml(
+        issues_path,
+        {
+            "meta": {"schema_version": 2, "updated_on": "2026-04-05"},
+            "issues": [],
+        },
+    )
+    _write_toml(
+        todos_path,
+        {
+            "meta": {"schema_version": 2, "updated_on": "2026-04-05"},
+            "todos": [],
+        },
+    )
+    _write_toml(
+        refactors_path,
+        {
+            "meta": {"schema_version": 3, "updated_on": "2026-04-05"},
+            "refactors": [
+                {
+                    "id": "REFACTOR-0003",
+                    "title": "Inline one-use pipeline preview helpers",
+                    "status": "suggested",
+                    "priority": "medium",
+                    "summary": "The pipeline controller still carries single-use helper clutter worth inlining.",
+                    "loc_min": 20,
+                    "loc_expected": 50,
+                    "loc_max": 100,
+                }
+            ],
+        },
+    )
+    _write_toml(
+        resolved_path,
+        {
+            "meta": {"schema_version": 1, "updated_on": "2026-04-05"},
+        },
+    )
+
+    moved = AGENTS_DB.resolve_record(
+        kind="refactor",
+        record_id="REFACTOR-0003",
+        note="Closed after inlining the one-use helpers.",
+        resolved_on="2026-04-07",
+        issues_path=issues_path,
+        todos_path=todos_path,
+        refactors_path=refactors_path,
+        resolved_path=resolved_path,
+    )
+
+    updated_refactors = AGENTS_DB.load_toml(refactors_path)
+    updated_resolved = AGENTS_DB.load_toml(resolved_path)
+
+    assert moved["id"] == "REFACTOR-0003"
+    assert updated_refactors["refactors"] == []
+    assert updated_refactors["meta"]["updated_on"] == "2026-04-07"
+    assert updated_resolved["resolved_refactors"][0]["id"] == "REFACTOR-0003"
+    assert updated_resolved["resolved_refactors"][0]["status"] == "resolved"
+    assert updated_resolved["resolved_refactors"][0]["previous_status"] == "suggested"
+    assert updated_resolved["resolved_refactors"][0]["resolved_on"] == "2026-04-07"

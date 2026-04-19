@@ -1,10 +1,15 @@
-"""Native artifact normalization helpers for ViSTA-SLAM."""
+"""Native artifact normalization helpers for ViSTA-SLAM.
+
+This module handles end-of-run native outputs only. In particular, it
+normalizes exported ViSTA trajectories and fused world-space point clouds. It
+does not own live camera-local pointmap semantics, which remain in
+``SlamUpdate.pointmap`` and the streaming Rerun sink.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import open3d as o3d
@@ -16,9 +21,6 @@ from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.utils import RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
-if TYPE_CHECKING:
-    import torch
-
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
 
 
@@ -29,7 +31,18 @@ def build_vista_artifacts(
     output_policy: SlamOutputPolicy,
     timestamps_s: Sequence[float],
 ) -> SlamArtifacts:
-    """Normalize native ViSTA outputs into repository-owned artifact contracts."""
+    """Normalize native ViSTA exports into repository-owned artifact contracts.
+
+    The preserved native output directory contains a different geometry surface
+    from the live session API:
+
+    - live/session readback uses scaled camera-local pointmaps under posed
+      camera entities;
+    - ``pointcloud.ply`` is an already fused world-space dense cloud emitted by
+      upstream export.
+
+    This function only normalizes the exported artifact surface.
+    """
     trajectory_npy = native_output_dir / "trajectory.npy"
     if not trajectory_npy.exists():
         raise RuntimeError(f"Expected trajectory file not found: '{trajectory_npy}'.")
@@ -74,17 +87,6 @@ def build_vista_artifacts(
         dense_points_ply=dense_points_ref,
         extras=extras,
     )
-
-
-def _vista_numpy_array(
-    value: np.ndarray | torch.Tensor,
-    *,
-    dtype: np.dtype[np.generic] | type[np.generic],
-) -> np.ndarray:
-    """Convert one upstream ViSTA array-like payload into a numpy array."""
-    if isinstance(value, np.ndarray):
-        return np.asarray(value, dtype=dtype)
-    return np.asarray(value.detach().cpu().numpy(), dtype=dtype)
 
 
 def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:

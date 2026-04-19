@@ -1,0 +1,65 @@
+[[refactors]]
+id = "REFACTOR-0001"
+title = "Collapse the duplicated stage-runtime result and completion seams"
+status = "suggested"
+priority = "high"
+summary = "The Ray runtime currently spreads stage completion through `StageCompletionPayload`, the `*StageResult` DTOs in `common.py`, and coordinator-owned completion recording, which looks like parallel ownership around one semantic concept."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 60
+loc_expected = 140
+loc_max = 280
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/common.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_program.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "The runtime uses one canonical stage-completion/result shape instead of parallel DTO layers.",
+    "Coordinator/stage-program handoff stays linear and behavior-preserving for offline and streaming execution.",
+    "The existing review findings around ingest failure, SLAM provenance parity, and plan-driven runtime coverage remain fixed.",
+]
+sources = [
+    "src/prml_vslam/pipeline/ray_runtime/common.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_program.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "tests/test_pipeline.py",
+]
+
+[[refactors]]
+id = "REFACTOR-0002"
+title = "Inline low-value one-use helpers in the Pipeline app controller"
+status = "suggested"
+priority = "medium"
+summary = "The Pipeline app controller still owns several minimal-logic helpers that are only used from one render flow and mostly forward, rename, or lightly wrap existing calls."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 25
+loc_expected = 70
+loc_max = 160
+files = [
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "Single-use minimal-logic helpers are inlined where that reduces clutter without obscuring behavior.",
+    "The controller keeps only helpers that still earn a semantic boundary or real reuse.",
+    "The Pipeline page behavior and tests remain unchanged after the cleanup.",
+]
+sources = [
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/pages/pipeline.py",
+    "tests/test_app.py",
+]
+
+[meta]
+schema_version = 3
+repo = "prml-vslam"
+updated_on = "2026-04-19"
+source = "Seeded from the repo-local simplification workflow, current code-index triage, and the validated simplification guidance favoring one canonical owner, deletion of trivial wrappers, and inlining of one-use minimal-logic helpers."
+active_collection = "refactors"
+loc_unit = "lines"

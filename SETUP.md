@@ -28,6 +28,52 @@ uv run pytest -n auto
 make test PYTEST_ARGS="-n auto"
 ```
 
+## Codex History Utilities
+
+Use the repo-local helper under `.agents/scripts/` to refresh the Codex history
+exports and inspect one session by id:
+
+```bash
+python3 .agents/scripts/codex_history.py update
+python3 .agents/scripts/codex_history.py conversation 019da090-0d2b-72b2-aa63-dc0a4ecfaf44 --speaker both --write-default
+python3 .agents/scripts/codex_history.py overview 019da090-0d2b-72b2-aa63-dc0a4ecfaf44
+```
+
+What each command does:
+
+- `update`
+  - refreshes `codex-messages-prml-vslam.jsonl` and
+    `codex-user-messages-prml-vslam.jsonl` from the raw Codex session store
+- `conversation <session-id>`
+  - fetches the full conversation for one session directly from the raw session
+    file
+  - `--speaker user|agent|both` filters the visible roles
+  - `--format md|jsonl` chooses Markdown or JSONL output
+  - `--write-default` writes the result to the default repo-root file such as
+    `codex-session-<id>-messages.md`
+- `overview <session-id>`
+  - prints a minimal session summary including message counts, patch-touched
+    files, successful verification commands, and the last final-answer summary
+
+## MemPalace
+
+MemPalace is installed into the repo `.venv` and exposed through a repo-local
+Codex plugin plus a repo-local skill wrapper.
+
+Refresh the repo-local palace for docs and Codex chat histories:
+
+```bash
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py refresh
+```
+
+Inspect or query the repo-local palace:
+
+```bash
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py status
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py search "ViewCoordinates.RDF"
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
+```
+
 ## ViSTA/CUDA Setup
 
 The ViSTA integration uses `environment.yml` for native build dependencies that

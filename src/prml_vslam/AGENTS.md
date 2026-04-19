@@ -18,8 +18,10 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - All signatures must be typed; prefer modern builtins such as `list[str]` and `dict[str, Any]`.
 - Never use `object` in type annotations. Replace it with a concrete repo-owned protocol, discriminated union, typed payload model, or other explicit boundary type instead of treating `object` as a generic escape hatch.
 - Use `TYPE_CHECKING` guards for imports that are only needed for annotations.
+- Prefer normal repo-local imports over lazy `importlib` indirection or other runtime import tricks. Use `TYPE_CHECKING` to break annotation-only cycles, but do not hide local types from the language server or static tooling.
 - Use `Literal` for constrained string values when it improves clarity.
 - Use `pathlib.Path` for path handling.
+- When a repo-owned `Path` must cross a CLI, config, or persisted text boundary, prefer `.to_posix()` unless the boundary explicitly requires native platform formatting.
 - Prefer `match-case` over long `if` or `elif` chains when it fits the shape of the logic.
 - Prefer `Enum` for categorical variables over ad hoc string literals when that keeps interfaces clearer.
 - Prefer vectorized approaches over functional approaches, functional approaches over comprehensions, and comprehensions over manual loops when readability stays good.
@@ -30,6 +32,8 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Do not write overly defensive workaround code for backwards compatibility or unlikely edge cases unless the task explicitly calls for it.
 - Prefer direct API calls over reflective attribute probing such as `getattr(...)` or `hasattr(...)` when the attribute is known for the repo-targeted version.
 - When integrating an external library, inspect the exact version used in this repo before adding compatibility workarounds; do not implement multi-version fallbacks unless the task explicitly requires them.
+- Prefer inlining trivial one-off wrappers when the call site stays clear. If logic is genuinely reusable across leaf modules, move it to the shared owning module instead of leaving ad hoc helpers buried in leaf code.
+- Keep one semantic concept under one canonical owner. During cleanup, delete duplicate DTOs, wrapper types, and shallow re-export surfaces instead of preserving parallel APIs for backwards compatibility unless transition support is explicitly required.
 - Do not populate `__init__.py` files with imports that are not strictly necessary for the package's public API.
 - Never disable the formatter with inline pragmas; restructure code to satisfy formatting constraints without turning formatting off for a file or block.
 

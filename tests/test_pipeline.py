@@ -19,9 +19,11 @@ from prml_vslam.benchmark import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
     EfficiencyBenchmarkConfig,
+    ReferenceSource,
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.interfaces import FramePacketProvenance, FrameTransform
+from prml_vslam.methods import MethodId
 from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
 from prml_vslam.methods.events import BackendWarning, KeyframeVisualizationReady, translate_slam_update
 from prml_vslam.methods.factory import BackendFactory
@@ -41,10 +43,15 @@ from prml_vslam.pipeline.contracts.events import (
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import RunSummary
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.contracts.request import (
+    DatasetSourceSpec,
+    SlamStageConfig,
+    VideoSourceSpec,
+    build_run_request,
+)
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.pipeline.contracts.stages import StageExecutorKind, StageKey
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ingest import _max_frames_for_request
 from prml_vslam.pipeline.placement import actor_options_for_stage
@@ -138,6 +145,83 @@ local_head_lifecycle = "reusable"
     request = RunRequest.from_toml(config_path)
 
     assert request.runtime.ray.local_head_lifecycle == "reusable"
+
+
+def test_run_request_build_rejects_cloud_eval_without_dense_points(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="cloud-validation",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}, outputs={"emit_dense_points": False}),
+        benchmark=BenchmarkConfig(cloud=CloudBenchmarkConfig(enabled=True)),
+    )
+
+    with pytest.raises(ValueError, match=r"Cloud evaluation requires `slam\.outputs\.emit_dense_points=True`\."):
+        request.build(path_config)
+
+
+def test_run_request_build_uses_supplied_path_config(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="request-build",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+
+    plan = request.build(path_config)
+
+    assert plan.run_id == "request-build"
+    assert (
+        plan.artifact_root
+        == path_config.plan_run_paths(
+            experiment_name=request.experiment_name,
+            method_slug=request.slam.backend.kind,
+            output_dir=request.output_dir,
+        ).artifact_root
+    )
+    assert [stage.key for stage in plan.stages] == [StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY]
+
+
+def test_build_run_request_copies_backend_policy_and_visualization_fields(tmp_path: Path) -> None:
+    request = build_run_request(
+        experiment_name="builder-demo",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4"), frame_stride=3),
+        method=MethodId.VISTA,
+        max_frames=12,
+        backend_overrides={
+            "vista_slam_dir": Path("external/vista-slam"),
+            "checkpoint_path": Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
+            "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
+        },
+        emit_dense_points=False,
+        emit_sparse_points=True,
+        reference_enabled=True,
+        trajectory_eval_enabled=True,
+        trajectory_baseline=ReferenceSource.ARCORE,
+        evaluate_cloud=False,
+        evaluate_efficiency=True,
+        connect_live_viewer=True,
+        export_viewer_rrd=True,
+    )
+
+    assert request.slam.backend.kind == MethodId.VISTA.value
+    assert request.slam.backend.max_frames == 12
+    assert request.slam.backend.vista_slam_dir == Path("external/vista-slam")
+    assert request.slam.outputs.emit_dense_points is False
+    assert request.slam.outputs.emit_sparse_points is True
+    assert request.benchmark.reference.enabled is True
+    assert request.benchmark.trajectory.enabled is True
+    assert request.benchmark.trajectory.baseline_source is ReferenceSource.ARCORE
+    assert request.benchmark.cloud.enabled is False
+    assert request.benchmark.efficiency.enabled is True
+    assert request.visualization.connect_live_viewer is True
+    assert request.visualization.export_viewer_rrd is True
 
 
 def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> None:
@@ -969,6 +1053,31 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     assert stopped == ["backend-unit"]
 
 
+def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    backend = RayPipelineBackend(path_config=path_config, namespace="pytest-unit")
+    request = RunRequest(
+        experiment_name="placeholder",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        slam=SlamStageConfig(backend={"kind": "mock"}, outputs={"emit_dense_points": True}),
+        benchmark=BenchmarkConfig(cloud=CloudBenchmarkConfig(enabled=True)),
+    )
+    created_runs: list[str] = []
+
+    monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
+    monkeypatch.setattr(backend, "_create_coordinator", lambda run_id: created_runs.append(run_id))
+
+    with pytest.raises(RuntimeError, match="placeholder"):
+        backend.submit_run(request=request)
+
+    assert created_runs == []
+
+
 @pytest.mark.skipif(
     os.getenv("PRML_VSLAM_RUN_RAY_SMOKE") != "1",
     reason="Ray end-to-end smoke tests remain opt-in while the real cluster startup path is environment-sensitive.",
@@ -1050,21 +1159,10 @@ def _plan_with_stages(
         stages=[
             RunPlanStage(
                 key=stage_key,
-                title=stage_key.value,
-                summary=stage_key.value,
-                executor_kind=_executor_kind_for_test(stage_key=stage_key, mode=request.mode),
             )
             for stage_key in stage_keys
         ],
     )
-
-
-def _executor_kind_for_test(*, stage_key: StageKey, mode: PipelineMode) -> StageExecutorKind:
-    if stage_key is StageKey.SUMMARY:
-        return StageExecutorKind.PROJECTION
-    if stage_key is StageKey.SLAM and mode is PipelineMode.STREAMING:
-        return StageExecutorKind.STREAMING
-    return StageExecutorKind.BATCH
 
 
 def _placement_request(*, placement: dict[str, dict[str, dict[str, float]]] | None = None) -> RunRequest:

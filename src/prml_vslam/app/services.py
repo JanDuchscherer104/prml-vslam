@@ -16,7 +16,7 @@ from prml_vslam.io.record3d import (
     open_record3d_usb_packet_stream,
 )
 from prml_vslam.io.wifi_packets import Record3DWiFiMetadata
-from prml_vslam.io.wifi_session import open_record3d_wifi_preview_stream
+from prml_vslam.io.wifi_session import Record3DWiFiPreviewStreamConfig
 from prml_vslam.protocols import FramePacketStream
 
 from .models import (
@@ -37,11 +37,6 @@ class _PacketObservation:
     packet: FramePacket
     arrival_time_s: float
     trajectory_time_s: float | None
-
-
-def _is_record3d_frame_timeout(error: RuntimeError) -> bool:
-    message = str(error)
-    return message.startswith("Timed out waiting ") and "Record3D" in message and " frame." in message
 
 
 def _disconnect_snapshot(snapshot: SnapshotT) -> SnapshotT:
@@ -244,10 +239,12 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             )
         )
         self.wifi_preview_stream_factory = wifi_preview_stream_factory or (
-            lambda device_address, timeout_seconds: open_record3d_wifi_preview_stream(
+            lambda device_address, timeout_seconds: Record3DWiFiPreviewStreamConfig(
                 device_address=device_address,
-                frame_timeout_seconds=timeout_seconds,
-            )
+                frame_timeout_seconds=max(1.0, timeout_seconds),
+                signaling_timeout_seconds=10.0,
+                setup_timeout_seconds=12.0,
+            ).setup_target()
         )
         super().__init__(
             empty_snapshot=Record3DStreamSnapshot,
@@ -316,7 +313,8 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
             try:
                 packet = active_stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
             except RuntimeError as exc:
-                if _is_record3d_frame_timeout(exc):
+                message = str(exc)
+                if message.startswith("Timed out waiting ") and "Record3D" in message and " frame." in message:
                     return
                 raise
             arrival_time_s = packet.arrival_timestamp_s if packet.arrival_timestamp_s is not None else time.time()

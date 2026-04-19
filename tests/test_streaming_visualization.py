@@ -280,6 +280,89 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     ]
 
 
+def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, tuple[int, ...], int | None, int | None]] = []
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(
+            ("rgb", entity_path, tuple(np.asarray(image_rgb).shape), *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_pinhole",
+        lambda stream, *, entity_path, intrinsics: calls.append(
+            ("pinhole", entity_path, (intrinsics.height_px, intrinsics.width_px), *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_depth_image",
+        lambda stream, *, entity_path, depth_m: calls.append(
+            ("depth", entity_path, tuple(np.asarray(depth_m).shape), *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(rerun_sink_module, "log_transform", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_pointcloud", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    sink.observe(
+        PacketObserved(
+            event_id="packet",
+            run_id=f"run-{uuid.uuid4().hex}",
+            ts_ns=1,
+            packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance(source_id="fake")),
+            frame=ArrayHandle(handle_id="source-frame", shape=(11, 13, 3), dtype="uint8"),
+            received_frames=1,
+            measured_fps=30.0,
+        ),
+        payloads={"source-frame": np.zeros((11, 13, 3), dtype=np.uint8)},
+    )
+    sink.observe(
+        BackendNoticeReceived(
+            event_id="notice",
+            run_id=f"run-{uuid.uuid4().hex}",
+            ts_ns=2,
+            stage_key=StageKey.SLAM,
+            notice=KeyframeVisualizationReady(
+                seq=2,
+                timestamp_ns=2,
+                source_seq=1,
+                source_timestamp_ns=1,
+                keyframe_index=0,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                image=ArrayHandle(handle_id="model-rgb", shape=(5, 7, 3), dtype="uint8"),
+                depth=ArrayHandle(handle_id="model-depth", shape=(5, 7), dtype="float32"),
+                preview=PreviewHandle(handle_id="preview", width=7, height=5, channels=3, dtype="uint8"),
+                camera_intrinsics=CameraIntrinsics(fx=3.0, fy=4.0, cx=1.5, cy=2.0, width_px=7, height_px=5),
+            ),
+        ),
+        payloads={
+            "model-rgb": np.zeros((5, 7, 3), dtype=np.uint8),
+            "model-depth": np.ones((5, 7), dtype=np.float32),
+            "preview": np.zeros((5, 7, 3), dtype=np.uint8),
+        },
+    )
+
+    assert calls == [
+        ("rgb", "world/live/source/rgb", (11, 13, 3), 1, None),
+        ("pinhole", "world/live/model/camera/image", (5, 7), 1, None),
+        ("rgb", "world/live/model/camera/image", (5, 7, 3), 1, None),
+        ("depth", "world/live/model/camera/image/depth", (5, 7), 1, None),
+        ("rgb", "world/live/model/diag/preview", (5, 7, 3), 1, None),
+        ("pinhole", "world/keyframes/cameras/000000/image", (5, 7), 1, None),
+        ("rgb", "world/keyframes/cameras/000000/image", (5, 7, 3), 1, None),
+        ("depth", "world/keyframes/cameras/000000/image/depth", (5, 7), 1, None),
+        ("rgb", "world/keyframes/cameras/000000/diag/preview", (5, 7, 3), 1, None),
+    ]
+
+
 def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypatch) -> None:
     paths: list[tuple[str, int | None, int | None]] = []
 
