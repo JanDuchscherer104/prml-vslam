@@ -8,7 +8,7 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 ## Current State
 
-- The repository already has stable top-level package slices: `app`, `datasets`, `eval`, `interfaces`, `io`, `methods`, `pipeline`, `plotting`, `protocols`, and `utils`.
+- The repository already has stable top-level package slices: `alignment`, `app`, `datasets`, `eval`, `interfaces`, `io`, `methods`, `pipeline`, `plotting`, `protocols`, and `utils`.
 - This file is the current canonical location for top-level module ownership and cross-package contract placement rules.
 - Package-local `README.md` and `REQUIREMENTS.md` files already carry the deeper package-level guidance.
 - The current architecture is typed and artifact-first, with offline benchmark execution as the core and bounded live streaming around it.
@@ -22,6 +22,10 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 ## Responsibilities
 
+- `alignment`
+  - owns derived alignment logic that interprets normalized SLAM artifacts without mutating them
+  - examples include dominant-ground detection, viewer-scoped ground alignment metadata, and future gravity/reference-assisted alignment helpers
+  - does not own backend execution, benchmark metric computation, or Rerun logging
 - `app`
   - owns Streamlit pages, typed page state (`prml_vslam.app.models`), UI composition, and launch surfaces
   - does not own pipeline semantics, transport decoding, dataset normalization, or benchmark-policy logic
@@ -64,6 +68,7 @@ Use this file for package-root ownership rules and cross-package contract constr
 ## Non-Negotiable Requirements
 
 - One semantic concept must have one owning module.
+- Derived alignment transforms remain explicit repo-owned artifacts; they must not silently replace native SLAM trajectories or point clouds.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - Shared repo-wide behavior seams belong in `prml_vslam.protocols.*`.

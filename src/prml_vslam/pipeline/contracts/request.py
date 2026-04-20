@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
 from pydantic import Field
 
+from prml_vslam.alignment.contracts import AlignmentConfig
 from prml_vslam.benchmark import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
@@ -198,6 +199,9 @@ class RunRequest(BaseConfig):
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     """Benchmark-policy configuration kept outside the pipeline core."""
 
+    alignment: AlignmentConfig = Field(default_factory=AlignmentConfig)
+    """Derived alignment policy kept separate from native backend semantics."""
+
     visualization: VisualizationConfig = Field(default_factory=VisualizationConfig)
     """Viewer-export policy kept outside pipeline execution semantics."""
 
@@ -214,6 +218,10 @@ class RunRequest(BaseConfig):
 
         if self.benchmark.cloud.enabled and not self.slam.outputs.emit_dense_points:
             raise ValueError("Cloud evaluation requires `slam.outputs.emit_dense_points=True`.")
+        if self.alignment.ground.enabled and not (
+            self.slam.outputs.emit_dense_points or self.slam.outputs.emit_sparse_points
+        ):
+            raise ValueError("Ground alignment requires at least one point-cloud output from the SLAM stage.")
         config = PathConfig() if path_config is None else path_config
         backend_descriptor = BackendFactory().describe(self.slam.backend)
         return StageRegistry.default().compile(request=self, backend=backend_descriptor, path_config=config)
@@ -256,6 +264,7 @@ def build_run_request(
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
     evaluate_efficiency: bool = False,
+    ground_alignment_enabled: bool = False,
     connect_live_viewer: bool = False,
     export_viewer_rrd: bool = False,
 ) -> RunRequest:
@@ -280,6 +289,9 @@ def build_run_request(
             ),
             cloud=CloudBenchmarkConfig(enabled=evaluate_cloud),
             efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
+        ),
+        alignment=AlignmentConfig(
+            ground={"enabled": ground_alignment_enabled},
         ),
         visualization=VisualizationConfig(
             connect_live_viewer=connect_live_viewer,

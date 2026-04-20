@@ -11,6 +11,7 @@ from typing import TypeAlias
 import numpy as np
 import ray
 
+from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.methods.contracts import SlamBackendConfig
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
@@ -45,6 +46,11 @@ class SlamStageResult(BaseData):
 
 class TrajectoryEvaluationStageResult(BaseData):
     outcome: StageOutcome
+
+
+class GroundAlignmentStageResult(BaseData):
+    outcome: StageOutcome
+    ground_alignment: GroundAlignmentMetadata
 
 
 class SummaryStageResult(BaseData):
@@ -159,6 +165,7 @@ __all__ = [
     "DEFAULT_MAX_FRAMES_IN_FLIGHT",
     "EVENT_RING_LIMIT",
     "FPS_WINDOW",
+    "GroundAlignmentStageResult",
     "HANDLE_LIMIT",
     "HandlePayload",
     "IngestStageResult",

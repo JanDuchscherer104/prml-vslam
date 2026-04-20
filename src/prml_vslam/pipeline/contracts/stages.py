@@ -12,6 +12,7 @@ class StageKey(StrEnum):
 
     INGEST = "ingest"
     SLAM = "slam"
+    GROUND_ALIGNMENT = "ground.align"
     TRAJECTORY_EVALUATION = "trajectory.evaluate"
     REFERENCE_RECONSTRUCTION = "reference.reconstruct"
     CLOUD_EVALUATION = "cloud.evaluate"
@@ -24,6 +25,7 @@ class StageKey(StrEnum):
         return {
             StageKey.INGEST: "Normalize Input Sequence",
             StageKey.SLAM: "Run SLAM Backend",
+            StageKey.GROUND_ALIGNMENT: "Detect Ground Plane",
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
             StageKey.REFERENCE_RECONSTRUCTION: "Build Reference Reconstruction",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",

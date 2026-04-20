@@ -134,6 +134,12 @@ class StageRegistry:
             outputs_fn=_slam_outputs,
         )
         registry.register(
+            StageDefinition(key=StageKey.GROUND_ALIGNMENT),
+            _ground_alignment_stage_availability,
+            enabled_fn=lambda request: request.alignment.ground.enabled,
+            outputs_fn=lambda _request, run_paths: [run_paths.ground_alignment_path],
+        )
+        registry.register(
             StageDefinition(key=StageKey.TRAJECTORY_EVALUATION),
             _trajectory_stage_availability,
             enabled_fn=lambda request: request.benchmark.trajectory.enabled,
@@ -190,6 +196,20 @@ def _trajectory_stage_availability(_request: RunRequest, backend: BackendDescrip
         return StageAvailability(
             available=False,
             reason=f"{backend.display_name} does not support repository trajectory evaluation.",
+        )
+    return StageAvailability(available=True)
+
+
+def _ground_alignment_stage_availability(request: RunRequest, backend: BackendDescriptor) -> StageAvailability:
+    if not backend.capabilities.dense_points:
+        return StageAvailability(
+            available=False,
+            reason=f"{backend.display_name} does not expose point-cloud outputs for ground alignment.",
+        )
+    if not (request.slam.outputs.emit_dense_points or request.slam.outputs.emit_sparse_points):
+        return StageAvailability(
+            available=False,
+            reason="Ground alignment requires sparse or dense point-cloud outputs from the SLAM stage.",
         )
     return StageAvailability(available=True)
 

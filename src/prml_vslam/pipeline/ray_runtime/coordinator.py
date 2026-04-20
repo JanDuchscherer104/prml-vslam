@@ -588,6 +588,7 @@ class RunCoordinatorActor:
                 sequence_manifest=payload.sequence_manifest,
                 benchmark_inputs=payload.benchmark_inputs,
                 slam=payload.slam,
+                ground_alignment=payload.ground_alignment,
                 visualization=payload.visualization,
                 summary=payload.summary,
                 stage_manifests=payload.stage_manifests,

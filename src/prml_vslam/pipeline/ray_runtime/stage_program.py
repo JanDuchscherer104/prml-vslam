@@ -12,6 +12,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
+from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
@@ -23,6 +24,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.stage_execution import (
     StageExecutionContext,
+    run_ground_alignment_stage,
     run_ingest_stage,
     run_offline_slam_stage,
     run_summary_stage,
@@ -49,6 +51,7 @@ class RuntimeExecutionState:
     sequence_manifest: SequenceManifest | None = None
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     slam: SlamArtifacts | None = None
+    ground_alignment: GroundAlignmentMetadata | None = None
     visualization: VisualizationArtifacts | None = None
     stage_outcomes: list[StageOutcome] = field(default_factory=list)
 
@@ -65,6 +68,7 @@ class StageCompletionPayload:
     sequence_manifest: SequenceManifest | None = None
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     slam: SlamArtifacts | None = None
+    ground_alignment: GroundAlignmentMetadata | None = None
     visualization: VisualizationArtifacts | None = None
     summary: RunSummary | None = None
     stage_manifests: list[StageManifest] = field(default_factory=list)
@@ -151,6 +155,20 @@ class RuntimeStageProgram:
                         input_payload=lambda context, state: state.sequence_manifest
                         if state.sequence_manifest is not None
                         else {"run_id": context.plan.run_id, "stage_key": StageKey.SLAM.value},
+                    ),
+                ),
+                StageRuntimeSpec(
+                    key=StageKey.GROUND_ALIGNMENT,
+                    run_offline=_run_ground_alignment,
+                    run_streaming_finalize=_run_ground_alignment,
+                    build_failure_outcome=_failure_builder(
+                        stage_key=StageKey.GROUND_ALIGNMENT,
+                        config_payload=lambda context, state: context.request.alignment.ground,
+                        input_payload=lambda _context, state: {
+                            "trajectory_tum": None if state.slam is None else state.slam.trajectory_tum,
+                            "dense_points_ply": None if state.slam is None else state.slam.dense_points_ply,
+                            "sparse_points_ply": None if state.slam is None else state.slam.sparse_points_ply,
+                        },
                     ),
                 ),
                 StageRuntimeSpec(
@@ -411,6 +429,19 @@ def _run_trajectory(
     return StageCompletionPayload(outcome=result.outcome)
 
 
+def _run_ground_alignment(
+    context: StageExecutionContext,
+    state: RuntimeExecutionState,
+    _source_or_driver: OfflineSequenceSource | RuntimeStageDriver,
+    _driver: RuntimeStageDriver | None = None,
+) -> StageCompletionPayload:
+    result = run_ground_alignment_stage(
+        context=context,
+        slam=_require_slam_artifacts(state),
+    )
+    return StageCompletionPayload(outcome=result.outcome, ground_alignment=result.ground_alignment)
+
+
 def _run_summary(
     context: StageExecutionContext,
     state: RuntimeExecutionState,
@@ -433,6 +464,8 @@ def _apply_completion(state: RuntimeExecutionState, payload: StageCompletionPayl
         state.benchmark_inputs = payload.benchmark_inputs
     if payload.slam is not None:
         state.slam = payload.slam
+    if payload.ground_alignment is not None:
+        state.ground_alignment = payload.ground_alignment
     if payload.visualization is not None:
         state.visualization = payload.visualization
 
