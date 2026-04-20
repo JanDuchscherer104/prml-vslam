@@ -52,6 +52,7 @@ def _write_synthetic_recording(tmp_path: Path) -> Path:
         log_line_strip3d=rerun_helpers.log_line_strip3d,
         log_clear=rerun_helpers.log_clear,
         log_depth_image=rerun_helpers.log_depth_image,
+        log_ground_plane_patch=rerun_helpers.log_ground_plane_patch,
         log_rgb_image=rerun_helpers.log_rgb_image,
         log_transform=rerun_helpers.log_transform,
         frusta_history_window_streaming=None,

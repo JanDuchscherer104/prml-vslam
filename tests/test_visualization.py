@@ -144,6 +144,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     layout = sent_blueprints[0].layout
     assert layout.views[0].origin == "world"
     assert layout.views[0].contents == [
+        "+ world/alignment/**",
         "+ world/live/tracking/**",
         "+ world/live/model/camera/**",
         "- world/live/model/camera/image/depth",
@@ -191,7 +192,8 @@ def test_log_transform_uses_parent_from_child_relation(monkeypatch) -> None:
         ParentFromChild = "parent-from-child"
 
     class FakeRecordingStream:
-        def log(self, entity_path: str, payload: object) -> None:
+        def log(self, entity_path: str, payload: object, *, static: bool = False) -> None:
+            del static
             logged.append((entity_path, payload))
 
     monkeypatch.setattr(
@@ -224,7 +226,8 @@ def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
             self.radii = radii
 
     class FakeRecordingStream:
-        def log(self, entity_path: str, payload: object) -> None:
+        def log(self, entity_path: str, payload: object, *, static: bool = False) -> None:
+            del static
             logged.append((entity_path, payload))
 
     monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(LineStrips3D=FakeLineStrips3D))
@@ -240,6 +243,89 @@ def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
     assert entity_path == "world/trajectory/tracking"
     assert len(payload.strips) == 1
     assert np.array_equal(payload.strips[0], np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]], dtype=np.float32))
+
+
+def test_log_mesh3d_logs_one_mesh(monkeypatch) -> None:
+    logged: list[tuple[str, object]] = []
+
+    class FakeMesh3D:
+        def __init__(self, *, vertex_positions, triangle_indices, vertex_colors) -> None:
+            self.vertex_positions = vertex_positions
+            self.triangle_indices = triangle_indices
+            self.vertex_colors = vertex_colors
+
+    class FakeRecordingStream:
+        def log(self, entity_path: str, payload: object, *, static: bool = False) -> None:
+            del static
+            logged.append((entity_path, payload))
+
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(Mesh3D=FakeMesh3D))
+
+    rerun_helpers.log_mesh3d(
+        FakeRecordingStream(),
+        entity_path="world/alignment/ground_plane/fill",
+        vertex_positions_xyz=np.array(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+            dtype=np.float32,
+        ),
+        triangle_indices=np.array([[0, 1, 2], [0, 2, 3]], dtype=np.uint32),
+    )
+
+    assert len(logged) == 1
+    entity_path, payload = logged[0]
+    assert entity_path == "world/alignment/ground_plane/fill"
+    assert payload.vertex_positions.shape == (4, 3)
+    assert payload.triangle_indices.shape == (2, 3)
+
+
+def test_log_ground_plane_patch_logs_fill_and_outline(monkeypatch) -> None:
+    logged: list[tuple[str, object]] = []
+
+    class FakeMesh3D:
+        def __init__(self, *, vertex_positions, triangle_indices, vertex_colors) -> None:
+            self.vertex_positions = vertex_positions
+            self.triangle_indices = triangle_indices
+            self.vertex_colors = vertex_colors
+
+    class FakeLineStrips3D:
+        def __init__(self, strips, *, radii, colors) -> None:
+            self.strips = strips
+            self.radii = radii
+            self.colors = colors
+
+    class FakeRecordingStream:
+        def log(self, entity_path: str, payload: object, *, static: bool = False) -> None:
+            del static
+            logged.append((entity_path, payload))
+
+    monkeypatch.setattr(
+        rerun_helpers,
+        "rr",
+        SimpleNamespace(
+            Mesh3D=FakeMesh3D,
+            LineStrips3D=FakeLineStrips3D,
+        ),
+    )
+
+    rerun_helpers.log_ground_plane_patch(
+        FakeRecordingStream(),
+        metadata=SimpleNamespace(
+            visualization=SimpleNamespace(
+                corners_xyz_world=[
+                    (0.0, 0.0, 0.0),
+                    (0.0, 0.0, 1.0),
+                    (1.0, 0.0, 1.0),
+                    (1.0, 0.0, 0.0),
+                ]
+            ),
+            ground_plane_world=SimpleNamespace(normal_xyz_world=(0.0, 1.0, 0.0)),
+        ),
+    )
+
+    assert [entity for entity, _ in logged] == [
+        "world/alignment/ground_plane/fill",
+        "world/alignment/ground_plane/outline",
+    ]
 
 
 def test_log_clear_logs_recursive_clear(monkeypatch) -> None:

@@ -44,6 +44,7 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_events() ->
         ),
         log_clear=lambda *args, **kwargs: None,
         log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda stream, *, entity_path, image_rgb: calls.append(
             ("rgb", entity_path, *_timeline_state(stream))
         ),
@@ -105,6 +106,7 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         log_depth_image=lambda stream, *, entity_path, depth_m: calls.append(
             ("depth", entity_path, *_timeline_state(stream))
         ),
+        log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda stream, *, entity_path, image_rgb: calls.append(
             ("rgb", entity_path, *_timeline_state(stream))
         ),
