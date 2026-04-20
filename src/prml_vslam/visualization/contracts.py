@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field
 
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
@@ -19,6 +21,9 @@ class VisualizationConfig(BaseConfig):
 
     grpc_url: str = "rerun+http://127.0.0.1:9876/proxy"
     """Rerun gRPC endpoint used when `connect_live_viewer` is enabled."""
+
+    viewer_blueprint_path: Path | None = None
+    """Optional blueprint loaded by the CLI-owned live viewer subprocess."""
 
     preserve_native_rerun: bool = True
     """Whether native upstream `.rrd` recordings should be preserved as method artifacts."""
