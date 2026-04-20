@@ -1,4 +1,11 @@
-"""Repository-local mock SLAM backend used by the interactive pipeline demo."""
+"""Repository-local mock SLAM backend used by the interactive pipeline demo.
+
+The mock backend is the simplest complete implementation of the method-layer
+contracts. It replays prepared benchmark references through the same normalized
+seams as real wrappers, which makes it useful both as a smoke-test backend and
+as a readable example of how :mod:`prml_vslam.methods` connects to
+:mod:`prml_vslam.pipeline`.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +16,6 @@ from pathlib import Path
 import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
-from pydantic import Field
 from pytransform3d.transformations import transform, vectors_to_points
 
 from prml_vslam.benchmark import (
@@ -30,13 +36,13 @@ from prml_vslam.datasets.advio.advio_geometry import (
     resolve_tango_point_cloud_payload,
 )
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.configs import MockSlamBackendConfig
+from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.utils import BaseConfig, FactoryConfig
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply,
     load_tum_trajectory,
@@ -65,35 +71,8 @@ class _PointCloudSequenceRuntime:
     alignment: Sim3Alignment
 
 
-class MockSlamBackendConfig(BaseConfig, FactoryConfig["MockSlamBackend"]):
-    """Config that builds the repository-local mock SLAM backend."""
-
-    method_id: MethodId = MethodId.MOCK
-    """Selected mock backend label."""
-
-    trajectory_position_noise_mean_m: float = 0.0
-    """Mean of the i.i.d. position noise applied to replayed trajectory translations."""
-
-    trajectory_position_noise_variance_m2: float = Field(default=0.0, ge=0.0)
-    """Variance of the i.i.d. position noise applied to replayed trajectory translations."""
-
-    point_noise_mean_m: float = 0.0
-    """Mean of the i.i.d. point noise applied to replayed reference geometry."""
-
-    point_noise_variance_m2: float = Field(default=0.0, ge=0.0)
-    """Variance of the i.i.d. point noise applied to replayed reference geometry."""
-
-    random_seed: int = 43
-    """Deterministic seed used for replay noise generation."""
-
-    @property
-    def target_type(self) -> type[MockSlamBackend]:
-        """Return the mock backend type used for the pipeline demo."""
-        return MockSlamBackend
-
-
 class MockSlamBackend(SlamBackend):
-    """Mock SLAM backend that supports both batch and streaming execution."""
+    """Implement the full method contract with deterministic reference replay."""
 
     def __init__(self, config: MockSlamBackendConfig) -> None:
         self.config = config
@@ -106,7 +85,7 @@ class MockSlamBackend(SlamBackend):
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> MockSlamSession:
-        """Prepare one streaming-capable session."""
+        """Prepare one streaming-capable mock session over normalized repository inputs."""
         return MockSlamSession(
             config=self.config,
             session_init=session_init,
@@ -141,7 +120,12 @@ class MockSlamBackend(SlamBackend):
 
 
 class MockSlamSession(SlamSession):
-    """Stateful mock SLAM session shared by offline and streaming execution."""
+    """Replay prepared references through the streaming session contract.
+
+    The session demonstrates the method-layer lifecycle end to end: it consumes
+    normalized inputs, emits :class:`SlamUpdate` telemetry, and closes into
+    normalized :class:`prml_vslam.pipeline.SlamArtifacts`.
+    """
 
     def __init__(
         self,

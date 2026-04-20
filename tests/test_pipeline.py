@@ -28,15 +28,13 @@ from prml_vslam.benchmark import (
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.interfaces import FramePacketProvenance, FrameTransform
-from prml_vslam.methods import MethodId
-from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
+from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackendConfig
 from prml_vslam.methods.events import (
     BackendWarning,
     KeyframeVisualizationReady,
     PoseEstimated,
     translate_slam_update,
 )
-from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest
@@ -72,7 +70,6 @@ from prml_vslam.pipeline.ray_runtime.common import (
     IngestStageResult,
     SlamStageResult,
     SummaryStageResult,
-    backend_config_payload,
     clean_actor_options,
 )
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
@@ -136,11 +133,11 @@ def test_run_request_accepts_explicit_backend_spec() -> None:
             "mode": "offline",
             "output_dir": ".artifacts",
             "source": {"video_path": "captures/demo.mp4"},
-            "slam": {"backend": {"kind": "vista", "max_frames": 9}},
+            "slam": {"backend": {"method_id": "vista", "max_frames": 9}},
         }
     )
 
-    assert request.slam.backend.kind == "vista"
+    assert request.slam.backend.method_id is MethodId.VISTA
     assert request.slam.backend.max_frames == 9
 
 
@@ -153,7 +150,7 @@ def test_run_request_accepts_mock_backend_noise_fields() -> None:
             "source": {"video_path": "captures/demo.mp4"},
             "slam": {
                 "backend": {
-                    "kind": "mock",
+                    "method_id": "mock",
                     "max_frames": 9,
                     "trajectory_position_noise_mean_m": 0.1,
                     "trajectory_position_noise_variance_m2": 0.2,
@@ -165,7 +162,7 @@ def test_run_request_accepts_mock_backend_noise_fields() -> None:
         }
     )
 
-    assert request.slam.backend.kind == "mock"
+    assert request.slam.backend.method_id is MethodId.MOCK
     assert request.slam.backend.trajectory_position_noise_mean_m == 0.1
     assert request.slam.backend.trajectory_position_noise_variance_m2 == 0.2
     assert request.slam.backend.point_noise_mean_m == 0.3
@@ -180,7 +177,7 @@ def test_run_request_defaults_to_ephemeral_local_head_lifecycle() -> None:
             "mode": "offline",
             "output_dir": ".artifacts",
             "source": {"video_path": "captures/demo.mp4"},
-            "slam": {"backend": {"kind": "vista"}},
+            "slam": {"backend": {"method_id": "vista"}},
         }
     )
 
@@ -200,7 +197,7 @@ dataset_id = "advio"
 sequence_id = "advio-01"
 
 [slam.backend]
-kind = "mock"
+method_id = "mock"
 
 [runtime.ray]
 local_head_lifecycle = "reusable"
@@ -226,7 +223,7 @@ dataset_id = "advio"
 sequence_id = "advio-01"
 
 [slam.backend]
-kind = "mock"
+method_id = "mock"
 
 [visualization]
 connect_live_viewer = true
@@ -248,7 +245,7 @@ def test_run_request_build_rejects_cloud_eval_without_dense_points(tmp_path: Pat
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}, outputs={"emit_dense_points": False}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}, outputs={"emit_dense_points": False}),
         benchmark=BenchmarkConfig(cloud=CloudBenchmarkConfig(enabled=True)),
     )
 
@@ -263,7 +260,7 @@ def test_run_request_build_uses_supplied_path_config(tmp_path: Path) -> None:
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
 
     plan = request.build(path_config)
@@ -273,7 +270,7 @@ def test_run_request_build_uses_supplied_path_config(tmp_path: Path) -> None:
         plan.artifact_root
         == path_config.plan_run_paths(
             experiment_name=request.experiment_name,
-            method_slug=request.slam.backend.kind,
+            method_slug=request.slam.backend.method_id.value,
             output_dir=request.output_dir,
         ).artifact_root
     )
@@ -304,7 +301,7 @@ def test_build_run_request_copies_backend_policy_and_visualization_fields(tmp_pa
         export_viewer_rrd=True,
     )
 
-    assert request.slam.backend.kind == MethodId.VISTA.value
+    assert request.slam.backend.method_id is MethodId.VISTA
     assert request.slam.backend.max_frames == 12
     assert request.slam.backend.vista_slam_dir == Path("external/vista-slam")
     assert request.slam.outputs.emit_dense_points is False
@@ -333,7 +330,7 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
                 "pose_frame_mode": "provider_world",
             },
         ),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         benchmark=BenchmarkConfig(
             reference={"enabled": False},
             trajectory=TrajectoryBenchmarkConfig(enabled=False),
@@ -342,11 +339,7 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
         ),
     )
 
-    plan = StageRegistry.default().compile(
-        request=request,
-        backend=BackendFactory().describe(request.slam.backend),
-        path_config=path_config,
-    )
+    plan = StageRegistry.default().compile(request=request, path_config=path_config)
 
     unavailable = [stage for stage in plan.stages if not stage.available]
     assert len(unavailable) == 1
@@ -499,12 +492,10 @@ def test_translate_slam_update_emits_explicit_backend_events() -> None:
 
 def test_actor_options_preserve_defaults_without_placement() -> None:
     request = _placement_request()
-    backend = _test_backend_descriptor(default_cpu=4.0, default_gpu=1.0)
 
     ingest_options = actor_options_for_stage(
         stage_key=StageKey.INGEST,
         request=request,
-        backend=backend,
         default_num_cpus=1.0,
         default_num_gpus=0.0,
         restartable=True,
@@ -512,7 +503,6 @@ def test_actor_options_preserve_defaults_without_placement() -> None:
     slam_options = actor_options_for_stage(
         stage_key=StageKey.SLAM,
         request=request,
-        backend=backend,
         default_num_cpus=2.0,
         default_num_gpus=0.0,
         inherit_backend_defaults=True,
@@ -521,18 +511,16 @@ def test_actor_options_preserve_defaults_without_placement() -> None:
     assert ingest_options["num_cpus"] == 1.0
     assert ingest_options["num_gpus"] == 0.0
     assert ingest_options["max_restarts"] == -1
-    assert slam_options["num_cpus"] == 4.0
+    assert slam_options["num_cpus"] == 2.0
     assert slam_options["num_gpus"] == 1.0
 
 
 def test_actor_options_explicit_slam_placement_overrides_resources() -> None:
     request = _placement_request(placement={"slam": {"resources": {"CPU": 4, "GPU": 1}}})
-    backend = _test_backend_descriptor(default_cpu=2.0, default_gpu=0.0)
 
     options = actor_options_for_stage(
         stage_key=StageKey.SLAM,
         request=request,
-        backend=backend,
         default_num_cpus=2.0,
         default_num_gpus=0.0,
         inherit_backend_defaults=True,
@@ -544,12 +532,10 @@ def test_actor_options_explicit_slam_placement_overrides_resources() -> None:
 
 def test_actor_options_explicit_ingest_placement_overrides_resources() -> None:
     request = _placement_request(placement={"ingest": {"resources": {"CPU": 3}}})
-    backend = _test_backend_descriptor(default_cpu=8.0, default_gpu=1.0)
 
     options = actor_options_for_stage(
         stage_key=StageKey.INGEST,
         request=request,
-        backend=backend,
         default_num_cpus=1.0,
         default_num_gpus=0.0,
         restartable=True,
@@ -666,7 +652,7 @@ def test_run_coordinator_emits_ingest_stage_failure_before_run_failed(
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         benchmark={"trajectory": {"enabled": False}},
     )
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
@@ -711,7 +697,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path / ".artifacts",
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id=request.experiment_name, namespace="pytest-unit")
@@ -722,10 +708,6 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
         stage_keys=[StageKey.INGEST, StageKey.CLOUD_EVALUATION, StageKey.SUMMARY],
     )
 
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.coordinator.BackendFactory.describe",
-        lambda self, backend: _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0),
-    )
     monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
 
     coordinator._run(request=request, plan=plan, path_config=path_config, runtime_source=FakeOfflineSource())
@@ -745,7 +727,7 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         benchmark={"trajectory": {"enabled": False}},
     )
     plan = _plan_with_stages(
@@ -759,7 +741,6 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(
         trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),
     )
 
-    coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
     monkeypatch.setattr(
         "prml_vslam.pipeline.ray_runtime.stage_program.run_ingest_stage",
         lambda *, context, source: (
@@ -840,7 +821,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
         mode=PipelineMode.STREAMING,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         benchmark={"trajectory": {"enabled": True}},
     )
     plan = _plan_with_stages(
@@ -929,7 +910,6 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
     coordinator._request = request
     coordinator._plan = plan
     coordinator._path_config = path_config
-    coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
     coordinator._snapshot = StreamingRunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
     coordinator._runtime_state.sequence_manifest = sequence_manifest
     coordinator._slam_actor = FakeSlamActor()
@@ -962,7 +942,7 @@ def test_streaming_slam_close_stage_fingerprints_normalized_sequence_manifest(
         mode=PipelineMode.STREAMING,
         output_dir=tmp_path / ".artifacts",
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
     plan = _plan_with_stages(
         tmp_path=tmp_path,
@@ -1000,18 +980,15 @@ def test_streaming_slam_stage_passes_sequence_manifest_and_benchmark_inputs_to_b
             captured.update(kwargs)
             return SimpleNamespace(step=lambda *_args, **_kwargs: None, try_get_updates=lambda: [], close=lambda: None)
 
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_actors.BackendFactory.build",
-        lambda self, backend_spec, path_config=None: FakeBackend(),
-    )
     actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
     request = RunRequest(
         experiment_name="streaming-start",
         mode=PipelineMode.STREAMING,
         output_dir=tmp_path / ".artifacts",
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
+    monkeypatch.setattr(MockSlamBackendConfig, "setup_target", lambda self, **kwargs: FakeBackend())
     plan = _plan_with_stages(
         tmp_path=tmp_path,
         request=request,
@@ -1038,20 +1015,50 @@ def test_streaming_slam_stage_passes_sequence_manifest_and_benchmark_inputs_to_b
     assert session_init.baseline_source is ReferenceSource.GROUND_TRUTH
 
 
-def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
+def test_streaming_slam_stage_passes_backend_config_object_directly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_cls = StreamingSlamStageActor.__ray_metadata__.modified_class
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.stage_actors.ray.get_actor", lambda *args, **kwargs: None)
+    captured: dict[str, object] = {}
+
+    class FakeBackend:
+        method_id = MethodId.VISTA
+
+        def start_session(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(step=lambda *_args, **_kwargs: None, try_get_updates=lambda: [], close=lambda: None)
+
+    monkeypatch.setattr(VistaSlamBackendConfig, "setup_target", lambda self, **kwargs: FakeBackend())
+    actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
     request = RunRequest.model_validate(
         {
             "experiment_name": "vista",
-            "mode": "offline",
-            "output_dir": ".artifacts",
+            "mode": "streaming",
+            "output_dir": str(tmp_path / ".artifacts"),
             "source": {"video_path": "captures/demo.mp4"},
-            "slam": {"backend": {"kind": "vista", "max_frames": 9}},
+            "slam": {"backend": {"method_id": "vista", "max_frames": 9}},
         }
     )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
+    )
 
-    payload = backend_config_payload(request)
+    actor.start_stage(
+        request=request,
+        plan=plan,
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
+        session_init=SlamSessionInit(
+            sequence_manifest=SequenceManifest(sequence_id="normalized-sequence"),
+            benchmark_inputs=PreparedBenchmarkInputs(),
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+        ),
+    )
 
-    assert payload.max_frames == 9
+    assert captured["backend_config"] is request.slam.backend
 
 
 def test_streaming_requests_cap_ingest_by_backend_max_frames() -> None:
@@ -1061,7 +1068,7 @@ def test_streaming_requests_cap_ingest_by_backend_max_frames() -> None:
             "mode": "streaming",
             "output_dir": ".artifacts",
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "vista", "max_frames": 42}},
+            "slam": {"backend": {"method_id": "vista", "max_frames": 42}},
         }
     )
 
@@ -1323,7 +1330,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/dummy.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
     snapshot = RunSnapshot(run_id="backend-unit", state=RunState.COMPLETED)
     submitted: list[tuple[str, str | None]] = []
@@ -1383,7 +1390,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
                 "pose_frame_mode": "provider_world",
             },
         ),
-        slam=SlamStageConfig(backend={"kind": "mock"}, outputs={"emit_dense_points": True}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}, outputs={"emit_dense_points": True}),
         benchmark=BenchmarkConfig(cloud=CloudBenchmarkConfig(enabled=True)),
     )
     created_runs: list[str] = []
@@ -1440,7 +1447,7 @@ def test_materialize_offline_manifest_logs_cache_hit(
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path / ".artifacts",
         source=VideoSourceSpec(video_path=video_path, frame_stride=1),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
     prepared_manifest = SequenceManifest(sequence_id="ingest-cache", video_path=video_path)
 
@@ -1558,7 +1565,7 @@ def test_run_service_offline_mock_smoke(tmp_path: Path) -> None:
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/dummy.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
 
     service.start_run(request=request, runtime_source=FakeOfflineSource())
@@ -1583,7 +1590,7 @@ def test_run_service_streaming_mock_smoke(tmp_path: Path) -> None:
         mode=PipelineMode.STREAMING,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/dummy.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
 
     service.start_run(request=request, runtime_source=FakeStreamingSource())
@@ -1644,22 +1651,6 @@ def _placement_request(*, placement: dict[str, dict[str, dict[str, float]]] | No
         mode=PipelineMode.OFFLINE,
         output_dir=Path(".artifacts"),
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend=VistaSlamBackendConfig()),
         placement={"by_stage": by_stage},
-    )
-
-
-def _test_backend_descriptor(*, default_cpu: float, default_gpu: float) -> BackendDescriptor:
-    return BackendDescriptor(
-        key="test",
-        display_name="Test Backend",
-        capabilities=BackendCapabilities(
-            offline=True,
-            streaming=True,
-            dense_points=True,
-            live_preview=True,
-            native_visualization=False,
-            trajectory_benchmark_support=True,
-        ),
-        default_resources={"CPU": default_cpu, "GPU": default_gpu},
     )

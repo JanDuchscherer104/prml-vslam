@@ -3,7 +3,8 @@
 This module keeps the app and CLI-facing entrypoints decoupled from the active
 runtime implementation. A backend accepts a typed :class:`RunRequest`, owns run
 lifecycle operations, and exposes only projected metadata and opaque live-array
-handles back to the caller.
+handles back to the caller. It is the narrow seam between user-facing launch
+code and the concrete runtime implementation such as the Ray backend.
 """
 
 from __future__ import annotations

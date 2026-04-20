@@ -1,4 +1,10 @@
-"""Portable opaque handles for bulk pipeline payloads."""
+"""Portable opaque handles for transient bulk runtime payloads.
+
+This module contains the handle DTOs used when the pipeline keeps large arrays
+and previews out of persisted contracts. They let runtime code refer to
+substrate-owned payloads from events and snapshots without pretending those
+arrays are durable scientific artifacts.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +13,9 @@ from typing import Literal
 from .transport import TransportModel
 
 
+# TODO: add module level doc string explaining the motivation for handle contracts!
 class ArrayHandle(TransportModel):
-    """Opaque handle for one array stored in the execution substrate."""
+    """Refer to one transient array stored in the execution substrate."""
 
     kind: Literal["array"] = "array"
     handle_id: str
@@ -18,7 +25,7 @@ class ArrayHandle(TransportModel):
 
 
 class PreviewHandle(TransportModel):
-    """Opaque handle for one preview image stored in the execution substrate."""
+    """Refer to one transient preview image stored in the execution substrate."""
 
     kind: Literal["preview"] = "preview"
     handle_id: str
@@ -30,7 +37,7 @@ class PreviewHandle(TransportModel):
 
 
 class BlobHandle(TransportModel):
-    """Opaque handle for one non-array binary payload."""
+    """Refer to one transient non-array binary payload."""
 
     kind: Literal["blob"] = "blob"
     handle_id: str

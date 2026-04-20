@@ -1,4 +1,10 @@
-"""Pipeline provenance contracts."""
+"""Persisted provenance contracts for completed pipeline runs.
+
+This module owns the durable, post-execution view of what happened during a
+run. In pipeline terms, provenance means the stable record of stage status,
+input and config fingerprints, and named outputs that survived beyond the live
+:class:`prml_vslam.pipeline.contracts.events.RunEvent` stream.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ from .stages import StageKey
 
 
 class StageStatus(StrEnum):
-    """Shared stage status for runtime snapshots and persisted provenance."""
+    """Shared stage-status vocabulary used in runtime and persisted views."""
 
     QUEUED = "queued"
     RUNNING = "running"
@@ -25,7 +31,13 @@ class StageStatus(StrEnum):
 
 
 class StageManifest(BaseData):
-    """Cache and provenance record for one executed stage."""
+    """Persist the durable record for one executed or skipped stage.
+
+    Each manifest ties one :class:`prml_vslam.pipeline.contracts.stages.StageKey`
+    to the configuration and input fingerprints that produced its named output
+    artifacts. This is the stage-level durable counterpart to transient runtime
+    events such as :class:`prml_vslam.pipeline.contracts.events.StageCompleted`.
+    """
 
     stage_id: StageKey
     """Stage identity."""
@@ -44,7 +56,7 @@ class StageManifest(BaseData):
 
     @staticmethod
     def table_rows(stage_manifests: list[StageManifest]) -> list[dict[str, str]]:
-        """Return compact tabular rows for manifest summaries."""
+        """Return compact rows suitable for run summaries and review surfaces."""
         return [
             {
                 "Stage": manifest.stage_id.value,
@@ -57,7 +69,7 @@ class StageManifest(BaseData):
 
 
 class RunSummary(BaseData):
-    """Final persisted outcome for one benchmark run."""
+    """Persist the final run-level status view derived from executed stages."""
 
     run_id: str
     """Stable run identifier."""

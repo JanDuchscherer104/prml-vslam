@@ -1,4 +1,10 @@
-"""Record3D streaming integration for shared packet ingestion."""
+"""Record3D USB streaming integration for shared packet ingestion.
+
+This module owns the stable USB-backed Record3D ingress path. It turns the
+upstream native bindings into normalized :class:`prml_vslam.interfaces.FramePacket`
+values and the shared packet-stream lifecycle consumed elsewhere in the
+repository.
+"""
 
 from __future__ import annotations
 
@@ -22,14 +28,14 @@ from prml_vslam.utils import BaseConfig, BaseData, Console, FactoryConfig
 
 
 class Record3DDeviceType(IntEnum):
-    """Device types exposed by the Record3D bindings."""
+    """Name the device classes exposed by the upstream Record3D bindings."""
 
     TRUEDEPTH = 0
     LIDAR = 1
 
 
 class Record3DDevice(BaseData):
-    """One USB-connected Record3D device."""
+    """Describe one USB-connected Record3D device discovered through the bindings."""
 
     product_id: int
     """Apple product identifier reported by the device."""
@@ -51,7 +57,7 @@ def _import_record3d_module() -> Any:
 
 
 class Record3DStreamConfig(BaseConfig, FactoryConfig["Record3DUSBPacketStream"]):
-    """Configuration for a USB Record3D streaming session."""
+    """Configure one USB Record3D packet stream."""
 
     device_index: int = 0
     """Zero-based index into the list of connected Record3D devices."""
@@ -66,7 +72,7 @@ class Record3DStreamConfig(BaseConfig, FactoryConfig["Record3DUSBPacketStream"])
 
 
 class Record3DUSBPacketStream:
-    """Thin packet-stream adapter around the upstream `record3d.Record3DStream`."""
+    """Adapt the upstream USB stream to the shared packet-stream contract."""
 
     def __init__(self, config: Record3DStreamConfig) -> None:
         self.config = config
@@ -82,7 +88,7 @@ class Record3DUSBPacketStream:
         return [self._device_from_binding(device) for device in self._get_connected_devices()]
 
     def connect(self) -> Record3DDevice:
-        """Connect to the configured USB device."""
+        """Connect to the configured USB device and return its normalized device metadata."""
         devices = self._get_connected_devices()
         if not devices:
             raise RuntimeError(
@@ -214,7 +220,7 @@ class Record3DUSBPacketStream:
 
 
 def list_record3d_usb_devices() -> list[Record3DDevice]:
-    """List currently connected Record3D USB devices through the canonical IO owner."""
+    """List currently connected USB devices through the canonical Record3D IO owner."""
     stream = Record3DStreamConfig().setup_target()
     if stream is None:
         raise RuntimeError("Failed to initialize the USB Record3D packet stream.")
@@ -222,7 +228,7 @@ def list_record3d_usb_devices() -> list[Record3DDevice]:
 
 
 def open_record3d_usb_packet_stream(*, device_index: int, frame_timeout_seconds: float) -> Record3DUSBPacketStream:
-    """Build one shared USB packet stream with explicit runtime validation."""
+    """Build one validated USB packet stream ready for the shared runtime seam."""
     stream = Record3DStreamConfig(
         device_index=device_index,
         frame_timeout_seconds=frame_timeout_seconds,

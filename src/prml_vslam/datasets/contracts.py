@@ -1,4 +1,10 @@
-"""Dataset-owned contracts."""
+"""Dataset-owned contracts shared across dataset adapters.
+
+This module owns the dataset-facing DTOs and serving semantics that multiple
+dataset adapters use before they normalize into pipeline-owned contracts. It is
+the main link between repository-local dataset concerns and the normalized
+offline/runtime boundaries consumed by :mod:`prml_vslam.pipeline`.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +25,7 @@ SequenceT = TypeVar("SequenceT", int, str)
 
 
 class DatasetId(StrEnum):
-    """Datasets exposed through evaluation surfaces."""
+    """Name the repository-owned dataset families exposed across the package."""
 
     ADVIO = "advio"
     TUM_RGBD = "tum_rgbd"
@@ -31,7 +37,7 @@ class DatasetId(StrEnum):
 
 
 class AdvioPoseSource(StrEnum):
-    """ADVIO trajectory providers surfaced through replay and pipeline contracts."""
+    """Name ADVIO trajectory providers exposed through replay and pipeline contracts."""
 
     GROUND_TRUTH = "ground_truth"
     ARCORE = "arcore"
@@ -42,6 +48,7 @@ class AdvioPoseSource(StrEnum):
 
     @property
     def label(self) -> str:
+        """Return the user-facing provider label shown in ADVIO replay controls."""
         return {
             self.GROUND_TRUTH: "Ground Truth",
             self.ARCORE: "ARCore",
@@ -53,11 +60,12 @@ class AdvioPoseSource(StrEnum):
 
     @property
     def is_real_provider(self) -> bool:
+        """Return whether the value refers to an actual provider rather than a sentinel."""
         return self is not self.NONE
 
 
 class AdvioPoseFrameMode(StrEnum):
-    """Coordinate-frame semantics for served ADVIO trajectories."""
+    """Describe how ADVIO replay poses should be interpreted or normalized."""
 
     PROVIDER_WORLD = "provider_world"
     REFERENCE_WORLD = "reference_world"
@@ -65,6 +73,7 @@ class AdvioPoseFrameMode(StrEnum):
 
     @property
     def label(self) -> str:
+        """Return the user-facing frame-mode label."""
         return {
             self.PROVIDER_WORLD: "Provider World",
             self.REFERENCE_WORLD: "Aligned Global",
@@ -73,7 +82,13 @@ class AdvioPoseFrameMode(StrEnum):
 
 
 class AdvioServingConfig(BaseConfig):
-    """Typed ADVIO serving semantics shared by request and manifest contracts."""
+    """Bundle ADVIO pose-provider semantics that survive normalization.
+
+    This config crosses the dataset-request boundary into
+    :class:`prml_vslam.pipeline.contracts.sequence.SequenceManifest` so replay,
+    method wrappers, and evaluation code can understand which ADVIO provider was
+    selected and how its world frame should be treated.
+    """
 
     dataset_id: Literal["advio"] = "advio"
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
@@ -81,6 +96,7 @@ class AdvioServingConfig(BaseConfig):
 
     @model_validator(mode="after")
     def validate_real_provider(self) -> AdvioServingConfig:
+        """Reject the sentinel ``none`` pose source at the normalized serving boundary."""
         if not self.pose_source.is_real_provider:
             raise ValueError("AdvioServingConfig.pose_source must name a real provider, not `none`.")
         return self
@@ -90,7 +106,7 @@ DatasetServingConfig: TypeAlias = AdvioServingConfig
 
 
 class AdvioRawPoseRefs(BaseData):
-    """Relevant ADVIO raw pose artifacts preserved in the normalized manifest."""
+    """Point to raw ADVIO pose files preserved in the normalized manifest."""
 
     ground_truth_csv_path: Path
     arcore_csv_path: Path | None = None
@@ -101,7 +117,7 @@ class AdvioRawPoseRefs(BaseData):
 
 
 class AdvioManifestAssets(BaseData):
-    """ADVIO-specific manifest payload preserved for downstream consumers."""
+    """Carry ADVIO-specific assets that do not fit the generic manifest fields."""
 
     calibration_path: Path
     intrinsics: CameraIntrinsics
@@ -113,16 +129,20 @@ class AdvioManifestAssets(BaseData):
 
 
 class FrameSelectionConfig(BaseConfig):
+    """Describe shared frame-subsampling policy for dataset-backed sources."""
+
     frame_stride: int = Field(default=1, ge=1)
     target_fps: float | None = Field(default=None, gt=0.0)
 
     @model_validator(mode="after")
     def validate_single_sampling_mode(self) -> FrameSelectionConfig:
+        """Ensure callers pick either explicit stride or target FPS, not both."""
         if self.target_fps is not None and self.frame_stride != 1:
             raise ValueError("Configure either `frame_stride` or `target_fps`, not both.")
         return self
 
     def stride_for_timestamps_ns(self, timestamps_ns: Sequence[int]) -> int:
+        """Resolve the effective stride for a nanosecond timestamp sequence."""
         if self.target_fps is None or len(timestamps_ns) < 2:
             return self.frame_stride
         duration_s = max((int(timestamps_ns[-1]) - int(timestamps_ns[0])) / 1e9, 0.0)
@@ -130,6 +150,7 @@ class FrameSelectionConfig(BaseConfig):
         return max(1, int(round(native_fps / self.target_fps))) if native_fps > 0.0 else 1
 
     def stride_for_timestamps_s(self, timestamps_s: Sequence[float]) -> int:
+        """Resolve the effective stride for a seconds-based timestamp sequence."""
         return self.stride_for_timestamps_ns([int(round(value * 1e9)) for value in timestamps_s])
 
 
@@ -170,7 +191,7 @@ def selected_advio_pose_source(
     *,
     default: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
 ) -> AdvioPoseSource:
-    """Return the effective ADVIO provider for one optional serving config."""
+    """Return the effective ADVIO pose provider for one optional serving config."""
     return default if dataset_serving is None else dataset_serving.pose_source
 
 

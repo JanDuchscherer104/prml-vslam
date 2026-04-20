@@ -1,4 +1,11 @@
-"""Typed contracts for derived ground-plane alignment."""
+"""Typed contracts for derived viewer/world-up alignment.
+
+This module owns the alignment metadata that can be derived from normalized
+SLAM outputs without mutating the native artifact bundle. It explains the
+optional boundary between :mod:`prml_vslam.pipeline` and visualization-oriented
+consumers: native method outputs stay authoritative, while alignment metadata
+describes one explicit viewer-scoped interpretation.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +18,7 @@ from prml_vslam.utils import BaseConfig, BaseData
 
 
 class GroundAlignmentConfig(BaseConfig):
-    """Policy for the optional dominant-ground alignment stage."""
+    """Configure the optional dominant-ground stage that interprets point-cloud outputs."""
 
     enabled: bool = False
     """Whether the `ground.align` stage should run."""
@@ -24,14 +31,14 @@ class GroundAlignmentConfig(BaseConfig):
 
 
 class AlignmentConfig(BaseConfig):
-    """Top-level alignment policy bundle attached to one run request."""
+    """Collect alignment-stage policy alongside the main pipeline request."""
 
     ground: GroundAlignmentConfig = Field(default_factory=GroundAlignmentConfig)
     """Ground-plane detection and viewer-alignment policy."""
 
 
 class GroundPlaneModel(BaseData):
-    """Dominant ground-plane hypothesis expressed in native `world` coordinates."""
+    """Describe one detected dominant plane in the native backend world frame."""
 
     normal_xyz_world: tuple[float, float, float]
     """Unit plane normal expressed in native `world` coordinates."""
@@ -47,7 +54,7 @@ class GroundPlaneModel(BaseData):
 
 
 class GroundPlaneVisualizationHint(BaseData):
-    """Finite plane-patch geometry ready for a future visualization consumer."""
+    """Carry finite patch geometry that future viewer code can render directly."""
 
     frame: Literal["world"] = "world"
     """Frame represented by the stored patch corners."""
@@ -57,7 +64,12 @@ class GroundPlaneVisualizationHint(BaseData):
 
 
 class GroundAlignmentMetadata(BaseData):
-    """Result of one derived ground-plane alignment attempt."""
+    """Record the result of one derived alignment attempt over SLAM outputs.
+
+    Consumers should read this metadata as an explicit interpretation layer on
+    top of :class:`prml_vslam.pipeline.contracts.artifacts.SlamArtifacts`. It
+    does not replace the native world frame in those artifacts.
+    """
 
     applied: bool
     """Whether the stage produced an alignment transform above the confidence threshold."""

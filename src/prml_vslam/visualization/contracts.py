@@ -1,4 +1,10 @@
-"""Thin visualization-policy contracts."""
+"""Viewer-policy contracts for repo-owned visualization artifacts.
+
+This module owns the small configuration and artifact DTOs that describe how a
+run interacts with Rerun or preserved native viewer outputs. It does not own
+logging behavior itself; live sink policy and concrete logging helpers live in
+:mod:`prml_vslam.pipeline.sinks` and :mod:`prml_vslam.visualization.rerun`.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,12 @@ from prml_vslam.utils import BaseConfig, BaseData
 
 
 class VisualizationConfig(BaseConfig):
-    """Viewer-export policy attached to one run request."""
+    """Describe viewer-export policy attached to one :class:`RunRequest`.
+
+    These flags shape how the rest of the package logs or preserves viewer
+    artifacts, but they do not change scientific artifact ownership in
+    :mod:`prml_vslam.pipeline.contracts.artifacts`.
+    """
 
     connect_live_viewer: bool = False
     """Whether streaming runs should attach a live gRPC viewer sink."""
@@ -39,7 +50,7 @@ class VisualizationConfig(BaseConfig):
 
 
 class VisualizationArtifacts(BaseData):
-    """Viewer artifacts associated with one run."""
+    """Collect viewer-oriented artifacts produced alongside one run."""
 
     native_rerun_rrd: ArtifactRef | None = None
     """Optional preserved recorded-session `.rrd` from an upstream backend."""

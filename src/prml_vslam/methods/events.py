@@ -1,4 +1,9 @@
-"""Transport-safe backend event contracts."""
+"""Transport-safe backend event contracts.
+
+This module contains the handoff between method-owned live updates and the
+pipeline's event stream. It translates richer :class:`SlamUpdate` payloads into
+transport-safe notices that can flow through runtime events and snapshots.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ from prml_vslam.pipeline.contracts.transport import TransportModel
 
 
 class PoseEstimated(TransportModel):
-    """Pose estimate emitted by a streaming backend."""
+    """Report one canonical pose estimate emitted by a streaming backend."""
 
     kind: Literal["pose.estimated"] = "pose.estimated"
     seq: int
@@ -25,7 +30,7 @@ class PoseEstimated(TransportModel):
 
 
 class KeyframeAccepted(TransportModel):
-    """Keyframe-acceptance notice emitted by a streaming backend."""
+    """Report that the backend accepted one frame as a keyframe."""
 
     kind: Literal["keyframe.accepted"] = "keyframe.accepted"
     seq: int
@@ -36,7 +41,7 @@ class KeyframeAccepted(TransportModel):
 
 
 class KeyframeVisualizationReady(TransportModel):
-    """Visualization payload handles emitted for one accepted keyframe."""
+    """Expose transient visualization payload handles for one accepted keyframe."""
 
     kind: Literal["keyframe.visualization_ready"] = "keyframe.visualization_ready"
     seq: int
@@ -53,7 +58,7 @@ class KeyframeVisualizationReady(TransportModel):
 
 
 class MapStatsUpdated(TransportModel):
-    """Map-size telemetry emitted by a streaming backend."""
+    """Report current map-size counters from a streaming backend."""
 
     kind: Literal["map.stats"] = "map.stats"
     seq: int
@@ -63,7 +68,7 @@ class MapStatsUpdated(TransportModel):
 
 
 class BackendWarning(TransportModel):
-    """Non-fatal backend warning."""
+    """Carry a non-fatal backend warning through the transport-safe event layer."""
 
     kind: Literal["backend.warning"] = "backend.warning"
     message: str
@@ -72,7 +77,7 @@ class BackendWarning(TransportModel):
 
 
 class BackendError(TransportModel):
-    """Fatal or actionable backend error."""
+    """Carry a fatal or actionable backend error through the event layer."""
 
     kind: Literal["backend.error"] = "backend.error"
     message: str
@@ -81,7 +86,7 @@ class BackendError(TransportModel):
 
 
 class SessionClosed(TransportModel):
-    """Terminal backend-session notice."""
+    """Record that a streaming backend session has closed."""
 
     kind: Literal["session.closed"] = "session.closed"
     artifact_keys: list[str] = Field(default_factory=list)
@@ -109,7 +114,7 @@ def translate_slam_update(
     depth_handle: ArrayHandle | None = None,
     pointmap_handle: ArrayHandle | None = None,
 ) -> list[BackendEvent]:
-    """Translate one legacy `SlamUpdate` into explicit backend events."""
+    """Translate one :class:`SlamUpdate` into explicit transport-safe backend events."""
     events: list[BackendEvent] = []
     seq = int(update.seq)
     timestamp_ns = int(update.timestamp_ns)

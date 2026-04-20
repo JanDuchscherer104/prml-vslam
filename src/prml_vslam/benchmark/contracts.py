@@ -1,4 +1,11 @@
-"""Thin benchmark-policy contracts kept outside the pipeline core."""
+"""Benchmark-policy and prepared-reference contracts kept outside the pipeline core.
+
+This module owns the typed benchmark-side inputs and policy toggles that
+surround a run without becoming part of the orchestration core. The pipeline
+attaches :class:`BenchmarkConfig` to :class:`prml_vslam.pipeline.RunRequest`,
+while dataset adapters materialize :class:`PreparedBenchmarkInputs` for methods,
+alignment, and evaluation consumers.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +18,7 @@ from prml_vslam.utils import BaseConfig, BaseData
 
 
 class ReferenceSource(StrEnum):
-    """Typed source identifier for one available reference trajectory."""
+    """Identify one trajectory baseline available to benchmark-oriented consumers."""
 
     GROUND_TRUTH = "ground_truth"
     ARCORE = "arcore"
@@ -19,7 +26,7 @@ class ReferenceSource(StrEnum):
 
     @property
     def label(self) -> str:
-        """Return the human-readable source label."""
+        """Return the human-readable benchmark reference-source label."""
         return {
             ReferenceSource.GROUND_TRUTH: "ground truth",
             ReferenceSource.ARCORE: "ARCore",
@@ -28,7 +35,7 @@ class ReferenceSource(StrEnum):
 
 
 class ReferenceTrajectoryRef(BaseData):
-    """One prepared reference trajectory available to a benchmark run."""
+    """Point to one normalized benchmark trajectory prepared for a run."""
 
     source: ReferenceSource
     """Typed source that produced the trajectory."""
@@ -52,7 +59,7 @@ class ReferenceCloudCoordinateStatus(StrEnum):
 
 
 class ReferenceCloudRef(BaseData):
-    """One prepared reference cloud available to a benchmark run."""
+    """Point to one prepared dense reference cloud available to benchmark consumers."""
 
     source: ReferenceCloudSource
     """Typed source that produced the cloud."""
@@ -71,7 +78,7 @@ class ReferenceCloudRef(BaseData):
 
 
 class ReferencePointCloudSequenceRef(BaseData):
-    """One prepared step-wise reference point-cloud stream for replay-like use."""
+    """Describe one prepared step-wise point-cloud sequence for replay-like consumers."""
 
     source: ReferenceCloudSource
     """Typed source that produced the point-cloud payloads."""
@@ -96,7 +103,14 @@ class ReferencePointCloudSequenceRef(BaseData):
 
 
 class PreparedBenchmarkInputs(BaseData):
-    """Prepared benchmark-side inputs discovered for one normalized sequence."""
+    """Bundle prepared reference artifacts that complement one normalized sequence.
+
+    This DTO sits beside :class:`prml_vslam.pipeline.contracts.sequence.SequenceManifest`
+    at the offline boundary: the manifest describes what the method should
+    process, while these prepared inputs describe what optional benchmark
+    references the rest of the package may compare against or forward through a
+    wrapper.
+    """
 
     reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
     """Available normalized reference trajectories keyed by source."""
@@ -108,11 +122,11 @@ class PreparedBenchmarkInputs(BaseData):
     """Available step-wise point-cloud sequences keyed by source."""
 
     def trajectory_for_source(self, source: ReferenceSource) -> ReferenceTrajectoryRef | None:
-        """Return the prepared reference trajectory for one requested source."""
+        """Return the prepared trajectory baseline for one requested source."""
         return next((reference for reference in self.reference_trajectories if reference.source is source), None)
 
     def point_cloud_sequence_for_source(self, source: ReferenceCloudSource) -> ReferencePointCloudSequenceRef | None:
-        """Return the prepared point-cloud sequence for one requested source."""
+        """Return the prepared step-wise point-cloud baseline for one requested source."""
         return next(
             (reference for reference in self.reference_point_cloud_sequences if reference.source is source),
             None,
@@ -120,14 +134,14 @@ class PreparedBenchmarkInputs(BaseData):
 
 
 class ReferenceReconstructionConfig(BaseConfig):
-    """Policy toggle for the optional reference-reconstruction stage."""
+    """Toggle the optional reference-reconstruction stage in :mod:`prml_vslam.pipeline`."""
 
     enabled: bool = False
     """Whether the run should include the corresponding stage."""
 
 
 class TrajectoryBenchmarkConfig(BaseConfig):
-    """Policy for trajectory evaluation."""
+    """Configure trajectory evaluation around normalized run outputs."""
 
     enabled: bool = False
     """Whether the run should include trajectory evaluation."""
@@ -137,21 +151,26 @@ class TrajectoryBenchmarkConfig(BaseConfig):
 
 
 class CloudBenchmarkConfig(BaseConfig):
-    """Policy for dense-cloud comparison."""
+    """Toggle dense-cloud comparison stages around normalized run outputs."""
 
     enabled: bool = False
     """Whether the run should include dense-cloud comparison."""
 
 
 class EfficiencyBenchmarkConfig(BaseConfig):
-    """Policy for efficiency evaluation."""
+    """Toggle runtime-efficiency evaluation for one run."""
 
     enabled: bool = False
     """Whether the run should include efficiency metrics."""
 
 
 class BenchmarkConfig(BaseConfig):
-    """Thin benchmark-policy bundle attached to one run request."""
+    """Collect benchmark-side stage toggles attached to one :class:`RunRequest`.
+
+    This bundle shapes which optional benchmark stages the pipeline plans, but
+    it does not perform evaluation itself. Execution lives in
+    :mod:`prml_vslam.eval` and adjacent runtime owners.
+    """
 
     reference: ReferenceReconstructionConfig = Field(default_factory=ReferenceReconstructionConfig)
     """Reference-reconstruction policy."""

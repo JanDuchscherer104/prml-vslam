@@ -1,8 +1,9 @@
 """Project append-only runtime events into live metadata snapshots.
 
-The projector is intentionally pure and deterministic. It does not own runtime
-state; it only applies :class:`RunEvent` values to a previous
-:class:`RunSnapshot` to derive the next projected view shown by the app or CLI.
+This module contains the projector that turns the append-only event stream into
+inspection-oriented :class:`RunSnapshot` values. It is intentionally pure and
+deterministic: it does not own runtime state, it only applies
+:class:`RunEvent` values to a previous snapshot.
 """
 
 from __future__ import annotations
@@ -40,10 +41,14 @@ _TRAJECTORY_HISTORY_LIMIT = 100
 
 
 class SnapshotProjector:
-    """Derive one snapshot state from one or more runtime events."""
+    """Derive :class:`RunSnapshot` values from append-only runtime events.
+
+    This projector is the bridge from event-first runtime truth to the
+    inspection-oriented snapshot model consumed by app and CLI polling loops.
+    """
 
     def project(self, snapshot: RunSnapshot, events: Iterable[RunEvent]) -> RunSnapshot:
-        """Apply a sequence of events in order and return the final snapshot."""
+        """Apply a sequence of events in order and return the final projected snapshot."""
         current = snapshot
         for event in events:
             current = self.apply(current, event)

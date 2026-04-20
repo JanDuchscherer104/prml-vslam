@@ -1,4 +1,10 @@
-"""Pipeline planning contracts."""
+"""Deterministic planning contracts for the pipeline.
+
+This module owns the side-effect-free plan representation returned from
+:meth:`prml_vslam.pipeline.contracts.request.RunRequest.build`. It captures what
+the pipeline intends to execute before any runtime actor, backend wrapper, or
+source stream is started.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ from .stages import StageKey
 
 
 class RunPlanStage(BaseData):
-    """One typed stage in a benchmark run plan."""
+    """Describe one planned stage in the deterministic execution order."""
 
     key: StageKey
     """Stable identifier for the stage."""
@@ -29,7 +35,12 @@ class RunPlanStage(BaseData):
 
 
 class RunPlan(BaseData):
-    """Planner output returned to the CLI or UI layer."""
+    """Represent the deterministic plan compiled from one :class:`RunRequest`.
+
+    The plan is the bridge between request-time policy and runtime execution.
+    UI code, CLI code, and the backend layer all consume this DTO instead of
+    re-deriving stage order or output ownership on their own.
+    """
 
     run_id: str
     """Stable filesystem-safe run identifier."""
@@ -47,7 +58,7 @@ class RunPlan(BaseData):
     """Ordered execution stages for the benchmark run."""
 
     def stage_rows(self) -> list[dict[str, str]]:
-        """Return compact tabular rows for plan summaries."""
+        """Return compact rows suitable for CLI or UI plan previews."""
         return [
             {
                 "Stage": stage.key.label,

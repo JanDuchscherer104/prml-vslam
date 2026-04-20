@@ -1,4 +1,10 @@
-"""Package-local protocol seams for SLAM backends and sessions."""
+"""Package-local protocol seams for SLAM backends and sessions.
+
+These protocols define the method-owned behavior boundary between pipeline
+orchestration and concrete backend wrappers. They explain how a backend consumes
+normalized inputs and returns normalized durable artifacts without exposing
+upstream-private runtime APIs to the rest of the repository.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +22,13 @@ from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 @runtime_checkable
 class SlamSession(Protocol):
-    """Protocol for a live SLAM session that consumes incremental frames."""
+    """Consume streaming frames and buffer method-owned live updates.
+
+    The lifecycle is ``start_session() -> step(...) -> try_get_updates() ->
+    close()``. The returned :class:`SlamUpdate` values are live telemetry,
+    while :class:`prml_vslam.pipeline.SlamArtifacts` remains the durable output
+    boundary.
+    """
 
     def step(self, frame: FramePacket) -> None:
         """Consume one frame and prepare an incremental SLAM update."""
@@ -30,7 +42,7 @@ class SlamSession(Protocol):
 
 @runtime_checkable
 class OfflineSlamBackend(Protocol):
-    """Protocol for SLAM backends that operate on materialized sequences."""
+    """Execute over a normalized offline sequence manifest."""
 
     method_id: MethodId
 
@@ -48,7 +60,7 @@ class OfflineSlamBackend(Protocol):
 
 @runtime_checkable
 class StreamingSlamBackend(Protocol):
-    """Protocol for SLAM backends that support incremental streaming execution."""
+    """Start one incremental session over normalized repository inputs."""
 
     method_id: MethodId
 
@@ -64,7 +76,7 @@ class StreamingSlamBackend(Protocol):
 
 @runtime_checkable
 class SlamBackend(OfflineSlamBackend, StreamingSlamBackend, Protocol):
-    """Protocol for backends that implement both offline and streaming SLAM."""
+    """Combine the offline and streaming method seams into one backend contract."""
 
 
 __all__ = [

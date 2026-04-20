@@ -1,4 +1,9 @@
-"""Pipeline artifact contracts."""
+"""Durable artifact contracts produced by the pipeline.
+
+This module contains the normalized artifact references that stage outputs use
+to cross package boundaries. These objects are durable and file-backed, unlike
+the transient array handles used in runtime snapshots.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +14,9 @@ from pydantic import Field
 from prml_vslam.utils import BaseData
 
 
+#  TODO: this is a pipeline general dto
 class ArtifactRef(BaseData):
-    """Reference to one materialized artifact owned by the repository."""
+    """Describe one durable artifact materialized under the run artifact root."""
 
     path: Path
     """Filesystem path to the materialized artifact."""
@@ -22,8 +28,14 @@ class ArtifactRef(BaseData):
     """Content or provenance fingerprint for cache decisions."""
 
 
+# TODO: this is a dto / data model that should be defined in a shared model module! This belongs to methods!
 class SlamArtifacts(BaseData):
-    """Materialized outputs produced by the SLAM stage."""
+    """Bundle the normalized durable outputs of the SLAM stage.
+
+    Method wrappers normalize backend-native exports into this DTO so the rest
+    of the repository can reason about trajectories and point clouds without
+    learning each backend's private file layout.
+    """
 
     trajectory_tum: ArtifactRef
     """Normalized TUM trajectory artifact."""

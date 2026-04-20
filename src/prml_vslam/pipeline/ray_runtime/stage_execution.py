@@ -15,7 +15,6 @@ import ray
 from prml_vslam.alignment import GroundAlignmentService
 from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.eval.services import TrajectoryEvaluationService
-from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
@@ -41,24 +40,30 @@ from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 @dataclass(frozen=True, slots=True)
 class StageExecutionContext:
-    """Immutable run-scoped execution context shared by bounded stage helpers.
+    """Immutable per-run execution envelope shared by bounded stage helpers.
+
+    The context carries the stable inputs that do not change while a run is
+    executing: the original request, the compiled plan, path-resolution
+    helpers, the canonical artifact layout, and backend metadata. Stage
+    implementations read these fields when they need run-scoped configuration
+    or filesystem locations, while mutable cross-stage outputs live separately
+    in :class:`RuntimeExecutionState`.
 
     Attributes:
-        request: Original run request.
-        plan: Compiled deterministic run plan.
+        request: Original run request and policy surface for the run.
+        plan: Compiled deterministic run plan that owns stage order and the
+            artifact root.
         path_config: Repo path configuration used for runtime resolution.
         run_paths: Canonical artifact layout for the run.
-        backend_descriptor: Capability and resource metadata for the selected
-            backend.
     """
 
     request: RunRequest
     plan: RunPlan
     path_config: PathConfig
     run_paths: RunArtifactPaths
-    backend_descriptor: BackendDescriptor
 
 
+#  TODO: I feel like this kind of multiplexing should be handeled similar
 def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceSource) -> IngestStageResult:
     """Materialize the canonical ingest boundary from one offline source.
 
@@ -117,7 +122,6 @@ def run_offline_slam_stage(
             actor_options_for_stage(
                 stage_key=StageKey.SLAM,
                 request=context.request,
-                backend=context.backend_descriptor,
                 default_num_cpus=2.0,
                 default_num_gpus=1.0,
             )

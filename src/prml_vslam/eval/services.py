@@ -1,3 +1,11 @@
+"""Concrete evaluation services built on normalized run artifacts.
+
+This module implements the explicit evaluation work described by
+:mod:`prml_vslam.eval.contracts` and :mod:`prml_vslam.eval.protocols`. It
+discovers runs under the artifact root, resolves reference trajectories, and
+computes or reloads persisted `evo`-based trajectory metrics.
+"""
+
 from __future__ import annotations
 
 import json
@@ -38,7 +46,7 @@ _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 
 
 class TrajectoryEvaluationService(TrajectoryEvaluator):
-    """Discover runs and persist explicit `evo` trajectory metrics."""
+    """Discover runs and compute or reload explicit `evo` trajectory metrics."""
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
@@ -212,8 +220,8 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 run=DiscoveredRun(
                     artifact_root=plan.artifact_root,
                     estimate_path=slam.trajectory_tum.path,
-                    method=MethodId(request.slam.backend.kind),
-                    label=MethodId(request.slam.backend.kind).display_name,
+                    method=request.slam.backend.method_id,
+                    label=request.slam.backend.display_name,
                 ),
             )
         )
@@ -230,7 +238,7 @@ def compute_trajectory_ape_preview(
     estimate_path: Path,
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
 ) -> TrajectoryEvaluationPreview:
-    """Compute in-memory translation APE for two TUM trajectory artifacts."""
+    """Compute in-memory translation APE for two normalized TUM trajectory artifacts."""
     reference_trajectory = load_tum_trajectory(reference_path)
     estimate_trajectory = load_tum_trajectory(estimate_path)
     try:

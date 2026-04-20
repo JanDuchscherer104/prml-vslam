@@ -13,7 +13,6 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import (
-    BackendConfigPayload,
     DatasetSourceSpec,
     Record3DLiveSourceSpec,
     build_run_request,
@@ -107,7 +106,7 @@ def sync_pipeline_page_state_from_template(
         config_path=config_path,
         experiment_name=request.experiment_name,
         mode=request.mode,
-        method=MethodId(request.slam.backend.kind),
+        method=request.slam.backend.method_id,
         slam_max_frames=request.slam.backend.max_frames,
         slam_backend_spec=request.slam.backend.model_copy(deep=True),
         emit_dense_points=request.slam.outputs.emit_dense_points,
@@ -182,7 +181,7 @@ def request_support_error(
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
-    if request.slam.backend.kind == MethodId.MAST3R.value:
+    if request.slam.backend.method_id is MethodId.MAST3R:
         return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
     unavailable_stages = [stage for stage in plan.stages if not stage.available]
     if unavailable_stages:
@@ -366,13 +365,15 @@ def record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLive
     )
 
 
-def backend_payload_from_action(action: PipelinePageAction) -> BackendConfigPayload:
+def backend_payload_from_action(
+    action: PipelinePageAction,
+) -> dict[str, Path | str | int | float | bool | None]:
     """Return backend config overrides for one action."""
     backend_spec = action.slam_backend_spec
-    if backend_spec is None or backend_spec.kind != action.method.value:
+    if backend_spec is None or backend_spec.method_id is not action.method:
         return {}
     payload = backend_spec.model_dump(mode="python")
-    payload.pop("kind", None)
+    payload.pop("method_id", None)
     payload.pop("max_frames", None)
     return payload
 

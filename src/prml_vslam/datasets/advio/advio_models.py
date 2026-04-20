@@ -1,3 +1,11 @@
+"""ADVIO-specific metadata and config models.
+
+This module owns the committed scene catalog metadata, download request DTOs,
+and sequence config used by the ADVIO adapter. The actual normalization and
+replay logic lives in :mod:`prml_vslam.datasets.advio.advio_sequence` and
+:mod:`prml_vslam.datasets.advio.advio_service`.
+"""
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -23,6 +31,7 @@ class AdvioEnvironment(StrEnum):
 
     @property
     def label(self) -> str:
+        """Return the user-facing environment label."""
         return self.value.capitalize()
 
 
@@ -36,6 +45,7 @@ class AdvioPeopleLevel(StrEnum):
 
     @property
     def label(self) -> str:
+        """Return the user-facing crowd-density label."""
         return self.value.capitalize()
 
 
@@ -52,6 +62,7 @@ class AdvioModality(StrEnum):
 
     @property
     def label(self) -> str:
+        """Return the user-facing modality label shown in ADVIO controls."""
         return {
             self.CALIBRATION: "Calibration",
             self.GROUND_TRUTH: "Ground Truth",
@@ -72,10 +83,12 @@ class AdvioDownloadPreset(StrEnum):
 
     @property
     def label(self) -> str:
+        """Return the user-facing preset label shown in ADVIO download controls."""
         return self.value.capitalize()
 
     @property
     def modalities(self) -> tuple[AdvioModality, ...]:
+        """Return the effective modality bundle for the selected preset."""
         return {
             self.STREAMING: (
                 AdvioModality.CALIBRATION,
@@ -95,6 +108,8 @@ class AdvioDownloadPreset(StrEnum):
 
 
 class AdvioUpstreamMetadata(BaseData):
+    """Describe the committed upstream ADVIO metadata sources for the adapter."""
+
     repo_url: str
     zenodo_record_url: str
     doi: str
@@ -103,6 +118,8 @@ class AdvioUpstreamMetadata(BaseData):
 
 
 class AdvioSceneMetadata(BaseData):
+    """Describe one ADVIO scene committed into the repository catalog."""
+
     sequence_id: int
     sequence_slug: str
     venue: str
@@ -125,6 +142,8 @@ class AdvioSceneMetadata(BaseData):
 
 
 class AdvioCatalog(BaseData):
+    """Bundle the committed ADVIO catalog plus upstream metadata provenance."""
+
     dataset_id: str
     dataset_label: str
     upstream: AdvioUpstreamMetadata
@@ -181,7 +200,11 @@ class AdvioDatasetSummary(DatasetSummary):
 
 
 class AdvioSequenceConfig(BaseConfig, FactoryConfig["AdvioSequence"]):
-    """Config describing one local ADVIO sequence."""
+    """Configure one local ADVIO sequence owner.
+
+    This config is the main click-through bridge from app or pipeline selection
+    into :class:`prml_vslam.datasets.advio.advio_sequence.AdvioSequence`.
+    """
 
     dataset_root: Path = Path(".data/advio")
     """Directory that stores extracted ADVIO sequences and calibration files."""
@@ -191,13 +214,13 @@ class AdvioSequenceConfig(BaseConfig, FactoryConfig["AdvioSequence"]):
 
     @property
     def sequence_name(self) -> str:
-        """Return the canonical ADVIO folder name."""
+        """Return the canonical ADVIO folder name used on disk."""
         return f"advio-{self.sequence_id:02d}"
 
     @field_validator("dataset_root")
     @classmethod
     def validate_dataset_root(cls, value: Path) -> Path:
-        """Reject empty dataset roots."""
+        """Reject blank dataset roots before path resolution happens downstream."""
         if not str(value).strip():
             msg = "dataset_root must not be blank"
             raise ValueError(msg)

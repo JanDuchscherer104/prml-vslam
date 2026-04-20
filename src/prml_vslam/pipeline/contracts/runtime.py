@@ -1,4 +1,9 @@
-"""Projected runtime snapshot contracts."""
+"""Projected runtime snapshot contracts.
+
+This module owns the live metadata view derived from the append-only event
+stream in :mod:`prml_vslam.pipeline.contracts.events`. Snapshots are for
+inspection and UI convenience; they are not the source of truth.
+"""
 
 from __future__ import annotations
 
@@ -19,8 +24,9 @@ from prml_vslam.pipeline.contracts.transport import TransportModel
 from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
+# TODO: this is a dto / data model that should be defined in a shared model module! given that it contains only transport-model definitions!
 class RunState(StrEnum):
-    """Lifecycle states exposed to the app and CLI."""
+    """Name the coarse lifecycle states exposed to app and CLI consumers."""
 
     IDLE = "idle"
     PREPARING = "preparing"
@@ -31,7 +37,12 @@ class RunState(StrEnum):
 
 
 class RunSnapshot(TransportModel):
-    """Projected metadata-only runtime snapshot."""
+    """Project the latest run state from the append-only event stream.
+
+    Callers should treat this DTO as a convenience view for status displays and
+    polling loops. Durable outcomes still live in artifacts and summaries, while
+    runtime truth still lives in :class:`prml_vslam.pipeline.contracts.events.RunEvent`.
+    """
 
     run_id: str = ""
     state: RunState = RunState.IDLE
@@ -57,7 +68,7 @@ class RunSnapshot(TransportModel):
 
 
 class StreamingRunSnapshot(RunSnapshot):
-    """Projected snapshot with bounded streaming telemetry."""
+    """Extend :class:`RunSnapshot` with bounded streaming telemetry fields."""
 
     received_frames: int = 0
     measured_fps: float = 0.0

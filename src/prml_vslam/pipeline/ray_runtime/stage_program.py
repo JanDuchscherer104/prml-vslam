@@ -1,9 +1,9 @@
 """Phase-aware stage executor for the linear Ray-backed pipeline.
 
-This module binds stage keys to concrete runtime implementations and decides
-whether they run during offline execution, streaming prepare, or streaming
-finalize. It keeps stage order aligned with the compiled :class:`RunPlan`
-instead of letting the coordinator hardcode stage sequencing itself.
+This module contains the stage-runtime bindings that decide whether a planned
+stage runs during offline execution, streaming prepare, or streaming finalize.
+It keeps stage order aligned with the compiled :class:`RunPlan` instead of
+letting the coordinator hardcode stage sequencing itself.
 """
 
 from __future__ import annotations
@@ -75,19 +75,23 @@ class StageCompletionPayload:
 
 
 class RuntimeStageDriver(Protocol):
-    """Coordinator-facing hooks required by streaming-capable stages."""
+    """Coordinator-facing hooks required by streaming-capable stage execution."""
 
     stop_requested: bool
     streaming_error: str | None
 
-    def start_streaming_slam_stage(self, *, context: StageExecutionContext) -> None: ...
+    def start_streaming_slam_stage(self, *, context: StageExecutionContext) -> None:
+        """Construct and start the ordered streaming SLAM stage."""
+        ...
 
     def close_streaming_slam_stage(
         self,
         *,
         context: StageExecutionContext,
         sequence_manifest: SequenceManifest,
-    ) -> StageCompletionPayload: ...
+    ) -> StageCompletionPayload:
+        """Close the ordered streaming SLAM stage and return its completion payload."""
+        ...
 
 
 OfflineStageFn = Callable[

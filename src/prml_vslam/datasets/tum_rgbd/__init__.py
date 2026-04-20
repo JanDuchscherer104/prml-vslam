@@ -1,3 +1,10 @@
+"""Public TUM RGB-D dataset surface for app, tests, and pipeline integration.
+
+This package owns the TUM RGB-D-specific models, sequence owner, service
+helpers, and replay/normalization entry points that plug into the broader
+:mod:`prml_vslam.datasets` and :mod:`prml_vslam.pipeline` architecture.
+"""
+
 from __future__ import annotations
 
 from .tum_rgbd_loading import TumRgbdOfflineSample

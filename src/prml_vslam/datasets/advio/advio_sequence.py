@@ -1,3 +1,11 @@
+"""ADVIO sequence normalization and replay entry points.
+
+This module owns the high-level ADVIO sequence object that callers use to load
+offline samples, prepare normalized manifests and benchmark inputs, and open
+runtime replay streams. It is the main ADVIO click-through surface after the
+catalog models.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,6 +64,8 @@ if TYPE_CHECKING:
 
 
 class AdvioSequencePaths(BaseData):
+    """Resolve the local file layout for one ADVIO sequence."""
+
     config: AdvioSequenceConfig
     sequence_dir: Path
     video_path: Path
@@ -80,6 +90,7 @@ class AdvioSequencePaths(BaseData):
         *,
         require_arcore: bool = True,
     ) -> AdvioSequencePaths:
+        """Resolve and validate the local ADVIO file layout for one scene."""
         sequence_dir = advio_layout.resolve_sequence_dir(config.dataset_root, scene)
         paths = cls(
             config=config,
@@ -115,6 +126,8 @@ class AdvioSequencePaths(BaseData):
 
 
 class AdvioOfflineSample(BaseData):
+    """Bundle the fully loaded offline sample surfaces for one ADVIO sequence."""
+
     model_config = {"arbitrary_types_allowed": True}
 
     sequence_id: int = Field(ge=1, le=ADVIO_SEQUENCE_COUNT)
@@ -128,6 +141,7 @@ class AdvioOfflineSample(BaseData):
 
     @property
     def duration_s(self) -> float:
+        """Return the video duration implied by the frame timestamps."""
         return (
             0.0
             if self.frame_timestamps_ns.size < 2
@@ -136,6 +150,8 @@ class AdvioOfflineSample(BaseData):
 
 
 class AdvioSequence(BaseData):
+    """Own one ADVIO sequence across loading, replay, and normalization paths."""
+
     config: AdvioSequenceConfig
     catalog: AdvioCatalog | None = None
 
@@ -149,15 +165,18 @@ class AdvioSequence(BaseData):
 
     @property
     def scene(self) -> AdvioSceneMetadata:
+        """Return the committed scene metadata for this sequence id."""
         return advio_layout.scene_for_sequence_id(
             self.catalog or advio_layout.load_advio_catalog(), self.config.sequence_id
         )
 
     @property
     def paths(self) -> AdvioSequencePaths:
+        """Return the validated local file layout for this sequence."""
         return self._resolve_paths()
 
     def load_offline_sample(self) -> AdvioOfflineSample:
+        """Load the main offline sample surfaces for inspection or tests."""
         paths = self.paths
         return AdvioOfflineSample(
             sequence_id=self.config.sequence_id,
@@ -179,6 +198,7 @@ class AdvioSequence(BaseData):
         frame_selection: FrameSelectionConfig | None = None,
         dataset_serving: DatasetServingConfig | None = None,
     ) -> SequenceManifest:
+        """Materialize the normalized ADVIO manifest for this sequence."""
         from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
         del frame_selection
@@ -213,7 +233,7 @@ class AdvioSequence(BaseData):
         )
 
     def to_benchmark_inputs(self, *, output_dir: Path | None = None) -> PreparedBenchmarkInputs:
-        """Materialize benchmark-owned reference trajectories for one sequence."""
+        """Materialize benchmark-owned reference trajectories and clouds for one sequence."""
         paths = self._resolve_paths(require_arcore=False)
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
         evaluation_dir.mkdir(parents=True, exist_ok=True)
@@ -264,6 +284,7 @@ class AdvioSequence(BaseData):
         replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
         respect_video_rotation: bool = False,
     ) -> FramePacketStream:
+        """Open the canonical ADVIO replay stream for app or pipeline consumers."""
         scene = self.scene
         paths = self._resolve_paths(require_arcore=False)
         frame_timestamps_ns = advio_loading.load_advio_frame_timestamps_ns(paths.frame_timestamps_path)

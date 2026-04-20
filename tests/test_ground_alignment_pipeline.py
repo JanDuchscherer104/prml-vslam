@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from prml_vslam.alignment import GroundAlignmentMetadata
-from prml_vslam.methods.descriptors import BackendCapabilities
-from prml_vslam.methods.factory import BackendFactory
+from prml_vslam.methods.configs import MockSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
@@ -28,7 +27,7 @@ def test_run_request_build_rejects_ground_alignment_without_point_cloud_outputs(
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
         slam=SlamStageConfig(
-            backend={"kind": "mock"},
+            backend={"method_id": "mock"},
             outputs={"emit_dense_points": False, "emit_sparse_points": False},
         ),
         alignment={"ground": {"enabled": True}},
@@ -45,7 +44,7 @@ def test_stage_registry_places_ground_alignment_between_slam_and_trajectory(tmp_
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         benchmark={"trajectory": {"enabled": True}},
         alignment={"ground": {"enabled": True}},
     )
@@ -68,27 +67,26 @@ def test_stage_registry_marks_ground_alignment_unavailable_without_backend_point
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         alignment={"ground": {"enabled": True}},
     )
-    backend = (
-        BackendFactory()
-        .describe(request.slam.backend)
-        .model_copy(
-            update={
-                "capabilities": BackendCapabilities(
-                    offline=True,
-                    streaming=True,
-                    dense_points=False,
-                    live_preview=True,
-                    native_visualization=False,
-                    trajectory_benchmark_support=True,
-                )
-            }
-        )
+
+    class NoDenseMockBackendConfig(MockSlamBackendConfig):
+        @property
+        def supports_dense_points(self) -> bool:
+            return False
+
+    request = request.model_copy(
+        update={
+            "slam": request.slam.model_copy(
+                update={
+                    "backend": NoDenseMockBackendConfig.model_validate(request.slam.backend.model_dump(mode="python"))
+                }
+            )
+        }
     )
 
-    plan = StageRegistry.default().compile(request=request, backend=backend, path_config=path_config)
+    plan = StageRegistry.default().compile(request=request, path_config=path_config)
     ground_stage = next(stage for stage in plan.stages if stage.key is StageKey.GROUND_ALIGNMENT)
 
     assert ground_stage.available is False
@@ -118,7 +116,7 @@ def test_run_ground_alignment_stage_writes_metadata_and_returns_skipped(
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         alignment={"ground": {"enabled": True}},
     )
     plan = request.build(path_config)
@@ -128,7 +126,6 @@ def test_run_ground_alignment_stage_writes_metadata_and_returns_skipped(
         plan=plan,
         path_config=path_config,
         run_paths=run_paths,
-        backend_descriptor=BackendFactory().describe(request.slam.backend),
     )
     slam = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),
@@ -173,7 +170,7 @@ def test_run_ground_alignment_stage_writes_applied_metadata_when_export_enabled(
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         alignment={"ground": {"enabled": True}},
         visualization={"export_viewer_rrd": True},
     )
@@ -184,7 +181,6 @@ def test_run_ground_alignment_stage_writes_applied_metadata_when_export_enabled(
         plan=plan,
         path_config=path_config,
         run_paths=run_paths,
-        backend_descriptor=BackendFactory().describe(request.slam.backend),
     )
     slam = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),

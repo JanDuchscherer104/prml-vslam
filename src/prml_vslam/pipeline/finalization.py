@@ -3,7 +3,8 @@
 These helpers turn executed :class:`StageOutcome` values into durable pipeline
 provenance without reaching back into runtime actors. They are intentionally
 side-effect light and deterministic apart from the explicit JSON writes they
-perform.
+perform, which makes this module the final durable handoff from runtime
+execution into persisted summaries.
 """
 
 from __future__ import annotations

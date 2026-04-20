@@ -17,14 +17,14 @@ pose_frame_mode = "provider_world"
     emit_sparse_points = false
 
     [slam.backend]
-    kind = "vista"
+    method_id = "vista"
 
 [benchmark.reference]
 enabled = false
 
 [benchmark.trajectory]
 enabled     = false
-baseline_id = "reference"
+baseline_source = "ground_truth"
 
 [benchmark.cloud]
 enabled = false

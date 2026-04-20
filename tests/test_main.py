@@ -24,11 +24,11 @@ from prml_vslam.main import (
     plan_run,
     run_config,
 )
-from prml_vslam.methods import MethodId
+from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.demo import build_advio_demo_request, build_runtime_source_from_request, load_run_request_toml
 from prml_vslam.pipeline.run_service import RunService
@@ -151,7 +151,7 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
             sequence_id="advio-01",
             dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
         ),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
     )
     runtime_source = object()
     captured: dict[str, object] = {}
@@ -232,7 +232,7 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
                 "output_dir": path_config.artifacts_dir,
                 "slam": request.slam.model_copy(
                     update={
-                        "backend": build_backend_spec(method=MethodId.MOCK, max_frames=3),
+                        "backend": MockSlamBackendConfig(max_frames=3),
                     }
                 ),
                 "visualization": request.visualization.model_copy(
@@ -256,7 +256,7 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
     assert isinstance(captured["runtime_source"], FakeStreamingSource)
     request = captured["request"]
     assert isinstance(request, RunRequest)
-    assert request.slam.backend.kind == "mock"
+    assert request.slam.backend.method_id is MethodId.MOCK
     assert request.visualization.connect_live_viewer is False
     assert request.visualization.export_viewer_rrd is False
     assert captured["shutdown"] is False
@@ -273,7 +273,7 @@ def test_run_config_preserves_local_head_for_reusable_completed_run(
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
         }
     )
@@ -318,7 +318,7 @@ def test_run_config_does_not_preserve_local_head_for_reusable_failed_run(
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
         }
     )
@@ -361,7 +361,7 @@ def test_build_rerun_viewer_command_uses_blueprint_when_configured(tmp_path: Pat
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {
                 "connect_live_viewer": True,
                 "viewer_blueprint_path": ".configs/visualization/demo_blueprint.rbl",
@@ -390,7 +390,7 @@ def test_build_rerun_viewer_command_omits_blueprint_when_unset(tmp_path: Path) -
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
@@ -430,7 +430,7 @@ def test_launch_rerun_viewer_is_noop_when_live_viewer_disabled(
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": False},
         }
     )
@@ -451,7 +451,7 @@ def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.Mon
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
@@ -495,7 +495,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_startup_failure(
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
@@ -523,7 +523,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_early_exit(
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
@@ -601,7 +601,7 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
@@ -644,7 +644,7 @@ def test_run_config_shuts_down_viewer_after_normal_completion(
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
@@ -692,7 +692,7 @@ def test_run_config_shuts_down_viewer_after_keyboard_interrupt(
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
             "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
-            "slam": {"backend": {"kind": "mock"}},
+            "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
@@ -759,7 +759,7 @@ def test_build_runtime_source_from_request_caps_streaming_replay(
             },
             respect_video_rotation=True,
         ),
-        slam=SlamStageConfig(backend={"kind": "mock", "max_frames": 2}),
+        slam=SlamStageConfig(backend={"method_id": "mock", "max_frames": 2}),
     )
 
     class FakePacketStream:
