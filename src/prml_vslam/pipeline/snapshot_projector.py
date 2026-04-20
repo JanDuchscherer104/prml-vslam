@@ -57,12 +57,12 @@ class SnapshotProjector:
             event: New event emitted for that same run.
 
         Returns:
-            A deep-copied updated snapshot. The input snapshot is never mutated.
+            An updated snapshot. The input snapshot is never mutated.
         """
         if snapshot.run_id and event.run_id != snapshot.run_id:
             raise ValueError(f"Event run id mismatch: {event.run_id} != {snapshot.run_id}")
 
-        updated = snapshot.model_copy(deep=True)
+        updated = self._copy_for_update(snapshot)
         updated.run_id = event.run_id
         updated.last_event_id = event.event_id
         updated.last_event_kind = event.kind
@@ -170,6 +170,18 @@ class SnapshotProjector:
                 updated.current_stage_key = None
             case _:
                 raise ValueError(f"Unsupported run event: {event!r}")
+        return updated
+
+    @staticmethod
+    def _copy_for_update(snapshot: RunSnapshot) -> RunSnapshot:
+        """Copy only the mutable containers that projection mutates."""
+        updated = snapshot.model_copy()
+        updated.stage_status = dict(snapshot.stage_status)
+        updated.stage_progress = dict(snapshot.stage_progress)
+        updated.artifacts = dict(snapshot.artifacts)
+        if isinstance(snapshot, StreamingRunSnapshot):
+            updated.trajectory_positions_xyz = list(snapshot.trajectory_positions_xyz)
+            updated.trajectory_timestamps_s = list(snapshot.trajectory_timestamps_s)
         return updated
 
 

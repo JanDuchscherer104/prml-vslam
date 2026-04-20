@@ -30,7 +30,12 @@ from prml_vslam.benchmark import (
 from prml_vslam.interfaces import FramePacketProvenance, FrameTransform
 from prml_vslam.methods import MethodId
 from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
-from prml_vslam.methods.events import BackendWarning, KeyframeVisualizationReady, translate_slam_update
+from prml_vslam.methods.events import (
+    BackendWarning,
+    KeyframeVisualizationReady,
+    PoseEstimated,
+    translate_slam_update,
+)
 from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.methods.updates import SlamUpdate
@@ -38,12 +43,14 @@ from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import (
+    BackendNoticeReceived,
     FramePacketSummary,
     PacketObserved,
     RunEvent,
     RunStopped,
     StageFailed,
     StageOutcome,
+    StageProgress,
     StageStatus,
 )
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
@@ -372,6 +379,47 @@ def test_snapshot_projector_preserves_completed_state_on_run_stopped() -> None:
     )
 
     assert updated.state is RunState.COMPLETED
+
+
+def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
+    projector = SnapshotProjector()
+    snapshot = StreamingRunSnapshot(
+        run_id="run-1",
+        state=RunState.RUNNING,
+        stage_status={StageKey.INGEST: StageStatus.RUNNING},
+        stage_progress={StageKey.INGEST: StageProgress(message="streaming")},
+        artifacts={"before": ArtifactRef(path=Path("/tmp/before"), kind="txt", fingerprint="before")},
+        trajectory_positions_xyz=[(0.0, 0.0, 0.0)],
+        trajectory_timestamps_s=[0.0],
+    )
+
+    updated = projector.apply(
+        snapshot,
+        BackendNoticeReceived(
+            event_id="2a",
+            run_id="run-1",
+            ts_ns=2,
+            stage_key=StageKey.SLAM,
+            notice=PoseEstimated(
+                seq=1,
+                source_seq=1,
+                source_timestamp_ns=2,
+                timestamp_ns=2,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+            ),
+        ),
+    )
+
+    assert updated.trajectory_positions_xyz == [(0.0, 0.0, 0.0), (1.0, 2.0, 3.0)]
+    assert updated.trajectory_timestamps_s == [0.0, 2e-9]
+    assert snapshot.trajectory_positions_xyz == [(0.0, 0.0, 0.0)]
+    assert snapshot.trajectory_timestamps_s == [0.0]
+    assert updated.stage_status == snapshot.stage_status
+    assert updated.stage_progress == snapshot.stage_progress
+    assert updated.artifacts == snapshot.artifacts
+    assert updated.stage_status is not snapshot.stage_status
+    assert updated.stage_progress is not snapshot.stage_progress
+    assert updated.artifacts is not snapshot.artifacts
 
 
 def test_snapshot_projector_clears_current_stage_on_stage_failed() -> None:
