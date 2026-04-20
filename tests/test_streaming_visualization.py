@@ -49,7 +49,9 @@ class _RecordingProbe:
     def set_time(self, timeline: str, *, sequence: int) -> None:
         self.time_events.append((timeline, sequence))
 
-    def log(self, entity_path: str, payload: object, *extra: object, static: bool = False, strict: bool | None = None) -> None:
+    def log(
+        self, entity_path: str, payload: object, *extra: object, static: bool = False, strict: bool | None = None
+    ) -> None:
         del extra, static, strict
         self.logged_events.append((entity_path, payload))
 
