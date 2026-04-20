@@ -83,10 +83,7 @@ python_files = ["test_*.py"]
 addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 
 [tool.uv]
-no-build-isolation-package = ["dbow3py"]
-
   [tool.uv.extra-build-dependencies]
-  dbow3py = ["setuptools"]
   xformers = ["torch==2.5.1"]
 
   [tool.uv.sources]
