@@ -8,8 +8,10 @@ from pathlib import Path
 
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, PipelineMode, RunRequest, VideoSourceSpec
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-from prml_vslam.utils import RunArtifactPaths
+from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.utils.video_frames import extract_video_frames
+
+_CONSOLE = Console(__name__).child("materialize_offline_manifest")
 
 
 def materialize_offline_manifest(
@@ -19,6 +21,10 @@ def materialize_offline_manifest(
     run_paths: RunArtifactPaths,
 ) -> SequenceManifest:
     """Materialize the canonical offline ingest boundary for one run."""
+    _CONSOLE.info(
+        "Materializing offline manifest for sequence '%s'.",
+        prepared_manifest.sequence_id,
+    )
     rotation_degrees = 0
     rgb_dir = prepared_manifest.rgb_dir
     timestamps_path = prepared_manifest.timestamps_path
@@ -34,8 +40,21 @@ def materialize_offline_manifest(
             max_frames=max_frames,
         )
         if cached_rgb_dir is not None:
+            _CONSOLE.info(
+                "Reusing extracted frames from '%s' with frame_stride=%d and max_frames=%s.",
+                cached_rgb_dir,
+                frame_stride,
+                max_frames,
+            )
             rgb_dir = cached_rgb_dir
         else:
+            _CONSOLE.info(
+                "Extracting frames from '%s' into '%s' with frame_stride=%d and max_frames=%s.",
+                prepared_manifest.video_path,
+                run_paths.input_frames_dir,
+                frame_stride,
+                max_frames,
+            )
             extracted = extract_video_frames(
                 video_path=prepared_manifest.video_path,
                 output_dir=run_paths.input_frames_dir,
@@ -61,6 +80,12 @@ def materialize_offline_manifest(
             frame_stride=frame_stride,
             fallback_timestamps_ns=[] if cached_rgb_dir is not None else extracted.timestamps_ns,
         )
+        if prepared_manifest.timestamps_path is not None and prepared_manifest.timestamps_path.exists():
+            _CONSOLE.debug("Using prepared timestamps from '%s'.", prepared_manifest.timestamps_path)
+        elif cached_rgb_dir is not None and run_paths.input_timestamps_path.exists():
+            _CONSOLE.debug("Using cached canonical timestamps from '%s'.", run_paths.input_timestamps_path)
+        else:
+            _CONSOLE.debug("Using extracted fallback timestamps for sequence '%s'.", prepared_manifest.sequence_id)
         # If we reused frames, we expect the timestamps to already be materialized if they were part of a previous run.
         # However, materialize_offline_manifest always ensures the input/ directory is populated.
         timestamps_path = _write_json_payload(
@@ -72,12 +97,16 @@ def materialize_offline_manifest(
         run_paths.input_intrinsics_path.parent.mkdir(parents=True, exist_ok=True)
         if intrinsics_path.resolve() != run_paths.input_intrinsics_path.resolve():
             shutil.copyfile(intrinsics_path, run_paths.input_intrinsics_path)
+            _CONSOLE.debug("Copied intrinsics into canonical path '%s'.", run_paths.input_intrinsics_path)
+        else:
+            _CONSOLE.debug("Intrinsics already at canonical path '%s'.", intrinsics_path)
         intrinsics_path = run_paths.input_intrinsics_path.resolve()
 
     rotation_metadata_path = _write_json_payload(
         run_paths.input_rotation_metadata_path,
         {"rotation_degrees": rotation_degrees},
     )
+    _CONSOLE.debug("Wrote rotation metadata to '%s'.", rotation_metadata_path)
 
     return prepared_manifest.model_copy(
         update={

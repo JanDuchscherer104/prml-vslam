@@ -11,14 +11,17 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
-from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.utils import BaseConfig, RunArtifactPaths
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.contracts.plan import RunPlan
+    from prml_vslam.pipeline.contracts.request import RunRequest
 
 
 def project_summary(
