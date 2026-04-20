@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from pydantic import Field
 
+from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageProgress, StageStatus
@@ -46,6 +47,7 @@ class RunSnapshot(TransportModel):
     sequence_manifest: SequenceManifest | None = None
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     slam: SlamArtifacts | None = None
+    ground_alignment: GroundAlignmentMetadata | None = None
     visualization: VisualizationArtifacts | None = None
     summary: RunSummary | None = None
     stage_manifests: list[StageManifest] = Field(default_factory=list)

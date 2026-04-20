@@ -54,6 +54,8 @@ class RunArtifactPaths(BaseData):
     """Directory containing preserved native backend outputs."""
     native_rerun_rrd_path: Path
     """Path to a preserved native backend Rerun recording."""
+    ground_alignment_path: Path
+    """Path to the derived ground-alignment metadata artifact."""
     arcore_alignment_path: Path
     """Path to the ARCore alignment artifact."""
     trajectory_metrics_path: Path
@@ -88,6 +90,7 @@ class RunArtifactPaths(BaseData):
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),
             native_rerun_rrd_path=(resolved_root / "native" / "rerun_recording.rrd").resolve(),
+            ground_alignment_path=(resolved_root / "alignment" / "ground_alignment.json").resolve(),
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
             trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),

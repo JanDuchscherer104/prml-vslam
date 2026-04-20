@@ -123,6 +123,7 @@ class SnapshotProjector:
                 sequence_manifest=sequence_manifest,
                 benchmark_inputs=benchmark_inputs,
                 slam=slam,
+                ground_alignment=ground_alignment,
                 visualization=visualization,
                 summary=summary,
                 stage_manifests=stage_manifests,
@@ -138,6 +139,8 @@ class SnapshotProjector:
                     updated.benchmark_inputs = benchmark_inputs
                 if slam is not None:
                     updated.slam = slam
+                if ground_alignment is not None:
+                    updated.ground_alignment = ground_alignment
                 if visualization is not None:
                     updated.visualization = visualization
                 if summary is not None:

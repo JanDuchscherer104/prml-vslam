@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import ray
 
+from prml_vslam.alignment import GroundAlignmentService
 from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.methods.descriptors import BackendDescriptor
@@ -25,6 +26,7 @@ from prml_vslam.pipeline.finalization import project_summary, stable_hash, write
 from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
+    GroundAlignmentStageResult,
     IngestStageResult,
     SlamStageResult,
     SummaryStageResult,
@@ -172,6 +174,36 @@ def run_trajectory_evaluation_stage(
     )
 
 
+def run_ground_alignment_stage(
+    *,
+    context: StageExecutionContext,
+    slam: SlamArtifacts,
+) -> GroundAlignmentStageResult:
+    """Detect one dominant ground plane and persist derived alignment metadata."""
+    metadata = GroundAlignmentService(config=context.request.alignment.ground).estimate_from_slam_artifacts(slam=slam)
+    write_json(context.run_paths.ground_alignment_path, metadata)
+    return GroundAlignmentStageResult(
+        outcome=StageOutcome(
+            stage_key=StageKey.GROUND_ALIGNMENT,
+            status=StageStatus.COMPLETED if metadata.applied else StageStatus.SKIPPED,
+            config_hash=stable_hash(context.request.alignment.ground),
+            input_fingerprint=stable_hash(
+                {
+                    "trajectory_tum": slam.trajectory_tum,
+                    "dense_points_ply": slam.dense_points_ply,
+                    "sparse_points_ply": slam.sparse_points_ply,
+                }
+            ),
+            artifacts={"ground_alignment": artifact_ref(context.run_paths.ground_alignment_path, kind="json")},
+            metrics={
+                "confidence": metadata.confidence,
+                "candidate_count": metadata.candidate_count,
+            },
+        ),
+        ground_alignment=metadata,
+    )
+
+
 def run_summary_stage(
     *,
     context: StageExecutionContext,
@@ -193,6 +225,7 @@ def run_summary_stage(
 
 __all__ = [
     "StageExecutionContext",
+    "run_ground_alignment_stage",
     "run_ingest_stage",
     "run_offline_slam_stage",
     "run_summary_stage",

@@ -70,6 +70,11 @@ enabled = false
 [benchmark.efficiency]
 enabled = false
 
+[alignment.ground]
+enabled        = true
+strategy       = "ransac_point_cloud"
+min_confidence = 0.6
+
 [runtime.ray]
 local_head_lifecycle = "ephemeral"
 

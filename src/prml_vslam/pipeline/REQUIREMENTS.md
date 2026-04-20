@@ -10,8 +10,8 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   internal `contracts/` package rather than one monolithic `contracts.py`.
 - The package exposes one authoritative runtime path through
   `PipelineBackend`, `RayPipelineBackend`, and `RunService`.
-- The current executable slice is `ingest`, `slam`, optional
-  `trajectory.evaluate`, and `summary`.
+- The current executable slice is `ingest`, `slam`, optional `ground.align`,
+  optional `trajectory.evaluate`, and `summary`.
 
 ## Responsibilities
 
@@ -34,6 +34,9 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   second mutable runtime truth.
 - stage manifests and run summaries must reuse the shared `StageStatus`
   vocabulary instead of introducing a second status enum
+- `ground.align` is a derived-artifact stage that may run only after `slam`, in
+  offline execution and streaming finalize; it must never widen the streaming
+  hot path.
 - `summary` must be projection-only; it must not compute trajectory or cloud
   metrics.
 - Trajectory evaluation may run only from prepared benchmark inputs and
