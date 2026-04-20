@@ -7,14 +7,26 @@ This root module exposes the backend configs and canonical wrappers that other
 packages import directly.
 """
 
-from .configs import BackendConfig, MockSlamBackendConfig, VistaSlamBackendConfig
+from __future__ import annotations
+
+from typing import Any
+
+from .configs import MockSlamBackendConfig, VistaSlamBackendConfig
 from .contracts import MethodId
 from .vista.adapter import VistaSlamBackend
 
 __all__ = [
-    "BackendConfig",
     "MethodId",
     "MockSlamBackendConfig",
     "VistaSlamBackend",
     "VistaSlamBackendConfig",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Provide lazy access to non-exported compatibility symbols."""
+    if name == "BackendConfig":
+        from .configs import BackendConfig
+
+        return BackendConfig
+    raise AttributeError(name)
