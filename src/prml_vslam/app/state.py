@@ -52,7 +52,6 @@ class SessionStateStore:
         return self._load_runtime(
             session_key=self.record3d_runtime_key,
             runtime_type=Record3DStreamRuntimeController,
-            required_methods=("snapshot", "stop", "start_usb", "start_wifi"),
             factory=Record3DStreamRuntimeController,
         )
 
@@ -61,7 +60,6 @@ class SessionStateStore:
         return self._load_runtime(
             session_key=self.advio_runtime_key,
             runtime_type=AdvioPreviewRuntimeController,
-            required_methods=("snapshot", "stop", "start"),
             factory=AdvioPreviewRuntimeController,
         )
 
@@ -70,7 +68,6 @@ class SessionStateStore:
         return self._load_runtime(
             session_key=self.run_service_key,
             runtime_type=RunService,
-            required_methods=("snapshot", "stop_run", "start_run"),
             factory=lambda: RunService(path_config=path_config),
         )
 
@@ -79,11 +76,9 @@ class SessionStateStore:
         *,
         session_key: str,
         runtime_type: type[RuntimeT],
-        required_methods: tuple[str, ...],
         factory: Callable[[], RuntimeT],
     ) -> RuntimeT:
         """Return one stored runtime or replace a stale session object."""
-        del required_methods
         runtime = st.session_state.get(session_key)
         if runtime is None:
             return self._store_runtime(session_key=session_key, runtime=factory())
