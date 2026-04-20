@@ -9,7 +9,14 @@ from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.benchmark import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudSource,
+    ReferencePointCloudSequenceRef,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+)
 from prml_vslam.interfaces import FramePacketProvenance
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.io.cv2_producer import Cv2FrameProducer, Cv2ProducerConfig
@@ -17,6 +24,7 @@ from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
 
 from . import advio_layout, advio_loading
+from .advio_geometry import build_advio_tango_reference_clouds
 from .advio_models import (
     ADVIO_SEQUENCE_COUNT,
     AdvioCatalog,
@@ -44,6 +52,10 @@ class AdvioSequencePaths(BaseData):
     arcore_csv_path: Path
     arkit_csv_path: Path | None = None
     calibration_path: Path
+    tango_raw_csv_path: Path | None = None
+    tango_area_learning_csv_path: Path | None = None
+    tango_point_cloud_index_path: Path | None = None
+    tango_dir: Path | None = None
     accelerometer_csv_path: Path | None = None
     gyroscope_csv_path: Path | None = None
 
@@ -65,6 +77,14 @@ class AdvioSequencePaths(BaseData):
             arcore_csv_path=sequence_dir / "pixel" / "arcore.csv",
             arkit_csv_path=advio_layout.resolve_optional_arkit_csv(sequence_dir, scene),
             calibration_path=advio_layout.resolve_calibration_path(config.dataset_root, scene),
+            tango_raw_csv_path=(path if (path := sequence_dir / "tango" / "raw.csv").exists() else None),
+            tango_area_learning_csv_path=(
+                path if (path := sequence_dir / "tango" / "area-learning.csv").exists() else None
+            ),
+            tango_point_cloud_index_path=(
+                path if (path := sequence_dir / "tango" / "point-cloud.csv").exists() else None
+            ),
+            tango_dir=(path if (path := sequence_dir / "tango").exists() else None),
             accelerometer_csv_path=(path if (path := sequence_dir / "iphone" / "accelerometer.csv").exists() else None),
             gyroscope_csv_path=advio_layout.resolve_optional_gyroscope_csv(sequence_dir, scene),
         )
@@ -176,7 +196,22 @@ class AdvioSequence(BaseData):
                     path=_ensure_tum(self.write_arkit_tum, evaluation_dir / "arkit.tum"),
                 )
             )
-        return PreparedBenchmarkInputs(reference_trajectories=references)
+        return PreparedBenchmarkInputs(
+            reference_trajectories=references,
+            reference_clouds=build_advio_tango_reference_clouds(
+                sequence_slug=self.scene.sequence_slug,
+                ground_truth_csv_path=paths.ground_truth_csv_path,
+                tango_raw_csv_path=paths.tango_raw_csv_path,
+                tango_area_learning_csv_path=paths.tango_area_learning_csv_path,
+                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
+                output_dir=evaluation_dir,
+            ),
+            reference_point_cloud_sequences=_build_reference_point_cloud_sequences(
+                paths=paths,
+                sequence_slug=self.scene.sequence_slug,
+                evaluation_dir=evaluation_dir,
+            ),
+        )
 
     def open_stream(
         self,
@@ -237,3 +272,41 @@ def _ensure_tum(write_tum: Callable[[Path], Path], target_path: Path) -> Path:
     if not target_path.exists():
         write_tum(target_path)
     return target_path
+
+
+def _build_reference_point_cloud_sequences(
+    *,
+    paths: AdvioSequencePaths,
+    sequence_slug: str,
+    evaluation_dir: Path,
+) -> list[ReferencePointCloudSequenceRef]:
+    if paths.tango_point_cloud_index_path is None or paths.tango_dir is None:
+        return []
+
+    sequences: list[ReferencePointCloudSequenceRef] = []
+    for source, trajectory_csv_path, tum_name in (
+        (ReferenceCloudSource.TANGO_AREA_LEARNING, paths.tango_area_learning_csv_path, "tango_area_learning.tum"),
+        (ReferenceCloudSource.TANGO_RAW, paths.tango_raw_csv_path, "tango_raw.tum"),
+    ):
+        if trajectory_csv_path is None or not trajectory_csv_path.exists():
+            continue
+        trajectory_path = _ensure_advio_pose_tum(trajectory_csv_path, evaluation_dir / tum_name)
+        native_frame = f"advio_{source.value}_world"
+        sequences.append(
+            ReferencePointCloudSequenceRef(
+                source=source,
+                index_path=paths.tango_point_cloud_index_path.resolve(),
+                payload_root=paths.tango_dir.resolve(),
+                trajectory_path=trajectory_path,
+                target_frame=native_frame,
+                native_frame=native_frame,
+                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+            )
+        )
+    return sequences
+
+
+def _ensure_advio_pose_tum(source_path: Path, target_path: Path) -> Path:
+    if not target_path.exists():
+        advio_loading.write_advio_pose_tum(source_path, target_path)
+    return target_path.resolve()

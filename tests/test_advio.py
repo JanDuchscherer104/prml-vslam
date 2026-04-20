@@ -75,6 +75,21 @@ def _write_pose_csv(path: Path) -> None:
     )
 
 
+def _write_tango_point_cloud_payload(path: Path, *, depth_offset: float) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                f"0.0,0.0,{1.0 + depth_offset:.3f}",
+                f"0.1,0.0,{1.1 + depth_offset:.3f}",
+                f"0.0,0.1,{1.2 + depth_offset:.3f}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_fixpoints_csv(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("0.0,1.0,2.0,3.0\n0.2,2.0,3.0,4.0\n", encoding="utf-8")
@@ -92,6 +107,7 @@ def _write_advio_sequence(
     (sequence_dir / "iphone").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "pixel").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "ground-truth").mkdir(parents=True, exist_ok=True)
+    (sequence_dir / "tango").mkdir(parents=True, exist_ok=True)
 
     _write_video(sequence_dir / "iphone" / "frames.mov")
     (sequence_dir / "iphone" / "frames.csv").write_text(
@@ -122,6 +138,15 @@ def _write_advio_sequence(
     _write_fixpoints_csv(sequence_dir / "ground-truth" / "fixpoints.csv")
     _write_pose_csv(sequence_dir / "pixel" / "arcore.csv")
     _write_pose_csv(sequence_dir / "iphone" / "arkit.csv")
+    _write_pose_csv(sequence_dir / "tango" / "raw.csv")
+    _write_pose_csv(sequence_dir / "tango" / "area-learning.csv")
+    (sequence_dir / "tango" / "point-cloud.csv").write_text(
+        "0.0,1\n0.1,2\n0.2,3\n",
+        encoding="utf-8",
+    )
+    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00001.csv", depth_offset=0.0)
+    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00002.csv", depth_offset=0.1)
+    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00003.csv", depth_offset=0.2)
     _write_calibration(dataset_root / "calibration" / "iphone-03.yaml")
     return sequence_dir
 
@@ -396,6 +421,18 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert benchmark_inputs.reference_trajectories[0].path.exists()
     assert benchmark_inputs.reference_trajectories[1].path.exists()
     assert benchmark_inputs.reference_trajectories[2].path.exists()
+    assert [reference.source.value for reference in benchmark_inputs.reference_point_cloud_sequences] == [
+        "tango_area_learning",
+        "tango_raw",
+    ]
+    assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == [
+        "tango_area_learning",
+        "tango_area_learning",
+        "tango_raw",
+        "tango_raw",
+    ]
+    assert benchmark_inputs.reference_point_cloud_sequences[0].trajectory_path.exists()
+    assert benchmark_inputs.reference_clouds[0].path.exists()
 
 
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:

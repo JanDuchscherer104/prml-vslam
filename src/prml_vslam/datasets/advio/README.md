@@ -141,6 +141,12 @@ poses and point clouds live in Tango-local coordinate systems. Treat them as
 source-native auxiliary geometry until an explicit temporal association and
 cross-system alignment into the iPhone or GT world has been performed.
 
+For repository-owned benchmark prep, `AdvioSequence.to_benchmark_inputs()`
+materializes both bounded static reference clouds and source-native step-wise
+point-cloud sequence references so downstream replay-style consumers, such as
+the mock SLAM backend, can associate the nearest Tango payload to an iPhone
+frame timestamp and project that geometry back into a camera-local pointmap.
+
 ## Frame And Transform Tree
 
 ![ADVIO transform tree](../../../../docs/figures/mermaid/advio-transform-tree.svg)

@@ -165,10 +165,15 @@ def load_bounded_tango_point_clouds(
     chunks: list[NDArray[np.float64]] = []
     payloads_used = 0
     point_count = 0
-    poses_world_payload = _poses_for_timestamps(index_rows[:, 0], trajectory)
+    poses_world_payload = interpolate_trajectory_poses(
+        trajectory,
+        index_rows[:, 0],
+        target_frame="world",
+        source_frame="tango_depth_sensor",
+    )
     for (_, cloud_index_float), pose_world_payload in zip(index_rows, poses_world_payload, strict=True):
         payload = load_tango_point_cloud_payload(
-            _resolve_tango_point_cloud_payload(index_path.parent, cloud_index_float)
+            resolve_tango_point_cloud_payload(index_path.parent, cloud_index_float)
         )
         points_xyz_world = transform(pose_world_payload.as_matrix(), vectors_to_points(payload))[:, :3]
         sampled = points_xyz_world[::point_stride]
@@ -290,7 +295,13 @@ def _associate_trajectory_positions(
     )
 
 
-def _poses_for_timestamps(timestamps_s: NDArray[np.float64], trajectory: PoseTrajectory3D) -> list[FrameTransform]:
+def interpolate_trajectory_poses(
+    trajectory: PoseTrajectory3D,
+    timestamps_s: NDArray[np.float64],
+    *,
+    target_frame: str = "world",
+    source_frame: str = "camera",
+) -> list[FrameTransform]:
     source_timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
     target_timestamps_s = np.asarray(timestamps_s, dtype=np.float64)
     if source_timestamps_s.size == 0:
@@ -309,13 +320,13 @@ def _poses_for_timestamps(timestamps_s: NDArray[np.float64], trajectory: PoseTra
     for position, nearest_index in zip(interpolated_positions, nearest_indices, strict=True):
         nearest_pose = FrameTransform.from_matrix(
             np.asarray(trajectory.poses_se3[int(nearest_index)], dtype=np.float64),
-            target_frame="world",
-            source_frame="tango_depth_sensor",
+            target_frame=target_frame,
+            source_frame=source_frame,
         )
         poses.append(
             FrameTransform(
-                target_frame=nearest_pose.target_frame,
-                source_frame=nearest_pose.source_frame,
+                target_frame=target_frame,
+                source_frame=source_frame,
                 qx=nearest_pose.qx,
                 qy=nearest_pose.qy,
                 qz=nearest_pose.qz,
@@ -373,7 +384,7 @@ def _write_cloud_ref(
     )
 
 
-def _resolve_tango_point_cloud_payload(tango_dir: Path, cloud_index: float) -> Path:
+def resolve_tango_point_cloud_payload(tango_dir: Path, cloud_index: float | int) -> Path:
     index = int(round(float(cloud_index)))
     candidates = (
         tango_dir / f"point-cloud-{index:05d}.csv",
@@ -389,8 +400,10 @@ __all__ = [
     "apply_sim3",
     "build_advio_tango_reference_clouds",
     "fit_sim3_alignment",
+    "interpolate_trajectory_poses",
     "load_bounded_tango_point_clouds",
     "load_tango_point_cloud_index",
     "load_tango_point_cloud_payload",
+    "resolve_tango_point_cloud_payload",
     "transform_tango_payloads_to_pose_world",
 ]
