@@ -91,6 +91,9 @@ export_viewer_rrd = true
 # Rerun gRPC endpoint used when `connect_live_viewer` is enabled.
 grpc_url = "rerun+http://127.0.0.1:9876/proxy"
 
+# Optional Rerun blueprint loaded by the auto-launched web viewer.
+viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
+
 # Keep only a few recent frusta visible in the streaming viewer.
 frusta_history_window_streaming = 5
 

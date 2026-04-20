@@ -12,6 +12,20 @@ import numpy as np
 import prml_vslam.pipeline  # noqa: F401
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.visualization import rerun as rerun_helpers
+from prml_vslam.visualization.contracts import VisualizationConfig
+
+
+def test_visualization_config_serializes_optional_viewer_blueprint_path() -> None:
+    config = VisualizationConfig(
+        connect_live_viewer=True,
+        viewer_blueprint_path=Path(".configs/visualization/vista_blueprint.rbl"),
+    )
+
+    rendered = config.to_toml()
+    reloaded = VisualizationConfig.from_toml(rendered)
+
+    assert 'viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"' in rendered
+    assert reloaded.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
 
 
 def test_attach_recording_sinks_configures_grpc_and_file_together(

@@ -178,6 +178,34 @@ local_head_lifecycle = "reusable"
     assert request.runtime.ray.local_head_lifecycle == "reusable"
 
 
+def test_run_request_from_toml_accepts_viewer_blueprint_path(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.toml"
+    config_path.write_text(
+        """
+experiment_name = "demo"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[source]
+dataset_id = "advio"
+sequence_id = "advio-01"
+
+[slam.backend]
+kind = "mock"
+
+[visualization]
+connect_live_viewer = true
+viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    request = RunRequest.from_toml(config_path)
+
+    assert request.visualization.connect_live_viewer is True
+    assert request.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
+
+
 def test_run_request_build_rejects_cloud_eval_without_dense_points(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     request = RunRequest(
