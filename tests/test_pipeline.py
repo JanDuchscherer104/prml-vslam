@@ -324,7 +324,15 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
         experiment_name="placeholder",
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={
+                "dataset_id": "advio",
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
+        ),
         slam=SlamStageConfig(backend={"kind": "mock"}),
         benchmark=BenchmarkConfig(
             reference={"enabled": False},
@@ -1366,7 +1374,15 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
         experiment_name="placeholder",
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={
+                "dataset_id": "advio",
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
+        ),
         slam=SlamStageConfig(backend={"kind": "mock"}, outputs={"emit_dense_points": True}),
         benchmark=BenchmarkConfig(cloud=CloudBenchmarkConfig(enabled=True)),
     )

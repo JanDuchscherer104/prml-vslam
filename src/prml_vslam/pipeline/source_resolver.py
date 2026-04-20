@@ -51,7 +51,10 @@ class OfflineSourceResolver:
                     sequence_id,
                     numeric_sequence_id,
                 )
-                return service.build_offline_source(sequence_id=numeric_sequence_id)
+                return service.build_offline_source(
+                    sequence_id=numeric_sequence_id,
+                    dataset_serving=source_spec.dataset_serving,
+                )
             case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
                 resolved_video_path = self.path_config.resolve_video_path(video_path, must_exist=True)
                 console.info("Resolved video offline source '%s'.", video_path)

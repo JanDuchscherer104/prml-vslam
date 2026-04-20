@@ -18,9 +18,10 @@ def build_bev_trajectory_figure(
     trajectories: Sequence[tuple[str, PoseTrajectory3D]],
     *,
     title: str = "BEV Trajectory Overlay",
+    plane_axes: tuple[int, int] = (0, 1),
 ) -> go.Figure:
     """Build a bird's-eye trajectory overlay for one or more trajectories."""
-    builder = TrajectoryPlotBuilder(mode="bev", title=title)
+    builder = TrajectoryPlotBuilder(mode="bev", title=title, plane_axes=plane_axes)
     for index, (name, trajectory) in enumerate(trajectories):
         builder.add_trajectory(trajectory, name=name, color=str(DEFAULT_COLORS[index % len(DEFAULT_COLORS)]))
     return builder.finalize()
@@ -73,21 +74,27 @@ def build_height_profile_figure(
     trajectories: Sequence[tuple[str, PoseTrajectory3D]],
     *,
     title: str = "Height Profile",
+    height_axis: int = 2,
 ) -> go.Figure:
-    """Build a Z-over-time profile for one or more trajectories."""
+    """Build a height-over-time profile for one or more trajectories."""
     figure = go.Figure()
     for index, (name, trajectory) in enumerate(trajectories):
         timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
         figure.add_trace(
             go.Scattergl(
                 x=timestamps_s,
-                y=trajectory.positions_xyz[:, 2],
+                y=trajectory.positions_xyz[:, height_axis],
                 mode="lines",
                 name=name,
                 line={"width": 2.2, "color": str(DEFAULT_COLORS[index % len(DEFAULT_COLORS)])},
             )
         )
-    apply_standard_xy_layout(figure, title=title, xaxis_title="Timestamp (s)", yaxis_title="Z (m)")
+    apply_standard_xy_layout(
+        figure,
+        title=title,
+        xaxis_title="Timestamp (s)",
+        yaxis_title=f"{('X', 'Y', 'Z')[height_axis]} (m)",
+    )
     figure.update_xaxes(showgrid=True)
     figure.update_yaxes(showgrid=True)
     return figure
@@ -242,8 +249,14 @@ def _add_3d_end_markers(
     )
 
 
-def _apply_standard_trajectory_xy_layout(figure: go.Figure, *, title: str) -> go.Figure:
-    apply_standard_xy_layout(figure, title=title, xaxis_title="X (m)", yaxis_title="Y (m)")
+def _apply_standard_trajectory_xy_layout(
+    figure: go.Figure,
+    *,
+    title: str,
+    xaxis_title: str = "X (m)",
+    yaxis_title: str = "Y (m)",
+) -> go.Figure:
+    apply_standard_xy_layout(figure, title=title, xaxis_title=xaxis_title, yaxis_title=yaxis_title)
     figure.update_xaxes(showgrid=True)
     figure.update_yaxes(showgrid=True, scaleanchor="x", scaleratio=1)
     return figure
@@ -266,9 +279,10 @@ def _apply_standard_trajectory_3d_layout(figure: go.Figure, *, title: str) -> go
 class TrajectoryPlotBuilder:
     """Lightweight builder for BEV and 3D trajectory views."""
 
-    def __init__(self, *, mode: Literal["bev", "3d"], title: str) -> None:
+    def __init__(self, *, mode: Literal["bev", "3d"], title: str, plane_axes: tuple[int, int] = (0, 1)) -> None:
         self.mode = mode
         self.title = title
+        self.plane_axes = plane_axes
         self.figure = go.Figure()
 
     def add_trajectory(
@@ -286,11 +300,11 @@ class TrajectoryPlotBuilder:
         if self.mode == "bev":
             _add_xy_trajectory_trace(
                 self.figure,
-                positions,
+                positions[:, self.plane_axes],
                 name=name,
                 line={"width": 2.8, "color": color},
             )
-            _add_xy_end_markers(self.figure, positions, name=name, color=color)
+            _add_xy_end_markers(self.figure, positions[:, self.plane_axes], name=name, color=color)
         else:
             _add_3d_trajectory_trace(
                 self.figure,
@@ -360,7 +374,13 @@ class TrajectoryPlotBuilder:
     def finalize(self) -> go.Figure:
         """Finalize the figure layout and return it."""
         if self.mode == "bev":
-            _apply_standard_trajectory_xy_layout(self.figure, title=self.title)
+            axis_names = ("X", "Y", "Z")
+            _apply_standard_trajectory_xy_layout(
+                self.figure,
+                title=self.title,
+                xaxis_title=f"{axis_names[self.plane_axes[0]]} (m)",
+                yaxis_title=f"{axis_names[self.plane_axes[1]]} (m)",
+            )
         else:
             _apply_standard_trajectory_3d_layout(self.figure, title=self.title)
         return self.figure

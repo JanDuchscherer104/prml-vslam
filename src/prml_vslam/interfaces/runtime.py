@@ -77,6 +77,8 @@ class FramePacket(BaseData):
     depth: NDArray[np.float32] | None = None
     confidence: NDArray[np.float32] | None = None
     """Optional HxW sensor-confidence raster aligned with the depth image."""
+    pointmap: NDArray[np.float32] | None = None
+    """Optional pointmap-like XYZ payload aligned with the emitted frame when available."""
     intrinsics: CameraIntrinsics | None = None
     pose: FrameTransform | None = None
     provenance: FramePacketProvenance = Field(default_factory=FramePacketProvenance)

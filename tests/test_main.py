@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import typer
 
-from prml_vslam.datasets.advio import AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.main import (
     _build_rerun_viewer_command,
     _forward_rerun_viewer_stdout,
@@ -97,7 +97,10 @@ def test_build_advio_demo_request_enables_live_viewer_by_default(tmp_path: Path)
     )
 
     assert request.visualization.connect_live_viewer is True
-    assert request.source.pose_source is AdvioPoseSource.GROUND_TRUTH
+    assert request.source.dataset_serving == AdvioServingConfig(
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+    )
     assert request.source.respect_video_rotation is False
 
 
@@ -111,7 +114,10 @@ def test_build_advio_demo_request_keeps_streaming_replay_controls(tmp_path: Path
         respect_video_rotation=True,
     )
 
-    assert request.source.pose_source is AdvioPoseSource.ARCORE
+    assert request.source.dataset_serving == AdvioServingConfig(
+        pose_source=AdvioPoseSource.ARCORE,
+        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+    )
     assert request.source.respect_video_rotation is True
 
 
@@ -140,7 +146,11 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
         experiment_name="demo-streaming",
         mode=PipelineMode.STREAMING,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+        ),
         slam=SlamStageConfig(backend={"kind": "mock"}),
     )
     runtime_source = object()
@@ -742,7 +752,11 @@ def test_build_runtime_source_from_request_caps_streaming_replay(
         source=DatasetSourceSpec(
             dataset_id="advio",
             sequence_id="advio-01",
-            pose_source="ground_truth",
+            dataset_serving={
+                "dataset_id": "advio",
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
             respect_video_rotation=True,
         ),
         slam=SlamStageConfig(backend={"kind": "mock", "max_frames": 2}),
@@ -801,7 +815,7 @@ def test_build_runtime_source_from_request_caps_streaming_replay(
 
     capped_source = build_runtime_source_from_request(request=request, path_config=path_config)
     assert capped_source is not None
-    assert captured["pose_source"] == request.source.pose_source
+    assert captured["dataset_serving"] == request.source.dataset_serving
     assert captured["respect_video_rotation"] is True
 
     stream = capped_source.open_stream(loop=False)

@@ -10,6 +10,7 @@ from prml_vslam.datasets.advio import (
     AdvioLocalSceneStatus,
     AdvioOfflineSample,
     AdvioPoseSource,
+    AdvioServingConfig,
 )
 from prml_vslam.utils import BaseData
 
@@ -120,7 +121,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
             pose_source=form.pose_source,
             stream=context.advio_service.open_preview_stream(
                 sequence_id=form.sequence_id,
-                pose_source=form.pose_source,
+                dataset_serving=AdvioServingConfig(pose_source=form.pose_source),
                 respect_video_rotation=form.respect_video_rotation,
             ),
         )

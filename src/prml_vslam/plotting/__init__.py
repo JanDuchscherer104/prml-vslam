@@ -1,6 +1,7 @@
 """Plotly figure builders for the packaged Streamlit app."""
 
 from .advio import (
+    build_advio_comparison_trajectories,
     build_crowd_density_figure,
     build_local_readiness_figure,
     build_scene_attribute_figure,
@@ -20,6 +21,7 @@ from .trajectories import (
 
 __all__ = [
     "build_3d_trajectory_figure",
+    "build_advio_comparison_trajectories",
     "build_bev_trajectory_figure",
     "build_crowd_density_figure",
     "build_error_figure",

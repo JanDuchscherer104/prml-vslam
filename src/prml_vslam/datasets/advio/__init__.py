@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..contracts import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from .advio_loading import load_advio_calibration
 from .advio_models import (
     AdvioCatalog,
@@ -10,7 +11,6 @@ from .advio_models import (
     AdvioLocalSceneStatus,
     AdvioModality,
     AdvioPeopleLevel,
-    AdvioPoseSource,
     AdvioSceneMetadata,
     AdvioSequenceConfig,
     AdvioUpstreamMetadata,
@@ -29,10 +29,12 @@ __all__ = [
     "AdvioModality",
     "AdvioOfflineSample",
     "AdvioPeopleLevel",
+    "AdvioPoseFrameMode",
     "AdvioPoseSource",
     "AdvioSceneMetadata",
     "AdvioSequence",
     "AdvioSequenceConfig",
+    "AdvioServingConfig",
     "AdvioStreamingSourceConfig",
     "AdvioUpstreamMetadata",
     "load_advio_calibration",

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 
-from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
@@ -41,7 +41,7 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
 )
 
 PipelinePageStateUpdateValue: TypeAlias = (
-    PipelineSourceId | AdvioPoseSource | Record3DTransportId | int | str | bool | None
+    PipelineSourceId | AdvioPoseSource | AdvioPoseFrameMode | Record3DTransportId | int | str | bool | None
 )
 PipelinePageStateUpdates: TypeAlias = dict[str, PipelinePageStateUpdateValue]
 
@@ -84,7 +84,8 @@ def sync_pipeline_page_state_from_template(
                 "advio_sequence_id": advio_sequence_id,
                 "dataset_frame_stride": request.source.frame_stride,
                 "dataset_target_fps": request.source.target_fps,
-                "pose_source": request.source.pose_source,
+                "pose_source": request.source.dataset_serving.pose_source,
+                "pose_frame_mode": request.source.dataset_serving.pose_frame_mode,
                 "respect_video_rotation": request.source.respect_video_rotation,
             }
         case Record3DLiveSourceSpec() as record3d_source:
@@ -132,7 +133,10 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
                 sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
                 frame_stride=action.dataset_frame_stride,
                 target_fps=action.dataset_target_fps,
-                pose_source=action.pose_source,
+                dataset_serving=AdvioServingConfig(
+                    pose_source=action.pose_source,
+                    pose_frame_mode=action.pose_frame_mode,
+                ),
                 respect_video_rotation=action.respect_video_rotation,
             )
         else:
@@ -333,7 +337,7 @@ def request_summary_payload(request: RunRequest) -> JsonObject:
             sequence_id=sequence_id,
             frame_stride=frame_stride,
             target_fps=target_fps,
-            pose_source=pose_source,
+            dataset_serving=dataset_serving,
             respect_video_rotation=respect_video_rotation,
         ):
             payload["source"] = {
@@ -342,7 +346,7 @@ def request_summary_payload(request: RunRequest) -> JsonObject:
                 "sequence_id": sequence_id,
                 "frame_stride": frame_stride,
                 "target_fps": target_fps,
-                "pose_source": pose_source.value,
+                "dataset_serving": None if dataset_serving is None else dataset_serving.model_dump(mode="json"),
                 "respect_video_rotation": respect_video_rotation,
             }
         case _:

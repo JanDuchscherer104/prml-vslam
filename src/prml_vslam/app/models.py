@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
 from prml_vslam.io.record3d import Record3DTransportId
@@ -253,6 +253,9 @@ class PipelinePageState(BaseData):
 
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected pose source injected into the ADVIO replay packets."""
+
+    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD
+    """Selected ADVIO pose-frame mode injected into the pipeline request."""
 
     respect_video_rotation: bool = False
     """Whether the replay should honor video rotation metadata when available."""

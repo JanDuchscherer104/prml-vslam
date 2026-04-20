@@ -18,6 +18,7 @@ from prml_vslam.datasets.advio import (
     AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioModality,
+    AdvioPoseFrameMode,
     AdvioPoseSource,
 )
 from prml_vslam.io import Record3DStreamConfig
@@ -414,6 +415,14 @@ def pipeline_demo(
             case_sensitive=False,
         ),
     ] = AdvioPoseSource.GROUND_TRUTH,
+    pose_frame_mode: Annotated[
+        AdvioPoseFrameMode,
+        typer.Option(
+            "--pose-frame-mode",
+            help="Frame semantics used when serving ADVIO replay poses.",
+            case_sensitive=False,
+        ),
+    ] = AdvioPoseFrameMode.PROVIDER_WORLD,
     respect_video_rotation: Annotated[
         bool,
         typer.Option(
@@ -449,6 +458,7 @@ def pipeline_demo(
         mode=PipelineMode.STREAMING,
         method=method,
         pose_source=pose_source,
+        pose_frame_mode=pose_frame_mode,
         respect_video_rotation=respect_video_rotation,
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.datasets.contracts import FrameSelectionConfig
+from prml_vslam.datasets.contracts import DatasetServingConfig, FrameSelectionConfig
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.utils import BaseConfig
 
@@ -12,7 +12,6 @@ from .advio_layout import load_advio_catalog
 from .advio_loading import load_advio_frame_timestamps_ns
 from .advio_models import (
     AdvioDatasetSummary,
-    AdvioPoseSource,
     AdvioSequenceConfig,
 )
 from .advio_sequence import AdvioSequence
@@ -23,7 +22,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
 
     dataset_root: Path
     sequence_id: int
-    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
+    dataset_serving: DatasetServingConfig
     respect_video_rotation: bool = False
 
     def setup_target(self) -> DatasetSequenceSource:
@@ -45,7 +44,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
                 frame_selection=frame_selection,
                 loop=loop,
                 replay_mode=replay_mode,
-                pose_source=self.pose_source,
+                dataset_serving=self.dataset_serving,
                 respect_video_rotation=self.respect_video_rotation,
             )
 
@@ -56,6 +55,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
             manifest=lambda sequence_id, output_dir, frame_selection: sequence(sequence_id).to_sequence_manifest(
                 output_dir=output_dir,
                 frame_selection=frame_selection,
+                dataset_serving=self.dataset_serving,
             ),
             benchmark=lambda sequence_id, output_dir: sequence(sequence_id).to_benchmark_inputs(output_dir=output_dir),
             stream=stream,
@@ -79,3 +79,63 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
 
     def _preview_timestamps_ns(self, sequence: AdvioSequence) -> list[int]:
         return load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path).tolist()
+
+    def build_offline_source(
+        self,
+        *,
+        sequence_id: int,
+        frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: DatasetServingConfig | None = None,
+    ) -> DatasetSequenceSource:
+        selection = frame_selection or FrameSelectionConfig()
+        sequence = self._sequence(sequence_id)
+        return DatasetSequenceSource(
+            sequence_id=sequence_id,
+            frame_selection=selection,
+            label=lambda value: self.scene(value).display_name,
+            manifest=lambda _value, output_dir, manifest_selection: sequence.to_sequence_manifest(
+                output_dir=output_dir,
+                frame_selection=manifest_selection,
+                dataset_serving=dataset_serving,
+            ),
+            benchmark=lambda _value, output_dir: sequence.to_benchmark_inputs(output_dir=output_dir),
+        )
+
+    def build_streaming_source(
+        self,
+        *,
+        sequence_id: int,
+        frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: DatasetServingConfig,
+        respect_video_rotation: bool = False,
+    ) -> DatasetSequenceSource:
+        selection = frame_selection or FrameSelectionConfig()
+        return AdvioStreamingSourceConfig(
+            dataset_root=self.dataset_root,
+            sequence_id=sequence_id,
+            dataset_serving=dataset_serving,
+            respect_video_rotation=respect_video_rotation,
+            frame_stride=selection.frame_stride,
+            target_fps=selection.target_fps,
+        ).setup_target()
+
+    def open_preview_stream(
+        self,
+        *,
+        sequence_id: int,
+        frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: DatasetServingConfig,
+        loop: bool = True,
+        replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
+        respect_video_rotation: bool = False,
+    ):
+        sequence = self._sequence(sequence_id)
+        return open_dataset_sequence_stream(
+            sequence=sequence,
+            timestamps_ns=load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path).tolist(),
+            frame_selection=frame_selection or FrameSelectionConfig(),
+            loop=loop,
+            replay_mode=replay_mode,
+            dataset_serving=dataset_serving,
+            respect_video_rotation=respect_video_rotation,
+        )
