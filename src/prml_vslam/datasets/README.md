@@ -19,6 +19,7 @@ Current simplification work must preserve the full supported dataset surface. In
 The current ADVIO stack includes:
 
 - typed ADVIO metadata plus dataset-contract specializations in `advio_models.py`
+- typed ADVIO serving semantics and manifest payload contracts in `contracts.py`
 - local path resolution and catalog lookups in `advio_layout.py` and `advio_sequence.py`
 - typed file loading for timestamps, calibration, and trajectories in `advio_loading.py`
 - dataset fetch and cache mechanics in `fetch.py` plus archive extraction flows in `advio_download.py`
@@ -43,29 +44,123 @@ The TUM RGB-D stack mirrors the same service shape where practical:
 - sequence manifest and benchmark input preparation in `tum_rgbd/tum_rgbd_sequence.py`
 - image-sequence loop preview in `tum_rgbd/tum_rgbd_replay_adapter.py`
 
+Package-local guides:
+
+- [ADVIO guide](./advio/README.md)
+- [TUM RGB-D guide](./tum_rgbd/README.md)
+
+## Stage Boundaries
+
+The dataset layer feeds the current pipeline/app/runtime stack through a small
+set of typed boundaries. Those boundaries are the current source of truth for
+what downstream code is allowed to rely on.
+
+### Request Boundary
+
+Upstream of the dataset package, pipeline requests use:
+
+- [DatasetSourceSpec](../pipeline/contracts/request.py:57)
+  - selects `dataset_id` and `sequence_id`
+  - carries shared frame sampling via [FrameSelectionConfig](./contracts.py:115)
+  - for ADVIO, may also carry `dataset_serving`
+
+Dataset-serving semantics currently live in `prml_vslam.datasets.contracts`:
+
+- [AdvioServingConfig](./contracts.py:75)
+  - selected ADVIO pose provider
+  - selected ADVIO pose-frame mode
+- [AdvioPoseSource](./contracts.py:33)
+  - `GROUND_TRUTH`, `ARCORE`, `ARKIT`, `TANGO_RAW`, `TANGO_AREA_LEARNING`
+- [AdvioPoseFrameMode](./contracts.py:59)
+  - `PROVIDER_WORLD`, `REFERENCE_WORLD`, `LOCAL_FIRST_POSE`
+
+### Offline Boundary
+
+Datasets normalize local source data into two pipeline-facing outputs:
+
+- [SequenceManifest](../pipeline/contracts/sequence.py:11)
+  - canonical offline ingest boundary
+  - always carries `sequence_id`
+  - may carry `dataset_id`, `dataset_serving`, `video_path` or `rgb_dir`,
+    `timestamps_path`, `intrinsics_path`, `rotation_metadata_path`
+  - for ADVIO, may also carry `advio: AdvioManifestAssets`
+- [PreparedBenchmarkInputs](../benchmark/contracts.py:98)
+  - canonical benchmark-side auxiliary inputs
+  - may carry normalized `reference_trajectories`
+  - for ADVIO, may also carry `reference_clouds` and
+    `reference_point_cloud_sequences`
+
+The current ADVIO-specific manifest payload DTOs are:
+
+- [AdvioManifestAssets](./contracts.py:103)
+  - parsed intrinsics
+  - parsed `T_cam_imu`
+  - selected/raw pose refs
+  - fixpoints ref
+  - Tango point-cloud index/payload-root refs
+- [AdvioRawPoseRefs](./contracts.py:92)
+  - GT, ARCore, ARKit, Tango raw, Tango area-learning, and selected provider
+    pose paths when present
+
+### Streaming Boundary
+
+Datasets expose replay-capable runtime sources through:
+
+- [DatasetSequenceSource](./sources.py:19)
+  - shared adapter used by dataset services for process-backed replay sessions
+- [FramePacket](../interfaces/runtime.py:68)
+  - canonical runtime packet emitted by dataset replay
+  - may carry `rgb`, `depth`, `confidence`, `pointmap`, `intrinsics`, `pose`,
+    and typed provenance
+
+The replay path is intentionally layered:
+
+- `prml_vslam.io.cv2_producer`
+  - generic OpenCV-backed video replay and pacing
+  - shared optional payload injection (`depth`, `confidence`, `pointmap`)
+- dataset-specific replay adapters
+  - ADVIO: timestamped provider-pose serving, frame-mode semantics, optional
+    rotation handling
+  - TUM RGB-D: RGB/depth/GT association and image-sequence replay
+
+## Output DTOs
+
+The most important dataset-owned DTOs and outputs are:
+
+- `DatasetDownloadRequest`, [DatasetDownloadResult](./contracts.py:136)
+  - explicit local download/extract selection and result summary
+- [LocalSceneStatus](./contracts.py:146), [DatasetSummary](./contracts.py:157)
+  - local completeness and catalog coverage summaries
+- [AdvioOfflineSample](./advio/advio_sequence.py:116), [TumRgbdOfflineSample](./tum_rgbd/tum_rgbd_loading.py:25)
+  - fully loaded local sample surfaces for app/tests
+- [AdvioSequencePaths](./advio/advio_sequence.py:57), [TumRgbdSequencePaths](./tum_rgbd/tum_rgbd_sequence.py:22)
+  - resolved local file layout for one sequence
+- [AdvioCalibration](./advio/advio_loading.py:17)
+  - parsed ADVIO intrinsics and `T_cam_imu`
+
 ## Main Entry Points
 
-- `AdvioDatasetService`
+- [AdvioDatasetService](./advio/advio_service.py:66)
   - summarize the local dataset state
   - inspect scenes
   - download selected modalities
   - resolve dataset sequence ids for pipeline execution
   - prepare normalized sequence manifests and benchmark inputs
   - open a replay stream for the app or pipeline surfaces
-- `AdvioSequence`
+- [AdvioSequence](./advio/advio_sequence.py:138)
   - load one offline sample
   - open one replay stream
-  - export ground-truth and baseline trajectories to TUM
-- `load_advio_sequence(...)`
-  - convenience entry point for one fully loaded local sample
-- `TumRgbdDatasetService`
+  - prepare one `SequenceManifest`
+  - prepare one `PreparedBenchmarkInputs`
+- [TumRgbdDatasetService](./tum_rgbd/tum_rgbd_service.py:14)
   - summarize local TUM RGB-D state
   - download selected TUM RGB-D archives
   - prepare RGB-directory sequence manifests and ground-truth TUM references
-- `TumRgbdSequence`
+- [TumRgbdSequence](./tum_rgbd/tum_rgbd_sequence.py:52)
   - load one local sequence
   - open one RGB-D image-sequence replay stream
-  - export ground-truth trajectories to normalized `.tum` paths
+  - prepare one `SequenceManifest`
+  - prepare one `PreparedBenchmarkInputs`
 
 ## Typical Usage
 
@@ -91,14 +186,23 @@ Open a replay stream:
 ```python
 from pathlib import Path
 
-from prml_vslam.datasets.advio import AdvioPoseSource, AdvioSequence, AdvioSequenceConfig
+from prml_vslam.datasets.advio import (
+    AdvioPoseFrameMode,
+    AdvioPoseSource,
+    AdvioSequence,
+    AdvioSequenceConfig,
+    AdvioServingConfig,
+)
 from prml_vslam.io import Cv2ReplayMode
 
 sequence = AdvioSequence(
     config=AdvioSequenceConfig(dataset_root=Path(".data/advio"), sequence_id=15)
 )
 stream = sequence.open_stream(
-    pose_source=AdvioPoseSource.GROUND_TRUTH,
+    dataset_serving=AdvioServingConfig(
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
+    ),
     replay_mode=Cv2ReplayMode.REALTIME,
     respect_video_rotation=True,
 )
@@ -124,4 +228,6 @@ statuses = service.local_scene_statuses()
 - This package owns dataset normalization and replay preparation, not evaluation policy.
 - Simplification in this package must not drop supported modalities, ADVIO Tango support, or repo-owned reference-cloud preparation.
 - Generic replay mechanics stay in `prml_vslam.io`.
-- App pages and pipeline surfaces should prefer `AdvioDatasetService` or `AdvioSequence` over rebuilding ADVIO path or replay logic directly.
+- App pages and pipeline surfaces should prefer `AdvioDatasetService`, `TumRgbdDatasetService`, or the
+  corresponding sequence classes over rebuilding dataset path, manifest, or
+  replay logic directly.
