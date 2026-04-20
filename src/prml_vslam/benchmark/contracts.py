@@ -70,6 +70,31 @@ class ReferenceCloudRef(BaseData):
     """Whether the cloud remains source-native or was aligned into repo space."""
 
 
+class ReferencePointCloudSequenceRef(BaseData):
+    """One prepared step-wise reference point-cloud stream for replay-like use."""
+
+    source: ReferenceCloudSource
+    """Typed source that produced the point-cloud payloads."""
+
+    index_path: Path
+    """Filesystem path to the `timestamp,index` table for the point-cloud payloads."""
+
+    payload_root: Path
+    """Directory containing the referenced point-cloud payload CSV files."""
+
+    trajectory_path: Path
+    """Filesystem path to the normalized TUM trajectory used to place payloads in world coordinates."""
+
+    target_frame: str
+    """Target frame represented by the point coordinates after pose application."""
+
+    native_frame: str
+    """Original source-native world frame for the step-wise geometry stream."""
+
+    coordinate_status: ReferenceCloudCoordinateStatus
+    """Whether the point-cloud stream remains source-native or was already aligned."""
+
+
 class PreparedBenchmarkInputs(BaseData):
     """Prepared benchmark-side inputs discovered for one normalized sequence."""
 
@@ -79,9 +104,19 @@ class PreparedBenchmarkInputs(BaseData):
     reference_clouds: list[ReferenceCloudRef] = Field(default_factory=list)
     """Available normalized reference clouds keyed by source and coordinate status."""
 
+    reference_point_cloud_sequences: list[ReferencePointCloudSequenceRef] = Field(default_factory=list)
+    """Available step-wise point-cloud sequences keyed by source."""
+
     def trajectory_for_source(self, source: ReferenceSource) -> ReferenceTrajectoryRef | None:
         """Return the prepared reference trajectory for one requested source."""
         return next((reference for reference in self.reference_trajectories if reference.source is source), None)
+
+    def point_cloud_sequence_for_source(self, source: ReferenceCloudSource) -> ReferencePointCloudSequenceRef | None:
+        """Return the prepared point-cloud sequence for one requested source."""
+        return next(
+            (reference for reference in self.reference_point_cloud_sequences if reference.source is source),
+            None,
+        )
 
 
 class ReferenceReconstructionConfig(BaseConfig):
@@ -139,6 +174,7 @@ __all__ = [
     "ReferenceCloudCoordinateStatus",
     "ReferenceCloudRef",
     "ReferenceCloudSource",
+    "ReferencePointCloudSequenceRef",
     "ReferenceSource",
     "ReferenceReconstructionConfig",
     "ReferenceTrajectoryRef",

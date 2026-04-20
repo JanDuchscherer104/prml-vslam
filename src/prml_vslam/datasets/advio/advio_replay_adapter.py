@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.protocols import FramePacketStream
 
+from .advio_geometry import interpolate_trajectory_poses
 from .advio_loading import load_advio_trajectory
 from .advio_models import AdvioPoseSource
 
@@ -44,35 +45,10 @@ def _poses_for_frame_timestamps(
 ) -> list[FrameTransform | None]:
     if trajectory is None or frame_timestamps_ns.size == 0:
         return [None] * int(frame_timestamps_ns.size)
-    target_timestamps_s = frame_timestamps_ns.astype(np.float64) / 1e9
-    source_timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
-    interpolated_positions = np.column_stack(
-        [np.interp(target_timestamps_s, source_timestamps_s, trajectory.positions_xyz[:, axis]) for axis in range(3)]
+    return interpolate_trajectory_poses(
+        trajectory,
+        frame_timestamps_ns.astype(np.float64) / 1e9,
     )
-    nearest_indices = np.searchsorted(source_timestamps_s, target_timestamps_s, side="left")
-    nearest_indices = np.clip(nearest_indices, 0, max(len(source_timestamps_s) - 1, 0))
-    previous_indices = np.clip(nearest_indices - 1, 0, max(len(source_timestamps_s) - 1, 0))
-    pick_previous = np.abs(target_timestamps_s - source_timestamps_s[previous_indices]) <= np.abs(
-        source_timestamps_s[nearest_indices] - target_timestamps_s
-    )
-    nearest_indices = np.where(pick_previous, previous_indices, nearest_indices)
-    poses: list[FrameTransform] = []
-    for position, nearest_index in zip(interpolated_positions, nearest_indices, strict=True):
-        nearest_pose = FrameTransform.from_matrix(
-            np.asarray(trajectory.poses_se3[int(nearest_index)], dtype=np.float64)
-        )
-        poses.append(
-            FrameTransform(
-                qx=nearest_pose.qx,
-                qy=nearest_pose.qy,
-                qz=nearest_pose.qz,
-                qw=nearest_pose.qw,
-                tx=float(position[0]),
-                ty=float(position[1]),
-                tz=float(position[2]),
-            )
-        )
-    return poses
 
 
 class _RotatedVideoStream:
