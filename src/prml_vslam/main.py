@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TextIO
 
 import typer
 
-from prml_vslam.benchmark import (
-    BenchmarkConfig,
-    CloudBenchmarkConfig,
-    EfficiencyBenchmarkConfig,
-    ReferenceSource,
-    TrajectoryBenchmarkConfig,
-)
+from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadPreset,
@@ -25,13 +23,17 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
-from prml_vslam.pipeline.demo import build_advio_demo_request, load_run_request_toml, persist_advio_demo_request
+from prml_vslam.pipeline.contracts.request import VideoSourceSpec, build_run_request
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.demo import (
+    build_advio_demo_request,
+    build_runtime_source_from_request,
+    load_run_request_toml,
+    persist_advio_demo_request,
+)
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.utils.console import Console
-from prml_vslam.utils.path_config import get_path_config
-from prml_vslam.visualization.contracts import VisualizationConfig
+from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 app = typer.Typer(
     add_completion=False,
@@ -44,8 +46,95 @@ advio_app = typer.Typer(
     help="ADVIO dataset inspection and download helpers.",
 )
 console = Console(__name__)
+pipeline_demo_console = Console("pipeline.demo")
 
 app.add_typer(advio_app, name="advio")
+
+
+@dataclass(slots=True)
+class _RerunViewerProcess:
+    """CLI-owned Rerun web viewer subprocess plus its stdout forwarder thread."""
+
+    process: subprocess.Popen[str]
+    forwarder: threading.Thread
+
+
+def _build_rerun_viewer_command(*, request: RunRequest, path_config: PathConfig) -> list[str]:
+    """Build the authoritative `uv run ... rerun --serve-web` command."""
+    command = ["uv", "run", "--extra", "vista", "rerun"]
+    blueprint_path = request.visualization.viewer_blueprint_path
+    if blueprint_path is not None:
+        command.append(path_config.resolve_repo_path(blueprint_path).as_posix())
+    command.append("--serve-web")
+    return command
+
+
+def _forward_rerun_viewer_stdout(*, stream: TextIO, target: TextIO = sys.stdout) -> None:
+    """Forward merged child output into the main process stdout."""
+    try:
+        for line in stream:
+            target.write(f"[rerun] {line}")
+            if not line.endswith("\n"):
+                target.write("\n")
+            target.flush()
+    finally:
+        stream.close()
+
+
+def _launch_rerun_viewer(*, request: RunRequest, path_config: PathConfig) -> _RerunViewerProcess | None:
+    """Start the best-effort CLI-owned Rerun web viewer when configured."""
+    if not request.visualization.connect_live_viewer:
+        return None
+    command = _build_rerun_viewer_command(request=request, path_config=path_config)
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=path_config.root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except OSError as exc:
+        console.warning("Failed to launch the Rerun viewer subprocess: %s", exc)
+        return None
+    if process.stdout is None:
+        console.warning("Rerun viewer started without a stdout pipe; continuing without forwarded viewer logs.")
+        if process.poll() is None:
+            process.terminate()
+        return None
+    forwarder = threading.Thread(
+        target=_forward_rerun_viewer_stdout,
+        kwargs={"stream": process.stdout},
+        daemon=True,
+        name="rerun-viewer-stdout",
+    )
+    forwarder.start()
+    time.sleep(0.2)
+    if process.poll() is not None:
+        console.warning(
+            "Rerun viewer exited early with code %s; continuing without auto-launched live viewer.",
+            process.returncode,
+        )
+        return None
+    return _RerunViewerProcess(process=process, forwarder=forwarder)
+
+
+def _shutdown_rerun_viewer(viewer: _RerunViewerProcess | None) -> None:
+    """Terminate the CLI-owned Rerun viewer subprocess and release its pipe."""
+    if viewer is None:
+        return
+    process = viewer.process
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5.0)
+    if process.stdout is not None and not process.stdout.closed:
+        process.stdout.close()
+    viewer.forwarder.join(timeout=1.0)
 
 
 @app.command()
@@ -106,21 +195,19 @@ def plan_run(
     ] = False,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
-    request = RunRequest(
+    request = build_run_request(
         experiment_name=experiment_name,
         output_dir=output_dir,
         source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
-        slam=SlamStageConfig(
-            method=method,
-            outputs={"emit_dense_points": emit_dense_points, "emit_sparse_points": emit_sparse_points},
-        ),
-        benchmark=BenchmarkConfig(
-            reference={"enabled": reference_reconstruction},
-            trajectory=TrajectoryBenchmarkConfig(enabled=trajectory_evaluation, baseline_source=trajectory_baseline),
-            cloud=CloudBenchmarkConfig(enabled=emit_dense_points and reference_reconstruction),
-            efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
-        ),
-        visualization=VisualizationConfig(connect_live_viewer=False),
+        method=method,
+        emit_dense_points=emit_dense_points,
+        emit_sparse_points=emit_sparse_points,
+        reference_enabled=reference_reconstruction,
+        trajectory_eval_enabled=trajectory_evaluation,
+        trajectory_baseline=trajectory_baseline,
+        evaluate_cloud=emit_dense_points and reference_reconstruction,
+        evaluate_efficiency=evaluate_efficiency,
+        connect_live_viewer=True,
     )
     plan = request.build()
     console.plog(plan.model_dump(mode="json"))
@@ -155,18 +242,36 @@ def run_config(
         ),
     ],
 ) -> None:
-    """Run one offline pipeline request from a TOML config file."""
+    """Run one offline or streaming pipeline request from a TOML config file."""
     path_config = get_path_config()
+    run_service: RunService | None = None
+    viewer: _RerunViewerProcess | None = None
+    request: RunRequest | None = None
+    snapshot = RunSnapshot()
+    preserve_local_head = False
     try:
         request = load_run_request_toml(path_config=path_config, config_path=config_path)
-        if request.mode is not PipelineMode.OFFLINE:
-            raise RuntimeError("`run-config` currently supports only `offline` requests.")
+        viewer = _launch_rerun_viewer(request=request, path_config=path_config)
+        runtime_source = build_runtime_source_from_request(request=request, path_config=path_config)
         run_service = RunService(path_config=path_config)
-        run_service.start_run(request=request)
+        run_service.start_run(request=request, runtime_source=runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
+        preserve_local_head = (
+            snapshot.state is RunState.COMPLETED and request.runtime.ray.local_head_lifecycle == "reusable"
+        )
+    except KeyboardInterrupt as exc:
+        if run_service is not None:
+            run_service.stop_run()
+            snapshot = run_service.snapshot()
+            _print_pipeline_demo_snapshot(snapshot)
+        raise typer.Exit(code=130) from exc
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
+    finally:
+        if run_service is not None:
+            run_service.shutdown(preserve_local_head=preserve_local_head)
+        _shutdown_rerun_viewer(viewer)
     _print_pipeline_demo_snapshot(snapshot)
     if snapshot.state is RunState.FAILED:
         raise typer.Exit(code=1)
@@ -299,14 +404,12 @@ def pipeline_demo(
         sequence_id=scene.sequence_slug,
         mode=PipelineMode.STREAMING,
         method=method,
-    )
-    source = advio_service.build_streaming_source(
-        sequence_id=resolved_sequence_id,
         pose_source=pose_source,
         respect_video_rotation=respect_video_rotation,
     )
+    source = build_runtime_source_from_request(request=request, path_config=path_config)
     run_service = RunService(path_config=path_config)
-    console.info(
+    pipeline_demo_console.info(
         "Starting pipeline demo for %s (%s, %s).",
         scene.display_name,
         PipelineMode.STREAMING.value,
@@ -319,7 +422,7 @@ def pipeline_demo(
             poll_interval_seconds=poll_interval_seconds,
         )
     except KeyboardInterrupt as exc:
-        console.warning("Interrupted; stopping the active pipeline demo.")
+        pipeline_demo_console.warning("Interrupted; stopping the active pipeline demo.")
         run_service.stop_run()
         snapshot = run_service.snapshot()
         _print_pipeline_demo_snapshot(snapshot)
@@ -421,12 +524,12 @@ def _wait_for_pipeline_terminal_snapshot(
         snapshot = run_service.snapshot()
         if snapshot.state is not previous_state:
             plan_run_id = None if snapshot.plan is None else snapshot.plan.run_id
-            console.info(
+            pipeline_demo_console.info(
                 "Pipeline demo state: %s%s", snapshot.state.value, "" if plan_run_id is None else f" ({plan_run_id})"
             )
             previous_state = snapshot.state
         if isinstance(snapshot, StreamingRunSnapshot) and snapshot.received_frames != previous_received_frames:
-            console.info(
+            pipeline_demo_console.info(
                 "Frames=%d sparse=%d dense=%d",
                 snapshot.received_frames,
                 snapshot.num_sparse_points,

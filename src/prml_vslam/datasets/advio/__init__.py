@@ -29,10 +29,8 @@ from .advio_sequence import (
     AdvioOfflineSample,
     AdvioSequence,
     AdvioSequencePaths,
-    list_advio_sequence_ids,
-    load_advio_sequence,
 )
-from .advio_service import AdvioDatasetService
+from .advio_service import AdvioDatasetService, AdvioStreamingSequenceSource, AdvioStreamingSourceConfig
 
 __all__ = [
     "AdvioOfflineSample",
@@ -54,11 +52,9 @@ __all__ = [
     "AdvioSequencePaths",
     "AdvioUpstreamMetadata",
     "ADVIO_SEQUENCE_COUNT",
-    "list_advio_sequence_ids",
     "load_advio_calibration",
     "load_advio_frame_timestamps_ns",
     "load_advio_trajectory",
-    "load_advio_sequence",
     "write_advio_pose_tum",
     "load_advio_catalog",
 ]

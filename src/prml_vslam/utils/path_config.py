@@ -13,7 +13,7 @@ from .base_config import BaseConfig
 from .base_data import BaseData
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+    from prml_vslam.pipeline.contracts.stages import StageKey
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
@@ -54,6 +54,8 @@ class RunArtifactPaths(BaseData):
     """Directory containing preserved native backend outputs."""
     native_rerun_rrd_path: Path
     """Path to a preserved native backend Rerun recording."""
+    ground_alignment_path: Path
+    """Path to the derived ground-alignment metadata artifact."""
     arcore_alignment_path: Path
     """Path to the ARCore alignment artifact."""
     trajectory_metrics_path: Path
@@ -88,6 +90,7 @@ class RunArtifactPaths(BaseData):
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),
             native_rerun_rrd_path=(resolved_root / "native" / "rerun_recording.rrd").resolve(),
+            ground_alignment_path=(resolved_root / "alignment" / "ground_alignment.json").resolve(),
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
             trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
@@ -111,11 +114,11 @@ class RunArtifactPaths(BaseData):
         """Return the path to the repo-owned viewer recording."""
         return (self.artifact_root / "visualization" / "viewer_recording.rrd").resolve()
 
-    def stage_manifest_path(self, stage_id: str | RunPlanStageId) -> Path:
+    def stage_manifest_path(self, stage_id: str | StageKey) -> Path:
         """Return the canonical path to one stage manifest."""
-        from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+        from prml_vslam.pipeline.contracts.stages import StageKey
 
-        stage_slug = stage_id.value if isinstance(stage_id, RunPlanStageId) else str(stage_id)
+        stage_slug = stage_id.value if isinstance(stage_id, StageKey) else str(stage_id)
         return (self.artifact_root / stage_slug / "stage_manifest.json").resolve()
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field
 
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
@@ -20,8 +22,20 @@ class VisualizationConfig(BaseConfig):
     grpc_url: str = "rerun+http://127.0.0.1:9876/proxy"
     """Rerun gRPC endpoint used when `connect_live_viewer` is enabled."""
 
+    viewer_blueprint_path: Path | None = None
+    """Optional blueprint loaded by the CLI-owned live viewer subprocess."""
+
     preserve_native_rerun: bool = True
     """Whether native upstream `.rrd` recordings should be preserved as method artifacts."""
+
+    frusta_history_window_streaming: int = Field(default=20, gt=0)
+    """Bounded keyed-camera/frusta window applied by the streaming sink."""
+
+    frusta_history_window_offline: int | None = Field(default=None, gt=0)
+    """Future offline frusta-history window; `None` keeps full history."""
+
+    show_tracking_trajectory: bool = True
+    """Whether the repo-owned sink should log the full tracking trajectory polyline."""
 
 
 class VisualizationArtifacts(BaseData):
@@ -37,4 +51,7 @@ class VisualizationArtifacts(BaseData):
     """Optional additional viewer artifacts owned by the visualization layer."""
 
 
-__all__ = ["VisualizationArtifacts", "VisualizationConfig"]
+__all__ = [
+    "VisualizationArtifacts",
+    "VisualizationConfig",
+]

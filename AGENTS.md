@@ -24,7 +24,11 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
   - Python/package rules: `src/prml_vslam/AGENTS.md`
   - App-specific Streamlit rules: `src/prml_vslam/app/AGENTS.md`
   - Documentation and Typst rules: `docs/AGENTS.md`
+- Treat inline resolve comments and TODOs as task-local requirements when the user points at them directly. Implement the narrowest change that satisfies the comment, remove the stale comment in the same change, and keep exploration and verification proportional unless the comment explicitly asks for broader work.
 - Stay within the requested task scope. Do not implement adjacent features or speculative improvements without explicit approval.
+- Prefer direct, version-targeted API usage over compatibility shims.
+  - Do not add `getattr`/`hasattr`/similar reflective fallbacks for known attributes when the repository already pins or otherwise targets a concrete external API version.
+  - Before adding any workaround for an external dependency, check the exact version used by the repo and implement against that version directly unless the task explicitly requires multi-version support.
 - Use conventional commits with concise, focused messages. Split larger changes into multiple logical commits when appropriate.
 - Before creating a commit, run `make ci`.
 - Do not use destructive git commands unless explicitly requested. This includes `git restore`, `git reset --hard`, and similar commands.
@@ -32,6 +36,7 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 ## Requirements Guidance
 
 - When drafting requirements or specs, first extract every explicit user requirement before translating it into product or engineering requirements.
+- When promoting prompt-derived guidance into scaffold files or skills, persist only reusable rules, boundaries, and stable facts. Keep one-off task wording, temporary branch context, and transient cleanup notes out of canonical guidance.
 - For requirements work, prioritize `README.md`, `docs/Questions.md`, the nearest `AGENTS.md`, and `.github/CODEOWNERS` when resolving intent.
 - Prefer package `README.md` and `REQUIREMENTS.md` files for ownership and implementation notes rather than restating that material in nested `AGENTS.md` files.
 - Resolve discoverable repo facts locally before asking questions. If ambiguity still materially changes the spec, ask clarifying questions before finalizing it. In Plan Mode, prefer extensive clarification when ambiguity remains.

@@ -69,12 +69,14 @@ class Record3DStreamingSource(StreamingSequenceSource):
                     frame_timeout_seconds=self.config.frame_timeout_seconds,
                 )
             case Record3DTransportId.WIFI:
-                from .wifi_session import open_record3d_wifi_preview_stream
+                from .wifi_session import Record3DWiFiPreviewStreamConfig
 
-                return open_record3d_wifi_preview_stream(
+                return Record3DWiFiPreviewStreamConfig(
                     device_address=self.config.device_address,
-                    frame_timeout_seconds=self.config.frame_timeout_seconds,
-                )
+                    frame_timeout_seconds=max(1.0, self.config.frame_timeout_seconds),
+                    signaling_timeout_seconds=10.0,
+                    setup_timeout_seconds=12.0,
+                ).setup_target()
             case _:
                 raise ValueError(f"Unsupported Record3D transport: {self.config.transport}")
 

@@ -9,6 +9,8 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +23,33 @@ jobs:
       - name: Install Typst
         uses: typst-community/setup-typst@v5
 
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.yml
+          environment-name: prml-vslam
+          init-shell: bash
+          generate-run-shell: true
+
+      - name: Verify native ViSTA dependencies
+        shell: bash -el {0}
+        run: |
+          echo "CONDA_PREFIX=$CONDA_PREFIX"
+          which python
+          which cmake
+          which nvcc
+          find "$CONDA_PREFIX" -name OpenCVConfig.cmake -o -name opencv-config.cmake
+
       - name: Install project
-        run: uv sync --all-extras
+        shell: bash -el {0}
+        run: |
+          unset VIRTUAL_ENV
+          export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+          uv sync --all-extras
 
       - name: Run CI suite
-        run: make ci
+        shell: bash -el {0}
+        run: |
+          unset VIRTUAL_ENV
+          export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+          make ci

@@ -9,7 +9,7 @@ For repo-owned entry points and higher-level transport guidance, see [README.md]
 - The repo uses two upstream-facing Record3D surfaces:
   - USB via the native `record3d` Python bindings
   - Wi-Fi Preview via the official HTTP plus WebRTC browser demos
-- The two transports are not payload-equivalent and should not be treated as interchangeable ingestion contracts.
+- In this repository, the two transports are treated as equivalent supported ingress paths.
 
 ## USB Binding Surface
 
@@ -51,7 +51,7 @@ For repo-owned entry points and higher-level transport guidance, see [README.md]
 | Device type | yes | `FramePacket.metadata["device_type"]` |
 | Reserved misc buffer | yes | not currently surfaced |
 
-USB is therefore the canonical Record3D ingress in this repo and the only transport that currently carries typed per-frame pose and confidence.
+USB is a stable supported Record3D ingress in this repo.
 
 ## Wi-Fi Preview Demo Surface
 
@@ -108,7 +108,6 @@ The official Wi-Fi README also documents the following operational constraints:
 
 - the phone and receiver must be on the same Wi-Fi network
 - the stream quality and resolution degrade with bandwidth
-- Wi-Fi is lower fidelity than USB and is not recommended when accurate depth is required
 - Wi-Fi Streaming and RGBD mp4 export use the same composite RGBD format
 
 ## Repo Mapping
@@ -116,7 +115,7 @@ The official Wi-Fi README also documents the following operational constraints:
 | Transport | Repo adapter | Normalized frame surface | Current gaps |
 | --- | --- | --- | --- |
 | USB | [record3d.py](./record3d.py) | `rgb`, `depth`, `confidence`, `intrinsics`, `pose`, `metadata["device_type"]` | reserved misc buffer not surfaced |
-| Wi-Fi Preview | [wifi_signaling.py](./wifi_signaling.py), [wifi_receiver.py](./wifi_receiver.py), and [wifi_packets.py](./wifi_packets.py) | `rgb`, decoded `depth`, optional `intrinsics`, raw metadata | no pose, no confidence, no IMU |
+| Wi-Fi Preview | [wifi_signaling.py](./wifi_signaling.py), [wifi_receiver.py](./wifi_receiver.py), and [wifi_packets.py](./wifi_packets.py) | `rgb`, decoded `depth`, optional `intrinsics`, raw metadata | repo transport scope differs from USB only where the upstream public demo surface itself differs |
 
 ## Sources
 

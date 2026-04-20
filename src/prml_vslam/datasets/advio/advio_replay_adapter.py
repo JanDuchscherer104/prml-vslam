@@ -8,52 +8,15 @@ from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.io.cv2_producer import Cv2ProducerConfig, Cv2ReplayMode, open_cv2_replay_stream
 from prml_vslam.protocols import FramePacketStream
 
-from .advio_loading import load_advio_calibration, load_advio_frame_timestamps_ns, load_advio_trajectory
+from .advio_geometry import interpolate_trajectory_poses
+from .advio_loading import load_advio_trajectory
 from .advio_models import AdvioPoseSource
 
 if TYPE_CHECKING:
     from .advio_models import AdvioSceneMetadata
-    from .advio_sequence import AdvioSequence, AdvioSequencePaths
-
-
-def open_advio_stream(
-    sequence: AdvioSequence,
-    *,
-    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
-    stride: int = 1,
-    loop: bool = True,
-    replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
-    respect_video_rotation: bool = False,
-) -> FramePacketStream:
     from .advio_sequence import AdvioSequencePaths
-
-    scene = sequence.scene
-    paths = AdvioSequencePaths.resolve(sequence.config, scene, require_arcore=False)
-    frame_timestamps_ns = load_advio_frame_timestamps_ns(paths.frame_timestamps_path)
-    calibration = load_advio_calibration(paths.calibration_path)
-    stream = open_cv2_replay_stream(
-        Cv2ProducerConfig(
-            video_path=paths.video_path,
-            frame_timestamps_ns=frame_timestamps_ns.tolist(),
-            stride=stride,
-            loop=loop,
-            replay_mode=replay_mode,
-            intrinsics=calibration.intrinsics,
-            poses_by_frame=_poses_for_frame_timestamps(
-                frame_timestamps_ns, _load_pose_trajectory(paths, scene, pose_source)
-            ),
-            static_metadata={
-                "dataset": "ADVIO",
-                "sequence_id": scene.sequence_id,
-                "sequence_name": scene.sequence_slug,
-                "pose_source": pose_source.value,
-            },
-        )
-    )
-    return _wrap_with_advio_video_rotation(stream, video_path=paths.video_path) if respect_video_rotation else stream
 
 
 def _load_pose_trajectory(
@@ -82,40 +45,10 @@ def _poses_for_frame_timestamps(
 ) -> list[FrameTransform | None]:
     if trajectory is None or frame_timestamps_ns.size == 0:
         return [None] * int(frame_timestamps_ns.size)
-    target_timestamps_s = frame_timestamps_ns.astype(np.float64) / 1e9
-    source_timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
-    interpolated_positions = np.column_stack(
-        [np.interp(target_timestamps_s, source_timestamps_s, trajectory.positions_xyz[:, axis]) for axis in range(3)]
+    return interpolate_trajectory_poses(
+        trajectory,
+        frame_timestamps_ns.astype(np.float64) / 1e9,
     )
-    nearest_indices = np.searchsorted(source_timestamps_s, target_timestamps_s, side="left")
-    nearest_indices = np.clip(nearest_indices, 0, max(len(source_timestamps_s) - 1, 0))
-    previous_indices = np.clip(nearest_indices - 1, 0, max(len(source_timestamps_s) - 1, 0))
-    pick_previous = np.abs(target_timestamps_s - source_timestamps_s[previous_indices]) <= np.abs(
-        source_timestamps_s[nearest_indices] - target_timestamps_s
-    )
-    nearest_indices = np.where(pick_previous, previous_indices, nearest_indices)
-    poses: list[FrameTransform] = []
-    for position, nearest_index in zip(interpolated_positions, nearest_indices, strict=True):
-        nearest_pose = FrameTransform.from_matrix(
-            np.asarray(trajectory.poses_se3[int(nearest_index)], dtype=np.float64)
-        )
-        poses.append(
-            FrameTransform(
-                qx=nearest_pose.qx,
-                qy=nearest_pose.qy,
-                qz=nearest_pose.qz,
-                qw=nearest_pose.qw,
-                tx=float(position[0]),
-                ty=float(position[1]),
-                tz=float(position[2]),
-            )
-        )
-    return poses
-
-
-def _wrap_with_advio_video_rotation(stream: FramePacketStream, *, video_path: Path) -> FramePacketStream:
-    rotation_degrees = read_advio_video_rotation_degrees(video_path)
-    return stream if rotation_degrees == 0 else _RotatedVideoStream(stream, rotation_degrees)
 
 
 class _RotatedVideoStream:
@@ -135,7 +68,7 @@ class _RotatedVideoStream:
             update={
                 "rgb": _rotate_rgb(packet.rgb, self._rotation_degrees),
                 "intrinsics": _rotate_intrinsics(packet.intrinsics, self._rotation_degrees),
-                "metadata": {**packet.metadata, "video_rotation_degrees": self._rotation_degrees},
+                "provenance": packet.provenance.model_copy(update={"video_rotation_degrees": self._rotation_degrees}),
             }
         )
 

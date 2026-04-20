@@ -6,9 +6,21 @@ import importlib
 
 import pytest
 
+import prml_vslam.interfaces as interfaces_package
 import prml_vslam.io as io_package
 import prml_vslam.methods as methods_package
 import prml_vslam.pipeline as pipeline_package
+
+
+def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
+    assert interfaces_package.__all__ == [
+        "CameraIntrinsics",
+        "FrameTransform",
+        "FramePacket",
+        "FramePacketProvenance",
+        "Record3DTransportId",
+    ]
+    assert not hasattr(interfaces_package, "SE3Pose")
 
 
 def test_io_package_exports_only_minimal_public_surface() -> None:
@@ -17,7 +29,6 @@ def test_io_package_exports_only_minimal_public_surface() -> None:
         "Cv2ProducerConfig",
         "Cv2ReplayMode",
         "Record3DStreamConfig",
-        "open_cv2_replay_stream",
     ]
     assert not hasattr(io_package, "Record3DStreamSnapshot")
     assert not hasattr(io_package, "Record3DWifiSession")
@@ -60,7 +71,6 @@ def test_vista_package_is_the_only_canonical_vista_surface() -> None:
     assert vista_package.__all__ == [
         "VistaSlamBackend",
         "VistaSlamBackendConfig",
-        "VistaSlamConfig",
         "VistaSlamSession",
     ]
     with pytest.raises(ModuleNotFoundError):

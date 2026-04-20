@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import prml_vslam.datasets.advio.advio_replay_adapter as advio_replay_module
+import prml_vslam.datasets.advio.advio_sequence as advio_sequence_module
 from prml_vslam.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
@@ -22,11 +23,11 @@ from prml_vslam.datasets.advio import (
     AdvioSceneMetadata,
     AdvioSequence,
     AdvioSequenceConfig,
+    AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
-    list_advio_sequence_ids,
-    load_advio_sequence,
 )
-from prml_vslam.datasets.advio.advio_layout import resolve_existing_reference_tum
+from prml_vslam.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
+from prml_vslam.datasets.advio.advio_loading import load_advio_calibration
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.utils import PathConfig
 
@@ -74,6 +75,21 @@ def _write_pose_csv(path: Path) -> None:
     )
 
 
+def _write_tango_point_cloud_payload(path: Path, *, depth_offset: float) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                f"0.0,0.0,{1.0 + depth_offset:.3f}",
+                f"0.1,0.0,{1.1 + depth_offset:.3f}",
+                f"0.0,0.1,{1.2 + depth_offset:.3f}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_fixpoints_csv(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("0.0,1.0,2.0,3.0\n0.2,2.0,3.0,4.0\n", encoding="utf-8")
@@ -91,6 +107,7 @@ def _write_advio_sequence(
     (sequence_dir / "iphone").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "pixel").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "ground-truth").mkdir(parents=True, exist_ok=True)
+    (sequence_dir / "tango").mkdir(parents=True, exist_ok=True)
 
     _write_video(sequence_dir / "iphone" / "frames.mov")
     (sequence_dir / "iphone" / "frames.csv").write_text(
@@ -121,6 +138,15 @@ def _write_advio_sequence(
     _write_fixpoints_csv(sequence_dir / "ground-truth" / "fixpoints.csv")
     _write_pose_csv(sequence_dir / "pixel" / "arcore.csv")
     _write_pose_csv(sequence_dir / "iphone" / "arkit.csv")
+    _write_pose_csv(sequence_dir / "tango" / "raw.csv")
+    _write_pose_csv(sequence_dir / "tango" / "area-learning.csv")
+    (sequence_dir / "tango" / "point-cloud.csv").write_text(
+        "0.0,1\n0.1,2\n0.2,3\n",
+        encoding="utf-8",
+    )
+    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00001.csv", depth_offset=0.0)
+    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00002.csv", depth_offset=0.1)
+    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00003.csv", depth_offset=0.2)
     _write_calibration(dataset_root / "calibration" / "iphone-03.yaml")
     return sequence_dir
 
@@ -183,7 +209,7 @@ def _build_fake_catalog(tmp_path: Path, *, sequence_id: int = 15) -> AdvioCatalo
 def test_load_advio_sequence_returns_offline_sample(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
 
-    sample = load_advio_sequence(AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+    sample = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15)).load_offline_sample()
 
     assert sample.sequence_name == "advio-15"
     assert sample.paths.video_path == sequence_dir / "iphone" / "frames.mov"
@@ -206,6 +232,40 @@ def test_advio_sequence_uses_catalog_calibration_metadata(tmp_path: Path) -> Non
     sample = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog).load_local_sample(15)
 
     assert sample.paths.calibration_path == tmp_path / ".data" / "advio" / "calibration" / "iphone-custom.yaml"
+
+
+def test_load_advio_calibration_tolerates_tab_indentation(tmp_path: Path) -> None:
+    calibration_path = tmp_path / "iphone-tabs.yaml"
+    calibration_path.write_text(
+        "\n".join(
+            [
+                "cameras:",
+                "- camera:",
+                "\timage_height: 48",
+                "\timage_width: 64",
+                "\ttype: pinhole",
+                "\tintrinsics:",
+                "\t  data: [100.0, 101.0, 32.0, 24.0]",
+                "\tdistortion:",
+                "\t  type: radial-tangential",
+                "\t  parameters:",
+                "\t    data: [0.1, 0.01, 0.0, 0.0]",
+                "\tT_cam_imu:",
+                "\t  data:",
+                "\t  - [1.0, 0.0, 0.0, 0.01]",
+                "\t  - [0.0, 1.0, 0.0, 0.02]",
+                "\t  - [0.0, 0.0, 1.0, 0.03]",
+                "\t  - [0.0, 0.0, 0.0, 1.0]\t\t",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calibration = load_advio_calibration(calibration_path)
+
+    assert calibration.intrinsics.fx == 100.0
+    assert calibration.intrinsics.height_px == 48
+    assert calibration.t_cam_imu.tx == 0.01
 
 
 def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path) -> None:
@@ -237,9 +297,9 @@ def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path
     assert packet_0.pose.tx == 1.0
     assert packet_2.pose is not None
     assert packet_2.pose.tz == 4.0
-    assert packet_3.metadata["loop_index"] == 1
-    assert packet_0.metadata["dataset"] == "ADVIO"
-    assert packet_0.metadata["pose_source"] == AdvioPoseSource.GROUND_TRUTH.value
+    assert packet_3.provenance.loop_index == 1
+    assert packet_0.provenance.dataset_id == "advio"
+    assert packet_0.provenance.pose_source == AdvioPoseSource.GROUND_TRUTH.value
 
 
 def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path: Path) -> None:
@@ -301,7 +361,7 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
 ) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-    monkeypatch.setattr(advio_replay_module, "read_advio_video_rotation_degrees", lambda path: 90)
+    monkeypatch.setattr(advio_sequence_module, "read_advio_video_rotation_degrees", lambda path: 90)
 
     stream = sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
     stream.connect()
@@ -309,7 +369,7 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
     stream.disconnect()
 
     assert packet.rgb.shape == (64, 48, 3)
-    assert packet.metadata["video_rotation_degrees"] == 90
+    assert packet.provenance.video_rotation_degrees == 90
     assert packet.intrinsics is not None
     assert packet.intrinsics.width_px == 48
     assert packet.intrinsics.height_px == 64
@@ -361,13 +421,45 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert benchmark_inputs.reference_trajectories[0].path.exists()
     assert benchmark_inputs.reference_trajectories[1].path.exists()
     assert benchmark_inputs.reference_trajectories[2].path.exists()
+    assert [reference.source.value for reference in benchmark_inputs.reference_point_cloud_sequences] == [
+        "tango_area_learning",
+        "tango_raw",
+    ]
+    assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == [
+        "tango_area_learning",
+        "tango_area_learning",
+        "tango_raw",
+        "tango_raw",
+    ]
+    assert benchmark_inputs.reference_point_cloud_sequences[0].trajectory_path.exists()
+    assert benchmark_inputs.reference_clouds[0].path.exists()
+
+
+def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path)
+
+    source = AdvioStreamingSourceConfig(
+        dataset_root=tmp_path,
+        sequence_id=15,
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        frame_stride=1,
+    ).setup_target()
+
+    assert source is not None
+    assert source.prepare_sequence_manifest(tmp_path / "manifest").sequence_id == "advio-15"
+    stream = source.open_stream(loop=False)
+    stream.connect()
+    packet = stream.wait_for_packet()
+    stream.disconnect()
+    assert packet.pose is not None
+    assert packet.pose.tx == 1.0
 
 
 def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path, sequence_id=7, nested_layout=True)
     _write_advio_sequence(tmp_path, sequence_id=15)
 
-    assert list_advio_sequence_ids(tmp_path) == [7, 15]
+    assert list_local_sequence_ids(tmp_path) == [7, 15]
 
 
 def test_resolve_existing_advio_reference_tum_only_uses_existing_tum(tmp_path: Path) -> None:

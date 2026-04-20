@@ -1,11 +1,43 @@
+# Shared team defaults for this repository.
+# Keep machine-local trust, auth, and UI preferences in ~/.codex/config.toml.
+
+model                  = "gpt-5.4"
+model_reasoning_effort = "high"
+personality            = "pragmatic"
+web_search             = "cached"
+
+project_doc_fallback_filenames = ["AGENTS.md"]
+
+[mcp_servers]
+
+    # Bootstrap once with:
+    #   docker mcp profile pull docker.io/janduchscherer104/codex:latest
+    [mcp_servers.MCP_DOCKER]
+    command = "docker"
+    args    = ["mcp", "gateway", "run", "--profile", "codex"]
+
+    [mcp_servers.code-index]
+    type    = "stdio"
+    command = "uvx"
+    args    = ["code-index-mcp"]
+
+[features]
+unified_exec = true
+multi_agent  = true
+apps         = true
+
 [[skills.config]]
-path = "../.agents/skills/pydantic"
+path    = "../.agents/skills/pydantic"
 enabled = true
 
 [[skills.config]]
-path = "../.agents/skills/understanding-streamlit-architecture"
+path    = "../.agents/skills/understanding-streamlit-architecture"
 enabled = true
 
 [[skills.config]]
-path = "../.agents/skills/graphify"
+path    = "../.agents/skills/graphify"
+enabled = true
+
+[[skills.config]]
+path    = "../.agents/skills/rerun-slam-integration"
 enabled = true

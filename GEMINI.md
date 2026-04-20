@@ -36,10 +36,13 @@ Call the `activate_skill` tool when your task falls into any of these domains:
 - **Pydantic** (`activate_skill("pydantic")`)
   Activate when writing or reviewing Pydantic models or settings.
 
-- **Agents DB and simplification** (`activate_skill("agents-db-and-simplification")`)
+- **Agents DB** (`activate_skill("agents-db")`)
   Activate when interacting with `.agents/issues.toml`, `.agents/todos.toml`,
-  `.agents/resolved.toml`, `make agents-db`, or when doing simplification,
-  pruning, or LOC-reduction work.
+  `.agents/resolved.toml`, or `make agents-db`.
+
+- **Simplification** (`activate_skill("simplification")`)
+  Activate when doing simplification, pruning, redundancy reduction, or
+  LOC-reduction work. Pair it with **Agents DB** when the task is backlog-guided.
 
 - **Streamlit architecture** (`activate_skill("understanding-streamlit-architecture")`)
   Activate when debugging cross-layer Streamlit issues or planning architectural

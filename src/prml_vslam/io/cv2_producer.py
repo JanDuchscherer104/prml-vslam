@@ -10,8 +10,7 @@ import cv2
 import numpy as np
 from pydantic import Field
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.protocols import FramePacketStream
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
 from prml_vslam.utils import BaseConfig
 
 
@@ -49,8 +48,8 @@ class Cv2ProducerConfig(BaseConfig):
     fps: float = 60.0
     """Target frames per second."""
 
-    static_metadata: dict[str, object] = Field(default_factory=dict)
-    """Metadata copied into each emitted packet."""
+    base_provenance: FramePacketProvenance = Field(default_factory=FramePacketProvenance)
+    """Typed provenance copied into each emitted packet before frame-local fields are filled."""
 
 
 class Cv2FrameProducer:
@@ -109,11 +108,6 @@ class Cv2FrameProducer:
             timestamp_ns = self._timestamp_ns_for_frame(source_frame_index)
             self._apply_replay_timing(timestamp_ns)
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            metadata = {
-                **self.config.static_metadata,
-                "loop_index": self._loop_index,
-                "source_frame_index": source_frame_index,
-            }
             return FramePacket(
                 seq=source_frame_index,
                 timestamp_ns=timestamp_ns,
@@ -121,7 +115,12 @@ class Cv2FrameProducer:
                 rgb=np.asarray(frame_rgb, dtype=np.uint8),
                 intrinsics=self.config.intrinsics,
                 pose=self._pose_for_frame(source_frame_index),
-                metadata=metadata,
+                provenance=self.config.base_provenance.model_copy(
+                    update={
+                        "loop_index": self._loop_index,
+                        "source_frame_index": source_frame_index,
+                    }
+                ),
             )
 
     def _require_capture(self) -> cv2.VideoCapture:
@@ -167,14 +166,8 @@ class Cv2FrameProducer:
         return poses_by_frame[frame_index]
 
 
-def open_cv2_replay_stream(config: Cv2ProducerConfig) -> FramePacketStream:
-    """Return a ready-to-use replay stream for `config`."""
-    return Cv2FrameProducer(config)
-
-
 __all__ = [
     "Cv2FrameProducer",
     "Cv2ProducerConfig",
     "Cv2ReplayMode",
-    "open_cv2_replay_stream",
 ]

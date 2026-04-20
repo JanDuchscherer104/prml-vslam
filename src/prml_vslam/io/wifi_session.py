@@ -70,7 +70,7 @@ class Record3DWiFiPreviewStreamSession:
             get_offer=self.signaling_client.get_offer,
             get_metadata=self.signaling_client.get_metadata,
             send_answer=self.signaling_client.send_answer,
-            on_metadata=self._store_metadata,
+            on_metadata=lambda metadata: setattr(self, "_metadata", metadata),
             on_connected=self._mark_connected,
             on_packet=self._packet_queue.put,
             on_failure=self._register_failure,
@@ -123,11 +123,8 @@ class Record3DWiFiPreviewStreamSession:
                 raise RuntimeError("The Record3D Wi-Fi preview stream is not active.") from exc
             raise RuntimeError(f"Timed out waiting {timeout:.2f}s for a Record3D Wi-Fi preview frame.") from exc
 
-    def _store_metadata(self, metadata: Record3DWiFiMetadata) -> None:
-        self._metadata = metadata
-
     def _mark_connected(self, metadata: Record3DWiFiMetadata) -> None:
-        self._store_metadata(metadata)
+        self._metadata = metadata
         self._connected_event.set()
 
     def _register_failure(self, message: str) -> None:
@@ -136,20 +133,3 @@ class Record3DWiFiPreviewStreamSession:
         self._failure_message = message
         self._failure_event.set()
         self.console.error(message)
-
-
-def open_record3d_wifi_preview_stream(
-    *,
-    device_address: str,
-    frame_timeout_seconds: float,
-) -> Record3DWiFiPreviewStreamSession:
-    """Build one optional Record3D Wi-Fi preview stream with explicit validation."""
-    stream = Record3DWiFiPreviewStreamConfig(
-        device_address=device_address,
-        frame_timeout_seconds=max(1.0, frame_timeout_seconds),
-        signaling_timeout_seconds=10.0,
-        setup_timeout_seconds=12.0,
-    ).setup_target()
-    if stream is None:
-        raise RuntimeError("Failed to initialize the Record3D Wi-Fi preview stream.")
-    return stream

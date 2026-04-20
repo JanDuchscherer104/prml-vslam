@@ -10,10 +10,8 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, Record3DTransportId
 from prml_vslam.utils import BaseData
-
-from .record3d import Record3DTransportId
 
 
 class Record3DWiFiMetadata(BaseData):
@@ -131,11 +129,6 @@ def record3d_wifi_packet_from_video_frame(
         raise RuntimeError("Record3D Wi-Fi composite frames must contain both depth and RGB halves.")
 
     half_width = composite_frame.shape[1] // 2
-    packet_metadata = dict(metadata.raw_metadata)
-    packet_metadata["device_address"] = metadata.device_address
-    if metadata.original_width is not None and metadata.original_height is not None:
-        packet_metadata["original_size"] = [metadata.original_width, metadata.original_height]
-
     if timestamp_ns is None:
         timestamp_ns = time.time_ns()
 
@@ -150,5 +143,11 @@ def record3d_wifi_packet_from_video_frame(
         ),
         intrinsics=metadata.intrinsics,
         confidence=None,
-        metadata={**packet_metadata, "transport": Record3DTransportId.WIFI.value},
+        provenance=FramePacketProvenance(
+            source_id="record3d",
+            transport=Record3DTransportId.WIFI,
+            device_address=metadata.device_address,
+            original_width=metadata.original_width,
+            original_height=metadata.original_height,
+        ),
     )

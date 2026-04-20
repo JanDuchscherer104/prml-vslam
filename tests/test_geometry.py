@@ -7,8 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from pytransform3d.rotations import check_matrix
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
+from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply,
     load_tum_trajectory,
@@ -37,7 +39,7 @@ def test_camera_intrinsics_from_column_major_flat_k() -> None:
     assert intrinsics == CameraIntrinsics(fx=525.0, fy=530.0, cx=320.0, cy=240.0)
 
 
-def test_se3_pose_roundtrips_through_matrix() -> None:
+def test_frame_transform_roundtrips_through_matrix() -> None:
     pose = FrameTransform(
         qx=0.0,
         qy=0.0,
@@ -54,10 +56,50 @@ def test_se3_pose_roundtrips_through_matrix() -> None:
     assert np.allclose(roundtripped.translation_xyz(), np.array([1.5, -2.0, 0.25], dtype=np.float64))
 
 
-def test_se3_pose_to_tum_fields() -> None:
+def test_frame_transform_to_tum_fields() -> None:
     pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0)
 
     assert pose.to_tum_fields() == (1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0)
+
+
+def test_project_rotation_to_so3_normalizes_small_perturbations() -> None:
+    rotation = FrameTransform(
+        qx=0.0,
+        qy=0.0,
+        qz=math.sin(math.pi / 8.0),
+        qw=math.cos(math.pi / 8.0),
+        tx=0.0,
+        ty=0.0,
+        tz=0.0,
+    ).as_matrix()[:3, :3]
+    perturbed = rotation.copy()
+    perturbed[0, 0] += 1e-5
+    perturbed[1, 2] -= 2e-5
+
+    projected = project_rotation_to_so3(perturbed)
+
+    check_matrix(projected)
+    np.testing.assert_allclose(projected, rotation, atol=1e-4)
+
+
+def test_project_rotation_to_so3_rejects_non_finite_input() -> None:
+    rotation = np.eye(3, dtype=np.float64)
+    rotation[0, 0] = np.nan
+
+    with pytest.raises(ValueError, match="must contain only finite values"):
+        project_rotation_to_so3(rotation)
+
+
+def test_project_rotation_to_so3_rejects_non_3x3_input() -> None:
+    with pytest.raises(ValueError, match="Expected a 3x3 rotation matrix"):
+        project_rotation_to_so3(np.eye(4, dtype=np.float64))
+
+
+def test_project_rotation_to_so3_rejects_rotations_that_are_too_far_away() -> None:
+    rotation = np.diag([2.0, 0.5, 0.25]).astype(np.float64)
+
+    with pytest.raises(ValueError, match="too far from SO\\(3\\)"):
+        project_rotation_to_so3(rotation)
 
 
 def test_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> None:

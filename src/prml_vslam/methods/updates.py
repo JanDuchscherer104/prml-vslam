@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from numpy.typing import NDArray
+from pydantic import Field
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils import BaseData
@@ -40,22 +41,51 @@ class SlamUpdate(BaseData):
     """Current cumulative dense-point count when the backend exposes reconstruction output."""
 
     pointmap: NDArray[np.float32] | None = None
-    """Optional HxWx3 pointmap in camera coordinates for the current accepted keyframe."""
+    """Optional HxWx3 camera-local pointmap for the current accepted keyframe.
+
+    The current ViSTA integration forwards the upstream `get_pointmap_vis(...)`
+    payload unchanged apart from dtype normalization. This means the pointmap is
+    expressed in the ViSTA camera basis (`RDF`: right, down, forward), already
+    scaled by the selected Sim(3) node scale, and still local to the keyed
+    camera frame. It is not a world-space fused cloud and must be composed
+    through the posed parent camera entity when logged to Rerun.
+    """
 
     camera_intrinsics: CameraIntrinsics | None = None
-    """Optional camera intrinsics for the current accepted keyframe raster."""
+    """Optional camera intrinsics for the current accepted keyframe raster.
+
+    For ViSTA live updates these intrinsics describe the ViSTA-preprocessed
+    model raster, not the original source-frame raster.
+    """
 
     image_rgb: NDArray[np.uint8] | None = None
-    """Optional HxWx3 RGB image for the current accepted keyframe raster."""
+    """Optional HxWx3 RGB image for the current accepted keyframe raster.
+
+    For ViSTA live updates this is the preprocessed model image that shares a
+    raster with `camera_intrinsics`, `depth_map`, and `pointmap`.
+    """
 
     depth_map: NDArray[np.float32] | None = None
-    """Optional HxW metric depth raster for the current accepted keyframe raster."""
+    """Optional HxW metric depth raster for the current accepted keyframe raster.
+
+    In the ViSTA live path this is the scaled upstream depth image returned by
+    `OnlineSLAM.get_view(...)`. It lives on the model raster and should not be
+    confused with the exported world-space dense cloud produced later by
+    `save_data_all()`.
+    """
 
     preview_rgb: NDArray[np.uint8] | None = None
-    """Optional HxWx3 diagnostic preview visualization for the current accepted keyframe."""
+    """Optional HxWx3 diagnostic preview visualization for the current accepted keyframe.
+
+    ViSTA currently uses a pseudo-colored pointmap preview here. It is neither
+    the source RGB image nor a metric depth visualization.
+    """
 
     pose_updated: bool = False
     """Whether the pose in this update is a fresh result from a new backend step."""
+
+    backend_warnings: list[str] = Field(default_factory=list)
+    """Non-fatal backend warnings associated with this update."""
 
 
 __all__ = ["SlamUpdate"]

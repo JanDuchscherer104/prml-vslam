@@ -1,597 +1,713 @@
-"""Tests for streaming viewer logging semantics."""
+"""Tests for repo-owned streaming Rerun sink behavior."""
 
 from __future__ import annotations
 
-import time
+import uuid
+import warnings
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
-import pytest
+import rerun.dataframe as rdf
 
-from prml_vslam.benchmark import (
-    PreparedBenchmarkInputs,
-    ReferenceCloudCoordinateStatus,
-    ReferenceCloudRef,
-    ReferenceCloudSource,
+from prml_vslam.alignment.contracts import GroundAlignmentMetadata
+from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
+from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
+from prml_vslam.pipeline.contracts.events import (
+    BackendNoticeReceived,
+    FramePacketSummary,
+    PacketObserved,
+    StageCompleted,
+    StageOutcome,
 )
-from prml_vslam.datasets import DatasetId
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.methods import MethodId
-from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.updates import SlamUpdate
-from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
-from prml_vslam.pipeline.state import RunState, StreamingRunSnapshot
-from prml_vslam.pipeline.streaming import StreamingRunner, _viewer_pose_from_update
-from prml_vslam.utils import PathConfig
-from prml_vslam.utils.geometry import transform_points_world_camera, write_point_cloud_ply
-from prml_vslam.visualization import rerun as rerun_module
+from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.sinks import rerun as rerun_sink_module
+from prml_vslam.pipeline.sinks.rerun import RerunEventSink, RerunSinkActor
+from prml_vslam.utils.geometry import transform_points_world_camera
 
 
-class _FakeImage:
-    def __init__(self, image_rgb: np.ndarray) -> None:
-        self.image_rgb = image_rgb
-
-
-class _FakeDepthImage:
-    def __init__(self, depth_map: np.ndarray, *, meter: float) -> None:
-        self.depth_map = depth_map
-        self.meter = meter
-
-
-class _RecordingProbe:
+class _FakeRecordingStream:
     def __init__(self) -> None:
-        self.time_events: list[tuple[str, int]] = []
-        self.logged_events: list[tuple[str, object]] = []
+        self.timelines: dict[str, int] = {}
+
+    def log(self, entity_path: str, payload: object) -> None:
+        del entity_path, payload
 
     def set_time(self, timeline: str, *, sequence: int) -> None:
-        self.time_events.append((timeline, sequence))
+        self.timelines[timeline] = sequence
 
-    def log(self, entity_path: str, payload: object, *extra: object, static: bool = False, strict: bool | None = None) -> None:
-        del extra, static, strict
-        self.logged_events.append((entity_path, payload))
+    def reset_time(self) -> None:
+        self.timelines.clear()
+
+    def flush(self, blocking: bool = True) -> None:
+        assert blocking is True
+
+    def disconnect(self) -> None:
+        return None
+
+    def disable_timeline(self, timeline: str) -> None:  # pragma: no cover - should never be called
+        raise AssertionError(f"disable_timeline must not be used in ordinary logging paths: {timeline}")
+
+    def current_timeline(self, timeline: str) -> int | None:
+        return self.timelines.get(timeline)
 
 
-def _patch_streaming_rerun_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
+def _timeline_state(stream: _FakeRecordingStream) -> tuple[int | None, int | None]:
+    return stream.current_timeline("frame"), stream.current_timeline("keyframe")
+
+
+def _ground_alignment_metadata() -> GroundAlignmentMetadata:
+    return GroundAlignmentMetadata(
+        applied=True,
+        confidence=0.9,
+        point_cloud_source="dense_points_ply",
+        ground_plane_world={
+            "normal_xyz_world": (0.0, 1.0, 0.0),
+            "offset_world": 0.0,
+            "inlier_count": 16,
+            "inlier_ratio": 0.8,
+        },
+        visualization={
+            "corners_xyz_world": [
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 1.0),
+                (1.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0),
+            ]
+        },
+    )
+
+
+def _ground_alignment_event(*, event_id: str = "ground", run_id: str | None = None) -> StageCompleted:
+    return StageCompleted(
+        event_id=event_id,
+        run_id=f"run-{uuid.uuid4().hex}" if run_id is None else run_id,
+        ts_ns=1,
+        stage_key=StageKey.GROUND_ALIGNMENT,
+        outcome=StageOutcome(
+            stage_key=StageKey.GROUND_ALIGNMENT,
+            status=StageStatus.COMPLETED,
+            config_hash="cfg",
+            input_fingerprint="inp",
+        ),
+        ground_alignment=_ground_alignment_metadata(),
+    )
+
+
+def test_rerun_sink_is_noop_when_handles_are_unavailable(tmp_path: Path) -> None:
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    event = BackendNoticeReceived(
+        event_id="1",
+        run_id=f"run-{uuid.uuid4().hex}",
+        ts_ns=1,
+        stage_key=StageKey.SLAM,
+        notice=PoseEstimated(
+            seq=1,
+            timestamp_ns=1,
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+        ),
+    )
+
+    sink.observe(event, payloads={})
+
+
+def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_path: Path, monkeypatch) -> None:
+    viewer_path = tmp_path / "viewer.rrd"
+    viewer_path.write_bytes(b"rrd")
+    ground_calls: list[str] = []
+    augment_calls: list[tuple[GroundAlignmentMetadata, Path, str]] = []
+    stream_names = iter(["live", "export"])
+
+    class FakeRecordingStream(_FakeRecordingStream):
+        def __init__(self, *, name: str) -> None:
+            super().__init__()
+            self.name = name
+            self.flushed = False
+            self.disconnected = False
+
+        def flush(self, blocking: bool = True) -> None:
+            assert blocking is True
+            self.flushed = True
+
+        def disconnect(self) -> None:
+            self.disconnected = True
+
     monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming_coordinator.rr",
-        SimpleNamespace(Image=_FakeImage, DepthImage=_FakeDepthImage, ViewCoordinates=SimpleNamespace(RDF="rdf")),
+        rerun_sink_module,
+        "create_recording_stream",
+        lambda **_: FakeRecordingStream(name=next(stream_names)),
+    )
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_ground_plane_patch",
+        lambda stream, *, metadata, static=True: ground_calls.append(stream.name),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "augment_viewer_recording_with_ground_plane",
+        lambda *, metadata, viewer_recording_path, recording_id: augment_calls.append(
+            (metadata, viewer_recording_path, recording_id)
+        ),
     )
 
-
-def test_streaming_runner_logs_live_pointmaps_under_posed_keyframe_entities(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = RunRequest(
-        experiment_name="advio-streaming-vista",
-        mode=PipelineMode.STREAMING,
-        output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        slam=SlamStageConfig(method=MethodId.VISTA),
+    sink = RerunEventSink(
+        grpc_url="rerun+http://127.0.0.1:9876/proxy",
+        target_path=viewer_path,
+        recording_id="demo-run",
     )
-    request.visualization.connect_live_viewer = True
-    plan = request.build(path_config)
-    source = _FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=_FinitePacketStream(
+
+    sink.observe(_ground_alignment_event(run_id="demo-run"), payloads={})
+
+    assert ground_calls == ["live"]
+
+    sink.close()
+
+    assert augment_calls == [(_ground_alignment_metadata(), viewer_path, "demo-run")]
+
+
+def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(tmp_path: Path) -> None:
+    viewer_path = tmp_path / "viewer.rrd"
+    sink = RerunEventSink(grpc_url=None, target_path=viewer_path, recording_id="static-ground-plane")
+
+    sink.observe(_ground_alignment_event(run_id="static-ground-plane"), payloads={})
+    sink.close()
+
+    recording = rdf.load_recording(viewer_path)
+    fill_view = recording.view(index="log_tick", contents="/world/alignment/ground_plane/fill")
+    outline_view = recording.view(index="log_tick", contents="/world/alignment/ground_plane/outline")
+
+    fill_static_rows = [batch.to_pydict() for batch in fill_view.select_static()]
+    outline_static_rows = [batch.to_pydict() for batch in outline_view.select_static()]
+
+    assert len(fill_static_rows) == 1
+    assert len(outline_static_rows) == 1
+
+    np.testing.assert_allclose(
+        np.asarray(fill_static_rows[0]["/world/alignment/ground_plane/fill:Mesh3D:vertex_positions"]).reshape(-1, 3),
+        np.asarray(_ground_alignment_metadata().visualization.corners_xyz_world, dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        np.asarray(fill_static_rows[0]["/world/alignment/ground_plane/fill:Mesh3D:triangle_indices"]).reshape(-1, 3),
+        np.asarray([[0, 1, 2], [0, 2, 3]], dtype=np.uint32),
+    )
+    np.testing.assert_allclose(
+        np.asarray(outline_static_rows[0]["/world/alignment/ground_plane/outline:LineStrips3D:strips"]).reshape(-1, 3),
+        np.asarray(
             [
-                _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
-                _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
-                _make_packet(seq=2, timestamp_ns=3_000_000_000, tx=0.2),
-            ]
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 1.0),
+                (1.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+            ],
+            dtype=np.float32,
         ),
     )
-    recording = _RecordingProbe()
-    transform_events: list[tuple[str, np.ndarray, np.ndarray, float | None]] = []
-    pointcloud_paths: list[str] = []
-    reference_paths: list[str] = []
-    pinhole_paths: list[str] = []
-    _patch_streaming_rerun_payloads(monkeypatch)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.create_recording_stream", lambda **_: recording)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.attach_recording_sinks", lambda *_, **__: None)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert [batch.to_pydict() for batch in fill_view.select()] == []
+        assert [batch.to_pydict() for batch in outline_view.select()] == []
+
+
+def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, int | None, int | None]] = []
+    transform_axis_lengths: dict[str, float | None] = {}
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_transform",
-        lambda _recording, *, entity_path, transform, axis_length=None: transform_events.append(
-            (entity_path, transform.translation_xyz(), transform.as_matrix()[:3, :3], axis_length)
+        rerun_sink_module,
+        "log_pinhole",
+        lambda stream, *, entity_path, intrinsics: calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_depth_image",
+        lambda stream, *, entity_path, depth_m: calls.append(("depth", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None: (
+            calls.append(("pose", entity_path, *_timeline_state(stream))),
+            transform_axis_lengths.__setitem__(entity_path, axis_length),
         ),
     )
     monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pinhole",
-        lambda _recording, *, entity_path, intrinsics: pinhole_paths.append(entity_path),
-    )
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pointcloud",
-        lambda _recording, *, entity_path, pointmap, colors=None: pointcloud_paths.append(entity_path),
-    )
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_points3d",
-        lambda _recording, *, entity_path, points_xyz, **kwargs: reference_paths.append(entity_path),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=_KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    image_paths = [
-        path for path, payload in recording.logged_events if isinstance(payload, _FakeImage) and path.endswith("/cam")
-    ]
-    world_coordinate_paths = [path for path, payload in recording.logged_events if payload == "rdf"]
-    preview_paths = [
-        path
-        for path, payload in recording.logged_events
-        if isinstance(payload, _FakeImage) and path.endswith("/preview")
-    ]
-
-    assert snapshot.state is RunState.COMPLETED
-    assert world_coordinate_paths == ["world"]
-    assert reference_paths == []
-    assert recording.time_events == [("keyframe", 0), ("keyframe", 1)]
-    assert pinhole_paths == [
-        "world/live/camera/cam",
-        "world/est/cameras/cam_000000/cam",
-        "world/live/camera/cam",
-        "world/est/cameras/cam_000001/cam",
-    ]
-    assert image_paths == [
-        "world/live/camera/cam",
-        "world/est/cameras/cam_000000/cam",
-        "world/live/camera/cam",
-        "world/est/cameras/cam_000001/cam",
-    ]
-    assert pointcloud_paths == [
-        "world/live/pointmap/points",
-        "world/est/pointmaps/cam_000000/points",
-        "world/live/pointmap/points",
-        "world/est/pointmaps/cam_000001/points",
-    ]
-    assert "camera/pointcloud" not in pointcloud_paths
-    assert [path for path, _, _, _ in transform_events] == [
-        "world/live/camera",
-        "world/live/pointmap",
-        "world/est/cameras/cam_000000",
-        "world/est/pointmaps/cam_000000",
-        "world/live/camera",
-        "world/live/pointmap",
-        "world/est/cameras/cam_000001",
-        "world/est/pointmaps/cam_000001",
-    ]
-    assert all(np.allclose(rotation, np.eye(3)) for _, _, rotation, _ in transform_events)
-    assert np.allclose(transform_events[-1][1], np.array([0.2, 0.0, 0.0]))
-    assert [
-        axis_length for path, _, _, axis_length in transform_events if "/pointmap" in path or "/pointmaps/" in path
-    ] == [
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-    ]
-    assert [
-        axis_length for path, _, _, axis_length in transform_events if "/camera" in path or "/cameras/" in path
-    ] == [
-        None,
-        None,
-        None,
-        None,
-    ]
-    assert preview_paths == [
-        "world/live/camera/preview",
-        "world/est/cameras/cam_000000/preview",
-        "world/live/camera/preview",
-        "world/est/cameras/cam_000001/preview",
-    ]
-
-
-def test_streaming_runner_logs_only_aligned_reference_clouds_under_explicit_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = RunRequest(
-        experiment_name="advio-streaming-vista",
-        mode=PipelineMode.STREAMING,
-        output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        slam=SlamStageConfig(method=MethodId.VISTA),
-    )
-    request.visualization.connect_live_viewer = True
-    plan = request.build(path_config)
-    aligned_cloud_path = write_point_cloud_ply(tmp_path / "aligned.ply", np.array([[1.0, 2.0, 3.0]]))
-    source_native_path = write_point_cloud_ply(tmp_path / "source_native.ply", np.array([[9.0, 9.0, 9.0]]))
-    metadata_path = tmp_path / "cloud.metadata.json"
-    metadata_path.write_text("{}", encoding="utf-8")
-    source = _FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        benchmark_inputs=PreparedBenchmarkInputs(
-            reference_clouds=[
-                ReferenceCloudRef(
-                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
-                    path=source_native_path,
-                    metadata_path=metadata_path,
-                    target_frame="advio_tango_area_learning_world",
-                    coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
-                ),
-                ReferenceCloudRef(
-                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
-                    path=aligned_cloud_path,
-                    metadata_path=metadata_path,
-                    target_frame="advio_gt_world",
-                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                ),
-            ]
+        rerun_sink_module,
+        "log_pointcloud",
+        lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+            ("points", entity_path, *_timeline_state(stream))
         ),
-        stream=_FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
     )
-    reference_paths: list[str] = []
-
-    _patch_streaming_rerun_payloads(monkeypatch)
     monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.create_recording_stream", lambda **_: _RecordingProbe()
-    )
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.attach_recording_sinks", lambda *_, **__: None)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_transform", lambda *_, **__: None)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pinhole", lambda *_, **__: None)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pointcloud", lambda *_, **__: None)
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_points3d",
-        lambda _recording, *, entity_path, points_xyz, **kwargs: reference_paths.append(entity_path),
-    )
-
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-    runner.start(request=request, plan=plan, source=source, slam_backend=_KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert snapshot.state is RunState.COMPLETED
-    assert reference_paths == ["world/reference/aligned_gt_world/tango_area_learning"]
-
-
-def test_streaming_runner_warns_and_continues_when_one_aligned_reference_cloud_is_invalid(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = RunRequest(
-        experiment_name="advio-streaming-vista",
-        mode=PipelineMode.STREAMING,
-        output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        slam=SlamStageConfig(method=MethodId.VISTA),
-    )
-    request.visualization.connect_live_viewer = True
-    plan = request.build(path_config)
-    missing_cloud_path = tmp_path / "missing-aligned.ply"
-    aligned_cloud_path = write_point_cloud_ply(tmp_path / "aligned.ply", np.array([[1.0, 2.0, 3.0]]))
-    metadata_path = tmp_path / "cloud.metadata.json"
-    metadata_path.write_text("{}", encoding="utf-8")
-    source = _FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        benchmark_inputs=PreparedBenchmarkInputs(
-            reference_clouds=[
-                ReferenceCloudRef(
-                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
-                    path=missing_cloud_path,
-                    metadata_path=metadata_path,
-                    target_frame="advio_gt_world",
-                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                ),
-                ReferenceCloudRef(
-                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
-                    path=aligned_cloud_path,
-                    metadata_path=metadata_path,
-                    target_frame="advio_gt_world",
-                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                ),
-            ]
+        rerun_sink_module,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz: calls.append(
+            ("trajectory", entity_path, *_timeline_state(stream))
         ),
-        stream=_FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
     )
-    reference_paths: list[str] = []
-    warnings: list[str] = []
+    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
 
-    _patch_streaming_rerun_payloads(monkeypatch)
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.create_recording_stream", lambda **_: _RecordingProbe()
-    )
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.attach_recording_sinks", lambda *_, **__: None)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_transform", lambda *_, **__: None)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pinhole", lambda *_, **__: None)
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pointcloud", lambda *_, **__: None)
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_points3d",
-        lambda _recording, *, entity_path, points_xyz, **kwargs: reference_paths.append(entity_path),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-    monkeypatch.setattr(runner._console, "warning", lambda message: warnings.append(message))
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
 
-    runner.start(request=request, plan=plan, source=source, slam_backend=_KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert snapshot.state is RunState.COMPLETED
-    assert reference_paths == ["world/reference/aligned_gt_world/tango_area_learning"]
-    assert len(warnings) == 1
-    assert "Skipping aligned reference cloud" in warnings[0]
-    assert str(missing_cloud_path) in warnings[0]
-
-
-def test_vista_viewer_pose_preserves_upstream_world_coordinates() -> None:
-    update = SlamUpdate(
-        seq=0,
-        timestamp_ns=0,
-        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+    event = BackendNoticeReceived(
+        event_id="1",
+        run_id=f"run-{uuid.uuid4().hex}",
+        ts_ns=1,
+        stage_key=StageKey.SLAM,
+        notice=KeyframeVisualizationReady(
+            seq=5,
+            timestamp_ns=1,
+            source_seq=8,
+            source_timestamp_ns=1,
+            keyframe_index=3,
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            preview=PreviewHandle(handle_id="preview", width=4, height=3, channels=3, dtype="uint8"),
+            image=ArrayHandle(handle_id="rgb", shape=(3, 4, 3), dtype="uint8"),
+            depth=ArrayHandle(handle_id="depth", shape=(3, 4), dtype="float32"),
+            pointmap=ArrayHandle(handle_id="pointmap", shape=(3, 4, 3), dtype="float32"),
+            camera_intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3),
+        ),
     )
 
-    viewer_pose = _viewer_pose_from_update(update, method_id=MethodId.VISTA)
-
-    assert np.allclose(viewer_pose.translation_xyz(), np.array([1.0, 2.0, 3.0]))
-    assert np.allclose(viewer_pose.as_matrix()[:3, :3], np.eye(3))
-
-
-def test_rerun_log_transform_uses_parent_from_child_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
-    events: list[tuple[str, object]] = []
-
-    class FakeRecording:
-        def log(self, entity_path: str, payload: object) -> None:
-            events.append((entity_path, payload))
-
-    class FakeQuaternion:
-        def __init__(self, *, xyzw: list[float]) -> None:
-            self.xyzw = xyzw
-
-    class FakeTransform3D:
-        def __init__(self, **kwargs: object) -> None:
-            self.kwargs = kwargs
-
-    fake_rr = SimpleNamespace(
-        Transform3D=FakeTransform3D,
-        Quaternion=FakeQuaternion,
-        TransformRelation=SimpleNamespace(ParentFromChild="parent-from-child"),
-    )
-    monkeypatch.setattr(rerun_module, "rr", fake_rr)
-
-    rerun_module.log_transform(
-        FakeRecording(),
-        entity_path="world/cam_000000",
-        transform=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+    sink.observe(
+        event,
+        payloads={
+            "preview": np.zeros((3, 4, 3), dtype=np.uint8),
+            "rgb": np.zeros((3, 4, 3), dtype=np.uint8),
+            "depth": np.ones((3, 4), dtype=np.float32),
+            "pointmap": np.ones((3, 4, 3), dtype=np.float32),
+        },
     )
 
-    assert len(events) == 1
-    entity_path, payload = events[0]
-    assert entity_path == "world/cam_000000"
-    assert payload.kwargs["relation"] == "parent-from-child"
-    assert payload.kwargs["translation"] == [1.0, 2.0, 3.0]
+    assert calls == [
+        ("pose", "world/live/model", 8, None),
+        ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, 8, None),
+        ("pinhole", "world/live/model/camera/image", 8, None),
+        ("rgb", "world/live/model/camera/image", 8, None),
+        ("depth", "world/live/model/camera/image/depth", 8, None),
+        ("rgb", "world/live/model/diag/preview", 8, None),
+        ("points", "world/live/model/points", 8, None),
+        ("pose", "world/keyframes/cameras/000003", 8, None),
+        ("pose", "world/keyframes/points/000003", 8, None),
+        ("pinhole", "world/keyframes/cameras/000003/image", 8, None),
+        ("rgb", "world/keyframes/cameras/000003/image", 8, None),
+        ("depth", "world/keyframes/cameras/000003/image/depth", 8, None),
+        ("rgb", "world/keyframes/cameras/000003/diag/preview", 8, None),
+        ("points", "world/keyframes/points/000003/points", 8, None),
+    ]
+    assert transform_axis_lengths["world/live/model"] == 0.0
+    assert transform_axis_lengths["world/keyframes/cameras/000003"] == 0.0
+    assert transform_axis_lengths["world/keyframes/points/000003"] == 0.0
 
 
-def test_streaming_runner_round_trips_camera_local_points_with_repo_pose_semantics(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = RunRequest(
-        experiment_name="advio-streaming-mock",
-        mode=PipelineMode.STREAMING,
-        output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        slam=SlamStageConfig(method=MethodId.MOCK),
-    )
-    request.visualization.connect_live_viewer = True
-    plan = request.build(path_config)
-    source = _FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=_FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-    )
+def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, int | None, int | None]] = []
     captured_transforms: dict[str, FrameTransform] = {}
     captured_pointmaps: dict[str, np.ndarray] = {}
 
-    _patch_streaming_rerun_payloads(monkeypatch)
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.create_recording_stream", lambda **_: _RecordingProbe()
-    )
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.attach_recording_sinks", lambda *_, **__: None)
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_transform",
-        lambda _recording, *, entity_path, transform, axis_length=None: captured_transforms.__setitem__(
-            entity_path, transform
+        rerun_sink_module,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None: (
+            calls.append(("pose", entity_path, *_timeline_state(stream))),
+            captured_transforms.__setitem__(entity_path, transform),
         ),
     )
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pinhole", lambda *_, **__: None)
     monkeypatch.setattr(
-        "prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_pointcloud",
-        lambda _recording, *, entity_path, pointmap, colors=None: captured_pointmaps.__setitem__(
-            entity_path, np.asarray(pointmap)
+        rerun_sink_module,
+        "log_pointcloud",
+        lambda stream, *, entity_path, pointmap, colors=None: (
+            calls.append(("points", entity_path, *_timeline_state(stream))),
+            captured_pointmaps.__setitem__(entity_path, np.asarray(pointmap)),
         ),
     )
-    monkeypatch.setattr("prml_vslam.pipeline.streaming.VIEWER_HOOKS.log_points3d", lambda *_, **__: None)
+    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
 
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-    runner.start(request=request, plan=plan, source=source, slam_backend=_MockGeometryBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
 
-    assert snapshot.state is RunState.COMPLETED
-    camera_transform = captured_transforms["world/est/pointmaps/cam_000000"]
-    pointmap = captured_pointmaps["world/est/pointmaps/cam_000000/points"]
-    world_points = transform_points_world_camera(pointmap.reshape(-1, 3), camera_transform)
+    event = BackendNoticeReceived(
+        event_id="1",
+        run_id=f"run-{uuid.uuid4().hex}",
+        ts_ns=1,
+        stage_key=StageKey.SLAM,
+        notice=KeyframeVisualizationReady(
+            seq=1,
+            timestamp_ns=1,
+            source_seq=4,
+            source_timestamp_ns=1,
+            keyframe_index=0,
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=1.0),
+            pointmap=ArrayHandle(handle_id="pointmap", shape=(1, 1, 3), dtype="float32"),
+        ),
+    )
 
-    np.testing.assert_allclose(world_points[0], np.array([1.5, 2.0, 3.0]))
+    sink.observe(
+        event,
+        payloads={"pointmap": np.array([[[0.5, 0.0, 2.0]]], dtype=np.float32)},
+    )
 
+    assert calls == [
+        ("pose", "world/live/model", 4, None),
+        ("points", "world/live/model/points", 4, None),
+        ("pose", "world/keyframes/cameras/000000", 4, None),
+        ("pose", "world/keyframes/points/000000", 4, None),
+        ("points", "world/keyframes/points/000000/points", 4, None),
+    ]
 
-class _KeyframeStreamingBackend:
-    method_id = MethodId.VISTA
+    live_world_points = transform_points_world_camera(
+        captured_pointmaps["world/live/model/points"].reshape(-1, 3),
+        captured_transforms["world/live/model"],
+    )
+    keyframe_world_points = transform_points_world_camera(
+        captured_pointmaps["world/keyframes/points/000000/points"].reshape(-1, 3),
+        captured_transforms["world/keyframes/points/000000"],
+    )
 
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> object:
-        del backend_config, output_policy
-        return _KeyframeStreamingSession(artifact_root=artifact_root)
-
-
-class _KeyframeStreamingSession:
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-        self._updates = iter(
-            [
-                SlamUpdate(
-                    seq=0,
-                    timestamp_ns=1_000_000_000,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                    is_keyframe=True,
-                    keyframe_index=0,
-                    camera_intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
-                    image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
-                    preview_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
-                    pointmap=np.zeros((2, 2, 3), dtype=np.float32),
-                ),
-                SlamUpdate(seq=1, timestamp_ns=2_000_000_000, is_keyframe=False),
-                SlamUpdate(
-                    seq=2,
-                    timestamp_ns=3_000_000_000,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.2, ty=0.0, tz=0.0),
-                    is_keyframe=True,
-                    keyframe_index=1,
-                    camera_intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
-                    image_rgb=np.ones((2, 2, 3), dtype=np.uint8),
-                    preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
-                    pointmap=np.zeros((2, 2, 3), dtype=np.float32),
-                ),
-            ]
-        )
-        self._pending: list[SlamUpdate] = []
-
-    def step(self, frame: FramePacket) -> None:
-        del frame
-        self._pending.append(next(self._updates))
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        updates = self._pending
-        self._pending = []
-        return updates
-
-    def close(self) -> SlamArtifacts:
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(
-            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="keyframe-streaming"),
-        )
+    np.testing.assert_allclose(live_world_points[0], np.array([1.5, 2.0, 3.0]))
+    np.testing.assert_allclose(keyframe_world_points[0], np.array([1.5, 2.0, 3.0]))
 
 
-class _FakeStreamingSource:
-    def __init__(
-        self,
-        *,
-        sequence_manifest: SequenceManifest,
-        stream: object,
-        benchmark_inputs: PreparedBenchmarkInputs | None = None,
-    ) -> None:
-        self.sequence_manifest = sequence_manifest
-        self.stream = stream
-        self.benchmark_inputs = benchmark_inputs
+def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, int | None, int | None]] = []
+    tracking_axis_lengths: dict[str, float | None] = {}
 
-    @property
-    def label(self) -> str:
-        return "fake-streaming"
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None: (
+            calls.append(("pose", entity_path, *_timeline_state(stream))),
+            tracking_axis_lengths.__setitem__(entity_path, axis_length),
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz: calls.append(
+            ("trajectory", entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
 
-    def prepare_sequence_manifest(self, _output_dir: Path) -> SequenceManifest:
-        return self.sequence_manifest
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
 
-    def prepare_benchmark_inputs(self, _output_dir: Path) -> PreparedBenchmarkInputs | None:
-        return self.benchmark_inputs
+    packet_event = PacketObserved(
+        event_id="1",
+        run_id=f"run-{uuid.uuid4().hex}",
+        ts_ns=1,
+        packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance(source_id="fake")),
+        frame=ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8"),
+        received_frames=1,
+        measured_fps=30.0,
+    )
+    pose_event = BackendNoticeReceived(
+        event_id="2",
+        run_id=f"run-{uuid.uuid4().hex}",
+        ts_ns=2,
+        stage_key=StageKey.SLAM,
+        notice=PoseEstimated(
+            seq=1,
+            timestamp_ns=1,
+            source_seq=7,
+            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+        ),
+    )
 
-    def open_stream(self, *, loop: bool = False) -> object:
-        del loop
-        return self.stream
+    sink.observe(packet_event, payloads={"frame": np.zeros((2, 2, 3), dtype=np.uint8)})
+    sink.observe(pose_event, payloads={})
 
-
-class _FinitePacketStream:
-    def __init__(self, packets: list[FramePacket]) -> None:
-        self.packets = iter(packets)
-
-    def connect(self) -> None:
-        return None
-
-    def wait_for_packet(self, timeout_seconds: float) -> FramePacket:
-        del timeout_seconds
-        try:
-            return next(self.packets)
-        except StopIteration:
-            raise EOFError from None
-
-    def disconnect(self) -> None:
-        pass
-
-
-class _MockGeometryBackend:
-    method_id = MethodId.MOCK
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> object:
-        del backend_config, output_policy
-        return _MockGeometrySession(artifact_root=artifact_root)
+    assert calls == [
+        ("rgb", "world/live/source/rgb", 1, None),
+        ("pose", "world/live/tracking/camera", 7, None),
+        ("trajectory", "world/trajectory/tracking", 7, None),
+    ]
+    assert tracking_axis_lengths["world/live/tracking/camera"] == 0.0
 
 
-class _MockGeometrySession:
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-        self._pending: list[SlamUpdate] = []
-        self._emitted = False
+def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, tuple[int, ...], int | None, int | None]] = []
 
-    def step(self, frame: FramePacket) -> None:
-        del frame
-        if self._emitted:
-            return
-        self._emitted = True
-        self._pending.append(
-            SlamUpdate(
-                seq=0,
-                timestamp_ns=1_000_000_000,
-                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=1.0),
-                is_keyframe=True,
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(
+            ("rgb", entity_path, tuple(np.asarray(image_rgb).shape), *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_pinhole",
+        lambda stream, *, entity_path, intrinsics: calls.append(
+            ("pinhole", entity_path, (intrinsics.height_px, intrinsics.width_px), *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_depth_image",
+        lambda stream, *, entity_path, depth_m: calls.append(
+            ("depth", entity_path, tuple(np.asarray(depth_m).shape), *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(rerun_sink_module, "log_transform", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_pointcloud", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    sink.observe(
+        PacketObserved(
+            event_id="packet",
+            run_id=f"run-{uuid.uuid4().hex}",
+            ts_ns=1,
+            packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance(source_id="fake")),
+            frame=ArrayHandle(handle_id="source-frame", shape=(11, 13, 3), dtype="uint8"),
+            received_frames=1,
+            measured_fps=30.0,
+        ),
+        payloads={"source-frame": np.zeros((11, 13, 3), dtype=np.uint8)},
+    )
+    sink.observe(
+        BackendNoticeReceived(
+            event_id="notice",
+            run_id=f"run-{uuid.uuid4().hex}",
+            ts_ns=2,
+            stage_key=StageKey.SLAM,
+            notice=KeyframeVisualizationReady(
+                seq=2,
+                timestamp_ns=2,
+                source_seq=1,
+                source_timestamp_ns=1,
                 keyframe_index=0,
-                camera_intrinsics=CameraIntrinsics(fx=1.0, fy=1.0, cx=0.0, cy=0.0, width_px=1, height_px=1),
-                image_rgb=np.zeros((1, 1, 3), dtype=np.uint8),
-                depth_map=np.array([[2.0]], dtype=np.float32),
-                pointmap=np.array([[[0.5, 0.0, 2.0]]], dtype=np.float32),
-            )
-        )
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        updates = self._pending
-        self._pending = []
-        return updates
-
-    def close(self) -> SlamArtifacts:
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(
-            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="mock-geometry"),
-        )
-
-
-def _make_packet(*, seq: int, timestamp_ns: int, tx: float) -> FramePacket:
-    return FramePacket(
-        seq=seq,
-        timestamp_ns=timestamp_ns,
-        rgb=np.zeros((4, 4, 3), dtype=np.uint8),
-        intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
-        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=0.0, tz=0.0),
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                image=ArrayHandle(handle_id="model-rgb", shape=(5, 7, 3), dtype="uint8"),
+                depth=ArrayHandle(handle_id="model-depth", shape=(5, 7), dtype="float32"),
+                preview=PreviewHandle(handle_id="preview", width=7, height=5, channels=3, dtype="uint8"),
+                camera_intrinsics=CameraIntrinsics(fx=3.0, fy=4.0, cx=1.5, cy=2.0, width_px=7, height_px=5),
+            ),
+        ),
+        payloads={
+            "model-rgb": np.zeros((5, 7, 3), dtype=np.uint8),
+            "model-depth": np.ones((5, 7), dtype=np.float32),
+            "preview": np.zeros((5, 7, 3), dtype=np.uint8),
+        },
     )
 
+    assert calls == [
+        ("rgb", "world/live/source/rgb", (11, 13, 3), 1, None),
+        ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, (5, 7, 3), 1, None),
+        ("pinhole", "world/live/model/camera/image", (5, 7), 1, None),
+        ("rgb", "world/live/model/camera/image", (5, 7, 3), 1, None),
+        ("depth", "world/live/model/camera/image/depth", (5, 7), 1, None),
+        ("rgb", "world/live/model/diag/preview", (5, 7, 3), 1, None),
+        ("pinhole", "world/keyframes/cameras/000000/image", (5, 7), 1, None),
+        ("rgb", "world/keyframes/cameras/000000/image", (5, 7, 3), 1, None),
+        ("depth", "world/keyframes/cameras/000000/image/depth", (5, 7), 1, None),
+        ("rgb", "world/keyframes/cameras/000000/diag/preview", (5, 7, 3), 1, None),
+    ]
 
-def _wait_for_terminal_snapshot(runner: StreamingRunner, *, timeout_seconds: float = 2.5) -> StreamingRunSnapshot:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        snapshot = runner.snapshot()
-        if snapshot.state in (RunState.COMPLETED, RunState.FAILED, RunState.STOPPED):
-            return snapshot
-        time.sleep(0.05)
-    raise TimeoutError("Pipeline runner did not reach a terminal state.")
+
+def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypatch) -> None:
+    paths: list[tuple[str, int | None, int | None]] = []
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None: paths.append(
+            (entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    sink.observe(
+        BackendNoticeReceived(
+            event_id="1",
+            run_id=f"run-{uuid.uuid4().hex}",
+            ts_ns=1,
+            stage_key=StageKey.SLAM,
+            notice=PoseEstimated(
+                seq=1,
+                timestamp_ns=1,
+                source_seq=2,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            ),
+        ),
+        payloads={},
+    )
+
+    assert paths == [("world/live/tracking/camera", 2, None)]
+    assert "world" not in [path for path, _, _ in paths]
+
+
+def test_rerun_sink_actor_forwards_materialized_rerun_bindings_without_ray_get(tmp_path: Path, monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class FakeLocalSink:
+        def __init__(self, **kwargs: object) -> None:
+            observed["init"] = kwargs
+
+        def observe(self, event, *, payloads) -> None:
+            observed["event"] = event
+            observed["payload"] = payloads["frame"]
+
+        def close(self) -> None:
+            observed["closed"] = True
+
+    monkeypatch.setattr(rerun_sink_module, "RerunEventSink", FakeLocalSink)
+    monkeypatch.setattr(
+        rerun_sink_module.ray,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("sink actor must not call ray.get")),
+    )
+
+    actor_cls = RerunSinkActor.__ray_metadata__.modified_class
+    actor = actor_cls(
+        grpc_url=None,
+        target_path=tmp_path / "viewer.rrd",
+        recording_id="demo",
+        frusta_history_window_streaming=5,
+        show_tracking_trajectory=False,
+    )
+    actor.observe_event(
+        event=PacketObserved(
+            event_id="1",
+            run_id="demo",
+            ts_ns=1,
+            packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
+            frame=ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8"),
+        ),
+        rerun_bindings=[("frame", np.ones((2, 2, 3), dtype=np.uint8))],
+    )
+    actor.close()
+
+    assert observed["init"]["recording_id"] == "demo"
+    assert observed["init"]["frusta_history_window_streaming"] == 5
+    assert observed["init"]["show_tracking_trajectory"] is False
+    assert np.array_equal(observed["payload"], np.ones((2, 2, 3), dtype=np.uint8))
+    assert observed["closed"] is True
+
+
+def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, int | None, int | None]] = []
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_pinhole",
+        lambda stream, *, entity_path, intrinsics: calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None: calls.append(
+            ("pose", entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    sink.observe(
+        BackendNoticeReceived(
+            event_id="1",
+            run_id=f"run-{uuid.uuid4().hex}",
+            ts_ns=1,
+            stage_key=StageKey.SLAM,
+            notice=KeyframeVisualizationReady(
+                seq=5,
+                timestamp_ns=1,
+                source_seq=8,
+                source_timestamp_ns=1,
+                keyframe_index=3,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                image=ArrayHandle(handle_id="rgb", shape=(3, 4, 3), dtype="uint8"),
+                camera_intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3),
+            ),
+        ),
+        payloads={"rgb": np.zeros((3, 4, 3), dtype=np.uint8)},
+    )
+
+    assert calls == [
+        ("pose", "world/live/model", 8, None),
+        ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, 8, None),
+        ("pinhole", "world/live/model/camera/image", 8, None),
+        ("rgb", "world/live/model/camera/image", 8, None),
+        ("pose", "world/keyframes/cameras/000003", 8, None),
+        ("pose", "world/keyframes/points/000003", 8, None),
+        ("pinhole", "world/keyframes/cameras/000003/image", 8, None),
+        ("rgb", "world/keyframes/cameras/000003/image", 8, None),
+    ]
+
+
+def test_rerun_sink_clears_stale_keyframe_camera_subtrees_without_clearing_points(tmp_path: Path, monkeypatch) -> None:
+    clears: list[str] = []
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_transform", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_pointcloud", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_pinhole", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_rgb_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_depth_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_clear",
+        lambda stream, *, entity_path, recursive: clears.append(f"{entity_path}:{recursive}"),
+    )
+
+    sink = RerunEventSink(
+        grpc_url=None,
+        target_path=tmp_path / "viewer.rrd",
+        frusta_history_window_streaming=2,
+    )
+
+    for keyframe_index in range(3):
+        sink.observe(
+            BackendNoticeReceived(
+                event_id=str(keyframe_index),
+                run_id=f"run-{uuid.uuid4().hex}",
+                ts_ns=keyframe_index,
+                stage_key=StageKey.SLAM,
+                notice=KeyframeVisualizationReady(
+                    seq=keyframe_index,
+                    timestamp_ns=keyframe_index,
+                    source_seq=keyframe_index,
+                    source_timestamp_ns=keyframe_index,
+                    keyframe_index=keyframe_index,
+                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                ),
+            ),
+            payloads={},
+        )
+
+    assert clears == ["world/keyframes/cameras/000000:True"]

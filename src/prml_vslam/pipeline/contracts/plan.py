@@ -2,45 +2,30 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseData
 
 from .request import PipelineMode, SourceSpec
-
-
-class RunPlanStageId(StrEnum):
-    """Canonical stage identifiers in the benchmark planner."""
-
-    INGEST = "ingest"
-    SLAM = "slam"
-    BENCHMARK = "benchmark"
-    """Alias for trajectory_evaluation used in early scaffold versions."""
-    REFERENCE_RECONSTRUCTION = "reference_reconstruction"
-    TRAJECTORY_EVALUATION = "trajectory_evaluation"
-    CLOUD_EVALUATION = "cloud_evaluation"
-    EFFICIENCY_EVALUATION = "efficiency_evaluation"
-    SUMMARY = "summary"
+from .stages import StageKey
 
 
 class RunPlanStage(BaseData):
     """One typed stage in a benchmark run plan."""
 
-    id: RunPlanStageId
+    key: StageKey
     """Stable identifier for the stage."""
-
-    title: str
-    """Short human-readable stage title."""
-
-    summary: str
-    """Short description of the stage intent."""
 
     outputs: list[Path] = Field(default_factory=list)
     """Expected artifact paths for the stage."""
+
+    available: bool = True
+    """Whether the selected backend can execute the stage."""
+
+    availability_reason: str | None = None
+    """Why the stage is unavailable, when it is merely a placeholder."""
 
 
 class RunPlan(BaseData):
@@ -51,9 +36,6 @@ class RunPlan(BaseData):
 
     mode: PipelineMode
     """Selected pipeline mode."""
-
-    method: MethodId
-    """External backend chosen for the run."""
 
     artifact_root: Path
     """Root directory for all run artifacts."""
@@ -68,12 +50,13 @@ class RunPlan(BaseData):
         """Return compact tabular rows for plan summaries."""
         return [
             {
-                "Stage": stage.title,
-                "Id": stage.id.value,
+                "Stage": stage.key.label,
+                "Id": stage.key.value,
+                "Available": "yes" if stage.available else "no",
                 "Outputs": ", ".join(path.name for path in stage.outputs),
             }
             for stage in self.stages
         ]
 
 
-__all__ = ["RunPlan", "RunPlanStage", "RunPlanStageId"]
+__all__ = ["RunPlan", "RunPlanStage"]

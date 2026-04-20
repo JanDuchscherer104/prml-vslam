@@ -1,22 +1,32 @@
-"""Pipeline request and source contracts."""
+"""Pipeline request, source, backend, and placement contracts."""
 
 from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
-from prml_vslam.benchmark import BenchmarkConfig
+from prml_vslam.alignment.contracts import AlignmentConfig
+from prml_vslam.benchmark import (
+    BenchmarkConfig,
+    CloudBenchmarkConfig,
+    EfficiencyBenchmarkConfig,
+    ReferenceSource,
+    TrajectoryBenchmarkConfig,
+)
+from prml_vslam.datasets.advio import AdvioPoseSource
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.vista.config import VistaSlamBackendConfig
+from prml_vslam.interfaces import Record3DTransportId
+from prml_vslam.methods.contracts import MethodId, SlamOutputPolicy
 from prml_vslam.utils import BaseConfig, PathConfig
 from prml_vslam.visualization.contracts import VisualizationConfig
 
 if TYPE_CHECKING:
     from .plan import RunPlan
+from .stages import StageKey
+from .transport import TransportModel
 
 
 class PipelineMode(StrEnum):
@@ -32,51 +42,6 @@ class PipelineMode(StrEnum):
             self.OFFLINE: "Offline (batch)",
             self.STREAMING: "Streaming (incremental)",
         }[self]
-
-
-class LiveTransportId(StrEnum):
-    """Pipeline-owned transport selector for Record3D live sources."""
-
-    USB = "usb"
-    WIFI = "wifi"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing transport label."""
-        return "Wi-Fi Preview" if self is LiveTransportId.WIFI else self.value.upper()
-
-
-class StageExecutionMode(StrEnum):
-    """Where one pipeline execution component should run."""
-
-    LOCAL = "local"
-    PROCESS = "process"
-
-
-class StreamingExecutionConfig(BaseConfig):
-    """Execution placement policy for streaming mode."""
-
-    ingest: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for source manifest and benchmark input preparation."""
-
-    packet_source: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for packet-source consumption."""
-
-    slam: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for streaming SLAM session execution."""
-
-    trajectory_evaluation: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for optional trajectory evaluation."""
-
-    summary: StageExecutionMode = StageExecutionMode.LOCAL
-    """Execution mode for final summary and manifest persistence."""
-
-
-class PipelineExecutionConfig(BaseConfig):
-    """Run-level execution placement policy."""
-
-    streaming: StreamingExecutionConfig = Field(default_factory=StreamingExecutionConfig)
-    """Streaming-mode execution policy."""
 
 
 class VideoSourceSpec(BaseConfig):
@@ -98,6 +63,12 @@ class DatasetSourceSpec(BaseConfig):
     sequence_id: str
     """Dataset-specific sequence identifier."""
 
+    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
+    """Replay pose source used when this dataset source is executed in streaming mode."""
+
+    respect_video_rotation: bool = False
+    """Whether ADVIO replay should honor video rotation metadata when available."""
+
 
 class Record3DLiveSourceSpec(BaseConfig):
     """Typed Record3D live source used by the pipeline app and planner."""
@@ -105,7 +76,7 @@ class Record3DLiveSourceSpec(BaseConfig):
     source_id: Literal["record3d"] = "record3d"
     """Stable live-source identifier for Record3D-backed runs."""
 
-    transport: LiveTransportId = LiveTransportId.USB
+    transport: Record3DTransportId = Record3DTransportId.USB
     """Selected Record3D transport."""
 
     persist_capture: bool = True
@@ -119,50 +90,92 @@ class Record3DLiveSourceSpec(BaseConfig):
 
 
 SourceSpec = VideoSourceSpec | DatasetSourceSpec | Record3DLiveSourceSpec
-BackendConfig = SlamBackendConfig | VistaSlamBackendConfig
+
+
+class MockBackendSpec(TransportModel):
+    """Executable mock backend configuration."""
+
+    kind: Literal["mock"] = "mock"
+    max_frames: int | None = None
+    trajectory_position_noise_mean_m: float = 0.0
+    trajectory_position_noise_variance_m2: float = 0.0
+    point_noise_mean_m: float = 0.0
+    point_noise_variance_m2: float = 0.0
+    random_seed: int = 43
+
+
+class Mast3rBackendSpec(TransportModel):
+    """Placeholder MASt3R backend configuration."""
+
+    kind: Literal["mast3r"] = "mast3r"
+    max_frames: int | None = None
+
+
+class VistaBackendSpec(TransportModel):
+    """Executable ViSTA backend configuration."""
+
+    kind: Literal["vista"] = "vista"
+    max_frames: int | None = None
+    vista_slam_dir: Path = Path("external/vista-slam")
+    checkpoint_path: Path = Path("external/vista-slam/pretrains/frontend_sta_weights.pth")
+    vocab_path: Path = Path("external/vista-slam/pretrains/ORBvoc.txt")
+    max_view_num: int = 400
+    flow_thres: float = 5.0
+    neighbor_edge_num: int = 3
+    loop_edge_num: int = 3
+    loop_dist_min: int = 40
+    loop_nms: int = 40
+    loop_cand_thresh_neighbor: int = 5
+    point_conf_thres: float = 4.2
+    rel_pose_thres: float = 0.75
+    pgo_every: int = 500
+    random_seed: int = 43
+
+
+BackendSpec = Annotated[
+    MockBackendSpec | Mast3rBackendSpec | VistaBackendSpec,
+    Field(discriminator="kind"),
+]
+
+BackendConfigValue: TypeAlias = Path | str | int | float | bool | None
+BackendConfigPayload: TypeAlias = dict[str, BackendConfigValue]
+RayLocalHeadLifecycle: TypeAlias = Literal["ephemeral", "reusable"]
+
+
+class StagePlacement(BaseConfig):
+    """Repo-owned placement preference for one stage."""
+
+    resources: dict[str, float] = Field(default_factory=dict)
+
+
+class PlacementPolicy(BaseConfig):
+    """Repo-owned placement policy translated by the backend layer only."""
+
+    by_stage: dict[StageKey, StagePlacement] = Field(default_factory=dict)
+
+
+class RayRuntimeConfig(BaseConfig):
+    """Repo-owned local Ray runtime policy."""
+
+    local_head_lifecycle: RayLocalHeadLifecycle = "ephemeral"
+    """Whether the auto-started local Ray head is torn down or preserved after a run."""
+
+
+class RunRuntimeConfig(BaseConfig):
+    """Repo-owned execution-lifecycle policy."""
+
+    ray: RayRuntimeConfig = Field(default_factory=RayRuntimeConfig)
+    """Local Ray runtime policy translated by the backend layer."""
 
 
 class SlamStageConfig(BaseConfig):
     """Pipeline-owned SLAM stage request."""
 
-    method: MethodId
-    """External monocular VSLAM backend to use for the run."""
-
     outputs: SlamOutputPolicy = Field(default_factory=SlamOutputPolicy)
     """Output materialization wishes for the selected backend."""
 
-    backend: BackendConfig = Field(default_factory=SlamBackendConfig)
-    """Backend-private runtime or wrapper controls."""
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_backend_by_method(cls, raw_data: object) -> object:
-        if not isinstance(raw_data, dict):
-            return raw_data
-        method = raw_data.get("method")
-        if method is None:
-            return raw_data
-        backend = raw_data.get("backend")
-        if backend is None:
-            return raw_data
-        method_id = method if isinstance(method, MethodId) else MethodId(method)
-        payload = dict(raw_data)
-        backend_payload = backend.model_dump(mode="python") if isinstance(backend, SlamBackendConfig) else backend
-        if method_id is MethodId.VISTA:
-            payload["backend"] = VistaSlamBackendConfig.model_validate(backend_payload)
-        elif isinstance(backend, VistaSlamBackendConfig):
-            payload["backend"] = SlamBackendConfig.model_validate({"max_frames": backend.max_frames})
-        else:
-            payload["backend"] = SlamBackendConfig.model_validate(backend_payload)
-        return payload
-
-    @model_validator(mode="after")
-    def _normalize_backend_default(self) -> SlamStageConfig:
-        if self.method is MethodId.VISTA and not isinstance(self.backend, VistaSlamBackendConfig):
-            self.backend = VistaSlamBackendConfig.model_validate(self.backend.model_dump(mode="python"))
-        if self.method is not MethodId.VISTA and isinstance(self.backend, VistaSlamBackendConfig):
-            self.backend = SlamBackendConfig.model_validate({"max_frames": self.backend.max_frames})
-        return self
+    backend: BackendSpec
+    """Executable backend spec and source of truth for backend selection."""
 
 
 class RunRequest(BaseConfig):
@@ -186,30 +199,134 @@ class RunRequest(BaseConfig):
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     """Benchmark-policy configuration kept outside the pipeline core."""
 
+    alignment: AlignmentConfig = Field(default_factory=AlignmentConfig)
+    """Derived alignment policy kept separate from native backend semantics."""
+
     visualization: VisualizationConfig = Field(default_factory=VisualizationConfig)
     """Viewer-export policy kept outside pipeline execution semantics."""
 
-    execution: PipelineExecutionConfig = Field(default_factory=PipelineExecutionConfig)
-    """Execution placement policy for local or process-backed run components."""
+    placement: PlacementPolicy = Field(default_factory=PlacementPolicy)
+    """Placement policy translated into backend-specific scheduling controls."""
+
+    runtime: RunRuntimeConfig = Field(default_factory=RunRuntimeConfig)
+    """Repo-owned execution-lifecycle policy for the selected run."""
 
     def build(self, path_config: PathConfig | None = None) -> RunPlan:
         """Materialize the canonical run plan for this request."""
-        from prml_vslam.pipeline.services import RunPlannerService
+        from prml_vslam.methods.factory import BackendFactory
+        from prml_vslam.pipeline.stage_registry import StageRegistry
 
-        return RunPlannerService().build_run_plan(request=self, path_config=path_config)
+        if self.benchmark.cloud.enabled and not self.slam.outputs.emit_dense_points:
+            raise ValueError("Cloud evaluation requires `slam.outputs.emit_dense_points=True`.")
+        if self.alignment.ground.enabled and not (
+            self.slam.outputs.emit_dense_points or self.slam.outputs.emit_sparse_points
+        ):
+            raise ValueError("Ground alignment requires at least one point-cloud output from the SLAM stage.")
+        config = PathConfig() if path_config is None else path_config
+        backend_descriptor = BackendFactory().describe(self.slam.backend)
+        return StageRegistry.default().compile(request=self, backend=backend_descriptor, path_config=config)
+
+
+def build_backend_spec(
+    *,
+    method: MethodId,
+    max_frames: int | None = None,
+    overrides: BackendConfigPayload | None = None,
+) -> BackendSpec:
+    """Build one explicit backend spec from a user-selected method and overrides."""
+    payload = {"max_frames": max_frames}
+    if overrides is not None:
+        payload.update(overrides)
+    match method:
+        case MethodId.MOCK:
+            return MockBackendSpec.model_validate({"kind": "mock", **payload})
+        case MethodId.VISTA:
+            return VistaBackendSpec.model_validate(
+                _normalize_backend_payload(VistaBackendSpec, {"kind": "vista", **payload})
+            )
+        case MethodId.MAST3R:
+            return Mast3rBackendSpec.model_validate({"kind": "mast3r", **payload})
+
+
+def build_run_request(
+    *,
+    experiment_name: str,
+    mode: PipelineMode = PipelineMode.OFFLINE,
+    output_dir: Path,
+    source: SourceSpec,
+    method: MethodId,
+    max_frames: int | None = None,
+    backend_overrides: BackendConfigPayload | None = None,
+    emit_dense_points: bool = True,
+    emit_sparse_points: bool = True,
+    reference_enabled: bool = False,
+    trajectory_eval_enabled: bool = False,
+    trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    evaluate_cloud: bool = False,
+    evaluate_efficiency: bool = False,
+    ground_alignment_enabled: bool = False,
+    connect_live_viewer: bool = False,
+    export_viewer_rrd: bool = False,
+) -> RunRequest:
+    """Build one canonical run request from source, backend, and policy selections."""
+    return RunRequest(
+        experiment_name=experiment_name,
+        mode=mode,
+        output_dir=output_dir,
+        source=source,
+        slam=SlamStageConfig(
+            backend=build_backend_spec(method=method, max_frames=max_frames, overrides=backend_overrides),
+            outputs={
+                "emit_dense_points": emit_dense_points,
+                "emit_sparse_points": emit_sparse_points,
+            },
+        ),
+        benchmark=BenchmarkConfig(
+            reference={"enabled": reference_enabled},
+            trajectory=TrajectoryBenchmarkConfig(
+                enabled=trajectory_eval_enabled,
+                baseline_source=trajectory_baseline,
+            ),
+            cloud=CloudBenchmarkConfig(enabled=evaluate_cloud),
+            efficiency=EfficiencyBenchmarkConfig(enabled=evaluate_efficiency),
+        ),
+        alignment=AlignmentConfig(
+            ground={"enabled": ground_alignment_enabled},
+        ),
+        visualization=VisualizationConfig(
+            connect_live_viewer=connect_live_viewer,
+            export_viewer_rrd=export_viewer_rrd,
+        ),
+    )
+
+
+def _normalize_backend_payload(model_type: type[TransportModel], payload: BackendConfigPayload) -> BackendConfigPayload:
+    """Coerce strict config payloads back into their declared scalar field types."""
+    normalized = dict(payload)
+    for field_name, field in model_type.model_fields.items():
+        if field_name not in normalized:
+            continue
+        value = normalized[field_name]
+        if isinstance(value, str) and field.annotation is Path:
+            normalized[field_name] = Path(value)
+    return normalized
 
 
 __all__ = [
+    "BackendSpec",
+    "BackendConfigPayload",
+    "build_backend_spec",
+    "build_run_request",
     "DatasetSourceSpec",
-    "BackendConfig",
-    "LiveTransportId",
+    "Mast3rBackendSpec",
+    "MockBackendSpec",
     "PipelineMode",
+    "PlacementPolicy",
     "Record3DLiveSourceSpec",
     "RunRequest",
     "SlamStageConfig",
     "SourceSpec",
-    "StageExecutionMode",
-    "StreamingExecutionConfig",
-    "PipelineExecutionConfig",
+    "StagePlacement",
     "VideoSourceSpec",
+    "VistaBackendSpec",
 ]
