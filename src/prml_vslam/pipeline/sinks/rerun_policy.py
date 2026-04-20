@@ -9,10 +9,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, PacketObserved, RunEvent
+from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, PacketObserved, RunEvent, StageCompleted
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.visualization.rerun import MODEL_RGB_2D_ENTITY_PATH
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +38,7 @@ class RerunLoggingPolicy:
     log_line_strip3d: Callable[..., None]
     log_clear: Callable[..., None]
     log_depth_image: Callable[..., None]
+    log_ground_plane_patch: Callable[..., None]
     log_rgb_image: Callable[..., None]
     log_transform: Callable[..., None]
     frusta_history_window_streaming: int | None = 20
@@ -78,8 +81,17 @@ class RerunLoggingPolicy:
                         self._log_keyframe_visualization(stream, keyframe_notice, payloads=resolved_payloads)
                     case _:
                         return
+            case StageCompleted(stage_key=stage_key, ground_alignment=ground_alignment):
+                if stage_key is StageKey.GROUND_ALIGNMENT:
+                    self._log_ground_alignment(stream, metadata=ground_alignment)
             case _:
                 return
+
+    def _log_ground_alignment(self, stream, *, metadata: GroundAlignmentMetadata | None) -> None:
+        """Log one derived ground-plane overlay when the alignment stage completes."""
+        if metadata is None or not metadata.applied:
+            return
+        self.log_ground_plane_patch(stream, metadata=metadata)
 
     def _log_keyframe_visualization(
         self,

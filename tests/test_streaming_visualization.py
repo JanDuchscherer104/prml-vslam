@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 import uuid
+import warnings
 from pathlib import Path
 
 import numpy as np
+import rerun.dataframe as rdf
 
+from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, FramePacketSummary, PacketObserved
+from prml_vslam.pipeline.contracts.events import (
+    BackendNoticeReceived,
+    FramePacketSummary,
+    PacketObserved,
+    StageCompleted,
+    StageOutcome,
+)
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks import rerun as rerun_sink_module
 from prml_vslam.pipeline.sinks.rerun import RerunEventSink, RerunSinkActor
@@ -30,6 +40,12 @@ class _FakeRecordingStream:
     def reset_time(self) -> None:
         self.timelines.clear()
 
+    def flush(self, blocking: bool = True) -> None:
+        assert blocking is True
+
+    def disconnect(self) -> None:
+        return None
+
     def disable_timeline(self, timeline: str) -> None:  # pragma: no cover - should never be called
         raise AssertionError(f"disable_timeline must not be used in ordinary logging paths: {timeline}")
 
@@ -39,6 +55,44 @@ class _FakeRecordingStream:
 
 def _timeline_state(stream: _FakeRecordingStream) -> tuple[int | None, int | None]:
     return stream.current_timeline("frame"), stream.current_timeline("keyframe")
+
+
+def _ground_alignment_metadata() -> GroundAlignmentMetadata:
+    return GroundAlignmentMetadata(
+        applied=True,
+        confidence=0.9,
+        point_cloud_source="dense_points_ply",
+        ground_plane_world={
+            "normal_xyz_world": (0.0, 1.0, 0.0),
+            "offset_world": 0.0,
+            "inlier_count": 16,
+            "inlier_ratio": 0.8,
+        },
+        visualization={
+            "corners_xyz_world": [
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 1.0),
+                (1.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0),
+            ]
+        },
+    )
+
+
+def _ground_alignment_event(*, event_id: str = "ground", run_id: str | None = None) -> StageCompleted:
+    return StageCompleted(
+        event_id=event_id,
+        run_id=f"run-{uuid.uuid4().hex}" if run_id is None else run_id,
+        ts_ns=1,
+        stage_key=StageKey.GROUND_ALIGNMENT,
+        outcome=StageOutcome(
+            stage_key=StageKey.GROUND_ALIGNMENT,
+            status=StageStatus.COMPLETED,
+            config_hash="cfg",
+            input_fingerprint="inp",
+        ),
+        ground_alignment=_ground_alignment_metadata(),
+    )
 
 
 def test_rerun_sink_is_noop_when_handles_are_unavailable(tmp_path: Path) -> None:
@@ -56,6 +110,105 @@ def test_rerun_sink_is_noop_when_handles_are_unavailable(tmp_path: Path) -> None
     )
 
     sink.observe(event, payloads={})
+
+
+def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_path: Path, monkeypatch) -> None:
+    viewer_path = tmp_path / "viewer.rrd"
+    viewer_path.write_bytes(b"rrd")
+    ground_calls: list[str] = []
+    augment_calls: list[tuple[GroundAlignmentMetadata, Path, str]] = []
+    stream_names = iter(["live", "export"])
+
+    class FakeRecordingStream(_FakeRecordingStream):
+        def __init__(self, *, name: str) -> None:
+            super().__init__()
+            self.name = name
+            self.flushed = False
+            self.disconnected = False
+
+        def flush(self, blocking: bool = True) -> None:
+            assert blocking is True
+            self.flushed = True
+
+        def disconnect(self) -> None:
+            self.disconnected = True
+
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "create_recording_stream",
+        lambda **_: FakeRecordingStream(name=next(stream_names)),
+    )
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_ground_plane_patch",
+        lambda stream, *, metadata, static=True: ground_calls.append(stream.name),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "augment_viewer_recording_with_ground_plane",
+        lambda *, metadata, viewer_recording_path, recording_id: augment_calls.append(
+            (metadata, viewer_recording_path, recording_id)
+        ),
+    )
+
+    sink = RerunEventSink(
+        grpc_url="rerun+http://127.0.0.1:9876/proxy",
+        target_path=viewer_path,
+        recording_id="demo-run",
+    )
+
+    sink.observe(_ground_alignment_event(run_id="demo-run"), payloads={})
+
+    assert ground_calls == ["live"]
+
+    sink.close()
+
+    assert augment_calls == [(_ground_alignment_metadata(), viewer_path, "demo-run")]
+
+
+def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(tmp_path: Path) -> None:
+    viewer_path = tmp_path / "viewer.rrd"
+    sink = RerunEventSink(grpc_url=None, target_path=viewer_path, recording_id="static-ground-plane")
+
+    sink.observe(_ground_alignment_event(run_id="static-ground-plane"), payloads={})
+    sink.close()
+
+    recording = rdf.load_recording(viewer_path)
+    fill_view = recording.view(index="log_tick", contents="/world/alignment/ground_plane/fill")
+    outline_view = recording.view(index="log_tick", contents="/world/alignment/ground_plane/outline")
+
+    fill_static_rows = [batch.to_pydict() for batch in fill_view.select_static()]
+    outline_static_rows = [batch.to_pydict() for batch in outline_view.select_static()]
+
+    assert len(fill_static_rows) == 1
+    assert len(outline_static_rows) == 1
+
+    np.testing.assert_allclose(
+        np.asarray(fill_static_rows[0]["/world/alignment/ground_plane/fill:Mesh3D:vertex_positions"]).reshape(-1, 3),
+        np.asarray(_ground_alignment_metadata().visualization.corners_xyz_world, dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        np.asarray(fill_static_rows[0]["/world/alignment/ground_plane/fill:Mesh3D:triangle_indices"]).reshape(-1, 3),
+        np.asarray([[0, 1, 2], [0, 2, 3]], dtype=np.uint32),
+    )
+    np.testing.assert_allclose(
+        np.asarray(outline_static_rows[0]["/world/alignment/ground_plane/outline:LineStrips3D:strips"]).reshape(-1, 3),
+        np.asarray(
+            [
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 1.0),
+                (1.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+            ],
+            dtype=np.float32,
+        ),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert [batch.to_pydict() for batch in fill_view.select()] == []
+        assert [batch.to_pydict() for batch in outline_view.select()] == []
 
 
 def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkeypatch) -> None:

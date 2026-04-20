@@ -8,9 +8,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.methods.events import KeyframeVisualizationReady
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived
+from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, StageCompleted, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
@@ -41,6 +42,7 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
         log_line_strip3d=lambda *args, **kwargs: None,
         log_clear=lambda *args, **kwargs: None,
         log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda stream, *, entity_path, image_rgb: rgb_calls.append(entity_path),
         log_transform=lambda *args, **kwargs: None,
     )
@@ -95,6 +97,7 @@ def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
         log_line_strip3d=lambda *args, **kwargs: None,
         log_clear=lambda *args, **kwargs: None,
         log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda *args, **kwargs: None,
         log_transform=lambda *args, **kwargs: None,
     )
@@ -199,6 +202,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
 
     layout = sent_blueprints[0].layout
     assert layout.views[0].contents == [
+        "+ world/alignment/**",
         "+ world/live/tracking/**",
         "+ world/live/model/camera/**",
         "- world/live/model/camera/image/depth",
@@ -223,3 +227,43 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert logged_entities[1][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert logged_entities[1][1] == FakeViewCoordinates.RDF
     assert logged_entities[1][2] is True
+
+
+def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_completion() -> None:
+    stream = _FakeRecordingStream()
+    ground_calls: list[GroundAlignmentMetadata] = []
+    metadata = GroundAlignmentMetadata(
+        applied=True,
+        confidence=0.9,
+        point_cloud_source="dense_points_ply",
+        visualization={"corners_xyz_world": [(0.0, 0.0, 0.0)] * 4},
+    )
+    policy = RerunLoggingPolicy(
+        log_pinhole=lambda *args, **kwargs: None,
+        log_pointcloud=lambda *args, **kwargs: None,
+        log_line_strip3d=lambda *args, **kwargs: None,
+        log_clear=lambda *args, **kwargs: None,
+        log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda stream, *, metadata: ground_calls.append(metadata),
+        log_rgb_image=lambda *args, **kwargs: None,
+        log_transform=lambda *args, **kwargs: None,
+    )
+
+    policy.observe(
+        stream,
+        StageCompleted(
+            event_id="1",
+            run_id="run-1",
+            ts_ns=1,
+            stage_key=StageKey.GROUND_ALIGNMENT,
+            outcome=StageOutcome(
+                stage_key=StageKey.GROUND_ALIGNMENT,
+                status=StageStatus.COMPLETED,
+                config_hash="cfg",
+                input_fingerprint="inp",
+            ),
+            ground_alignment=metadata,
+        ),
+    )
+
+    assert ground_calls == [metadata]
