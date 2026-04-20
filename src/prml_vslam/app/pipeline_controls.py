@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 
-from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
@@ -41,7 +41,7 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
 )
 
 PipelinePageStateUpdateValue: TypeAlias = (
-    PipelineSourceId | AdvioPoseSource | Record3DTransportId | int | str | bool | None
+    PipelineSourceId | AdvioPoseSource | AdvioPoseFrameMode | Record3DTransportId | int | str | bool | None
 )
 PipelinePageStateUpdates: TypeAlias = dict[str, PipelinePageStateUpdateValue]
 
@@ -82,7 +82,10 @@ def sync_pipeline_page_state_from_template(
             source_updates = {
                 "source_kind": PipelineSourceId.ADVIO,
                 "advio_sequence_id": advio_sequence_id,
-                "pose_source": request.source.pose_source,
+                "dataset_frame_stride": request.source.frame_stride,
+                "dataset_target_fps": request.source.target_fps,
+                "pose_source": request.source.dataset_serving.pose_source,
+                "pose_frame_mode": request.source.dataset_serving.pose_frame_mode,
                 "respect_video_rotation": request.source.respect_video_rotation,
             }
         case Record3DLiveSourceSpec() as record3d_source:
@@ -128,7 +131,12 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             source = DatasetSourceSpec(
                 dataset_id=DatasetId.ADVIO,
                 sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
-                pose_source=action.pose_source,
+                frame_stride=action.dataset_frame_stride,
+                target_fps=action.dataset_target_fps,
+                dataset_serving=AdvioServingConfig(
+                    pose_source=action.pose_source,
+                    pose_frame_mode=action.pose_frame_mode,
+                ),
                 respect_video_rotation=action.respect_video_rotation,
             )
         else:
@@ -298,6 +306,17 @@ def parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None,
         return None, f"Enter a whole number for `{field_label}` or leave the field blank."
 
 
+def parse_optional_float(*, raw_value: str, field_label: str) -> tuple[float | None, str | None]:
+    """Parse a blankable positive float form field."""
+    if raw_value == "":
+        return None, None
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return None, f"Enter a positive number for `{field_label}` or leave the field blank."
+    return (value, None) if value > 0.0 else (None, f"Enter a positive number for `{field_label}`.")
+
+
 def request_summary_payload(request: RunRequest) -> JsonObject:
     """Return the compact JSON payload rendered by the Pipeline request preview."""
     payload: JsonObject = {
@@ -316,14 +335,18 @@ def request_summary_payload(request: RunRequest) -> JsonObject:
         case DatasetSourceSpec(
             dataset_id=dataset_id,
             sequence_id=sequence_id,
-            pose_source=pose_source,
+            frame_stride=frame_stride,
+            target_fps=target_fps,
+            dataset_serving=dataset_serving,
             respect_video_rotation=respect_video_rotation,
         ):
             payload["source"] = {
                 "kind": "dataset",
                 "dataset_id": dataset_id.value,
                 "sequence_id": sequence_id,
-                "pose_source": pose_source.value,
+                "frame_stride": frame_stride,
+                "target_fps": target_fps,
+                "dataset_serving": None if dataset_serving is None else dataset_serving.model_dump(mode="json"),
                 "respect_video_rotation": respect_video_rotation,
             }
         case _:
@@ -372,6 +395,7 @@ __all__ = [
     "json_dump",
     "load_pipeline_request",
     "parse_optional_int",
+    "parse_optional_float",
     "pipeline_config_label",
     "record3d_source_spec_from_action",
     "request_summary_payload",

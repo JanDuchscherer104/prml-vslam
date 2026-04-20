@@ -15,6 +15,7 @@ from prml_vslam.app.pipeline_controller import (
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
+from prml_vslam.datasets.advio import AdvioServingConfig
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.methods import MethodId
 from prml_vslam.methods.events import KeyframeVisualizationReady
@@ -108,7 +109,10 @@ def test_build_request_from_action_accepts_stringified_vista_paths(tmp_path: Pat
 
     assert error is None
     assert isinstance(request, RunRequest)
-    assert request.source.pose_source.value == "ground_truth"
+    assert request.source.dataset_serving == AdvioServingConfig(
+        pose_source="ground_truth",
+        pose_frame_mode="provider_world",
+    )
     assert request.source.respect_video_rotation is True
     assert request.slam.backend.vista_slam_dir == Path("external/vista-slam")
 
@@ -139,7 +143,11 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
         source=DatasetSourceSpec(
             dataset_id="advio",
             sequence_id="advio-01",
-            pose_source="ground_truth",
+            dataset_serving={
+                "dataset_id": "advio",
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
             respect_video_rotation=True,
         ),
         slam=SlamStageConfig(
@@ -164,6 +172,7 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     assert backend_spec.kind == "vista"
     assert backend_spec.vista_slam_dir == Path("external/vista-slam")
     assert context.state.pipeline.pose_source.value == "ground_truth"
+    assert context.state.pipeline.pose_frame_mode.value == "provider_world"
     assert context.state.pipeline.respect_video_rotation is True
     action = action_from_page_state(context.state.pipeline, Path(".configs/pipelines/vista-full.toml"))
     rebuilt_request, error = build_request_from_action(context, action)
@@ -180,7 +189,11 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
         experiment_name="placeholder",
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+        ),
         slam={"backend": {"kind": "mock"}},
         benchmark={"cloud": {"enabled": True}},
     )
@@ -197,7 +210,11 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
         experiment_name="streaming-demo",
         mode=PipelineMode.STREAMING,
         output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+        ),
         slam=SlamStageConfig(backend={"kind": "vista"}),
     )
     plan = RunPlan(
@@ -287,7 +304,11 @@ def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path
         experiment_name="streaming-demo",
         mode=PipelineMode.STREAMING,
         output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+        ),
         slam=SlamStageConfig(backend={"kind": "vista"}),
     )
     plan = RunPlan(
@@ -324,7 +345,11 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
         experiment_name="streaming-demo",
         mode=PipelineMode.STREAMING,
         output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(dataset_id="advio", sequence_id="advio-01"),
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+        ),
         slam=SlamStageConfig(backend={"kind": "mock"}),
     )
     plan = RunPlan(

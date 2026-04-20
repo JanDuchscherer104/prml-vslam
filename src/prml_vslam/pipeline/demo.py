@@ -1,11 +1,12 @@
-"""Shared helpers for the bounded ADVIO pipeline demo."""
+"""Shared helpers for the bounded dataset pipeline demo."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.datasets.advio import AdvioDatasetService, AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioDatasetService, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
@@ -65,7 +66,10 @@ def build_advio_demo_request(
     mode: PipelineMode,
     method: MethodId,
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
+    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD,
     respect_video_rotation: bool = False,
+    dataset_frame_stride: int = 1,
+    dataset_target_fps: float | None = None,
 ) -> RunRequest:
     """Build the canonical bounded ADVIO demo request shared by app and CLI."""
     return build_run_request(
@@ -75,7 +79,12 @@ def build_advio_demo_request(
         source=DatasetSourceSpec(
             dataset_id=DatasetId.ADVIO,
             sequence_id=sequence_id,
-            pose_source=pose_source,
+            frame_stride=dataset_frame_stride,
+            target_fps=dataset_target_fps,
+            dataset_serving=AdvioServingConfig(
+                pose_source=pose_source,
+                pose_frame_mode=pose_frame_mode,
+            ),
             respect_video_rotation=respect_video_rotation,
         ),
         method=method,
@@ -107,8 +116,22 @@ def build_runtime_source_from_request(
             service = AdvioDatasetService(path_config)
             source = service.build_streaming_source(
                 sequence_id=service.resolve_sequence_id(sequence_id),
-                pose_source=request.source.pose_source,
+                frame_selection=request.source,
+                dataset_serving=request.source.dataset_serving,
                 respect_video_rotation=request.source.respect_video_rotation,
+            )
+            return (
+                source
+                if request.slam.backend.max_frames is None
+                else _CappedStreamingSource(source, max_frames=request.slam.backend.max_frames)
+            )
+        case DatasetSourceSpec(dataset_id=DatasetId.TUM_RGBD, sequence_id=sequence_id):
+            service = TumRgbdDatasetService(path_config)
+            source = service.build_streaming_source(
+                sequence_id=service.resolve_sequence_id(sequence_id),
+                frame_selection=request.source,
+                pose_source=TumRgbdPoseSource.GROUND_TRUTH,
+                include_depth=True,
             )
             return (
                 source
@@ -154,6 +177,8 @@ def persist_advio_demo_request(
     sequence_id: str,
     mode: PipelineMode,
     method: MethodId,
+    dataset_frame_stride: int = 1,
+    dataset_target_fps: float | None = None,
     config_path: str | Path | None = None,
 ) -> Path:
     """Persist the canonical ADVIO demo request under `.configs/pipelines/` by default."""
@@ -162,6 +187,8 @@ def persist_advio_demo_request(
         sequence_id=sequence_id,
         mode=mode,
         method=method,
+        dataset_frame_stride=dataset_frame_stride,
+        dataset_target_fps=dataset_target_fps,
     )
     return save_run_request_toml(
         path_config=path_config,

@@ -1,188 +1,141 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs
+from prml_vslam.datasets.contracts import DatasetServingConfig, FrameSelectionConfig
 from prml_vslam.io import Cv2ReplayMode
-from prml_vslam.protocols import FramePacketStream
-from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
-from prml_vslam.utils import BaseConfig, Console, FactoryConfig, PathConfig
+from prml_vslam.utils import BaseConfig
 
+from ..sources import DatasetSequenceSource, DatasetServiceBase, open_dataset_sequence_stream
 from .advio_download import AdvioDownloadManager
 from .advio_layout import load_advio_catalog
+from .advio_loading import load_advio_frame_timestamps_ns
 from .advio_models import (
-    AdvioCatalog,
     AdvioDatasetSummary,
-    AdvioLocalSceneStatus,
-    AdvioPoseSource,
     AdvioSequenceConfig,
 )
-from .advio_sequence import AdvioOfflineSample, AdvioSequence
-
-if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from .advio_sequence import AdvioSequence
 
 
-class AdvioOfflineSequenceSource(BenchmarkInputSource):
-    """ADVIO-backed offline source used by pipeline-owned batch runs."""
-
-    def __init__(self, *, service: AdvioDatasetService, sequence_id: int) -> None:
-        self._service = service
-        self._sequence_id = sequence_id
-
-    @property
-    def label(self) -> str:
-        """Return the human-readable ADVIO scene label."""
-        return self._service.scene(self._sequence_id).display_name
-
-    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
-        """Materialize the normalized sequence boundary for one offline run."""
-        return self._service.build_sequence_manifest(sequence_id=self._sequence_id, output_dir=output_dir)
-
-    def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
-        """Materialize benchmark-side inputs for one offline run."""
-        return self._service.build_benchmark_inputs(sequence_id=self._sequence_id, output_dir=output_dir)
-
-
-class AdvioStreamingSourceConfig(BaseConfig, FactoryConfig["AdvioStreamingSequenceSource"]):
+class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
     """Config-backed ADVIO streaming source for process-backed execution."""
 
     dataset_root: Path
-    """Resolved ADVIO dataset root."""
-
     sequence_id: int
-    """ADVIO sequence id."""
-
-    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
-    """Pose source injected into replay packets."""
-
+    dataset_serving: DatasetServingConfig
     respect_video_rotation: bool = False
-    """Whether replay should honor video rotation metadata."""
 
-    frame_stride: int = 1
-    """Frame subsampling stride."""
+    def setup_target(self) -> DatasetSequenceSource:
+        """Build the minimal config-backed ADVIO streaming adapter."""
 
-    @property
-    def target_type(self) -> type[AdvioStreamingSequenceSource]:
-        """Runtime source type."""
-        return AdvioStreamingSequenceSource
+        def sequence(sequence_id: int) -> AdvioSequence:
+            return AdvioSequenceConfig(dataset_root=self.dataset_root, sequence_id=sequence_id).setup_target()
 
+        def stream(
+            sequence_id: int,
+            loop: bool,
+            replay_mode: Cv2ReplayMode,
+            frame_selection: FrameSelectionConfig,
+        ):
+            advio_sequence = sequence(sequence_id)
+            return open_dataset_sequence_stream(
+                sequence=advio_sequence,
+                timestamps_ns=load_advio_frame_timestamps_ns(advio_sequence.paths.frame_timestamps_path).tolist(),
+                frame_selection=frame_selection,
+                loop=loop,
+                replay_mode=replay_mode,
+                dataset_serving=self.dataset_serving,
+                respect_video_rotation=self.respect_video_rotation,
+            )
 
-class AdvioStreamingSequenceSource(StreamingSequenceSource, BenchmarkInputSource):
-    """ADVIO-backed streaming source used by pipeline-owned replay sessions."""
-
-    def __init__(self, config: AdvioStreamingSourceConfig) -> None:
-        self.config = config
-
-    @property
-    def label(self) -> str:
-        """Return the human-readable ADVIO scene label."""
-        return self._sequence().scene.display_name
-
-    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
-        """Materialize the normalized sequence boundary for one replay run."""
-        return self._sequence().to_sequence_manifest(output_dir=output_dir)
-
-    def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
-        """Materialize benchmark-side inputs for one replay run."""
-        return self._sequence().to_benchmark_inputs(output_dir=output_dir)
-
-    def open_stream(self, *, loop: bool) -> FramePacketStream:
-        """Open the replay stream consumed by the pipeline session."""
-        return self._sequence().open_stream(
-            pose_source=self.config.pose_source,
-            stride=self.config.frame_stride,
-            respect_video_rotation=self.config.respect_video_rotation,
-            loop=loop,
-            replay_mode=Cv2ReplayMode.REALTIME,
+        return DatasetSequenceSource(
+            sequence_id=self.sequence_id,
+            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            label=lambda sequence_id: sequence(sequence_id).scene.display_name,
+            manifest=lambda sequence_id, output_dir, frame_selection: sequence(sequence_id).to_sequence_manifest(
+                output_dir=output_dir,
+                frame_selection=frame_selection,
+                dataset_serving=self.dataset_serving,
+            ),
+            benchmark=lambda sequence_id, output_dir: sequence(sequence_id).to_benchmark_inputs(output_dir=output_dir),
+            stream=stream,
         )
 
-    def _sequence(self) -> AdvioSequence:
-        return AdvioSequenceConfig(
-            dataset_root=self.config.dataset_root, sequence_id=self.config.sequence_id
-        ).setup_target()
 
-
-class AdvioDatasetService(AdvioDownloadManager):
+class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
     """Dataset service for ADVIO catalog access, download, and replay helpers."""
 
-    def __init__(self, path_config: PathConfig, *, catalog: AdvioCatalog | None = None) -> None:
-        resolved_catalog = load_advio_catalog() if catalog is None else catalog
-        super().__init__(
-            path_config.resolve_dataset_dir(resolved_catalog.dataset_id),
-            catalog=resolved_catalog,
-            console=Console(__name__).child(self.__class__.__name__),
-        )
-
-    def summarize(self, statuses: list[AdvioLocalSceneStatus] | None = None) -> AdvioDatasetSummary:
-        statuses = self.local_scene_statuses() if statuses is None else statuses
-        return AdvioDatasetSummary(
-            total_scene_count=len(statuses),
-            local_scene_count=sum(status.sequence_dir is not None for status in statuses),
-            replay_ready_scene_count=sum(status.replay_ready for status in statuses),
-            offline_ready_scene_count=sum(status.offline_ready for status in statuses),
-            full_scene_count=sum(status.full_ready for status in statuses),
-            cached_archive_count=sum(status.archive_path is not None for status in statuses),
-            total_remote_archive_bytes=sum(scene.archive_size_bytes for scene in self.catalog.scenes),
-        )
-
-    def list_local_sequence_ids(self) -> list[int]:
-        return [status.scene.sequence_id for status in self.local_scene_statuses() if status.offline_ready]
-
-    def load_local_sample(self, sequence_id: int) -> AdvioOfflineSample:
-        return self._sequence(sequence_id).load_offline_sample()
-
-    def build_sequence_manifest(self, *, sequence_id: int, output_dir: Path | None = None) -> SequenceManifest:
-        return self._sequence(sequence_id).to_sequence_manifest(output_dir=output_dir)
-
-    def build_benchmark_inputs(self, *, sequence_id: int, output_dir: Path | None = None) -> PreparedBenchmarkInputs:
-        return self._sequence(sequence_id).to_benchmark_inputs(output_dir=output_dir)
+    catalog_loader = staticmethod(load_advio_catalog)
+    summary_model = AdvioDatasetSummary
+    sequence_config_model = AdvioSequenceConfig
+    sequence_model = AdvioSequence
 
     def resolve_sequence_id(self, sequence_slug: str) -> int:
-        """Resolve one public sequence slug into the canonical numeric ADVIO id."""
         if sequence_slug.startswith("advio-"):
             _, suffix = sequence_slug.split("-", maxsplit=1)
             if suffix.isdigit():
                 return int(suffix)
         raise RuntimeError(f"ADVIO sequence slug '{sequence_slug}' could not be resolved to a numeric scene id.")
 
-    def build_offline_source(self, *, sequence_id: int) -> AdvioOfflineSequenceSource:
-        """Return a source compatible with pipeline-owned offline runs."""
-        return AdvioOfflineSequenceSource(service=self, sequence_id=sequence_id)
+    def _preview_timestamps_ns(self, sequence: AdvioSequence) -> list[int]:
+        return load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path).tolist()
+
+    def build_offline_source(
+        self,
+        *,
+        sequence_id: int,
+        frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: DatasetServingConfig | None = None,
+    ) -> DatasetSequenceSource:
+        selection = frame_selection or FrameSelectionConfig()
+        sequence = self._sequence(sequence_id)
+        return DatasetSequenceSource(
+            sequence_id=sequence_id,
+            frame_selection=selection,
+            label=lambda value: self.scene(value).display_name,
+            manifest=lambda _value, output_dir, manifest_selection: sequence.to_sequence_manifest(
+                output_dir=output_dir,
+                frame_selection=manifest_selection,
+                dataset_serving=dataset_serving,
+            ),
+            benchmark=lambda _value, output_dir: sequence.to_benchmark_inputs(output_dir=output_dir),
+        )
 
     def build_streaming_source(
         self,
         *,
         sequence_id: int,
-        pose_source: AdvioPoseSource,
-        respect_video_rotation: bool,
-    ) -> StreamingSequenceSource:
-        """Return a replay source compatible with pipeline-owned streaming sessions."""
+        frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: DatasetServingConfig,
+        respect_video_rotation: bool = False,
+    ) -> DatasetSequenceSource:
+        selection = frame_selection or FrameSelectionConfig()
         return AdvioStreamingSourceConfig(
             dataset_root=self.dataset_root,
             sequence_id=sequence_id,
-            pose_source=pose_source,
+            dataset_serving=dataset_serving,
             respect_video_rotation=respect_video_rotation,
+            frame_stride=selection.frame_stride,
+            target_fps=selection.target_fps,
         ).setup_target()
 
     def open_preview_stream(
         self,
         *,
         sequence_id: int,
-        pose_source: AdvioPoseSource,
-        respect_video_rotation: bool,
+        frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: DatasetServingConfig,
         loop: bool = True,
         replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
-    ) -> FramePacketStream:
-        return self._sequence(sequence_id).open_stream(
-            pose_source=pose_source,
+        respect_video_rotation: bool = False,
+    ):
+        sequence = self._sequence(sequence_id)
+        return open_dataset_sequence_stream(
+            sequence=sequence,
+            timestamps_ns=load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path).tolist(),
+            frame_selection=frame_selection or FrameSelectionConfig(),
             loop=loop,
             replay_mode=replay_mode,
+            dataset_serving=dataset_serving,
             respect_video_rotation=respect_video_rotation,
-        )
-
-    def _sequence(self, sequence_id: int) -> AdvioSequence:
-        return AdvioSequence(
-            config=AdvioSequenceConfig(dataset_root=self.dataset_root, sequence_id=sequence_id), catalog=self.catalog
         )

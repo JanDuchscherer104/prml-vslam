@@ -170,6 +170,10 @@ def resolve_ground_truth_csv(sequence_dir: Path, scene: AdvioSceneMetadata) -> P
     return _require_path(sequence_dir, scene, _GROUND_TRUTH_POSE, "ground-truth pose CSV")
 
 
+def resolve_optional_fixpoints_csv(sequence_dir: Path, scene: AdvioSceneMetadata) -> Path | None:
+    return _GROUND_TRUTH_FIXPOINTS.resolve(sequence_dir, scene)
+
+
 def resolve_optional_arkit_csv(sequence_dir: Path, scene: AdvioSceneMetadata) -> Path | None:
     return _IPHONE_ARKIT.resolve(sequence_dir, scene)
 

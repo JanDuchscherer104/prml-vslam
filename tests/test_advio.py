@@ -19,16 +19,19 @@ from prml_vslam.datasets.advio import (
     AdvioEnvironment,
     AdvioModality,
     AdvioPeopleLevel,
+    AdvioPoseFrameMode,
     AdvioPoseSource,
     AdvioSceneMetadata,
     AdvioSequence,
     AdvioSequenceConfig,
+    AdvioServingConfig,
     AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
 )
 from prml_vslam.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
 from prml_vslam.datasets.advio.advio_loading import load_advio_calibration
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
+from prml_vslam.io.cv2_producer import Cv2FramePayload, Cv2ProducerConfig
 from prml_vslam.utils import PathConfig
 
 
@@ -68,9 +71,16 @@ cameras:
 
 
 def _write_pose_csv(path: Path) -> None:
+    _write_pose_csv_rows(
+        path,
+        rows=((0.0, 1.0, 2.0, 3.0), (0.1, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)),
+    )
+
+
+def _write_pose_csv_rows(path: Path, *, rows: tuple[tuple[float, float, float, float], ...]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "0.0,1.0,2.0,3.0,1.0,0.0,0.0,0.0\n0.1,1.5,2.5,3.5,1.0,0.0,0.0,0.0\n0.2,2.0,3.0,4.0,1.0,0.0,0.0,0.0\n",
+        "\n".join(f"{t},{x},{y},{z},1.0,0.0,0.0,0.0" for t, x, y, z in rows) + "\n",
         encoding="utf-8",
     )
 
@@ -302,6 +312,32 @@ def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path
     assert packet_0.provenance.pose_source == AdvioPoseSource.GROUND_TRUTH.value
 
 
+def test_cv2_frame_producer_emits_optional_payloads(tmp_path: Path) -> None:
+    video_path = tmp_path / "frames.mov"
+    _write_video(video_path)
+    producer = Cv2FrameProducer(
+        Cv2ProducerConfig(
+            video_path=video_path,
+            payload_provider=lambda frame_index, timestamp_ns: Cv2FramePayload(
+                depth=np.full((2, 2), frame_index + 1, dtype=np.float32),
+                confidence=np.full((2, 2), timestamp_ns / 1e9, dtype=np.float32),
+                pointmap=np.full((2, 2, 3), frame_index, dtype=np.float32),
+            ),
+        )
+    )
+
+    producer.connect()
+    packet = producer.wait_for_packet()
+    producer.disconnect()
+
+    assert packet.depth is not None
+    assert packet.confidence is not None
+    assert packet.pointmap is not None
+    assert packet.depth.shape == (2, 2)
+    assert packet.confidence.shape == (2, 2)
+    assert packet.pointmap.shape == (2, 2, 3)
+
+
 def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
     (sequence_dir / "pixel" / "arcore.csv").unlink()
@@ -403,13 +439,27 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     sequence_dir = _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
-    manifest = sequence.to_sequence_manifest()
+    manifest = sequence.to_sequence_manifest(
+        dataset_serving=AdvioServingConfig(
+            pose_source=AdvioPoseSource.ARCORE,
+            pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
+        )
+    )
     benchmark_inputs = sequence.to_benchmark_inputs()
 
     assert manifest.sequence_id == "advio-15"
+    assert manifest.dataset_id == "advio"
+    assert manifest.dataset_serving is not None
+    assert manifest.dataset_serving.pose_source is AdvioPoseSource.ARCORE
     assert manifest.video_path == sequence_dir / "iphone" / "frames.mov"
     assert manifest.timestamps_path == sequence_dir / "iphone" / "frames.csv"
     assert manifest.intrinsics_path == tmp_path / "calibration" / "iphone-03.yaml"
+    assert manifest.advio is not None
+    assert manifest.advio.fixpoints_csv_path == sequence_dir / "ground-truth" / "fixpoints.csv"
+    assert manifest.advio.pose_refs.selected_pose_csv_path == sequence_dir / "pixel" / "arcore.csv"
+    assert manifest.advio.pose_refs.tango_raw_csv_path == sequence_dir / "tango" / "raw.csv"
+    assert manifest.advio.pose_refs.tango_area_learning_csv_path == sequence_dir / "tango" / "area-learning.csv"
+    assert manifest.advio.T_cam_imu.tx == 0.01
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
         "arcore",
@@ -441,7 +491,7 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     source = AdvioStreamingSourceConfig(
         dataset_root=tmp_path,
         sequence_id=15,
-        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.GROUND_TRUTH),
         frame_stride=1,
     ).setup_target()
 
@@ -453,6 +503,77 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     stream.disconnect()
     assert packet.pose is not None
     assert packet.pose.tx == 1.0
+
+
+def test_advio_open_stream_supports_tango_raw_provider_and_pointmap_payload(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path)
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    stream = sequence.open_stream(
+        dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.TANGO_RAW),
+        loop=False,
+        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+    )
+
+    stream.connect()
+    packet = stream.wait_for_packet()
+    stream.disconnect()
+
+    assert packet.pose is not None
+    assert packet.pointmap is not None
+    assert packet.pointmap.shape[2] == 3
+    assert packet.provenance.pose_source == AdvioPoseSource.TANGO_RAW.value
+
+
+def test_advio_reference_world_and_local_first_pose_modes_transform_provider_poses(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    _write_pose_csv_rows(
+        sequence_dir / "pixel" / "arcore.csv",
+        rows=((0.0, 10.0, 20.0, 30.0), (0.1, 10.5, 20.5, 30.5), (0.2, 11.0, 21.0, 31.0)),
+    )
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    provider_world = sequence.open_stream(
+        dataset_serving=AdvioServingConfig(
+            pose_source=AdvioPoseSource.ARCORE,
+            pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+        ),
+        loop=False,
+        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+    )
+    local_first = sequence.open_stream(
+        dataset_serving=AdvioServingConfig(
+            pose_source=AdvioPoseSource.ARCORE,
+            pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE,
+        ),
+        loop=False,
+        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+    )
+    reference_world = sequence.open_stream(
+        dataset_serving=AdvioServingConfig(
+            pose_source=AdvioPoseSource.ARCORE,
+            pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
+        ),
+        loop=False,
+        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+    )
+
+    provider_world.connect()
+    provider_packet = provider_world.wait_for_packet()
+    provider_world.disconnect()
+    local_first.connect()
+    local_packet = local_first.wait_for_packet()
+    local_first.disconnect()
+    reference_world.connect()
+    reference_packet = reference_world.wait_for_packet()
+    reference_world.disconnect()
+
+    assert provider_packet.pose is not None
+    assert local_packet.pose is not None
+    assert reference_packet.pose is not None
+    assert provider_packet.pose.tx == 10.0
+    assert local_packet.pose.tx == pytest.approx(0.0, abs=1e-6)
+    assert reference_packet.pose.tx == pytest.approx(1.0, abs=1e-3)
 
 
 def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> None:

@@ -6,6 +6,11 @@ output_dir      = ".artifacts"
 dataset_id  = "advio"
 sequence_id = "advio-15"
 
+[source.dataset_serving]
+dataset_id = "advio"
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
+
 [slam]
     [slam.outputs]
     emit_dense_points  = true
