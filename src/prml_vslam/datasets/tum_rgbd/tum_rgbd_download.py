@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import tarfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
+from prml_vslam.datasets.download_helpers import modalities_present, normalize_archive_member, relative_sequence_path
 from prml_vslam.datasets.fetch import DatasetFetchHelper
 from prml_vslam.utils import Console
 
@@ -44,8 +45,8 @@ class TumRgbdDownloadManager:
                 sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_id),
                 local_modalities=(modalities := self._local_modalities(scene)),
                 archive_path=self._existing_archive_path(scene),
-                replay_ready=_modalities_present(modalities, TumRgbdDownloadPreset.STREAMING.modalities),
-                offline_ready=_modalities_present(modalities, TumRgbdDownloadPreset.OFFLINE.modalities),
+                replay_ready=modalities_present(modalities, TumRgbdDownloadPreset.STREAMING.modalities),
+                offline_ready=modalities_present(modalities, TumRgbdDownloadPreset.OFFLINE.modalities),
             )
             for scene in self.catalog.scenes
         ]
@@ -108,8 +109,10 @@ class TumRgbdDownloadManager:
             for member in archive.getmembers():
                 if not member.isfile():
                     continue
-                normalized = _normalize_archive_member(member.name)
-                relative_path = _relative_sequence_path(normalized, scene.folder_name)
+                normalized = normalize_archive_member(member.name, invalid_path_label="TUM RGB-D")
+                if normalized is None:
+                    continue
+                relative_path = relative_sequence_path(normalized, scene.folder_name)
                 if relative_path is None or not archive_member_matches(relative_path, modalities):
                     continue
                 matched_members += 1
@@ -123,27 +126,6 @@ class TumRgbdDownloadManager:
             msg = f"Archive {archive_path} did not contain any members for requested modalities: {requested}"
             raise ValueError(msg)
         return written_paths
-
-
-def _modalities_present(local_modalities: list[TumRgbdModality], required: tuple[TumRgbdModality, ...]) -> bool:
-    available = set(local_modalities)
-    return all(modality in available for modality in required)
-
-
-def _normalize_archive_member(member_name: str) -> tuple[str, ...]:
-    parts = tuple(part for part in PurePosixPath(member_name).parts if part not in {"", "."})
-    if not parts or any(part == ".." for part in parts):
-        raise ValueError(f"Unsafe TUM RGB-D archive member path: {member_name}")
-    return parts
-
-
-def _relative_sequence_path(normalized_parts: tuple[str, ...], folder_name: str) -> PurePosixPath | None:
-    root_parts = (
-        normalized_parts[1:] if len(normalized_parts) >= 2 and normalized_parts[0] == "data" else normalized_parts
-    )
-    if not root_parts or root_parts[0] != folder_name:
-        return None
-    return PurePosixPath(*root_parts[1:])
 
 
 def _safe_extract_member(archive: tarfile.TarFile, member: tarfile.TarInfo, target_path: Path) -> None:
