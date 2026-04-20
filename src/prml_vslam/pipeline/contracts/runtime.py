@@ -11,17 +11,16 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from prml_vslam.alignment.contracts import GroundAlignmentMetadata
-from prml_vslam.benchmark import PreparedBenchmarkInputs
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageProgress, StageStatus
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
-from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
 # TODO: this is a dto / data model that should be defined in a shared model module! given that it contains only transport-model definitions!

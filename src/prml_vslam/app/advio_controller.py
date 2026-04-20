@@ -5,41 +5,23 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 from prml_vslam.datasets.advio import (
-    AdvioDatasetSummary,
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
     AdvioOfflineSample,
-    AdvioPoseSource,
     AdvioServingConfig,
 )
-from prml_vslam.utils import BaseData
 
-from .models import ACTIVE_PREVIEW_STREAM_STATES, AdvioPreviewSnapshot
+from .models import (
+    ACTIVE_PREVIEW_STREAM_STATES,
+    AdvioDownloadFormData,
+    AdvioPageData,
+    AdvioPreviewFormData,
+    AdvioPreviewSnapshot,
+)
 from .state import save_model_updates
 
 if TYPE_CHECKING:
     from .bootstrap import AppContext
-
-
-class AdvioDownloadFormData(BaseData):
-    request: AdvioDownloadRequest
-    submitted: bool = False
-
-
-class AdvioPreviewFormData(BaseData):
-    sequence_id: int
-    pose_source: AdvioPoseSource
-    respect_video_rotation: bool = False
-    start_requested: bool = False
-    stop_requested: bool = False
-
-
-class AdvioPageData(BaseData):
-    summary: AdvioDatasetSummary
-    statuses: list[AdvioLocalSceneStatus]
-    rows: list[dict[str, object]]
-    notice_level: Literal["error", "warning", "success"] | None = None
-    notice_message: str = ""
 
 
 def build_advio_page_data(context: AppContext, form: AdvioDownloadFormData) -> AdvioPageData:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.eval.contracts import (
     EvaluationArtifact,
     MetricStats,
@@ -17,11 +17,11 @@ from prml_vslam.eval.contracts import (
 )
 from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.interfaces import FrameTransform
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, ReferenceTrajectoryRef, SequenceManifest
+from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 

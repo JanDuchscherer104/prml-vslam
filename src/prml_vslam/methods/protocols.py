@@ -12,13 +12,11 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.slam import SlamArtifacts, SlamSessionInit, SlamUpdate
 from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.session_init import SlamSessionInit
-from prml_vslam.methods.updates import SlamUpdate
-from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 
 #  TODO: Why do we need both SlamSession and SlamBackend?

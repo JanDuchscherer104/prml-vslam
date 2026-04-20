@@ -1,7 +1,7 @@
-"""Transport-safe backend event contracts.
+"""Translate method-owned live updates into pipeline-facing backend notices.
 
 This module exists because the method layer and the pipeline layer care about
-different kinds of runtime payloads. Method wrappers naturally emit rich
+different runtime payloads. Method wrappers naturally emit rich
 backend-facing :class:`SlamUpdate` objects that may include NumPy arrays,
 backend-local semantics, and live visualization payloads. The pipeline,
 however, needs a smaller transport-safe vocabulary that can be embedded inside
@@ -16,115 +16,16 @@ module is the explicit translation boundary between those two worlds.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
-
-from pydantic import Field
-
-from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-from prml_vslam.methods.updates import SlamUpdate
+from prml_vslam.interfaces.slam import (
+    BackendEvent,
+    BackendWarning,
+    KeyframeAccepted,
+    KeyframeVisualizationReady,
+    MapStatsUpdated,
+    PoseEstimated,
+    SlamUpdate,
+)
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
-from prml_vslam.pipeline.contracts.transport import TransportModel
-
-
-class PoseEstimated(TransportModel):
-    """Report one canonical pose estimate emitted by a streaming backend."""
-
-    kind: Literal["pose.estimated"] = "pose.estimated"
-    seq: int
-    timestamp_ns: int
-    source_seq: int | None = None
-    source_timestamp_ns: int | None = None
-    pose: FrameTransform
-    pose_updated: bool = True
-
-
-class KeyframeAccepted(TransportModel):
-    """Report that the backend accepted one frame as a keyframe."""
-
-    kind: Literal["keyframe.accepted"] = "keyframe.accepted"
-    seq: int
-    timestamp_ns: int
-    keyframe_index: int | None = None
-    accepted_keyframes: int | None = None
-    backend_fps: float | None = None
-
-
-class KeyframeVisualizationReady(TransportModel):
-    """Expose transient visualization payload handles for one accepted keyframe.
-
-    The method layer may have arrays for previews, images, depth, or pointmaps
-    in hand, but the pipeline should only see opaque handles plus the minimal
-    metadata needed to log or project them safely.
-    """
-
-    kind: Literal["keyframe.visualization_ready"] = "keyframe.visualization_ready"
-    seq: int
-    timestamp_ns: int
-    source_seq: int | None = None
-    source_timestamp_ns: int | None = None
-    keyframe_index: int
-    pose: FrameTransform
-    preview: PreviewHandle | None = None
-    image: ArrayHandle | None = None
-    depth: ArrayHandle | None = None
-    pointmap: ArrayHandle | None = None
-    camera_intrinsics: CameraIntrinsics | None = None
-
-
-class MapStatsUpdated(TransportModel):
-    """Report current map-size counters from a streaming backend.
-
-    This keeps lightweight progress telemetry in the event stream even when the
-    durable output boundary remains the final :class:`SlamArtifacts` bundle.
-    """
-
-    kind: Literal["map.stats"] = "map.stats"
-    seq: int
-    timestamp_ns: int
-    num_sparse_points: int = 0
-    num_dense_points: int = 0
-
-
-class BackendWarning(TransportModel):
-    """Carry a non-fatal backend warning through the transport-safe event layer."""
-
-    kind: Literal["backend.warning"] = "backend.warning"
-    message: str
-    seq: int | None = None
-    timestamp_ns: int | None = None
-
-
-class BackendError(TransportModel):
-    """Carry a fatal or actionable backend error through the event layer."""
-
-    kind: Literal["backend.error"] = "backend.error"
-    message: str
-    seq: int | None = None
-    timestamp_ns: int | None = None
-
-
-class SessionClosed(TransportModel):
-    """Record that a streaming backend session has closed.
-
-    This is a live transport notice rather than the durable end-of-run result.
-    The durable boundary is still the final :class:`SlamArtifacts` bundle that
-    reaches the pipeline through stage completion.
-    """
-
-    kind: Literal["session.closed"] = "session.closed"
-    artifact_keys: list[str] = Field(default_factory=list)
-
-
-BackendEvent = Annotated[
-    PoseEstimated
-    | KeyframeAccepted
-    | KeyframeVisualizationReady
-    | MapStatsUpdated
-    | BackendWarning
-    | BackendError
-    | SessionClosed,
-    Field(discriminator="kind"),
-]
 
 
 def translate_slam_update(
@@ -229,14 +130,4 @@ def translate_slam_update(
     return events
 
 
-__all__ = [
-    "BackendError",
-    "BackendEvent",
-    "BackendWarning",
-    "KeyframeAccepted",
-    "KeyframeVisualizationReady",
-    "MapStatsUpdated",
-    "PoseEstimated",
-    "SessionClosed",
-    "translate_slam_update",
-]
+__all__ = ["translate_slam_update"]

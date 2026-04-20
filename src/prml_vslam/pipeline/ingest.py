@@ -11,8 +11,8 @@ import json
 import shutil
 from pathlib import Path
 
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, PipelineMode, RunRequest, VideoSourceSpec
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.utils.video_frames import extract_video_frames
 

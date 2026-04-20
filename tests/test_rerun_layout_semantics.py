@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.interfaces import FrameTransform
-from prml_vslam.methods.events import KeyframeVisualizationReady
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.slam import KeyframeVisualizationReady
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, StageCompleted, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.stages import StageKey

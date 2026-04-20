@@ -14,11 +14,34 @@ import prml_vslam.pipeline as pipeline_package
 
 def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
     assert interfaces_package.__all__ == [
+        "AdvioManifestAssets",
+        "AdvioRawPoseRefs",
+        "ArtifactRef",
+        "BackendError",
+        "BackendEvent",
+        "BackendWarning",
         "CameraIntrinsics",
-        "FrameTransform",
         "FramePacket",
         "FramePacketProvenance",
+        "FrameTransform",
+        "GroundAlignmentMetadata",
+        "GroundPlaneModel",
+        "GroundPlaneVisualizationHint",
+        "KeyframeAccepted",
+        "KeyframeVisualizationReady",
+        "MapStatsUpdated",
+        "PoseEstimated",
+        "PreparedBenchmarkInputs",
         "Record3DTransportId",
+        "ReferenceCloudRef",
+        "ReferencePointCloudSequenceRef",
+        "ReferenceTrajectoryRef",
+        "SequenceManifest",
+        "SessionClosed",
+        "SlamArtifacts",
+        "SlamSessionInit",
+        "SlamUpdate",
+        "VisualizationArtifacts",
     ]
     assert not hasattr(interfaces_package, "SE3Pose")
 
@@ -39,9 +62,7 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
         "PipelineMode",
         "RunPlan",
         "RunRequest",
-        "SequenceManifest",
         "RunSummary",
-        "SlamArtifacts",
     ]
     assert not hasattr(pipeline_package, "PipelineSessionService")
     assert not hasattr(pipeline_package, "PipelineSessionSnapshot")

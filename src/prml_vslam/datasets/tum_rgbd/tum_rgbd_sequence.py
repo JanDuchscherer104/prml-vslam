@@ -1,11 +1,3 @@
-"""TUM RGB-D sequence normalization and replay entry points.
-
-This module owns the high-level TUM RGB-D sequence object that callers use to
-load offline samples, prepare normalized manifests and benchmark inputs, and
-open runtime replay streams. It is the main TUM RGB-D click-through surface
-after the catalog models.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,8 +5,9 @@ from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.datasets.contracts import FrameSelectionConfig
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, ReferenceTrajectoryRef
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
@@ -24,12 +17,10 @@ from .tum_rgbd_models import TumRgbdCatalog, TumRgbdPoseSource, TumRgbdSequenceC
 from .tum_rgbd_replay_adapter import open_tum_rgbd_stream
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+    from prml_vslam.interfaces.ingest import SequenceManifest
 
 
 class TumRgbdSequencePaths(BaseData):
-    """Resolve the local file layout for one TUM RGB-D sequence."""
-
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     config: TumRgbdSequenceConfig
@@ -40,7 +31,6 @@ class TumRgbdSequencePaths(BaseData):
 
     @classmethod
     def resolve(cls, config: TumRgbdSequenceConfig, *, catalog: TumRgbdCatalog | None = None) -> TumRgbdSequencePaths:
-        """Resolve and validate the local TUM RGB-D file layout for one scene."""
         scene = tum_rgbd_layout.scene_for_sequence_id(
             catalog or tum_rgbd_layout.load_tum_rgbd_catalog(), config.sequence_id
         )
@@ -61,14 +51,11 @@ class TumRgbdSequencePaths(BaseData):
 
 
 class TumRgbdSequence(BaseData):
-    """Own one TUM RGB-D sequence across loading, replay, and normalization paths."""
-
     config: TumRgbdSequenceConfig
     catalog: TumRgbdCatalog | None = None
 
     @property
     def scene(self):
-        """Return the committed scene metadata for this sequence id."""
         return tum_rgbd_layout.scene_for_sequence_id(
             self.catalog or tum_rgbd_layout.load_tum_rgbd_catalog(),
             self.config.sequence_id,
@@ -76,11 +63,9 @@ class TumRgbdSequence(BaseData):
 
     @property
     def paths(self) -> TumRgbdSequencePaths:
-        """Return the validated local file layout for this sequence."""
         return TumRgbdSequencePaths.resolve(self.config, catalog=self.catalog)
 
     def load_offline_sample(self) -> tum_rgbd_loading.TumRgbdOfflineSample:
-        """Load the main offline sample surfaces for inspection or tests."""
         paths = self.paths
         return tum_rgbd_loading.TumRgbdOfflineSample(
             sequence_id=self.scene.sequence_id,
@@ -97,8 +82,7 @@ class TumRgbdSequence(BaseData):
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
     ) -> SequenceManifest:
-        """Materialize the normalized offline manifest for this sequence."""
-        from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+        from prml_vslam.interfaces.ingest import SequenceManifest
 
         paths = self.paths
         if frame_selection is not None and output_dir is not None:
@@ -116,7 +100,6 @@ class TumRgbdSequence(BaseData):
         )
 
     def to_benchmark_inputs(self, *, output_dir: Path | None = None) -> PreparedBenchmarkInputs:
-        """Materialize benchmark-owned reference trajectories for this sequence."""
         paths = self.paths
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
         reference_path = tum_rgbd_loading.ensure_ground_truth_tum(
@@ -135,7 +118,6 @@ class TumRgbdSequence(BaseData):
         replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
         include_depth: bool = True,
     ) -> FramePacketStream:
-        """Open the canonical TUM RGB-D replay stream for app or pipeline consumers."""
         paths = self.paths
         return open_tum_rgbd_stream(
             self.scene.sequence_id,

@@ -12,12 +12,12 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs
 
 from .runtime import FramePacketStream
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+    from prml_vslam.interfaces.ingest import SequenceManifest
 
 
 @runtime_checkable

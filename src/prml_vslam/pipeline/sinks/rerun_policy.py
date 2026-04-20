@@ -9,9 +9,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.slam import KeyframeVisualizationReady, PoseEstimated
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, PacketObserved, RunEvent, StageCompleted
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.stages import StageKey

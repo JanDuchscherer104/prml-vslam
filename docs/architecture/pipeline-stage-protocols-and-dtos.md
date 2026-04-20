@@ -157,9 +157,9 @@ flowchart LR
     click Descriptor "../../src/prml_vslam/methods/descriptors.py#L21" "BackendDescriptor"
     click Plan "../../src/prml_vslam/pipeline/contracts/plan.py#L31" "RunPlan"
     click Source "../../src/prml_vslam/pipeline/contracts/request.py#L100" "SourceSpec"
-    click Manifest "../../src/prml_vslam/pipeline/contracts/sequence.py#L11" "SequenceManifest"
-    click Artifacts "../../src/prml_vslam/pipeline/contracts/artifacts.py#L25" "SlamArtifacts"
-    click Alignment "../../src/prml_vslam/alignment/contracts.py#L59" "GroundAlignmentMetadata"
+    click Manifest "../../src/prml_vslam/interfaces/ingest.py#L43" "SequenceManifest"
+    click Artifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
+    click Alignment "../../src/prml_vslam/interfaces/alignment.py#L29" "GroundAlignmentMetadata"
     click Outcomes "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
     click Final "../../src/prml_vslam/pipeline/contracts/provenance.py#L59" "RunSummary"
 ```
@@ -171,16 +171,15 @@ not change.
 ## Stage Views
 
 The diagrams below zoom in on each executable pipeline stage. Each stage view
-shows the stage-local protocol boundary, the main stage DTOs, and the adapter
-from the stage-specific result wrapper into
-[`StageCompletionPayload`][stage-completion-payload], which is the runtime
-program’s cross-stage handoff bundle.
+shows the stage-local protocol boundary, the main stage DTOs, and the direct
+handoff into [`StageCompletionPayload`][stage-completion-payload], which is the
+runtime program’s only cross-stage handoff bundle.
 
 In these stage-local diagrams:
 
 - green nodes are offline-mode interfaces and DTOs
 - blue nodes are streaming-mode interfaces and DTOs
-- lavender nodes are shared or mode-agnostic DTO/result wrappers
+- lavender nodes are shared or mode-agnostic DTOs or handoff bundles
 - gray nodes are compute, service, or stage-execution nodes
 
 ### `ingest`
@@ -210,7 +209,6 @@ flowchart LR
         OfflineManifest["SequenceManifest<br/>(offline run)"]
         OfflinePrepared["PreparedBenchmarkInputs?<br/>(offline run)"]
         OfflineOutcome["StageOutcome<br/>(offline ingest)"]
-        OfflineResult["IngestStageResult<br/>(offline)"]
         OfflinePayload["StageCompletionPayload<br/>(offline)"]
 
         OfflineSource --> OfflineStage
@@ -218,10 +216,9 @@ flowchart LR
         OfflineStage --> OfflineManifest
         OfflineStage -. optional .-> OfflinePrepared
         OfflineStage -.-> OfflineOutcome
-        OfflineManifest --> OfflineResult
-        OfflinePrepared -. optional .-> OfflineResult
-        OfflineOutcome --> OfflineResult
-        OfflineResult --> OfflinePayload
+        OfflineManifest --> OfflinePayload
+        OfflinePrepared -. optional .-> OfflinePayload
+        OfflineOutcome --> OfflinePayload
     end
 
     subgraph Streaming["Streaming prepare"]
@@ -231,7 +228,6 @@ flowchart LR
         StreamingManifest["SequenceManifest<br/>(streaming prepare)"]
         StreamingPrepared["PreparedBenchmarkInputs?<br/>(streaming prepare)"]
         StreamingOutcome["StageOutcome<br/>(streaming ingest)"]
-        StreamingResult["IngestStageResult<br/>(streaming)"]
         StreamingPayload["StageCompletionPayload<br/>(streaming)"]
 
         StreamingSource --> StreamingStage
@@ -239,10 +235,9 @@ flowchart LR
         StreamingStage --> StreamingManifest
         StreamingStage -. optional .-> StreamingPrepared
         StreamingStage -.-> StreamingOutcome
-        StreamingManifest --> StreamingResult
-        StreamingPrepared -. optional .-> StreamingResult
-        StreamingOutcome --> StreamingResult
-        StreamingResult --> StreamingPayload
+        StreamingManifest --> StreamingPayload
+        StreamingPrepared -. optional .-> StreamingPayload
+        StreamingOutcome --> StreamingPayload
     end
 
     classDef compute fill:#F4F4F4,stroke:#666666,stroke-width:2px,color:#222222;
@@ -253,28 +248,26 @@ flowchart LR
     classDef streamingInterface fill:#DCE8FF,stroke:#1F57B5,stroke-width:2px,color:#222222;
 
     class OfflineSource,OfflineBench offlineInterface;
-    class OfflineManifest,OfflinePrepared,OfflineOutcome,OfflineResult,OfflinePayload offlineData;
+    class OfflineManifest,OfflinePrepared,OfflineOutcome,OfflinePayload offlineData;
     class OfflineStage compute;
     class StreamingSource,StreamingBench streamingInterface;
-    class StreamingManifest,StreamingPrepared,StreamingOutcome,StreamingResult,StreamingPayload streamingData;
+    class StreamingManifest,StreamingPrepared,StreamingOutcome,StreamingPayload streamingData;
     class StreamingStage compute;
 
     click OfflineSource "../../src/prml_vslam/protocols/source.py#L17" "OfflineSequenceSource"
     click OfflineBench "../../src/prml_vslam/protocols/source.py#L27" "BenchmarkInputSource"
     click OfflineStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L62" "run_ingest_stage"
-    click OfflineManifest "../../src/prml_vslam/pipeline/contracts/sequence.py#L11" "SequenceManifest"
-    click OfflinePrepared "../../src/prml_vslam/benchmark/contracts.py#L98" "PreparedBenchmarkInputs"
+    click OfflineManifest "../../src/prml_vslam/interfaces/ingest.py#L43" "SequenceManifest"
+    click OfflinePrepared "../../src/prml_vslam/interfaces/ingest.py#L86" "PreparedBenchmarkInputs"
     click OfflineOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click OfflineResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L35" "IngestStageResult"
-    click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+        click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
     click StreamingSource "../../src/prml_vslam/protocols/source.py#L35" "StreamingSequenceSource"
     click StreamingBench "../../src/prml_vslam/protocols/source.py#L27" "BenchmarkInputSource"
     click StreamingStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L62" "run_ingest_stage"
-    click StreamingManifest "../../src/prml_vslam/pipeline/contracts/sequence.py#L11" "SequenceManifest"
-    click StreamingPrepared "../../src/prml_vslam/benchmark/contracts.py#L98" "PreparedBenchmarkInputs"
+    click StreamingManifest "../../src/prml_vslam/interfaces/ingest.py#L43" "SequenceManifest"
+    click StreamingPrepared "../../src/prml_vslam/interfaces/ingest.py#L86" "PreparedBenchmarkInputs"
     click StreamingOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click StreamingResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L35" "IngestStageResult"
-    click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+        click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
 ```
 
 ### `slam`
@@ -285,7 +278,7 @@ The `slam` stage has two execution seams. Offline execution enters through
 starts with [`StreamingSlamBackend.start_session()`][streaming-slam-backend],
 then flows through [`SlamSession`][slam-session], [`SlamUpdate`][slam-update],
 and [`BackendEvent`][backend-event] before both modes converge on
-[`SlamArtifacts`][slam-artifacts] and [`SlamStageResult`][slam-stage-result].
+[`SlamArtifacts`][slam-artifacts] and [`StageCompletionPayload`][stage-completion-payload].
 
 ```mermaid
 %%{init: {
@@ -336,9 +329,8 @@ flowchart TB
         Session --> StreamingArtifacts
     end
 
-    OfflineArtifacts --> Result["SlamStageResult"]
-    StreamingArtifacts --> Result
-    Result --> Payload["StageCompletionPayload"]
+    OfflineArtifacts --> Payload["StageCompletionPayload"]
+    StreamingArtifacts --> Payload
 
     classDef compute fill:#F4F4F4,stroke:#666666,stroke-width:2px,color:#222222;
     classDef sharedData fill:#ECECFF,stroke:#9370DB,color:#222222;
@@ -353,25 +345,24 @@ flowchart TB
     class Init,Packet,StreamingArtifacts,Update,Event streamingData;
     class StreamingBackend,Session streamingInterface;
     class Translate compute;
-    class Config,Result,Payload sharedData;
+    class Config,Payload sharedData;
 
-    click Manifest "../../src/prml_vslam/pipeline/contracts/sequence.py#L11" "SequenceManifest"
-    click Prepared "../../src/prml_vslam/benchmark/contracts.py#L98" "PreparedBenchmarkInputs"
+    click Manifest "../../src/prml_vslam/interfaces/ingest.py#L43" "SequenceManifest"
+    click Prepared "../../src/prml_vslam/interfaces/ingest.py#L86" "PreparedBenchmarkInputs"
     click Baseline "../../src/prml_vslam/benchmark/contracts.py#L13" "ReferenceSource"
     click Config "../../src/prml_vslam/methods/contracts.py#L31" "SlamOutputPolicy and SlamBackendConfig"
     click OfflineStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L108" "run_offline_slam_stage"
     click OfflineBackend "../../src/prml_vslam/methods/protocols.py#L32" "OfflineSlamBackend"
-    click Init "../../src/prml_vslam/methods/session_init.py#L10" "SlamSessionInit"
+    click Init "../../src/prml_vslam/interfaces/slam.py#L39" "SlamSessionInit"
     click StreamingBackend "../../src/prml_vslam/methods/protocols.py#L50" "StreamingSlamBackend"
     click Session "../../src/prml_vslam/methods/protocols.py#L18" "SlamSession"
     click Packet "../../src/prml_vslam/interfaces/runtime.py#L68" "FramePacket"
-    click Update "../../src/prml_vslam/methods/updates.py#L13" "SlamUpdate"
+    click Update "../../src/prml_vslam/interfaces/slam.py#L46" "SlamUpdate"
     click Translate "../../src/prml_vslam/methods/events.py#L102" "translate_slam_update"
-    click Event "../../src/prml_vslam/methods/events.py#L90" "BackendEvent"
-    click OfflineArtifacts "../../src/prml_vslam/pipeline/contracts/artifacts.py#L25" "SlamArtifacts"
-    click StreamingArtifacts "../../src/prml_vslam/pipeline/contracts/artifacts.py#L25" "SlamArtifacts"
-    click Result "../../src/prml_vslam/pipeline/ray_runtime/common.py#L41" "SlamStageResult"
-    click Payload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+    click Event "../../src/prml_vslam/interfaces/slam.py#L142" "BackendEvent"
+    click OfflineArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
+    click StreamingArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
+        click Payload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
 ```
 
 ### `ground.align`
@@ -401,16 +392,14 @@ flowchart LR
         OfflineService["GroundAlignmentService<br/>estimate_from_slam_artifacts()"]
         OfflineMetadata["GroundAlignmentMetadata<br/>(offline)"]
         OfflineOutcome["StageOutcome<br/>(offline ground.align)"]
-        OfflineResult["GroundAlignmentStageResult<br/>(offline)"]
         OfflinePayload["StageCompletionPayload<br/>(offline)"]
 
         OfflineArtifacts --> OfflineStage
         OfflineStage --> OfflineService
         OfflineService --> OfflineMetadata
         OfflineStage -.-> OfflineOutcome
-        OfflineMetadata --> OfflineResult
-        OfflineOutcome --> OfflineResult
-        OfflineResult --> OfflinePayload
+        OfflineMetadata --> OfflinePayload
+        OfflineOutcome --> OfflinePayload
     end
 
     subgraph Streaming["Streaming finalize path"]
@@ -419,41 +408,37 @@ flowchart LR
         StreamingService["GroundAlignmentService<br/>estimate_from_slam_artifacts()"]
         StreamingMetadata["GroundAlignmentMetadata<br/>(streaming)"]
         StreamingOutcome["StageOutcome<br/>(streaming ground.align)"]
-        StreamingResult["GroundAlignmentStageResult<br/>(streaming)"]
         StreamingPayload["StageCompletionPayload<br/>(streaming)"]
 
         StreamingArtifacts --> StreamingStage
         StreamingStage --> StreamingService
         StreamingService --> StreamingMetadata
         StreamingStage -.-> StreamingOutcome
-        StreamingMetadata --> StreamingResult
-        StreamingOutcome --> StreamingResult
-        StreamingResult --> StreamingPayload
+        StreamingMetadata --> StreamingPayload
+        StreamingOutcome --> StreamingPayload
     end
 
     classDef compute fill:#F4F4F4,stroke:#666666,stroke-width:2px,color:#222222;
     classDef offlineData fill:#E7F6EE,stroke:#2E8B57,color:#222222;
     classDef streamingData fill:#E8F0FF,stroke:#2F6FDB,color:#222222;
 
-    class OfflineArtifacts,OfflineMetadata,OfflineOutcome,OfflineResult,OfflinePayload offlineData;
+    class OfflineArtifacts,OfflineMetadata,OfflineOutcome,OfflinePayload offlineData;
     class OfflineStage,OfflineService compute;
-    class StreamingArtifacts,StreamingMetadata,StreamingOutcome,StreamingResult,StreamingPayload streamingData;
+    class StreamingArtifacts,StreamingMetadata,StreamingOutcome,StreamingPayload streamingData;
     class StreamingStage,StreamingService compute;
 
-    click OfflineArtifacts "../../src/prml_vslam/pipeline/contracts/artifacts.py#L25" "SlamArtifacts"
+    click OfflineArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
     click OfflineStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L177" "run_ground_alignment_stage"
     click OfflineService "../../src/prml_vslam/alignment/services.py#L65" "GroundAlignmentService"
-    click OfflineMetadata "../../src/prml_vslam/alignment/contracts.py#L59" "GroundAlignmentMetadata"
+    click OfflineMetadata "../../src/prml_vslam/interfaces/alignment.py#L29" "GroundAlignmentMetadata"
     click OfflineOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click OfflineResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L51" "GroundAlignmentStageResult"
-    click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
-    click StreamingArtifacts "../../src/prml_vslam/pipeline/contracts/artifacts.py#L25" "SlamArtifacts"
+        click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+    click StreamingArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
     click StreamingStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L177" "run_ground_alignment_stage"
     click StreamingService "../../src/prml_vslam/alignment/services.py#L65" "GroundAlignmentService"
-    click StreamingMetadata "../../src/prml_vslam/alignment/contracts.py#L59" "GroundAlignmentMetadata"
+    click StreamingMetadata "../../src/prml_vslam/interfaces/alignment.py#L29" "GroundAlignmentMetadata"
     click StreamingOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click StreamingResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L51" "GroundAlignmentStageResult"
-    click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+        click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
 ```
 
 ### `trajectory.evaluate`
@@ -484,7 +469,6 @@ flowchart LR
         OfflineService["TrajectoryEvaluationService<br/>compute_pipeline_evaluation()"]
         OfflineMetrics["trajectory metrics artifact<br/>(offline)"]
         OfflineOutcome["StageOutcome<br/>(offline trajectory.evaluate)"]
-        OfflineResult["TrajectoryEvaluationStageResult<br/>(offline)"]
         OfflinePayload["StageCompletionPayload<br/>(offline)"]
 
         OfflineManifest --> OfflineStage
@@ -493,9 +477,8 @@ flowchart LR
         OfflineStage --> OfflineService
         OfflineService --> OfflineMetrics
         OfflineStage -.-> OfflineOutcome
-        OfflineMetrics --> OfflineResult
-        OfflineOutcome --> OfflineResult
-        OfflineResult --> OfflinePayload
+        OfflineMetrics --> OfflinePayload
+        OfflineOutcome --> OfflinePayload
     end
 
     subgraph Streaming["Streaming finalize path"]
@@ -506,7 +489,6 @@ flowchart LR
         StreamingService["TrajectoryEvaluationService<br/>compute_pipeline_evaluation()"]
         StreamingMetrics["trajectory metrics artifact<br/>(streaming finalize)"]
         StreamingOutcome["StageOutcome<br/>(streaming trajectory.evaluate)"]
-        StreamingResult["TrajectoryEvaluationStageResult<br/>(streaming)"]
         StreamingPayload["StageCompletionPayload<br/>(streaming)"]
 
         StreamingManifest --> StreamingStage
@@ -515,36 +497,33 @@ flowchart LR
         StreamingStage --> StreamingService
         StreamingService --> StreamingMetrics
         StreamingStage -.-> StreamingOutcome
-        StreamingMetrics --> StreamingResult
-        StreamingOutcome --> StreamingResult
-        StreamingResult --> StreamingPayload
+        StreamingMetrics --> StreamingPayload
+        StreamingOutcome --> StreamingPayload
     end
 
     classDef compute fill:#F4F4F4,stroke:#666666,stroke-width:2px,color:#222222;
     classDef offlineData fill:#E7F6EE,stroke:#2E8B57,color:#222222;
     classDef streamingData fill:#E8F0FF,stroke:#2F6FDB,color:#222222;
 
-    class OfflineManifest,OfflinePrepared,OfflineArtifacts,OfflineMetrics,OfflineOutcome,OfflineResult,OfflinePayload offlineData;
+    class OfflineManifest,OfflinePrepared,OfflineArtifacts,OfflineMetrics,OfflineOutcome,OfflinePayload offlineData;
     class OfflineStage,OfflineService compute;
-    class StreamingManifest,StreamingPrepared,StreamingArtifacts,StreamingMetrics,StreamingOutcome,StreamingResult,StreamingPayload streamingData;
+    class StreamingManifest,StreamingPrepared,StreamingArtifacts,StreamingMetrics,StreamingOutcome,StreamingPayload streamingData;
     class StreamingStage,StreamingService compute;
 
-    click OfflineManifest "../../src/prml_vslam/pipeline/contracts/sequence.py#L11" "SequenceManifest"
-    click OfflinePrepared "../../src/prml_vslam/benchmark/contracts.py#L98" "PreparedBenchmarkInputs"
-    click OfflineArtifacts "../../src/prml_vslam/pipeline/contracts/artifacts.py#L25" "SlamArtifacts"
+    click OfflineManifest "../../src/prml_vslam/interfaces/ingest.py#L43" "SequenceManifest"
+    click OfflinePrepared "../../src/prml_vslam/interfaces/ingest.py#L86" "PreparedBenchmarkInputs"
+    click OfflineArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
     click OfflineStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137" "run_trajectory_evaluation_stage"
     click OfflineService "../../src/prml_vslam/eval/services.py#L186" "TrajectoryEvaluationService"
     click OfflineOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click OfflineResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L47" "TrajectoryEvaluationStageResult"
-    click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
-    click StreamingManifest "../../src/prml_vslam/pipeline/contracts/sequence.py#L11" "SequenceManifest"
-    click StreamingPrepared "../../src/prml_vslam/benchmark/contracts.py#L98" "PreparedBenchmarkInputs"
-    click StreamingArtifacts "../../src/prml_vslam/pipeline/contracts/artifacts.py#L25" "SlamArtifacts"
+        click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+    click StreamingManifest "../../src/prml_vslam/interfaces/ingest.py#L43" "SequenceManifest"
+    click StreamingPrepared "../../src/prml_vslam/interfaces/ingest.py#L86" "PreparedBenchmarkInputs"
+    click StreamingArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
     click StreamingStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137" "run_trajectory_evaluation_stage"
     click StreamingService "../../src/prml_vslam/eval/services.py#L186" "TrajectoryEvaluationService"
     click StreamingOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click StreamingResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L47" "TrajectoryEvaluationStageResult"
-    click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+        click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
 ```
 
 ### `summary`
@@ -575,7 +554,6 @@ flowchart LR
         OfflineSummary["RunSummary<br/>(offline run)"]
         OfflineManifests["StageManifest[]<br/>(offline run)"]
         OfflineOutcome["StageOutcome<br/>(offline summary)"]
-        OfflineResult["SummaryStageResult<br/>(offline)"]
         OfflinePayload["StageCompletionPayload<br/>(offline)"]
 
         OfflineOutcomes --> OfflineStage
@@ -583,10 +561,9 @@ flowchart LR
         OfflineProject --> OfflineSummary
         OfflineProject --> OfflineManifests
         OfflineProject --> OfflineOutcome
-        OfflineSummary --> OfflineResult
-        OfflineManifests --> OfflineResult
-        OfflineOutcome --> OfflineResult
-        OfflineResult --> OfflinePayload
+        OfflineSummary --> OfflinePayload
+        OfflineManifests --> OfflinePayload
+        OfflineOutcome --> OfflinePayload
     end
 
     subgraph Streaming["Streaming finalize path"]
@@ -596,7 +573,6 @@ flowchart LR
         StreamingSummary["RunSummary<br/>(streaming run)"]
         StreamingManifests["StageManifest[]<br/>(streaming run)"]
         StreamingOutcome["StageOutcome<br/>(streaming summary)"]
-        StreamingResult["SummaryStageResult<br/>(streaming)"]
         StreamingPayload["StageCompletionPayload<br/>(streaming)"]
 
         StreamingOutcomes --> StreamingStage
@@ -604,19 +580,18 @@ flowchart LR
         StreamingProject --> StreamingSummary
         StreamingProject --> StreamingManifests
         StreamingProject --> StreamingOutcome
-        StreamingSummary --> StreamingResult
-        StreamingManifests --> StreamingResult
-        StreamingOutcome --> StreamingResult
-        StreamingResult --> StreamingPayload
+        StreamingSummary --> StreamingPayload
+        StreamingManifests --> StreamingPayload
+        StreamingOutcome --> StreamingPayload
     end
 
     classDef compute fill:#F4F4F4,stroke:#666666,stroke-width:2px,color:#222222;
     classDef offlineData fill:#E7F6EE,stroke:#2E8B57,color:#222222;
     classDef streamingData fill:#E8F0FF,stroke:#2F6FDB,color:#222222;
 
-    class OfflineOutcomes,OfflineSummary,OfflineManifests,OfflineOutcome,OfflineResult,OfflinePayload offlineData;
+    class OfflineOutcomes,OfflineSummary,OfflineManifests,OfflineOutcome,OfflinePayload offlineData;
     class OfflineStage,OfflineProject compute;
-    class StreamingOutcomes,StreamingSummary,StreamingManifests,StreamingOutcome,StreamingResult,StreamingPayload streamingData;
+    class StreamingOutcomes,StreamingSummary,StreamingManifests,StreamingOutcome,StreamingPayload streamingData;
     class StreamingStage,StreamingProject compute;
 
     click OfflineOutcomes "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
@@ -625,16 +600,14 @@ flowchart LR
     click OfflineSummary "../../src/prml_vslam/pipeline/contracts/provenance.py#L59" "RunSummary"
     click OfflineManifests "../../src/prml_vslam/pipeline/contracts/provenance.py#L27" "StageManifest"
     click OfflineOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click OfflineResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L56" "SummaryStageResult"
-    click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+        click OfflinePayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
     click StreamingOutcomes "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
     click StreamingStage "../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L207" "run_summary_stage"
     click StreamingProject "../../src/prml_vslam/pipeline/finalization.py#L27" "project_summary"
     click StreamingSummary "../../src/prml_vslam/pipeline/contracts/provenance.py#L59" "RunSummary"
     click StreamingManifests "../../src/prml_vslam/pipeline/contracts/provenance.py#L27" "StageManifest"
     click StreamingOutcome "../../src/prml_vslam/pipeline/contracts/events.py#L47" "StageOutcome"
-    click StreamingResult "../../src/prml_vslam/pipeline/ray_runtime/common.py#L56" "SummaryStageResult"
-    click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
+        click StreamingPayload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
 ```
 
 ## Streaming Translation Seam
@@ -693,10 +666,10 @@ flowchart LR
     click Stream "../../src/prml_vslam/protocols/runtime.py#L10" "FramePacketStream"
     click Packet "../../src/prml_vslam/interfaces/runtime.py#L68" "FramePacket"
     click Session "../../src/prml_vslam/methods/protocols.py#L18" "SlamSession"
-    click Update "../../src/prml_vslam/methods/updates.py#L13" "SlamUpdate"
+    click Update "../../src/prml_vslam/interfaces/slam.py#L46" "SlamUpdate"
     click Array "../../src/prml_vslam/pipeline/contracts/handles.py#L10" "ArrayHandle"
     click Preview "../../src/prml_vslam/pipeline/contracts/handles.py#L20" "PreviewHandle"
-    click Event "../../src/prml_vslam/methods/events.py#L90" "BackendEvent"
+    click Event "../../src/prml_vslam/interfaces/slam.py#L142" "BackendEvent"
     click Notice "../../src/prml_vslam/pipeline/contracts/events.py#L112" "BackendNoticeReceived"
     click Projector "../../src/prml_vslam/pipeline/snapshot_projector.py#L42" "SnapshotProjector"
     click Snapshot "../../src/prml_vslam/pipeline/contracts/runtime.py#L59" "StreamingRunSnapshot"
@@ -886,10 +859,10 @@ This is the critical layering seam for streaming implementations:
 | `trajectory_positions_xyz` | `list[tuple[float, float, float]]` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Bounded trajectory polyline built from `PoseEstimated.pose` translations in repo world coordinates. |
 | `trajectory_timestamps_s` | `list[float]` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Timestamps associated with the bounded trajectory polyline. |
 
-[stage-registry-default]: ../../src/prml_vslam/pipeline/stage_registry.py#L123
-[runtime-stage-program-default]: ../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L133
+[stage-registry-default]: ../../src/prml_vslam/pipeline/stage_registry.py#L125
+[runtime-stage-program-default]: ../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L132
 [run-request-build]: ../../src/prml_vslam/pipeline/contracts/request.py#L222
-[stage-registry-compile]: ../../src/prml_vslam/pipeline/stage_registry.py#L72
+[stage-registry-compile]: ../../src/prml_vslam/pipeline/stage_registry.py#L74
 [run-request]: ../../src/prml_vslam/pipeline/contracts/request.py#L189
 [backend-descriptor]: ../../src/prml_vslam/methods/descriptors.py#L21
 [path-config]: ../../src/prml_vslam/utils/path_config.py#L125
@@ -897,37 +870,37 @@ This is the critical layering seam for streaming implementations:
 [source-spec]: ../../src/prml_vslam/pipeline/contracts/request.py#L100
 [offline-sequence-source]: ../../src/prml_vslam/protocols/source.py#L17
 [benchmark-input-source]: ../../src/prml_vslam/protocols/source.py#L27
-[run-ingest-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L62
+[run-ingest-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60
 [ingest-stage-result]: ../../src/prml_vslam/pipeline/ray_runtime/common.py#L35
-[sequence-manifest]: ../../src/prml_vslam/pipeline/contracts/sequence.py#L11
-[prepared-benchmark-inputs]: ../../src/prml_vslam/benchmark/contracts.py#L98
+[sequence-manifest]: ../../src/prml_vslam/interfaces/ingest.py#L43
+[prepared-benchmark-inputs]: ../../src/prml_vslam/interfaces/ingest.py#L86
 [stage-outcome]: ../../src/prml_vslam/pipeline/contracts/events.py#L47
-[offline-slam-backend]: ../../src/prml_vslam/methods/protocols.py#L32
-[reference-source]: ../../src/prml_vslam/benchmark/contracts.py#L13
+[offline-slam-backend]: ../../src/prml_vslam/methods/protocols.py#L30
+[reference-source]: ../../src/prml_vslam/benchmark/contracts.py#L12
 [slam-backend-config]: ../../src/prml_vslam/methods/contracts.py#L41
 [slam-output-policy]: ../../src/prml_vslam/methods/contracts.py#L31
-[slam-artifacts]: ../../src/prml_vslam/pipeline/contracts/artifacts.py#L25
-[streaming-slam-backend]: ../../src/prml_vslam/methods/protocols.py#L50
-[slam-session-init]: ../../src/prml_vslam/methods/session_init.py#L10
-[slam-session]: ../../src/prml_vslam/methods/protocols.py#L18
+[slam-artifacts]: ../../src/prml_vslam/interfaces/slam.py#L29
+[streaming-slam-backend]: ../../src/prml_vslam/methods/protocols.py#L48
+[slam-session-init]: ../../src/prml_vslam/interfaces/slam.py#L38
+[slam-session]: ../../src/prml_vslam/methods/protocols.py#L16
 [run-offline-slam-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L108
 [slam-stage-result]: ../../src/prml_vslam/pipeline/ray_runtime/common.py#L41
 [frame-packet]: ../../src/prml_vslam/interfaces/runtime.py#L68
 [frame-packet-provenance]: ../../src/prml_vslam/interfaces/runtime.py#L45
-[slam-update]: ../../src/prml_vslam/methods/updates.py#L13
-[translate-slam-update]: ../../src/prml_vslam/methods/events.py#L102
-[backend-event]: ../../src/prml_vslam/methods/events.py#L90
+[slam-update]: ../../src/prml_vslam/interfaces/slam.py#L46
+[translate-slam-update]: ../../src/prml_vslam/methods/events.py#L17
+[backend-event]: ../../src/prml_vslam/interfaces/slam.py#L142
 [ground-alignment-service]: ../../src/prml_vslam/alignment/services.py#L65
-[ground-alignment-metadata]: ../../src/prml_vslam/alignment/contracts.py#L59
-[run-ground-alignment-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L177
+[ground-alignment-metadata]: ../../src/prml_vslam/interfaces/alignment.py#L29
+[run-ground-alignment-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179
 [ground-alignment-stage-result]: ../../src/prml_vslam/pipeline/ray_runtime/common.py#L51
 [trajectory-evaluation-service]: ../../src/prml_vslam/eval/services.py#L186
 [run-trajectory-evaluation-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137
 [trajectory-evaluation-stage-result]: ../../src/prml_vslam/pipeline/ray_runtime/common.py#L47
 [project-summary]: ../../src/prml_vslam/pipeline/finalization.py#L27
-[run-summary-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L207
+[run-summary-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L211
 [summary-stage-result]: ../../src/prml_vslam/pipeline/ray_runtime/common.py#L56
-[stage-completion-payload]: ../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60
+[stage-completion-payload]: ../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L59
 [run-summary]: ../../src/prml_vslam/pipeline/contracts/provenance.py#L59
 [stage-manifest]: ../../src/prml_vslam/pipeline/contracts/provenance.py#L27
 [frame-packet-stream]: ../../src/prml_vslam/protocols/runtime.py#L10
@@ -935,20 +908,20 @@ This is the critical layering seam for streaming implementations:
 [preview-handle]: ../../src/prml_vslam/pipeline/contracts/handles.py#L20
 [backend-notice-received]: ../../src/prml_vslam/pipeline/contracts/events.py#L112
 [snapshot-projector]: ../../src/prml_vslam/pipeline/snapshot_projector.py#L42
-[run-snapshot]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L33
-[streaming-run-snapshot]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L59
+[run-snapshot]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L32
+[streaming-run-snapshot]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L58
 [camera-intrinsics]: ../../src/prml_vslam/interfaces/camera.py#L15
 [frame-transform]: ../../src/prml_vslam/interfaces/transforms.py#L21
-[dataset-id]: ../../src/prml_vslam/datasets/contracts.py#L21
-[dataset-serving-config]: ../../src/prml_vslam/datasets/contracts.py#L75
+[dataset-id]: ../../src/prml_vslam/datasets/contracts.py#L20
+[dataset-serving-config]: ../../src/prml_vslam/datasets/contracts.py#L74
 [advio-manifest-assets]: ../../src/prml_vslam/datasets/contracts.py#L103
-[reference-trajectory-ref]: ../../src/prml_vslam/benchmark/contracts.py#L30
-[reference-cloud-ref]: ../../src/prml_vslam/benchmark/contracts.py#L54
-[reference-point-cloud-sequence-ref]: ../../src/prml_vslam/benchmark/contracts.py#L73
-[artifact-ref]: ../../src/prml_vslam/pipeline/contracts/artifacts.py#L12
+[reference-trajectory-ref]: ../../src/prml_vslam/interfaces/ingest.py#L57
+[reference-cloud-ref]: ../../src/prml_vslam/interfaces/ingest.py#L64
+[reference-point-cloud-sequence-ref]: ../../src/prml_vslam/interfaces/ingest.py#L74
+[artifact-ref]: ../../src/prml_vslam/interfaces/slam.py#L21
 [stage-key]: ../../src/prml_vslam/pipeline/contracts/stages.py#L10
 [stage-status]: ../../src/prml_vslam/pipeline/contracts/provenance.py#L15
 [run-state]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L22
-[stage-progress]: ../../src/prml_vslam/pipeline/contracts/events.py#L30
-[visualization-artifacts]: ../../src/prml_vslam/visualization/contracts.py#L41
-[frame-packet-summary]: ../../src/prml_vslam/pipeline/contracts/events.py#L39
+[stage-progress]: ../../src/prml_vslam/pipeline/contracts/events.py#L28
+[visualization-artifacts]: ../../src/prml_vslam/interfaces/visualization.py#L11
+[frame-packet-summary]: ../../src/prml_vslam/pipeline/contracts/events.py#L37

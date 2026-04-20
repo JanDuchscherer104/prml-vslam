@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import FramePacket, FramePacketProvenance, FrameTransform
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.interfaces.ingest import SequenceManifest
 
 
 class FakeOfflineSource:

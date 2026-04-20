@@ -9,9 +9,9 @@ from pathlib import Path
 import numpy as np
 import rerun.dataframe as rdf
 
-from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
-from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.slam import KeyframeVisualizationReady, PoseEstimated
 from prml_vslam.pipeline.contracts.events import (
     BackendNoticeReceived,
     FramePacketSummary,

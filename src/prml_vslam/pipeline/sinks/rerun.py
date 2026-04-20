@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import ray
 
-from prml_vslam.alignment.contracts import GroundAlignmentMetadata
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.pipeline.contracts.events import RunEvent, StageCompleted
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.visualization.rerun import (

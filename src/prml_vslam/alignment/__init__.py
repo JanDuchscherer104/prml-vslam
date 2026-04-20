@@ -2,13 +2,7 @@
 
 from typing import Any
 
-from .contracts import (
-    AlignmentConfig,
-    GroundAlignmentConfig,
-    GroundAlignmentMetadata,
-    GroundPlaneModel,
-    GroundPlaneVisualizationHint,
-)
+from .contracts import AlignmentConfig, GroundAlignmentConfig
 
 
 def __getattr__(name: str) -> Any:
@@ -22,8 +16,5 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "AlignmentConfig",
     "GroundAlignmentConfig",
-    "GroundAlignmentMetadata",
     "GroundAlignmentService",
-    "GroundPlaneModel",
-    "GroundPlaneVisualizationHint",
 ]

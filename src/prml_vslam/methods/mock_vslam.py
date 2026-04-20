@@ -1,11 +1,4 @@
-"""Repository-local mock SLAM backend used by the interactive pipeline demo.
-
-The mock backend is the simplest complete implementation of the method-layer
-contracts. It replays prepared benchmark references through the same normalized
-seams as real wrappers, which makes it useful both as a smoke-test backend and
-as a readable example of how :mod:`prml_vslam.methods` connects to
-:mod:`prml_vslam.pipeline`.
-"""
+"""Repository-local mock SLAM backend used by the interactive pipeline demo."""
 
 from __future__ import annotations
 
@@ -18,13 +11,7 @@ from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 from pytransform3d.transformations import transform, vectors_to_points
 
-from prml_vslam.benchmark import (
-    PreparedBenchmarkInputs,
-    ReferenceCloudCoordinateStatus,
-    ReferenceCloudSource,
-    ReferencePointCloudSequenceRef,
-    ReferenceSource,
-)
+from prml_vslam.benchmark import ReferenceCloudCoordinateStatus, ReferenceCloudSource, ReferenceSource
 from prml_vslam.datasets.advio import load_advio_calibration
 from prml_vslam.datasets.advio.advio_geometry import (
     Sim3Alignment,
@@ -36,13 +23,15 @@ from prml_vslam.datasets.advio.advio_geometry import (
     resolve_tango_point_cloud_payload,
 )
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
+from prml_vslam.interfaces.ingest import (
+    PreparedBenchmarkInputs,
+    ReferencePointCloudSequenceRef,
+    SequenceManifest,
+)
+from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts, SlamSessionInit, SlamUpdate
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import MockSlamBackendConfig
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
-from prml_vslam.methods.session_init import SlamSessionInit
-from prml_vslam.methods.updates import SlamUpdate
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply,
     load_tum_trajectory,
@@ -72,7 +61,7 @@ class _PointCloudSequenceRuntime:
 
 
 class MockSlamBackend(SlamBackend):
-    """Implement the full method contract with deterministic reference replay."""
+    """Mock SLAM backend that supports both batch and streaming execution."""
 
     def __init__(self, config: MockSlamBackendConfig) -> None:
         self.config = config
@@ -85,7 +74,7 @@ class MockSlamBackend(SlamBackend):
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> MockSlamSession:
-        """Prepare one streaming-capable mock session over normalized repository inputs."""
+        """Prepare one streaming-capable session."""
         return MockSlamSession(
             config=self.config,
             session_init=session_init,
@@ -120,12 +109,7 @@ class MockSlamBackend(SlamBackend):
 
 
 class MockSlamSession(SlamSession):
-    """Replay prepared references through the streaming session contract.
-
-    The session demonstrates the method-layer lifecycle end to end: it consumes
-    normalized inputs, emits :class:`SlamUpdate` telemetry, and closes into
-    normalized :class:`prml_vslam.pipeline.SlamArtifacts`.
-    """
+    """Stateful mock SLAM session shared by offline and streaming execution."""
 
     def __init__(
         self,

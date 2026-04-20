@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import BaseConfig, FactoryConfig
 

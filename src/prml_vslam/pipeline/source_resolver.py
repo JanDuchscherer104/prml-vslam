@@ -13,8 +13,8 @@ from pathlib import Path
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SourceSpec, VideoSourceSpec
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.protocols.source import OfflineSequenceSource
 from prml_vslam.utils import Console, PathConfig
 

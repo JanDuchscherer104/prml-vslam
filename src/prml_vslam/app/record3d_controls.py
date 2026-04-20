@@ -3,32 +3,10 @@
 from __future__ import annotations
 
 import streamlit as st
-from pydantic import Field
 
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId, list_record3d_usb_devices
-from prml_vslam.utils import BaseData
 
-
-class Record3DTransportSelection(BaseData):
-    """Resolved Record3D transport inputs for one page render."""
-
-    transport: Record3DTransportId
-    """Selected Record3D transport."""
-
-    usb_device_index: int = 0
-    """Selected USB device index when using the USB transport."""
-
-    wifi_device_address: str = ""
-    """Entered Wi-Fi preview device address."""
-
-    usb_devices: list[Record3DDevice] = Field(default_factory=list)
-    """Discovered USB devices for the current render pass."""
-
-    usb_error_message: str = ""
-    """Discovery error surfaced while checking USB devices."""
-
-    input_error: str | None = None
-    """Transport-specific input error that should disable start actions when present."""
+from .models import Record3DTransportSelection
 
 
 def render_record3d_transport_controls(

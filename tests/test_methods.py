@@ -11,20 +11,18 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.benchmark import (
-    PreparedBenchmarkInputs,
-    ReferenceCloudCoordinateStatus,
-    ReferenceCloudRef,
-    ReferenceCloudSource,
-    ReferencePointCloudSequenceRef,
-    ReferenceSource,
-    ReferenceTrajectoryRef,
-)
+from prml_vslam.benchmark import ReferenceCloudCoordinateStatus, ReferenceCloudSource, ReferenceSource
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
+from prml_vslam.interfaces.ingest import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudRef,
+    ReferencePointCloudSequenceRef,
+    ReferenceTrajectoryRef,
+    SequenceManifest,
+)
+from prml_vslam.interfaces.slam import SlamSessionInit
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.session_init import SlamSessionInit
-from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import Console
 from prml_vslam.utils.geometry import load_tum_trajectory, write_point_cloud_ply, write_tum_trajectory

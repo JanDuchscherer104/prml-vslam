@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
-from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
+from prml_vslam.interfaces.slam import KeyframeVisualizationReady, PoseEstimated
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, FramePacketSummary, PacketObserved
 from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.stages import StageKey

@@ -9,27 +9,23 @@ maps, leaving stage ordering and event recording to the coordinator and
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import ray
 
 from prml_vslam.alignment import GroundAlignmentService
-from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.eval.services import TrajectoryEvaluationService
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import project_summary, stable_hash, write_json
 from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
-    GroundAlignmentStageResult,
-    IngestStageResult,
-    SlamStageResult,
-    SummaryStageResult,
-    TrajectoryEvaluationStageResult,
     artifact_ref,
     clean_actor_options,
 )
@@ -37,39 +33,38 @@ from prml_vslam.pipeline.ray_runtime.stage_actors import OfflineSlamStageActor
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
+
 
 @dataclass(frozen=True, slots=True)
 class StageExecutionContext:
-    """Immutable per-run execution envelope shared by bounded stage helpers.
-
-    The context carries the stable inputs that do not change while a run is
-    executing: the original request, the compiled plan, path-resolution
-    helpers, the canonical artifact layout, and backend metadata. Stage
-    implementations read these fields when they need run-scoped configuration
-    or filesystem locations, while mutable cross-stage outputs live separately
-    in :class:`RuntimeExecutionState`.
+    """Immutable run-scoped execution context shared by bounded stage helpers.
 
     Attributes:
-        request: Original run request and policy surface for the run.
-        plan: Compiled deterministic run plan that owns stage order and the
-            artifact root.
+        request: Original run request.
+        plan: Compiled deterministic run plan.
         path_config: Repo path configuration used for runtime resolution.
         run_paths: Canonical artifact layout for the run.
+        backend_descriptor: Capability and resource metadata for the selected
+            backend.
     """
 
     request: RunRequest
     plan: RunPlan
     path_config: PathConfig
     run_paths: RunArtifactPaths
+    backend_descriptor: BackendDescriptor
 
 
-#  TODO: I feel like this kind of multiplexing should be handeled similar
-def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceSource) -> IngestStageResult:
+def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceSource) -> StageCompletionPayload:
     """Materialize the canonical ingest boundary from one offline source.
 
     The helper persists the normalized :class:`SequenceManifest` and any
     prepared benchmark-side inputs before returning the ingest stage outcome.
     """
+    from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
+
     prepared_manifest = source.prepare_sequence_manifest(context.run_paths.sequence_manifest_path.parent)
     benchmark_inputs = None
     if isinstance(source, BenchmarkInputSource):
@@ -97,7 +92,7 @@ def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceS
         artifacts["benchmark_inputs"] = artifact_ref(context.run_paths.benchmark_inputs_path, kind="json")
         for reference in benchmark_inputs.reference_trajectories:
             artifacts[f"reference_tum:{reference.source.value}"] = artifact_ref(reference.path, kind="tum")
-    return IngestStageResult(
+    return StageCompletionPayload(
         outcome=StageOutcome(
             stage_key=StageKey.INGEST,
             status=StageStatus.COMPLETED,
@@ -115,13 +110,14 @@ def run_offline_slam_stage(
     context: StageExecutionContext,
     sequence_manifest: SequenceManifest,
     benchmark_inputs: PreparedBenchmarkInputs | None,
-) -> SlamStageResult:
+) -> StageCompletionPayload:
     """Execute offline SLAM through the dedicated stage actor boundary."""
     actor = OfflineSlamStageActor.options(
         **clean_actor_options(
             actor_options_for_stage(
                 stage_key=StageKey.SLAM,
                 request=context.request,
+                backend=context.backend_descriptor,
                 default_num_cpus=2.0,
                 default_num_gpus=1.0,
             )
@@ -144,8 +140,10 @@ def run_trajectory_evaluation_stage(
     sequence_manifest: SequenceManifest,
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts,
-) -> TrajectoryEvaluationStageResult:
+) -> StageCompletionPayload:
     """Evaluate the normalized SLAM trajectory against prepared references."""
+    from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
+
     artifact = TrajectoryEvaluationService(
         PathConfig(artifacts_dir=context.request.output_dir)
     ).compute_pipeline_evaluation(
@@ -162,7 +160,7 @@ def run_trajectory_evaluation_stage(
             "reference_tum": artifact_ref(artifact.reference_path, kind="tum"),
             "estimate_tum": artifact_ref(artifact.estimate_path, kind="tum"),
         }
-    return TrajectoryEvaluationStageResult(
+    return StageCompletionPayload(
         outcome=StageOutcome(
             stage_key=StageKey.TRAJECTORY_EVALUATION,
             status=StageStatus.COMPLETED,
@@ -182,11 +180,13 @@ def run_ground_alignment_stage(
     *,
     context: StageExecutionContext,
     slam: SlamArtifacts,
-) -> GroundAlignmentStageResult:
+) -> StageCompletionPayload:
     """Detect one dominant ground plane and persist derived alignment metadata."""
+    from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
+
     metadata = GroundAlignmentService(config=context.request.alignment.ground).estimate_from_slam_artifacts(slam=slam)
     write_json(context.run_paths.ground_alignment_path, metadata)
-    return GroundAlignmentStageResult(
+    return StageCompletionPayload(
         outcome=StageOutcome(
             stage_key=StageKey.GROUND_ALIGNMENT,
             status=StageStatus.COMPLETED if metadata.applied else StageStatus.SKIPPED,
@@ -212,15 +212,17 @@ def run_summary_stage(
     *,
     context: StageExecutionContext,
     stage_outcomes: list[StageOutcome],
-) -> SummaryStageResult:
+) -> StageCompletionPayload:
     """Project durable run summary artifacts from terminal stage outcomes."""
+    from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
+
     summary, stage_manifests, outcome = project_summary(
         request=context.request,
         plan=context.plan,
         run_paths=context.run_paths,
         stage_outcomes=stage_outcomes,
     )
-    return SummaryStageResult(
+    return StageCompletionPayload(
         outcome=outcome,
         summary=summary,
         stage_manifests=stage_manifests,

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from prml_vslam.methods.events import (
+from prml_vslam.interfaces.slam import (
     KeyframeAccepted,
     KeyframeVisualizationReady,
     MapStatsUpdated,
