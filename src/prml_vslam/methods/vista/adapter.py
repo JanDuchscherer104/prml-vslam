@@ -1,4 +1,10 @@
-"""Canonical ViSTA-SLAM backend adapter (offline + streaming)."""
+"""Canonical ViSTA-SLAM backend adapter for offline and streaming execution.
+
+This module contains the primary bridge from the repository's method contract
+into the upstream ViSTA runtime. It keeps the top-level adapter thin and
+delegates preprocessing, session management, and artifact normalization to the
+rest of the :mod:`prml_vslam.methods.vista` package.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +15,7 @@ import cv2
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.interfaces import FramePacket
+from prml_vslam.methods.configs import VistaSlamBackendConfig
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.session_init import SlamSessionInit
@@ -16,12 +23,11 @@ from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import Console, PathConfig
 
-from .config import VistaSlamBackendConfig
 from .session import create_vista_session
 
 
 class VistaSlamBackend(SlamBackend):
-    """ViSTA-SLAM backend implementing offline and streaming contracts."""
+    """Adapt the upstream ViSTA runtime to the repository's method contract."""
 
     method_id: MethodId = MethodId.VISTA
 

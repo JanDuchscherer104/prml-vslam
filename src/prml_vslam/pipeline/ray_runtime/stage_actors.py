@@ -1,4 +1,10 @@
-"""Ray actors that execute individual pipeline stages and streaming I/O."""
+"""Ray actors that execute individual pipeline stages and streaming I/O.
+
+This module contains the long-lived substrate-owned actors that the public
+pipeline runtime delegates to during Ray-backed execution. The actors implement
+the concrete execution mechanics, while the public orchestration contract still
+lives in :mod:`prml_vslam.pipeline`.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +18,6 @@ import ray
 from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.methods.events import BackendEvent, translate_slam_update
-from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageOutcome, StageStatus
@@ -26,7 +31,6 @@ from prml_vslam.pipeline.ray_runtime.common import (
     FPS_WINDOW,
     HandlePayload,
     SlamStageResult,
-    backend_config_payload,
     put_array_handle,
     put_preview_handle,
     rolling_fps,
@@ -37,9 +41,10 @@ from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 
+# TODO: decide: should we maybe move the StageActor definitions into the stage specific modules?
 @ray.remote(num_cpus=2, max_restarts=0, max_task_retries=0)
 class OfflineSlamStageActor:
-    """Run one offline SLAM stage."""
+    """Execute the offline SLAM stage inside its own Ray actor."""
 
     def run(
         self,
@@ -50,20 +55,21 @@ class OfflineSlamStageActor:
         benchmark_inputs: PreparedBenchmarkInputs | None,
         path_config: PathConfig,
     ) -> SlamStageResult:
+        """Run the offline SLAM stage and return its typed stage result."""
         console = Console(__name__).child(self.__class__.__name__)
         console.info(
             "Starting offline SLAM with backend '%s' at artifact root '%s'.",
-            request.slam.backend.kind,
+            request.slam.backend.method_id.value,
             plan.artifact_root,
         )
-        backend = BackendFactory().build(request.slam.backend, path_config=path_config)
+        backend = request.slam.backend.setup_target(path_config=path_config)
         if not isinstance(backend, OfflineSlamBackend):
-            raise RuntimeError(f"Backend '{request.slam.backend.kind}' does not support offline execution.")
+            raise RuntimeError(f"Backend '{request.slam.backend.method_id.value}' does not support offline execution.")
         slam = backend.run_sequence(
             sequence_manifest,
             benchmark_inputs,
             request.benchmark.trajectory.baseline_source,
-            backend_config=backend_config_payload(request),
+            backend_config=request.slam.backend,
             output_policy=request.slam.outputs,
             artifact_root=plan.artifact_root,
         )
@@ -76,7 +82,7 @@ class OfflineSlamStageActor:
         )
         console.info(
             "Finished offline SLAM with backend '%s'; visualization artifacts %s.",
-            request.slam.backend.kind,
+            request.slam.backend.method_id.value,
             "collected" if visualization is not None else "not collected",
         )
         return SlamStageResult(
@@ -114,6 +120,7 @@ class PacketSourceActor:
         initial_credits: int = DEFAULT_MAX_FRAMES_IN_FLIGHT,
         loop: bool = False,
     ) -> None:
+        """Start pulling packets from the streaming source in a worker thread."""
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("Packet source actor is already running.")
         self._console.info(
@@ -129,11 +136,13 @@ class PacketSourceActor:
         self._thread.start()
 
     def grant_credit(self, count: int = 1) -> None:
+        """Grant additional packet-read credits from the coordinator."""
         with self._credits_cv:
             self._credits += count
             self._credits_cv.notify_all()
 
     def stop(self) -> None:
+        """Request the worker thread to stop and join it when possible."""
         self._stop_event.set()
         with self._credits_cv:
             self._credits_cv.notify_all()
@@ -198,7 +207,7 @@ class PacketSourceActor:
 
 @ray.remote(num_cpus=2, max_restarts=0, max_task_retries=0)
 class StreamingSlamStageActor:
-    """Ordered streaming SLAM stage with internal session state."""
+    """Own the ordered streaming SLAM session inside one Ray actor."""
 
     def __init__(self, *, coordinator_name: str, namespace: str) -> None:
         self._console = Console(__name__).child(self.__class__.__name__).child(coordinator_name)
@@ -216,17 +225,20 @@ class StreamingSlamStageActor:
         path_config: PathConfig,
         session_init: SlamSessionInit,
     ) -> None:
+        """Construct the backend session and enter streaming execution."""
         self._console.info(
             "Starting streaming SLAM actor with backend '%s' at artifact root '%s'.",
-            request.slam.backend.kind,
+            request.slam.backend.method_id.value,
             plan.artifact_root,
         )
-        backend = BackendFactory().build(request.slam.backend, path_config=path_config)
+        backend = request.slam.backend.setup_target(path_config=path_config)
         if not isinstance(backend, StreamingSlamBackend):
-            raise RuntimeError(f"Backend '{request.slam.backend.kind}' does not support streaming execution.")
+            raise RuntimeError(
+                f"Backend '{request.slam.backend.method_id.value}' does not support streaming execution."
+            )
         self._session = backend.start_session(
             session_init=session_init,
-            backend_config=backend_config_payload(request),
+            backend_config=request.slam.backend,
             output_policy=request.slam.outputs,
             artifact_root=plan.artifact_root,
         )
@@ -242,6 +254,7 @@ class StreamingSlamStageActor:
         pose: FrameTransform | None,
         provenance: FramePacketProvenance,
     ) -> None:
+        """Push one frame through the active streaming backend session."""
         if self._session is None:
             raise RuntimeError("Streaming SLAM actor has not been started.")
         from prml_vslam.interfaces import FramePacket
@@ -327,6 +340,7 @@ class StreamingSlamStageActor:
         plan: RunPlan,
         sequence_manifest: SequenceManifest,
     ) -> SlamStageResult:
+        """Finalize the active streaming session and return the typed SLAM result."""
         if self._session is None:
             raise RuntimeError("Streaming SLAM actor has not been started.")
         self._console.info("Closing streaming SLAM stage.")

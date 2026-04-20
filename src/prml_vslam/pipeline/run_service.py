@@ -1,9 +1,10 @@
 """Thin launch-surface façade over the active pipeline backend.
 
-The service exists so app pages and CLI commands can work with one small object
-instead of depending directly on the Ray backend. It intentionally keeps only
-the currently active run id and forwards lifecycle operations into a
-:class:`PipelineBackend`.
+This module contains the small service object that app pages and CLI commands
+use instead of depending directly on the Ray backend. It intentionally keeps
+only the currently active run id and forwards lifecycle operations into a
+:class:`PipelineBackend`, making it the main app/CLI click-through entry point
+into runtime orchestration.
 """
 
 from __future__ import annotations

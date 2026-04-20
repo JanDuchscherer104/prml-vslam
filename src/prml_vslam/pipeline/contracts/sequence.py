@@ -1,4 +1,10 @@
-"""Pipeline manifest contracts."""
+"""Normalized offline input-manifest contracts.
+
+This module owns :class:`SequenceManifest`, the offline boundary shared between
+source preparation and stage execution. Dataset adapters and video/live source
+adapters normalize source-specific details into this DTO so backend wrappers and
+pipeline runtime code can consume one consistent input shape.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +14,15 @@ from prml_vslam.datasets.contracts import AdvioManifestAssets, DatasetId, Datase
 from prml_vslam.utils import BaseData
 
 
+# TODO: this is a dto / data model that should be defined in a shared model module!
 class SequenceManifest(BaseData):
-    """Normalized artifact boundary between input ingestion and benchmark execution."""
+    """Describe the normalized offline input sequence for one run.
+
+    Treat this as the durable offline counterpart to
+    :class:`prml_vslam.interfaces.FramePacket`: the manifest describes the
+    prepared source artifacts and preserved source metadata that offline or
+    streaming sessions can rely on before frame processing begins.
+    """
 
     sequence_id: str
     """Stable sequence identifier used across artifact stages."""

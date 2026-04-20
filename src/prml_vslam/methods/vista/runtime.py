@@ -1,4 +1,10 @@
-"""Upstream ViSTA runtime/bootstrap helpers."""
+"""Upstream ViSTA runtime and bootstrap helpers.
+
+This module owns the heavy lifting required to turn repository config and local
+paths into an initialized upstream ViSTA runtime bundle. It stays below the
+top-level adapter in :mod:`prml_vslam.methods.vista.adapter` and above the
+session wrapper in :mod:`prml_vslam.methods.vista.session`.
+"""
 
 from __future__ import annotations
 
@@ -10,9 +16,9 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
 
+from prml_vslam.methods.configs import VistaSlamBackendConfig
 from prml_vslam.utils import Console, PathConfig
 
-from .config import VistaSlamBackendConfig
 from .preprocess import UpstreamVistaFramePreprocessor, VistaFramePreprocessor
 
 if TYPE_CHECKING:
@@ -22,19 +28,19 @@ _VISTA_INPUT_RESOLUTION = (224, 224)
 
 
 class VistaFlowTracker(Protocol):
-    """Subset of the upstream flow tracker API used by the session wrapper."""
+    """Subset of the upstream flow-tracker API consumed by the session wrapper."""
 
     def compute_disparity(self, image: Any, visualize: bool = False) -> bool:
         """Return whether the current frame should become a new keyframe."""
 
 
 class VistaOnlineSlam(Protocol):
-    """Subset of the upstream OnlineSLAM API used by the session wrapper."""
+    """Subset of the upstream OnlineSLAM API consumed by the wrapper."""
 
     device: torch.device | str
 
     def step(self, value: dict[str, Any]) -> None:
-        """Consume one prepared keyframe."""
+        """Consume one prepared keyframe payload through the upstream runtime API."""
 
     def save_data_all(self, output_dir: str, *, save_images: bool, save_depths: bool) -> None:
         """Persist native ViSTA outputs for later normalization."""
@@ -65,7 +71,7 @@ class _DbowModule(Protocol):
 
 @dataclass(slots=True)
 class VistaRuntimeComponents:
-    """Concrete upstream runtime components consumed by the session wrapper."""
+    """Bundle the concrete upstream runtime objects consumed by the session wrapper."""
 
     slam: VistaOnlineSlam
     flow_tracker: VistaFlowTracker
@@ -79,7 +85,11 @@ def build_vista_runtime_components(
     console: Console,
     live_mode: bool,
 ) -> VistaRuntimeComponents:
-    """Instantiate one configured upstream ViSTA runtime bundle."""
+    """Instantiate one configured upstream ViSTA runtime bundle.
+
+    This is the main assembly boundary between repo-owned config/path policy and
+    the imported upstream ViSTA runtime components.
+    """
     vista_dir = path_config.resolve_repo_path(config.vista_slam_dir)
     checkpoint_path = path_config.resolve_repo_path(config.checkpoint_path)
     vocab_path = path_config.resolve_repo_path(config.vocab_path)

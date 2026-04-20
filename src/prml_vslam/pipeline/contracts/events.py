@@ -1,4 +1,9 @@
-"""Event-first runtime contracts for the pipeline."""
+"""Event-first runtime contracts for the pipeline.
+
+This module owns the append-only event stream that represents runtime truth for
+one run. Projected snapshots, summaries, and UI views are all derived from
+these events rather than treated as independent state stores.
+"""
 
 from __future__ import annotations
 
@@ -21,14 +26,14 @@ from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
 class EventTier(StrEnum):
-    """Durability tier for one runtime event."""
+    """Classify whether an event is durable provenance or live telemetry."""
 
     DURABLE = "durable"
     TELEMETRY = "telemetry"
 
 
 class StageProgress(TransportModel):
-    """Human-readable progress state for one stage."""
+    """Carry lightweight human-readable progress details for one running stage."""
 
     message: str = ""
     completed_steps: int | None = None
@@ -37,7 +42,7 @@ class StageProgress(TransportModel):
 
 
 class FramePacketSummary(TransportModel):
-    """Transport-safe summary of one observed input packet."""
+    """Summarize one observed :class:`prml_vslam.interfaces.FramePacket` for telemetry."""
 
     seq: int
     timestamp_ns: int
@@ -45,7 +50,12 @@ class FramePacketSummary(TransportModel):
 
 
 class StageOutcome(TransportModel):
-    """Terminal stage result used for manifests and summary projection."""
+    """Capture the terminal result of one stage execution.
+
+    This object is the key bridge from live execution into durable provenance:
+    stage-completion events carry it, summary projection consumes it, and
+    manifest writing turns it into persisted stage records.
+    """
 
     stage_key: StageKey
     status: StageStatus
@@ -64,28 +74,38 @@ class _RunEventBase(TransportModel):
 
 
 class RunSubmitted(_RunEventBase):
+    """Record that a run has been accepted by the backend layer."""
+
     kind: Literal["run.submitted"] = "run.submitted"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
 
 
 class RunStarted(_RunEventBase):
+    """Record that backend execution has actually started."""
+
     kind: Literal["run.started"] = "run.started"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
 
 
 class StageQueued(_RunEventBase):
+    """Record that one stage has become eligible to run."""
+
     kind: Literal["stage.queued"] = "stage.queued"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
     stage_key: StageKey
 
 
 class StageStarted(_RunEventBase):
+    """Record that one stage has begun executing."""
+
     kind: Literal["stage.started"] = "stage.started"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
     stage_key: StageKey
 
 
 class StageProgressed(_RunEventBase):
+    """Emit telemetry progress for one running stage."""
+
     kind: Literal["stage.progressed"] = "stage.progressed"
     tier: Literal[EventTier.TELEMETRY] = EventTier.TELEMETRY
     stage_key: StageKey
@@ -93,6 +113,8 @@ class StageProgressed(_RunEventBase):
 
 
 class ArtifactRegistered(_RunEventBase):
+    """Record that one durable artifact path has been materialized."""
+
     kind: Literal["artifact.registered"] = "artifact.registered"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
     stage_key: StageKey
@@ -101,6 +123,8 @@ class ArtifactRegistered(_RunEventBase):
 
 
 class PacketObserved(_RunEventBase):
+    """Emit telemetry about one observed streaming packet and related handles."""
+
     kind: Literal["packet.observed"] = "packet.observed"
     tier: Literal[EventTier.TELEMETRY] = EventTier.TELEMETRY
     packet: FramePacketSummary
@@ -110,6 +134,8 @@ class PacketObserved(_RunEventBase):
 
 
 class BackendNoticeReceived(_RunEventBase):
+    """Emit translated method-layer telemetry from one streaming backend."""
+
     kind: Literal["backend.notice"] = "backend.notice"
     tier: Literal[EventTier.TELEMETRY] = EventTier.TELEMETRY
     stage_key: StageKey
@@ -117,6 +143,8 @@ class BackendNoticeReceived(_RunEventBase):
 
 
 class StageCompleted(_RunEventBase):
+    """Record durable completion for one stage plus any normalized outputs."""
+
     kind: Literal["stage.completed"] = "stage.completed"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
     stage_key: StageKey
@@ -131,6 +159,8 @@ class StageCompleted(_RunEventBase):
 
 
 class StageFailed(_RunEventBase):
+    """Record durable failure for one stage together with its terminal outcome."""
+
     kind: Literal["stage.failed"] = "stage.failed"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
     stage_key: StageKey
@@ -138,21 +168,29 @@ class StageFailed(_RunEventBase):
 
 
 class RunStopRequested(_RunEventBase):
+    """Record that a graceful stop has been requested for the run."""
+
     kind: Literal["run.stop_requested"] = "run.stop_requested"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
 
 
 class RunStopped(_RunEventBase):
+    """Record that the run has stopped before normal completion."""
+
     kind: Literal["run.stopped"] = "run.stopped"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
 
 
 class RunCompleted(_RunEventBase):
+    """Record that the full run finished successfully."""
+
     kind: Literal["run.completed"] = "run.completed"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
 
 
 class RunFailed(_RunEventBase):
+    """Record that the run terminated with an unrecoverable error."""
+
     kind: Literal["run.failed"] = "run.failed"
     tier: Literal[EventTier.DURABLE] = EventTier.DURABLE
     error_message: str

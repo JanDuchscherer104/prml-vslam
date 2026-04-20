@@ -1,4 +1,10 @@
-"""Method-owned runtime update contracts."""
+"""Method-owned runtime update contracts.
+
+This module owns the live telemetry surface emitted by streaming-capable
+wrappers before the pipeline translates it into transport-safe runtime events.
+It is intentionally richer and more backend-aware than the pipeline event
+surface because it still lives inside the method layer.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,13 @@ from prml_vslam.utils import BaseData
 
 
 class SlamUpdate(BaseData):
-    """Incremental SLAM update emitted by streaming-capable backends."""
+    """Carry one incremental backend update before pipeline translation.
+
+    Backends use this DTO to report poses, map statistics, and optional live
+    visualization surfaces such as pointmaps or preview images. The pipeline
+    translates it into :mod:`prml_vslam.methods.events` so the transport layer
+    can stay backend-neutral.
+    """
 
     seq: int
     """Source-frame sequence number associated with the update."""

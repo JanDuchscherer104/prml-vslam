@@ -11,9 +11,8 @@ from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioP
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.methods import MethodId
+from prml_vslam.methods import BackendConfig, MethodId
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.contracts.request import BackendSpec
 from prml_vslam.utils import BaseData
 
 from .preview_runtime import PacketSessionSnapshot
@@ -212,8 +211,8 @@ class PipelinePageState(BaseData):
     slam_max_frames: int | None = None
     """Optional frame cap for the current request."""
 
-    slam_backend_spec: BackendSpec | None = None
-    """Typed backend spec preserved from the selected request template."""
+    slam_backend_spec: BackendConfig | None = None
+    """Typed backend config preserved from the selected request template."""
 
     emit_dense_points: bool = True
     """Whether dense geometry artifacts should be emitted."""

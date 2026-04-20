@@ -1,10 +1,14 @@
-"""Repo-owned placement policy translation for the Ray backend."""
+"""Repo-owned placement policy translation for the Ray backend.
+
+This module contains the narrow translation layer from
+:class:`prml_vslam.pipeline.contracts.request.PlacementPolicy` into the
+Ray-specific actor options used by the backend runtime.
+"""
 
 from __future__ import annotations
 
 from typing import TypeAlias
 
-from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
 
@@ -17,7 +21,6 @@ def actor_options_for_stage(
     *,
     stage_key: StageKey,
     request: RunRequest,
-    backend: BackendDescriptor,
     default_num_cpus: float = 1.0,
     default_num_gpus: float = 0.0,
     restartable: bool = False,
@@ -25,7 +28,7 @@ def actor_options_for_stage(
 ) -> RayActorOptions:
     """Translate one repo-owned placement policy into Ray actor options."""
     placement = request.placement.by_stage.get(stage_key)
-    resources = dict(backend.default_resources) if inherit_backend_defaults else {}
+    resources = dict(request.slam.backend.default_resources) if inherit_backend_defaults else {}
     if placement is not None:
         resources.update(placement.resources)
     return {

@@ -1,4 +1,10 @@
-"""Pipeline-local offline source adapters used by orchestration."""
+"""Pipeline-local source resolution for offline-capable requests.
+
+This module adapts request-layer source specs into concrete
+:class:`prml_vslam.protocols.source.OfflineSequenceSource` owners. It belongs to
+the pipeline because it translates request contracts into source adapters, but
+the actual dataset and IO logic still stays in their owning packages.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +20,7 @@ from prml_vslam.utils import Console, PathConfig
 
 
 class VideoOfflineSequenceSource:
-    """Video-backed offline source adapter owned by pipeline orchestration."""
+    """Adapt a raw video path into the normalized offline source seam."""
 
     def __init__(self, *, path_config: PathConfig, video_path: Path, frame_stride: int) -> None:
         self._path_config = path_config
@@ -23,9 +29,11 @@ class VideoOfflineSequenceSource:
 
     @property
     def label(self) -> str:
+        """Return the compact user-facing label for this source."""
         return f"Video '{self._video_path.name}'"
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+        """Resolve the video path and return the minimal normalized manifest."""
         del output_dir
         resolved_video_path = self._path_config.resolve_video_path(self._video_path, must_exist=True)
         return SequenceManifest(
@@ -36,11 +44,12 @@ class VideoOfflineSequenceSource:
 
 @dataclass(slots=True)
 class OfflineSourceResolver:
-    """Resolve offline-capable source adapters for pipeline orchestration."""
+    """Resolve request-layer source specs into offline-capable source adapters."""
 
     path_config: PathConfig
 
     def resolve(self, source_spec: SourceSpec) -> OfflineSequenceSource:
+        """Resolve one request source spec into the owning offline source adapter."""
         console = Console(__name__).child(self.__class__.__name__)
         match source_spec:
             case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id):

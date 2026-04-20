@@ -9,7 +9,7 @@ frame_stride = 1
 [slam]
 
 [slam.backend]
-kind = "vista"
+method_id = "vista"
 max_frames = 50
 
 [benchmark.reference]

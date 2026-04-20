@@ -1,4 +1,11 @@
-"""Typed evaluation contracts for persisted artifacts and plotting."""
+"""Typed evaluation contracts for persisted metrics and review surfaces.
+
+This module owns the normalized result payloads produced by
+:mod:`prml_vslam.eval.services` and consumed by app or plotting code. It sits
+downstream of :mod:`prml_vslam.pipeline` and :mod:`prml_vslam.benchmark`: runs
+provide artifact roots and prepared references, while this package provides the
+typed metric outputs and selection models used to inspect them.
+"""
 
 from __future__ import annotations
 
@@ -15,21 +22,21 @@ from prml_vslam.utils import BaseData
 
 
 class TrajectoryMetricId(StrEnum):
-    """Trajectory metric identifiers supported or planned through the evo seam."""
+    """Name the trajectory metrics supported or planned through the `evo` seam."""
 
     APE_TRANSLATION = "ape.translation"
     RPE_TRANSLATION = "rpe.translation"
 
 
 class TrajectoryAlignmentMode(StrEnum):
-    """Alignment semantics applied before computing trajectory metrics."""
+    """Describe how trajectories are aligned before metric computation."""
 
     TIMESTAMP_ASSOCIATED_ONLY = "timestamp_associated_only"
     SE3_UMeyama = "se3_umeyama"
 
 
 class MetricStats(BaseData):
-    """Summary metrics reported by `evo`."""
+    """Capture scalar summary statistics for one evaluated error series."""
 
     rmse: float
     mean: float
@@ -41,7 +48,7 @@ class MetricStats(BaseData):
 
     @classmethod
     def from_error_values(cls, error_values: np.ndarray) -> MetricStats:
-        """Build scalar summary metrics from one error series."""
+        """Build the shared scalar summary payload from one raw error series."""
         squared = np.square(error_values)
         return cls(
             rmse=float(np.sqrt(np.mean(squared))),
@@ -55,7 +62,7 @@ class MetricStats(BaseData):
 
 
 class TrajectorySeries(BaseData):
-    """One trajectory rendered in the overlay figure."""
+    """Carry one trajectory series for persisted review and plotting."""
 
     name: str
     positions_xyz: Float[np.ndarray, "num_points 3"]  # noqa: F722
@@ -63,14 +70,14 @@ class TrajectorySeries(BaseData):
 
 
 class ErrorSeries(BaseData):
-    """Scalar `evo` error profile rendered as a Plotly line chart."""
+    """Carry one scalar error profile aligned with the evaluated timestamps."""
 
     timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
     values: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
 
 
 class TrajectoryEvaluationPreview(BaseData):
-    """In-memory trajectory APE result shared by app previews and persisted evaluation."""
+    """Hold one in-memory trajectory-evaluation preview before or after persistence."""
 
     reference: TrajectorySeries
     estimate: TrajectorySeries
@@ -79,7 +86,7 @@ class TrajectoryEvaluationPreview(BaseData):
 
 
 class TrajectoryEvaluationSemantics(BaseData):
-    """Explicit metric semantics persisted with one trajectory evaluation result."""
+    """Persist the exact metric semantics needed to interpret one evaluation result."""
 
     metric_id: TrajectoryMetricId = TrajectoryMetricId.APE_TRANSLATION
     pose_relation: str = "translation_part"
@@ -91,7 +98,7 @@ class TrajectoryEvaluationSemantics(BaseData):
 
 
 class EvaluationArtifact(BaseData):
-    """Loaded or freshly computed persisted `evo` result."""
+    """Represent one loaded or freshly computed persisted trajectory-evaluation artifact."""
 
     path: Path
     title: str
@@ -113,7 +120,7 @@ class EvaluationArtifact(BaseData):
         estimate_path: Path,
         trajectories: tuple[TrajectorySeries, TrajectorySeries],
     ) -> EvaluationArtifact:
-        """Build an evaluation artifact from one persisted metrics payload."""
+        """Build the canonical evaluation artifact from one persisted metrics payload."""
         reference_trajectory, estimate_trajectory = trajectories
         return cls(
             path=path,
@@ -132,7 +139,7 @@ class EvaluationArtifact(BaseData):
 
 
 class DenseCloudEvaluationSelection(BaseData):
-    """Resolved inputs for one dense-cloud evaluation run."""
+    """Describe the resolved dense-cloud inputs for one evaluation action."""
 
     artifact_root: Path
     """Artifact root that owns the compared dense outputs."""
@@ -145,7 +152,7 @@ class DenseCloudEvaluationSelection(BaseData):
 
 
 class DenseCloudEvaluationArtifact(BaseData):
-    """Persisted dense-cloud evaluation result."""
+    """Persist one dense-cloud evaluation result for later review."""
 
     path: Path
     """Path to the persisted result payload."""
@@ -164,14 +171,14 @@ class DenseCloudEvaluationArtifact(BaseData):
 
 
 class EfficiencyEvaluationSelection(BaseData):
-    """Resolved inputs for one runtime-efficiency evaluation run."""
+    """Describe the resolved runtime-efficiency inputs for one evaluation action."""
 
     artifact_root: Path
     """Artifact root that owns the run-level runtime outputs."""
 
 
 class EfficiencyEvaluationArtifact(BaseData):
-    """Persisted runtime-efficiency evaluation result."""
+    """Persist one runtime-efficiency evaluation result for later review."""
 
     path: Path
     """Path to the persisted result payload."""
@@ -184,7 +191,7 @@ class EfficiencyEvaluationArtifact(BaseData):
 
 
 class DiscoveredRun(BaseData):
-    """One benchmark run discovered under the configured artifacts root."""
+    """Describe one normalized run discovered under the configured artifacts root."""
 
     artifact_root: Path
     """Root directory for the selected run."""
@@ -200,7 +207,7 @@ class DiscoveredRun(BaseData):
 
 
 class SelectionSnapshot(BaseData):
-    """Resolved dataset-selection snapshot for one metrics render."""
+    """Capture the resolved dataset-and-run choice for one metrics render."""
 
     sequence_slug: str
     """Selected sequence slug."""
@@ -213,7 +220,7 @@ class SelectionSnapshot(BaseData):
 
 
 class EvaluationSelection(BaseData):
-    """Resolved dataset and run choices exposed to the metrics page."""
+    """Bundle dataset, run, and reference choices exposed to review surfaces."""
 
     dataset: DatasetId
     """Dataset currently selected in the UI."""

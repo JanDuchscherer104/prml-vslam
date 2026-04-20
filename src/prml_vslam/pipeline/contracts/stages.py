@@ -1,4 +1,10 @@
-"""Typed stage vocabulary owned by the pipeline registry."""
+"""Typed stage vocabulary owned by the pipeline registry.
+
+This module contains the shared stage ids and availability payloads that
+:mod:`prml_vslam.pipeline.stage_registry` uses to compile :class:`RunPlan`
+values. It does not execute stages itself; it only names and describes the
+stage vocabulary the rest of the pipeline agrees on.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +14,7 @@ from .transport import TransportModel
 
 
 class StageKey(StrEnum):
-    """Central stage-key set for the pipeline."""
+    """Name the canonical linear stage vocabulary for the repository pipeline."""
 
     INGEST = "ingest"
     SLAM = "slam"
@@ -35,14 +41,14 @@ class StageKey(StrEnum):
 
 
 class StageAvailability(TransportModel):
-    """Availability decision for one stage under one request/backend pair."""
+    """Record whether one stage is executable for one request/backend pairing."""
 
     available: bool = True
     reason: str | None = None
 
 
 class StageDefinition(TransportModel):
-    """Registry entry for one supported pipeline stage."""
+    """Carry the stable identity for one stage registered in the planner."""
 
     key: StageKey
 

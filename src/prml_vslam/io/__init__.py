@@ -1,4 +1,14 @@
-"""Input and output helpers for videos, logs, and benchmark artifacts."""
+"""Public IO surface for replay and live ingress helpers.
+
+The :mod:`prml_vslam.io` package owns low-level transport and replay adapters
+that emit normalized :class:`prml_vslam.interfaces.FramePacket` values. It does
+not own pipeline semantics or dataset catalogs; it provides the ingress
+building blocks that those higher-level packages consume.
+"""
+
+import sys
+
+from prml_vslam import datasets as datasets
 
 from .cv2_producer import (
     Cv2FrameProducer,
@@ -6,6 +16,8 @@ from .cv2_producer import (
     Cv2ReplayMode,
 )
 from .record3d import Record3DStreamConfig
+
+sys.modules.setdefault(__name__ + ".datasets", datasets)
 
 __all__ = [
     "Cv2FrameProducer",

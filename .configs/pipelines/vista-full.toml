@@ -24,7 +24,7 @@ pose_frame_mode = "provider_world"
     emit_sparse_points = false
 
     [slam.backend]
-    kind = "vista"
+    method_id = "vista"
     # Frame cap to stop the backend after N frames.
     max_frames = 1000
 

@@ -1,4 +1,9 @@
-"""Protocol seams for repository-local evaluation stages."""
+"""Protocol seams for repository-local evaluation stages.
+
+These protocols describe the service boundaries that review surfaces and
+pipeline stages use when they compute or load persisted evaluation artifacts.
+They sit above normalized pipeline outputs and below app or CLI rendering code.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +25,7 @@ from prml_vslam.eval.contracts import (
 
 @runtime_checkable
 class TrajectoryEvaluator(Protocol):
-    """Protocol for trajectory-evaluation services over normalized run artifacts."""
+    """Load or compute trajectory evaluation over normalized run artifacts."""
 
     def discover_runs(self, sequence_slug: str | None) -> list[DiscoveredRun]:
         """Return discovered benchmark runs for one optional sequence slug."""
@@ -47,7 +52,7 @@ class TrajectoryEvaluator(Protocol):
 
 @runtime_checkable
 class DenseCloudEvaluator(Protocol):
-    """Protocol for dense-cloud evaluation services."""
+    """Load or compute dense-cloud evaluation over normalized run artifacts."""
 
     def load_dense_evaluation(
         self,
@@ -68,7 +73,7 @@ class DenseCloudEvaluator(Protocol):
 
 @runtime_checkable
 class EfficiencyEvaluator(Protocol):
-    """Protocol for runtime-efficiency evaluation services."""
+    """Load or compute runtime-efficiency evaluation over normalized run artifacts."""
 
     def load_efficiency_evaluation(
         self,

@@ -3,20 +3,32 @@ mode            = "offline"
 output_dir      = ".artifacts"
 
 [source]
-dataset_id    = "advio"
-sequence_id   = "advio-15"
-frame_stride  = 1
-# target_fps = 10.0
+dataset_id   = "advio"
+sequence_id  = "advio-15"
+frame_stride = 1
+
+[source.dataset_serving]
+dataset_id = "advio"
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
 
 [slam]
-method             = "vista"
-emit_dense_points  = true
-emit_sparse_points = true
+    [slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = true
 
-[reference]
+    [slam.backend]
+    method_id = "vista"
+
+[benchmark.reference]
 enabled = false
 
-[evaluation]
-compare_to_arcore   = false
-evaluate_cloud      = false
-evaluate_efficiency = false
+[benchmark.trajectory]
+enabled = false
+baseline_source = "ground_truth"
+
+[benchmark.cloud]
+enabled = false
+
+[benchmark.efficiency]
+enabled = false

@@ -1,4 +1,10 @@
-"""Open3D-backed dominant-ground detection and viewer alignment helpers."""
+"""Open3D-backed dominant-ground detection and viewer alignment helpers.
+
+This module contains the concrete implementation of the alignment boundary
+defined in :mod:`prml_vslam.alignment.contracts`. It consumes normalized
+:class:`prml_vslam.pipeline.SlamArtifacts` and emits explicit viewer-scoped
+alignment metadata without rewriting the native SLAM outputs.
+"""
 
 from __future__ import annotations
 
@@ -57,7 +63,7 @@ class _PlaneCandidate:
 
 
 class GroundAlignmentService:
-    """Detect a dominant ground plane and derive a viewer-scoped transform."""
+    """Detect a dominant ground plane and derive viewer-scoped alignment metadata."""
 
     def __init__(self, *, config: GroundAlignmentConfig | None = None) -> None:
         self._config = GroundAlignmentConfig() if config is None else config

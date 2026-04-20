@@ -1337,8 +1337,6 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
 
 
 def test_vista_config_models_reject_removed_dead_knobs() -> None:
-    from prml_vslam.pipeline.contracts.request import VistaBackendSpec
-
     for payload in (
         {"device": "cpu"},
         {"stride": 5},
@@ -1346,5 +1344,3 @@ def test_vista_config_models_reject_removed_dead_knobs() -> None:
     ):
         with pytest.raises(ValidationError):
             VistaSlamBackendConfig.model_validate(payload)
-        with pytest.raises(ValidationError):
-            VistaBackendSpec.model_validate({"kind": "vista", **payload})

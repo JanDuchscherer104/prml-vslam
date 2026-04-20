@@ -1,3 +1,11 @@
+"""Shared dataset-source adapters that bridge datasets into pipeline seams.
+
+This module owns the dataset-side implementation of the shared source protocols.
+It lets concrete dataset services build normalized offline or streaming sources
+without duplicating the common glue between dataset-owned sequence objects and
+pipeline-owned source contracts.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -17,6 +25,8 @@ if TYPE_CHECKING:
 
 
 class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
+    """Adapt one dataset sequence into the shared offline/streaming source seams."""
+
     def __init__(
         self,
         *,
@@ -36,15 +46,19 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
 
     @property
     def label(self) -> str:
+        """Return the user-facing label for the selected dataset sequence."""
         return self._label(self._sequence_id)
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+        """Materialize the normalized manifest for the selected dataset sequence."""
         return self._manifest(self._sequence_id, output_dir, self._frame_selection)
 
     def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
+        """Materialize prepared benchmark inputs for the selected dataset sequence."""
         return self._benchmark(self._sequence_id, output_dir)
 
     def open_stream(self, *, loop: bool) -> FramePacketStream:
+        """Open the replay stream for the selected dataset sequence."""
         if self._stream is None:
             raise RuntimeError("This dataset sequence source does not expose a replay stream.")
         return self._stream(self._sequence_id, loop, Cv2ReplayMode.REALTIME, self._frame_selection)
@@ -65,6 +79,14 @@ def open_dataset_sequence_stream(
 
 
 class DatasetServiceBase:
+    """Provide shared dataset-service behavior for app and pipeline entry points.
+
+    Concrete dataset services own catalog details, local layout, and
+    dataset-specific replay logic. This base class centralizes the shared logic
+    that turns those sequence owners into normalized source adapters and summary
+    surfaces.
+    """
+
     catalog_loader: Callable[[], Any]
     summary_model: type[BaseData]
     sequence_config_model: type[Any]
@@ -79,6 +101,7 @@ class DatasetServiceBase:
         )
 
     def summarize(self, statuses: list[Any] | None = None) -> BaseData:
+        """Return the high-level local-coverage summary for the dataset."""
         statuses = self.local_scene_statuses() if statuses is None else statuses
         return self.summary_model(
             total_scene_count=len(statuses),
@@ -90,9 +113,11 @@ class DatasetServiceBase:
         )
 
     def list_local_sequence_ids(self) -> list[SequenceKey]:
+        """Return the offline-ready local sequence ids for the dataset."""
         return [status.scene.sequence_id for status in self.local_scene_statuses() if status.offline_ready]
 
     def load_local_sample(self, sequence_id: SequenceKey) -> object:
+        """Load one dataset-owned offline sample for inspection or tests."""
         return self._sequence(sequence_id).load_offline_sample()
 
     def build_sequence_manifest(
@@ -102,6 +127,7 @@ class DatasetServiceBase:
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
     ) -> SequenceManifest:
+        """Build the normalized offline manifest for one dataset sequence."""
         return self._sequence(sequence_id).to_sequence_manifest(
             output_dir=output_dir,
             frame_selection=frame_selection or FrameSelectionConfig(),
@@ -110,14 +136,17 @@ class DatasetServiceBase:
     def build_benchmark_inputs(
         self, *, sequence_id: SequenceKey, output_dir: Path | None = None
     ) -> PreparedBenchmarkInputs:
+        """Build prepared benchmark inputs for one dataset sequence."""
         return self._sequence(sequence_id).to_benchmark_inputs(output_dir=output_dir)
 
     def resolve_sequence_id(self, sequence_slug: str) -> SequenceKey:
+        """Resolve a UI- or CLI-facing slug into the dataset's canonical sequence id."""
         return self.scene(sequence_slug).sequence_id
 
     def build_offline_source(
         self, *, sequence_id: SequenceKey, frame_selection: FrameSelectionConfig | None = None
     ) -> DatasetSequenceSource:
+        """Build the dataset-backed offline source adapter for one sequence."""
         return self._build_source(sequence_id=sequence_id, frame_selection=frame_selection)
 
     def build_streaming_source(
@@ -127,6 +156,7 @@ class DatasetServiceBase:
         frame_selection: FrameSelectionConfig | None = None,
         **stream_kwargs: Any,
     ) -> DatasetSequenceSource:
+        """Build the dataset-backed streaming source adapter for one sequence."""
         return self._build_streaming_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
@@ -142,6 +172,7 @@ class DatasetServiceBase:
         replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
         **stream_kwargs: Any,
     ) -> FramePacketStream:
+        """Open a preview replay stream for one local dataset sequence."""
         return self._open_preview_stream(
             sequence_id=sequence_id,
             frame_selection=frame_selection,

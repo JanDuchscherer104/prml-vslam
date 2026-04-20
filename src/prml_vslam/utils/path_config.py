@@ -1,4 +1,10 @@
-"""Centralized filesystem path handling for the PRML VSLAM project."""
+"""Centralized repository-owned path semantics.
+
+This module owns the canonical filesystem layout used across datasets, pipeline
+artifacts, method checkouts, checkpoints, and runtime logs. It is the single
+source of truth for path policy in the repository; higher-level packages should
+inject :class:`PathConfig` instead of re-deriving paths ad hoc.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +28,13 @@ _ROOT_DIR_FIELDS = (
 
 
 class RunArtifactPaths(BaseData):
-    """Typed layout for one planned benchmark run."""
+    """Describe the canonical artifact layout for one planned run.
+
+    The pipeline planner and runtime both rely on this DTO so stage outputs can
+    be named deterministically before execution begins. It bridges the path
+    layer in :mod:`prml_vslam.utils` with the artifact contracts in
+    :mod:`prml_vslam.pipeline`.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -123,7 +135,13 @@ class RunArtifactPaths(BaseData):
 
 
 class PathConfig(BaseConfig):
-    """Centralize all repository-owned path semantics."""
+    """Centralize all repository-owned path semantics and directory defaults.
+
+    Inject this config into services or runtime owners that need path policy.
+    It knows where datasets, captures, configs, method repos, checkpoints, and
+    planned run artifacts live, while leaving package-specific behavior to the
+    higher-level owners that consume those paths.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -175,7 +193,7 @@ class PathConfig(BaseConfig):
         return resolved
 
     def resolve_repo_path(self, path: str | Path, *, base_dir: Path | None = None) -> Path:
-        """Resolve a path relative to the repository root or a provided base directory."""
+        """Resolve a path relative to the repository root or an explicit base directory."""
         base_path = self.root if base_dir is None else self._resolve_path(base_dir, root=self.root)
         return self._resolve_path(path, root=base_path)
 
@@ -273,7 +291,7 @@ class PathConfig(BaseConfig):
     def plan_run_paths(
         self, *, experiment_name: str, method_slug: str, output_dir: str | Path | None = None
     ) -> RunArtifactPaths:
-        """Build the canonical artifact layout for one benchmark run."""
+        """Build the canonical artifact layout used by :mod:`prml_vslam.pipeline` for one run."""
         return RunArtifactPaths.build(
             self.resolve_output_dir(output_dir) / self.slugify_experiment_name(experiment_name) / method_slug
         )
@@ -281,7 +299,7 @@ class PathConfig(BaseConfig):
 
 @lru_cache(maxsize=1)
 def get_path_config() -> PathConfig:
-    """Return the process-wide default path configuration."""
+    """Return the cached default :class:`PathConfig` for the current process."""
     return PathConfig()
 
 

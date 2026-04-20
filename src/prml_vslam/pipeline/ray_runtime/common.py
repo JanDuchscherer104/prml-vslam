@@ -1,4 +1,10 @@
-"""Shared Ray runtime contracts and helpers."""
+"""Shared Ray runtime contracts and helpers.
+
+This module owns the small helper DTOs and utility functions that the Ray-backed
+runtime shares across coordinator and stage actors. It bridges the public
+pipeline contracts to substrate-specific concerns such as transient handles and
+actor naming.
+"""
 
 from __future__ import annotations
 
@@ -13,12 +19,10 @@ import ray
 
 from prml_vslam.alignment.contracts import GroundAlignmentMetadata
 from prml_vslam.benchmark import PreparedBenchmarkInputs
-from prml_vslam.methods.contracts import SlamBackendConfig
 from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions
@@ -33,27 +37,37 @@ HandlePayload: TypeAlias = ray.ObjectRef[np.ndarray] | np.ndarray
 
 
 class IngestStageResult(BaseData):
+    """Bundle the typed outputs of the ingest stage inside the Ray runtime."""
+
     outcome: StageOutcome
     sequence_manifest: SequenceManifest
     benchmark_inputs: PreparedBenchmarkInputs | None = None
 
 
 class SlamStageResult(BaseData):
+    """Bundle the typed outputs of the SLAM stage inside the Ray runtime."""
+
     outcome: StageOutcome
     slam: SlamArtifacts
     visualization: VisualizationArtifacts | None = None
 
 
 class TrajectoryEvaluationStageResult(BaseData):
+    """Bundle the typed outputs of the trajectory-evaluation stage."""
+
     outcome: StageOutcome
 
 
 class GroundAlignmentStageResult(BaseData):
+    """Bundle the typed outputs of the ground-alignment stage."""
+
     outcome: StageOutcome
     ground_alignment: GroundAlignmentMetadata
 
 
 class SummaryStageResult(BaseData):
+    """Bundle the typed outputs of the summary stage."""
+
     outcome: StageOutcome
     summary: RunSummary
     stage_manifests: list[StageManifest]
@@ -138,19 +152,6 @@ def visualization_artifact_map(visualization: VisualizationArtifacts | None) -> 
     return artifacts
 
 
-def backend_config_payload(request: RunRequest) -> SlamBackendConfig:
-    """Build the executable backend-config model expected by current backends."""
-    if request.slam.backend.kind == "vista":
-        from prml_vslam.methods import VistaSlamBackendConfig
-
-        payload = request.slam.backend.model_dump(mode="python")
-        payload.pop("kind")
-        return VistaSlamBackendConfig.model_validate(payload)
-    from prml_vslam.methods.contracts import SlamBackendConfig
-
-    return SlamBackendConfig(max_frames=request.slam.backend.max_frames)
-
-
 def clean_actor_options(options: RayActorOptions) -> RayActorOptions:
     """Remove empty Ray actor options before `.options(...)`."""
     return {key: value for key, value in options.items() if value is not None and value != {}}
@@ -173,7 +174,6 @@ __all__ = [
     "SummaryStageResult",
     "TrajectoryEvaluationStageResult",
     "artifact_ref",
-    "backend_config_payload",
     "clean_actor_options",
     "coordinator_actor_name",
     "put_array_handle",

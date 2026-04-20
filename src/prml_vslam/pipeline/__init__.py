@@ -1,4 +1,11 @@
-"""Pipeline orchestration contracts re-exported for package users."""
+"""Public orchestration surface for the repository pipeline.
+
+The :mod:`prml_vslam.pipeline` package owns typed run requests, deterministic
+plans, normalized input and output artifacts, runtime events, projected
+snapshots, and the execution façade used by the app and CLI. This root module
+re-exports the smallest set of contracts that other packages most often import
+directly.
+"""
 
 from .contracts.artifacts import SlamArtifacts
 from .contracts.plan import RunPlan

@@ -1,4 +1,10 @@
-"""Preview-only Record3D Wi-Fi session wrapper."""
+"""Preview-only Record3D Wi-Fi session wrapper.
+
+This module owns the Python-side Wi-Fi preview ingress path for Record3D. It is
+parallel to the USB path in :mod:`prml_vslam.io.record3d`, but its transport
+setup is specific to WebRTC preview and signaling rather than the native USB
+bindings.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +21,7 @@ from .wifi_signaling import Record3DWiFiSignalingClient
 
 
 class Record3DWiFiPreviewStreamConfig(BaseConfig, FactoryConfig["Record3DWiFiPreviewStreamSession"]):
-    """Configuration for the optional Python-side Record3D Wi-Fi preview receiver."""
+    """Configure the optional Python-side Record3D Wi-Fi preview receiver."""
 
     device_address: str = ""
     """mDNS host, IP address, or absolute URL advertised by the Record3D app."""
@@ -31,11 +37,17 @@ class Record3DWiFiPreviewStreamConfig(BaseConfig, FactoryConfig["Record3DWiFiPre
 
     @property
     def target_type(self) -> type[Record3DWiFiPreviewStreamSession]:
+        """Return the runtime session type constructed from this config."""
         return Record3DWiFiPreviewStreamSession
 
 
 class Record3DWiFiPreviewStreamSession:
-    """Manage one optional Python-side Record3D Wi-Fi preview session."""
+    """Manage one Python-side Record3D Wi-Fi preview session.
+
+    The lifecycle matches the shared packet-stream seam:
+    ``connect() -> wait_for_packet(...) -> disconnect()``. Internally the
+    session owns the signaling client, background worker, and packet queue.
+    """
 
     def __init__(self, config: Record3DWiFiPreviewStreamConfig) -> None:
         self.config = config
@@ -54,6 +66,7 @@ class Record3DWiFiPreviewStreamSession:
         self._metadata: Record3DWiFiMetadata | None = None
 
     def connect(self) -> Record3DWiFiMetadata:
+        """Establish signaling, start the worker, and wait for the preview stream to become ready."""
         if self._worker is not None and self._worker.is_alive():
             raise RuntimeError("The Record3D Wi-Fi session is already active.")
 
@@ -97,6 +110,7 @@ class Record3DWiFiPreviewStreamSession:
         )
 
     def disconnect(self) -> None:
+        """Request shutdown and join the background worker when possible."""
         self._stop_event.set()
         if self._runtime is not None:
             self._runtime.request_stop()
@@ -113,6 +127,7 @@ class Record3DWiFiPreviewStreamSession:
         self._runtime = None
 
     def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
+        """Block until the next normalized preview packet is available."""
         timeout = self.config.frame_timeout_seconds if timeout_seconds is None else timeout_seconds
         try:
             return self._packet_queue.get(timeout=timeout)

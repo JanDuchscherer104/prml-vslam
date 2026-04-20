@@ -1,4 +1,9 @@
-"""OpenCV-backed frame replay source for local video samples."""
+"""OpenCV-backed frame replay source for local video samples.
+
+This module owns the generic video replay path used by dataset adapters and
+simple video-backed sources. It emits normalized runtime packets but does not
+decide dataset semantics, pipeline stages, or backend behavior.
+"""
 
 from __future__ import annotations
 
@@ -16,14 +21,14 @@ from prml_vslam.utils import BaseConfig, BaseData
 
 
 class Cv2ReplayMode(StrEnum):
-    """Replay pacing options for local video samples."""
+    """Select whether replay follows source timing or returns frames immediately."""
 
     FAST_AS_POSSIBLE = "fast_as_possible"
     REALTIME = "realtime"
 
 
 class Cv2FramePayload(BaseData):
-    """Optional per-frame payload injected through the shared OpenCV replay path."""
+    """Carry optional non-RGB payloads injected through the shared replay path."""
 
     depth: np.ndarray | None = None
     confidence: np.ndarray | None = None
@@ -31,7 +36,7 @@ class Cv2FramePayload(BaseData):
 
 
 class Cv2ProducerConfig(BaseConfig):
-    """Config describing one replayable local video sample."""
+    """Configure one replayable local video sample and its optional side payloads."""
 
     video_path: Path
     """Path to the source video file."""
@@ -65,7 +70,7 @@ class Cv2ProducerConfig(BaseConfig):
 
 
 class Cv2FrameProducer:
-    """Blocking RGB frame producer backed by `cv2.VideoCapture`."""
+    """Replay one local video through the shared blocking packet-stream seam."""
 
     def __init__(self, config: Cv2ProducerConfig) -> None:
         self.config = config

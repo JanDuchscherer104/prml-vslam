@@ -1,10 +1,11 @@
 """Streaming session wrapper for ViSTA-SLAM.
 
-This module exposes the upstream `OnlineSLAM` live path through repo-owned
-runtime contracts without changing ViSTA's native world semantics. The key
-distinction is that live updates expose scaled camera-local pointmaps on the
-ViSTA model raster, while end-of-run export produces a separately fused
-world-space dense cloud in the preserved native output directory.
+This module contains the live-session wrapper that exposes the upstream
+`OnlineSLAM` path through repo-owned runtime contracts without changing ViSTA's
+native world semantics. The key distinction is that live updates expose scaled
+camera-local pointmaps on the ViSTA model raster, while end-of-run export
+produces a separately fused world-space dense cloud in the preserved native
+output directory.
 """
 
 from __future__ import annotations
@@ -14,13 +15,13 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket
+from prml_vslam.methods.configs import VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamOutputPolicy
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 from .artifacts import _frame_transform_from_vista_pose, build_vista_artifacts
-from .config import VistaSlamBackendConfig
 from .preprocess import VistaFramePreprocessor, vista_numpy_array
 from .runtime import VistaFlowTracker, VistaOnlineSlam, build_vista_runtime_components
 
@@ -290,7 +291,12 @@ def create_vista_session(
     output_policy: SlamOutputPolicy,
     live_mode: bool,
 ) -> VistaSlamSession:
-    """Construct one fully-wired ViSTA session from repo config and paths."""
+    """Construct one fully-wired ViSTA session from repo config and paths.
+
+    This helper centralizes the last step of wrapper assembly so both the
+    adapter's offline and streaming paths share the same normalized runtime
+    wiring.
+    """
     runtime = build_vista_runtime_components(
         config=config,
         path_config=path_config,

@@ -1,3 +1,10 @@
+"""ADVIO app- and pipeline-facing service layer.
+
+This module owns the high-level ADVIO service surface used by launch code. It
+turns the lower-level sequence owner into summaries, normalized source adapters,
+and preview streams without duplicating ADVIO-specific path or replay logic.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,7 +25,7 @@ from .advio_sequence import AdvioSequence
 
 
 class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
-    """Config-backed ADVIO streaming source for process-backed execution."""
+    """Configure a process-backed ADVIO streaming source adapter."""
 
     dataset_root: Path
     sequence_id: int
@@ -26,7 +33,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
     respect_video_rotation: bool = False
 
     def setup_target(self) -> DatasetSequenceSource:
-        """Build the minimal config-backed ADVIO streaming adapter."""
+        """Build the normalized ADVIO streaming source adapter."""
 
         def sequence(sequence_id: int) -> AdvioSequence:
             return AdvioSequenceConfig(dataset_root=self.dataset_root, sequence_id=sequence_id).setup_target()
@@ -63,7 +70,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
 
 
 class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
-    """Dataset service for ADVIO catalog access, download, and replay helpers."""
+    """Provide the main ADVIO service surface for app and pipeline code."""
 
     catalog_loader = staticmethod(load_advio_catalog)
     summary_model = AdvioDatasetSummary
@@ -71,6 +78,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
     sequence_model = AdvioSequence
 
     def resolve_sequence_id(self, sequence_slug: str) -> int:
+        """Resolve an ``advio-XX`` slug into the numeric ADVIO sequence id."""
         if sequence_slug.startswith("advio-"):
             _, suffix = sequence_slug.split("-", maxsplit=1)
             if suffix.isdigit():
@@ -87,6 +95,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         frame_selection: FrameSelectionConfig | None = None,
         dataset_serving: DatasetServingConfig | None = None,
     ) -> DatasetSequenceSource:
+        """Build the ADVIO-backed offline source adapter for one sequence."""
         selection = frame_selection or FrameSelectionConfig()
         sequence = self._sequence(sequence_id)
         return DatasetSequenceSource(
@@ -109,6 +118,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         dataset_serving: DatasetServingConfig,
         respect_video_rotation: bool = False,
     ) -> DatasetSequenceSource:
+        """Build the ADVIO-backed streaming source adapter for one sequence."""
         selection = frame_selection or FrameSelectionConfig()
         return AdvioStreamingSourceConfig(
             dataset_root=self.dataset_root,
@@ -129,6 +139,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
         respect_video_rotation: bool = False,
     ):
+        """Open the canonical ADVIO preview replay stream for one sequence."""
         sequence = self._sequence(sequence_id)
         return open_dataset_sequence_stream(
             sequence=sequence,

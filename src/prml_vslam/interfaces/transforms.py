@@ -1,4 +1,10 @@
-"""Explicit frame-labelled transform contracts."""
+"""Explicit frame-labelled transform contracts shared across the repository.
+
+This module owns :class:`FrameTransform`, the canonical rigid-transform DTO
+used for runtime poses, dataset calibration, alignment outputs, and viewer
+placement metadata. It centralizes transform semantics so packages can exchange
+poses without inventing parallel matrix or quaternion formats.
+"""
 
 from __future__ import annotations
 
@@ -50,7 +56,7 @@ class FrameTransform(BaseData):
         target_frame: str = "world",
         source_frame: str = "camera",
     ) -> Self:
-        """Build a transform from XYZW quaternion and XYZ translation arrays."""
+        """Build the shared transform DTO from XYZW quaternion and XYZ translation arrays."""
         return cls(
             target_frame=target_frame,
             source_frame=source_frame,
@@ -64,7 +70,7 @@ class FrameTransform(BaseData):
         )
 
     def quaternion_xyzw(self) -> NDArray[np.float64]:
-        """Return the normalized quaternion in XYZW order."""
+        """Return the normalized unit quaternion in XYZW order."""
         quaternion = np.array([self.qx, self.qy, self.qz, self.qw], dtype=np.float64)
         norm = np.linalg.norm(quaternion)
         if norm == 0.0:
@@ -72,11 +78,11 @@ class FrameTransform(BaseData):
         return quaternion / norm
 
     def translation_xyz(self) -> NDArray[np.float64]:
-        """Return the translation vector in XYZ order."""
+        """Return the translation component in XYZ order."""
         return np.array([self.tx, self.ty, self.tz], dtype=np.float64)
 
     def as_matrix(self) -> NDArray[np.float64]:
-        """Return the transform as a 4x4 matrix."""
+        """Return the transform as a 4x4 homogeneous matrix."""
         quaternion_wxyz = self.quaternion_xyzw()[[3, 0, 1, 2]]
         rotation = matrix_from_quaternion(quaternion_wxyz)
         return transform_from(rotation, self.translation_xyz(), strict_check=False)
@@ -89,7 +95,7 @@ class FrameTransform(BaseData):
         target_frame: str = "world",
         source_frame: str = "camera",
     ) -> Self:
-        """Build a transform from a 4x4 homogeneous matrix."""
+        """Build the shared transform DTO from a 4x4 homogeneous matrix."""
         matrix_array = np.asarray(matrix, dtype=np.float64)
         if matrix_array.shape != (4, 4):
             raise ValueError(f"Expected a 4x4 pose matrix, got shape {matrix_array.shape}.")
@@ -104,13 +110,19 @@ class FrameTransform(BaseData):
         )
 
     def to_tum_fields(self) -> tuple[float, float, float, float, float, float, float]:
-        """Return the transform fields in TUM trajectory order."""
+        """Return translation and quaternion fields in canonical TUM trajectory order."""
         qx, qy, qz, qw = self.quaternion_xyzw()
         return (self.tx, self.ty, self.tz, float(qx), float(qy), float(qz), float(qw))
 
 
-def project_rotation_to_so3(rotation: NDArray[np.float64], *, max_frobenius_error: float = 1e-3) -> NDArray[np.float64]:
-    """Project one near-rotation matrix to the closest valid SO(3) matrix."""
+def project_rotation_to_so3(rotation: NDArray[np.float64], *, max_frobenius_error: float = 2e-3) -> NDArray[np.float64]:
+    """Project one near-rotation matrix into a validated SO(3) rotation.
+
+    Use this helper when an upstream system or numeric procedure yields a
+    slightly non-orthonormal 3x3 matrix that still belongs on a
+    :class:`FrameTransform`. It is intentionally strict so invalid geometry does
+    not silently cross package boundaries.
+    """
     rotation_array = np.asarray(rotation, dtype=np.float64)
     if rotation_array.shape != (3, 3):
         raise ValueError(f"Expected a 3x3 rotation matrix, got shape {rotation_array.shape}.")

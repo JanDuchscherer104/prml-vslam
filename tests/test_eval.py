@@ -96,7 +96,7 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path,
         source=VideoSourceSpec(video_path=tmp_path / "demo.mp4"),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
+        slam=SlamStageConfig(backend={"method_id": "mock"}),
         benchmark={"trajectory": {"enabled": True, "baseline_source": ReferenceSource.GROUND_TRUTH}},
     )
     plan = RunPlan(

@@ -1,4 +1,10 @@
-"""Record3D-backed streaming-source wrapper for pipeline-owned sessions."""
+"""Record3D-backed streaming-source wrapper for pipeline-owned sessions.
+
+This module contains the source adapter that bridges low-level Record3D
+transport code in :mod:`prml_vslam.io` to the higher-level streaming source
+seam consumed by :mod:`prml_vslam.pipeline`. It is the normalized source-side
+entry point for live Record3D runs.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ from .record3d import Record3DTransportId, open_record3d_usb_packet_stream
 
 
 class Record3DStreamingSourceConfig(BaseConfig, FactoryConfig["Record3DStreamingSource"]):
-    """Configuration for one Record3D-backed streaming source."""
+    """Configure one Record3D-backed streaming source adapter."""
 
     transport: Record3DTransportId = Record3DTransportId.USB
     """Selected Record3D transport."""
@@ -34,14 +40,14 @@ class Record3DStreamingSourceConfig(BaseConfig, FactoryConfig["Record3DStreaming
 
 
 class Record3DStreamingSource(StreamingSequenceSource):
-    """Record3D-backed live source compatible with pipeline-owned sessions."""
+    """Expose Record3D live capture through the shared streaming-source seam."""
 
     def __init__(self, config: Record3DStreamingSourceConfig) -> None:
         self.config = config
 
     @property
     def label(self) -> str:
-        """Return the user-facing source label."""
+        """Return the user-facing label for the configured live Record3D source adapter."""
         match self.config.transport:
             case Record3DTransportId.USB:
                 return f"Record3D USB device #{self.config.device_index}"
@@ -55,7 +61,7 @@ class Record3DStreamingSource(StreamingSequenceSource):
                 raise ValueError(f"Unsupported Record3D transport: {self.config.transport}")
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
-        """Return the normalized live-sequence boundary for one Record3D source."""
+        """Return the minimal normalized live-sequence manifest for Record3D."""
         del output_dir
         return SequenceManifest(sequence_id=self._sequence_id())
 

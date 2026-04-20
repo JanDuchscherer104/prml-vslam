@@ -1,4 +1,9 @@
-"""Canonical ingest helpers for offline execution."""
+"""Canonical offline-ingest helpers for the pipeline.
+
+This module materializes the normalized on-disk inputs that later pipeline
+stages consume. It bridges source-owned manifests into the canonical
+``input/`` layout represented by :class:`prml_vslam.utils.RunArtifactPaths`.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +25,13 @@ def materialize_offline_manifest(
     prepared_manifest: SequenceManifest,
     run_paths: RunArtifactPaths,
 ) -> SequenceManifest:
-    """Materialize the canonical offline ingest boundary for one run."""
+    """Materialize the canonical offline ingest boundary for one run.
+
+    This function is the main handoff from source preparation into pipeline
+    execution. It ensures the returned :class:`SequenceManifest` points at the
+    canonical run-owned input layout even when the prepared source came from a
+    raw video or a dataset-owned manifest.
+    """
     _CONSOLE.info(
         "Materializing offline manifest for sequence '%s'.",
         prepared_manifest.sequence_id,
