@@ -23,15 +23,15 @@ RGB and depth together.
 - Official benchmark paper:
   [A Benchmark for the Evaluation of RGB-D SLAM Systems (IROS 2012)](https://vision.in.tum.de/_media/data/datasets/rgbd-dataset/iros2012.pdf)
 - Repo-owned loader and layout code:
-  [`tum_rgbd_layout.py`](./tum_rgbd_layout.py),
-  [`tum_rgbd_loading.py`](./tum_rgbd_loading.py),
-  [`tum_rgbd_sequence.py`](./tum_rgbd_sequence.py),
-  [`tum_rgbd_replay_adapter.py`](./tum_rgbd_replay_adapter.py)
+  [tum_rgbd_layout.py](./tum_rgbd_layout.py:1),
+  [tum_rgbd_loading.py](./tum_rgbd_loading.py:1),
+  [tum_rgbd_sequence.py](./tum_rgbd_sequence.py:1),
+  [tum_rgbd_replay_adapter.py](./tum_rgbd_replay_adapter.py:1)
 
 ## Current Scope
 
 The repository currently exposes the ViSTA-oriented TUM RGB-D subset committed
-in [`tum_rgbd_layout.py`](./tum_rgbd_layout.py). That subset includes selected
+in [tum_rgbd_layout.py](./tum_rgbd_layout.py:42). That subset includes selected
 Freiburg 1/2/3 sequences such as `freiburg1_desk`, `freiburg2_desk`, and
 `freiburg3_long_office_household`.
 
@@ -113,7 +113,7 @@ difference of `0.02 s`.
 
 The repository follows the same nearest-neighbor association idea but currently
 uses a looser `max_delta_s=0.08` inside
-[`load_tum_rgbd_associations()`](./tum_rgbd_loading.py) so one local sequence
+[load_tum_rgbd_associations()](./tum_rgbd_loading.py:64) so one local sequence
 load can produce RGB/depth/pose tuples even when the nearest pose/depth sample
 is not within the stricter official default.
 
@@ -151,7 +151,7 @@ For this repository, that means:
 
 The official dataset provides RGB and IR calibration notes, but the repository
 normalizes TUM RGB-D intrinsics into a generated `intrinsics.yaml` file through
-[`ensure_tum_rgbd_intrinsics_yaml()`](./tum_rgbd_loading.py).
+[ensure_tum_rgbd_intrinsics_yaml()](./tum_rgbd_loading.py:145).
 
 Important repo-specific detail:
 
@@ -177,7 +177,7 @@ Because the official depth images are already registered to RGB and scaled by
 depth_m = depth_png / 5000.0
 ```
 
-This is implemented in [`load_depth_image_m()`](./tum_rgbd_loading.py).
+This is implemented in [load_depth_image_m()](./tum_rgbd_loading.py:191).
 
 The official tools page also provides a `generate_pointcloud.py` example for
 building colored point clouds from one registered RGB/depth pair. The current
@@ -190,7 +190,7 @@ geometry they need.
 
 For the current TUM RGB-D replay path:
 
-- `TumRgbdImageSequenceStream` replays RGB frames from `rgb.txt`
+- [TumRgbdImageSequenceStream](./tum_rgbd_replay_adapter.py:25) replays RGB frames from `rgb.txt`
 - optional depth is loaded from the nearest associated `depth.txt` row
 - pose is loaded from the nearest associated ground-truth row
 - packet intrinsics are the Freiburg RGB intrinsics (or an explicit
@@ -207,11 +207,11 @@ The stream therefore emits one repository-owned `FramePacket` carrying:
 
 For offline pipeline execution:
 
-- `TumRgbdSequence.to_sequence_manifest()` materializes or reuses an RGB frame
+- [TumRgbdSequence.to_sequence_manifest()](./tum_rgbd_sequence.py:78) materializes or reuses an RGB frame
   directory and an `intrinsics.yaml`
-- `TumRgbdSequence.to_benchmark_inputs()` exports the official ground truth to a
+- [TumRgbdSequence.to_benchmark_inputs()](./tum_rgbd_sequence.py:101) exports the official ground truth to a
   normalized `ground_truth.tum`
-- the resulting `SequenceManifest` stays RGB-directory-based rather than
+- the resulting [SequenceManifest](../../pipeline/contracts/sequence.py:11) stays RGB-directory-based rather than
   video-based
 
 This keeps TUM RGB-D aligned with the repository’s normalized pipeline surface
