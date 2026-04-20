@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import StrEnum
+from pathlib import Path
+from typing import Generic, TypeVar
 
 from pydantic import Field, model_validator
 
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseConfig, BaseData
 
 SequenceKey = int | str
+SceneT = TypeVar("SceneT", bound=BaseData)
+ModalityT = TypeVar("ModalityT", bound=StrEnum)
+SequenceT = TypeVar("SequenceT", int, str)
 
 
 class DatasetId(StrEnum):
@@ -45,4 +50,43 @@ class FrameSelectionConfig(BaseConfig):
         return self.stride_for_timestamps_ns([int(round(value * 1e9)) for value in timestamps_s])
 
 
-__all__ = ["DatasetId", "FrameSelectionConfig", "SequenceKey"]
+class DatasetDownloadResult(BaseData, Generic[SequenceT, ModalityT]):
+    """Summary of one explicit dataset download action."""
+
+    sequence_ids: list[SequenceT]
+    modalities: list[ModalityT]
+    downloaded_archive_count: int = 0
+    reused_archive_count: int = 0
+    written_path_count: int = 0
+
+
+class LocalSceneStatus(BaseData, Generic[SceneT, ModalityT]):
+    """Local availability summary for one dataset scene."""
+
+    scene: SceneT
+    sequence_dir: Path | None = None
+    local_modalities: list[ModalityT] = Field(default_factory=list)
+    archive_path: Path | None = None
+    replay_ready: bool = False
+    offline_ready: bool = False
+
+
+class DatasetSummary(BaseData):
+    """High-level summary of committed and local dataset coverage."""
+
+    total_scene_count: int
+    local_scene_count: int
+    replay_ready_scene_count: int
+    offline_ready_scene_count: int
+    cached_archive_count: int
+    total_remote_archive_bytes: int
+
+
+__all__ = [
+    "DatasetDownloadResult",
+    "DatasetId",
+    "DatasetSummary",
+    "FrameSelectionConfig",
+    "LocalSceneStatus",
+    "SequenceKey",
+]

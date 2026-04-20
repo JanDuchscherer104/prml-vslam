@@ -128,9 +128,6 @@ class TumRgbdSequence(BaseData):
             include_depth=include_depth,
         )
 
-    def write_ground_truth_tum(self, target_path: Path) -> Path:
-        return tum_rgbd_loading.ensure_ground_truth_tum(self.paths.sequence_dir, target_path)
-
 
 def _materialize_sampled_paths(
     paths: TumRgbdSequencePaths,

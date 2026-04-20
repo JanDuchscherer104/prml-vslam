@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pydantic import Field
 
+from prml_vslam.datasets.contracts import DatasetDownloadResult, DatasetSummary, LocalSceneStatus
 from prml_vslam.utils import BaseConfig, BaseData
 
 
@@ -85,30 +86,16 @@ class TumRgbdDownloadRequest(BaseConfig):
         return tuple(self.modalities) if self.modalities else self.preset.modalities
 
 
-class TumRgbdDownloadResult(BaseData):
-    sequence_ids: list[str]
-    modalities: list[TumRgbdModality]
-    downloaded_archive_count: int = 0
-    reused_archive_count: int = 0
-    written_path_count: int = 0
+class TumRgbdDownloadResult(DatasetDownloadResult[str, TumRgbdModality]):
+    """Summary of one explicit TUM RGB-D download action."""
 
 
-class TumRgbdLocalSceneStatus(BaseData):
-    scene: TumRgbdSceneMetadata
-    sequence_dir: Path | None = None
-    local_modalities: list[TumRgbdModality] = Field(default_factory=list)
-    archive_path: Path | None = None
-    replay_ready: bool = False
-    offline_ready: bool = False
+class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata, TumRgbdModality]):
+    """Local availability summary for one TUM RGB-D scene."""
 
 
-class TumRgbdDatasetSummary(BaseData):
-    total_scene_count: int
-    local_scene_count: int
-    replay_ready_scene_count: int
-    offline_ready_scene_count: int
-    cached_archive_count: int
-    total_remote_archive_bytes: int
+class TumRgbdDatasetSummary(DatasetSummary):
+    """High-level summary of committed and local TUM RGB-D coverage."""
 
 
 class TumRgbdSequenceConfig(BaseConfig):

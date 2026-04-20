@@ -31,6 +31,7 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own pipeline semantics, transport decoding, dataset normalization, or benchmark-policy logic
 - `datasets`
   - owns dataset catalogs, dataset-facing contracts, fetch/extract flows, and normalization into repository contracts
+  - preserves the currently supported dataset modalities and dataset-specific auxiliary/reference assets, including ADVIO Tango data and reference-cloud preparation
   - does not own evaluation policy or method-specific execution
 - `eval`
   - owns explicit evaluation logic and typed evaluation contracts

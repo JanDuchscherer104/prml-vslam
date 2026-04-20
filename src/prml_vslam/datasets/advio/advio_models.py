@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import Field, field_validator
 
+from prml_vslam.datasets.contracts import DatasetDownloadResult, DatasetSummary, LocalSceneStatus
 from prml_vslam.utils import BaseConfig, BaseData, FactoryConfig
 
 if TYPE_CHECKING:
@@ -185,36 +186,16 @@ class AdvioDownloadRequest(BaseConfig):
         return tuple(self.modalities) if self.modalities else self.preset.modalities
 
 
-class AdvioDownloadResult(BaseData):
+class AdvioDownloadResult(DatasetDownloadResult[int, AdvioModality]):
     """Summary of one explicit ADVIO download action."""
 
-    sequence_ids: list[int]
-    modalities: list[AdvioModality]
-    downloaded_archive_count: int = 0
-    reused_archive_count: int = 0
-    written_path_count: int = 0
 
-
-class AdvioLocalSceneStatus(BaseData):
+class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata, AdvioModality]):
     """Local availability summary for one ADVIO scene."""
 
-    scene: AdvioSceneMetadata
-    sequence_dir: Path | None = None
-    local_modalities: list[AdvioModality] = Field(default_factory=list)
-    archive_path: Path | None = None
-    replay_ready: bool = False
-    offline_ready: bool = False
 
-
-class AdvioDatasetSummary(BaseData):
+class AdvioDatasetSummary(DatasetSummary):
     """High-level summary of committed and local ADVIO coverage."""
-
-    total_scene_count: int
-    local_scene_count: int
-    replay_ready_scene_count: int
-    offline_ready_scene_count: int
-    cached_archive_count: int
-    total_remote_archive_bytes: int
 
 
 class AdvioSequenceConfig(BaseConfig, FactoryConfig["AdvioSequence"]):

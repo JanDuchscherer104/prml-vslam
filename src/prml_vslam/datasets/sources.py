@@ -50,6 +50,20 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
         return self._stream(self._sequence_id, loop, Cv2ReplayMode.REALTIME, self._frame_selection)
 
 
+def open_dataset_sequence_stream(
+    *,
+    sequence: Any,
+    timestamps_ns: list[int],
+    frame_selection: FrameSelectionConfig,
+    loop: bool,
+    replay_mode: Cv2ReplayMode,
+    **stream_kwargs: Any,
+) -> FramePacketStream:
+    """Open one dataset stream using the shared frame-selection policy."""
+    stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
+    return sequence.open_stream(stride=stride, loop=loop, replay_mode=replay_mode, **stream_kwargs)
+
+
 class DatasetServiceBase:
     catalog_loader: Callable[[], Any]
     summary_model: type[BaseData]
@@ -185,10 +199,14 @@ class DatasetServiceBase:
         **stream_kwargs: Any,
     ) -> FramePacketStream:
         sequence = self._sequence(sequence_id)
-        stride = (frame_selection or FrameSelectionConfig()).stride_for_timestamps_ns(
-            self._preview_timestamps_ns(sequence)
+        return open_dataset_sequence_stream(
+            sequence=sequence,
+            timestamps_ns=self._preview_timestamps_ns(sequence),
+            frame_selection=frame_selection or FrameSelectionConfig(),
+            loop=loop,
+            replay_mode=replay_mode,
+            **stream_kwargs,
         )
-        return sequence.open_stream(stride=stride, loop=loop, replay_mode=replay_mode, **stream_kwargs)
 
     def _preview_timestamps_ns(self, sequence: Any) -> list[int]:
         raise NotImplementedError

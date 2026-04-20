@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.datasets.contracts import FrameSelectionConfig
 from prml_vslam.io import Cv2ReplayMode
-from prml_vslam.protocols import FramePacketStream
-from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
-from prml_vslam.utils import BaseConfig, FactoryConfig
+from prml_vslam.utils import BaseConfig
 
-from ..sources import DatasetServiceBase
+from ..sources import DatasetSequenceSource, DatasetServiceBase, open_dataset_sequence_stream
 from .advio_download import AdvioDownloadManager
 from .advio_layout import load_advio_catalog
 from .advio_loading import load_advio_frame_timestamps_ns
@@ -21,11 +17,8 @@ from .advio_models import (
 )
 from .advio_sequence import AdvioSequence
 
-if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
-
-class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig, FactoryConfig["AdvioStreamingSequenceSource"]):
+class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
     """Config-backed ADVIO streaming source for process-backed execution."""
 
     dataset_root: Path
@@ -33,44 +26,40 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig, FactoryConfig
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     respect_video_rotation: bool = False
 
-    @property
-    def target_type(self) -> type[AdvioStreamingSequenceSource]:
-        return AdvioStreamingSequenceSource
+    def setup_target(self) -> DatasetSequenceSource:
+        """Build the minimal config-backed ADVIO streaming adapter."""
 
+        def sequence(sequence_id: int) -> AdvioSequence:
+            return AdvioSequenceConfig(dataset_root=self.dataset_root, sequence_id=sequence_id).setup_target()
 
-class AdvioStreamingSequenceSource(StreamingSequenceSource, BenchmarkInputSource):
-    """ADVIO-backed streaming source used by pipeline-owned replay sessions."""
+        def stream(
+            sequence_id: int,
+            loop: bool,
+            replay_mode: Cv2ReplayMode,
+            frame_selection: FrameSelectionConfig,
+        ):
+            advio_sequence = sequence(sequence_id)
+            return open_dataset_sequence_stream(
+                sequence=advio_sequence,
+                timestamps_ns=load_advio_frame_timestamps_ns(advio_sequence.paths.frame_timestamps_path).tolist(),
+                frame_selection=frame_selection,
+                loop=loop,
+                replay_mode=replay_mode,
+                pose_source=self.pose_source,
+                respect_video_rotation=self.respect_video_rotation,
+            )
 
-    def __init__(self, config: AdvioStreamingSourceConfig) -> None:
-        self.config = config
-
-    @property
-    def label(self) -> str:
-        return self._sequence().scene.display_name
-
-    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
-        return self._sequence().to_sequence_manifest(output_dir=output_dir, frame_selection=self.config)
-
-    def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
-        return self._sequence().to_benchmark_inputs(output_dir=output_dir)
-
-    def open_stream(self, *, loop: bool) -> FramePacketStream:
-        sequence = self._sequence()
-        timestamps_ns = load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path)
-        stride = self.config.stride_for_timestamps_ns(timestamps_ns.tolist())
-        return sequence.open_stream(
-            pose_source=self.config.pose_source,
-            stride=stride,
-            respect_video_rotation=self.config.respect_video_rotation,
-            loop=loop,
-            replay_mode=Cv2ReplayMode.REALTIME,
+        return DatasetSequenceSource(
+            sequence_id=self.sequence_id,
+            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            label=lambda sequence_id: sequence(sequence_id).scene.display_name,
+            manifest=lambda sequence_id, output_dir, frame_selection: sequence(sequence_id).to_sequence_manifest(
+                output_dir=output_dir,
+                frame_selection=frame_selection,
+            ),
+            benchmark=lambda sequence_id, output_dir: sequence(sequence_id).to_benchmark_inputs(output_dir=output_dir),
+            stream=stream,
         )
-
-    def _sequence(self) -> AdvioSequence:
-        return AdvioSequenceConfig(
-            dataset_root=self.config.dataset_root,
-            sequence_id=self.config.sequence_id,
-        ).setup_target()
 
 
 class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
@@ -87,45 +76,6 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             if suffix.isdigit():
                 return int(suffix)
         raise RuntimeError(f"ADVIO sequence slug '{sequence_slug}' could not be resolved to a numeric scene id.")
-
-    def build_streaming_source(
-        self,
-        *,
-        sequence_id: int,
-        pose_source: AdvioPoseSource,
-        respect_video_rotation: bool,
-        frame_selection: FrameSelectionConfig | None = None,
-    ) -> StreamingSequenceSource:
-        selection = frame_selection or FrameSelectionConfig()
-        return AdvioStreamingSourceConfig(
-            dataset_root=self.dataset_root,
-            sequence_id=sequence_id,
-            pose_source=pose_source,
-            respect_video_rotation=respect_video_rotation,
-            frame_stride=selection.frame_stride,
-            target_fps=selection.target_fps,
-        ).setup_target()
-
-    def open_preview_stream(
-        self,
-        *,
-        sequence_id: int,
-        pose_source: AdvioPoseSource,
-        respect_video_rotation: bool,
-        frame_selection: FrameSelectionConfig | None = None,
-        loop: bool = True,
-        replay_mode: Cv2ReplayMode = Cv2ReplayMode.REALTIME,
-    ) -> FramePacketStream:
-        sequence = self._sequence(sequence_id)
-        timestamps_ns = load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path)
-        stride = (frame_selection or FrameSelectionConfig()).stride_for_timestamps_ns(timestamps_ns.tolist())
-        return sequence.open_stream(
-            pose_source=pose_source,
-            stride=stride,
-            loop=loop,
-            replay_mode=replay_mode,
-            respect_video_rotation=respect_video_rotation,
-        )
 
     def _preview_timestamps_ns(self, sequence: AdvioSequence) -> list[int]:
         return load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path).tolist()
