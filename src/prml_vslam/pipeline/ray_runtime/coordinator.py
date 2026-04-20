@@ -20,6 +20,7 @@ from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, Frame
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.methods.events import BackendError, BackendEvent
 from prml_vslam.methods.factory import BackendFactory
+from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import (
@@ -468,11 +469,19 @@ class RunCoordinatorActor:
             namespace=self._namespace,
         )
         try:
+            sequence_manifest = self._runtime_state.sequence_manifest
+            if sequence_manifest is None:
+                raise RuntimeError("Streaming SLAM stage requires a prepared sequence manifest before startup.")
             ray.get(
                 self._slam_actor.start_stage.remote(
                     request=context.request,
                     plan=context.plan,
                     path_config=context.path_config,
+                    session_init=SlamSessionInit(
+                        sequence_manifest=sequence_manifest,
+                        benchmark_inputs=self._runtime_state.benchmark_inputs,
+                        baseline_source=context.request.benchmark.trajectory.baseline_source,
+                    ),
                 )
             )
         except Exception:

@@ -14,6 +14,7 @@ from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, Frame
 from prml_vslam.methods.events import BackendEvent, translate_slam_update
 from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
+from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
@@ -33,7 +34,7 @@ from prml_vslam.pipeline.ray_runtime.common import (
     visualization_artifact_map,
 )
 from prml_vslam.protocols.source import StreamingSequenceSource
-from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 
 @ray.remote(num_cpus=2, max_restarts=0, max_task_retries=0)
@@ -49,6 +50,12 @@ class OfflineSlamStageActor:
         benchmark_inputs: PreparedBenchmarkInputs | None,
         path_config: PathConfig,
     ) -> SlamStageResult:
+        console = Console(__name__).child(self.__class__.__name__)
+        console.info(
+            "Starting offline SLAM with backend '%s' at artifact root '%s'.",
+            request.slam.backend.kind,
+            plan.artifact_root,
+        )
         backend = BackendFactory().build(request.slam.backend, path_config=path_config)
         if not isinstance(backend, OfflineSlamBackend):
             raise RuntimeError(f"Backend '{request.slam.backend.kind}' does not support offline execution.")
@@ -66,6 +73,11 @@ class OfflineSlamStageActor:
         visualization = collect_native_visualization_artifacts(
             native_output_dir=run_paths.native_output_dir,
             preserve_native_rerun=request.visualization.preserve_native_rerun,
+        )
+        console.info(
+            "Finished offline SLAM with backend '%s'; visualization artifacts %s.",
+            request.slam.backend.kind,
+            "collected" if visualization is not None else "not collected",
         )
         return SlamStageResult(
             outcome=StageOutcome(
@@ -85,6 +97,7 @@ class PacketSourceActor:
     """Read packets from one streaming source with coordinator-owned credits."""
 
     def __init__(self, *, coordinator_name: str, namespace: str, frame_timeout_seconds: float = 5.0) -> None:
+        self._console = Console(__name__).child(self.__class__.__name__).child(coordinator_name)
         self._coordinator = ray.get_actor(coordinator_name, namespace=namespace)
         self._frame_timeout_seconds = frame_timeout_seconds
         self._thread: threading.Thread | None = None
@@ -103,6 +116,13 @@ class PacketSourceActor:
     ) -> None:
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("Packet source actor is already running.")
+        self._console.info(
+            "Starting packet stream for source '%s' with loop=%s, initial_credits=%d, timeout=%s.",
+            getattr(source, "label", source.__class__.__name__),
+            loop,
+            initial_credits,
+            self._frame_timeout_seconds,
+        )
         self._stop_event.clear()
         self._credits = initial_credits
         self._thread = threading.Thread(target=self._run_source, args=(source, loop), daemon=True)
@@ -119,6 +139,8 @@ class PacketSourceActor:
             self._credits_cv.notify_all()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
+            if self._thread.is_alive():
+                self._console.warning("Timed out waiting for packet source worker thread to stop.")
 
     def _run_source(self, source: StreamingSequenceSource, loop: bool) -> None:
         stream = source.open_stream(loop=loop)
@@ -129,6 +151,7 @@ class PacketSourceActor:
                     while self._credits <= 0 and not self._stop_event.is_set():
                         self._credits_cv.wait(timeout=0.1)
                     if self._stop_event.is_set():
+                        self._console.debug("Stop requested while waiting for packet credits.")
                         break
                     self._credits -= 1
                 packet = stream.wait_for_packet(timeout_seconds=self._frame_timeout_seconds)
@@ -161,8 +184,10 @@ class PacketSourceActor:
                     measured_fps=rolling_fps(self._packet_timestamps),
                 )
         except EOFError:
+            self._console.debug("Streaming source reached EOF.")
             self._coordinator.on_source_eof.remote()
         except Exception as exc:  # pragma: no cover - exercised via integration tests
+            self._console.error("Streaming source raised an unexpected exception: %s", exc)
             self._coordinator.on_source_error.remote(str(exc))
         finally:
             try:
@@ -176,16 +201,31 @@ class StreamingSlamStageActor:
     """Ordered streaming SLAM stage with internal session state."""
 
     def __init__(self, *, coordinator_name: str, namespace: str) -> None:
+        self._console = Console(__name__).child(self.__class__.__name__).child(coordinator_name)
         self._coordinator = ray.get_actor(coordinator_name, namespace=namespace)
         self._session = None
         self._accepted_keyframes = 0
         self._keyframe_timestamps = deque(maxlen=FPS_WINDOW)
+        self._logged_first_notice = False
 
-    def start_stage(self, *, request: RunRequest, plan: RunPlan, path_config: PathConfig) -> None:
+    def start_stage(
+        self,
+        *,
+        request: RunRequest,
+        plan: RunPlan,
+        path_config: PathConfig,
+        session_init: SlamSessionInit,
+    ) -> None:
+        self._console.info(
+            "Starting streaming SLAM actor with backend '%s' at artifact root '%s'.",
+            request.slam.backend.kind,
+            plan.artifact_root,
+        )
         backend = BackendFactory().build(request.slam.backend, path_config=path_config)
         if not isinstance(backend, StreamingSlamBackend):
             raise RuntimeError(f"Backend '{request.slam.backend.kind}' does not support streaming execution.")
         self._session = backend.start_session(
+            session_init=session_init,
             backend_config=backend_config_payload(request),
             output_policy=request.slam.outputs,
             artifact_root=plan.artifact_root,
@@ -249,6 +289,8 @@ class StreamingSlamStageActor:
             if update.is_keyframe:
                 self._accepted_keyframes += 1
                 self._keyframe_timestamps.append(now)
+                if self._accepted_keyframes == 1:
+                    self._console.debug("Accepted first streaming keyframe.")
             notices.extend(
                 translate_slam_update(
                     update=update,
@@ -260,6 +302,9 @@ class StreamingSlamStageActor:
                     pointmap_handle=pointmap_handle,
                 )
             )
+        if notices and not self._logged_first_notice:
+            self._console.debug("Translated first backend notice batch with %d notices.", len(notices))
+            self._logged_first_notice = True
         self._coordinator.on_slam_notices.remote(
             notices=notices,
             bindings=bindings,
@@ -284,6 +329,7 @@ class StreamingSlamStageActor:
     ) -> SlamStageResult:
         if self._session is None:
             raise RuntimeError("Streaming SLAM actor has not been started.")
+        self._console.info("Closing streaming SLAM stage.")
         slam = self._session.close()
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
@@ -291,6 +337,10 @@ class StreamingSlamStageActor:
         visualization = collect_native_visualization_artifacts(
             native_output_dir=run_paths.native_output_dir,
             preserve_native_rerun=request.visualization.preserve_native_rerun,
+        )
+        self._console.info(
+            "Finished streaming SLAM close; visualization artifacts %s.",
+            "collected" if visualization is not None else "not collected",
         )
         return SlamStageResult(
             outcome=StageOutcome(
