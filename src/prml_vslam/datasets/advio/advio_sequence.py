@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -186,21 +185,21 @@ class AdvioSequence(BaseData):
         references = [
             ReferenceTrajectoryRef(
                 source=ReferenceSource.GROUND_TRUTH,
-                path=_ensure_tum(self.write_ground_truth_tum, evaluation_dir / "ground_truth.tum"),
+                path=_ensure_advio_tum(paths.ground_truth_csv_path, evaluation_dir / "ground_truth.tum"),
             )
         ]
         if paths.arcore_csv_path.exists():
             references.append(
                 ReferenceTrajectoryRef(
                     source=ReferenceSource.ARCORE,
-                    path=_ensure_tum(self.write_arcore_tum, evaluation_dir / "arcore.tum"),
+                    path=_ensure_advio_tum(paths.arcore_csv_path, evaluation_dir / "arcore.tum"),
                 )
             )
         if paths.arkit_csv_path is not None:
             references.append(
                 ReferenceTrajectoryRef(
                     source=ReferenceSource.ARKIT,
-                    path=_ensure_tum(self.write_arkit_tum, evaluation_dir / "arkit.tum"),
+                    path=_ensure_advio_tum(paths.arkit_csv_path, evaluation_dir / "arkit.tum"),
                 )
             )
         return PreparedBenchmarkInputs(
@@ -259,25 +258,10 @@ class AdvioSequence(BaseData):
         rotation_degrees = read_advio_video_rotation_degrees(paths.video_path)
         return stream if rotation_degrees == 0 else _RotatedVideoStream(stream, rotation_degrees)
 
-    def write_ground_truth_tum(self, target_path: Path) -> Path:
-        return advio_loading.write_advio_pose_tum(
-            self._resolve_paths(require_arcore=False).ground_truth_csv_path, target_path
-        )
 
-    def write_arcore_tum(self, target_path: Path) -> Path:
-        return advio_loading.write_advio_pose_tum(
-            self._resolve_paths(require_arcore=False).arcore_csv_path, target_path
-        )
-
-    def write_arkit_tum(self, target_path: Path) -> Path:
-        if (arkit_path := self._resolve_paths(require_arcore=False).arkit_csv_path) is None:
-            raise FileNotFoundError(f"Sequence {self.scene.sequence_slug} does not include an ARKit baseline CSV.")
-        return advio_loading.write_advio_pose_tum(arkit_path, target_path)
-
-
-def _ensure_tum(write_tum: Callable[[Path], Path], target_path: Path) -> Path:
+def _ensure_advio_tum(source_path: Path, target_path: Path) -> Path:
     if not target_path.exists():
-        write_tum(target_path)
+        advio_loading.write_advio_pose_tum(source_path, target_path)
     return target_path
 
 

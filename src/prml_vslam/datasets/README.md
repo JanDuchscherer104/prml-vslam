@@ -9,9 +9,16 @@ Use [../REQUIREMENTS.md](../REQUIREMENTS.md) for top-level ownership rules. Use 
 This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO
 and TUM RGB-D.
 
+Current simplification work must preserve the full supported dataset surface. In particular:
+
+- all currently supported modalities remain in scope
+- ADVIO Tango poses and Tango point-cloud payload support remain in scope
+- dataset-provided reference cloud preparation remains in scope
+- the current ray-pipeline-facing dataset service and sequence surfaces remain the public integration boundary
+
 The current ADVIO stack includes:
 
-- typed dataset metadata and status models in `advio_models.py`
+- typed ADVIO metadata plus dataset-contract specializations in `advio_models.py`
 - local path resolution and catalog lookups in `advio_layout.py` and `advio_sequence.py`
 - typed file loading for timestamps, calibration, and trajectories in `advio_loading.py`
 - dataset fetch and cache mechanics in `fetch.py` plus archive extraction flows in `advio_download.py`
@@ -28,7 +35,7 @@ The replay path is layered on purpose:
 
 The TUM RGB-D stack mirrors the same service shape where practical:
 
-- typed metadata, status, and download request models in `tum_rgbd/tum_rgbd_models.py`
+- typed metadata plus dataset-contract specializations in `tum_rgbd/tum_rgbd_models.py`
 - ViSTA-compatible scene catalog and local path resolution in `tum_rgbd/tum_rgbd_layout.py`
 - TUM timestamp-list parsing, RGB/depth/pose association, and Freiburg intrinsics in
   `tum_rgbd/tum_rgbd_loading.py`
@@ -115,5 +122,6 @@ statuses = service.local_scene_statuses()
 ## Boundaries
 
 - This package owns dataset normalization and replay preparation, not evaluation policy.
+- Simplification in this package must not drop supported modalities, ADVIO Tango support, or repo-owned reference-cloud preparation.
 - Generic replay mechanics stay in `prml_vslam.io`.
 - App pages and pipeline surfaces should prefer `AdvioDatasetService` or `AdvioSequence` over rebuilding ADVIO path or replay logic directly.

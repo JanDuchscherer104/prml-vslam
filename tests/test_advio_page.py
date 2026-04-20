@@ -2,18 +2,14 @@ from __future__ import annotations
 
 import numpy as np
 
-import prml_vslam.app.pages.advio as advio_page
+import prml_vslam.app.pages.datasets as advio_page
 from prml_vslam.interfaces import FramePacket, FramePacketProvenance
 
 
 def test_advio_preview_frame_uses_live_image_renderer(monkeypatch) -> None:
     calls: dict[str, object] = {}
     monkeypatch.setattr(advio_page.st, "markdown", lambda text: calls.setdefault("markdown", text))
-    monkeypatch.setattr(
-        advio_page,
-        "render_live_image",
-        lambda image, **kwargs: calls.update(image=image, kwargs=kwargs),
-    )
+    monkeypatch.setattr(advio_page.st, "image", lambda image, **kwargs: calls.update(image=image, kwargs=kwargs))
     packet = FramePacket(
         seq=0,
         timestamp_ns=1,
