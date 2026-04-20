@@ -8,6 +8,7 @@ from typing import Protocol, runtime_checkable
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
@@ -53,6 +54,7 @@ class StreamingSlamBackend(Protocol):
 
     def start_session(
         self,
+        session_init: SlamSessionInit,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,

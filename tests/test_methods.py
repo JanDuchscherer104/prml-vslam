@@ -11,12 +11,23 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from prml_vslam.benchmark import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
+    ReferenceCloudSource,
+    ReferencePointCloudSequenceRef,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+)
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import Console
+from prml_vslam.utils.geometry import load_tum_trajectory, write_point_cloud_ply, write_tum_trajectory
 
 
 def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,6 +84,72 @@ def _write_normalized_timestamps(path: Path, timestamps_ns: list[int]) -> Path:
     return path
 
 
+def _pose(tx: float, *, ty: float = 0.0, tz: float = 0.0) -> FrameTransform:
+    return FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=ty, tz=tz)
+
+
+def _write_reference_bundle(tmp_path: Path) -> PreparedBenchmarkInputs:
+    reference_dir = tmp_path / "references"
+    reference_dir.mkdir(parents=True, exist_ok=True)
+
+    ground_truth_path = write_tum_trajectory(
+        reference_dir / "ground_truth.tum",
+        [_pose(0.0), _pose(1.0), _pose(2.0)],
+        [0.0, 0.1, 0.2],
+    )
+    arcore_path = write_tum_trajectory(
+        reference_dir / "arcore.tum",
+        [_pose(10.0), _pose(11.0), _pose(12.0)],
+        [0.0, 0.1, 0.2],
+    )
+    tango_trajectory_path = write_tum_trajectory(
+        reference_dir / "tango_area_learning.tum",
+        [_pose(0.0), _pose(1.0), _pose(2.0)],
+        [0.0, 0.1, 0.2],
+    )
+    payload_root = reference_dir / "tango"
+    payload_root.mkdir(parents=True, exist_ok=True)
+    index_path = payload_root / "point-cloud.csv"
+    index_path.write_text("0.0,1\n0.1,2\n0.2,3\n", encoding="utf-8")
+    for index, depth in ((1, 1.0), (2, 1.1), (3, 1.2)):
+        (payload_root / f"point-cloud-{index:05d}.csv").write_text(
+            f"0.0,0.0,{depth}\n0.1,0.0,{depth}\n0.0,0.1,{depth}\n",
+            encoding="utf-8",
+        )
+    aligned_cloud_path = write_point_cloud_ply(
+        reference_dir / "tango_area_learning_aligned.ply",
+        np.asarray([[0.0, 0.0, 1.0], [0.2, 0.0, 1.0], [0.0, 0.2, 1.0]], dtype=np.float64),
+    )
+    metadata_path = reference_dir / "tango_area_learning_aligned.metadata.json"
+    metadata_path.write_text("{}", encoding="utf-8")
+    return PreparedBenchmarkInputs(
+        reference_trajectories=[
+            ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=ground_truth_path),
+            ReferenceTrajectoryRef(source=ReferenceSource.ARCORE, path=arcore_path),
+        ],
+        reference_clouds=[
+            ReferenceCloudRef(
+                source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+                path=aligned_cloud_path,
+                metadata_path=metadata_path,
+                target_frame="advio_gt_world",
+                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+            )
+        ],
+        reference_point_cloud_sequences=[
+            ReferencePointCloudSequenceRef(
+                source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+                index_path=index_path,
+                payload_root=payload_root,
+                trajectory_path=tango_trajectory_path,
+                target_frame="advio_tango_area_learning_world",
+                native_frame="advio_tango_area_learning_world",
+                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+            )
+        ],
+    )
+
+
 def _make_fake_frame_preprocessor(
     *,
     image_rgb: np.ndarray | None = None,
@@ -107,8 +184,6 @@ def _make_fake_frame_preprocessor(
 
 
 def test_mock_slam_backend_materializes_placeholder_outputs_without_reference(tmp_path: Path) -> None:
-    from prml_vslam.benchmark import ReferenceSource
-
     backend = MockSlamBackendConfig().setup_target()
     assert backend is not None
     sequence = SequenceManifest(sequence_id="test-seq")
@@ -132,34 +207,39 @@ def test_mock_slam_backend_config_defaults_to_mock_method() -> None:
 
 
 def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> None:
-    from prml_vslam.benchmark import ReferenceSource
-
     backend = MockSlamBackendConfig().setup_target()
     assert backend is not None
+    (tmp_path / "frames").mkdir()
+    benchmark_inputs = _write_reference_bundle(tmp_path)
     sequence = SequenceManifest(
         sequence_id="advio-15",
         rgb_dir=tmp_path / "frames",
-        timestamps_path=tmp_path / "timestamps.json",
+        timestamps_path=_write_normalized_timestamps(tmp_path / "timestamps.json", [0, 100_000_000, 200_000_000]),
     )
-    # reference_tum_path was removed from SequenceManifest in main.
-    # The mock now just emits a placeholder update.
     artifacts = backend.run_sequence(
         sequence=sequence,
-        benchmark_inputs=None,
-        baseline_source=ReferenceSource.GROUND_TRUTH,
+        benchmark_inputs=benchmark_inputs,
+        baseline_source=ReferenceSource.ARCORE,
         backend_config=VistaSlamBackendConfig(),
         output_policy=SlamOutputPolicy(),
         artifact_root=tmp_path / "mock-run",
     )
 
-    assert artifacts.trajectory_tum.path.exists()
+    trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
+    assert trajectory.positions_xyz[:, 0].tolist() == [10.0, 11.0, 12.0]
 
 
 def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Path) -> None:
+    benchmark_inputs = _write_reference_bundle(tmp_path)
     session = (
         MockSlamBackendConfig()
         .setup_target()
         .start_session(
+            session_init=SlamSessionInit(
+                sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+                benchmark_inputs=benchmark_inputs,
+                baseline_source=ReferenceSource.GROUND_TRUTH,
+            ),
             backend_config=VistaSlamBackendConfig(),
             output_policy=SlamOutputPolicy(),
             artifact_root=tmp_path / "mock-stream",
@@ -172,6 +252,7 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
             seq=1,
             timestamp_ns=100_000_000,
             rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=4.0, cy=4.0, width_px=8, height_px=8),
             pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
         )
     )
@@ -181,9 +262,147 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
     assert updates[0].is_keyframe is True
     assert updates[1].pose is not None
     assert updates[1].pose.tx == 1.0
+    assert updates[1].pointmap is not None
+    assert updates[1].num_dense_points > 0
 
     artifacts = session.close()
     assert artifacts.trajectory_tum.path.exists()
+
+
+def test_mock_slam_session_uses_reference_pose_instead_of_stream_packet_pose(tmp_path: Path) -> None:
+    benchmark_inputs = _write_reference_bundle(tmp_path)
+    session = (
+        MockSlamBackendConfig()
+        .setup_target()
+        .start_session(
+            session_init=SlamSessionInit(
+                sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+                benchmark_inputs=benchmark_inputs,
+                baseline_source=ReferenceSource.ARCORE,
+            ),
+            backend_config=SlamBackendConfig(),
+            output_policy=SlamOutputPolicy(),
+            artifact_root=tmp_path / "mock-stream-ref-pose",
+        )
+    )
+
+    session.step(
+        FramePacket(
+            seq=0,
+            timestamp_ns=100_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=4.0, cy=4.0, width_px=8, height_px=8),
+            pose=_pose(999.0),
+        )
+    )
+
+    update = session.try_get_updates()[0]
+    assert update.pose is not None
+    assert update.pose.tx == 11.0
+    assert update.pointmap is not None
+
+
+def test_mock_slam_backend_zero_variance_awgn_preserves_reference_outputs(tmp_path: Path) -> None:
+    benchmark_inputs = _write_reference_bundle(tmp_path)
+    backend = MockSlamBackendConfig(
+        trajectory_position_noise_variance_m2=0.0,
+        point_noise_variance_m2=0.0,
+        random_seed=7,
+    ).setup_target()
+    sequence = SequenceManifest(
+        sequence_id="advio-15",
+        timestamps_path=_write_normalized_timestamps(tmp_path / "timestamps.json", [0, 100_000_000, 200_000_000]),
+    )
+
+    artifacts = backend.run_sequence(
+        sequence=sequence,
+        benchmark_inputs=benchmark_inputs,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
+        backend_config=SlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-offline-zero-noise",
+    )
+
+    trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
+    assert trajectory.positions_xyz[:, 0].tolist() == [0.0, 1.0, 2.0]
+
+
+def test_mock_slam_backend_nonzero_awgn_is_deterministic_with_fixed_seed(tmp_path: Path) -> None:
+    benchmark_inputs = _write_reference_bundle(tmp_path)
+    config = MockSlamBackendConfig(
+        trajectory_position_noise_variance_m2=0.01,
+        point_noise_variance_m2=0.01,
+        random_seed=13,
+    )
+    session1 = config.setup_target().start_session(
+        session_init=SlamSessionInit(
+            sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+            benchmark_inputs=benchmark_inputs,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+        ),
+        backend_config=SlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-noise-1",
+    )
+    session2 = config.setup_target().start_session(
+        session_init=SlamSessionInit(
+            sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+            benchmark_inputs=benchmark_inputs,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+        ),
+        backend_config=SlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-noise-2",
+    )
+    frame = FramePacket(
+        seq=0,
+        timestamp_ns=100_000_000,
+        rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+        intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=4.0, cy=4.0, width_px=8, height_px=8),
+    )
+
+    session1.step(frame)
+    session2.step(frame)
+    update1 = session1.try_get_updates()[0]
+    update2 = session2.try_get_updates()[0]
+
+    assert update1.pose is not None and update2.pose is not None
+    assert update1.pose.tx == pytest.approx(update2.pose.tx)
+    assert update1.pose.ty == pytest.approx(update2.pose.ty)
+    assert update1.pose.tz == pytest.approx(update2.pose.tz)
+    assert update1.pointmap is not None and update2.pointmap is not None
+    assert np.array_equal(np.nan_to_num(update1.pointmap, nan=-1.0), np.nan_to_num(update2.pointmap, nan=-1.0))
+
+
+def test_mock_slam_session_warns_and_falls_back_when_reference_payload_is_missing(tmp_path: Path) -> None:
+    benchmark_inputs = _write_reference_bundle(tmp_path)
+    session = (
+        MockSlamBackendConfig()
+        .setup_target()
+        .start_session(
+            session_init=SlamSessionInit(
+                sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+                benchmark_inputs=benchmark_inputs,
+                baseline_source=ReferenceSource.GROUND_TRUTH,
+            ),
+            backend_config=SlamBackendConfig(),
+            output_policy=SlamOutputPolicy(),
+            artifact_root=tmp_path / "mock-stream-missing-payload",
+        )
+    )
+
+    session.step(
+        FramePacket(
+            seq=0,
+            timestamp_ns=10_000_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=4.0, cy=4.0, width_px=8, height_px=8),
+        )
+    )
+
+    update = session.try_get_updates()[0]
+    assert update.pointmap is not None
+    assert any("falling back to synthetic pointmap generation" in warning for warning in update.backend_warnings)
 
 
 def test_methods_package_exports_vista_backend_surfaces() -> None:
@@ -206,9 +425,10 @@ def test_vista_backend_starts_direct_streaming_session(tmp_path: Path, monkeypat
     )
 
     session = backend.start_session(
-        SlamBackendConfig(),
-        SlamOutputPolicy(),
-        tmp_path / "vista-stream",
+        session_init=SlamSessionInit(sequence_manifest=SequenceManifest(sequence_id="vista-stream")),
+        backend_config=SlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "vista-stream",
     )
 
     assert callable(session.step)

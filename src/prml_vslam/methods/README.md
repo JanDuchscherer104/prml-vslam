@@ -37,7 +37,8 @@ The actual execution seams live in [`protocols.py`](./protocols.py#L16). Offline
 backends implement [`run_sequence()`](./protocols.py#L36) over a normalized
 [`SequenceManifest`](../pipeline/contracts/sequence.py#L10), optional prepared
 benchmark inputs, and a method-owned output policy. Streaming backends implement
-[`start_session()`](./protocols.py#L54), which returns a
+[`start_session()`](./protocols.py#L54), which receives one method-owned
+session-init bundle plus the runtime controls before returning a
 [`SlamSession`](./protocols.py#L17) that consumes incremental
 [`FramePacket`](../interfaces/runtime.py#L68) values and produces
 [`SlamUpdate`](./updates.py#L13) telemetry before closing into the same
