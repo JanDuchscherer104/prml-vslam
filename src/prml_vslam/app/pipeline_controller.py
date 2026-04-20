@@ -12,8 +12,8 @@ import numpy as np
 from prml_vslam.eval.contracts import TrajectoryEvaluationPreview
 from prml_vslam.eval.services import compute_trajectory_ape_preview
 from prml_vslam.interfaces import CameraIntrinsics
+from prml_vslam.interfaces.slam import KeyframeVisualizationReady
 from prml_vslam.methods import MethodId
-from prml_vslam.methods.events import KeyframeVisualizationReady
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunEvent
 from prml_vslam.pipeline.contracts.provenance import StageManifest

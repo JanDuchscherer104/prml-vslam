@@ -17,20 +17,20 @@ from prml_vslam.app.pipeline_controller import (
 )
 from prml_vslam.datasets.advio import AdvioServingConfig
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
-from prml_vslam.methods import MethodId, VistaSlamBackendConfig
-from prml_vslam.methods.events import KeyframeVisualizationReady
+from prml_vslam.interfaces.slam import KeyframeVisualizationReady
+from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, FramePacketSummary, RunStarted
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import StageManifest, StageStatus
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
 from prml_vslam.pipeline.contracts.runtime import RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.utils import PathConfig
 
 
-def test_build_request_from_action_derives_backend_method(tmp_path: Path) -> None:
+def test_build_request_from_action_derives_backend_kind(tmp_path: Path) -> None:
     context = type(
         "Context",
         (),
@@ -66,7 +66,8 @@ def test_build_request_from_action_derives_backend_method(tmp_path: Path) -> Non
 
     assert error is None
     assert isinstance(request, RunRequest)
-    assert request.slam.backend.method_id is MethodId.VISTA
+    assert request.slam.backend.kind == "vista"
+    assert request.slam.backend.kind == MethodId.VISTA.value
 
 
 def test_build_request_from_action_accepts_stringified_vista_paths(tmp_path: Path) -> None:
@@ -90,10 +91,13 @@ def test_build_request_from_action_accepts_stringified_vista_paths(tmp_path: Pat
         mode=PipelineMode.OFFLINE,
         method=MethodId.VISTA,
         slam_max_frames=12,
-        slam_backend_spec=VistaSlamBackendConfig(
-            vista_slam_dir=Path("external/vista-slam"),
-            checkpoint_path=Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
-            vocab_path=Path("external/vista-slam/pretrains/ORBvoc.txt"),
+        slam_backend_spec=build_backend_spec(
+            method=MethodId.VISTA,
+            overrides={
+                "vista_slam_dir": Path("external/vista-slam"),
+                "checkpoint_path": Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
+                "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
+            },
         ),
         pose_source="ground_truth",
         respect_video_rotation=True,
@@ -148,7 +152,7 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
         ),
         slam=SlamStageConfig(
             backend={
-                "method_id": "vista",
+                "kind": "vista",
                 "vista_slam_dir": Path("external/vista-slam"),
                 "checkpoint_path": Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
                 "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
@@ -165,7 +169,7 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
 
     backend_spec = context.state.pipeline.slam_backend_spec
     assert backend_spec is not None
-    assert backend_spec.method_id is MethodId.VISTA
+    assert backend_spec.kind == "vista"
     assert backend_spec.vista_slam_dir == Path("external/vista-slam")
     assert context.state.pipeline.pose_source.value == "ground_truth"
     assert context.state.pipeline.pose_frame_mode.value == "provider_world"
@@ -190,7 +194,7 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
             sequence_id="advio-01",
             dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
         ),
-        slam={"backend": {"method_id": "mock"}},
+        slam={"backend": {"kind": "mock"}},
         benchmark={"cloud": {"enabled": True}},
     )
     plan = request.build(path_config)
@@ -211,7 +215,7 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
             sequence_id="advio-01",
             dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
         ),
-        slam=SlamStageConfig(backend={"method_id": "vista"}),
+        slam=SlamStageConfig(backend={"kind": "vista"}),
     )
     plan = RunPlan(
         run_id="streaming-demo",
@@ -305,7 +309,7 @@ def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path
             sequence_id="advio-01",
             dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
         ),
-        slam=SlamStageConfig(backend={"method_id": "vista"}),
+        slam=SlamStageConfig(backend={"kind": "vista"}),
     )
     plan = RunPlan(
         run_id="streaming-demo",
@@ -346,7 +350,7 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
             sequence_id="advio-01",
             dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
         ),
-        slam=SlamStageConfig(backend={"method_id": "mock"}),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
     )
     plan = RunPlan(
         run_id="streaming-demo",

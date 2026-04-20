@@ -5,23 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.utils import BaseData
 
-from .models import ACTIVE_PREVIEW_STREAM_STATES, Record3DStreamSnapshot
+from .models import ACTIVE_PREVIEW_STREAM_STATES, Record3DPageAction, Record3DStreamSnapshot
 from .state import save_model_updates
 
 if TYPE_CHECKING:
     from .bootstrap import AppContext
-
-
-class Record3DPageAction(BaseData):
-    """Typed Record3D page action payload."""
-
-    transport: Record3DTransportId
-    usb_device_index: int | None = None
-    wifi_device_address: str | None = None
-    start_requested: bool = False
-    stop_requested: bool = False
 
 
 def handle_record3d_page_action(context: AppContext, action: Record3DPageAction) -> Record3DStreamSnapshot:

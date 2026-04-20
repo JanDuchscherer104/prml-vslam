@@ -13,14 +13,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
-from prml_vslam.alignment.contracts import GroundAlignmentMetadata
-from prml_vslam.benchmark import PreparedBenchmarkInputs
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.request import PipelineMode
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.stage_execution import (
@@ -32,7 +32,6 @@ from prml_vslam.pipeline.ray_runtime.stage_execution import (
     run_trajectory_evaluation_stage,
 )
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
 @dataclass(slots=True)
@@ -364,12 +363,7 @@ def _run_ingest(
     source: OfflineSequenceSource,
     _driver: RuntimeStageDriver,
 ) -> StageCompletionPayload:
-    result = run_ingest_stage(context=context, source=source)
-    return StageCompletionPayload(
-        outcome=result.outcome,
-        sequence_manifest=result.sequence_manifest,
-        benchmark_inputs=result.benchmark_inputs,
-    )
+    return run_ingest_stage(context=context, source=source)
 
 
 def _run_slam_offline(
@@ -378,12 +372,11 @@ def _run_slam_offline(
     _source: OfflineSequenceSource,
     _driver: RuntimeStageDriver,
 ) -> StageCompletionPayload:
-    result = run_offline_slam_stage(
+    return run_offline_slam_stage(
         context=context,
         sequence_manifest=_require_sequence_manifest(state),
         benchmark_inputs=state.benchmark_inputs,
     )
-    return StageCompletionPayload(outcome=result.outcome, slam=result.slam, visualization=result.visualization)
 
 
 def _run_slam_streaming_prepare(
@@ -427,13 +420,12 @@ def _run_trajectory(
     _source_or_driver: OfflineSequenceSource | RuntimeStageDriver,
     _driver: RuntimeStageDriver | None = None,
 ) -> StageCompletionPayload:
-    result = run_trajectory_evaluation_stage(
+    return run_trajectory_evaluation_stage(
         context=context,
         sequence_manifest=_require_sequence_manifest(state),
         benchmark_inputs=state.benchmark_inputs,
         slam=_require_slam_artifacts(state),
     )
-    return StageCompletionPayload(outcome=result.outcome)
 
 
 def _run_ground_alignment(
@@ -442,11 +434,10 @@ def _run_ground_alignment(
     _source_or_driver: OfflineSequenceSource | RuntimeStageDriver,
     _driver: RuntimeStageDriver | None = None,
 ) -> StageCompletionPayload:
-    result = run_ground_alignment_stage(
+    return run_ground_alignment_stage(
         context=context,
         slam=_require_slam_artifacts(state),
     )
-    return StageCompletionPayload(outcome=result.outcome, ground_alignment=result.ground_alignment)
 
 
 def _run_summary(
@@ -455,12 +446,7 @@ def _run_summary(
     _source_or_driver: OfflineSequenceSource | RuntimeStageDriver,
     _driver: RuntimeStageDriver | None = None,
 ) -> StageCompletionPayload:
-    result = run_summary_stage(context=context, stage_outcomes=list(state.stage_outcomes))
-    return StageCompletionPayload(
-        outcome=result.outcome,
-        summary=result.summary,
-        stage_manifests=result.stage_manifests,
-    )
+    return run_summary_stage(context=context, stage_outcomes=list(state.stage_outcomes))
 
 
 def _apply_completion(state: RuntimeExecutionState, payload: StageCompletionPayload) -> None:

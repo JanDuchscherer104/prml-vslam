@@ -17,10 +17,11 @@ import ray
 from ray.actor import ActorHandle
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
-from prml_vslam.methods.events import BackendError, BackendEvent
-from prml_vslam.methods.session_init import SlamSessionInit
+from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces.slam import BackendError, BackendEvent, SlamArtifacts, SlamSessionInit
+from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
-from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import (
     ArtifactRegistered,
     BackendNoticeReceived,
@@ -44,7 +45,6 @@ from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.placement import RayActorOptions, actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
@@ -100,6 +100,7 @@ class RunCoordinatorActor:
         self._slam_actor = None
         self._request: RunRequest | None = None
         self._plan: RunPlan | None = None
+        self._backend_descriptor: BackendDescriptor | None = None
         self._runtime_state = RuntimeExecutionState()
         self._stage_program = RuntimeStageProgram.default()
         self._streaming_error: str | None = None
@@ -309,6 +310,7 @@ class RunCoordinatorActor:
             if unavailable:
                 reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."
                 raise RuntimeError(reason)
+            self._backend_descriptor = BackendFactory().describe(request.slam.backend)
             if plan.mode is PipelineMode.OFFLINE:
                 self._run_offline(
                     request=request,
@@ -457,12 +459,10 @@ class RunCoordinatorActor:
 
     @property
     def stop_requested(self) -> bool:
-        """Return whether graceful stop was requested for the active streaming run."""
         return self._stop_requested
 
     @property
     def streaming_error(self) -> str | None:
-        """Return the terminal streaming error captured by the coordinator, if any."""
         return self._streaming_error
 
     def start_streaming_slam_stage(self, *, context: StageExecutionContext) -> None:
@@ -520,11 +520,7 @@ class RunCoordinatorActor:
                 sequence_manifest=sequence_manifest,
             )
         )
-        return StageCompletionPayload(
-            outcome=result.outcome,
-            slam=result.slam,
-            visualization=result.visualization,
-        )
+        return result
 
     def _build_rerun_sink(self, *, request: RunRequest, run_paths: RunArtifactPaths) -> ActorHandle | None:
         if not (request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd):
@@ -555,6 +551,7 @@ class RunCoordinatorActor:
             actor_options_for_stage(
                 stage_key=stage_key,
                 request=request,
+                backend=self._require_backend_descriptor(),
                 default_num_cpus=default_num_cpus,
                 default_num_gpus=default_num_gpus,
                 restartable=restartable,
@@ -715,6 +712,11 @@ class RunCoordinatorActor:
             raise RuntimeError("Run plan is not initialized.")
         return self._plan
 
+    def _require_backend_descriptor(self) -> BackendDescriptor:
+        if self._backend_descriptor is None:
+            raise RuntimeError("Backend descriptor is not initialized.")
+        return self._backend_descriptor
+
     def _require_path_config(self) -> PathConfig:
         if self._path_config is None:
             raise RuntimeError("Path config is not initialized.")
@@ -742,6 +744,7 @@ class RunCoordinatorActor:
             plan=plan,
             path_config=self._require_path_config() if path_config is None else path_config,
             run_paths=RunArtifactPaths.build(plan.artifact_root),
+            backend_descriptor=self._require_backend_descriptor(),
         )
 
 

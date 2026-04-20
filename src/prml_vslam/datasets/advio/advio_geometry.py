@@ -8,8 +8,9 @@ from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 from pytransform3d.transformations import transform, vectors_to_points
 
-from prml_vslam.benchmark import ReferenceCloudCoordinateStatus, ReferenceCloudRef, ReferenceCloudSource
+from prml_vslam.benchmark import ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.interfaces import FrameTransform
+from prml_vslam.interfaces.ingest import ReferenceCloudRef
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import write_point_cloud_ply
 

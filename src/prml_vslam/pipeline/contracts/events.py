@@ -12,17 +12,15 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from prml_vslam.alignment.contracts import GroundAlignmentMetadata
-from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.interfaces import FramePacketProvenance
-from prml_vslam.methods.events import BackendEvent
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.slam import ArtifactRef, BackendEvent, SlamArtifacts
+from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
-from prml_vslam.visualization.contracts import VisualizationArtifacts
 
 
 class EventTier(StrEnum):

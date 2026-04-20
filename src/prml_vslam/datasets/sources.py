@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
@@ -21,7 +21,7 @@ from prml_vslam.utils import BaseData, Console, PathConfig
 from .contracts import FrameSelectionConfig, SequenceKey
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+    from prml_vslam.interfaces.ingest import SequenceManifest
 
 
 class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):

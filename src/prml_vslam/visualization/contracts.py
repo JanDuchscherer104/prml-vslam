@@ -1,10 +1,4 @@
-"""Viewer-policy contracts for repo-owned visualization artifacts.
-
-This module owns the small configuration and artifact DTOs that describe how a
-run interacts with Rerun or preserved native viewer outputs. It does not own
-logging behavior itself; live sink policy and concrete logging helpers live in
-:mod:`prml_vslam.pipeline.sinks` and :mod:`prml_vslam.visualization.rerun`.
-"""
+"""Thin visualization-policy contracts."""
 
 from __future__ import annotations
 
@@ -12,17 +6,11 @@ from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
-from prml_vslam.utils import BaseConfig, BaseData
+from prml_vslam.utils import BaseConfig
 
 
 class VisualizationConfig(BaseConfig):
-    """Describe viewer-export policy attached to one :class:`RunRequest`.
-
-    These flags shape how the rest of the package logs or preserves viewer
-    artifacts, but they do not change scientific artifact ownership in
-    :mod:`prml_vslam.pipeline.contracts.artifacts`.
-    """
+    """Viewer-export policy attached to one run request."""
 
     connect_live_viewer: bool = False
     """Whether streaming runs should attach a live gRPC viewer sink."""
@@ -49,20 +37,4 @@ class VisualizationConfig(BaseConfig):
     """Whether the repo-owned sink should log the full tracking trajectory polyline."""
 
 
-class VisualizationArtifacts(BaseData):
-    """Collect viewer-oriented artifacts produced alongside one run."""
-
-    native_rerun_rrd: ArtifactRef | None = None
-    """Optional preserved recorded-session `.rrd` from an upstream backend."""
-
-    native_output_dir: ArtifactRef | None = None
-    """Optional preserved backend-native output directory."""
-
-    extras: dict[str, ArtifactRef] = Field(default_factory=dict)
-    """Optional additional viewer artifacts owned by the visualization layer."""
-
-
-__all__ = [
-    "VisualizationArtifacts",
-    "VisualizationConfig",
-]
+__all__ = ["VisualizationConfig"]

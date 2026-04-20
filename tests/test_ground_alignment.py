@@ -7,8 +7,9 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from prml_vslam.alignment import GroundAlignmentMetadata, GroundAlignmentService
+from prml_vslam.alignment import GroundAlignmentService
 from prml_vslam.interfaces import FrameTransform
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
 

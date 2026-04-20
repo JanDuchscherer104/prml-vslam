@@ -9,20 +9,22 @@ stage order independently.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageAvailability, StageDefinition, StageKey
-from prml_vslam.utils import BaseData, PathConfig, RunArtifactPaths
+from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 EnabledFn = Callable[[RunRequest], bool]
 AvailabilityFn = Callable[[RunRequest], StageAvailability]
 OutputsFn = Callable[[RunRequest, RunArtifactPaths], list[Path]]
 
 
-class _RegistryEntry(BaseData):
+@dataclass(slots=True)
+class _RegistryEntry:
     definition: StageDefinition
     enabled_fn: EnabledFn | None = None
     availability_fn: AvailabilityFn

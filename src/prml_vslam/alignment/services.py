@@ -16,18 +16,18 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation
 
-from prml_vslam.interfaces import FrameTransform
-from prml_vslam.utils.geometry import load_point_cloud_ply, load_tum_trajectory
-
-from .contracts import (
-    GroundAlignmentConfig,
+from prml_vslam.interfaces.alignment import (
     GroundAlignmentMetadata,
     GroundPlaneModel,
     GroundPlaneVisualizationHint,
 )
+from prml_vslam.interfaces.transforms import FrameTransform
+from prml_vslam.utils.geometry import load_point_cloud_ply, load_tum_trajectory
+
+from .contracts import GroundAlignmentConfig
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
+    from prml_vslam.interfaces.slam import SlamArtifacts
 
 _RANSAC_DISTANCE_THRESHOLD_M = 0.03
 _RANSAC_NUM_POINTS = 3

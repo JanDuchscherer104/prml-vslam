@@ -4,15 +4,25 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 
-from prml_vslam.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.datasets.advio import (
+    AdvioDatasetSummary,
+    AdvioDownloadPreset,
+    AdvioDownloadRequest,
+    AdvioLocalSceneStatus,
+    AdvioModality,
+    AdvioPoseFrameMode,
+    AdvioPoseSource,
+)
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
-from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.methods import BackendConfig, MethodId
+from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
+from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.contracts.request import BackendSpec
 from prml_vslam.utils import BaseData
 
 from .preview_runtime import PacketSessionSnapshot
@@ -73,6 +83,33 @@ class AdvioPreviewSnapshot(PreviewSessionSnapshot):
 
     pose_source: AdvioPoseSource | TumRgbdPoseSource | None = None
     """Pose source currently used for the preview stream."""
+
+
+class AdvioDownloadFormData(BaseData):
+    """Typed ADVIO dataset-download form payload."""
+
+    request: AdvioDownloadRequest
+    submitted: bool = False
+
+
+class AdvioPreviewFormData(BaseData):
+    """Typed ADVIO preview action payload."""
+
+    sequence_id: int
+    pose_source: AdvioPoseSource
+    respect_video_rotation: bool = False
+    start_requested: bool = False
+    stop_requested: bool = False
+
+
+class AdvioPageData(BaseData):
+    """Computed ADVIO page render payload."""
+
+    summary: AdvioDatasetSummary
+    statuses: list[AdvioLocalSceneStatus]
+    rows: list[dict[str, object]]
+    notice_level: Literal["error", "warning", "success"] | None = None
+    notice_message: str = ""
 
 
 class AdvioPageState(BaseData):
@@ -169,6 +206,27 @@ class Record3DPageState(BaseData):
     """Whether the current browser session expects a live stream to be active."""
 
 
+class Record3DPageAction(BaseData):
+    """Typed Record3D page action payload."""
+
+    transport: Record3DTransportId
+    usb_device_index: int | None = None
+    wifi_device_address: str | None = None
+    start_requested: bool = False
+    stop_requested: bool = False
+
+
+class Record3DTransportSelection(BaseData):
+    """Resolved Record3D transport inputs for one page render."""
+
+    transport: Record3DTransportId
+    usb_device_index: int = 0
+    wifi_device_address: str = ""
+    usb_devices: list[Record3DDevice] = Field(default_factory=list)
+    usb_error_message: str = ""
+    input_error: str | None = None
+
+
 class PipelineSourceId(StrEnum):
     """Input-source families supported by the bounded pipeline app surface."""
 
@@ -211,8 +269,8 @@ class PipelinePageState(BaseData):
     slam_max_frames: int | None = None
     """Optional frame cap for the current request."""
 
-    slam_backend_spec: BackendConfig | None = None
-    """Typed backend config preserved from the selected request template."""
+    slam_backend_spec: BackendSpec | None = None
+    """Typed backend spec preserved from the selected request template."""
 
     emit_dense_points: bool = True
     """Whether dense geometry artifacts should be emitted."""

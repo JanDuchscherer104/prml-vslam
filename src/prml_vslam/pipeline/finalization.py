@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef
+from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.stages import StageKey

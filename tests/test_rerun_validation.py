@@ -8,7 +8,7 @@ import numpy as np
 import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-from prml_vslam.methods.events import KeyframeVisualizationReady, PoseEstimated
+from prml_vslam.interfaces.slam import KeyframeVisualizationReady, PoseEstimated
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived
 from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.stages import StageKey
