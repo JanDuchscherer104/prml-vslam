@@ -79,7 +79,7 @@ class BackendFactory(BackendFactoryProtocol):
         kind = backend_spec.kind
         match kind:
             case MethodId.MOCK.value:
-                backend = MockSlamBackendConfig(method_id=MethodId.MOCK).setup_target()
+                backend = MockSlamBackendConfig.model_validate(_backend_config_payload(backend_spec)).setup_target()
             case MethodId.VISTA.value:
                 backend = VistaSlamBackendConfig.model_validate(_backend_config_payload(backend_spec)).setup_target(
                     path_config=path_config

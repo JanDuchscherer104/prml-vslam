@@ -11,6 +11,7 @@ from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
+from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import Console, PathConfig
@@ -35,12 +36,13 @@ class VistaSlamBackend(SlamBackend):
 
     def start_session(
         self,
+        session_init: SlamSessionInit,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamSession:
         """Load upstream OnlineSLAM and return a ready in-process session."""
-        del backend_config
+        del session_init, backend_config
         return create_vista_session(
             config=self._cfg,
             path_config=self._path_config,

@@ -96,6 +96,11 @@ class MockBackendSpec(TransportModel):
 
     kind: Literal["mock"] = "mock"
     max_frames: int | None = None
+    trajectory_position_noise_mean_m: float = 0.0
+    trajectory_position_noise_variance_m2: float = 0.0
+    point_noise_mean_m: float = 0.0
+    point_noise_variance_m2: float = 0.0
+    random_seed: int = 43
 
 
 class Mast3rBackendSpec(TransportModel):

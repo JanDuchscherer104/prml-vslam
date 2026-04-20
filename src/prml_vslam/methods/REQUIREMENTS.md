@@ -26,3 +26,11 @@ This document is the concise source of truth for `prml_vslam.methods`.
 - upstream-native outputs may be preserved, but normalized artifacts remain the
   repo contract
 - method code must not own benchmark policy or viewer orchestration
+
+### Mock Slam Backend
+- The [Mock Slam Backend](mock_vslam.py) must forward the selected reference trajectory from the dataset (i.e. ARKit, ARCore, GT), as well as the point cloud or point map from the dataset (i.e. tango point clouds in case of advio dataset).
+- It should allow to superimpose AWGN on the reference trajectory and point cloud with user-configurable parameters (e.g. mean, variance).
+- It must implement the same interface as the ViSTA backend (i.e. full offline and streaming support).
+- In streaming mode, the mock backend should keep the live `SlamUpdate.pointmap`
+  surface camera-local and derive it from the step-wise reference geometry
+  rather than exposing a separate world-space live cloud contract.

@@ -19,6 +19,7 @@ from prml_vslam.benchmark import (
     BenchmarkConfig,
     CloudBenchmarkConfig,
     EfficiencyBenchmarkConfig,
+    PreparedBenchmarkInputs,
     ReferenceSource,
     TrajectoryBenchmarkConfig,
 )
@@ -27,6 +28,7 @@ from prml_vslam.methods import MethodId
 from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
 from prml_vslam.methods.events import BackendWarning, KeyframeVisualizationReady, translate_slam_update
 from prml_vslam.methods.factory import BackendFactory
+from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
@@ -105,6 +107,35 @@ def test_run_request_accepts_explicit_backend_spec() -> None:
 
     assert request.slam.backend.kind == "vista"
     assert request.slam.backend.max_frames == 9
+
+
+def test_run_request_accepts_mock_backend_noise_fields() -> None:
+    request = RunRequest.model_validate(
+        {
+            "experiment_name": "mock-noise",
+            "mode": "offline",
+            "output_dir": ".artifacts",
+            "source": {"video_path": "captures/demo.mp4"},
+            "slam": {
+                "backend": {
+                    "kind": "mock",
+                    "max_frames": 9,
+                    "trajectory_position_noise_mean_m": 0.1,
+                    "trajectory_position_noise_variance_m2": 0.2,
+                    "point_noise_mean_m": 0.3,
+                    "point_noise_variance_m2": 0.4,
+                    "random_seed": 17,
+                }
+            },
+        }
+    )
+
+    assert request.slam.backend.kind == "mock"
+    assert request.slam.backend.trajectory_position_noise_mean_m == 0.1
+    assert request.slam.backend.trajectory_position_noise_variance_m2 == 0.2
+    assert request.slam.backend.point_noise_mean_m == 0.3
+    assert request.slam.backend.point_noise_variance_m2 == 0.4
+    assert request.slam.backend.random_seed == 17
 
 
 def test_run_request_defaults_to_ephemeral_local_head_lifecycle() -> None:
@@ -838,6 +869,61 @@ def test_streaming_slam_stage_resolves_materialized_payloads_without_ray_get() -
 
     assert resolved is not None
     assert np.array_equal(resolved, payload)
+
+
+def test_streaming_slam_stage_passes_sequence_manifest_and_benchmark_inputs_to_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_cls = StreamingSlamStageActor.__ray_metadata__.modified_class
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.stage_actors.ray.get_actor", lambda *args, **kwargs: None)
+    captured: dict[str, object] = {}
+
+    class FakeBackend:
+        method_id = MethodId.MOCK
+
+        def start_session(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(step=lambda *_args, **_kwargs: None, try_get_updates=lambda: [], close=lambda: None)
+
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.BackendFactory.build",
+        lambda self, backend_spec, path_config=None: FakeBackend(),
+    )
+    actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
+    request = RunRequest(
+        experiment_name="streaming-start",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
+    )
+    sequence_manifest = SequenceManifest(sequence_id="normalized-sequence")
+    benchmark_inputs = PreparedBenchmarkInputs()
+
+    actor.start_stage(
+        request=request,
+        plan=plan,
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
+        session_init=SlamSessionInit(
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=benchmark_inputs,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+        ),
+    )
+
+    session_init = captured["session_init"]
+    assert isinstance(session_init, SlamSessionInit)
+    assert session_init.sequence_manifest == sequence_manifest
+    assert session_init.benchmark_inputs == benchmark_inputs
+    assert session_init.baseline_source is ReferenceSource.GROUND_TRUTH
+
+
 
 
 def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
