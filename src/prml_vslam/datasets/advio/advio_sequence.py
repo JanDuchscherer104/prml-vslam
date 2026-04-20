@@ -16,27 +16,39 @@ from prml_vslam.benchmark import (
     ReferenceSource,
     ReferenceTrajectoryRef,
 )
-from prml_vslam.datasets.contracts import FrameSelectionConfig
+from prml_vslam.datasets.contracts import (
+    AdvioManifestAssets,
+    AdvioPoseSource,
+    AdvioRawPoseRefs,
+    DatasetId,
+    DatasetServingConfig,
+    FrameSelectionConfig,
+    selected_advio_pose_source,
+)
 from prml_vslam.interfaces import FramePacketProvenance
 from prml_vslam.io import Cv2ReplayMode
-from prml_vslam.io.cv2_producer import Cv2FrameProducer, Cv2ProducerConfig
+from prml_vslam.io.cv2_producer import Cv2FramePayload, Cv2FrameProducer, Cv2ProducerConfig
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.utils import BaseData
 
 from . import advio_layout, advio_loading
-from .advio_geometry import build_advio_tango_reference_clouds
+from .advio_geometry import (
+    build_advio_tango_reference_clouds,
+    load_tango_point_cloud_index,
+    load_tango_point_cloud_payload,
+)
 from .advio_models import (
     ADVIO_SEQUENCE_COUNT,
     AdvioCatalog,
-    AdvioPoseSource,
     AdvioSceneMetadata,
     AdvioSequenceConfig,
 )
 from .advio_replay_adapter import (
-    _load_pose_trajectory,
     _poses_for_frame_timestamps,
     _RotatedVideoStream,
+    load_advio_served_trajectory,
     read_advio_video_rotation_degrees,
+    resolve_advio_pose_csv_path,
 )
 
 if TYPE_CHECKING:
@@ -49,6 +61,7 @@ class AdvioSequencePaths(BaseData):
     video_path: Path
     frame_timestamps_path: Path
     ground_truth_csv_path: Path
+    fixpoints_csv_path: Path | None = None
     arcore_csv_path: Path
     arkit_csv_path: Path | None = None
     calibration_path: Path
@@ -74,6 +87,7 @@ class AdvioSequencePaths(BaseData):
             video_path=sequence_dir / "iphone" / "frames.mov",
             frame_timestamps_path=sequence_dir / "iphone" / "frames.csv",
             ground_truth_csv_path=advio_layout.resolve_ground_truth_csv(sequence_dir, scene),
+            fixpoints_csv_path=advio_layout.resolve_optional_fixpoints_csv(sequence_dir, scene),
             arcore_csv_path=sequence_dir / "pixel" / "arcore.csv",
             arkit_csv_path=advio_layout.resolve_optional_arkit_csv(sequence_dir, scene),
             calibration_path=advio_layout.resolve_calibration_path(config.dataset_root, scene),
@@ -163,18 +177,39 @@ class AdvioSequence(BaseData):
         *,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: DatasetServingConfig | None = None,
     ) -> SequenceManifest:
         from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
         del frame_selection
         paths = self._resolve_paths(require_arcore=False)
+        calibration = advio_loading.load_advio_calibration(paths.calibration_path)
+        selected_pose_source = selected_advio_pose_source(dataset_serving)
         if output_dir is not None:
             output_dir.mkdir(parents=True, exist_ok=True)
         return SequenceManifest(
             sequence_id=self.scene.sequence_slug,
+            dataset_id=DatasetId.ADVIO,
+            dataset_serving=dataset_serving,
             video_path=paths.video_path,
             timestamps_path=paths.frame_timestamps_path,
             intrinsics_path=paths.calibration_path,
+            advio=AdvioManifestAssets(
+                calibration_path=paths.calibration_path,
+                intrinsics=calibration.intrinsics,
+                T_cam_imu=calibration.t_cam_imu,
+                pose_refs=AdvioRawPoseRefs(
+                    ground_truth_csv_path=paths.ground_truth_csv_path,
+                    arcore_csv_path=paths.arcore_csv_path if paths.arcore_csv_path.exists() else None,
+                    arkit_csv_path=paths.arkit_csv_path,
+                    tango_raw_csv_path=paths.tango_raw_csv_path,
+                    tango_area_learning_csv_path=paths.tango_area_learning_csv_path,
+                    selected_pose_csv_path=resolve_advio_pose_csv_path(paths=paths, pose_source=selected_pose_source),
+                ),
+                fixpoints_csv_path=paths.fixpoints_csv_path,
+                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
+                tango_payload_root=paths.tango_dir,
+            ),
         )
 
     def to_benchmark_inputs(self, *, output_dir: Path | None = None) -> PreparedBenchmarkInputs:
@@ -222,6 +257,7 @@ class AdvioSequence(BaseData):
     def open_stream(
         self,
         *,
+        dataset_serving: DatasetServingConfig | None = None,
         pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
         stride: int = 1,
         loop: bool = True,
@@ -232,6 +268,11 @@ class AdvioSequence(BaseData):
         paths = self._resolve_paths(require_arcore=False)
         frame_timestamps_ns = advio_loading.load_advio_frame_timestamps_ns(paths.frame_timestamps_path)
         calibration = advio_loading.load_advio_calibration(paths.calibration_path)
+        effective_serving = (
+            dataset_serving
+            if dataset_serving is not None
+            else DatasetServingConfig(dataset_id="advio", pose_source=pose_source)
+        )
         stream: FramePacketStream = Cv2FrameProducer(
             Cv2ProducerConfig(
                 video_path=paths.video_path,
@@ -240,16 +281,24 @@ class AdvioSequence(BaseData):
                 loop=loop,
                 replay_mode=replay_mode,
                 intrinsics=calibration.intrinsics,
+                payload_provider=_build_advio_payload_provider(
+                    paths=paths,
+                    pose_source=effective_serving.pose_source,
+                ),
                 poses_by_frame=_poses_for_frame_timestamps(
                     frame_timestamps_ns,
-                    _load_pose_trajectory(paths, scene, pose_source),
+                    load_advio_served_trajectory(
+                        paths=paths,
+                        scene=scene,
+                        dataset_serving=effective_serving,
+                    ),
                 ),
                 base_provenance=FramePacketProvenance(
                     source_id="advio",
                     dataset_id="advio",
                     sequence_id=str(scene.sequence_id),
                     sequence_name=scene.sequence_slug,
-                    pose_source=pose_source.value,
+                    pose_source=effective_serving.pose_source.value,
                 ),
             )
         )
@@ -263,6 +312,46 @@ def _ensure_advio_tum(source_path: Path, target_path: Path) -> Path:
     if not target_path.exists():
         advio_loading.write_advio_pose_tum(source_path, target_path)
     return target_path
+
+
+def _build_advio_payload_provider(
+    *,
+    paths: AdvioSequencePaths,
+    pose_source: AdvioPoseSource,
+):
+    if pose_source not in {AdvioPoseSource.TANGO_RAW, AdvioPoseSource.TANGO_AREA_LEARNING}:
+        return None
+    if paths.tango_point_cloud_index_path is None:
+        return None
+    index_rows = load_tango_point_cloud_index(paths.tango_point_cloud_index_path)
+    if index_rows.size == 0:
+        return None
+
+    def provider(_frame_index: int, timestamp_ns: int) -> Cv2FramePayload | None:
+        target_timestamp_s = timestamp_ns / 1e9
+        nearest_index = int(np.argmin(np.abs(index_rows[:, 0] - target_timestamp_s)))
+        if abs(float(index_rows[nearest_index, 0]) - target_timestamp_s) > 0.05:
+            return None
+        payload_path = _resolve_tango_payload_path(paths, int(index_rows[nearest_index, 1]))
+        if payload_path is None:
+            return None
+        payload = load_tango_point_cloud_payload(payload_path).astype(np.float32, copy=False)
+        return Cv2FramePayload(pointmap=payload.reshape(-1, 1, 3))
+
+    return provider
+
+
+def _resolve_tango_payload_path(paths: AdvioSequencePaths, cloud_index: int) -> Path | None:
+    if paths.tango_dir is None:
+        return None
+    for candidate in (
+        paths.tango_dir / f"point-cloud-{cloud_index:05d}.csv",
+        paths.tango_dir / f"point-cloud-{cloud_index:03d}.csv",
+        paths.tango_dir / f"point-cloud-{cloud_index}.csv",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _build_reference_point_cloud_sequences(
@@ -281,7 +370,7 @@ def _build_reference_point_cloud_sequences(
     ):
         if trajectory_csv_path is None or not trajectory_csv_path.exists():
             continue
-        trajectory_path = _ensure_advio_pose_tum(trajectory_csv_path, evaluation_dir / tum_name)
+        trajectory_path = _ensure_advio_tum(trajectory_csv_path, evaluation_dir / tum_name)
         native_frame = f"advio_{source.value}_world"
         sequences.append(
             ReferencePointCloudSequenceRef(
@@ -295,9 +384,3 @@ def _build_reference_point_cloud_sequences(
             )
         )
     return sequences
-
-
-def _ensure_advio_pose_tum(source_path: Path, target_path: Path) -> Path:
-    if not target_path.exists():
-        advio_loading.write_advio_pose_tum(source_path, target_path)
-    return target_path.resolve()

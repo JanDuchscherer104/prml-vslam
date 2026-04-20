@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import numpy as np
 from pydantic import Field
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
-from prml_vslam.utils import BaseConfig
+from prml_vslam.utils import BaseConfig, BaseData
 
 
 class Cv2ReplayMode(StrEnum):
@@ -19,6 +20,14 @@ class Cv2ReplayMode(StrEnum):
 
     FAST_AS_POSSIBLE = "fast_as_possible"
     REALTIME = "realtime"
+
+
+class Cv2FramePayload(BaseData):
+    """Optional per-frame payload injected through the shared OpenCV replay path."""
+
+    depth: np.ndarray | None = None
+    confidence: np.ndarray | None = None
+    pointmap: np.ndarray | None = None
 
 
 class Cv2ProducerConfig(BaseConfig):
@@ -44,6 +53,9 @@ class Cv2ProducerConfig(BaseConfig):
 
     poses_by_frame: list[FrameTransform | None] | None = None
     """Optional per-frame camera poses aligned to source frame indices."""
+
+    payload_provider: Callable[[int, int], Cv2FramePayload | None] | None = None
+    """Optional provider for depth/confidence/pointmap payloads aligned by frame index and timestamp."""
 
     fps: float = 60.0
     """Target frames per second."""
@@ -108,11 +120,19 @@ class Cv2FrameProducer:
             timestamp_ns = self._timestamp_ns_for_frame(source_frame_index)
             self._apply_replay_timing(timestamp_ns)
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            payload = self._payload_for_frame(source_frame_index, timestamp_ns)
             return FramePacket(
                 seq=source_frame_index,
                 timestamp_ns=timestamp_ns,
                 arrival_timestamp_s=time.time(),
                 rgb=np.asarray(frame_rgb, dtype=np.uint8),
+                depth=None if payload is None or payload.depth is None else np.asarray(payload.depth, dtype=np.float32),
+                confidence=None
+                if payload is None or payload.confidence is None
+                else np.asarray(payload.confidence, dtype=np.float32),
+                pointmap=None
+                if payload is None or payload.pointmap is None
+                else np.asarray(payload.pointmap, dtype=np.float32),
                 intrinsics=self.config.intrinsics,
                 pose=self._pose_for_frame(source_frame_index),
                 provenance=self.config.base_provenance.model_copy(
@@ -165,9 +185,14 @@ class Cv2FrameProducer:
             return None
         return poses_by_frame[frame_index]
 
+    def _payload_for_frame(self, frame_index: int, timestamp_ns: int) -> Cv2FramePayload | None:
+        payload_provider = self.config.payload_provider
+        return None if payload_provider is None else payload_provider(frame_index, timestamp_ns)
+
 
 __all__ = [
     "Cv2FrameProducer",
+    "Cv2FramePayload",
     "Cv2ProducerConfig",
     "Cv2ReplayMode",
 ]

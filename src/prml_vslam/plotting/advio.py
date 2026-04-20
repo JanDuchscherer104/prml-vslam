@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
+from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.datasets.advio import AdvioEnvironment, AdvioLocalSceneStatus, AdvioPeopleLevel
+from prml_vslam.datasets.advio import (
+    AdvioEnvironment,
+    AdvioLocalSceneStatus,
+    AdvioPeopleLevel,
+    AdvioPoseFrameMode,
+    AdvioPoseSource,
+)
+from prml_vslam.datasets.advio.advio_replay_adapter import serve_loaded_advio_trajectory
 
 from .theme import BLUE, GRAY, GREEN, ORANGE, PURPLE, RED, apply_standard_xy_layout
 
@@ -149,7 +157,43 @@ def build_scene_attribute_figure(statuses: list[AdvioLocalSceneStatus]) -> go.Fi
     return figure
 
 
+def build_advio_comparison_trajectories(
+    *,
+    ground_truth: PoseTrajectory3D,
+    arcore: PoseTrajectory3D,
+    arkit: PoseTrajectory3D | None,
+    pose_frame_mode: AdvioPoseFrameMode,
+) -> list[tuple[str, PoseTrajectory3D]]:
+    """Build ADVIO explorer overlays with explicit comparison semantics."""
+    trajectories: list[tuple[str, PoseTrajectory3D]] = [("Ground Truth", ground_truth)]
+    trajectories.append(
+        (
+            "ARCore",
+            serve_loaded_advio_trajectory(
+                trajectory=arcore,
+                ground_truth_trajectory=ground_truth,
+                pose_source=AdvioPoseSource.ARCORE,
+                pose_frame_mode=pose_frame_mode,
+            ),
+        )
+    )
+    if arkit is not None:
+        trajectories.append(
+            (
+                "ARKit",
+                serve_loaded_advio_trajectory(
+                    trajectory=arkit,
+                    ground_truth_trajectory=ground_truth,
+                    pose_source=AdvioPoseSource.ARKIT,
+                    pose_frame_mode=pose_frame_mode,
+                ),
+            )
+        )
+    return trajectories
+
+
 __all__ = [
+    "build_advio_comparison_trajectories",
     "build_crowd_density_figure",
     "build_local_readiness_figure",
     "build_scene_attribute_figure",

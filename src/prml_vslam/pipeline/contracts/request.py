@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from prml_vslam.alignment.contracts import AlignmentConfig
 from prml_vslam.benchmark import (
@@ -16,8 +16,11 @@ from prml_vslam.benchmark import (
     ReferenceSource,
     TrajectoryBenchmarkConfig,
 )
-from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.datasets.contracts import (
+    DatasetId,
+    DatasetServingConfig,
+    FrameSelectionConfig,
+)
 from prml_vslam.interfaces import Record3DTransportId
 from prml_vslam.methods.contracts import MethodId, SlamOutputPolicy
 from prml_vslam.utils import BaseConfig, PathConfig
@@ -60,11 +63,19 @@ class DatasetSourceSpec(FrameSelectionConfig):
     sequence_id: str
     """Dataset-specific sequence identifier."""
 
-    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
-    """Replay pose source used when this dataset source is executed in streaming mode."""
+    dataset_serving: DatasetServingConfig | None = None
+    """Typed dataset-serving semantics carried through request and manifest boundaries."""
 
     respect_video_rotation: bool = False
     """Whether ADVIO replay should honor video rotation metadata when available."""
+
+    @model_validator(mode="after")
+    def validate_dataset_serving(self) -> DatasetSourceSpec:
+        if self.dataset_id is DatasetId.ADVIO and self.dataset_serving is None:
+            raise ValueError("ADVIO dataset sources must provide `dataset_serving`.")
+        if self.dataset_id is not DatasetId.ADVIO and self.dataset_serving is not None:
+            raise ValueError("Only ADVIO dataset sources currently support `dataset_serving`.")
+        return self
 
 
 class Record3DLiveSourceSpec(BaseConfig):

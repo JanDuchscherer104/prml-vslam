@@ -16,6 +16,7 @@ from prml_vslam.datasets.advio import (
     AdvioLocalSceneStatus,
     AdvioModality,
     AdvioOfflineSample,
+    AdvioPoseFrameMode,
     AdvioPoseSource,
 )
 from prml_vslam.datasets.tum_rgbd import (
@@ -426,14 +427,31 @@ def _render_sequence_explorer_impl(
 
 def _render_advio_sequence_details(sample: AdvioOfflineSample) -> None:
     intrinsics = sample.calibration.intrinsics
-    trajectories = [("Ground Truth", sample.ground_truth), ("ARCore", sample.arcore)]
+    pose_frame_mode = st.segmented_control(
+        "Trajectory Comparison",
+        options=[AdvioPoseFrameMode.REFERENCE_WORLD, AdvioPoseFrameMode.LOCAL_FIRST_POSE],
+        default=AdvioPoseFrameMode.REFERENCE_WORLD,
+        format_func=lambda item: item.label,
+        selection_mode="single",
+        width="stretch",
+        key=f"advio_compare_mode_{sample.sequence_id}",
+    )
+    resolved_mode = AdvioPoseFrameMode.REFERENCE_WORLD if pose_frame_mode is None else pose_frame_mode
+    st.caption(
+        "Aligned Global maps provider trajectories into ground-truth world before overlay. Local First Pose rebases each trajectory to its own first valid pose."
+    )
+    trajectories = plots.build_advio_comparison_trajectories(
+        ground_truth=sample.ground_truth,
+        arcore=sample.arcore,
+        arkit=sample.arkit,
+        pose_frame_mode=resolved_mode,
+    )
     timing = [
         ("Video Frames", sample.frame_timestamps_ns.astype(np.float64) / 1e9),
         ("Ground Truth", np.asarray(sample.ground_truth.timestamps, dtype=np.float64)),
         ("ARCore", np.asarray(sample.arcore.timestamps, dtype=np.float64)),
     ]
     if sample.arkit is not None:
-        trajectories.append(("ARKit", sample.arkit))
         timing.append(("ARKit", np.asarray(sample.arkit.timestamps, dtype=np.float64)))
     _render_sequence_details(
         duration_s=sample.duration_s,
@@ -450,6 +468,8 @@ def _render_advio_sequence_details(sample: AdvioOfflineSample) -> None:
             ("ARCore", sample.paths.arcore_csv_path),
             ("ARKit", sample.paths.arkit_csv_path or "Missing"),
         ),
+        bev_axes=(0, 2),
+        height_axis=1,
     )
 
 
@@ -483,6 +503,8 @@ def _render_sequence_details(
     trajectories: list[tuple[str, object]],
     timing: list[tuple[str, np.ndarray]],
     paths: tuple[tuple[str, object], ...],
+    bev_axes: tuple[int, int] = (0, 1),
+    height_axis: int = 2,
 ) -> None:
     mean_fps = 0.0 if duration_s <= 0.0 else float(max(frame_count - 1, 0) / duration_s)
     metric_values = (
@@ -500,10 +522,13 @@ def _render_sequence_details(
     tabs = st.tabs(["Trajectories", "Motion", "Timing", "Camera"])
     figure_rows = (
         (
-            plots.build_bev_trajectory_figure(trajectories),
+            plots.build_bev_trajectory_figure(trajectories, plane_axes=bev_axes),
             plots.build_3d_trajectory_figure(trajectories, pose_axes_name="Ground Truth", pose_axis_stride=30),
         ),
-        (plots.build_speed_profile_figure(trajectories), plots.build_height_profile_figure(trajectories)),
+        (
+            plots.build_speed_profile_figure(trajectories),
+            plots.build_height_profile_figure(trajectories, height_axis=height_axis),
+        ),
         (
             plots.build_sample_interval_figure(timing),
             plots.build_sample_interval_figure(timing[1:], title="Trajectory Cadence"),
@@ -532,6 +557,7 @@ def _render_advio_loop_preview(context: AppContext, statuses: list[AdvioLocalSce
         page_state=context.state.advio,
         service=context.advio_service,
         pose_source_type=AdvioPoseSource,
+        pose_source_options=lambda selected_id: _advio_preview_pose_sources(statuses, sequence_id=int(selected_id)),
         caption="Run a replay-ready ADVIO scene in a local loop with the existing CV2 producer and inspect frames, trajectory, and camera metadata live.",
         option_label="Respect video rotation metadata",
         option_attr="preview_respect_video_rotation",
@@ -555,6 +581,7 @@ def _render_tum_rgbd_loop_preview(context: AppContext, statuses: list[TumRgbdLoc
         page_state=context.state.tum_rgbd,
         service=context.tum_rgbd_service,
         pose_source_type=TumRgbdPoseSource,
+        pose_source_options=None,
         caption="Run a replay-ready TUM RGB-D scene in a local loop and inspect RGB-D frames, trajectory, and camera metadata live.",
         option_label="Include depth frames",
         option_attr="preview_include_depth",
@@ -576,6 +603,7 @@ def _render_loop_preview_impl(
     page_state: object,
     service: object,
     pose_source_type: type[StrEnum],
+    pose_source_options: Callable[[SequenceId], list[StrEnum]] | None,
     caption: str,
     option_label: str,
     option_attr: str,
@@ -599,10 +627,18 @@ def _render_loop_preview_impl(
             index=previewable_ids.index(selected_id),
             format_func=lambda sequence_id: service.scene(sequence_id).display_name,
         )
+        available_pose_sources = (
+            list(pose_source_type) if pose_source_options is None else pose_source_options(selected_id)
+        )
+        pose_source = (
+            page_state.preview_pose_source
+            if page_state.preview_pose_source in available_pose_sources
+            else available_pose_sources[0]
+        )
         pose_source = st.selectbox(
             "Pose Source",
-            options=list(pose_source_type),
-            index=list(pose_source_type).index(pose_source),
+            options=available_pose_sources,
+            index=available_pose_sources.index(pose_source),
             format_func=lambda item: item.label,
         )
         option_value = st.toggle(option_label, value=getattr(page_state, option_attr))
@@ -620,6 +656,24 @@ def _render_loop_preview_impl(
             run_every=live_poll_interval(is_active=page_state.preview_is_running, interval_seconds=0.2),
             render_body=lambda: _render_preview_snapshot(sync_snapshot()),
         )
+
+
+def _advio_preview_pose_sources(
+    statuses: list[AdvioLocalSceneStatus],
+    *,
+    sequence_id: int,
+) -> list[AdvioPoseSource]:
+    status = next((status for status in statuses if status.scene.sequence_id == sequence_id), None)
+    if status is None:
+        return [AdvioPoseSource.GROUND_TRUTH, AdvioPoseSource.NONE]
+    options = [AdvioPoseSource.GROUND_TRUTH, AdvioPoseSource.NONE]
+    if AdvioModality.PIXEL_ARCORE in status.local_modalities:
+        options.insert(1, AdvioPoseSource.ARCORE)
+    if AdvioModality.IPHONE_ARKIT in status.local_modalities:
+        options.append(AdvioPoseSource.ARKIT)
+    if AdvioModality.TANGO in status.local_modalities:
+        options.extend([AdvioPoseSource.TANGO_RAW, AdvioPoseSource.TANGO_AREA_LEARNING])
+    return options
 
 
 def _render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:

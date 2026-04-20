@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.datasets.advio import AdvioDatasetService, AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioDatasetService, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
@@ -66,6 +66,7 @@ def build_advio_demo_request(
     mode: PipelineMode,
     method: MethodId,
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
+    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD,
     respect_video_rotation: bool = False,
     dataset_frame_stride: int = 1,
     dataset_target_fps: float | None = None,
@@ -80,7 +81,10 @@ def build_advio_demo_request(
             sequence_id=sequence_id,
             frame_stride=dataset_frame_stride,
             target_fps=dataset_target_fps,
-            pose_source=pose_source,
+            dataset_serving=AdvioServingConfig(
+                pose_source=pose_source,
+                pose_frame_mode=pose_frame_mode,
+            ),
             respect_video_rotation=respect_video_rotation,
         ),
         method=method,
@@ -113,7 +117,7 @@ def build_runtime_source_from_request(
             source = service.build_streaming_source(
                 sequence_id=service.resolve_sequence_id(sequence_id),
                 frame_selection=request.source,
-                pose_source=request.source.pose_source,
+                dataset_serving=request.source.dataset_serving,
                 respect_video_rotation=request.source.respect_video_rotation,
             )
             return (
@@ -126,7 +130,7 @@ def build_runtime_source_from_request(
             source = service.build_streaming_source(
                 sequence_id=service.resolve_sequence_id(sequence_id),
                 frame_selection=request.source,
-                pose_source=TumRgbdPoseSource(request.source.pose_source.value),
+                pose_source=TumRgbdPoseSource.GROUND_TRUTH,
                 include_depth=True,
             )
             return (

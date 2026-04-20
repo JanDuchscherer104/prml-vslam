@@ -15,24 +15,6 @@ if TYPE_CHECKING:
 ADVIO_SEQUENCE_COUNT = 23
 
 
-class AdvioPoseSource(StrEnum):
-    """Trajectory source used for replay-time pose annotation."""
-
-    GROUND_TRUTH = "ground_truth"
-    ARCORE = "arcore"
-    ARKIT = "arkit"
-    NONE = "none"
-
-    @property
-    def label(self) -> str:
-        return {
-            self.GROUND_TRUTH: "Ground Truth",
-            self.ARCORE: "ARCore",
-            self.ARKIT: "ARKit",
-            self.NONE: "No Pose Overlay",
-        }[self]
-
-
 class AdvioEnvironment(StrEnum):
     """Environment labels committed from the official ADVIO scene table."""
 

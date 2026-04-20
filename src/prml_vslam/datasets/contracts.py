@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeAlias, TypeVar
 
 from pydantic import Field, model_validator
 
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils import BaseConfig, BaseData
 
 SequenceKey = int | str
@@ -27,6 +28,88 @@ class DatasetId(StrEnum):
     def label(self) -> str:
         """Return the short user-facing dataset label."""
         return {self.ADVIO: "ADVIO", self.TUM_RGBD: "TUM RGB-D"}[self]
+
+
+class AdvioPoseSource(StrEnum):
+    """ADVIO trajectory providers surfaced through replay and pipeline contracts."""
+
+    GROUND_TRUTH = "ground_truth"
+    ARCORE = "arcore"
+    ARKIT = "arkit"
+    TANGO_RAW = "tango_raw"
+    TANGO_AREA_LEARNING = "tango_area_learning"
+    NONE = "none"
+
+    @property
+    def label(self) -> str:
+        return {
+            self.GROUND_TRUTH: "Ground Truth",
+            self.ARCORE: "ARCore",
+            self.ARKIT: "ARKit",
+            self.TANGO_RAW: "Tango Raw",
+            self.TANGO_AREA_LEARNING: "Tango Area-Learning",
+            self.NONE: "No Pose Overlay",
+        }[self]
+
+    @property
+    def is_real_provider(self) -> bool:
+        return self is not self.NONE
+
+
+class AdvioPoseFrameMode(StrEnum):
+    """Coordinate-frame semantics for served ADVIO trajectories."""
+
+    PROVIDER_WORLD = "provider_world"
+    REFERENCE_WORLD = "reference_world"
+    LOCAL_FIRST_POSE = "local_first_pose"
+
+    @property
+    def label(self) -> str:
+        return {
+            self.PROVIDER_WORLD: "Provider World",
+            self.REFERENCE_WORLD: "Aligned Global",
+            self.LOCAL_FIRST_POSE: "Local First Pose",
+        }[self]
+
+
+class AdvioServingConfig(BaseConfig):
+    """Typed ADVIO serving semantics shared by request and manifest contracts."""
+
+    dataset_id: Literal["advio"] = "advio"
+    pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
+    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD
+
+    @model_validator(mode="after")
+    def validate_real_provider(self) -> AdvioServingConfig:
+        if not self.pose_source.is_real_provider:
+            raise ValueError("AdvioServingConfig.pose_source must name a real provider, not `none`.")
+        return self
+
+
+DatasetServingConfig: TypeAlias = AdvioServingConfig
+
+
+class AdvioRawPoseRefs(BaseData):
+    """Relevant ADVIO raw pose artifacts preserved in the normalized manifest."""
+
+    ground_truth_csv_path: Path
+    arcore_csv_path: Path | None = None
+    arkit_csv_path: Path | None = None
+    tango_raw_csv_path: Path | None = None
+    tango_area_learning_csv_path: Path | None = None
+    selected_pose_csv_path: Path | None = None
+
+
+class AdvioManifestAssets(BaseData):
+    """ADVIO-specific manifest payload preserved for downstream consumers."""
+
+    calibration_path: Path
+    intrinsics: CameraIntrinsics
+    T_cam_imu: FrameTransform
+    pose_refs: AdvioRawPoseRefs
+    fixpoints_csv_path: Path | None = None
+    tango_point_cloud_index_path: Path | None = None
+    tango_payload_root: Path | None = None
 
 
 class FrameSelectionConfig(BaseConfig):
@@ -82,11 +165,27 @@ class DatasetSummary(BaseData):
     total_remote_archive_bytes: int
 
 
+def selected_advio_pose_source(
+    dataset_serving: DatasetServingConfig | None,
+    *,
+    default: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
+) -> AdvioPoseSource:
+    """Return the effective ADVIO provider for one optional serving config."""
+    return default if dataset_serving is None else dataset_serving.pose_source
+
+
 __all__ = [
+    "AdvioManifestAssets",
+    "AdvioPoseFrameMode",
+    "AdvioPoseSource",
+    "AdvioRawPoseRefs",
+    "AdvioServingConfig",
     "DatasetDownloadResult",
     "DatasetId",
+    "DatasetServingConfig",
     "DatasetSummary",
     "FrameSelectionConfig",
     "LocalSceneStatus",
     "SequenceKey",
+    "selected_advio_pose_source",
 ]

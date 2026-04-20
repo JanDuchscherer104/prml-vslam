@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseSource
+from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
@@ -52,6 +52,7 @@ def render_request_editor(
         record3d_wifi_device_address,
         record3d_persist_capture,
         pose_source,
+        pose_frame_mode,
         respect_video_rotation,
         source_input_error,
     ) = _render_source_settings(
@@ -96,6 +97,7 @@ def render_request_editor(
                 "record3d_wifi_device_address": record3d_wifi_device_address,
                 "record3d_persist_capture": record3d_persist_capture,
                 "pose_source": pose_source,
+                "pose_frame_mode": pose_frame_mode,
                 "respect_video_rotation": respect_video_rotation,
             }
         ),
@@ -157,7 +159,19 @@ def _render_source_settings(
     page_state: PipelinePageState,
     source_kind: PipelineSourceId,
     previewable_statuses: list[AdvioLocalSceneStatus],
-) -> tuple[int | None, int, float | None, Record3DTransportId, int, str, bool, AdvioPoseSource, bool, str | None]:
+) -> tuple[
+    int | None,
+    int,
+    float | None,
+    Record3DTransportId,
+    int,
+    str,
+    bool,
+    AdvioPoseSource,
+    AdvioPoseFrameMode,
+    bool,
+    str | None,
+]:
     _, right = st.columns(2, gap="large")
     with right:
         advio_sequence_id = page_state.advio_sequence_id
@@ -166,6 +180,7 @@ def _render_source_settings(
         record3d_wifi_device_address = page_state.record3d_wifi_device_address
         record3d_persist_capture = page_state.record3d_persist_capture
         pose_source = page_state.pose_source
+        pose_frame_mode = page_state.pose_frame_mode
         respect_video_rotation = page_state.respect_video_rotation
         dataset_frame_stride = page_state.dataset_frame_stride
         dataset_target_fps = page_state.dataset_target_fps
@@ -174,6 +189,7 @@ def _render_source_settings(
             (
                 advio_sequence_id,
                 pose_source,
+                pose_frame_mode,
                 respect_video_rotation,
                 dataset_frame_stride,
                 dataset_target_fps,
@@ -202,6 +218,7 @@ def _render_source_settings(
         record3d_wifi_device_address,
         record3d_persist_capture,
         pose_source,
+        pose_frame_mode,
         respect_video_rotation,
         source_input_error,
     )
@@ -212,7 +229,8 @@ def _render_advio_source_settings(
     context: AppContext,
     page_state: PipelinePageState,
     previewable_statuses: list[AdvioLocalSceneStatus],
-) -> tuple[int | None, AdvioPoseSource, bool, int, float | None, str | None]:
+) -> tuple[int | None, AdvioPoseSource, AdvioPoseFrameMode, bool, int, float | None, str | None]:
+    status_by_sequence_id = {status.scene.sequence_id: status for status in previewable_statuses}
     previewable_ids = [status.scene.sequence_id for status in previewable_statuses]
     if previewable_ids:
         selected_advio_sequence = (
@@ -227,10 +245,22 @@ def _render_advio_source_settings(
     else:
         advio_sequence_id = None
         st.info("No replay-ready ADVIO scenes are available.")
+    provider_options = (
+        _advio_provider_options(status_by_sequence_id.get(advio_sequence_id))
+        if advio_sequence_id is not None
+        else [AdvioPoseSource.GROUND_TRUTH]
+    )
+    resolved_pose_source = page_state.pose_source if page_state.pose_source in provider_options else provider_options[0]
     pose_source = st.selectbox(
         "Pose Source",
-        options=list(AdvioPoseSource),
-        index=list(AdvioPoseSource).index(page_state.pose_source),
+        options=provider_options,
+        index=provider_options.index(resolved_pose_source),
+        format_func=lambda item: item.label,
+    )
+    pose_frame_mode = st.selectbox(
+        "Pose Frame Mode",
+        options=list(AdvioPoseFrameMode),
+        index=list(AdvioPoseFrameMode).index(page_state.pose_frame_mode),
         format_func=lambda item: item.label,
     )
     respect_video_rotation = st.toggle(
@@ -257,11 +287,25 @@ def _render_advio_source_settings(
     return (
         advio_sequence_id,
         pose_source,
+        pose_frame_mode,
         respect_video_rotation,
         dataset_frame_stride,
         dataset_target_fps,
         sampling_error,
     )
+
+
+def _advio_provider_options(status: AdvioLocalSceneStatus | None) -> list[AdvioPoseSource]:
+    if status is None:
+        return [AdvioPoseSource.GROUND_TRUTH]
+    options = [AdvioPoseSource.GROUND_TRUTH]
+    if AdvioModality.PIXEL_ARCORE in status.local_modalities:
+        options.append(AdvioPoseSource.ARCORE)
+    if AdvioModality.IPHONE_ARKIT in status.local_modalities:
+        options.append(AdvioPoseSource.ARKIT)
+    if AdvioModality.TANGO in status.local_modalities:
+        options.extend([AdvioPoseSource.TANGO_RAW, AdvioPoseSource.TANGO_AREA_LEARNING])
+    return options
 
 
 def _render_record3d_source_settings(
