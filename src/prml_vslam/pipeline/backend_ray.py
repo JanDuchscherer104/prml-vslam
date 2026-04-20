@@ -86,7 +86,12 @@ class RayPipelineBackend(PipelineBackend):
         if unavailable:
             reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."
             raise RuntimeError(reason)
-        self._console.info("Submitting run '%s' through Ray backend.", plan.run_id)
+        self._console.info(
+            "Submitting run '%s' in %s mode with %d planned stages.",
+            plan.run_id,
+            plan.mode.value,
+            len(plan.stages),
+        )
         coordinator = self._create_coordinator(plan.run_id)
         coordinator.start.remote(
             request=request,
@@ -148,12 +153,14 @@ class RayPipelineBackend(PipelineBackend):
         coordinator = self._coordinators.get(run_id)
         if coordinator is not None:
             return coordinator
+        self._console.debug("Coordinator for run '%s' not cached locally; attempting Ray lookup.", run_id)
         self._ensure_ray()
         try:
             coordinator = ray.get_actor(coordinator_actor_name(run_id), namespace=self._namespace)
         except ValueError:
             raise RuntimeError(f"Coordinator for run '{run_id}' is not available.") from None
         self._coordinators[run_id] = coordinator
+        self._console.debug("Reattached to coordinator for run '%s' via Ray lookup.", run_id)
         return coordinator
 
     def _shutdown_run(self, run_id: str) -> None:
@@ -194,6 +201,7 @@ class RayPipelineBackend(PipelineBackend):
         }
         if not self._namespace.startswith("pytest-"):
             init_kwargs["runtime_env"] = self._build_runtime_env(address=address)
+            self._console.debug("Prepared Ray runtime environment for namespace '%s'.", self._namespace)
         if address:
             self._console.info("Connecting Ray backend to configured address '%s'.", address)
             init_kwargs["address"] = address
@@ -241,6 +249,7 @@ class RayPipelineBackend(PipelineBackend):
             reused_address = self._reuse_local_head_address_if_available()
             if reused_address is not None:
                 self._local_head_address = reused_address
+                self._console.debug("Reusing healthy local Ray head at '%s'.", reused_address)
                 return reused_address
         ray_bin = str(Path(sys.executable).with_name("ray"))
         if not self._reuse_local_head:
@@ -357,7 +366,9 @@ class RayPipelineBackend(PipelineBackend):
             return None
         address = metadata["address"]
         if isinstance(address, str) and self._can_connect(address):
+            self._console.debug("Found reusable local Ray head metadata for '%s'.", address)
             return address
+        self._console.debug("Discarding stale local Ray head metadata.")
         self._clear_local_head_metadata()
         return None
 

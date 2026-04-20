@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+import threading
 import time
 import uuid
+from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -55,7 +59,7 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, Streami
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.pipeline.ingest import _max_frames_for_request
+from prml_vslam.pipeline.ingest import _max_frames_for_request, materialize_offline_manifest
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     IngestStageResult,
@@ -65,11 +69,12 @@ from prml_vslam.pipeline.ray_runtime.common import (
     clean_actor_options,
 )
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
-from prml_vslam.pipeline.ray_runtime.stage_actors import StreamingSlamStageActor
+from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, StreamingSlamStageActor
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
+from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
 from prml_vslam.pipeline.stage_registry import StageRegistry
-from prml_vslam.utils import PathConfig
+from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
 
@@ -79,6 +84,29 @@ def _isolated_ray_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
     yield
     if ray.is_initialized():
         ray.shutdown()
+
+
+@contextmanager
+def _capture_logger(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    logger_name: str,
+):
+    monkeypatch.setattr("prml_vslam.utils.console.Console._logging_configured", True)
+    logger = logging.getLogger(logger_name)
+    old_handlers = list(logger.handlers)
+    old_level = logger.level
+    old_propagate = logger.propagate
+    logger.handlers = [caplog.handler]
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    caplog.clear()
+    try:
+        yield logger
+    finally:
+        logger.handlers = old_handlers
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
 
 
 def test_run_request_requires_explicit_backend_spec() -> None:
@@ -596,6 +624,7 @@ def test_run_coordinator_emits_ingest_stage_failure_before_run_failed(
     coordinator._request = request
     coordinator._plan = plan
     coordinator._path_config = path_config
+    monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "prml_vslam.pipeline.ray_runtime.stage_program.run_ingest_stage",
         lambda *, context, source: (_ for _ in ()).throw(RuntimeError("ingest boom")),
@@ -641,6 +670,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
         "prml_vslam.pipeline.ray_runtime.coordinator.BackendFactory.describe",
         lambda self, backend: _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0),
     )
+    monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
 
     coordinator._run(request=request, plan=plan, path_config=path_config, runtime_source=FakeOfflineSource())
 
@@ -952,8 +982,6 @@ def test_streaming_slam_stage_passes_sequence_manifest_and_benchmark_inputs_to_b
     assert session_init.baseline_source is ReferenceSource.GROUND_TRUTH
 
 
-
-
 def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
     request = RunRequest.model_validate(
         {
@@ -1061,6 +1089,38 @@ def test_ray_backend_keeps_inprocess_init_for_pytest_namespaces(
     assert captured["_skip_env_hook"] is True
 
 
+def test_ray_backend_logs_pytest_init_path(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backend = RayPipelineBackend(namespace="pytest-unit")
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: False)
+    monkeypatch.setattr(
+        backend,
+        "_ensure_local_head_address",
+        lambda: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+
+    def fake_init(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.init", fake_init)
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.backend_ray.RayPipelineBackend.pytest-unit",
+    ):
+        backend._ensure_ray()
+
+    assert "address" not in captured
+    assert any(
+        "Initializing in-process Ray runtime for pytest namespace 'pytest-unit'." in r.message for r in caplog.records
+    )
+
+
 def test_ray_backend_reuses_healthy_local_head_metadata(tmp_path: Path) -> None:
     backend = RayPipelineBackend(
         path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
@@ -1098,6 +1158,42 @@ def test_ray_backend_replaces_stale_local_head_metadata(tmp_path: Path, monkeypa
 
     assert backend._ensure_local_head_address() == "127.0.0.1:25002"
     assert backend._read_local_head_metadata() == {"address": "127.0.0.1:25002", "pid": 456}
+
+
+def test_ray_backend_logs_stale_local_head_metadata_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
+    )
+    backend._reuse_local_head = True
+    metadata_path = backend._local_head_metadata_path()
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
+    backend._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
+    monkeypatch.setattr(backend, "_pick_local_head_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(backend, "_wait_until_connectable", lambda address: address == "127.0.0.1:25002")
+
+    class FakePopen:
+        pid = 456
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.subprocess.Popen", lambda *args, **kwargs: FakePopen())
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.backend_ray.RayPipelineBackend.prml_vslam.local",
+    ):
+        assert backend._ensure_local_head_address() == "127.0.0.1:25002"
+
+    assert any("Discarding stale local Ray head metadata." in r.message for r in caplog.records)
+    assert any("Starting local Ray head on '127.0.0.1:25002'." in r.message for r in caplog.records)
 
 
 def test_ray_backend_closes_parent_log_handle_after_spawn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1235,6 +1331,155 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
         backend.submit_run(request=request)
 
     assert created_runs == []
+
+
+def test_source_resolver_logs_video_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    video_path = tmp_path / "resolver-demo.mp4"
+    video_path.write_bytes(b"")
+    resolver = OfflineSourceResolver(path_config)
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.source_resolver.OfflineSourceResolver",
+    ):
+        resolved = resolver.resolve(VideoSourceSpec(video_path=video_path))
+
+    assert resolved.label == "Video 'resolver-demo.mp4'"
+    assert any("Resolved video offline source" in r.message for r in caplog.records)
+    assert any("Resolved video path to" in r.message for r in caplog.records)
+
+
+def test_materialize_offline_manifest_logs_cache_hit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    artifact_root = tmp_path / "artifacts"
+    run_paths = RunArtifactPaths.build(artifact_root)
+    run_paths.input_frames_dir.mkdir(parents=True, exist_ok=True)
+    video_path = tmp_path / "captures" / "demo.mp4"
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.write_bytes(b"")
+    (run_paths.input_frames_dir / "000000.png").write_bytes(b"png")
+    (run_paths.input_frames_dir / ".ingest_metadata.json").write_text(
+        f'{{"video_path": "{video_path.resolve()}", "frame_stride": 1, "max_frames": null}}',
+        encoding="utf-8",
+    )
+    request = RunRequest(
+        experiment_name="ingest-cache",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=video_path, frame_stride=1),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    prepared_manifest = SequenceManifest(sequence_id="ingest-cache", video_path=video_path)
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.ingest.materialize_offline_manifest",
+    ):
+        manifest = materialize_offline_manifest(
+            request=request,
+            prepared_manifest=prepared_manifest,
+            run_paths=run_paths,
+        )
+
+    assert manifest.rgb_dir == run_paths.input_frames_dir.resolve()
+    assert any("Materializing offline manifest for sequence 'ingest-cache'." in r.message for r in caplog.records)
+    assert any("Reusing extracted frames" in r.message for r in caplog.records)
+
+
+def test_run_coordinator_logs_stage_start_and_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    outcome = StageOutcome(
+        stage_key=StageKey.SLAM,
+        status=StageStatus.COMPLETED,
+        config_hash="cfg",
+        input_fingerprint="input",
+        artifacts={},
+    )
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.ray_runtime.coordinator.RunCoordinatorActor.demo",
+    ):
+        coordinator._emit_stage_started(StageKey.SLAM)
+        coordinator._record_stage_completion(
+            StageKey.SLAM,
+            SimpleNamespace(
+                outcome=outcome,
+                sequence_manifest=None,
+                benchmark_inputs=None,
+                slam=None,
+                ground_alignment=None,
+                visualization=None,
+                summary=None,
+                stage_manifests=[],
+            ),
+        )
+
+    assert any("Stage 'slam' started for run 'demo'." in r.message for r in caplog.records)
+    assert any(
+        "Stage 'slam' finished for run 'demo' with status 'completed' and 0 artifacts." in r.message
+        for r in caplog.records
+    )
+
+
+def test_packet_source_actor_logs_start_and_eof(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    events: list[str] = []
+
+    class _Remote:
+        def __init__(self, fn):
+            self.remote = fn
+
+    fake_coordinator = SimpleNamespace(
+        on_packet=_Remote(lambda **kwargs: events.append("packet")),
+        on_source_eof=_Remote(lambda: events.append("eof")),
+        on_source_error=_Remote(lambda message: events.append(f"error:{message}")),
+    )
+
+    actor_cls = PacketSourceActor.__ray_metadata__.modified_class
+    actor = object.__new__(actor_cls)
+    actor._console = Console("prml_vslam.pipeline.ray_runtime.stage_actors").child("PacketSourceActor").child("demo")
+    actor._coordinator = fake_coordinator
+    actor._frame_timeout_seconds = 5.0
+    actor._thread = None
+    actor._stop_event = threading.Event()
+    actor._credits = 0
+    actor._credits_cv = threading.Condition()
+    actor._received_frames = 0
+    actor._packet_timestamps = deque(maxlen=20)
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.put_array_handle",
+        lambda array: (SimpleNamespace(handle_id="frame"), np.asarray(array)),
+    )
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.ray_runtime.stage_actors.PacketSourceActor.demo",
+    ):
+        actor.start_stream(source=FakeStreamingSource(), initial_credits=4, loop=False)
+        actor._thread.join(timeout=5.0)
+
+    assert events[-1] == "eof"
+    assert any("Starting packet stream for source 'fake-stream'" in r.message for r in caplog.records)
+    assert any("Streaming source reached EOF." in r.message for r in caplog.records)
 
 
 @pytest.mark.skipif(

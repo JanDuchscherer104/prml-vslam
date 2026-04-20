@@ -139,6 +139,7 @@ class RunCoordinatorActor:
         )
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         self._jsonl_sink = JsonlEventSink(run_paths.summary_path.parent / "run-events.jsonl")
+        self._console.info("Writing durable run events to '%s'.", self._jsonl_sink.path)
         self._rerun_sink = self._build_rerun_sink(request=request, run_paths=run_paths)
         self._record_event(RunSubmitted(event_id=self._next_event_id(), run_id=plan.run_id, ts_ns=ts_ns()))
         self._worker = threading.Thread(
@@ -346,6 +347,10 @@ class RunCoordinatorActor:
         source: OfflineSequenceSource = (
             OfflineSourceResolver(path_config).resolve(request.source) if runtime_source is None else runtime_source
         )
+        self._console.info(
+            "Offline source prepared via %s path.",
+            "injected runtime source" if runtime_source is not None else "request-resolved source",
+        )
         context = self._stage_execution_context(request=request, plan=plan, path_config=path_config)
         self._stage_program.execute_offline(
             plan=plan,
@@ -414,6 +419,14 @@ class RunCoordinatorActor:
         if self._streaming_finalized:
             return
         self._streaming_finalized = True
+        finalize_reason = (
+            "streaming error"
+            if self._streaming_error is not None
+            else "stop request"
+            if self._stop_requested
+            else "source finished and in-flight frames drained"
+        )
+        self._console.debug("Finalizing streaming run '%s' because %s.", self._run_id, finalize_reason)
         try:
             request = self._require_request()
             plan = self._require_plan()
@@ -517,9 +530,11 @@ class RunCoordinatorActor:
 
     def _build_rerun_sink(self, *, request: RunRequest, run_paths: RunArtifactPaths) -> ActorHandle | None:
         if not (request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd):
+            self._console.info("Rerun sink disabled for run '%s'.", self._run_id)
             return None
         from prml_vslam.pipeline.sinks.rerun import RerunSinkActor
 
+        self._console.info("Rerun sink enabled for run '%s'.", self._run_id)
         return RerunSinkActor.remote(
             grpc_url=request.visualization.grpc_url if request.visualization.connect_live_viewer else None,
             target_path=run_paths.viewer_rrd_path if request.visualization.export_viewer_rrd else None,
@@ -639,6 +654,7 @@ class RunCoordinatorActor:
             self._snapshot = self._projector.apply(self._snapshot, event)
             self._events.append(event)
             if len(self._events) > EVENT_RING_LIMIT:
+                self._console.debug("Trimming in-memory event ring to last %d events.", EVENT_RING_LIMIT)
                 self._events = self._events[-EVENT_RING_LIMIT:]
         if self._jsonl_sink is not None:
             self._jsonl_sink.observe(event)
@@ -656,6 +672,7 @@ class RunCoordinatorActor:
         self._handle_order.append(handle_id)
         while len(self._handle_order) > HANDLE_LIMIT:
             stale_id = self._handle_order.popleft()
+            self._console.debug("Evicting stale handle '%s' due to handle limit %d.", stale_id, HANDLE_LIMIT)
             self._handle_refs.pop(stale_id, None)
 
     def _resolve_handle_local(self, handle_id: str) -> np.ndarray | None:

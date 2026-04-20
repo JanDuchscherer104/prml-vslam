@@ -17,11 +17,19 @@ contract split after the offline/streaming refactor.
 - `prml_vslam.methods`
   - method ids, backend-private config, output policy, runtime updates, and
     thin wrapper integration around external SLAM systems
+- `prml_vslam.alignment`
+  - derived alignment contracts and services such as dominant-ground detection
+    and viewer-scoped world alignment metadata
 - `prml_vslam.benchmark`
   - benchmark-policy composition such as reference reconstruction and
     evaluation-stage enablement/baseline selection
+  - prepared reference trajectories, prepared static reference clouds, and
+    step-wise reference point-cloud sequence refs used by replay-style adapters
 - `prml_vslam.visualization`
   - viewer/export policy plus the repo-owned Rerun integration layer
+  - owns visualization config such as the optional viewer blueprint path, while
+    the CLI remains responsible for auto-launching and supervising external
+    viewer subprocesses
 
 ## Pipeline Center
 
@@ -48,6 +56,17 @@ artifacts remain TUM trajectories, PLY clouds, manifests, and stage summaries.
 Normalized `.rrd` recordings are viewer/export artifacts, not the scientific
 source of truth. Bulk arrays stay out of persisted/public contracts and move
 through repo-owned opaque handles instead.
+
+Streaming method startup is intentionally symmetric with offline execution: a
+backend session can receive the normalized `SequenceManifest`, optional
+prepared benchmark inputs, and the selected reference baseline before the first
+`FramePacket` arrives. That keeps dataset-backed replay logic, such as mock
+reference-trajectory and Tango point-cloud forwarding, inside the method layer
+instead of leaking dataset-specific hooks into the transport path.
+
+Derived viewer/world-up alignment remains a separate repo-owned boundary. It
+must produce explicit metadata and derived artifacts without mutating the native
+SLAM artifact bundle in place.
 
 ## Pose And Transform Ownership
 
