@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
+from prml_vslam.datasets.download_helpers import modalities_present, normalize_archive_member, relative_sequence_path
 from prml_vslam.datasets.fetch import DatasetFetchHelper
 from prml_vslam.utils import Console
 
@@ -50,8 +51,8 @@ class AdvioDownloadManager:
                 sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_slug),
                 local_modalities=(local_modalities := self._local_modalities(scene)),
                 archive_path=self._existing_archive_path(scene),
-                replay_ready=_modalities_present(local_modalities, AdvioDownloadPreset.STREAMING.modalities),
-                offline_ready=_modalities_present(local_modalities, AdvioDownloadPreset.OFFLINE.modalities),
+                replay_ready=modalities_present(local_modalities, AdvioDownloadPreset.STREAMING.modalities),
+                offline_ready=modalities_present(local_modalities, AdvioDownloadPreset.OFFLINE.modalities),
             )
             for scene in self.catalog.scenes
         ]
@@ -134,13 +135,11 @@ class AdvioDownloadManager:
             for member in archive.infolist():
                 if member.is_dir():
                     continue
-                normalized = _normalize_archive_member(member.filename)
+                normalized = normalize_archive_member(member.filename)
                 if normalized is None:
                     continue
-                relative_sequence_path = _relative_sequence_path(normalized, scene.sequence_slug)
-                if relative_sequence_path is None or not archive_member_matches(
-                    relative_sequence_path, scene, modalities
-                ):
+                relative_path = relative_sequence_path(normalized, scene.sequence_slug)
+                if relative_path is None or not archive_member_matches(relative_path, scene, modalities):
                     continue
                 matched_members += 1
                 target_path = self.dataset_root / Path(*normalized)
@@ -155,11 +154,6 @@ class AdvioDownloadManager:
             msg = f"Archive {archive_path} did not contain any members for requested modalities: {requested}"
             raise ValueError(msg)
         return written_paths
-
-
-def _modalities_present(local_modalities: list[AdvioModality], required_modalities: tuple[AdvioModality, ...]) -> bool:
-    available = set(local_modalities)
-    return all(modality in available for modality in required_modalities)
 
 
 def _ensure_directory_parent(target_path: Path) -> None:
@@ -177,17 +171,3 @@ def _ensure_directory_parent(target_path: Path) -> None:
             msg = f"Expected directory path but found file at {target_path.parent}. Remove it and retry the ADVIO download."
             raise ValueError(msg)
     target_path.parent.mkdir(parents=True, exist_ok=True)
-
-
-def _normalize_archive_member(member_name: str) -> tuple[str, ...] | None:
-    parts = tuple(part for part in PurePosixPath(member_name).parts if part not in {"", "."})
-    return None if not parts or any(part == ".." for part in parts) else parts
-
-
-def _relative_sequence_path(normalized_parts: tuple[str, ...], sequence_slug: str) -> PurePosixPath | None:
-    root_parts = (
-        normalized_parts[1:] if len(normalized_parts) >= 2 and normalized_parts[0] == "data" else normalized_parts
-    )
-    if not root_parts or root_parts[0] != sequence_slug:
-        return None
-    return PurePosixPath(*root_parts[1:])
