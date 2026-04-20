@@ -2,7 +2,7 @@
 # Keep machine-local trust, auth, and UI preferences in ~/.codex/config.toml.
 
 model                  = "gpt-5.4"
-model_reasoning_effort = "low"
+model_reasoning_effort = "high"
 personality            = "pragmatic"
 web_search             = "cached"
 
@@ -10,16 +10,16 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 
 [mcp_servers]
 
-# Bootstrap once with:
-#   docker mcp profile pull docker.io/janduchscherer104/codex:latest
-[mcp_servers.MCP_DOCKER]
-command = "docker"
-args    = ["mcp", "gateway", "run", "--profile", "codex"]
+    # Bootstrap once with:
+    #   docker mcp profile pull docker.io/janduchscherer104/codex:latest
+    [mcp_servers.MCP_DOCKER]
+    command = "docker"
+    args    = ["mcp", "gateway", "run", "--profile", "codex"]
 
-[mcp_servers.code-index]
-type    = "stdio"
-command = "uvx"
-args    = ["code-index-mcp"]
+    [mcp_servers.code-index]
+    type    = "stdio"
+    command = "uvx"
+    args    = ["code-index-mcp"]
 
 [features]
 unified_exec = true
