@@ -91,6 +91,18 @@ Use this file for package-root ownership rules and cross-package contract constr
 - Record3D live pipeline requests must use a transport-aware typed source contract instead of encoding USB or Wi-Fi details into ad hoc `source_id` strings alone.
 - `PathConfig` remains the single owner of repo-owned path semantics.
 
+## Stage Runtime Requirements
+
+- Pipeline stages must be constructed from typed config objects instead of loose dictionaries or long argument lists.
+- Top-level stage configs must expose a common runtime contract that lets the pipeline reason uniformly about target construction and resource placement.
+- Stateful Ray-backed stages must resolve from config into the runtime actor class that the pipeline schedules.
+- Runtime placement metadata such as CPU, GPU, memory, and remote-node requirements belongs in typed stage config surfaces.
+- Stage configs should compose nested child configs and use typed discriminators for backend or variant selection.
+- Every stage must define explicit DTOs for offline and streaming inputs and outputs.
+- Stage output DTOs that participate in visualization must convert into repo-owned Rerun event payloads rather than calling the Rerun SDK directly.
+- The Rerun sink is the only component that talks directly to the Rerun SDK.
+- Running stages must expose typed status telemetry, including queue depth, throughput, and latency where the stage can measure them.
+
 ## Explicit Non-Goals
 
 - This file is not the home for app UX requirements.
