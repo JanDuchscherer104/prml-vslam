@@ -46,6 +46,7 @@ _PAGE_SPECS = (
     (AppPageId.RECORD3D, ":material/videocam:", "record3d", True),
     (AppPageId.DATASETS, ":material/download:", "datasets", False),
     (AppPageId.PIPELINE, ":material/account_tree:", "pipeline", False),
+    (AppPageId.ARTIFACTS, ":material/folder_open:", "artifacts", False),
     (AppPageId.METRICS, ":material/show_chart:", "metrics", False),
 )
 
@@ -129,7 +130,11 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
         state_changed = True
     if state_changed:
         context.store.save(context.state)
-    if page_id not in {AppPageId.PIPELINE, AppPageId.METRICS} and context.run_service.snapshot().state in {
+    if page_id not in {
+        AppPageId.PIPELINE,
+        AppPageId.ARTIFACTS,
+        AppPageId.METRICS,
+    } and context.run_service.snapshot().state in {
         RunState.PREPARING,
         RunState.RUNNING,
     }:

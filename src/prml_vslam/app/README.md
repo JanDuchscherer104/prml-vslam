@@ -150,6 +150,11 @@ sequenceDiagram
   - Uses explicit actions for `evo` execution.
   - Delegates data access to `TrajectoryEvaluationService` and figure creation to `plotting.metrics`.
 
+- [pages/artifacts.py](pages/artifacts.py)
+  - Persisted run artifact inspector.
+  - Reads typed summaries, manifests, structured paths, and small raw metadata from a selected method-level run root.
+  - Keeps heavier trajectory and reconstruction views behind explicit buttons.
+
 - [pages/datasets.py](pages/datasets.py)
   - Dataset-management page renderer for ADVIO and TUM RGB-D tabs.
   - Renders committed upstream metadata, local dataset coverage, and explicit download controls.
