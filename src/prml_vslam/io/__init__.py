@@ -17,6 +17,7 @@ from .cv2_producer import (
 )
 from .record3d import Record3DStreamConfig
 
+# TODO: what the fuck is this? Decide, should datasets become an actual submodule of io or stay a top level module?
 sys.modules.setdefault(__name__ + ".datasets", datasets)
 
 __all__ = [

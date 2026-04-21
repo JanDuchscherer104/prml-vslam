@@ -24,6 +24,7 @@ _KEYED_POINTS_PREFIX = "/world/keyframes/points/"
 _KEYED_CAMERAS_PREFIX = "/world/keyframes/cameras/"
 
 
+# TODO: This is a DTO / data model, it should hence be defined in a dedicated dto / data model module!
 class RerunPointCloudSnapshot(BaseData):
     """Summary of one populated point-cloud entity in a recording."""
 
@@ -35,6 +36,9 @@ class RerunPointCloudSnapshot(BaseData):
     bounds_max_xyz: tuple[float, float, float]
 
 
+# TODO: This is a DTO / data model, it should hence be defined in a dedicated dto / data model module!
+
+
 class RerunValidationSummary(BaseData):
     """Deterministic semantic summary extracted from one `.rrd` recording."""
 
@@ -44,6 +48,9 @@ class RerunValidationSummary(BaseData):
     keyed_point_clouds: list[RerunPointCloudSnapshot] = Field(default_factory=list)
     keyed_camera_entities: list[str] = Field(default_factory=list)
     tracking_positions_xyz: list[tuple[float, float, float]] = Field(default_factory=list)
+
+
+# TODO: This is a DTO / data model, it should hence be defined in a dedicated dto / data model module!
 
 
 class RerunValidationArtifacts(BaseData):
