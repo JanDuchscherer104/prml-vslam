@@ -174,6 +174,7 @@ flowchart LR
         SlamOfflineFn["run_offline_slam_stage()"]
         GroundFn["run_ground_alignment_stage()"]
         TrajFn["run_trajectory_evaluation_stage()"]
+        RefReconFn["run_reference_reconstruction_stage()"]
         SummaryFn["run_summary_stage()"]
     end
 
@@ -189,6 +190,7 @@ flowchart LR
     RuntimeStageProgram --> SlamOfflineFn
     RuntimeStageProgram --> GroundFn
     RuntimeStageProgram --> TrajFn
+    RuntimeStageProgram --> RefReconFn
     RuntimeStageProgram --> SummaryFn
     SlamOfflineFn --> OfflineSlam
     RuntimeStageProgram --> StreamingSlam
@@ -198,6 +200,7 @@ flowchart LR
     StreamingSlam --> StageCompletionPayload
     GroundFn --> StageCompletionPayload
     TrajFn --> StageCompletionPayload
+    RefReconFn --> StageCompletionPayload
     SummaryFn --> StageCompletionPayload
 ```
 
@@ -212,6 +215,105 @@ Key contact points:
 - [bounded stage helpers](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60)
 - [stage actors](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L42)
 
+## Current Stage Execution Flow
+
+[RuntimeStageProgram.default()](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L140)
+is the current runtime phase router. It binds each available
+[`StageKey`](../../src/prml_vslam/pipeline/contracts/stages.py#L12) to
+hardcoded function pointers in
+[`StageRuntimeSpec`](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L118),
+then executes only the entrypoints that apply to the current phase:
+
+| Stage | Offline phase | Streaming prepare phase | Streaming finalize phase |
+| --- | --- | --- | --- |
+| `ingest` | `_run_ingest()` -> [run_ingest_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60) | `_run_ingest()` -> [run_ingest_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60) | none |
+| `slam` | `_run_slam_offline()` -> [run_offline_slam_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L101) -> [OfflineSlamStageActor.run()](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L46) | `_run_slam_streaming_prepare()` -> [RunCoordinatorActor.start_streaming_slam_stage()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L471) | `_run_slam_streaming_finalize()` -> [RunCoordinatorActor.close_streaming_slam_stage()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L510) |
+| `ground.align` | `_run_ground_alignment()` -> [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) | none | `_run_ground_alignment()` -> [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
+| `trajectory.evaluate` | `_run_trajectory()` -> [run_trajectory_evaluation_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137) | none | `_run_trajectory()` -> [run_trajectory_evaluation_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137), skipped after streaming error or stop |
+| `reference.reconstruct` | `_run_reference_reconstruction()` -> [run_reference_reconstruction_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212) | none | `_run_reference_reconstruction()` -> [run_reference_reconstruction_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212) |
+| `summary` | `_run_summary()` -> [run_summary_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L257) | none | `_run_summary()` -> [run_summary_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L257) |
+
+Offline execution starts in
+[RunCoordinatorActor._run_offline()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L340).
+The coordinator resolves the source through
+[OfflineSourceResolver](../../src/prml_vslam/pipeline/source_resolver.py#L46)
+unless a runtime source was injected, builds one
+[`StageExecutionContext`](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L31),
+and calls
+[`RuntimeStageProgram.execute_offline()`](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L222).
+For each available planned stage, the program emits stage-start callbacks,
+invokes the hardcoded stage function, applies the returned completion payload
+to mutable runtime state, and calls back into the coordinator to record
+artifacts plus `StageCompleted`. The coordinator then emits either
+`RunCompleted` or `RunStopped`.
+
+Streaming execution is split across prepare, hot path, and finalize code:
+
+1. [RunCoordinatorActor._run_streaming()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L374)
+   requires an injected streaming source and calls
+   [`execute_streaming_prepare()`](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L248).
+   In this phase, `ingest` prepares the normalized sequence manifest and
+   `slam` asks the coordinator driver hook to construct and start
+   [`StreamingSlamStageActor`](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L203).
+2. The coordinator creates
+   [`PacketSourceActor`](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L99),
+   which owns the source read loop, credit blocking, frame handle creation,
+   and `on_packet()`, `on_source_eof()`, or `on_source_error()` callbacks.
+3. [RunCoordinatorActor.on_packet()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L169)
+   records packet telemetry and forwards frame payload refs to
+   [`StreamingSlamStageActor.push_frame()`](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L240).
+   The SLAM actor resolves payloads, steps the method session, translates
+   backend updates through
+   [`translate_slam_update()`](../../src/prml_vslam/methods/events.py),
+   creates transient preview/array handles, and calls
+   `on_slam_notices()`.
+4. [RunCoordinatorActor.on_slam_notices()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L220)
+   stores transient handles, records backend notice events, forwards Rerun
+   bindings, releases packet credits, and finalizes once the source is
+   finished and in-flight frames drain.
+5. [RunCoordinatorActor._finalize_streaming()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L419)
+   calls
+   [`execute_streaming_finalize()`](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L272).
+   The SLAM finalizer closes the streaming actor and returns a
+   `StageCompletionPayload`; downstream finalize-only stages then run against
+   the accumulated runtime state before the coordinator emits `RunCompleted`,
+   `RunFailed`, or `RunStopped`.
+
+The cross-stage handoff is mutable and broad:
+
+- [`StageCompletionPayload`](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60)
+  carries the terminal `StageOutcome` plus whichever rich payload fields the
+  stage happened to produce.
+- [`_apply_completion()`](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L483)
+  mutates [`RuntimeExecutionState`](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L38)
+  by copying non-`None` payload fields into shared state.
+- `RuntimeExecutionState.stage_outcomes` accumulates terminal outcomes in
+  execution order and is the direct input to `summary`.
+- [RunCoordinatorActor._record_stage_completion()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L574)
+  emits artifact registration events, then duplicates the rich payload fields
+  into `StageCompleted` so the snapshot projector can retain them.
+
+The actor split is therefore not a clean stage-runtime boundary:
+
+- [`OfflineSlamStageActor`](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L42)
+  owns offline backend construction, `run_sequence()`, native visualization
+  collection, and normalized SLAM completion.
+- [`StreamingSlamStageActor`](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L203)
+  owns method streaming-session state, frame payload resolution, backend update
+  translation, transient update handles, and streaming SLAM completion.
+- [`PacketSourceActor`](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L99)
+  owns live source reads, credit blocking, frame handle creation, source EOF
+  and source-error callbacks.
+- [`RunCoordinatorActor`](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L75)
+  owns actor construction, streaming credits, transient handle cache, event
+  recording, snapshot projection, JSONL persistence, Rerun fanout, and terminal
+  run-state decisions.
+
+The practical problem is not simply that some work is in actors and some work
+is in helper functions. The current execution model splits one stage concept
+across phase routing, mutable cross-stage state, actor lifecycle, and
+observer/event policy.
+
 ## Present Stage Inventory
 
 | Stage | Config today | Planning today | Runtime today | Output today | Present issue |
@@ -220,10 +322,10 @@ Key contact points:
 | `slam` | [SlamStageConfig](../../src/prml_vslam/pipeline/contracts/request.py#L150) with method-owned backend config | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L145) | [OfflineSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L42) and [StreamingSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L203) | `StageCompletionPayload.slam`, `visualization` | Offline and streaming are separate actors; stage lifecycle is not represented by one stage runtime target. |
 | `ground.align` | [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), enabled through `request.alignment.ground` | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L150) | [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) | `StageCompletionPayload.ground_alignment` | Config is package-local but injected through a top-level request field, not a stage config; output DTO is implicit. |
 | `trajectory.evaluate` | [TrajectoryBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), enabled through `request.benchmark.trajectory` | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L156) | [run_trajectory_evaluation_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137) | artifact map only; `EvaluationArtifact` not retained in payload | Benchmark policy and eval computation are split, but output retention is inconsistent with other stages. |
-| `reference.reconstruct` | [ReferenceReconstructionConfig](../../src/prml_vslam/benchmark/contracts.py) | placeholder unavailable in [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L162) | none | expected output path only | Stage key exists but has no runtime DTO, runtime target, or implementation owner. |
+| `reference.reconstruct` | [ReferenceReconstructionConfig](../../src/prml_vslam/benchmark/contracts.py) | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L164), available only for TUM RGB-D dataset sources | [run_reference_reconstruction_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212) | `reference_cloud`, reconstruction metadata, optional mesh | Stage now has a bounded runtime helper, but no stage-local config/input/output DTO or clear reconstruction package runtime owner. |
 | `cloud.evaluate` | [CloudBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py) | placeholder unavailable in [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L171) | none | expected output path only | Stage key exists but metric owner and DTO ownership are not fully wired. |
 | `efficiency.evaluate` | [EfficiencyBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py) | placeholder unavailable in [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L180) | none | expected output path only | Stage key exists but should likely derive metrics from `RunEvent` stream; no DTO/runtime yet. |
-| `summary` | no dedicated stage config | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L189) | [run_summary_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L211) | `RunSummary`, `StageManifest[]` | Projection-only behavior is correct, but summary config/runtime is implicit. |
+| `summary` | no dedicated stage config | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L189) | [run_summary_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L257) | `RunSummary`, `StageManifest[]` | Projection-only behavior is correct, but summary config/runtime is implicit. |
 
 ## Current Config Placement
 
@@ -340,6 +442,10 @@ Findings:
 - [RuntimeStageProgram](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L132)
   looks like a generic stage executor but is currently a hardcoded list of
   function pointers rather than a stage runtime abstraction.
+- Stage execution authority is split four ways: `RuntimeStageProgram` owns
+  phase routing, `RuntimeExecutionState` owns mutable handoff state, Ray actors
+  own parts of the stage lifecycle, and the coordinator owns observer/event
+  policy.
 - [StageCompletionPayload](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60)
   is the de facto cross-stage output DTO, but it is a broad union-like bag
   rather than stage-specific output contracts.
@@ -494,6 +600,7 @@ pipeline/method boundary contracts rather than `interfaces`.
 
 | Redundant / overlapping concept | Current locations | Problem |
 | --- | --- | --- |
+| Stage execution authority | `RuntimeStageProgram`, `RuntimeExecutionState`, `stage_execution.py`, `stage_actors.py`, `RunCoordinatorActor` | One stage lifecycle is split across phase routing, mutable state, helper functions, actors, and event/observer policy. |
 | Runtime stage result | `StageCompletionPayload`, `StageOutcome`, `StageCompleted` event, `RuntimeExecutionState` | Multiple objects represent partly overlapping “stage result” semantics. |
 | Stage status | `StageStatus`, `RunState`, `StageProgress`, `StreamingRunSnapshot` counters | No single stage runtime status DTO for queue, FPS, latency, throughput, and resource use. |
 | Source construction | `OfflineSourceResolver`, `pipeline/demo.py`, dataset services, IO configs | Offline and streaming source construction do not share one mux/factory abstraction. |
@@ -522,7 +629,7 @@ pipeline/method boundary contracts rather than `interfaces`.
 
 | Severity | Issue | Why it matters |
 | --- | --- | --- |
-| High | No generic stage config/runtime abstraction | Blocks clean stage-wise refactor and makes new stages require edits across registry, runtime program, coordinator, and helper modules. |
+| High | No generic stage config/runtime abstraction | Blocks clean stage-wise refactor and makes new stages require edits across registry, runtime program, coordinator, and helper modules. The current issue is a four-way split across phase routing, mutable state, actor lifecycle, and observer/event policy, not merely actor/helper placement. |
 | High | SLAM stage split into offline actor and streaming actor | Duplicates backend construction/finalization logic and obscures one stage lifecycle. |
 | High | Coordinator owns too many runtime/observer responsibilities | Makes streaming changes risky and hard to test in isolation. |
 | Medium | Source muxing and backend muxing use different patterns | New source/backend variants require different extension paths. |
