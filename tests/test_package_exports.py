@@ -10,6 +10,7 @@ import prml_vslam.interfaces as interfaces_package
 import prml_vslam.io as io_package
 import prml_vslam.methods as methods_package
 import prml_vslam.pipeline as pipeline_package
+import prml_vslam.reconstruction as reconstruction_package
 
 
 def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
@@ -102,3 +103,20 @@ def test_vista_package_is_the_only_canonical_vista_surface() -> None:
     ]
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("prml_vslam.methods.vista_slam")
+
+
+def test_reconstruction_package_exports_runtime_surfaces_without_harness() -> None:
+    assert reconstruction_package.__all__ == [
+        "Open3dTsdfBackend",
+        "Open3dTsdfBackendConfig",
+        "FileRgbdObservationSource",
+        "OfflineReconstructionBackend",
+        "ReconstructionArtifacts",
+        "ReconstructionBackendConfig",
+        "ReconstructionMetadata",
+        "ReconstructionMethodId",
+        "ReconstructionObservation",
+        "ReconstructionSession",
+        "StreamingReconstructionBackend",
+    ]
+    assert not hasattr(reconstruction_package, "ReconstructionHarness")

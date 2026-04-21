@@ -8,25 +8,27 @@ reconstruction adapters. Shared posed RGB-D observation DTOs live in
 minimal offline reconstruction implementation.
 """
 
-from .configs import Open3dTsdfBackendConfig, ReconstructionBackendConfig
+from .config import Open3dTsdfBackendConfig, ReconstructionBackendConfig
 from .contracts import (
     ReconstructionArtifacts,
     ReconstructionMetadata,
     ReconstructionMethodId,
     ReconstructionObservation,
 )
-from .harness import ReconstructionHarness
 from .open3d_tsdf import Open3dTsdfBackend
+from .protocols import OfflineReconstructionBackend, ReconstructionSession, StreamingReconstructionBackend
 from .rgbd_source import FileRgbdObservationSource
 
 __all__ = [
     "Open3dTsdfBackend",
     "Open3dTsdfBackendConfig",
     "FileRgbdObservationSource",
+    "OfflineReconstructionBackend",
     "ReconstructionArtifacts",
     "ReconstructionBackendConfig",
-    "ReconstructionHarness",
     "ReconstructionMetadata",
     "ReconstructionMethodId",
     "ReconstructionObservation",
+    "ReconstructionSession",
+    "StreamingReconstructionBackend",
 ]
