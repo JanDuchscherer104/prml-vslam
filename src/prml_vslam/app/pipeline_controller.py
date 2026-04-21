@@ -18,9 +18,9 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunEvent
 from prml_vslam.pipeline.contracts.provenance import StageManifest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
-from prml_vslam.utils.json_types import JsonObject
 
 from .pipeline_controls import (
+    JsonObject,
     PipelinePageAction,
     action_from_page_state,
     backend_payload_from_action,

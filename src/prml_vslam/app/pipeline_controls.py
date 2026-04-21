@@ -20,7 +20,6 @@ from prml_vslam.pipeline.contracts.request import (
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_request, load_run_request_toml
 from prml_vslam.utils import BaseData, PathConfig
-from prml_vslam.utils.json_types import JsonObject
 
 from .models import PipelinePageState, PipelineSourceId
 from .record3d_controls import record3d_transport_input_error
@@ -38,6 +37,10 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
         StageKey.SUMMARY,
     }
 )
+
+JsonScalar: TypeAlias = str | int | float | bool | None
+JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
+JsonObject: TypeAlias = dict[str, JsonValue]
 
 PipelinePageStateUpdateValue: TypeAlias = (
     PipelineSourceId | AdvioPoseSource | AdvioPoseFrameMode | Record3DTransportId | int | str | bool | None
@@ -386,6 +389,7 @@ def json_dump(payload: BaseData | None) -> str | None:
 
 
 __all__ = [
+    "JsonObject",
     "PipelinePageAction",
     "action_from_page_state",
     "backend_payload_from_action",
