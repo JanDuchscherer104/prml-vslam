@@ -4,53 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
 
 import numpy as np
-from evo.core.trajectory import PoseTrajectory3D
-from evo.tools import file_interface
-from pydantic import ConfigDict
+import open3d as o3d
+from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
+from evo.tools import file_interface  # type: ignore[import-untyped]
 from pytransform3d.transformations import transform, vectors_to_points
-
-from .base_data import BaseData
 
 if TYPE_CHECKING:
     from prml_vslam.interfaces.camera import CameraIntrinsics
     from prml_vslam.interfaces.transforms import FrameTransform
-
-
-class ImageSize(BaseData):
-    """Integer image resolution in pixels."""
-
-    model_config = ConfigDict(frozen=True)
-
-    width: int
-    """Image width in pixels."""
-
-    height: int
-    """Image height in pixels."""
-
-    @classmethod
-    def from_payload(cls, payload: object) -> Self:
-        """Normalize a width/height payload into an image-size model.
-
-        Args:
-            payload: Upstream payload encoded as either a mapping with
-                ``width``/``height`` keys or a 2-value sequence.
-
-        Returns:
-            Normalized image size.
-        """
-        if isinstance(payload, dict):
-            width = payload.get("width")
-            height = payload.get("height")
-            if isinstance(width, int) and isinstance(height, int):
-                return cls(width=width, height=height)
-
-        if isinstance(payload, list | tuple) and len(payload) == 2 and all(isinstance(value, int) for value in payload):
-            return cls(width=int(payload[0]), height=int(payload[1]))
-
-        raise TypeError("Image size must be encoded as {'width': int, 'height': int} or [width, height].")
 
 
 def write_tum_trajectory(
@@ -96,21 +60,12 @@ def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
     return trajectory
 
 
-def _import_open3d() -> object:
-    try:
-        import open3d as o3d
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("Point-cloud PLY I/O requires the repository Open3D dependency.") from exc
-    return o3d
-
-
 def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     """Write an XYZ point cloud to PLY using the repository's Open3D dependency."""
     positions = np.asarray(points_xyz, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 3:
         raise ValueError(f"Expected point cloud shape (N, 3), got {positions.shape}.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    o3d = _import_open3d()
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(positions)
     if not o3d.io.write_point_cloud(str(path), point_cloud, write_ascii=True):
@@ -122,7 +77,6 @@ def load_point_cloud_ply(path: Path) -> np.ndarray:
     """Load an XYZ point cloud from PLY using the repository's Open3D dependency."""
     if not path.exists():
         raise FileNotFoundError(f"Point cloud '{path}' does not exist.")
-    o3d = _import_open3d()
     point_cloud = o3d.io.read_point_cloud(str(path))
     points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
     if points_xyz.ndim != 2 or (points_xyz.size > 0 and points_xyz.shape[1] != 3):
@@ -164,21 +118,25 @@ def pointmap_from_depth(
     if not np.all(np.isfinite(sampled_depth)):
         raise ValueError("Depth map must contain only finite values.")
 
-    rows_px = np.arange(0, depth.shape[0], stride_px, dtype=np.float32)
-    cols_px = np.arange(0, depth.shape[1], stride_px, dtype=np.float32)
-    grid_y_px, grid_x_px = np.meshgrid(rows_px, cols_px, indexing="ij")
-    return np.stack(
-        [
-            (grid_x_px - intrinsics.cx) / intrinsics.fx * sampled_depth,
-            (grid_y_px - intrinsics.cy) / intrinsics.fy * sampled_depth,
-            sampled_depth,
-        ],
-        axis=-1,
-    ).astype(np.float32)
+    point_cloud = o3d.geometry.PointCloud.create_from_depth_image(
+        o3d.geometry.Image(np.ascontiguousarray(depth)),
+        o3d.camera.PinholeCameraIntrinsic(
+            depth.shape[1],
+            depth.shape[0],
+            intrinsics.fx,
+            intrinsics.fy,
+            intrinsics.cx,
+            intrinsics.cy,
+        ),
+        depth_scale=1.0,
+        depth_trunc=float(np.finfo(np.float32).max),
+        stride=stride_px,
+        project_valid_depth_only=False,
+    )
+    return np.asarray(point_cloud.points, dtype=np.float32).reshape((*sampled_depth.shape, 3))
 
 
 __all__ = [
-    "ImageSize",
     "load_point_cloud_ply",
     "load_tum_trajectory",
     "pointmap_from_depth",
