@@ -104,6 +104,43 @@ Optionally run the ViSTA smoke pipeline:
 uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
 ```
 
+
+## MASt3R/CUDA Setup
+Activate the same `prml-vslam` conda environment used above (provides
+`cuda-nvcc=12.4`, `gcc_linux-64`, and `libopencv=4.12.0`):
+
+conda activate prml-vslam
+unset LD_LIBRARY_PATH
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+
+
+Install MASt3R-SLAM and its two nested Python packages as editable installs
+into the project environment. They are not listed in `pyproject.toml` because
+they require the submodule to be present at install time:
+
+    uv pip install --no-build-isolation -e external/mast3r-slam/thirdparty/mast3r
+    uv pip install --no-build-isolation -e external/mast3r-slam/thirdparty/in3d
+    uv pip install --no-build-isolation -e external/mast3r-slam
+
+Optionally enable faster MP4 decoding:
+
+    uv pip install torchcodec==0.1
+
+## MASt3R Pretrained Files
+
+Download the upstream NaverLabs checkpoints (weigths) into
+`external/mast3r-slam/checkpoints/`:
+
+    mkdir -p external/mast3r-slam/checkpoints
+    wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth \
+      -P external/mast3r-slam/checkpoints/
+    wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth \
+      -P external/mast3r-slam/checkpoints/
+    wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_codebook.pkl \
+      -P external/mast3r-slam/checkpoints/
+
+
+
 ## Streamlit Workbench
 
 For the Streamlit app without ViSTA:
