@@ -1,8 +1,17 @@
 """Transport-safe backend event contracts.
 
-This module contains the handoff between method-owned live updates and the
-pipeline's event stream. It translates richer :class:`SlamUpdate` payloads into
-transport-safe notices that can flow through runtime events and snapshots.
+This module exists because the method layer and the pipeline layer care about
+different kinds of runtime payloads. Method wrappers naturally emit rich
+backend-facing :class:`SlamUpdate` objects that may include NumPy arrays,
+backend-local semantics, and live visualization payloads. The pipeline,
+however, needs a smaller transport-safe vocabulary that can be embedded inside
+:class:`prml_vslam.pipeline.contracts.events.BackendNoticeReceived`, persisted
+in runtime event streams, and projected into
+:class:`prml_vslam.pipeline.contracts.runtime.RunSnapshot`.
+
+In other words: :class:`SlamUpdate` is the wrapper-facing live update surface,
+while :class:`BackendEvent` is the pipeline-facing live notice surface. This
+module is the explicit translation boundary between those two worlds.
 """
 
 from __future__ import annotations
@@ -41,7 +50,12 @@ class KeyframeAccepted(TransportModel):
 
 
 class KeyframeVisualizationReady(TransportModel):
-    """Expose transient visualization payload handles for one accepted keyframe."""
+    """Expose transient visualization payload handles for one accepted keyframe.
+
+    The method layer may have arrays for previews, images, depth, or pointmaps
+    in hand, but the pipeline should only see opaque handles plus the minimal
+    metadata needed to log or project them safely.
+    """
 
     kind: Literal["keyframe.visualization_ready"] = "keyframe.visualization_ready"
     seq: int
@@ -58,7 +72,11 @@ class KeyframeVisualizationReady(TransportModel):
 
 
 class MapStatsUpdated(TransportModel):
-    """Report current map-size counters from a streaming backend."""
+    """Report current map-size counters from a streaming backend.
+
+    This keeps lightweight progress telemetry in the event stream even when the
+    durable output boundary remains the final :class:`SlamArtifacts` bundle.
+    """
 
     kind: Literal["map.stats"] = "map.stats"
     seq: int
@@ -86,7 +104,12 @@ class BackendError(TransportModel):
 
 
 class SessionClosed(TransportModel):
-    """Record that a streaming backend session has closed."""
+    """Record that a streaming backend session has closed.
+
+    This is a live transport notice rather than the durable end-of-run result.
+    The durable boundary is still the final :class:`SlamArtifacts` bundle that
+    reaches the pipeline through stage completion.
+    """
 
     kind: Literal["session.closed"] = "session.closed"
     artifact_keys: list[str] = Field(default_factory=list)
@@ -114,7 +137,25 @@ def translate_slam_update(
     depth_handle: ArrayHandle | None = None,
     pointmap_handle: ArrayHandle | None = None,
 ) -> list[BackendEvent]:
-    """Translate one :class:`SlamUpdate` into explicit transport-safe backend events."""
+    """Translate one wrapper-facing :class:`SlamUpdate` into pipeline-facing notices.
+
+    This function is the key boundary between :mod:`prml_vslam.methods` and
+    :mod:`prml_vslam.pipeline` during streaming execution.
+
+    Why the translation exists:
+    - :class:`SlamUpdate` is convenient for backend wrappers because it can
+      describe one incremental backend step in method-owned terms.
+    - the pipeline event stream needs smaller, explicit, transport-safe records
+      that can be embedded into runtime events, projected into snapshots, and
+      forwarded without exposing backend-specific payload structure.
+
+    The translator therefore explodes one coarse update into a sequence of
+    domain-specific notices such as :class:`PoseEstimated`,
+    :class:`KeyframeAccepted`, :class:`KeyframeVisualizationReady`, and
+    :class:`MapStatsUpdated`. Callers should update this function whenever the
+    meaning of :class:`SlamUpdate` changes so the pipeline transport vocabulary
+    remains aligned with the method-layer telemetry surface.
+    """
     events: list[BackendEvent] = []
     seq = int(update.seq)
     timestamp_ns = int(update.timestamp_ns)
