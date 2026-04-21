@@ -17,8 +17,9 @@ DEFAULT_COLORS = np.asarray((BLUE, ORANGE, GREEN, RED), dtype=object)
 AXIS_COLORS = {"x": RED, "y": GREEN, "z": BLUE}
 STANDARD_MARGIN = {"l": 24, "r": 16, "t": 72, "b": 24}
 LEGEND_MARGIN = {"l": 24, "r": 16, "t": 120, "b": 24}
-COMPACT_3D_MARGIN = {"l": 0, "r": 0, "t": 72, "b": 0}
+COMPACT_3D_MARGIN = {"l": 0, "r": 0, "t": 112, "b": 0}
 HORIZONTAL_LEGEND = {"orientation": "h", "yanchor": "bottom", "y": 1.08, "x": 0}
+HORIZONTAL_3D_LEGEND = {"orientation": "h", "yanchor": "top", "y": 1.02, "x": 0}
 
 
 def apply_standard_xy_layout(
@@ -52,7 +53,7 @@ def apply_standard_3d_layout(
     figure.update_layout(
         title=title,
         margin=COMPACT_3D_MARGIN,
-        legend=HORIZONTAL_LEGEND if showlegend else None,
+        legend=HORIZONTAL_3D_LEGEND if showlegend else None,
         showlegend=showlegend,
         scene=scene,
     )

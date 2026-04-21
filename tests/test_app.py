@@ -6,7 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.app.models import AppState, PipelineSourceId
+from prml_vslam.app.bootstrap import _PAGE_SPECS
+from prml_vslam.app.models import AppPageId, AppState, ArtifactInspectorPageState, PipelineSourceId
 from prml_vslam.app.pipeline_controller import (
     PipelinePageAction,
     action_from_page_state,
@@ -28,6 +29,38 @@ from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageCo
 from prml_vslam.pipeline.contracts.runtime import RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.utils import PathConfig
+
+
+def test_artifact_page_is_registered_and_state_round_trips() -> None:
+    assert any(
+        page_id is AppPageId.ARTIFACTS and page_module == "artifacts" for page_id, _, page_module, _ in _PAGE_SPECS
+    )
+
+    state = AppState(
+        artifacts=ArtifactInspectorPageState(
+            selected_run_root=Path(".artifacts/demo/vista"),
+            manual_run_root=".artifacts/manual/vista",
+            use_manual_path=True,
+            show_reconstruction_point_cloud=False,
+            show_reconstruction_mesh=True,
+            reconstruction_max_points=40_000,
+            reconstruction_target_triangles=60_000,
+            reconstruction_mesh_opacity=0.55,
+            reconstruction_mesh_color="#7b1fa2",
+        )
+    )
+
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+
+    assert reloaded.artifacts.selected_run_root == Path(".artifacts/demo/vista")
+    assert reloaded.artifacts.manual_run_root == ".artifacts/manual/vista"
+    assert reloaded.artifacts.use_manual_path is True
+    assert reloaded.artifacts.show_reconstruction_point_cloud is False
+    assert reloaded.artifacts.show_reconstruction_mesh is True
+    assert reloaded.artifacts.reconstruction_max_points == 40_000
+    assert reloaded.artifacts.reconstruction_target_triangles == 60_000
+    assert reloaded.artifacts.reconstruction_mesh_opacity == 0.55
+    assert reloaded.artifacts.reconstruction_mesh_color == "#7b1fa2"
 
 
 def test_build_request_from_action_derives_backend_kind(tmp_path: Path) -> None:

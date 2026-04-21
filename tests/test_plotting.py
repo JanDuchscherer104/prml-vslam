@@ -60,6 +60,9 @@ def test_pipeline_evo_figure_uses_shared_3d_layout() -> None:
     assert [trace.name for trace in figure.data] == ["Reference", "Estimate", "APE (m)"]
     assert figure.layout.scene.zaxis.title.text == "Z (m)"
     assert figure.layout.scene.aspectmode == "data"
+    assert figure.layout.margin.t >= 112
+    assert figure.layout.legend.yanchor == "top"
+    assert figure.layout.legend.y <= 1.02
 
 
 def test_pipeline_pointmap_preview_image_uses_generic_projection() -> None:

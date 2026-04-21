@@ -34,6 +34,7 @@ class AppPageId(StrEnum):
     RECORD3D = "record3d"
     DATASETS = "datasets"
     PIPELINE = "pipeline"
+    ARTIFACTS = "artifacts"
     METRICS = "metrics"
 
     @property
@@ -190,6 +191,37 @@ class MetricsPageState(BaseData):
     """Most recently loaded or computed persisted result path."""
 
 
+class ArtifactInspectorPageState(BaseData):
+    """Persisted selector state for the artifact inspector page."""
+
+    selected_run_root: Path | None = None
+    """Selected discovered artifact root."""
+
+    manual_run_root: str = ""
+    """User-entered artifact root path."""
+
+    use_manual_path: bool = False
+    """Whether the manual path should override discovered run selection."""
+
+    show_reconstruction_point_cloud: bool = True
+    """Whether the reconstruction view should render the reference point cloud."""
+
+    show_reconstruction_mesh: bool = True
+    """Whether the reconstruction view should render the reference mesh."""
+
+    reconstruction_max_points: int = 80_000
+    """Maximum number of reference-cloud points rendered in Plotly."""
+
+    reconstruction_target_triangles: int = 120_000
+    """Target number of reference-mesh triangles rendered in Plotly."""
+
+    reconstruction_mesh_opacity: float = 0.72
+    """Mesh opacity used for the reconstruction Plotly trace."""
+
+    reconstruction_mesh_color: str = "#2f6fed"
+    """Mesh color used for the reconstruction Plotly trace."""
+
+
 class Record3DPageState(BaseData):
     """Persisted selector state for the Record3D live-stream page."""
 
@@ -333,6 +365,9 @@ class AppState(BaseData):
     pipeline: PipelinePageState = Field(default_factory=PipelinePageState)
     """Pipeline-page selector state."""
 
+    artifacts: ArtifactInspectorPageState = Field(default_factory=ArtifactInspectorPageState)
+    """Artifact inspector page selector state."""
+
     metrics: MetricsPageState = Field(default_factory=MetricsPageState)
     """Metrics-page selector state."""
 
@@ -340,6 +375,7 @@ class AppState(BaseData):
 __all__ = [
     "AppPageId",
     "AppState",
+    "ArtifactInspectorPageState",
     "AdvioPageState",
     "AdvioPreviewSnapshot",
     "MetricsPageState",

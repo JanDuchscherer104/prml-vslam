@@ -8,11 +8,12 @@ Use this file for current app behavior, target app constraints, and package-loca
 
 ## Current State
 
-- The app currently exposes four top-level pages: `Record3D`, `ADVIO`, `Pipeline`, and `Metrics`.
+- The app currently exposes five top-level pages: `Record3D`, `Datasets`, `Pipeline`, `Artifacts`, and `Metrics`.
 - The `Record3D` page supports both the `USB` transport and the `Wi-Fi Preview` transport through one selector.
 - The `Pipeline` page can show example request shapes, a generated `RunPlan`, one mock executed run, and the current offline plus bounded streaming demo surface.
 - The `Pipeline` page may run offline ADVIO requests plus bounded Record3D live flows through pipeline-owned services.
 - The `Pipeline` page currently renders an explicit `evo` APE preview when both reference and estimate TUM trajectories are available for the bounded demo result.
+- The `Artifacts` page inspects persisted method-level run roots and keeps heavy trajectory, PLY, and Rerun artifact loading behind explicit user actions.
 - The `Metrics` page keeps evaluation explicit and renders persisted `evo` trajectory results.
 
 ## Target State
@@ -51,6 +52,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 
 - Selecting `USB` or `Wi-Fi Preview` and starting a stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and confidence when available.
 - Switching to `Metrics` renders a matching persisted `evo` result without recomputing it.
+- Switching to `Artifacts` can inspect typed run metadata, canonical paths, stage output paths, and small raw metadata without loading heavy geometry or `.rrd` files.
 - Switching to `Pipeline` shows the direct `RunRequest(...)` workflow, a generated `RunPlan` preview, one mock executed run, and an `evo` APE preview when the required trajectories are available.
 - On live pages, only one of `Start` or `Stop` is visible in the shared action slot at a time.
 - The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.
