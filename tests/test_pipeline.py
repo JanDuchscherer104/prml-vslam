@@ -1543,6 +1543,117 @@ def test_materialize_offline_manifest_logs_cache_hit(
     assert any("Reusing extracted frames" in r.message for r in caplog.records)
 
 
+def test_materialize_offline_manifest_normalizes_tum_rgbd_timestamps(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "artifacts"
+    run_paths = RunArtifactPaths.build(artifact_root)
+    rgb_dir = tmp_path / "rgb"
+    rgb_dir.mkdir(parents=True)
+    timestamps_path = tmp_path / "rgb.txt"
+    timestamps_path.write_text(
+        "\n".join(
+            [
+                "# color images",
+                "# timestamp filename",
+                "0.000000000 rgb/000000.png",
+                "0.200000000 rgb/000001.png",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    request = RunRequest(
+        experiment_name="tum-ingest",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_room"),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    prepared_manifest = SequenceManifest(
+        sequence_id="freiburg1_room",
+        rgb_dir=rgb_dir,
+        timestamps_path=timestamps_path,
+    )
+
+    manifest = materialize_offline_manifest(
+        request=request,
+        prepared_manifest=prepared_manifest,
+        run_paths=run_paths,
+    )
+
+    assert manifest.timestamps_path == run_paths.input_timestamps_path.resolve()
+    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
+
+
+def test_materialize_offline_manifest_normalizes_advio_csv_timestamps(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "artifacts"
+    run_paths = RunArtifactPaths.build(artifact_root)
+    rgb_dir = tmp_path / "rgb"
+    rgb_dir.mkdir(parents=True)
+    timestamps_path = tmp_path / "frames.csv"
+    timestamps_path.write_text("0.000000000,1\n0.100000000,2\n", encoding="utf-8")
+    request = RunRequest(
+        experiment_name="advio-ingest",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-15",
+            dataset_serving={
+                "dataset_id": "advio",
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
+        ),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    prepared_manifest = SequenceManifest(
+        sequence_id="advio-15",
+        rgb_dir=rgb_dir,
+        timestamps_path=timestamps_path,
+    )
+
+    manifest = materialize_offline_manifest(
+        request=request,
+        prepared_manifest=prepared_manifest,
+        run_paths=run_paths,
+    )
+
+    assert manifest.timestamps_path == run_paths.input_timestamps_path.resolve()
+    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 100_000_000]}
+
+
+def test_materialize_offline_manifest_does_not_double_sample_dataset_timestamps(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "artifacts"
+    run_paths = RunArtifactPaths.build(artifact_root)
+    rgb_dir = tmp_path / "rgb"
+    rgb_dir.mkdir(parents=True)
+    timestamps_path = tmp_path / "sampled-rgb.txt"
+    timestamps_path.write_text("0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n", encoding="utf-8")
+    request = RunRequest(
+        experiment_name="sampled-dataset-ingest",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_room", frame_stride=2),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    prepared_manifest = SequenceManifest(
+        sequence_id="freiburg1_room",
+        rgb_dir=rgb_dir,
+        timestamps_path=timestamps_path,
+    )
+
+    manifest = materialize_offline_manifest(
+        request=request,
+        prepared_manifest=prepared_manifest,
+        run_paths=run_paths,
+    )
+
+    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
+
+
 def test_run_coordinator_logs_stage_start_and_completion(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

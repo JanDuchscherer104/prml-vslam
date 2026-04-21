@@ -40,9 +40,11 @@ def materialize_offline_manifest(
     rgb_dir = prepared_manifest.rgb_dir
     timestamps_path = prepared_manifest.timestamps_path
     intrinsics_path = prepared_manifest.intrinsics_path
+    frame_stride = _frame_stride_for_request(request)
+    cached_rgb_dir: Path | None = None
+    fallback_timestamps_ns: list[int] = []
 
     if prepared_manifest.video_path is not None and rgb_dir is None:
-        frame_stride = _frame_stride_for_request(request)
         max_frames = _max_frames_for_request(request)
         cached_rgb_dir = _check_extraction_cache(
             video_path=prepared_manifest.video_path,
@@ -82,14 +84,18 @@ def materialize_offline_manifest(
                 },
             )
 
+        fallback_timestamps_ns = [] if cached_rgb_dir is not None else extracted.timestamps_ns
+
+    timestamps_source = _preferred_timestamps_source(
+        prepared_manifest=prepared_manifest,
+        run_paths=run_paths,
+        cached_rgb_dir=cached_rgb_dir,
+    )
+    if (timestamps_source is not None and timestamps_source.exists()) or fallback_timestamps_ns:
         timestamps_ns = _resolve_timestamps_ns(
-            source_path=_preferred_timestamps_source(
-                prepared_manifest=prepared_manifest,
-                run_paths=run_paths,
-                cached_rgb_dir=cached_rgb_dir,
-            ),
+            source_path=timestamps_source,
             frame_stride=frame_stride,
-            fallback_timestamps_ns=[] if cached_rgb_dir is not None else extracted.timestamps_ns,
+            fallback_timestamps_ns=fallback_timestamps_ns,
         )
         if prepared_manifest.timestamps_path is not None and prepared_manifest.timestamps_path.exists():
             _CONSOLE.debug("Using prepared timestamps from '%s'.", prepared_manifest.timestamps_path)
@@ -183,11 +189,13 @@ def _resolve_timestamps_ns(
         if isinstance(payload, dict) and isinstance(payload.get("timestamps_ns"), list):
             values = [int(value) for value in payload["timestamps_ns"]]
             return values[::frame_stride]
+        raise RuntimeError(f"Expected normalized timestamps JSON with a `timestamps_ns` list at '{source_path}'.")
     rows = []
     for line in source_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        first_field = line.split(",", maxsplit=1)[0].strip()
+        first_field = stripped.split(",", maxsplit=1)[0].strip() if "," in stripped else stripped.split()[0]
         rows.append(first_field)
     if not rows:
         return fallback_timestamps_ns

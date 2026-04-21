@@ -1,12 +1,12 @@
 # Graph Report - .  (2026-04-21)
 
 ## Corpus Check
-- 489 files · ~40,063,196 words
+- 489 files · ~40,065,753 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 8207 nodes · 34885 edges · 522 communities detected
-- Extraction: 20% EXTRACTED · 80% INFERRED · 0% AMBIGUOUS · INFERRED: 27812 edges (avg confidence: 0.56)
+- 8210 nodes · 34909 edges · 522 communities detected
+- Extraction: 20% EXTRACTED · 80% INFERRED · 0% AMBIGUOUS · INFERRED: 27833 edges (avg confidence: 0.56)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -537,83 +537,83 @@
 1. `StageKey` - 948 edges
 2. `DatasetId` - 880 edges
 3. `RunPlan` - 864 edges
-4. `RunRequest` - 529 edges
+4. `RunRequest` - 532 edges
 5. `RunSnapshot` - 518 edges
-6. `DatasetSourceSpec` - 489 edges
+6. `DatasetSourceSpec` - 492 edges
 7. `ArrayHandle` - 445 edges
 8. `StageManifest` - 427 edges
 9. `Record3DLiveSourceSpec` - 391 edges
 10. `VisualizationConfig` - 374 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `tuple()` --calls--> `modalities()`  [INFERRED]
-  external/vista-slam/DBoW3Py/pybind11/include/pybind11/pytypes.h → src/prml_vslam/datasets/advio/advio_models.py
-- `Console` --uses--> `Focused tests for the Rich-backed console wrapper.`  [INFERRED]
-  src/prml_vslam/utils/console.py → tests/test_console.py
-- `PathConfig` --calls--> `test_path_config_is_immutable_after_construction()`  [INFERRED]
-  src/prml_vslam/utils/path_config.py → tests/test_path_config.py
 - `VisualizationConfig` --uses--> `Tests for repo-owned visualization helpers.`  [INFERRED]
   src/prml_vslam/visualization/contracts.py → tests/test_visualization.py
 - `MockSlamBackendConfig` --calls--> `test_mock_slam_backend_config_defaults_to_mock_method()`  [INFERRED]
   src/prml_vslam/methods/configs.py → tests/test_methods.py
+- `SequenceManifest` --uses--> `Small runtime sources used by focused pipeline smoke tests.`  [INFERRED]
+  src/prml_vslam/interfaces/ingest.py → tests/pipeline_testing_support.py
+- `SequenceManifest` --uses--> `Minimal offline source for pipeline smoke tests.`  [INFERRED]
+  src/prml_vslam/interfaces/ingest.py → tests/pipeline_testing_support.py
+- `SequenceManifest` --uses--> `Finite in-memory packet stream for streaming smoke tests.`  [INFERRED]
+  src/prml_vslam/interfaces/ingest.py → tests/pipeline_testing_support.py
 
 ## Communities
 
 ### Community 0 - "Community 0"
 Cohesion: 0.0
-Nodes (906): _load_offline_frame_inputs(), AdvioCalibration, _expect_float_list(), _expect_mapping(), _expect_matrix(), _extract_camera_mapping(), load_advio_calibration(), Parse an official ADVIO calibration YAML into a typed camera model. (+898 more)
+Nodes (757): modalities(), validate_dataset_root(), _artifact_ref(), build_vista_artifacts(), _frame_transform_from_vista_pose(), Build one stable artifact reference for a normalized ViSTA output., Normalize native ViSTA exports into repository-owned artifact contracts.      Th, Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO. (+749 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.01
-Nodes (946): ViSTA-SLAM backend implementing offline and streaming contracts., Local fallback preprocessor used by direct session tests., Return preview RGB and dense pointmap payloads for one live view., GroundAlignmentMetadata, GroundPlaneModel, GroundPlaneVisualizationHint, Canonical alignment-stage DTOs shared outside the alignment package., Dominant ground-plane hypothesis expressed in native `world` coordinates. (+938 more)
+Cohesion: 0.02
+Nodes (839): GroundAlignmentMetadata, Result of one derived ground-plane alignment attempt., ArtifactFileRow, ArtifactPathRow, Inspection helpers for persisted pipeline run artifact roots., One output path declared by a stage manifest., Structured inspection result for one persisted pipeline run., Discover method-level run roots under the configured artifact directory. (+831 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.01
-Nodes (899): BaseConfig, AppContext, Mast3rSlamBackendConfig, MockSlamBackendConfig, Console, Create a console using the caller's module and qualified function name., Create a console using the caller's module and qualified function name., Return a child console with additional namespace parts. (+891 more)
+Cohesion: 0.02
+Nodes (726): BaseConfig, AppContext, Mast3rSlamBackendConfig, MockSlamBackendConfig, AdvioPoseFrameMode, AdvioServingConfig, AlignmentConfig, DatasetId (+718 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.01
-Nodes (443): check_kw_only_arg(), init(), module_local(), name(), release_gil_before_calling_cpp_dtor(), is_good_type(), This function:             - first downsizes the image with LANCZOS inteprolatio, This function:         - first downsizes the image with LANCZOS inteprolation, (+435 more)
+Nodes (454): build_advio_comparison_trajectories(), build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), Build a crowd-density composition chart., Build a scene-attribute prevalence chart., Build ADVIO explorer overlays with explicit comparison semantics. (+446 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.01
-Nodes (375): build_advio_comparison_trajectories(), build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), _scene_rows(), Build a crowd-density composition chart., Build a scene-attribute prevalence chart. (+367 more)
+Nodes (438): check_kw_only_arg(), custom_type_setup(), init(), module_local(), name(), release_gil_before_calling_cpp_dtor(), add(), BoWFrame() (+430 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.01
-Nodes (420): build_advio_page_data(), handle_advio_preview_action(), AdvioDownloadManager, _ensure_directory_parent(), Return the cache directory used for downloaded scene archives., Return the cache directory used for downloaded scene archives., Return one catalog scene by id., Return one catalog scene by id. (+412 more)
+Nodes (582): _build_runtime_env(), _can_connect(), _is_local_ray_connectivity_error(), _local_node_ip_address(), _prepare_ray_environment(), # TODO: These should be exposed via config! (include_dashboard, log_to_driver), BaseConfig, _ConfigFactory (+574 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.01
-Nodes (425): _apply_fallbacks(), _artifact_ref(), _candidate_from_root(), _canonical_path_rows(), _derive_slam_artifacts(), discover_run_artifact_roots(), _file_inventory(), _format_size() (+417 more)
+Nodes (417): build_advio_page_data(), handle_advio_preview_action(), AdvioDownloadManager, _ensure_directory_parent(), Return the cache directory used for downloaded scene archives., Return the cache directory used for downloaded scene archives., Return one catalog scene by id., Return one catalog scene by id. (+409 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.02
-Nodes (371): Canonical ViSTA-SLAM backend adapter (offline + streaming)., Stateful streaming session that forwards frames to upstream OnlineSLAM., Write the vocabulary back to disk in the requested format., Create one configured upstream OnlineSLAM session., Subset of the imported DBoW module used by this adapter., Persist upstream outputs and convert to canonical repository artifacts., Construct one vocabulary instance., One RGB frame prepared for upstream ViSTA ingestion. (+363 more)
+Cohesion: 0.01
+Nodes (412): _load_offline_frame_inputs(), Canonical ViSTA-SLAM backend adapter (offline + streaming)., Stateful streaming session that forwards frames to upstream OnlineSLAM., Write the vocabulary back to disk in the requested format., Create one configured upstream OnlineSLAM session., Subset of the imported DBoW module used by this adapter., Persist upstream outputs and convert to canonical repository artifacts., Construct one vocabulary instance. (+404 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.01
-Nodes (349): load_advio_explorer_sample(), Controller helpers for the ADVIO Streamlit page., Apply one preview-form action and return an error message when it fails., Apply one preview-form action and return an error message when it fails., Persist the current ADVIO download-form state., Persist the current explorer selection and load its offline sample., Persist the current ADVIO download-form state., Persist the current ADVIO download-form state. (+341 more)
+Nodes (347): load_advio_explorer_sample(), Controller helpers for the ADVIO Streamlit page., Apply one preview-form action and return an error message when it fails., Apply one preview-form action and return an error message when it fails., Persist the current ADVIO download-form state., Persist the current explorer selection and load its offline sample., Persist the current ADVIO download-form state., Persist the current ADVIO download-form state. (+339 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.02
-Nodes (230): setup_target(), parent(), Instantiate or build the runtime object described by this config., Describe which optional geometry surfaces a backend should materialize.      The, SlamOutputPolicy, VistaSlamBackendConfig, Return a child console with additional namespace parts., build_runtime_source_from_request() (+222 more)
+Cohesion: 0.01
+Nodes (342): apply_sim3(), _associate_trajectory_positions(), build_advio_tango_reference_clouds(), fit_sim3_alignment(), load_bounded_tango_point_clouds(), load_tango_point_cloud_index(), load_tango_point_cloud_payload(), Load Tango point-cloud timestamps and integer payload indices. (+334 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.02
-Nodes (236): apply_sim3(), _associate_trajectory_positions(), build_advio_tango_reference_clouds(), fit_sim3_alignment(), interpolate_trajectory_poses(), load_bounded_tango_point_clouds(), load_tango_point_cloud_index(), load_tango_point_cloud_payload() (+228 more)
+Cohesion: 0.01
+Nodes (207): AdvioCalibration, _expect_float_list(), _expect_mapping(), _expect_matrix(), _extract_camera_mapping(), load_advio_calibration(), load_advio_frame_timestamps_ns(), load_advio_trajectory() (+199 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.04
-Nodes (209): Open3dTsdfBackendConfig, Compatibility shim for the canonical ViSTA config surfaces., Algorithm-level hyperparameters forwarded to upstream OnlineSLAM., Return the user-facing reconstruction label., Configure the minimal Open3D TSDF reconstruction backend., Factory config that builds the canonical ViSTA backend., Instantiate the Open3D TSDF backend while ignoring unrelated kwargs., ReconstructionBackendConfig (+201 more)
+Nodes (206): Open3dTsdfBackendConfig, Compatibility shim for the canonical ViSTA config surfaces., Algorithm-level hyperparameters forwarded to upstream OnlineSLAM., Return the user-facing reconstruction label., Configure the minimal Open3D TSDF reconstruction backend., Factory config that builds the canonical ViSTA backend., Instantiate the Open3D TSDF backend while ignoring unrelated kwargs., ReconstructionBackendConfig (+198 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.03
-Nodes (73): stop_requested(), Record3D-backed streaming-source wrapper for pipeline-owned sessions., Configuration for one Record3D-backed streaming source., Configure one Record3D-backed streaming source adapter., Configure one Record3D-backed streaming source adapter., Runtime type that exposes the shared streaming-source contract., Record3D-backed live source compatible with pipeline-owned sessions., Runtime type that exposes the shared streaming-source contract. (+65 more)
+Nodes (125): setup_target(), parent(), Instantiate or build the runtime object described by this config., Return a child console with additional namespace parts., Decode and return the next sampled RGB frame., wait(), IntEnum, record3d_devices() (+117 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.05
-Nodes (37): DPTOutputAdapter, FeatureFusionBlock_custom, Interpolate, make_fusion_block(), make_scratch(), pair(), Forward pass.         Args:             x (tensor): input         Returns:, Feature fusion block. (+29 more)
+Cohesion: 0.02
+Nodes (74): MyNvtxRange, DPTOutputAdapter, FeatureFusionBlock_custom, Interpolate, make_fusion_block(), make_scratch(), pair(), Feature fusion block. (+66 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.07
@@ -624,20 +624,20 @@ Cohesion: 0.08
 Nodes (6): PYBIND11_MODULE(), PYBIND11_MODULE(), test_exo_planet_pybind11_wrap_very_lonely_traveler(), test_home_planet_wrap_very_lonely_traveler(), wrap_lonely_traveler(), wrap_very_lonely_traveler()
 
 ### Community 16 - "Community 16"
-Cohesion: 0.13
-Nodes (8): f1(), f2(), f3(), f4(), print_bytes(), return_bytes(), test_bytes(), test_exception_specifiers()
+Cohesion: 0.09
+Nodes (11): Mixing bases with and without static properties should be possible     and the r, Mixing bases with and without dynamic attribute support, Returning an offset (non-first MI) base class pointer should recognize the insta, Tests returning an offset (non-first MI) base class pointer to a derived instanc, Tests extending a Python class from a single inheritor of a MI class, test_mi_base_return(), test_mi_dynamic_attributes(), test_mi_static_properties() (+3 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.23
-Nodes (12): fast_read(), hash_func(), hashat(), memcpy_up(), qlz_decompress(), qlz_decompress_core(), qlz_size_compressed(), qlz_size_decompressed() (+4 more)
+Cohesion: 0.17
+Nodes (5): get_sys_path_size(), PyWidget, test_override_cache_helper, test_override_cache_helper_trampoline, Widget
 
 ### Community 18 - "Community 18"
 Cohesion: 0.18
 Nodes (6): Pydoc needs to be able to provide help() for everything inside a pybind11 module, Registering two things with the same name, Test that all the keys in the builtin modules have type str.      Previous versi, test_builtin_key_type(), test_duplicate_registration(), test_pydoc()
 
 ### Community 19 - "Community 19"
-Cohesion: 0.22
-Nodes (3): init_numpy(), PyAllowThreads, PyEnsureGIL
+Cohesion: 0.36
+Nodes (4): test_resolve_issue_moves_record_to_resolved_collection(), test_resolve_refactor_moves_record_to_resolved_collection(), test_resolve_todo_moves_record_to_resolved_collection(), _write_toml()
 
 ### Community 20 - "Community 20"
 Cohesion: 0.29
@@ -648,12 +648,12 @@ Cohesion: 0.33
 Nodes (2): DerivedWidget, Widget
 
 ### Community 22 - "Community 22"
-Cohesion: 0.33
-Nodes (5): CaptureManifest, FrameSample, Workspace-owned manifests for prepared inputs and materialized captures., One decoded or materialized RGB frame in a capture manifest., Persistent metadata for a materialized SLAM-ready image sequence.
-
-### Community 23 - "Community 23"
 Cohesion: 0.7
 Nodes (4): PC, PPCC, test_PC(), test_PPCC()
+
+### Community 23 - "Community 23"
+Cohesion: 0.6
+Nodes (4): event_loop(), get_await_result(), test_await(), test_await_missing()
 
 ### Community 24 - "Community 24"
 Cohesion: 0.5
@@ -3630,17 +3630,17 @@ Nodes (1): # NOTE: drop path for stochastic depth, we shall see if this is bette
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `len()` connect `Community 4` to `Community 0`, `Community 1`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`?**
-  _High betweenness centrality (0.100) - this node is a cross-community bridge._
-- **Why does `DatasetId` connect `Community 2` to `Community 1`, `Community 5`, `Community 7`, `Community 8`, `Community 10`, `Community 11`?**
-  _High betweenness centrality (0.064) - this node is a cross-community bridge._
-- **Why does `isinstance()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
+- **Why does `len()` connect `Community 3` to `Community 0`, `Community 1`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 17`?**
+  _High betweenness centrality (0.110) - this node is a cross-community bridge._
+- **Why does `isinstance()` connect `Community 10` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`, `Community 12`, `Community 13`?**
+  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **Why does `DatasetId` connect `Community 2` to `Community 1`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`?**
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Are the 945 inferred relationships involving `StageKey` (e.g. with `RunArtifactPaths` and `PathConfig`) actually correct?**
   _`StageKey` has 945 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 878 inferred relationships involving `DatasetId` (e.g. with `Supported pipeline operating modes.` and `Dataset lookup helpers kept outside dataset identifier contracts.`) actually correct?**
   _`DatasetId` has 878 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 860 inferred relationships involving `RunPlan` (e.g. with `TrajectoryEvaluationService` and `Reusable live-preview services for the packaged Streamlit app. Every component o`) actually correct?**
   _`RunPlan` has 860 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 524 inferred relationships involving `RunRequest` (e.g. with `TrajectoryEvaluationService` and `Reusable live-preview services for the packaged Streamlit app. Every component o`) actually correct?**
-  _`RunRequest` has 524 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 527 inferred relationships involving `RunRequest` (e.g. with `TrajectoryEvaluationService` and `Reusable live-preview services for the packaged Streamlit app. Every component o`) actually correct?**
+  _`RunRequest` has 527 INFERRED edges - model-reasoned connections that need verification._
