@@ -57,12 +57,12 @@ class OfflineSlamStageActor:
         console = Console(__name__).child(self.__class__.__name__)
         console.info(
             "Starting offline SLAM with backend '%s' at artifact root '%s'.",
-            request.slam.backend.kind,
+            request.slam.backend.method_id.value,
             plan.artifact_root,
         )
         backend = BackendFactory().build(request.slam.backend, path_config=path_config)
         if not isinstance(backend, OfflineSlamBackend):
-            raise RuntimeError(f"Backend '{request.slam.backend.kind}' does not support offline execution.")
+            raise RuntimeError(f"Backend '{request.slam.backend.method_id.value}' does not support offline execution.")
         slam = backend.run_sequence(
             sequence_manifest,
             benchmark_inputs,
@@ -80,7 +80,7 @@ class OfflineSlamStageActor:
         )
         console.info(
             "Finished offline SLAM with backend '%s'; visualization artifacts %s.",
-            request.slam.backend.kind,
+            request.slam.backend.method_id.value,
             "collected" if visualization is not None else "not collected",
         )
         return StageCompletionPayload(
@@ -222,12 +222,14 @@ class StreamingSlamStageActor:
     ) -> None:
         self._console.info(
             "Starting streaming SLAM actor with backend '%s' at artifact root '%s'.",
-            request.slam.backend.kind,
+            request.slam.backend.method_id.value,
             plan.artifact_root,
         )
         backend = BackendFactory().build(request.slam.backend, path_config=path_config)
         if not isinstance(backend, StreamingSlamBackend):
-            raise RuntimeError(f"Backend '{request.slam.backend.kind}' does not support streaming execution.")
+            raise RuntimeError(
+                f"Backend '{request.slam.backend.method_id.value}' does not support streaming execution."
+            )
         self._session = backend.start_session(
             session_init=session_init,
             backend_config=backend_config_payload(request),

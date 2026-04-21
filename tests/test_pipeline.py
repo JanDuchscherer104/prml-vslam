@@ -17,8 +17,6 @@ from typing import Any
 import numpy as np
 import pytest
 import ray
-from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
-from prml_vslam.methods.factory import BackendFactory
 from pydantic import ValidationError
 
 from prml_vslam.benchmark import (
@@ -40,7 +38,9 @@ from prml_vslam.interfaces.slam import (
     SlamUpdate,
 )
 from prml_vslam.methods import MethodId
+from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
 from prml_vslam.methods.events import translate_slam_update
+from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.contracts.events import (
@@ -883,18 +883,14 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
             and benchmark_inputs is None
             and slam == slam_artifacts
             and calls.append("trajectory")
-            or type(
-                "TrajectoryResult",
-                (),
-                {
-                    "outcome": StageOutcome(
-                        stage_key=StageKey.TRAJECTORY_EVALUATION,
-                        status=StageStatus.COMPLETED,
-                        config_hash="trajectory",
-                        input_fingerprint="trajectory",
-                    )
-                },
-            )()
+            or StageCompletionPayload(
+                outcome=StageOutcome(
+                    stage_key=StageKey.TRAJECTORY_EVALUATION,
+                    status=StageStatus.COMPLETED,
+                    config_hash="trajectory",
+                    input_fingerprint="trajectory",
+                )
+            )
         ),
     )
     monkeypatch.setattr(

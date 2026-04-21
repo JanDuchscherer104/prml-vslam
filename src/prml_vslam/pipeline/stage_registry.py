@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from prml_vslam.methods.config_contracts import MethodId
+from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageAvailability, StageDefinition, StageKey
@@ -26,8 +27,8 @@ OutputsFn = Callable[[RunRequest, RunArtifactPaths], list[Path]]
 @dataclass(slots=True)
 class _RegistryEntry:
     definition: StageDefinition
-    enabled_fn: EnabledFn | None = None
     availability_fn: AvailabilityFn
+    enabled_fn: EnabledFn | None = None
     outputs_fn: OutputsFn | None = None
 
 
@@ -76,7 +77,13 @@ class StageRegistry:
         """Return whether the stage is executable for one request/backend pair."""
         return self._entries[key].availability_fn(request)
 
-    def compile(self, *, request: RunRequest, path_config: PathConfig) -> RunPlan:
+    def compile(
+        self,
+        *,
+        request: RunRequest,
+        path_config: PathConfig,
+        backend: BackendDescriptor | None = None,
+    ) -> RunPlan:
         """Compile one deterministic :class:`RunPlan` from registry entries.
 
         Planning is intentionally side-effect free: the registry decides stage
@@ -103,6 +110,7 @@ class StageRegistry:
                     entry=entry,
                     request=request,
                     run_paths=resolved_run_paths,
+                    backend=backend,
                 )
                 for entry in active_entries
             ],
@@ -114,9 +122,10 @@ class StageRegistry:
         entry: _RegistryEntry,
         request: RunRequest,
         run_paths: RunArtifactPaths,
+        backend: BackendDescriptor | None = None,
     ) -> RunPlanStage:
         definition = entry.definition
-        availability = entry.availability_fn(request)
+        availability = _availability_for_entry(entry=entry, request=request, backend=backend)
         return RunPlanStage(
             key=definition.key,
             outputs=[] if entry.outputs_fn is None else entry.outputs_fn(request, run_paths),
@@ -185,34 +194,65 @@ class StageRegistry:
         return registry
 
 
-def _slam_stage_availability(request: RunRequest) -> StageAvailability:
-    backend = request.slam.backend
-    if request.mode.value == "offline" and not backend.supports_offline:
-        return StageAvailability(available=False, reason=f"{backend.display_name} does not support offline execution.")
-    if request.mode.value == "streaming" and not backend.supports_streaming:
+def _availability_for_entry(
+    *,
+    entry: _RegistryEntry,
+    request: RunRequest,
+    backend: BackendDescriptor | None,
+) -> StageAvailability:
+    if backend is None:
+        return entry.availability_fn(request)
+    match entry.definition.key:
+        case StageKey.SLAM:
+            return _slam_stage_availability(request, backend=backend)
+        case StageKey.GROUND_ALIGNMENT:
+            return _ground_alignment_stage_availability(request, backend=backend)
+        case StageKey.TRAJECTORY_EVALUATION:
+            return _trajectory_stage_availability(request, backend=backend)
+        case _:
+            return entry.availability_fn(request)
+
+
+def _slam_stage_availability(request: RunRequest, backend: BackendDescriptor | None = None) -> StageAvailability:
+    selected = request.slam.backend
+    display_name = selected.display_name if backend is None else backend.display_name
+    supports_offline = selected.supports_offline if backend is None else backend.capabilities.offline
+    supports_streaming = selected.supports_streaming if backend is None else backend.capabilities.streaming
+    if request.mode.value == "offline" and not supports_offline:
+        return StageAvailability(available=False, reason=f"{display_name} does not support offline execution.")
+    if request.mode.value == "streaming" and not supports_streaming:
         return StageAvailability(
             available=False,
-            reason=f"{backend.display_name} does not support streaming execution.",
+            reason=f"{display_name} does not support streaming execution.",
         )
     return StageAvailability(available=True)
 
 
-def _trajectory_stage_availability(request: RunRequest) -> StageAvailability:
-    backend = request.slam.backend
-    if not backend.supports_trajectory_benchmark:
+def _trajectory_stage_availability(request: RunRequest, backend: BackendDescriptor | None = None) -> StageAvailability:
+    selected = request.slam.backend
+    display_name = selected.display_name if backend is None else backend.display_name
+    supports_trajectory = (
+        selected.supports_trajectory_benchmark if backend is None else backend.capabilities.trajectory_benchmark_support
+    )
+    if not supports_trajectory:
         return StageAvailability(
             available=False,
-            reason=f"{backend.display_name} does not support repository trajectory evaluation.",
+            reason=f"{display_name} does not support repository trajectory evaluation.",
         )
     return StageAvailability(available=True)
 
 
-def _ground_alignment_stage_availability(request: RunRequest) -> StageAvailability:
-    backend = request.slam.backend
-    if not backend.supports_dense_points:
+def _ground_alignment_stage_availability(
+    request: RunRequest,
+    backend: BackendDescriptor | None = None,
+) -> StageAvailability:
+    selected = request.slam.backend
+    display_name = selected.display_name if backend is None else backend.display_name
+    supports_dense_points = selected.supports_dense_points if backend is None else backend.capabilities.dense_points
+    if not supports_dense_points:
         return StageAvailability(
             available=False,
-            reason=f"{backend.display_name} does not expose point-cloud outputs for ground alignment.",
+            reason=f"{display_name} does not expose point-cloud outputs for ground alignment.",
         )
     if not (request.slam.outputs.emit_dense_points or request.slam.outputs.emit_sparse_points):
         return StageAvailability(

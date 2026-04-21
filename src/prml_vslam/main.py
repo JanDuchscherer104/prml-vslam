@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
 import threading
@@ -95,6 +97,7 @@ def _launch_rerun_viewer(*, request: RunRequest, path_config: PathConfig) -> _Re
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            start_new_session=True,
         )
     except OSError as exc:
         console.warning("Failed to launch the Rerun viewer subprocess: %s", exc)
@@ -127,15 +130,35 @@ def _shutdown_rerun_viewer(viewer: _RerunViewerProcess | None) -> None:
         return
     process = viewer.process
     if process.poll() is None:
-        process.terminate()
+        _terminate_process_group(process, signal.SIGTERM)
         try:
             process.wait(timeout=5.0)
         except subprocess.TimeoutExpired:
-            process.kill()
+            _terminate_process_group(process, signal.SIGKILL)
             process.wait(timeout=5.0)
     if process.stdout is not None and not process.stdout.closed:
         process.stdout.close()
     viewer.forwarder.join(timeout=1.0)
+
+
+def _terminate_process_group(process: subprocess.Popen[str], sig: signal.Signals) -> None:
+    """Signal a viewer process group, falling back to the direct child."""
+    pid = getattr(process, "pid", None)
+    if pid is None:
+        if sig is signal.SIGTERM:
+            process.terminate()
+        else:
+            process.kill()
+        return
+    try:
+        os.killpg(pid, sig)
+    except ProcessLookupError:
+        return
+    except OSError:
+        if sig is signal.SIGTERM:
+            process.terminate()
+        else:
+            process.kill()
 
 
 @app.command()
