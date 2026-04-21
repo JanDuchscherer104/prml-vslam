@@ -32,6 +32,7 @@ dependencies = [
     "bibtex-updater>=0.8.0",
     "mypy>=1.11,<2",
     "pre-commit>=4.2,<5",
+    "pybind11-stubgen>=2.5,<3",
     "pytest>=8.3,<9",
     "pytest-xdist>=3.6,<4",
     "rebiber>=1.1.3",
@@ -66,7 +67,7 @@ packages = ["src/prml_vslam"]
 [tool.ruff]
 target-version = "py311"
 line-length    = 120
-extend-exclude = ["external"]
+extend-exclude = ["external", "typings/open3d"]
 
   [tool.ruff.lint]
   select = ["B", "E", "F", "I", "UP"]
@@ -94,7 +95,7 @@ python_version      = "3.11"
 strict              = false
 warn_unused_configs = true
 packages            = ["prml_vslam"]
-mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
+mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src", "$MYPY_CONFIG_FILE_DIR/typings"]
 
   [[tool.mypy.overrides]]
   module = [
@@ -102,8 +103,6 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
     "cv2.*",
     "numpy",
     "numpy.*",
-    "open3d",
-    "open3d.*",
     "pydantic",
     "pydantic.*",
     "pytest",
@@ -116,6 +115,13 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
     "torch.*",
   ]
   ignore_missing_imports = true
+
+  [[tool.mypy.overrides]]
+  module = [
+    "open3d",
+    "open3d.*",
+  ]
+  ignore_errors = true
 
 [dependency-groups]
 dev = [
