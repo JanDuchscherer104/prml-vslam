@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 import pytest
-from prml_vslam.methods.descriptors import BackendCapabilities
-from prml_vslam.methods.factory import BackendFactory
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.methods.descriptors import BackendCapabilities
+from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey

@@ -13,7 +13,6 @@ from typing import Any
 
 from .config_contracts import MethodId
 from .configs import MockSlamBackendConfig, VistaSlamBackendConfig
-from .vista.adapter import VistaSlamBackend
 
 __all__ = [
     "MethodId",
@@ -25,6 +24,10 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     """Provide lazy access to non-exported compatibility symbols."""
+    if name == "VistaSlamBackend":
+        from .vista.adapter import VistaSlamBackend
+
+        return VistaSlamBackend
     if name == "BackendConfig":
         from .configs import BackendConfig
 

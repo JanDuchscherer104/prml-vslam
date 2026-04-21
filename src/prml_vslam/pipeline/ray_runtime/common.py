@@ -13,7 +13,7 @@ import ray
 
 from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
-from prml_vslam.methods.contracts import SlamBackendConfig
+from prml_vslam.methods.config_contracts import SlamBackendConfig
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.finalization import stable_hash
@@ -107,15 +107,7 @@ def visualization_artifact_map(visualization: VisualizationArtifacts | None) -> 
 
 def backend_config_payload(request: RunRequest) -> SlamBackendConfig:
     """Build the executable backend-config model expected by current backends."""
-    if request.slam.backend.kind == "vista":
-        from prml_vslam.methods import VistaSlamBackendConfig
-
-        payload = request.slam.backend.model_dump(mode="python")
-        payload.pop("kind")
-        return VistaSlamBackendConfig.model_validate(payload)
-    from prml_vslam.methods.contracts import SlamBackendConfig
-
-    return SlamBackendConfig(max_frames=request.slam.backend.max_frames)
+    return request.slam.backend
 
 
 def clean_actor_options(options: RayActorOptions) -> RayActorOptions:

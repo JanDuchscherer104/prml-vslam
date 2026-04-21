@@ -76,6 +76,13 @@ class SlamBackendConfig(BaseConfig):
         return self.method_id.display_name
 
     @property
+    def kind(self) -> str:
+        """Return the legacy backend discriminator string."""
+        if self.method_id is None:
+            raise NotImplementedError("Concrete backend configs must define method_id.")
+        return self.method_id.value
+
+    @property
     def supports_offline(self) -> bool:
         """Whether the backend supports offline execution."""
         raise NotImplementedError

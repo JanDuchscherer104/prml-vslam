@@ -118,22 +118,14 @@ def pointmap_from_depth(
     if not np.all(np.isfinite(sampled_depth)):
         raise ValueError("Depth map must contain only finite values.")
 
-    point_cloud = o3d.geometry.PointCloud.create_from_depth_image(
-        o3d.geometry.Image(np.ascontiguousarray(depth)),
-        o3d.camera.PinholeCameraIntrinsic(
-            depth.shape[1],
-            depth.shape[0],
-            intrinsics.fx,
-            intrinsics.fy,
-            intrinsics.cx,
-            intrinsics.cy,
-        ),
-        depth_scale=1.0,
-        depth_trunc=float(np.finfo(np.float32).max),
-        stride=stride_px,
-        project_valid_depth_only=False,
-    )
-    return np.asarray(point_cloud.points, dtype=np.float32).reshape((*sampled_depth.shape, 3))
+    u_px = np.arange(0, depth.shape[1], stride_px, dtype=np.float32)
+    v_px = np.arange(0, depth.shape[0], stride_px, dtype=np.float32)
+    u_grid, v_grid = np.meshgrid(u_px, v_px)
+    points_xyz_camera = np.empty((*sampled_depth.shape, 3), dtype=np.float32)
+    points_xyz_camera[..., 0] = (u_grid - np.float32(intrinsics.cx)) * sampled_depth / np.float32(intrinsics.fx)
+    points_xyz_camera[..., 1] = (v_grid - np.float32(intrinsics.cy)) * sampled_depth / np.float32(intrinsics.fy)
+    points_xyz_camera[..., 2] = sampled_depth
+    return points_xyz_camera
 
 
 __all__ = [

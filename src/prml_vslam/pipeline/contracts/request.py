@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from pydantic import Field, model_validator
 
@@ -117,6 +117,7 @@ class Record3DLiveSourceSpec(BaseConfig):
 
 SourceSpec = VideoSourceSpec | DatasetSourceSpec | Record3DLiveSourceSpec
 BackendConfigValue: TypeAlias = Path | str | int | float | bool | None
+BackendSpec: TypeAlias = BackendConfig
 RayLocalHeadLifecycle: TypeAlias = Literal["ephemeral", "reusable"]
 
 
@@ -154,6 +155,21 @@ class SlamStageConfig(BaseConfig):
 
     backend: BackendConfig
     """Executable backend spec and source of truth for backend selection."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_backend_kind(cls, data: Any) -> Any:
+        """Accept the previous `kind` backend discriminator at request boundaries."""
+        if not isinstance(data, dict):
+            return data
+        backend = data.get("backend")
+        if not isinstance(backend, dict) or "method_id" in backend or "kind" not in backend:
+            return data
+        normalized = dict(data)
+        normalized_backend = dict(backend)
+        normalized_backend["method_id"] = normalized_backend.pop("kind")
+        normalized["backend"] = normalized_backend
+        return normalized
 
 
 class RunRequest(BaseConfig):
@@ -282,8 +298,29 @@ def build_run_request(
     )
 
 
+def build_backend_spec(
+    *,
+    method: MethodId,
+    max_frames: int | None = None,
+    overrides: dict[str, BackendConfigValue] | None = None,
+) -> BackendSpec:
+    """Build a typed backend config from a selected method and optional overrides."""
+    backend_payload: dict[str, BackendConfigValue] = {"max_frames": max_frames}
+    if overrides is not None:
+        backend_payload.update(overrides)
+    match method:
+        case MethodId.MOCK:
+            return MockSlamBackendConfig.model_validate({"method_id": MethodId.MOCK, **backend_payload})
+        case MethodId.VISTA:
+            return VistaSlamBackendConfig.model_validate({"method_id": MethodId.VISTA, **backend_payload})
+        case MethodId.MAST3R:
+            return Mast3rSlamBackendConfig.model_validate({"method_id": MethodId.MAST3R, **backend_payload})
+
+
 __all__ = [
+    "build_backend_spec",
     "build_run_request",
+    "BackendSpec",
     "DatasetSourceSpec",
     "PipelineMode",
     "PlacementPolicy",
