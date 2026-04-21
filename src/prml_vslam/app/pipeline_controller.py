@@ -179,8 +179,8 @@ def request_support_error(
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
-    if request.slam.method is MethodId.MAST3R:
-        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
+    """ if request.slam.method is MethodId.MAST3R:
+        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page." """
     unsupported_stage_ids = [stage.id.value for stage in plan.stages if stage.id not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
         return (
