@@ -43,7 +43,7 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py graphify graphify-status graphify-report graphify-rebuild graphify-view
+.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py open3d-stubs graphify graphify-status graphify-report graphify-rebuild graphify-view
 
 lint: ## Auto-format Python files and apply Ruff fixes
 	$(RUFF) format .
@@ -74,6 +74,9 @@ loc-py: ## Print Python LOC for src/ and tests/ (example: make loc LOC_ARGS="--t
 
 loc: ## Alias for loc-py (pass flags with LOC_ARGS="--todo --fixme")
 	$(MAKE) loc-py
+
+open3d-stubs: ## Regenerate repo-local Open3D .pyi files
+	$(UV_RUN) --extra dev python scripts/generate_open3d_stubs.py
 
 graphify: graphify-status graphify-report ## Show graphify status and report summary
 
