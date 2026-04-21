@@ -21,3 +21,5 @@ __all__ = [
     "ReferenceReconstructionConfig",
     "TrajectoryBenchmarkConfig",
 ]
+
+# TODO: currently there is big redundancy and responsibility conflicts between benchmark and eval modules. decide how to optimally split responsibilities and avoid redundancies!

@@ -23,6 +23,7 @@ from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequence
 PipelineRuntimeSource: TypeAlias = OfflineSequenceSource | StreamingSequenceSource | None
 
 
+# TODO: This is a protocol that defines public interfaces, it should hence be defined in a module that clearly indicates that it contains protocol / interface definitions!
 class PipelineBackend(Protocol):
     """Execute, monitor, and tear down pipeline runs.
 

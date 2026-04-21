@@ -9,6 +9,7 @@ from pydantic import Field
 from prml_vslam.utils import BaseConfig
 
 
+# TODO: we need to decide where configs are defined? Are they contracts?
 class GroundAlignmentConfig(BaseConfig):
     """Policy for the optional dominant-ground alignment stage."""
 

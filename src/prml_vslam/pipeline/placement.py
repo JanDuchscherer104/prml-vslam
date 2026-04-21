@@ -13,6 +13,7 @@ from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
 
+# TODO: these type aliases are a mess. we should define a dedicated BaseConfig for RayActorOptions!
 RayActorResources: TypeAlias = dict[str, float]
 RayActorOptionsValue: TypeAlias = float | int | RayActorResources | None
 RayActorOptions: TypeAlias = dict[str, RayActorOptionsValue]
