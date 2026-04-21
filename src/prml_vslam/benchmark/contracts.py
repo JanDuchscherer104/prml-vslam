@@ -46,6 +46,9 @@ class ReferenceReconstructionConfig(BaseConfig):
     enabled: bool = False
     """Whether the run should include the corresponding stage."""
 
+    extract_mesh: bool = False
+    """Whether the reference reconstruction stage should also persist a triangle mesh."""
+
 
 class TrajectoryBenchmarkConfig(BaseConfig):
     """Policy for trajectory evaluation."""

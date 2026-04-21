@@ -13,6 +13,7 @@ from prml_vslam.benchmark.contracts import (
 )
 from prml_vslam.datasets.contracts import DatasetId, DatasetServingConfig
 from prml_vslam.interfaces.camera import CameraIntrinsics
+from prml_vslam.interfaces.rgbd import RgbdObservationSequenceRef
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.utils import BaseData
 
@@ -89,6 +90,7 @@ class PreparedBenchmarkInputs(BaseData):
     reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
     reference_clouds: list[ReferenceCloudRef] = Field(default_factory=list)
     reference_point_cloud_sequences: list[ReferencePointCloudSequenceRef] = Field(default_factory=list)
+    rgbd_observation_sequences: list[RgbdObservationSequenceRef] = Field(default_factory=list)
 
     def trajectory_for_source(self, source: ReferenceSource) -> ReferenceTrajectoryRef | None:
         """Return the prepared reference trajectory for one requested source."""
@@ -101,6 +103,10 @@ class PreparedBenchmarkInputs(BaseData):
             None,
         )
 
+    def default_rgbd_observation_sequence(self) -> RgbdObservationSequenceRef | None:
+        """Return the default prepared RGB-D observation sequence, when one exists."""
+        return next(iter(self.rgbd_observation_sequences), None)
+
 
 __all__ = [
     "AdvioManifestAssets",
@@ -112,5 +118,6 @@ __all__ = [
     "ReferencePointCloudSequenceRef",
     "ReferenceSource",
     "ReferenceTrajectoryRef",
+    "RgbdObservationSequenceRef",
     "SequenceManifest",
 ]

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SourceSpec, VideoSourceSpec
 from prml_vslam.protocols.source import OfflineSequenceSource
@@ -63,6 +64,18 @@ class OfflineSourceResolver:
                 return service.build_offline_source(
                     sequence_id=numeric_sequence_id,
                     dataset_serving=source_spec.dataset_serving,
+                )
+            case DatasetSourceSpec(dataset_id=DatasetId.TUM_RGBD, sequence_id=sequence_id):
+                service = TumRgbdDatasetService(self.path_config)
+                resolved_sequence_id = service.resolve_sequence_id(sequence_id)
+                console.info(
+                    "Resolved TUM RGB-D offline source '%s' to normalized sequence id '%s'.",
+                    sequence_id,
+                    resolved_sequence_id,
+                )
+                return service.build_offline_source(
+                    sequence_id=resolved_sequence_id,
+                    frame_selection=source_spec,
                 )
             case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
                 resolved_video_path = self.path_config.resolve_video_path(video_path, must_exist=True)

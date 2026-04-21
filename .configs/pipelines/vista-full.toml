@@ -1,21 +1,18 @@
 # Canonical ViSTA-SLAM Pipeline Configuration
 # -------------------------------------------
-# This file defines a complete pipeline request, including the source, SLAM backend
-# overrides, benchmarking, and visualization settings. It will appear in the
-# Streamlit UI under the "Pipeline Config" selector.
+# This file defines a complete pipeline request, including the RGB-D source,
+# SLAM backend overrides, reference reconstruction, benchmarking, and
+# visualization settings. It will appear in the Streamlit UI under the
+# "Pipeline Config" selector.
 
 experiment_name = "vista-full-tuning"
 mode            = "streaming"
 output_dir      = ".artifacts"
 
 [source]
-dataset_id  = "advio"
-sequence_id = "advio-20"
-
-[source.dataset_serving]
-dataset_id = "advio"
-pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+dataset_id   = "tum_rgbd"
+sequence_id  = "freiburg1_room"
+frame_stride = 1
 
 [slam]
     [slam.outputs]
@@ -64,7 +61,8 @@ pose_frame_mode = "provider_world"
     random_seed = 43
 
 [benchmark.reference]
-enabled = false
+enabled      = true
+extract_mesh = true
 
 [benchmark.trajectory]
 enabled = false

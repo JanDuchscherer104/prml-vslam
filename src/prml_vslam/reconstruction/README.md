@@ -3,9 +3,11 @@
 This package should own the repository's minimal dense-reconstruction execution
 surface. It is the reconstruction analogue of
 [`prml_vslam.methods`](../methods/README.md): a small package that names
-reconstruction methods, owns reconstruction-private config and DTOs, and
-provides thin adapters around external or library-backed reconstruction
-implementations. Benchmark policy stays in
+reconstruction methods, owns reconstruction-private config and artifact DTOs,
+and provides thin adapters around external or library-backed reconstruction
+implementations. The shared posed RGB-D observation boundary lives in
+[`prml_vslam.interfaces.rgbd`](../interfaces/rgbd.py) so datasets and SLAM
+methods can normalize into the same reconstruction input. Benchmark policy stays in
 [`prml_vslam.benchmark`](../benchmark/README.md), pipeline orchestration stays
 in [`prml_vslam.pipeline`](../pipeline/README.md), and Rerun logging stays in
 [`prml_vslam.visualization`](../visualization/README.md) plus the pipeline sink.
@@ -23,8 +25,8 @@ method boundary.
 - one executable reconstruction method: Open3D `ScalableTSDFVolume`
 - one method-style harness / multiplexer that selects the configured method in
   one place
-- one normalized offline reconstruction boundary built from typed RGB-D
-  observations plus explicit `T_world_camera` poses
+- one normalized offline reconstruction boundary built from shared
+  `RgbdObservation` values plus explicit `T_world_camera` poses
 - one normalized durable output for the stage: a world-space
   `reference_cloud.ply`
 - optional extra artifacts such as a mesh or debug metadata only when the
@@ -42,8 +44,9 @@ reconstruction implementation needs its own local home for three reasons:
 1. reconstruction methods have method-private config just like SLAM backends do
 2. reconstruction execution should be swappable behind one small harness rather
    than through ad hoc `if method == ...` branches in pipeline code
-3. reconstruction DTOs need explicit frame, raster, and artifact semantics so
-   later Rerun logging stays straightforward and truthful
+3. reconstruction artifact DTOs and the shared RGB-D observation DTOs need
+   explicit frame and raster semantics so later Rerun logging stays
+   straightforward and truthful
 
 ## Proposed Package Surface
 
@@ -55,9 +58,8 @@ src/prml_vslam/reconstruction
 ├── README.md                        # package guide
 ├── REQUIREMENTS.md                  # concise package constraints
 ├── __init__.py                      # curated public reconstruction surface
-├── contracts.py                     # method ids and typed reconstruction DTOs
+├── contracts.py                     # method ids and reconstruction artifact DTOs
 │   ├── ReconstructionMethodId       # supported reconstruction ids
-│   ├── ReconstructionObservation    # one RGB-D + pose sample
 │   ├── ReconstructionArtifacts      # normalized durable outputs
 │   └── ReconstructionMetadata       # typed side metadata for outputs
 ├── protocols.py                     # package-local execution seam
@@ -85,7 +87,7 @@ class OfflineReconstructionBackend(Protocol):
 
     def run_sequence(
         self,
-        observations: Sequence[ReconstructionObservation],
+        observations: Iterable[RgbdObservation],
         backend_config: ReconstructionBackendConfig,
         artifact_root: Path,
     ) -> ReconstructionArtifacts: ...
@@ -128,21 +130,23 @@ The key rule is to keep geometry semantics explicit:
 - live or debug payloads, if added later, should use repo-owned array/handle
   DTOs rather than Rerun SDK types
 
-The minimum observation DTO should look roughly like this:
+The minimum shared observation DTO lives in `prml_vslam.interfaces.rgbd` and
+should look roughly like this:
 
 ```python
-class ReconstructionObservation(BaseData):
+class RgbdObservation(BaseData):
     seq: int
     timestamp_ns: int
-    pose_world_camera: FrameTransform
+    T_world_camera: FrameTransform
     camera_intrinsics: CameraIntrinsics
     image_rgb: NDArray[np.uint8] | None = None
     depth_map_m: NDArray[np.float32]
+    provenance: RgbdObservationProvenance
 ```
 
 Contract requirements:
 
-- `pose_world_camera` follows the repo convention world <- camera
+- `T_world_camera` follows the repo convention world <- camera
 - `camera_intrinsics`, `image_rgb`, and `depth_map_m` refer to the same raster
 - `depth_map_m` is metric depth in meters, not a visualization depth product
 - the DTO is transport- and sink-friendly without importing `rerun`

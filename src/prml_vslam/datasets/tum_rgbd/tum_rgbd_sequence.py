@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 from pydantic import ConfigDict
 
 from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.datasets.contracts import FrameSelectionConfig
+from prml_vslam.interfaces import (
+    FrameTransform,
+    RgbdObservationIndexEntry,
+    RgbdObservationProvenance,
+    RgbdObservationSequenceIndex,
+    RgbdObservationSequenceRef,
+)
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, ReferenceTrajectoryRef
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
@@ -105,8 +114,10 @@ class TumRgbdSequence(BaseData):
         reference_path = tum_rgbd_loading.ensure_ground_truth_tum(
             paths.sequence_dir, evaluation_dir / "ground_truth.tum"
         )
+        rgbd_sequence = self._prepare_rgbd_observation_sequence(paths=paths, output_dir=evaluation_dir)
         return PreparedBenchmarkInputs(
-            reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)]
+            reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)],
+            rgbd_observation_sequences=[] if rgbd_sequence is None else [rgbd_sequence],
         )
 
     def open_stream(
@@ -127,6 +138,66 @@ class TumRgbdSequence(BaseData):
             loop=loop,
             replay_mode=replay_mode,
             include_depth=include_depth,
+        )
+
+    def _prepare_rgbd_observation_sequence(
+        self,
+        *,
+        paths: TumRgbdSequencePaths,
+        output_dir: Path,
+    ) -> RgbdObservationSequenceRef | None:
+        """Write a durable RGB-D observation index for reconstruction, if depth exists."""
+        associations = tum_rgbd_loading.load_tum_rgbd_associations(paths.sequence_dir)
+        trajectory = tum_rgbd_loading.load_tum_rgbd_ground_truth(paths.ground_truth_path)
+        intrinsics = tum_rgbd_loading.load_tum_rgbd_intrinsics(self.scene.sequence_id, paths.sequence_dir)
+        rows: list[RgbdObservationIndexEntry] = []
+        for source_index, association in enumerate(associations):
+            if association.depth_path is None or association.pose_index is None:
+                continue
+            rows.append(
+                RgbdObservationIndexEntry(
+                    seq=len(rows),
+                    timestamp_ns=int(round(association.rgb_timestamp_s * 1e9)),
+                    rgb_path=_relative_to_sequence_root(association.rgb_path, paths.sequence_dir),
+                    depth_path=_relative_to_sequence_root(association.depth_path, paths.sequence_dir),
+                    depth_scale_to_m=1.0 / 5000.0,
+                    T_world_camera=FrameTransform.from_matrix(
+                        np.asarray(trajectory.poses_se3[association.pose_index], dtype=np.float64)
+                    ),
+                    camera_intrinsics=intrinsics,
+                    provenance=RgbdObservationProvenance(
+                        source_id="tum_rgbd",
+                        dataset_id="tum_rgbd",
+                        sequence_id=self.scene.sequence_id,
+                        sequence_name=self.scene.display_name,
+                        pose_source=ReferenceSource.GROUND_TRUTH.value,
+                        world_frame="world",
+                        raster_space="source",
+                        source_frame_index=source_index,
+                    ),
+                )
+            )
+        if not rows:
+            return None
+        index = RgbdObservationSequenceIndex(
+            source_id="tum_rgbd",
+            sequence_id=self.scene.sequence_id,
+            world_frame="world",
+            raster_space="source",
+            observation_count=len(rows),
+            rows=rows,
+        )
+        index_path = (output_dir / "rgbd_observations.json").resolve()
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps(index.model_dump(mode="json"), indent=2), encoding="utf-8")
+        return RgbdObservationSequenceRef(
+            source_id="tum_rgbd",
+            sequence_id=self.scene.sequence_id,
+            index_path=index_path,
+            payload_root=paths.sequence_dir.resolve(),
+            observation_count=len(rows),
+            world_frame="world",
+            raster_space="source",
         )
 
 
@@ -153,3 +224,10 @@ def _materialize_sampled_paths(
     sampled_rgb_list = output_dir / "rgb.txt"
     sampled_rgb_list.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return paths.model_copy(update={"rgb_list_path": sampled_rgb_list, "sequence_dir": output_dir})
+
+
+def _relative_to_sequence_root(path: Path, sequence_dir: Path) -> Path:
+    try:
+        return path.relative_to(sequence_dir)
+    except ValueError as exc:
+        raise ValueError(f"Expected TUM RGB-D path '{path}' to live under sequence dir '{sequence_dir}'.") from exc

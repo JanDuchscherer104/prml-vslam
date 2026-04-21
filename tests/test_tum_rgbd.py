@@ -18,22 +18,29 @@ from prml_vslam.datasets.tum_rgbd import (
     TumRgbdSequenceConfig,
 )
 from prml_vslam.io import Cv2ReplayMode
+from prml_vslam.reconstruction import FileRgbdObservationSource
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
 
 
-def _write_tum_rgbd_sequence(dataset_root: Path, *, sequence_id: str = "freiburg1_desk") -> Path:
+def _write_tum_rgbd_sequence(
+    dataset_root: Path,
+    *,
+    sequence_id: str = "freiburg1_desk",
+    image_shape: tuple[int, int] = (48, 64),
+) -> Path:
     sequence_dir = dataset_root / f"rgbd_dataset_{sequence_id}"
     (sequence_dir / "rgb").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "depth").mkdir(parents=True, exist_ok=True)
     rgb_rows: list[str] = []
     depth_rows: list[str] = []
     ground_truth_rows: list[str] = []
+    height_px, width_px = image_shape
     for index, timestamp_s in enumerate((0.0, 0.1, 0.2)):
         rgb_path = sequence_dir / "rgb" / f"{timestamp_s:.6f}.png"
         depth_path = sequence_dir / "depth" / f"{timestamp_s:.6f}.png"
-        rgb = np.full((48, 64, 3), index * 50, dtype=np.uint8)
-        depth = np.full((48, 64), 5000 + index, dtype=np.uint16)
+        rgb = np.full((height_px, width_px, 3), index * 50, dtype=np.uint8)
+        depth = np.full((height_px, width_px), 5000 + index, dtype=np.uint16)
         assert cv2.imwrite(str(rgb_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
         assert cv2.imwrite(str(depth_path), depth)
         rgb_rows.append(f"{timestamp_s:.6f} rgb/{timestamp_s:.6f}.png")
@@ -99,6 +106,7 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     assert manifest.intrinsics_path == sequence_dir / "intrinsics.yaml"
     assert manifest.intrinsics_path.exists()
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
+    assert benchmark_inputs.rgbd_observation_sequences[0].observation_count == 3
     assert load_tum_trajectory(benchmark_inputs.reference_trajectories[0].path).positions_xyz.shape == (3, 3)
     assert list_sequence_slugs(DatasetId.TUM_RGBD, tmp_path) == ["freiburg1_desk"]
     assert (
@@ -176,3 +184,23 @@ def test_tum_rgbd_dataset_service_downloads_selected_modalities(tmp_path: Path) 
     assert status.local_modalities == [TumRgbdModality.RGB, TumRgbdModality.GROUND_TRUTH]
     assert status.replay_ready is True
     assert status.offline_ready is False
+
+
+def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None:
+    _write_tum_rgbd_sequence(tmp_path, image_shape=(480, 640))
+    sequence = TumRgbdSequence(config=TumRgbdSequenceConfig(dataset_root=tmp_path, sequence_id="freiburg1_desk"))
+
+    benchmark_inputs = sequence.to_benchmark_inputs(output_dir=tmp_path / "benchmark")
+    sequence_ref = benchmark_inputs.rgbd_observation_sequences[0]
+    observations = list(FileRgbdObservationSource(sequence_ref).iter_observations())
+
+    assert sequence_ref.source_id == "tum_rgbd"
+    assert sequence_ref.observation_count == 3
+    assert len(observations) == 3
+    assert observations[0].image_rgb is not None
+    assert observations[0].image_rgb.shape == (480, 640, 3)
+    assert observations[0].depth_map_m.shape == (480, 640)
+    assert observations[0].camera_intrinsics.width_px == 640
+    assert observations[0].camera_intrinsics.height_px == 480
+    assert observations[2].T_world_camera.tx == 2.0
+    assert observations[0].provenance.dataset_id == "tum_rgbd"

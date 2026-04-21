@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from prml_vslam.interfaces import RgbdObservation
+
 from .configs import ReconstructionBackendConfig
-from .contracts import ReconstructionArtifacts, ReconstructionMethodId, ReconstructionObservation
+from .contracts import ReconstructionArtifacts, ReconstructionMethodId
 
 
 @runtime_checkable
@@ -18,7 +20,7 @@ class OfflineReconstructionBackend(Protocol):
 
     def run_sequence(
         self,
-        observations: Sequence[ReconstructionObservation],
+        observations: Iterable[RgbdObservation],
         *,
         backend_config: ReconstructionBackendConfig,
         artifact_root: Path,

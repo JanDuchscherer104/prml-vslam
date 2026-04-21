@@ -7,6 +7,7 @@ providers. Pipeline orchestration consumes these protocols, but ownership of
 run planning and artifacts remains in :mod:`prml_vslam.pipeline`.
 """
 
+from .rgbd import RgbdObservationSource
 from .runtime import FramePacketStream
 
-__all__ = ["FramePacketStream"]
+__all__ = ["FramePacketStream", "RgbdObservationSource"]

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 from pathlib import Path
 
+from prml_vslam.interfaces import RgbdObservation
+
 from .configs import ReconstructionBackendConfig
-from .contracts import ReconstructionArtifacts, ReconstructionObservation
+from .contracts import ReconstructionArtifacts
 from .protocols import OfflineReconstructionBackend
 
 
@@ -33,7 +35,7 @@ class ReconstructionHarness:
 
     def run_sequence(
         self,
-        observations: Sequence[ReconstructionObservation],
+        observations: Iterable[RgbdObservation],
         *,
         artifact_root: Path,
     ) -> ReconstructionArtifacts:

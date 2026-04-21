@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -26,7 +27,14 @@ from prml_vslam.benchmark import (
     ReferenceSource,
     TrajectoryBenchmarkConfig,
 )
-from prml_vslam.interfaces import FramePacketProvenance, FrameTransform
+from prml_vslam.interfaces import (
+    FramePacketProvenance,
+    FrameTransform,
+    RgbdObservationIndexEntry,
+    RgbdObservationProvenance,
+    RgbdObservationSequenceIndex,
+    RgbdObservationSequenceRef,
+)
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import (
     ArtifactRef,
@@ -71,6 +79,10 @@ from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import backend_config_payload, clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, StreamingSlamStageActor
+from prml_vslam.pipeline.ray_runtime.stage_execution import (
+    StageExecutionContext,
+    run_reference_reconstruction_stage,
+)
 from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
@@ -347,6 +359,86 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
     assert len(unavailable) == 1
     assert unavailable[0].key.value == "cloud.evaluate"
     assert "placeholder" in unavailable[0].availability_reason
+
+
+def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="tum-reference",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_desk"),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+        benchmark=BenchmarkConfig(reference={"enabled": True}),
+    )
+
+    plan = StageRegistry.default().compile(
+        request=request,
+        backend=BackendFactory().describe(request.slam.backend),
+        path_config=path_config,
+    )
+
+    reference_stage = next(stage for stage in plan.stages if stage.key is StageKey.REFERENCE_RECONSTRUCTION)
+    assert reference_stage.available is True
+    assert reference_stage.outputs == [RunArtifactPaths.build(plan.artifact_root).reference_cloud_path]
+
+
+def test_stage_registry_rejects_non_rgbd_reference_reconstruction(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest(
+        experiment_name="video-reference",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+        benchmark=BenchmarkConfig(reference={"enabled": True}),
+    )
+
+    plan = StageRegistry.default().compile(
+        request=request,
+        backend=BackendFactory().describe(request.slam.backend),
+        path_config=path_config,
+    )
+
+    reference_stage = next(stage for stage in plan.stages if stage.key is StageKey.REFERENCE_RECONSTRUCTION)
+    assert reference_stage.available is False
+    assert (
+        reference_stage.availability_reason == "Reference reconstruction currently requires a TUM RGB-D dataset source."
+    )
+
+
+def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    request = RunRequest(
+        experiment_name="reference-stage",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_desk"),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+        benchmark=BenchmarkConfig(reference={"enabled": True, "extract_mesh": True}),
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.REFERENCE_RECONSTRUCTION],
+    )
+    context = StageExecutionContext(
+        request=request,
+        plan=plan,
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
+        run_paths=RunArtifactPaths.build(plan.artifact_root),
+        backend_descriptor=BackendFactory().describe(request.slam.backend),
+    )
+    benchmark_inputs = _rgbd_benchmark_inputs(tmp_path)
+
+    payload = run_reference_reconstruction_stage(context=context, benchmark_inputs=benchmark_inputs)
+
+    assert payload.outcome.stage_key is StageKey.REFERENCE_RECONSTRUCTION
+    assert payload.outcome.status is StageStatus.COMPLETED
+    assert payload.outcome.artifacts["reference_cloud"].path.exists()
+    assert payload.outcome.artifacts["reconstruction_metadata"].path.exists()
+    assert payload.outcome.artifacts["reference_mesh"].path.exists()
+    assert payload.outcome.metrics["observation_count"] == 1
 
 
 def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
@@ -1621,6 +1713,49 @@ def _plan_with_stages(
             )
             for stage_key in stage_keys
         ],
+    )
+
+
+def _rgbd_benchmark_inputs(tmp_path: Path) -> PreparedBenchmarkInputs:
+    payload_root = tmp_path / "rgbd-payload"
+    payload_root.mkdir(parents=True, exist_ok=True)
+    np.save(payload_root / "rgb.npy", np.full((32, 32, 3), 127, dtype=np.uint8))
+    np.save(payload_root / "depth.npy", np.ones((32, 32), dtype=np.float32))
+    index = RgbdObservationSequenceIndex(
+        source_id="test",
+        sequence_id="test-sequence",
+        observation_count=1,
+        rows=[
+            RgbdObservationIndexEntry(
+                seq=0,
+                timestamp_ns=0,
+                rgb_path=Path("rgb.npy"),
+                depth_path=Path("depth.npy"),
+                T_world_camera=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                camera_intrinsics={
+                    "fx": 32.0,
+                    "fy": 32.0,
+                    "cx": 15.5,
+                    "cy": 15.5,
+                    "width_px": 32,
+                    "height_px": 32,
+                },
+                provenance=RgbdObservationProvenance(source_id="test", sequence_id="test-sequence"),
+            )
+        ],
+    )
+    index_path = payload_root / "rgbd_observations.json"
+    index_path.write_text(json.dumps(index.model_dump(mode="json"), indent=2), encoding="utf-8")
+    return PreparedBenchmarkInputs(
+        rgbd_observation_sequences=[
+            RgbdObservationSequenceRef(
+                source_id="test",
+                sequence_id="test-sequence",
+                index_path=index_path,
+                payload_root=payload_root,
+                observation_count=1,
+            )
+        ]
     )
 
 
