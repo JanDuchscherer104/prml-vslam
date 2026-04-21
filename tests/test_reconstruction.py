@@ -7,8 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
+from prml_vslam.interfaces.rgbd import RgbdObservation
 from prml_vslam.reconstruction import (
     Open3dTsdfBackend,
     Open3dTsdfBackendConfig,
@@ -32,10 +34,10 @@ def _observation(
 ) -> ReconstructionObservation:
     depth_map_m = np.full((32, 32), depth_m, dtype=np.float32)
     image_rgb = None if not with_rgb else np.full((32, 32, 3), 127, dtype=np.uint8)
-    return ReconstructionObservation(
+    return RgbdObservation(
         seq=seq,
         timestamp_ns=timestamp_ns,
-        pose_world_camera=_pose_identity(),
+        T_world_camera=_pose_identity(),
         camera_intrinsics=CameraIntrinsics(
             fx=32.0,
             fy=32.0,
@@ -65,6 +67,26 @@ def test_reconstruction_harness_builds_open3d_backend() -> None:
     assert backend.method_id is ReconstructionMethodId.OPEN3D_TSDF
 
 
+def test_reconstruction_observation_alias_accepts_legacy_pose_name() -> None:
+    observation = ReconstructionObservation(
+        seq=0,
+        timestamp_ns=0,
+        pose_world_camera=_pose_identity(),
+        camera_intrinsics=CameraIntrinsics(
+            fx=32.0,
+            fy=32.0,
+            cx=15.5,
+            cy=15.5,
+            width_px=32,
+            height_px=32,
+        ),
+        depth_map_m=np.ones((32, 32), dtype=np.float32),
+    )
+
+    assert isinstance(observation, RgbdObservation)
+    assert observation.pose_world_camera == observation.T_world_camera
+
+
 def test_reconstruction_harness_runs_minimal_open3d_tsdf_sequence(tmp_path: Path) -> None:
     pytest.importorskip("open3d")
     harness = ReconstructionHarness(
@@ -75,10 +97,7 @@ def test_reconstruction_harness_runs_minimal_open3d_tsdf_sequence(tmp_path: Path
         )
     )
 
-    artifacts = harness.run_sequence(
-        [_observation()],
-        artifact_root=tmp_path / "reference",
-    )
+    artifacts = harness.run_sequence((_observation() for _ in range(1)), artifact_root=tmp_path / "reference")
 
     assert artifacts.reference_cloud_path.exists()
     assert artifacts.metadata_path.exists()
@@ -102,24 +121,20 @@ def test_open3d_tsdf_backend_rejects_color_integration_without_rgb(tmp_path: Pat
         harness.run_sequence([_observation(with_rgb=False)], artifact_root=tmp_path / "reference")
 
 
-def test_open3d_tsdf_backend_rejects_mismatched_raster_shapes(tmp_path: Path) -> None:
-    pytest.importorskip("open3d")
-    harness = ReconstructionHarness(Open3dTsdfBackendConfig())
-    observation = ReconstructionObservation(
-        seq=0,
-        timestamp_ns=0,
-        pose_world_camera=_pose_identity(),
-        camera_intrinsics=CameraIntrinsics(
-            fx=32.0,
-            fy=32.0,
-            cx=15.5,
-            cy=15.5,
-            width_px=32,
-            height_px=32,
-        ),
-        image_rgb=np.zeros((16, 16, 3), dtype=np.uint8),
-        depth_map_m=np.ones((32, 32), dtype=np.float32),
-    )
-
-    with pytest.raises(ValueError, match="Expected RGB image shape"):
-        harness.run_sequence([observation], artifact_root=tmp_path / "reference")
+def test_rgbd_observation_rejects_mismatched_raster_shapes() -> None:
+    with pytest.raises(ValidationError, match="Expected RGB image shape"):
+        ReconstructionObservation(
+            seq=0,
+            timestamp_ns=0,
+            T_world_camera=_pose_identity(),
+            camera_intrinsics=CameraIntrinsics(
+                fx=32.0,
+                fy=32.0,
+                cx=15.5,
+                cy=15.5,
+                width_px=32,
+                height_px=32,
+            ),
+            image_rgb=np.zeros((16, 16, 3), dtype=np.uint8),
+            depth_map_m=np.ones((32, 32), dtype=np.float32),
+        )

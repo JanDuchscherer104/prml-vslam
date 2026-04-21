@@ -15,7 +15,7 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 ## Responsibilities
 
 - own reconstruction method ids and reconstruction-private config
-- own typed reconstruction observation and artifact DTOs
+- own reconstruction artifact DTOs and consume shared RGB-D observation DTOs
 - own the thin harness / multiplexer that switches between reconstruction
   methods
 - own thin library-backed reconstruction adapters
@@ -31,8 +31,8 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
   code
 - the public execution seam must stay minimal and offline-first until a real
   streaming reconstruction use case exists
-- DTOs crossing the package boundary must keep explicit frame semantics and use
-  the repo convention `T_world_camera`
+- RGB-D DTOs crossing the package boundary must keep explicit frame semantics
+  and use the repo convention `T_world_camera`
 - `camera_intrinsics`, `image_rgb`, and `depth_map_m` for one observation must
   describe the same raster
 - depth inputs must be metric depth in meters, not visualization products

@@ -11,6 +11,14 @@ from .ingest import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from .rgbd import (
+    RGBD_OBSERVATION_SEQUENCE_FORMAT,
+    RgbdObservation,
+    RgbdObservationIndexEntry,
+    RgbdObservationProvenance,
+    RgbdObservationSequenceIndex,
+    RgbdObservationSequenceRef,
+)
 from .runtime import FramePacket, FramePacketProvenance, Record3DTransportId
 from .slam import (
     ArtifactRef,
@@ -52,6 +60,12 @@ __all__ = [
     "ReferenceCloudRef",
     "ReferencePointCloudSequenceRef",
     "ReferenceTrajectoryRef",
+    "RGBD_OBSERVATION_SEQUENCE_FORMAT",
+    "RgbdObservation",
+    "RgbdObservationIndexEntry",
+    "RgbdObservationProvenance",
+    "RgbdObservationSequenceIndex",
+    "RgbdObservationSequenceRef",
     "SequenceManifest",
     "SessionClosed",
     "SlamArtifacts",

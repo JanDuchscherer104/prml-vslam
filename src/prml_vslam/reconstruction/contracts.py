@@ -11,11 +11,9 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-import numpy as np
-from numpy.typing import NDArray
 from pydantic import ConfigDict, Field
 
-from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
+from prml_vslam.interfaces import RgbdObservation
 from prml_vslam.utils import BaseData
 
 
@@ -32,31 +30,8 @@ class ReconstructionMethodId(StrEnum):
                 return "Open3D TSDF"
 
 
-class ReconstructionObservation(BaseData):
-    """Describe one RGB-D observation consumed by offline reconstruction.
-
-    The pose follows the repository convention world <- camera
-    (``T_world_camera``). The color and depth rasters, when both present, must
-    share the same raster described by ``camera_intrinsics``.
-    """
-
-    seq: int
-    """Monotonic observation index within one reconstruction batch."""
-
-    timestamp_ns: int
-    """Observation timestamp in nanoseconds."""
-
-    pose_world_camera: FrameTransform
-    """Canonical camera pose for this observation using world <- camera semantics."""
-
-    camera_intrinsics: CameraIntrinsics
-    """Pinhole intrinsics for the RGB-D raster consumed by Open3D."""
-
-    image_rgb: NDArray[np.uint8] | None = None
-    """Optional HxWx3 RGB image aligned with ``depth_map_m``."""
-
-    depth_map_m: NDArray[np.float32]
-    """HxW metric depth raster in meters aligned with ``camera_intrinsics``."""
+ReconstructionObservation = RgbdObservation
+"""Temporary compatibility alias for the shared RGB-D observation DTO."""
 
 
 class ReconstructionMetadata(BaseData):

@@ -1,8 +1,9 @@
 """Public reconstruction entry surface for reference-scene builders.
 
 The :mod:`prml_vslam.reconstruction` package owns reconstruction-method ids,
-typed RGB-D observation DTOs, minimal config-as-factory surfaces, and thin
-library-backed reconstruction adapters. It is intentionally smaller than
+artifact DTOs, minimal config-as-factory surfaces, and thin library-backed
+reconstruction adapters. Shared posed RGB-D observation DTOs live in
+:mod:`prml_vslam.interfaces.rgbd`. This package is intentionally smaller than
 ``prml_vslam.methods`` today because the repository currently targets one
 minimal offline reconstruction implementation.
 """
@@ -16,10 +17,12 @@ from .contracts import (
 )
 from .harness import ReconstructionHarness
 from .open3d_tsdf import Open3dTsdfBackend
+from .rgbd_source import FileRgbdObservationSource
 
 __all__ = [
     "Open3dTsdfBackend",
     "Open3dTsdfBackendConfig",
+    "FileRgbdObservationSource",
     "ReconstructionArtifacts",
     "ReconstructionBackendConfig",
     "ReconstructionHarness",

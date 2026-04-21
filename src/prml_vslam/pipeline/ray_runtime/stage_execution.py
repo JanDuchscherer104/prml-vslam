@@ -31,6 +31,7 @@ from prml_vslam.pipeline.ray_runtime.common import (
 )
 from prml_vslam.pipeline.ray_runtime.stage_actors import OfflineSlamStageActor
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
+from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig, ReconstructionHarness
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 if TYPE_CHECKING:
@@ -208,6 +209,49 @@ def run_ground_alignment_stage(
     )
 
 
+def run_reference_reconstruction_stage(
+    *,
+    context: StageExecutionContext,
+    benchmark_inputs: PreparedBenchmarkInputs | None,
+) -> StageCompletionPayload:
+    """Build a reference reconstruction from prepared RGB-D observations."""
+    from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
+
+    if benchmark_inputs is None:
+        raise RuntimeError("Reference reconstruction requires prepared benchmark inputs.")
+    if len(benchmark_inputs.rgbd_observation_sequences) != 1:
+        raise RuntimeError(
+            "Reference reconstruction requires exactly one prepared RGB-D observation sequence; "
+            f"got {len(benchmark_inputs.rgbd_observation_sequences)}."
+        )
+
+    sequence_ref = benchmark_inputs.rgbd_observation_sequences[0]
+    backend_config = Open3dTsdfBackendConfig(extract_mesh=context.request.benchmark.reference.extract_mesh)
+    artifacts = ReconstructionHarness(backend_config).run_sequence(
+        FileRgbdObservationSource(sequence_ref).iter_observations(),
+        artifact_root=context.run_paths.reference_cloud_path.parent,
+    )
+    artifact_map = {
+        "reference_cloud": artifact_ref(artifacts.reference_cloud_path, kind="ply"),
+        "reconstruction_metadata": artifact_ref(artifacts.metadata_path, kind="json"),
+    }
+    if artifacts.mesh_path is not None:
+        artifact_map["reference_mesh"] = artifact_ref(artifacts.mesh_path, kind="ply")
+    for key, path in artifacts.extras.items():
+        artifact_map[f"extra:{key}"] = artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
+
+    return StageCompletionPayload(
+        outcome=StageOutcome(
+            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+            status=StageStatus.COMPLETED,
+            config_hash=stable_hash(backend_config),
+            input_fingerprint=stable_hash(sequence_ref),
+            artifacts=artifact_map,
+            metrics={"observation_count": sequence_ref.observation_count},
+        )
+    )
+
+
 def run_summary_stage(
     *,
     context: StageExecutionContext,
@@ -234,6 +278,7 @@ __all__ = [
     "run_ground_alignment_stage",
     "run_ingest_stage",
     "run_offline_slam_stage",
+    "run_reference_reconstruction_stage",
     "run_summary_stage",
     "run_trajectory_evaluation_stage",
 ]

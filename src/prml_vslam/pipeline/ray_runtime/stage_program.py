@@ -28,6 +28,7 @@ from prml_vslam.pipeline.ray_runtime.stage_execution import (
     run_ground_alignment_stage,
     run_ingest_stage,
     run_offline_slam_stage,
+    run_reference_reconstruction_stage,
     run_summary_stage,
     run_trajectory_evaluation_stage,
 )
@@ -188,6 +189,16 @@ class RuntimeStageProgram:
                             "benchmark_inputs": state.benchmark_inputs,
                             "slam_trajectory": None if state.slam is None else state.slam.trajectory_tum,
                         },
+                    ),
+                ),
+                StageRuntimeSpec(
+                    key=StageKey.REFERENCE_RECONSTRUCTION,
+                    run_offline=_run_reference_reconstruction,
+                    run_streaming_finalize=_run_reference_reconstruction,
+                    build_failure_outcome=_failure_builder(
+                        stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+                        config_payload=lambda context, state: context.request.benchmark.reference,
+                        input_payload=lambda _context, state: state.benchmark_inputs,
                     ),
                 ),
                 StageRuntimeSpec(
@@ -437,6 +448,18 @@ def _run_ground_alignment(
     return run_ground_alignment_stage(
         context=context,
         slam=_require_slam_artifacts(state),
+    )
+
+
+def _run_reference_reconstruction(
+    context: StageExecutionContext,
+    state: RuntimeExecutionState,
+    _source_or_driver: OfflineSequenceSource | RuntimeStageDriver,
+    _driver: RuntimeStageDriver | None = None,
+) -> StageCompletionPayload:
+    return run_reference_reconstruction_stage(
+        context=context,
+        benchmark_inputs=state.benchmark_inputs,
     )
 
 

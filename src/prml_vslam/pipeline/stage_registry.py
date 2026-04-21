@@ -12,10 +12,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.request import RunRequest
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, RunRequest
 from prml_vslam.pipeline.contracts.stages import StageAvailability, StageDefinition, StageKey
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
@@ -161,10 +162,7 @@ class StageRegistry:
         )
         registry.register(
             StageDefinition(key=StageKey.REFERENCE_RECONSTRUCTION),
-            lambda _request: StageAvailability(
-                available=False,
-                reason="Reference reconstruction remains a planned placeholder in this refactor.",
-            ),
+            _reference_reconstruction_stage_availability,
             enabled_fn=lambda request: request.benchmark.reference.enabled,
             outputs_fn=lambda _request, run_paths: [run_paths.reference_cloud_path],
         )
@@ -258,6 +256,15 @@ def _ground_alignment_stage_availability(
         return StageAvailability(
             available=False,
             reason="Ground alignment requires sparse or dense point-cloud outputs from the SLAM stage.",
+        )
+    return StageAvailability(available=True)
+
+
+def _reference_reconstruction_stage_availability(request: RunRequest) -> StageAvailability:
+    if not isinstance(request.source, DatasetSourceSpec) or request.source.dataset_id is not DatasetId.TUM_RGBD:
+        return StageAvailability(
+            available=False,
+            reason="Reference reconstruction currently requires a TUM RGB-D dataset source.",
         )
     return StageAvailability(available=True)
 

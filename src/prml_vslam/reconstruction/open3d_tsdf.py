@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
 
+from prml_vslam.interfaces import RgbdObservation
 from prml_vslam.utils.geometry import write_point_cloud_ply
 
 from .configs import Open3dTsdfBackendConfig, ReconstructionBackendConfig
@@ -14,7 +16,6 @@ from .contracts import (
     ReconstructionArtifacts,
     ReconstructionMetadata,
     ReconstructionMethodId,
-    ReconstructionObservation,
 )
 
 
@@ -28,7 +29,7 @@ class Open3dTsdfBackend:
 
     def run_sequence(
         self,
-        observations: list[ReconstructionObservation] | tuple[ReconstructionObservation, ...],
+        observations: Iterable[RgbdObservation],
         *,
         backend_config: ReconstructionBackendConfig,
         artifact_root: Path,
@@ -63,7 +64,7 @@ class Open3dTsdfBackend:
                 convert_rgb_to_intensity=backend_config.convert_rgb_to_intensity,
                 integrate_color=backend_config.integrate_color,
             )
-            extrinsic_world_to_camera = np.linalg.inv(observation.pose_world_camera.as_matrix())
+            extrinsic_world_to_camera = np.linalg.inv(observation.T_world_camera.as_matrix())
             volume.integrate(rgbd_image, intrinsic, extrinsic_world_to_camera)
 
         point_cloud = volume.extract_point_cloud()
@@ -78,14 +79,14 @@ class Open3dTsdfBackend:
         if backend_config.extract_mesh:
             mesh = volume.extract_triangle_mesh()
             mesh_path = (artifact_root / "reference_mesh.ply").resolve()
-            if not o3d.io.write_triangle_mesh(str(mesh_path), mesh, write_ascii=True):
+            if not o3d.io.write_triangle_mesh(mesh_path, mesh, write_ascii=True):
                 raise RuntimeError(f"Failed to write Open3D TSDF mesh to '{mesh_path}'.")
 
         metadata = ReconstructionMetadata(
             method_id=self.method_id,
             observation_count=len(ordered_observations),
             point_count=int(points_xyz.shape[0]),
-            target_frame=ordered_observations[0].pose_world_camera.target_frame,
+            target_frame=ordered_observations[0].T_world_camera.target_frame,
             voxel_length_m=backend_config.voxel_length_m,
             sdf_trunc_m=backend_config.sdf_trunc_m,
             depth_trunc_m=backend_config.depth_trunc_m,
@@ -112,7 +113,7 @@ def _import_open3d():
 
 def _rgbd_image_and_intrinsic(
     o3d,
-    observation: ReconstructionObservation,
+    observation: RgbdObservation,
     *,
     depth_scale: float,
     depth_trunc_m: float,
