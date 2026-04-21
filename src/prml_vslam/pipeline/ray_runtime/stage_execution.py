@@ -31,7 +31,7 @@ from prml_vslam.pipeline.ray_runtime.common import (
 )
 from prml_vslam.pipeline.ray_runtime.stage_actors import OfflineSlamStageActor
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
-from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig, ReconstructionHarness
+from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 if TYPE_CHECKING:
@@ -227,8 +227,10 @@ def run_reference_reconstruction_stage(
 
     sequence_ref = benchmark_inputs.rgbd_observation_sequences[0]
     backend_config = Open3dTsdfBackendConfig(extract_mesh=context.request.benchmark.reference.extract_mesh)
-    artifacts = ReconstructionHarness(backend_config).run_sequence(
+    backend = backend_config.setup_target()
+    artifacts = backend.run_sequence(
         FileRgbdObservationSource(sequence_ref).iter_observations(),
+        backend_config=backend_config,
         artifact_root=context.run_paths.reference_cloud_path.parent,
     )
     artifact_map = {

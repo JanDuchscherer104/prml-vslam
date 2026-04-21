@@ -11,7 +11,7 @@ import numpy as np
 from prml_vslam.interfaces import RgbdObservation
 from prml_vslam.utils.geometry import write_point_cloud_ply
 
-from .configs import Open3dTsdfBackendConfig, ReconstructionBackendConfig
+from .config import Open3dTsdfBackendConfig, ReconstructionBackendConfig
 from .contracts import (
     ReconstructionArtifacts,
     ReconstructionMetadata,

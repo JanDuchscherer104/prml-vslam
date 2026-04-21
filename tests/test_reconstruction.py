@@ -1,4 +1,4 @@
-"""Tests for the minimal reconstruction harness and Open3D backend."""
+"""Tests for the minimal reconstruction config and Open3D backend."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ from prml_vslam.interfaces.rgbd import RgbdObservation
 from prml_vslam.reconstruction import (
     Open3dTsdfBackend,
     Open3dTsdfBackendConfig,
-    ReconstructionHarness,
     ReconstructionMethodId,
     ReconstructionObservation,
 )
+from prml_vslam.reconstruction.protocols import OfflineReconstructionBackend
 from prml_vslam.utils.geometry import load_point_cloud_ply
 
 
@@ -58,12 +58,11 @@ def test_open3d_tsdf_backend_config_defaults_to_expected_method() -> None:
     assert config.display_name == "Open3D TSDF"
 
 
-def test_reconstruction_harness_builds_open3d_backend() -> None:
-    harness = ReconstructionHarness(Open3dTsdfBackendConfig())
-
-    backend = harness.build_backend()
+def test_reconstruction_config_builds_open3d_offline_backend() -> None:
+    backend = Open3dTsdfBackendConfig().setup_target()
 
     assert isinstance(backend, Open3dTsdfBackend)
+    assert isinstance(backend, OfflineReconstructionBackend)
     assert backend.method_id is ReconstructionMethodId.OPEN3D_TSDF
 
 
@@ -87,17 +86,20 @@ def test_reconstruction_observation_alias_accepts_legacy_pose_name() -> None:
     assert observation.pose_world_camera == observation.T_world_camera
 
 
-def test_reconstruction_harness_runs_minimal_open3d_tsdf_sequence(tmp_path: Path) -> None:
+def test_reconstruction_config_runs_minimal_open3d_tsdf_sequence(tmp_path: Path) -> None:
     pytest.importorskip("open3d")
-    harness = ReconstructionHarness(
-        Open3dTsdfBackendConfig(
-            voxel_length_m=0.05,
-            sdf_trunc_m=0.15,
-            depth_trunc_m=2.0,
-        )
+    config = Open3dTsdfBackendConfig(
+        voxel_length_m=0.05,
+        sdf_trunc_m=0.15,
+        depth_trunc_m=2.0,
     )
+    backend = config.setup_target()
 
-    artifacts = harness.run_sequence((_observation() for _ in range(1)), artifact_root=tmp_path / "reference")
+    artifacts = backend.run_sequence(
+        (_observation() for _ in range(1)),
+        backend_config=config,
+        artifact_root=tmp_path / "reference",
+    )
 
     assert artifacts.reference_cloud_path.exists()
     assert artifacts.metadata_path.exists()
@@ -115,10 +117,15 @@ def test_reconstruction_harness_runs_minimal_open3d_tsdf_sequence(tmp_path: Path
 
 def test_open3d_tsdf_backend_rejects_color_integration_without_rgb(tmp_path: Path) -> None:
     pytest.importorskip("open3d")
-    harness = ReconstructionHarness(Open3dTsdfBackendConfig(integrate_color=True))
+    config = Open3dTsdfBackendConfig(integrate_color=True)
+    backend = config.setup_target()
 
     with pytest.raises(ValueError, match="requires image_rgb"):
-        harness.run_sequence([_observation(with_rgb=False)], artifact_root=tmp_path / "reference")
+        backend.run_sequence(
+            [_observation(with_rgb=False)],
+            backend_config=config,
+            artifact_root=tmp_path / "reference",
+        )
 
 
 def test_rgbd_observation_rejects_mismatched_raster_shapes() -> None:

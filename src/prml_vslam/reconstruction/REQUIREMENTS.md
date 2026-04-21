@@ -16,8 +16,8 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 
 - own reconstruction method ids and reconstruction-private config
 - own reconstruction artifact DTOs and consume shared RGB-D observation DTOs
-- own the thin harness / multiplexer that switches between reconstruction
-  methods
+- own typed backend configs and protocol seams that switch between
+  reconstruction methods
 - own thin library-backed reconstruction adapters
 - stay separate from benchmark policy, pipeline orchestration, and Rerun
   logging policy
@@ -54,7 +54,7 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 
 - one Open3D TSDF implementation can consume typed reconstruction observations
   and produce the normalized `reference_cloud.ply`
-- adding a future second reconstruction method requires touching the harness and
-  config union, not widening the pipeline contract
+- adding a future second reconstruction method requires touching the config
+  union and protocol implementation, not widening the pipeline contract
 - DTOs remain usable by the existing Rerun sink without introducing
   reconstruction-owned viewer types

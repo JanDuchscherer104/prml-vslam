@@ -23,8 +23,8 @@ method boundary.
 ## Current Target State
 
 - one executable reconstruction method: Open3D `ScalableTSDFVolume`
-- one method-style harness / multiplexer that selects the configured method in
-  one place
+- one config-driven method boundary that selects the configured backend
+  without a separate harness object
 - one normalized offline reconstruction boundary built from shared
   `RgbdObservation` values plus explicit `T_world_camera` poses
 - one normalized durable output for the stage: a world-space
@@ -42,8 +42,9 @@ method boundary.
 reconstruction implementation needs its own local home for three reasons:
 
 1. reconstruction methods have method-private config just like SLAM backends do
-2. reconstruction execution should be swappable behind one small harness rather
-   than through ad hoc `if method == ...` branches in pipeline code
+2. reconstruction execution should be swappable through typed backend configs
+   and protocols rather than through ad hoc `if method == ...` branches in
+   pipeline code
 3. reconstruction artifact DTOs and the shared RGB-D observation DTOs need
    explicit frame and raster semantics so later Rerun logging stays
    straightforward and truthful
@@ -63,19 +64,20 @@ src/prml_vslam/reconstruction
 │   ├── ReconstructionArtifacts      # normalized durable outputs
 │   └── ReconstructionMetadata       # typed side metadata for outputs
 ├── protocols.py                     # package-local execution seam
-│   └── OfflineReconstructionBackend # normalized offline reconstruction protocol
-├── configs.py                       # discriminated backend config union
+│   ├── OfflineReconstructionBackend # normalized offline reconstruction protocol
+│   ├── StreamingReconstructionBackend # future streaming backend protocol
+│   └── ReconstructionSession        # future streaming session protocol
+├── config.py                        # discriminated backend config union
 │   ├── ReconstructionBackendConfig  # shared reconstruction config base
 │   └── Open3dTsdfBackendConfig      # concrete Open3D TSDF config
-├── harness.py                       # config-driven method multiplexer
-│   └── ReconstructionHarness        # build/describe selected reconstructor
+├── configs.py                       # temporary compatibility re-export shim
 └── open3d_tsdf.py                   # thin Open3D-backed implementation
     └── Open3dTsdfBackend            # concrete TSDF reconstructor
 ```
 
-The important design choice is that `harness.py` is the only place that should
-switch across reconstruction methods. The pipeline should depend on typed
-reconstruction config and the protocol seam, not on concrete backend modules.
+The important design choice is that typed configs and protocols are the method
+selection seam. Pipeline code should depend on `ReconstructionBackendConfig`
+and `OfflineReconstructionBackend` rather than a separate harness object.
 
 ## Core Interface Shape
 
