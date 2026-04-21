@@ -116,6 +116,24 @@ def test_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> Non
     assert np.allclose(trajectory.positions_xyz, np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float64))
 
 
+def test_load_tum_trajectory_normalizes_rounded_quaternions(tmp_path: Path) -> None:
+    path = tmp_path / "rounded.tum"
+    path.write_text(
+        "\n".join(
+            [
+                "0.0 1.0 2.0 3.0 0.7907 0.4393 -0.1770 -0.3879",
+                "1.0 4.0 5.0 6.0 0.7911 0.4393 -0.1768 -0.3872",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trajectory = load_tum_trajectory(path)
+
+    assert np.allclose(np.linalg.norm(trajectory.orientations_quat_wxyz, axis=1), 1.0)
+
+
 def test_empty_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> None:
     path = tmp_path / "trajectory.tum"
 

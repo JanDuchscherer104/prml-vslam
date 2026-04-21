@@ -54,10 +54,23 @@ def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
         raise ValueError(f"TUM trajectory file '{path}' is empty.")
 
     trajectory = file_interface.read_tum_trajectory_file(path)
+    trajectory = _normalize_trajectory_quaternions(trajectory)
     valid, details = trajectory.check()
     if not valid:
         raise ValueError(f"Invalid TUM trajectory '{path}': {details}")
     return trajectory
+
+
+def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
+    quaternions = np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64)
+    norms = np.linalg.norm(quaternions, axis=1, keepdims=True)
+    if np.any(norms == 0.0):
+        return trajectory
+    return PoseTrajectory3D(
+        positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
+        orientations_quat_wxyz=quaternions / norms,
+        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+    )
 
 
 def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
@@ -68,7 +81,7 @@ def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(positions)
-    if not o3d.io.write_point_cloud(str(path), point_cloud, write_ascii=True):
+    if not o3d.io.write_point_cloud(path, point_cloud, write_ascii=True):
         raise RuntimeError(f"Failed to write point cloud to '{path}'.")
     return path.resolve()
 
@@ -77,7 +90,7 @@ def load_point_cloud_ply(path: Path) -> np.ndarray:
     """Load an XYZ point cloud from PLY using the repository's Open3D dependency."""
     if not path.exists():
         raise FileNotFoundError(f"Point cloud '{path}' does not exist.")
-    point_cloud = o3d.io.read_point_cloud(str(path))
+    point_cloud = o3d.io.read_point_cloud(path)
     points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
     if points_xyz.ndim != 2 or (points_xyz.size > 0 and points_xyz.shape[1] != 3):
         raise ValueError(f"Expected Open3D to return shape (N, 3) for '{path}', got {points_xyz.shape}.")

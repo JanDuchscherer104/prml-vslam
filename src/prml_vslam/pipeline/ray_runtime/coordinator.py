@@ -327,10 +327,13 @@ class RunCoordinatorActor:
                 )
                 self._streaming_done.wait()
         except Exception as exc:
-            self._console.exception("Run '%s' failed: %s", self._run_id, exc)
             self._record_event(
                 RunFailed(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns(), error_message=str(exc))
             )
+            try:
+                self._console.exception("Run '%s' failed: %s", self._run_id, exc)
+            except Exception:
+                pass
         finally:
             self._close_rerun_sink()
 
