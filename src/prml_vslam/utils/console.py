@@ -180,18 +180,9 @@ class _ConsoleLogFormatter(logging.Formatter):
     """Formatter that keeps the logger tree rooted at ``prml_vslam`` but shortens display names."""
 
     def format(self, record: logging.LogRecord) -> str:
-        original_shortname = getattr(record, "shortname", None)
-        try:
+        if not hasattr(record, "shortname"):
             record.shortname = self._display_name(record.name)
-            return super().format(record)
-        finally:
-            if original_shortname is None:
-                try:
-                    delattr(record, "shortname")
-                except AttributeError:
-                    pass
-            else:
-                record.shortname = original_shortname
+        return super().format(record)
 
     @staticmethod
     def _display_name(name: str) -> str:
