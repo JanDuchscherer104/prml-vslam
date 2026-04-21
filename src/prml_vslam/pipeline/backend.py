@@ -9,6 +9,7 @@ code and the concrete runtime implementation such as the Ray backend.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from typing import Protocol, TypeAlias
 
 import numpy as np
@@ -32,6 +33,7 @@ class PipelineBackend(Protocol):
     process internals directly.
     """
 
+    @abstractmethod
     def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
         """Start one run and return the stable run identifier.
 
@@ -46,12 +48,15 @@ class PipelineBackend(Protocol):
             array-handle reads.
         """
 
+    @abstractmethod
     def stop_run(self, run_id: str) -> None:
         """Request graceful stop for one active run."""
 
+    @abstractmethod
     def get_snapshot(self, run_id: str) -> RunSnapshot:
         """Return the latest projected metadata view for one run."""
 
+    @abstractmethod
     def get_events(
         self,
         run_id: str,
@@ -67,6 +72,7 @@ class PipelineBackend(Protocol):
             limit: Maximum number of trailing events to return.
         """
 
+    @abstractmethod
     def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
         """Resolve one opaque live payload handle into a local array.
 
@@ -75,6 +81,7 @@ class PipelineBackend(Protocol):
         artifact paths rather than through this method.
         """
 
+    @abstractmethod
     def shutdown(self, *, preserve_local_head: bool = False) -> None:
         """Release backend-owned runtime resources.
 

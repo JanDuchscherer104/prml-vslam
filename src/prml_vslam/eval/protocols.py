@@ -7,6 +7,7 @@ They sit above normalized pipeline outputs and below app or CLI rendering code.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -27,10 +28,12 @@ from prml_vslam.eval.contracts import (
 class TrajectoryEvaluator(Protocol):
     """Load or compute trajectory evaluation over normalized run artifacts."""
 
+    @abstractmethod
     def discover_runs(self, sequence_slug: str | None) -> list[DiscoveredRun]:
         """Return discovered benchmark runs for one optional sequence slug."""
         ...
 
+    @abstractmethod
     def resolve_selection(
         self,
         *,
@@ -41,10 +44,12 @@ class TrajectoryEvaluator(Protocol):
         """Resolve dataset and run choices for one evaluation consumer."""
         ...
 
+    @abstractmethod
     def load_evaluation(self, *, selection: SelectionSnapshot) -> EvaluationArtifact | None:
         """Load a persisted trajectory evaluation when it exists."""
         ...
 
+    @abstractmethod
     def compute_evaluation(self, *, selection: SelectionSnapshot) -> EvaluationArtifact:
         """Compute and persist one trajectory evaluation result."""
         ...
@@ -54,6 +59,7 @@ class TrajectoryEvaluator(Protocol):
 class DenseCloudEvaluator(Protocol):
     """Load or compute dense-cloud evaluation over normalized run artifacts."""
 
+    @abstractmethod
     def load_dense_evaluation(
         self,
         *,
@@ -62,6 +68,7 @@ class DenseCloudEvaluator(Protocol):
         """Load a persisted dense-cloud evaluation when it exists."""
         ...
 
+    @abstractmethod
     def compute_dense_evaluation(
         self,
         *,
@@ -75,6 +82,7 @@ class DenseCloudEvaluator(Protocol):
 class EfficiencyEvaluator(Protocol):
     """Load or compute runtime-efficiency evaluation over normalized run artifacts."""
 
+    @abstractmethod
     def load_efficiency_evaluation(
         self,
         *,
@@ -83,6 +91,7 @@ class EfficiencyEvaluator(Protocol):
         """Load a persisted runtime-efficiency evaluation when it exists."""
         ...
 
+    @abstractmethod
     def compute_efficiency_evaluation(
         self,
         *,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -16,6 +17,7 @@ class _VistaImageDataset(Protocol):
 
     resolution: tuple[int, int]
 
+    @abstractmethod
     def _crop_resize_if_necessary_image_only(
         self,
         image: np.ndarray,
@@ -28,9 +30,11 @@ class _VistaImageDataset(Protocol):
     ) -> np.ndarray:
         """Apply the upstream crop-and-resize pipeline for image-only SLAM inputs."""
 
+    @abstractmethod
     def ImgGray(self, image: np.ndarray) -> np.ndarray | torch.Tensor:
         """Return the grayscale tensor expected by upstream ViSTA."""
 
+    @abstractmethod
     def ImgNorm(self, image: np.ndarray) -> torch.Tensor:
         """Return the normalized RGB tensor expected by upstream ViSTA."""
 
@@ -47,6 +51,7 @@ class PreparedVistaFrame:
 class VistaFramePreprocessor(Protocol):
     """Prepare one repo RGB frame for upstream ViSTA ingestion."""
 
+    @abstractmethod
     def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> PreparedVistaFrame:
         """Return the upstream-ready frame payload."""
 

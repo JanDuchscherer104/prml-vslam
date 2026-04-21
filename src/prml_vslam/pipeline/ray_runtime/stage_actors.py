@@ -41,7 +41,7 @@ from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 
-# TODO: decide: should we maybe move the StageActor definitions into the stage specific modules?
+# TODO: decide: should we maybe move the StageActor definitions into the stage specific modules? Anser: yes!
 @ray.remote(num_cpus=2, max_restarts=0, max_task_retries=0)
 class OfflineSlamStageActor:
     """Execute the offline SLAM stage inside its own Ray actor."""

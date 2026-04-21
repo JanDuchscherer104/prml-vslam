@@ -57,12 +57,22 @@ class SlamBackendConfig(BaseConfig):
 
     model_config = ConfigDict(extra="forbid")
 
+    method_id: MethodId | None = None
+    """Stable backend identifier used for discriminated config unions.
+
+    The generic base config may leave this unset when it is used only as a
+    shared runtime-policy object. Concrete backend configs must set a
+    backend-specific literal value.
+    """
+
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
 
     @property
     def display_name(self) -> str:
         """Return the user-facing backend label used across planning and UI surfaces."""
+        if self.method_id is None:
+            raise NotImplementedError("Concrete backend configs must define method_id.")
         return self.method_id.display_name
 
     @property

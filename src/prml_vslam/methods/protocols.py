@@ -8,18 +8,20 @@ upstream-private runtime APIs to the rest of the repository.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 
 
+#  TODO: Why do we need both SlamSession and SlamBackend?
 @runtime_checkable
 class SlamSession(Protocol):
     """Consume streaming frames and buffer method-owned live updates.
@@ -30,12 +32,15 @@ class SlamSession(Protocol):
     boundary.
     """
 
+    @abstractmethod
     def step(self, frame: FramePacket) -> None:
         """Consume one frame and prepare an incremental SLAM update."""
 
+    @abstractmethod
     def try_get_updates(self) -> list[SlamUpdate]:
         """Retrieve any pending incremental SLAM updates non-blockingly."""
 
+    @abstractmethod
     def close(self) -> SlamArtifacts:
         """Finalize the session and return the persisted SLAM artifacts."""
 
@@ -46,6 +51,7 @@ class OfflineSlamBackend(Protocol):
 
     method_id: MethodId
 
+    @abstractmethod
     def run_sequence(
         self,
         sequence: SequenceManifest,
@@ -64,6 +70,7 @@ class StreamingSlamBackend(Protocol):
 
     method_id: MethodId
 
+    @abstractmethod
     def start_session(
         self,
         session_init: SlamSessionInit,

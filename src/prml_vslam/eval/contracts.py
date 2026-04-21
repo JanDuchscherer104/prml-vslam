@@ -17,7 +17,7 @@ from jaxtyping import Float
 from pydantic import Field
 
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.utils import BaseData
 
 

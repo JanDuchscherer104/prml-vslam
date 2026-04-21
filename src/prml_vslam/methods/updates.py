@@ -15,6 +15,8 @@ from pydantic import Field
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.utils import BaseData
 
+# TODO: this is a dto / data model that should be defined in a shared model module!
+
 
 class SlamUpdate(BaseData):
     """Carry one incremental backend update before pipeline translation.

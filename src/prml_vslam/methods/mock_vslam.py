@@ -36,8 +36,8 @@ from prml_vslam.datasets.advio.advio_geometry import (
     resolve_tango_point_cloud_payload,
 )
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
+from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import MockSlamBackendConfig
-from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.methods.updates import SlamUpdate

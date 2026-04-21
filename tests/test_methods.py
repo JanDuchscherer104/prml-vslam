@@ -22,7 +22,7 @@ from prml_vslam.benchmark import (
 )
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
-from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.pipeline import SequenceManifest
 from prml_vslam.pipeline.finalization import stable_hash

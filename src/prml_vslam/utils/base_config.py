@@ -11,6 +11,7 @@ primitives.
 from __future__ import annotations
 
 import tomllib
+from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
 from typing import Any, Generic, Literal, Protocol, Self, TypeVar, cast
@@ -25,6 +26,7 @@ TTarget = TypeVar("TTarget", covariant=True)
 
 
 class _ConfigFactory(Protocol[TTarget]):
+    @abstractmethod
     def __call__(self, config: object, **kwargs: Any) -> TTarget: ...
 
 
@@ -59,7 +61,7 @@ class BaseConfig(BaseData):
 
     Use this base for durable repo-owned configuration surfaces such as
     :class:`prml_vslam.pipeline.contracts.request.RunRequest`,
-    :class:`prml_vslam.methods.contracts.SlamBackendConfig`, and
+    :class:`prml_vslam.methods.config_contracts.SlamBackendConfig`, and
     :class:`prml_vslam.visualization.contracts.VisualizationConfig`.
     """
 

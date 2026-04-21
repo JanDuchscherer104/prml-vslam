@@ -6,6 +6,8 @@ from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.pipeline.contracts.sequence import SequenceManifest
 from prml_vslam.utils import BaseData
 
+# TODO: this is a dto / data model that should be defined in a shared model module!
+
 
 class SlamSessionInit(BaseData):
     """Normalized context injected once when a streaming session starts."""
