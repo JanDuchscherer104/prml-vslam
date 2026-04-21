@@ -15,8 +15,8 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket
+from prml_vslam.methods.config_contracts import SlamOutputPolicy
 from prml_vslam.methods.configs import VistaSlamBackendConfig
-from prml_vslam.methods.contracts import SlamOutputPolicy
 from prml_vslam.methods.updates import SlamUpdate
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths

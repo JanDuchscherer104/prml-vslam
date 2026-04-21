@@ -29,13 +29,13 @@ from prml_vslam.datasets.contracts import (
     FrameSelectionConfig,
 )
 from prml_vslam.interfaces import Record3DTransportId
+from prml_vslam.methods.config_contracts import MethodId, SlamOutputPolicy
 from prml_vslam.methods.configs import (
     BackendConfig,
     Mast3rSlamBackendConfig,
     MockSlamBackendConfig,
     VistaSlamBackendConfig,
 )
-from prml_vslam.methods.contracts import MethodId, SlamOutputPolicy
 from prml_vslam.utils import BaseConfig, PathConfig
 from prml_vslam.visualization.contracts import VisualizationConfig
 

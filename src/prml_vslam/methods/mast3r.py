@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import Mast3rSlamBackendConfig
-from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.protocols import SlamBackend, SlamSession
 from prml_vslam.methods.session_init import SlamSessionInit
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts

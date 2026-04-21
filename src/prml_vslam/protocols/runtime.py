@@ -8,6 +8,7 @@ their frames. It does not define packet meaning; see
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from typing import Any, Protocol
 
 from prml_vslam.interfaces.runtime import FramePacket
@@ -23,12 +24,15 @@ class FramePacketStream(Protocol):
     uniformly.
     """
 
+    @abstractmethod
     def connect(self) -> Any:
         """Connect to the source and prepare subsequent blocking packet reads."""
 
+    @abstractmethod
     def disconnect(self) -> None:
         """Disconnect or release the source and any owned runtime resources."""
 
+    @abstractmethod
     def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
         """Wait for and return the next normalized frame packet."""
 

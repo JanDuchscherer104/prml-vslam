@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from abc import abstractmethod
 from dataclasses import dataclass
 from importlib.machinery import ModuleSpec
 from pathlib import Path
@@ -30,6 +31,7 @@ _VISTA_INPUT_RESOLUTION = (224, 224)
 class VistaFlowTracker(Protocol):
     """Subset of the upstream flow-tracker API consumed by the session wrapper."""
 
+    @abstractmethod
     def compute_disparity(self, image: Any, visualize: bool = False) -> bool:
         """Return whether the current frame should become a new keyframe."""
 
@@ -39,15 +41,19 @@ class VistaOnlineSlam(Protocol):
 
     device: torch.device | str
 
+    @abstractmethod
     def step(self, value: dict[str, Any]) -> None:
         """Consume one prepared keyframe payload through the upstream runtime API."""
 
+    @abstractmethod
     def save_data_all(self, output_dir: str, *, save_images: bool, save_depths: bool) -> None:
         """Persist native ViSTA outputs for later normalization."""
 
+    @abstractmethod
     def get_view(self, view_index: int, **kwargs: Any) -> Any:
         """Return one live view payload from the upstream pose graph."""
 
+    @abstractmethod
     def get_pointmap_vis(self, view_index: int) -> tuple[Any | None, Any | None]:
         """Return preview RGB and dense pointmap payloads for one live view."""
 
@@ -55,9 +61,11 @@ class VistaOnlineSlam(Protocol):
 class _DbowVocabulary(Protocol):
     """Subset of the DBoW vocabulary API used for binary cache generation."""
 
+    @abstractmethod
     def load(self, path: str) -> None:
         """Load the text vocabulary from disk."""
 
+    @abstractmethod
     def save(self, path: str, binary: bool) -> None:
         """Write the vocabulary back to disk in the requested format."""
 
@@ -65,6 +73,7 @@ class _DbowVocabulary(Protocol):
 class _DbowModule(Protocol):
     """Subset of the imported DBoW module used by this wrapper."""
 
+    @abstractmethod
     def Vocabulary(self) -> _DbowVocabulary:
         """Construct one vocabulary instance."""
 

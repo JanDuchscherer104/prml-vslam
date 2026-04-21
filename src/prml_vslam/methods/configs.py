@@ -15,7 +15,7 @@ from pydantic import ConfigDict, Field
 
 from prml_vslam.utils import FactoryConfig
 
-from .contracts import MethodId, SlamBackendConfig
+from .config_contracts import MethodId, SlamBackendConfig
 
 if TYPE_CHECKING:
     from .mast3r import Mast3rSlamBackend

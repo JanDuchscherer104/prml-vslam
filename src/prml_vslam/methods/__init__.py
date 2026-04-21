@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .config_contracts import MethodId
 from .configs import MockSlamBackendConfig, VistaSlamBackendConfig
-from .contracts import MethodId
 from .vista.adapter import VistaSlamBackend
 
 __all__ = [

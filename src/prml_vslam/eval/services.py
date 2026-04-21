@@ -32,7 +32,7 @@ from prml_vslam.eval.contracts import (
     TrajectorySeries,
 )
 from prml_vslam.eval.protocols import TrajectoryEvaluator
-from prml_vslam.methods.contracts import MethodId
+from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest

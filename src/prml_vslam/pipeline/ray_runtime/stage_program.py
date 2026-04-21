@@ -8,6 +8,7 @@ letting the coordinator hardcode stage sequencing itself.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
@@ -80,10 +81,12 @@ class RuntimeStageDriver(Protocol):
     stop_requested: bool
     streaming_error: str | None
 
+    @abstractmethod
     def start_streaming_slam_stage(self, *, context: StageExecutionContext) -> None:
         """Construct and start the ordered streaming SLAM stage."""
         ...
 
+    @abstractmethod
     def close_streaming_slam_stage(
         self,
         *,

@@ -8,6 +8,7 @@ artifact ownership remain in :mod:`prml_vslam.pipeline`.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -31,6 +32,7 @@ class OfflineSequenceSource(Protocol):
 
     label: str
 
+    @abstractmethod
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
         """Materialize or resolve the normalized :class:`SequenceManifest` for one run."""
 
@@ -39,6 +41,7 @@ class OfflineSequenceSource(Protocol):
 class BenchmarkInputSource(Protocol):
     """Optionally materialize prepared benchmark-side reference inputs."""
 
+    @abstractmethod
     def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs | None:
         """Materialize prepared benchmark inputs that complement the offline sequence."""
 
@@ -53,6 +56,7 @@ class StreamingSequenceSource(OfflineSequenceSource, Protocol):
     :class:`prml_vslam.protocols.runtime.FramePacketStream`.
     """
 
+    @abstractmethod
     def open_stream(self, *, loop: bool) -> FramePacketStream:
         """Open the frame stream that feeds the active SLAM session."""
 
