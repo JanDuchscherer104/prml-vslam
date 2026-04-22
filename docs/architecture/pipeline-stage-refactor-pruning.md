@@ -21,8 +21,8 @@ These are necessary because they directly simplify the current runtime path:
 - stage runtime protocols: `BaseStageRuntime`, `OfflineStageRuntime`, and
   `StreamingStageRuntime`
 - stage-local runtime classes replacing free `run_*` helpers
-- unified `SlamStageRuntime` reached through `StageRuntimeHandle`, with
-  `SlamStageActor` as the Ray worker
+- unified `SlamStageRuntime` implementing offline and streaming protocols, with
+  Ray hosting hidden behind `StageRuntimeProxy` when needed
 - minimal hybrid-lazy `RuntimeManager`
 - direct `StageRuntimeUpdate` routing for current streaming SLAM
 - `SourceRuntime` wrapper around existing source behavior
@@ -39,7 +39,7 @@ These are necessary because they directly simplify the current runtime path:
 | `reconstruction` umbrella implementation | Defer implementation | Keep target vocabulary, but do not implement reference/3DGS variants in the runtime refactor unless already needed. |
 | 3DGS actor/runtime | Defer | Long-term product-relevant, but high complexity and not needed to clean current stage execution. |
 | Full `TransientPayloadRef` replacement everywhere | Defer partially | Add target DTO or adapter, but do not migrate every handle path in the first slice. |
-| Full `StageOutputSummary` snapshot redesign | Defer | Snapshot cleanup can follow after `StageResult` works. |
+| Full keyed snapshot redesign | Defer | Snapshot cleanup can follow after `StageResult` works; do not add another required summary DTO. |
 | Full `StageRuntimeStatus` telemetry fields | Start minimal | Use lifecycle/progress/error and submitted/completed/failed/in-flight counters first; queue depth is reported only for owned queues or credits. |
 | Full `VisualizationEnvelope` modality system | Defer partially | Support current SLAM/Rerun needs only; avoid designing every future modality now. |
 | Remote Ray head / multi-machine placement tests | Defer | Keep local/single-node execution stable first. |
@@ -58,7 +58,8 @@ The smallest useful refactor should:
 2. Introduce `StageResult` and a keyed result store.
 3. Introduce runtime protocols and stage-local runtime objects.
 4. Move bounded `run_*` functions behind runtime classes.
-5. Merge SLAM runtime/actor surfaces behind `SlamStageRuntime`.
+5. Merge SLAM actor/session surfaces behind `SlamStageRuntime` and
+   `StageRuntimeProxy`.
 6. Keep current source configs and handles behind adapters.
 7. Keep Rerun and snapshot behavior mostly compatible, but route new
    `StageRuntimeUpdate` directly for streaming SLAM.

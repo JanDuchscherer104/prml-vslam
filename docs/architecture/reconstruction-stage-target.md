@@ -130,9 +130,9 @@ Runtime classification:
 | ViSTA-derived reconstruction | unavailable target-compatible source path | persisted or live ViSTA keyframes | Open3D TSDF after RGB-D normalization | SLAM-local reconstructed scene |
 | pointmap fusion | future separate backend/source path | ViSTA pointmaps or other pointmaps | not Open3D RGB-D TSDF v1 | point-cloud or mesh artifact |
 
-The runtime may later become actor-backed when input size, GPU needs, remote
-placement, or cancellation/status requirements justify that. The stage
-interface should not require Ray actor semantics in v1.
+The runtime may later become Ray-hosted behind `StageRuntimeProxy` when input
+size, GPU needs, remote placement, or cancellation/status requirements justify
+that. The stage interface should not require Ray semantics in v1.
 
 ## Target DTOs And Protocols
 
@@ -401,7 +401,8 @@ Target event behavior:
 - `ArtifactRegistered` records `reference_cloud`, metadata, and optional mesh
   artifacts.
 - `StageCompleted(reconstruction)` carries `ReconstructionStageOutput`
-  through `StageResult` or the target stage-output summary.
+  through `StageResult`; snapshots can project artifact refs, status, and live
+  refs from that result.
 
 If Rerun export of reconstruction outputs is added later, the sink should map
 the output artifact or neutral visualization envelope to Rerun entity paths.

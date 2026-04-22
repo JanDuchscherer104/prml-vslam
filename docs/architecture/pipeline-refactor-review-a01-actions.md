@@ -221,7 +221,7 @@ Initial map:
 | Current name | Target name | Notes |
 | --- | --- | --- |
 | `ingest` | `source` | Source normalization and prepared benchmark inputs. |
-| `slam` | `slam` | Same public stage concept; target runtime is `SlamStageRuntime` through `StageRuntimeHandle`, with `SlamStageActor` as the Ray worker. |
+| `slam` | `slam` | Same public stage concept; target runtime is `SlamStageRuntime` implementing offline and streaming protocols, with Ray hosting hidden behind `StageRuntimeProxy` when needed. |
 | `ground.align` | `align.ground` | Target docs use compact verb namespace. |
 | `trajectory.evaluate` | `evaluate.trajectory` | Target docs use compact verb namespace. |
 | `reference.reconstruct` | `reconstruction` | Target umbrella stage with reference/3DGS/future variants. |
@@ -275,7 +275,8 @@ The first runtime simplification slice remains focused on:
 - `StageResult`
 - keyed result store
 - stage-local runtimes
-- unified `SlamStageRuntime` through `StageRuntimeHandle`
+- unified `SlamStageRuntime` as a Ray-hostable runtime behind
+  `StageRuntimeProxy`
 - minimal `RuntimeManager`
 - compatible source, Rerun, and snapshot behavior
 
