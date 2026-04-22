@@ -6,12 +6,20 @@ import json
 from pathlib import Path
 from typing import TypeAlias, TypeVar
 
+import cv2
 from pydantic import Field, TypeAdapter
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.events import RunEvent
+from prml_vslam.pipeline.contracts.events import (
+    RunCompleted,
+    RunEvent,
+    RunFailed,
+    RunStarted,
+    RunSubmitted,
+    StageFailed,
+)
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
@@ -115,6 +123,65 @@ class StageOutputPathRow(ArtifactPathRow):
     """Stage that declared this output."""
 
 
+class InputArtifactDiagnostics(BaseData):
+    """Shallow diagnostics for materialized offline input artifacts."""
+
+    rgb_frame_count: int
+    """Number of materialized RGB frame files."""
+
+    timestamp_count: int
+    """Number of normalized input timestamps."""
+
+    frame_stride: int | None = None
+    """Frame stride recorded in normalized timestamp metadata."""
+
+    duration_s: float | None = None
+    """Timestamp span in seconds, when at least two timestamps are available."""
+
+    image_width_px: int | None = None
+    """Width of the first materialized RGB frame."""
+
+    image_height_px: int | None = None
+    """Height of the first materialized RGB frame."""
+
+    warnings: list[str] = Field(default_factory=list)
+    """Non-fatal inventory warnings."""
+
+
+class RunAttemptSummary(BaseData):
+    """One submitted run attempt found in a persisted event log."""
+
+    attempt_index: int
+    """Zero-based attempt index in event-log order."""
+
+    run_id: str
+    """Run id carried by this attempt's events."""
+
+    state: str
+    """Terminal or latest known state for this attempt."""
+
+    event_count: int
+    """Number of events in the attempt."""
+
+    first_event_id: str
+    """First event id in this attempt."""
+
+    last_event_id: str
+    """Last event id in this attempt."""
+
+    started_at_ns: int | None = None
+    """Run-start timestamp in nanoseconds, when present."""
+
+    ended_at_ns: int | None = None
+    """Terminal timestamp in nanoseconds, when present."""
+
+    failed_stage_key: str | None = None
+    """Failed stage key, when the attempt failed inside a stage."""
+
+    error_message: str = ""
+    """Run or stage error message, when present."""
+
+
 class RunArtifactInspection(BaseData):
     """Structured inspection result for one persisted pipeline run."""
 
@@ -147,6 +214,12 @@ class RunArtifactInspection(BaseData):
 
     ground_alignment: GroundAlignmentMetadata | None = None
     """Typed ground-alignment metadata."""
+
+    input_diagnostics: InputArtifactDiagnostics | None = None
+    """Input frame/timestamp inventory diagnostics."""
+
+    attempts: list[RunAttemptSummary] = Field(default_factory=list)
+    """Run attempts projected from the persisted event log."""
 
     canonical_paths: list[ArtifactPathRow] = Field(default_factory=list)
     """Canonical paths from :class:`RunArtifactPaths` with existence metadata."""
@@ -231,6 +304,8 @@ def inspect_run_artifacts(artifact_root: Path) -> RunArtifactInspection:
         benchmark_inputs=benchmark_inputs,
         reconstruction_metadata=reconstruction_metadata,
         ground_alignment=ground_alignment,
+        input_diagnostics=_load_input_diagnostics(run_paths),
+        attempts=_summarize_attempts(events),
         canonical_paths=_canonical_path_rows(run_paths),
         stage_output_paths=_stage_output_path_rows(stage_manifests),
         file_inventory=_file_inventory(resolved_root),
@@ -420,11 +495,103 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes} B"
 
 
+def _load_input_diagnostics(run_paths: RunArtifactPaths) -> InputArtifactDiagnostics:
+    timestamps, frame_stride = _load_normalized_timestamps(run_paths.input_timestamps_path)
+    input_rgb_dir = (
+        run_paths.input_frames_dir if run_paths.input_frames_dir.exists() else run_paths.artifact_root / "input" / "rgb"
+    )
+    rgb_paths = sorted(input_rgb_dir.glob("*.png")) if input_rgb_dir.exists() else []
+    warnings: list[str] = []
+    if rgb_paths and timestamps and len(rgb_paths) != len(timestamps):
+        warnings.append(f"Found {len(rgb_paths)} RGB frames but {len(timestamps)} timestamps.")
+    width_px: int | None = None
+    height_px: int | None = None
+    if rgb_paths:
+        image = cv2.imread(str(rgb_paths[0]))
+        if image is None:
+            warnings.append(f"Failed to read first RGB frame '{rgb_paths[0]}'.")
+        else:
+            height_px, width_px = image.shape[:2]
+    duration_s = None if len(timestamps) < 2 else (timestamps[-1] - timestamps[0]) / 1e9
+    return InputArtifactDiagnostics(
+        rgb_frame_count=len(rgb_paths),
+        timestamp_count=len(timestamps),
+        frame_stride=frame_stride,
+        duration_s=duration_s,
+        image_width_px=width_px,
+        image_height_px=height_px,
+        warnings=warnings,
+    )
+
+
+def _load_normalized_timestamps(path: Path) -> tuple[list[int], int | None]:
+    if not path.exists():
+        return [], None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("timestamps_ns"), list):
+        return [], None
+    return [int(value) for value in payload["timestamps_ns"]], (
+        int(payload["frame_stride"]) if payload.get("frame_stride") is not None else None
+    )
+
+
+def _summarize_attempts(events: list[RunEvent]) -> list[RunAttemptSummary]:
+    groups: list[list[RunEvent]] = []
+    current: list[RunEvent] = []
+    for event in events:
+        if isinstance(event, RunSubmitted) and current:
+            groups.append(current)
+            current = []
+        current.append(event)
+    if current:
+        groups.append(current)
+    return [_summarize_attempt(index, group) for index, group in enumerate(groups)]
+
+
+def _summarize_attempt(index: int, events: list[RunEvent]) -> RunAttemptSummary:
+    state = "submitted"
+    ended_at_ns: int | None = None
+    error_message = ""
+    failed_stage_key: str | None = None
+    for event in events:
+        match event:
+            case RunStarted():
+                state = "running"
+            case RunCompleted():
+                state = "completed"
+                ended_at_ns = event.ts_ns
+            case RunFailed(error_message=message):
+                state = "failed"
+                ended_at_ns = event.ts_ns
+                error_message = message
+            case StageFailed(stage_key=stage_key, outcome=outcome):
+                state = "failed"
+                failed_stage_key = stage_key.value
+                error_message = outcome.error_message
+            case _:
+                pass
+    started_at_ns = next((event.ts_ns for event in events if isinstance(event, RunStarted)), None)
+    return RunAttemptSummary(
+        attempt_index=index,
+        run_id=events[-1].run_id,
+        state=state,
+        event_count=len(events),
+        first_event_id=events[0].event_id,
+        last_event_id=events[-1].event_id,
+        started_at_ns=started_at_ns,
+        ended_at_ns=ended_at_ns,
+        failed_stage_key=failed_stage_key,
+        error_message=error_message,
+    )
+
+
 __all__ = [
     "ArtifactFileRow",
     "ArtifactPathRow",
+    "InputArtifactDiagnostics",
     "RunArtifactCandidate",
     "RunArtifactInspection",
+    "RunAttemptSummary",
     "StageOutputPathRow",
     "discover_run_artifact_roots",
     "inspect_run_artifacts",

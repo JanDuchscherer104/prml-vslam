@@ -4,10 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
 from prml_vslam.pipeline.artifact_inspection import discover_run_artifact_roots, inspect_run_artifacts
-from prml_vslam.pipeline.contracts.events import RunCompleted, RunStarted, RunSubmitted, StageCompleted, StageOutcome
+from prml_vslam.pipeline.contracts.events import (
+    RunCompleted,
+    RunFailed,
+    RunStarted,
+    RunSubmitted,
+    StageCompleted,
+    StageFailed,
+    StageOutcome,
+)
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
@@ -112,3 +123,44 @@ def test_inspect_run_artifacts_projects_events_and_typed_metadata(tmp_path: Path
     assert inspection.event_count == 4
     assert any(row.name == "trajectory_path" and row.exists for row in inspection.canonical_paths)
     assert any(row.stage_id == "slam" and row.name == "dense_points_ply" for row in inspection.stage_output_paths)
+
+
+def test_inspect_run_artifacts_reports_input_inventory_and_attempts(tmp_path: Path) -> None:
+    artifact_root = tmp_path / ".artifacts" / "demo-run" / "vista"
+    write_json(
+        artifact_root / "summary" / "run_summary.json",
+        RunSummary(run_id="demo-run", artifact_root=artifact_root, stage_status={}),
+    )
+    write_json(artifact_root / "summary" / "stage_manifests.json", [])
+    write_json(artifact_root / "input" / "timestamps.json", {"timestamps_ns": [100, 200], "frame_stride": 5})
+    rgb_dir = artifact_root / "input" / "rgb"
+    rgb_dir.mkdir(parents=True)
+    assert cv2.imwrite(str(rgb_dir / "000000.png"), np.zeros((3, 4, 3), dtype=np.uint8))
+    sink = JsonlEventSink(artifact_root / "summary" / "run-events.jsonl")
+    sink.observe(RunSubmitted(event_id="1", run_id="demo-run", ts_ns=1))
+    sink.observe(RunStarted(event_id="2", run_id="demo-run", ts_ns=2))
+    sink.observe(RunCompleted(event_id="3", run_id="demo-run", ts_ns=3))
+    sink.observe(RunSubmitted(event_id="1", run_id="demo-run", ts_ns=4))
+    sink.observe(RunStarted(event_id="2", run_id="demo-run", ts_ns=5))
+    failed_outcome = StageOutcome(
+        stage_key=StageKey.SLAM,
+        status=StageStatus.FAILED,
+        config_hash="cfg",
+        input_fingerprint="input",
+        error_message="boom",
+    )
+    sink.observe(StageFailed(event_id="3", run_id="demo-run", ts_ns=6, stage_key=StageKey.SLAM, outcome=failed_outcome))
+    sink.observe(RunFailed(event_id="4", run_id="demo-run", ts_ns=7, error_message="boom"))
+
+    inspection = inspect_run_artifacts(artifact_root)
+
+    assert inspection.input_diagnostics is not None
+    assert inspection.input_diagnostics.rgb_frame_count == 1
+    assert inspection.input_diagnostics.timestamp_count == 2
+    assert inspection.input_diagnostics.frame_stride == 5
+    assert inspection.input_diagnostics.image_width_px == 4
+    assert inspection.input_diagnostics.image_height_px == 3
+    assert inspection.input_diagnostics.warnings == ["Found 1 RGB frames but 2 timestamps."]
+    assert [attempt.state for attempt in inspection.attempts] == ["completed", "failed"]
+    assert inspection.attempts[1].failed_stage_key == "slam"
+    assert inspection.attempts[1].error_message == "boom"
