@@ -405,7 +405,7 @@ Target event behavior:
   refs from that result.
 
 If Rerun export of reconstruction outputs is added later, the sink should map
-the output artifact or neutral visualization envelope to Rerun entity paths.
+the output artifact or neutral `VisualizationItem` to Rerun entity paths.
 The reconstruction package should never embed Rerun entity paths, timelines,
 styles, or SDK commands in core DTOs.
 

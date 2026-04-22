@@ -79,8 +79,8 @@ flowchart TB
     RunConfig --> RunPlan
     RunPlan --> RuntimeManager
     RunPlan --> Coordinator
+    Coordinator --> RuntimeManager
     RuntimeManager --> Stages
-    Coordinator --> Stages
     Coordinator --> Events
     GenericContracts --> Events
     GenericContracts --> Coordinator
@@ -115,9 +115,9 @@ Rules:
   own pipeline lifecycle, `StageResult`, `RunEvent`, Ray refs, or Rerun SDK
   calls. Run-specific mutable algorithm state belongs behind the stage runtime;
   stage runtimes adapt those services and backends into pipeline contracts.
-- Rerun SDK calls remain inside the sink layer. Stage outputs and updates may
-  expose neutral visualization payloads, but they do not own Rerun entity paths,
-  timelines, styling, or SDK commands.
+- Rerun SDK calls remain inside the sink layer. Stage updates may expose
+  neutral `VisualizationItem`s, but they do not own Rerun entity paths,
+  timelines, styling, SDK commands, or bulk viewer payloads.
 
 ### SLAM Artifact Normalization And Inspection Ownership
 
@@ -152,14 +152,15 @@ understands them.
 ## Generic Stage Module Blueprint
 
 Recommended target: introduce a `pipeline/stages/` package for stage runtime
-adapters and stateful stage actors, while keeping domain semantic contracts in
-their owning packages. The base package owns the generic runtime protocol,
-status, result, update, payload-reference, and Ray adapter contracts.
+adapters and Ray-hosted runtime helpers, while keeping domain semantic
+contracts in their owning packages. The base package owns the generic runtime
+protocol, status, result, update, payload-reference, proxy, and Ray adapter
+contracts.
 
 ```text
 src/prml_vslam/pipeline/
 ├── config.py              # RunConfig and StageBundle; compiles RunPlan
-├── runtime_manager.py     # runtime/actor construction authority
+├── runtime_manager.py     # runtime/proxy construction authority
 ├── stages/
 │   ├── __init__.py
 │   ├── base/
@@ -167,9 +168,9 @@ src/prml_vslam/pipeline/
 │   │   ├── config.py          # StageConfig, StageExecutionConfig, runtime policy
 │   │   ├── contracts.py       # StageResult, StageRuntimeStatus, StageRuntimeUpdate
 │   │   ├── handles.py         # TransientPayloadRef
-│   │   ├── protocols.py       # BaseStageRuntime, OfflineStageRuntime, StreamingStageRuntime
+│   │   ├── protocols.py       # BaseStageRuntime, Offline/LiveUpdate/Streaming protocols
 │   │   ├── proxy.py           # StageRuntimeProxy for local/Ray-hosted invocation
-│   │   └── ray.py             # Ray placement and actor adapter helpers
+│   │   └── ray.py             # Ray placement and invocation helpers
 │   ├── source/
 │   │   ├── __init__.py
 │   │   ├── config.py          # SourceStageConfig + SourceBackendConfig union
@@ -177,6 +178,7 @@ src/prml_vslam/pipeline/
 │   ├── slam/
 │   │   ├── __init__.py
 │   │   ├── config.py          # SlamStageConfig, resource policy, backend config field
+│   │   ├── visualization.py   # SlamVisualizationAdapter, no Rerun SDK calls
 │   │   └── runtime.py         # unified offline + streaming SLAM runtime
 │   ├── ground_alignment/
 │   │   ├── config.py          # GroundAlignmentStageConfig; stage policy only
@@ -186,6 +188,7 @@ src/prml_vslam/pipeline/
 │   │   └── runtime.py         # adapter around TrajectoryEvaluationService
 │   ├── reconstruction/
 │   │   ├── config.py          # ReconstructionStageConfig + backend/mode variants
+│   │   ├── visualization.py   # optional future reconstruction VisualizationItem adapter
 │   │   └── runtime.py         # adapter around reconstruction backends
 │   └── summary/
 │       ├── config.py          # SummaryStageConfig; projection policy only
@@ -212,9 +215,9 @@ flowchart TB
         RuntimeStatus["StageRuntimeStatus"]
         StageResult["StageResult"]
         StageUpdate["StageRuntimeUpdate"]
-        PayloadRef["TransientPayloadRef"]
         BaseProtocol["BaseStageRuntime"]
         OfflineProtocol["OfflineStageRuntime"]
+        UpdateProtocol["LiveUpdateStageRuntime"]
         StreamingProtocol["StreamingStageRuntime"]
         ResultStore["StageResultStore"]
         Runner["StageRunner"]
@@ -228,7 +231,9 @@ flowchart TB
 
     subgraph DomainPayloads["domain/shared payloads"]
         Payloads["SequenceManifest, SlamArtifacts,<br/>GroundAlignmentMetadata,<br/>EvaluationArtifact, RunSummary"]
-        DomainEvents["domain-owned StrEnum events<br/>and typed payloads"]
+        DomainEvents["domain-owned event DTOs"]
+        VisualizationItem["VisualizationItem"]
+        PayloadRef["TransientPayloadRef"]
     end
 
     StageConfig --> ExecutionConfig
@@ -237,10 +242,11 @@ flowchart TB
     StageConfig --> Telemetry
     BaseProtocol --> RuntimeStatus
     OfflineProtocol --> StageResult
-    StreamingProtocol --> StageUpdate
+    UpdateProtocol --> StageUpdate
     StreamingProtocol --> StageResult
-    StageUpdate --> PayloadRef
     StageUpdate --> DomainEvents
+    StageUpdate --> VisualizationItem
+    VisualizationItem --> PayloadRef
     StageResult --> Payloads
     ResultStore --> StageResult
     Runner --> ResultStore
@@ -248,6 +254,7 @@ flowchart TB
     RuntimeProxy --> BaseProtocol
     RuntimeProxy --> RayHelpers
     StageRuntime --> OfflineProtocol
+    StageRuntime --> UpdateProtocol
     StageRuntime --> StreamingProtocol
 ```
 
@@ -256,11 +263,13 @@ Implementation guidance:
 - Keep `config.py` free of runtime construction side effects. Stage configs
   validate declarative policy and expose planning metadata only.
 - `RuntimeManager` is the only authority that turns a `RunPlan` and validated
-  configs into in-process runtime objects, actor proxies, payload stores, sink
-  sidecars, and placement decisions.
+  configs into in-process runtime objects, runtime proxies, payload stores,
+  sink sidecars, and placement decisions.
 - Keep public pipeline contracts generic. If a stage needs a semantic payload,
   use the owning package's DTO instead of adding a parallel pipeline DTO.
-- Keep Ray-specific APIs in stage actor modules or `stages/base/ray.py`.
+- Keep Ray-specific APIs in `stages/base/ray.py`, runtime proxy helpers, or
+  optional Ray implementation details. Stage-specific actors are migration
+  contacts or private implementation choices, not the default target shape.
 
 ## RunConfig Stage Bundle And Plan Compilation
 
@@ -366,6 +375,16 @@ stage semantics.
 `RunConfig`, stage configs, and stage backend configs validate and describe.
 They do not construct runtime targets. `RuntimeManager` performs live
 construction and startup when a run launches.
+
+External context: use the repo-local
+[$pydantic](../../.agents/skills/pydantic/SKILL.md) skill for Pydantic v2
+modeling patterns. Target config work should prefer `Field`,
+`model_validator` / field validators, discriminated unions, serialization via
+`model_dump` / `model_dump_json`, and the repo's existing `BaseConfig` /
+`BaseData` conventions; see also the official Pydantic docs on
+[unions](https://pydantic.dev/docs/validation/latest/concepts/unions/),
+[serialization](https://docs.pydantic.dev/latest/concepts/serialization/), and
+[models](https://docs.pydantic.dev/latest/concepts/models/).
 
 Target persisted TOML shape:
 
@@ -535,7 +554,7 @@ Config/factory boundary:
   `FactoryConfig.setup_target()` because they construct domain/source
   implementation targets, not pipeline stage runtimes.
 - `RuntimeManager` is the only owner that constructs stage runtime adapters,
-  actor proxies, sink sidecars, payload stores, and placement-specific runtime
+  runtime proxies, sink sidecars, payload stores, and placement-specific runtime
   wrappers.
 - This target document supersedes older refactor-note wording that described
   every top-level stage config as a factory. Backend/source/reconstruction
@@ -545,10 +564,16 @@ Config/factory boundary:
 ## Target Runtime Integration
 
 Recommended target: separate runtime capability from deployment. Stage
-capability is expressed through `BaseStageRuntime`, `OfflineStageRuntime`, and
-`StreamingStageRuntime`. Deployment is expressed by `StageRuntimeProxy`, which
-hides whether the concrete runtime is an in-process object or Ray-hosted
-runtime.
+capability is expressed through `BaseStageRuntime`, `OfflineStageRuntime`,
+`LiveUpdateStageRuntime`, and `StreamingStageRuntime`. Deployment is
+expressed by capability-typed `StageRuntimeProxy` instances, which hide whether
+the concrete runtime is an in-process object or Ray-hosted runtime.
+
+External context: use
+[Ray runtime patterns](../../.agents/references/ray-runtime-patterns.md) when
+implementing Ray-hosted runtimes, proxy task tracking, actor method ordering,
+object refs, resources, runtime envs, termination, State API diagnostics, or
+custom metrics.
 
 ```mermaid
 classDiagram
@@ -561,10 +586,13 @@ classDiagram
         +run_offline(input) StageResult
     }
 
+    class LiveUpdateStageRuntime {
+        +drain_runtime_updates(max_items) StageRuntimeUpdate[]
+    }
+
     class StreamingStageRuntime {
         +start_streaming(input)
         +submit_stream_item(item)
-        +drain_stream_updates(max_items) StageRuntimeUpdate[]
         +finish_streaming() StageResult
     }
 
@@ -599,15 +627,7 @@ classDiagram
 
     class StageRuntimeProxy {
         +deployment_kind
-        +submitted_count
-        +completed_count
-        +failed_count
-        +in_flight_count
-        +run_offline(input)
-        +start_streaming(input)
-        +submit_stream_item(item)
-        +drain_stream_updates(max_items)
-        +finish_streaming()
+        +supported_capabilities
         +status()
         +stop()
     }
@@ -620,16 +640,17 @@ classDiagram
     }
 
     BaseStageRuntime <|.. OfflineStageRuntime
+    BaseStageRuntime <|.. LiveUpdateStageRuntime
     BaseStageRuntime <|.. StreamingStageRuntime
     SourceRuntime ..|> OfflineStageRuntime
     SlamStageRuntime ..|> OfflineStageRuntime
+    SlamStageRuntime ..|> LiveUpdateStageRuntime
     SlamStageRuntime ..|> StreamingStageRuntime
     GroundAlignmentRuntime ..|> OfflineStageRuntime
     TrajectoryEvaluationRuntime ..|> OfflineStageRuntime
     ReconstructionRuntime ..|> OfflineStageRuntime
     SummaryRuntime ..|> OfflineStageRuntime
-    StageRuntimeProxy ..|> OfflineStageRuntime
-    StageRuntimeProxy ..|> StreamingStageRuntime
+    StageRuntimeProxy ..|> BaseStageRuntime
     RuntimeManager --> StageRuntimeProxy
     StageRuntimeProxy --> BaseStageRuntime
     RuntimeManager --> InternalPacketSourceActor
@@ -653,25 +674,36 @@ readers separate as internal runtime collaborators because they own source
 credits and transport reads, not durable benchmark stage semantics.
 
 Runtime protocol rule: all runtimes implement `BaseStageRuntime`.
-Offline-capable stages implement `OfflineStageRuntime`; streaming hot-path
-stages implement `StreamingStageRuntime`. A stage may implement both. Offline
-does not mean “single item”: the input DTO may represent a sequence, a batch,
-or a bundle of artifacts. Do not require every stage to expose streaming
-methods.
+Offline-capable stages implement `OfflineStageRuntime`; active runtimes that
+emit live updates implement `LiveUpdateStageRuntime`; streaming hot-path
+stages implement `StreamingStageRuntime`. A stage may implement several
+surfaces. Offline does not mean “single item”: the input DTO may represent a
+sequence, a batch, or a bundle of artifacts. Do not require every stage to
+expose streaming methods or live-update draining when it has no active
+observer feed.
 
 Streaming runtimes use command/query separation. `submit_stream_item(...)`
 submits one hot-path item to the runtime and returns no semantic update payload.
-`drain_stream_updates(max_items=None)` retrieves the live updates that have
+`drain_runtime_updates(max_items=None)` retrieves the live updates that have
 already been produced by prior submitted work. `finish_streaming()` finalizes
-the runtime and returns the terminal `StageResult`.
+the runtime and returns the terminal `StageResult`. The same
+`LiveUpdateStageRuntime` drain surface may also be used later by
+long-running bounded runtimes such as reconstruction or evaluation.
+For source-to-SLAM streaming, one source credit is released after the runtime
+or proxy has accepted and processed the submitted frame; observer sinks and
+Rerun logging do not participate in credit release.
 
 `RuntimeManager` returns a `StageRuntimeProxy` to `StageRunner` and the
-coordinator. For in-process deployment the proxy can be a thin direct-call
-adapter. For Ray-hosted deployment it owns actor creation, `.remote()` calls,
-Ray task refs, task counters, and failure accounting. Ray object refs and actor
-mailboxes never cross into `StageRunner`, coordinator, app, or CLI code. Queue
-depth is reported only when the runtime or pipeline explicitly owns a
-measurable queue or credit counter, such as source-to-SLAM in-flight frames.
+coordinator. The proxy is typed to the selected runtime's capabilities; a
+non-streaming runtime does not present a streaming command surface, and
+unsupported capability calls fail during plan/preflight rather than at an
+arbitrary hot-path call site. For in-process deployment the proxy can be a thin
+direct-call adapter. For Ray-hosted deployment it owns actor creation,
+`.remote()` calls, Ray task refs, task counters, and failure accounting. Ray
+object refs and actor mailboxes never cross into `StageRunner`, coordinator,
+app, or CLI code. Queue depth is reported only when the runtime or pipeline
+explicitly owns a measurable queue or credit counter, such as source-to-SLAM
+in-flight frames.
 
 Ray-idiomatic status uses both pipeline-owned counters and Ray observability.
 For Ray-hosted runtimes, `StageRuntimeProxy` tracks submitted, completed,
@@ -679,16 +711,18 @@ failed, and in-flight actor method refs. Ray-hosted runtimes may also emit Ray
 custom metrics for stage-owned queue depth, FPS, throughput, and latency. Ray
 State API and Dashboard data remain useful diagnostics, but they are not the
 canonical pipeline contract because state snapshots can be stale or partial.
+Proxy counters are internal deployment state and surface only through
+`StageRuntimeStatus`.
 
 Per-stage runtime classification:
 
 | Runtime | Capability protocols | Domain executor |
 | --- | --- | --- |
 | `SourceRuntime` | `OfflineStageRuntime` | Source normalization adapter and source backend config. |
-| `SlamStageRuntime` | `OfflineStageRuntime` + `StreamingStageRuntime` | `SlamBackend`. |
+| `SlamStageRuntime` | `OfflineStageRuntime` + `StreamingStageRuntime` + `LiveUpdateStageRuntime` | `SlamBackend`. |
 | `GroundAlignmentRuntime` | `OfflineStageRuntime` | `GroundAlignmentService`. |
 | `TrajectoryEvaluationRuntime` | `OfflineStageRuntime` | `TrajectoryEvaluationService`. |
-| `ReconstructionRuntime` | `OfflineStageRuntime` first; streaming only if needed later | `ReconstructionBackend` such as `Open3dTsdfBackend`. |
+| `ReconstructionRuntime` | `OfflineStageRuntime` first; `LiveUpdateStageRuntime` only for long-running variants; streaming only if needed later | `ReconstructionBackend` such as `Open3dTsdfBackend`. |
 | `SummaryRuntime` | `OfflineStageRuntime` | `project_summary()`. |
 
 Per-runtime deployment defaults:
@@ -809,10 +843,11 @@ Initial classification:
 | source/packet reader collaborator | Ray actor or in-process sidecar | Owns live transport state and source credits; not a public benchmark stage by default. |
 
 The coordinator should not care which deployment target is used. It should call
-the offline or streaming `StageRuntimeProxy` surface and receive
-`StageRuntimeStatus`, drained `StageRuntimeUpdate` values, and `StageResult`
-objects. In-process proxies call domain executors directly; Ray-hosted proxies
-hide Ray calls, task refs, and actor failures behind the same runtime surface.
+the capability-typed `StageRuntimeProxy` surface and receive
+`StageRuntimeStatus`, drained `StageRuntimeUpdate` values when the runtime is
+update-capable, and `StageResult` objects. In-process proxies call domain
+executors directly; Ray-hosted proxies hide Ray calls, task refs, and actor
+failures behind the same runtime surface.
 
 ### Stage Runtime API Vocabulary
 
@@ -850,12 +885,13 @@ For SLAM, the target runtime boundary specifically uses:
   artifacts collected at completion.
 
 The public generic streaming runtime method names are
-`start_streaming(...)`, `submit_stream_item(...)`,
-`drain_stream_updates(...)`, and `finish_streaming()`. Stage modules may keep
-private helpers with narrower names, such as `push_frame(...)`, but
+`start_streaming(...)`, `submit_stream_item(...)`, and
+`finish_streaming()`. Active runtimes that emit live observer updates expose
+`drain_runtime_updates(...)` through `LiveUpdateStageRuntime`. Stage modules
+may keep private helpers with narrower names, such as `push_frame(...)`, but
 `StageRunner` and `RunCoordinatorActor` must depend on the generic method
 names. For SLAM, `submit_stream_item(SlamFrameInput)` maps to the backend's
-stream-item execution surface, while `drain_stream_updates()` maps to the
+stream-item execution surface, while `drain_runtime_updates()` maps to the
 backend update-drain surface plus translation into `StageRuntimeUpdate` values.
 
 Method-level live DTOs such as `SlamUpdate` and backend notice/event payloads
@@ -870,8 +906,9 @@ Target coordinator responsibilities:
 - sequence the linear run
 - record `RunEvent` truth
 - project or trigger projection into `RunSnapshot`
-- dispatch stage commands through `StageRuntime`
+- dispatch stage commands through `StageRuntimeProxy`
 - stop or finalize active stage runtimes
+- publish `StageRuntimeUpdate` values to live projection and observer sinks
 
 Responsibilities that should move out of the coordinator:
 
@@ -887,25 +924,36 @@ Responsibilities that should move out of the coordinator:
 flowchart TB
     Coordinator["RunCoordinatorActor<br/>semantic run owner"]
     Plan["RunPlan"]
+    Runner["StageRunner"]
+    RuntimeProxy["StageRuntimeProxy"]
     StageRuntime["StageRuntime instances"]
+    Updates["StageRuntimeUpdate"]
+    ObserverSinks["Observer sinks"]
+    RerunSink["Rerun sink"]
     Events["RunEvent log"]
     Projector["SnapshotProjector"]
 
     RuntimeManager["RuntimeManager<br/>Ray/bootstrap/stage target setup"]
     Placement["PlacementTranslator<br/>StageExecutionConfig -> Ray options"]
     ArtifactMapper["ArtifactRef builders"]
-    RerunPolicy["RerunLoggingPolicy"]
+    RerunPolicy["RerunLoggingPolicy<br/>internal sink policy"]
     PayloadStore["Transient payload store"]
 
     Coordinator --> Plan
-    Coordinator --> StageRuntime
+    Coordinator --> Runner
+    Runner --> RuntimeProxy
+    RuntimeProxy --> StageRuntime
     Coordinator --> Events
     Events --> Projector
+    RuntimeProxy --> Updates
+    Updates --> Projector
+    Updates --> ObserverSinks
+    ObserverSinks --> RerunSink
+    RerunSink --> RerunPolicy
 
-    RuntimeManager --> StageRuntime
+    RuntimeManager --> RuntimeProxy
     RuntimeManager --> Placement
     StageRuntime --> ArtifactMapper
-    Events --> RerunPolicy
     StageRuntime --> PayloadStore
 ```
 
@@ -947,8 +995,8 @@ private implementation inputs, but public payloads inside `StageResult` and
 `StageRuntimeUpdate` are domain-owned or shared DTOs.
 
 `StageResult` is the canonical cross-stage completion target. `StageOutcome` is
-the durable/provenance subset, and semantic outputs remain typed payloads from
-their owning package.
+the durable/provenance subset, and semantic outputs remain domain-owned
+payloads from their owning package.
 
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "22px", "nodeTextColor": "#111827", "nodeBkg": "#ffffff", "nodeBorder": "#6b7280", "mainBkg": "transparent", "clusterBkg": "transparent", "clusterBorder": "#d1d5db"}, "flowchart": {"htmlLabels": true}}}%%
@@ -1086,7 +1134,8 @@ conceptual layer:
 | `RunRequest` | `RunConfig`, the persisted declarative root. |
 | `SourceSpec` | `SourceBackendConfig` under `SourceStageConfig`; legacy request variants are migration input. |
 | `StagePlacement` / `PlacementPolicy` | `StageExecutionConfig`, `ResourceSpec`, and `PlacementConstraint`; current Ray retry knobs stay backend/runtime implementation details. |
-| `reference.reconstruct` stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants. |
+| `ingest` stage key | `source` stage key, with an alias/projection mapping during migration so current runs remain inspectable. |
+| `reference.reconstruct` stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants, with an alias/projection mapping during migration. |
 | `EvaluationArtifact` | `TrajectoryEvaluationArtifact` when dense-cloud and efficiency artifacts become first-class. |
 | `ArtifactRef` | move out of `interfaces.slam` to a generic artifact contract owner. |
 | current SLAM streaming init DTO | private `SlamStreamingStartInput` at the pipeline stage boundary or method-owned streaming init, not a public shared DTO. |
@@ -1186,6 +1235,15 @@ only on completed `StageResult` values. Updates are immutable live-observer
 objects for UI/status/Rerun/debug data, not Rerun commands and not the
 stage-to-stage dependency contract.
 
+External context: use the repo-local
+[Rerun SLAM integration skill](../../.agents/skills/rerun-slam-integration/SKILL.md)
+for `VisualizationItem` mapping, transforms, camera-local geometry, pinhole,
+depth, timelines, blueprints, and official Rerun examples. Start from the
+official [Python API](https://ref.rerun.io/docs/python/stable/common/),
+[RGBD](https://rerun.io/examples/robotics/rgbd), and
+[DROID](https://rerun.io/examples/robotics/droid) entry points when validating
+Rerun-specific behavior.
+
 ```mermaid
 classDiagram
     class StageRuntimeUpdate {
@@ -1226,6 +1284,11 @@ classDiagram
         clear
     }
 
+    class VisualizationAdapter {
+        <<stage/domain-specific>>
+        +build_items(semantic_event, payload_refs) VisualizationItem[]
+    }
+
     class StageResult
     class RunEvent
     class LiveSnapshotProjection
@@ -1233,6 +1296,8 @@ classDiagram
 
     StageRuntimeUpdate --> DomainStageEvent
     StageRuntimeUpdate --> VisualizationItem
+    VisualizationAdapter --> VisualizationItem
+    VisualizationAdapter --> DomainStageEvent
     VisualizationItem --> VisualizationIntent
     VisualizationItem --> TransientPayloadRef
     StageRuntimeUpdate --> LiveSnapshotProjection
@@ -1264,8 +1329,9 @@ Rules:
   artifact refs.
 - `StageRuntimeUpdate` does not carry a generic top-level payload-ref bucket.
   `TransientPayloadRef`s live inside the object that gives them meaning:
-  `VisualizationItem.payload_refs` for sink-facing visual payloads, or
-  domain-owned semantic event DTO fields for nonvisual live payloads.
+  `VisualizationItem.payload_refs`, pipeline-owned live projection/update
+  DTOs, or payload resolver APIs. Pure domain DTOs such as `SlamUpdate` must
+  not import or embed `TransientPayloadRef`.
 - `StageRuntimeUpdate` is routed to live snapshot/status state and observer
   sinks. The exact first-slice routing can stay compatible with the current
   coordinator/Rerun sidecar structure; the target only requires that live
@@ -1276,6 +1342,15 @@ Rules:
 - Stage runtime adapters translate internal backend outputs into
   `StageRuntimeUpdate`; concrete event kinds and payload DTOs remain
   domain-owned.
+- Stage/domain-specific visualization adapters convert semantic event DTOs plus
+  runtime-created named payload refs into `VisualizationItem` values. Adapters
+  live stage-locally, starting with
+  `pipeline/stages/slam/visualization.py` for `SlamVisualizationAdapter`; future
+  long-running stages may add stage-local visualization modules when needed.
+  For SLAM, `SlamStageRuntime` receives method-owned `SlamUpdate` values,
+  stores large arrays in the transient payload store, creates named
+  `TransientPayloadRef`s, and passes `SlamUpdate` plus those refs to
+  `SlamVisualizationAdapter`.
 - The Rerun sink consumes `StageRuntimeUpdate.visualizations`, resolves payload
   refs best-effort, maps items to Rerun entity paths, timelines, archetypes,
   blueprints, styling, and SDK calls, and isolates sink failures from
@@ -1333,6 +1408,11 @@ The target should replace separate public array/preview/blob handle DTOs with
 one backend-agnostic transient payload reference. Public DTOs should not expose
 Ray object-store details such as `backend="ray-object-store"`.
 
+External context: use
+[Ray runtime patterns](../../.agents/references/ray-runtime-patterns.md) for
+Ray object refs and object-store semantics. `TransientPayloadRef` is public
+metadata; Ray `ObjectRef`s remain behind runtime-owned payload resolvers.
+
 ```mermaid
 classDiagram
     class TransientPayloadRef {
@@ -1373,8 +1453,12 @@ Rules:
 - Live updates and snapshots may expose refs, but durable scientific artifacts
   remain `ArtifactRef`s, not transient payload refs.
 - `TransientPayloadRef` may appear in `VisualizationItem.payload_refs`,
-  domain-owned live event DTOs, live snapshots, and backend resolver APIs. It
-  must not appear in durable `RunEvent`s, manifests, or summaries.
+  pipeline-owned live projection/update DTOs, live snapshots, and backend
+  resolver APIs. It must not appear in pure domain DTOs, durable `RunEvent`s,
+  manifests, or summaries.
+- SLAM uses the boundary `SlamUpdate -> SlamStageRuntime stores arrays ->
+  named TransientPayloadRefs -> SlamVisualizationAdapter -> VisualizationItem`.
+  It must not use `SlamUpdate -> TransientPayloadRef` directly.
 - Read-after-eviction returns a typed not-found result rather than leaking a
   backend-specific error.
 - UI/app callers resolve payloads through the pipeline backend/service, never
@@ -1392,6 +1476,12 @@ execution surface. `RuntimeManager` returns a `StageRuntimeProxy` so the
 coordinator and `StageRunner` use the same protocol calls whether the runtime
 is in-process or Ray-hosted.
 
+External context: use the repo-local
+[Rerun SLAM integration skill](../../.agents/skills/rerun-slam-integration/SKILL.md)
+when implementing or reviewing the SLAM visualization path. Keep Rerun
+transform, pinhole, depth, timeline, and blueprint semantics inside the
+sink/policy layer.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -1403,8 +1493,10 @@ sequenceDiagram
     participant SlamRuntime as "SlamStageRuntime"
     participant BackendCfg as "backend_config"
     participant Backend as "SlamBackend"
+    participant VizAdapter as "SlamVisualizationAdapter"
     participant Events as "RunEvent stream"
-    participant Rerun as "RerunSinkActor"
+    participant Observers as "Observer sinks"
+    participant Rerun as "Rerun sink"
 
     RunCfg->>Plan: compile with slam stage row
     Coord->>RuntimeMgr: preflight + build slam runtime proxy
@@ -1429,13 +1521,18 @@ sequenceDiagram
             Coord->>RuntimeProxy: submit_stream_item(SlamFrameInput)
             RuntimeProxy->>SlamRuntime: submit_stream_item(item)
             SlamRuntime->>Backend: submit_stream_item(FramePacket)
-            Coord->>RuntimeProxy: drain_stream_updates(max_items=None)
-            RuntimeProxy->>SlamRuntime: drain_stream_updates(...)
-            SlamRuntime->>Backend: drain_stream_updates()
+            Coord->>RuntimeProxy: drain_runtime_updates(max_items=None)
+            RuntimeProxy->>SlamRuntime: drain_runtime_updates(...)
+            SlamRuntime->>Backend: drain backend updates
             Backend-->>SlamRuntime: SlamUpdate[]
+            SlamRuntime->>SlamRuntime: store large arrays as TransientPayloadRefs
+            SlamRuntime->>VizAdapter: SlamUpdate + named payload refs
+            VizAdapter-->>SlamRuntime: VisualizationItem[]
             SlamRuntime-->>RuntimeProxy: StageRuntimeUpdate[]
             RuntimeProxy-->>Coord: StageRuntimeUpdate[]
-            Coord->>Rerun: route live update payloads
+            Coord->>Observers: publish StageRuntimeUpdate
+            Observers->>Rerun: forward StageRuntimeUpdate.visualizations
+            Rerun->>Rerun: log VisualizationItem refs
             Coord->>Events: no durable telemetry required
         end
         Coord->>RuntimeProxy: finish_streaming()
@@ -1546,7 +1643,7 @@ Rules:
 | Stage key | Config section | Runtime target | Semantic payload owner | Event/Rerun path | Required changes |
 | --- | --- | --- | --- | --- | --- |
 | `source` | `[stages.source]` | in-process `SourceRuntime`; streaming source backend may own an internal packet sidecar | shared `SequenceManifest` and `PreparedBenchmarkInputs` | durable `StageCompleted`; optional live source `StageRuntimeUpdate` | Replace public `ingest` vocabulary; add `SourceBackendConfig` union with `source_id`; preserve normalized boundary and keep packet reading internal. |
-| `slam` | `[stages.slam]` | `SlamStageRuntime` implements `OfflineStageRuntime` and `StreamingStageRuntime`; may be Ray-hosted behind `StageRuntimeProxy` | shared `SlamArtifacts`, visualization-owned artifacts, methods-owned live DTOs | method semantic updates -> `StageRuntimeUpdate` -> live snapshot/status + Rerun sink; completion -> durable `StageCompleted` | Merge offline/streaming runtime surfaces; hide current actor/session helpers behind migration adapters; keep backend discriminated union. |
+| `slam` | `[stages.slam]` | `SlamStageRuntime` implements `OfflineStageRuntime`, `StreamingStageRuntime`, and `LiveUpdateStageRuntime`; may be Ray-hosted behind `StageRuntimeProxy` | shared `SlamArtifacts`, visualization-owned artifacts, methods-owned live DTOs | semantic updates -> runtime-created refs -> `SlamVisualizationAdapter` -> `StageRuntimeUpdate.visualizations` / `VisualizationItem`s -> Rerun sink; completion -> durable `StageCompleted` | Merge offline/streaming runtime surfaces; hide current actor/session helpers behind migration adapters; keep backend discriminated union. |
 | `align.ground` | `[stages.align_ground]` | in-process runtime first | alignment-owned `GroundAlignmentMetadata` | durable `StageCompleted`; Rerun sink may augment export on close | Keep derived artifact semantics; do not mutate native SLAM outputs. |
 | `evaluate.trajectory` | `[stages.evaluate_trajectory]` | in-process runtime first | eval-owned trajectory evaluation artifact | durable `StageCompleted` | Keep `benchmark` as policy and `eval` as metric implementation/result owner. |
 | `reconstruction` | `[stages.reconstruction]` | selected by reconstruction backend/mode: in-process for reference, Ray-hosted for GPU-heavy variants | reconstruction-owned artifact bundle | durable `StageCompleted`; optional `StageRuntimeUpdate` visualization items for long-running variants | Replace `reference.reconstruct` target vocabulary with one umbrella reconstruction stage and model reference/3DGS/future methods as variants. |
@@ -1593,22 +1690,23 @@ Migration contact points: [stage_program.py](../../src/prml_vslam/pipeline/ray_r
 
 ### Runtime Protocol Taxonomy
 
-Decision: use `BaseStageRuntime`, `OfflineStageRuntime`, and
-`StreamingStageRuntime` as the capability protocols. Concrete stage runtimes
-implement these protocols directly.
+Decision: use `BaseStageRuntime`, `OfflineStageRuntime`,
+`LiveUpdateStageRuntime`, and `StreamingStageRuntime` as the capability
+protocols. Concrete stage runtimes implement these protocols directly.
 
 `OfflineStageRuntime` is a bounded stage invocation surface, but its input can
-represent a sequence, batch, or artifact bundle. `StreamingStageRuntime` owns
-the hot-path surface for `start_streaming(...)`, `submit_stream_item(...)`,
-`drain_stream_updates(...)`, and `finish_streaming()`. A runtime may implement
-both surfaces. Deployment remains separate: `RuntimeManager` returns a
-`StageRuntimeProxy` that either calls an in-process runtime or invokes a
-Ray-hosted runtime while preserving the same protocol surface.
-`StageRuntimeProxy` is deployment plumbing, not a stage role and not a second
-runtime taxonomy.
+represent a sequence, batch, or artifact bundle.
+`LiveUpdateStageRuntime` owns the live update-drain surface for active
+runtimes. `StreamingStageRuntime` owns the hot-path command surface for
+`start_streaming(...)`, `submit_stream_item(...)`, and `finish_streaming()`.
+A runtime may implement several surfaces. Deployment remains separate:
+`RuntimeManager` returns a capability-typed `StageRuntimeProxy` that either
+calls an in-process runtime or invokes a Ray-hosted runtime while preserving
+the selected protocol surface. `StageRuntimeProxy` is deployment plumbing, not
+a stage role and not a second runtime taxonomy.
 
 `submit_stream_item(...)` is an ingress command. It submits one item and does
-not return semantic updates. `drain_stream_updates(max_items=None)` is the
+not return semantic updates. `drain_runtime_updates(max_items=None)` is the
 non-blocking observation query. It returns updates already produced by
 completed prior work and may wait only as needed to preserve runtime-order
 consistency, not for future source items. For SLAM, this maps to the
@@ -1617,8 +1715,14 @@ method-owned backend streaming execution and update-drain surface.
 Ray-hosted runtimes may use Ray-native actor method ordering and actor
 mailboxes for submitted work. Ray mailboxes are not the portable queue model
 for pipeline contracts. `StageRuntimeProxy` tracks task refs, in-flight counts,
-and failures enough to surface status, but coordinator and app code do not
-receive Ray object refs or mailbox handles.
+and failures as internal deployment state only; it surfaces that state through
+`StageRuntimeStatus`, and coordinator and app code do not receive Ray object
+refs or mailbox handles.
+
+External context: use
+[Ray runtime patterns](../../.agents/references/ray-runtime-patterns.md) for
+actor ordering, `.remote()` invocation, `ray.wait` / `ray.get`, task refs,
+object refs, and queue/backpressure guardrails.
 
 ### Runtime Manager Construction
 
@@ -1632,6 +1736,11 @@ about to run.
 Reasoning: this catches configuration and placement errors early without
 allocating unused actors, opening sources, or connecting sidecars before their
 stage is reached.
+
+External context: use
+[Ray runtime patterns](../../.agents/references/ray-runtime-patterns.md) for
+Ray runtime environment, resource, placement, actor creation, and State API
+diagnostic considerations.
 
 ### Stage Execution Helper Fate
 
@@ -1694,14 +1803,15 @@ owns declarative failure-provenance policy. Do not recreate
 
 ### Offline And Streaming SLAM Lifecycle
 
-Decision: use one pipeline-facing `SlamStageRuntime` implementing both
-`OfflineStageRuntime` and `StreamingStageRuntime`. It may be Ray-hosted behind
-`StageRuntimeProxy` when Ray deployment is needed. Remove separate method
-streaming-session protocols from the target public architecture.
+Decision: use one pipeline-facing `SlamStageRuntime` implementing
+`OfflineStageRuntime`, `StreamingStageRuntime`, and
+`LiveUpdateStageRuntime`. It may be Ray-hosted behind `StageRuntimeProxy`
+when Ray deployment is needed. Remove separate method streaming-session
+protocols from the target public architecture.
 
 Target surface: one SLAM runtime with explicit methods:
 `run_offline()`, `start_streaming()`, `submit_stream_item()`,
-`drain_stream_updates()`, `finish_streaming()`, `status()`, and `stop()`.
+`drain_runtime_updates()`, `finish_streaming()`, `status()`, and `stop()`.
 `SlamBackend` exposes the execution surface needed by that runtime; no
 method-visible session object is part of the target architecture.
 
@@ -1749,6 +1859,11 @@ task refs, records failures from submitted work, drains feasible
 `StageRuntimeUpdate` values and durable artifacts, and calls
 `finish_streaming()` or `stop()` according to the terminal cause. Immediate
 Ray actor kill is reserved for unrecoverable runtime failure or timeout.
+
+External context: use
+[Ray runtime patterns](../../.agents/references/ray-runtime-patterns.md) for
+actor termination, fault tolerance, task refs, and graceful-vs-immediate stop
+behavior.
 
 ### Reconstruction Stage
 
@@ -1803,6 +1918,12 @@ The target muxing pattern should be the same for source variants, method
 backends, and future reconstruction backends: concrete variant configs build
 their implementation targets through `setup_target()`, while stage runtime
 construction stays in `RuntimeManager`.
+
+External context: use the repo-local
+[$pydantic](../../.agents/skills/pydantic/SKILL.md) skill for discriminated
+unions, validators, `Field`, serialization, and the repo's
+`BaseConfig` / `BaseData` conventions. Pydantic is the config/modeling tool
+here; it must not become a second runtime construction authority.
 
 ```mermaid
 classDiagram
@@ -1958,21 +2079,31 @@ Specific target placement:
 
 ### Rerun Integration
 
-Decision: output/update DTOs may expose neutral visualization items, but no
+Decision: output/update DTOs may expose neutral `VisualizationItem` values, but no
 DTO, stage runtime, or runtime proxy talks to the Rerun SDK.
 `StageRuntimeUpdate` carries domain-owned semantic event DTOs, visualization items,
 and runtime status. Transient payload refs live inside visualization items or
-domain event DTO fields. The runtime driver routes those updates to live
-snapshot/status state and observer sinks; they do not need to become telemetry
-`RunEvent`s first. The Rerun sink logs only from
+pipeline-owned live projection/update DTOs, never inside pure domain DTOs.
+Stage/domain-specific visualization adapters, starting with
+`SlamVisualizationAdapter` in `pipeline/stages/slam/visualization.py`, create
+`VisualizationItem` values from semantic events plus runtime-created named
+refs. The runtime driver routes those updates to live snapshot/status state and
+observer sinks; they do not need to become telemetry `RunEvent`s first. The
+Rerun sink logs only from
 `StageRuntimeUpdate.visualizations` plus resolved payload refs and remains the
 only SDK caller.
 
 Reasoning: the existing [RerunEventSink](../../src/prml_vslam/pipeline/sinks/rerun.py#L35)
 is already the single SDK sidecar. Keep this boundary and let
 [RerunLoggingPolicy](../../src/prml_vslam/pipeline/sinks/rerun_policy.py)
-map neutral visualization items to entity paths, timelines, styling, and
-SDK calls.
+map neutral `VisualizationItem` values to entity paths, timelines, styling,
+and SDK calls.
+
+External context: use the repo-local
+[Rerun SLAM integration skill](../../.agents/skills/rerun-slam-integration/SKILL.md)
+for Rerun SDK, transform, pinhole, depth, timeline, blueprint, and example
+guidance. Avoid duplicating that detailed Rerun guidance in this target
+architecture document.
 
 Migration contact points: [RerunEventSink.observe](../../src/prml_vslam/pipeline/sinks/rerun.py#L84),
 [RerunSinkActor.observe_event](../../src/prml_vslam/pipeline/sinks/rerun.py#L148),
@@ -1980,10 +2111,10 @@ Migration contact points: [RerunEventSink.observe](../../src/prml_vslam/pipeline
 
 ### Status And Telemetry
 
-Decision: add a `StageRuntimeStatus` transport-safe DTO under pipeline
-contracts. Stage runtimes and their proxies implement `status()`. Important
-status transitions are pushed through `StageRuntimeUpdate`; `status()` remains
-available for polling, recovery, and late observers.
+Decision: the target includes a `StageRuntimeStatus` transport-safe DTO under
+pipeline contracts. Stage runtimes and their proxies implement `status()`.
+Important status transitions are pushed through `StageRuntimeUpdate`;
+`status()` remains available for polling, recovery, and late observers.
 
 Minimum fields:
 
@@ -2006,6 +2137,11 @@ contains only streaming-specific SLAM/source counters.
 For Ray-hosted runtimes, stage-owned counters should be implemented with
 Ray-native task refs and application metrics where possible. Ray's own actor
 mailbox is not exposed as a portable `queue_depth` field.
+
+External context: use
+[Ray runtime patterns](../../.agents/references/ray-runtime-patterns.md) for
+Ray custom metrics, State API diagnostics, and the distinction between
+Ray-observed state and canonical `StageRuntimeStatus`.
 
 Migration contact points: [events.py](../../src/prml_vslam/pipeline/contracts/events.py#L33),
 [runtime.py](../../src/prml_vslam/pipeline/contracts/runtime.py#L38),
@@ -2031,6 +2167,11 @@ Reasoning: the loose-alias issue identified in
 target needs CPU, GPU, memory, custom resources, and node/IP hints. Do not add
 a public retry DTO until the project has a concrete repo-level retry
 requirement beyond Ray actor option translation.
+
+External context: use
+[Ray runtime patterns](../../.agents/references/ray-runtime-patterns.md) for
+official Ray resources, runtime environments, placement, and retry/fault
+tolerance context.
 
 Migration contact points: [StagePlacement](../../src/prml_vslam/pipeline/contracts/request.py#L124),
 [actor_options_for_stage](../../src/prml_vslam/pipeline/placement.py#L22),
@@ -2112,6 +2253,11 @@ Reasoning: [write_json](../../src/prml_vslam/pipeline/finalization.py#L88)
 is generic. [project_summary](../../src/prml_vslam/pipeline/finalization.py)
 is pipeline-specific.
 
+External context: use the repo-local
+[$pydantic](../../.agents/skills/pydantic/SKILL.md) skill and official
+Pydantic [serialization docs](https://docs.pydantic.dev/latest/concepts/serialization/)
+when moving model serialization behavior.
+
 Migration contact points: [finalization.py](../../src/prml_vslam/pipeline/finalization.py),
 [BaseConfig.to_jsonable](../../src/prml_vslam/utils/base_config.py#L68).
 
@@ -2160,45 +2306,50 @@ Migration contact points: [RunService](../../src/prml_vslam/pipeline/run_service
 [pipeline controls](../../src/prml_vslam/app/pipeline_controls.py),
 [main CLI](../../src/prml_vslam/main.py).
 
-## Change Inventory For The Actual Refactor
+## Future Implementation Inventory
 
-### Contract Additions
+This inventory documents target contract expectations and future code slices.
+It is not part of the docs/requirements consistency patch itself.
 
-- Add `StageConfig`, `StageExecutionConfig`, `ResourceSpec`,
+### Target Contract Expectations
+
+- Document `StageConfig`, `StageExecutionConfig`, `ResourceSpec`,
   `PlacementConstraint`, `StageTelemetryConfig`, `StageConfig.cleanup`, and
   `StageRuntimeStatus` under pipeline-owned contracts.
-- Add `StageResult` as the canonical runtime stage handoff.
+- Document `StageResult` as the canonical runtime stage handoff.
 - Keep durable `StageCompleted` and `StageFailed` events centered on
   `StageOutcome`; do not persist full `StageResult` payloads.
-- Add `StageRuntimeUpdate` as the generic live-update envelope carrying
-  domain-owned semantic event DTOs, neutral visualization items, and runtime
+- Document `StageRuntimeUpdate` as the generic live-update envelope carrying
+  domain-owned semantic event DTOs, neutral `VisualizationItem` values, and runtime
   status.
-- Add `TransientPayloadRef` as the backend-agnostic transient payload handle.
+- Document `TransientPayloadRef` as the backend-agnostic transient payload handle.
 - Keep `RunSummary`, `StageManifest`, and `StageOutcome` as pipeline-owned
   generic provenance DTOs.
-- Add run-attempt identity to durable event/provenance surfaces so reused run
+- Document run-attempt identity on durable event/provenance surfaces so reused run
   roots can be inspected without mixing events from multiple attempts.
 - Do not add public pipeline-owned stage-specific semantic DTOs. Keep semantic
   payloads in shared/domain packages and use private stage implementation DTOs
   only when useful.
-- Add private wrapper DTOs only for real runtime boundaries, especially SLAM
+- Document private wrapper DTOs only for real runtime boundaries, especially SLAM
   streaming inputs and reconstruction prepared-observation inputs. Simple
   local runtimes may consume domain payloads directly.
 
-### Runtime Changes
+### Target Runtime Expectations
 
-- Add `BaseStageRuntime`, `OfflineStageRuntime`, `StreamingStageRuntime`, and
-  `StageRuntimeProxy`.
+- Document `BaseStageRuntime`, `OfflineStageRuntime`,
+  `LiveUpdateStageRuntime`, `StreamingStageRuntime`, and
+  capability-typed `StageRuntimeProxy`.
 - Replace `StageRuntimeSpec` function pointers with runtime objects
   constructed by hybrid-lazy `RuntimeManager` and invoked through `StageRunner`.
 - Replace `RuntimeExecutionState` with `StageResultStore`, backed by a keyed
   `dict[StageKey, StageResult]`, shared typed accessors, and stage-local input
   builders.
-- Add `StageRunner` as the shared lifecycle owner for start, invoke, failure,
+- Document `StageRunner` as the shared lifecycle owner for start, invoke, failure,
   completion, and result storage.
-- Add Ray-hosted runtime proxy tracking for submitted Ray task refs,
-  submitted/completed/failed/in-flight counts, and task failures; do not expose
-  Ray mailbox depth as a portable queue metric.
+- Document Ray-hosted runtime proxy tracking for submitted Ray task refs,
+  submitted/completed/failed/in-flight counts, and task failures; expose those
+  counters through `StageRuntimeStatus`, not as public proxy fields, and do not
+  expose Ray mailbox depth as a portable queue metric.
 - Keep `StageConfig.failure_outcome(...)` declarative and use shared helpers
   for consistent failed `StageOutcome` construction.
 - Decompose `stage_execution.py`: move bounded `run_*` bodies into stage-local
@@ -2207,7 +2358,7 @@ Migration contact points: [RunService](../../src/prml_vslam/pipeline/run_service
   implementing offline and streaming protocols, and hide current
   method-specific session objects plus private actor helpers behind migration
   adapters, while keeping the packet source sidecar separate.
-- Add `SourceRuntime` for source normalization and source factory parity; keep
+- Document `SourceRuntime` for source normalization and source factory parity; keep
   packet reading and credits in an internal sidecar collaborator.
 - Route `StageRuntimeUpdate` to live snapshot/status and observer sinks without
   requiring durable telemetry JSONL; keep durable JSONL centered on lifecycle
@@ -2215,7 +2366,7 @@ Migration contact points: [RunService](../../src/prml_vslam/pipeline/run_service
 - Finalize active runtimes on stop/failure when possible, preserve partial
   artifacts, mark terminal outcomes, and skip downstream stages that require
   clean upstream outputs.
-- Add pushed status updates and `status()` querying for every runtime target.
+- Document pushed status updates and `status()` querying for every runtime target.
 - Stop new stream submissions on stop/failure, observe completed Ray task refs,
   drain feasible updates/artifacts, then finish or stop according to the
   terminal cause.
@@ -2236,16 +2387,23 @@ Migration contact points: [RunService](../../src/prml_vslam/pipeline/run_service
 - Keep `BackendConfig` as a discriminated union.
 - Make source configs follow the same discriminated-union and factory pattern
   as method backends.
-- Add reconstruction backend/mode variants under `ReconstructionStageConfig`.
+- Document reconstruction backend/mode variants under `ReconstructionStageConfig`.
 - Avoid adding a parallel enum plus manual `if`/`match` switch when the config
   subtype already identifies the backend/source.
+
+External context: use the repo-local
+[$pydantic](../../.agents/skills/pydantic/SKILL.md) skill for discriminated
+union, validation, and serialization patterns while implementing these config
+changes.
 
 ### Visualization Changes
 
 - Keep all Rerun SDK calls in `RerunEventSink`/`RerunSinkActor`.
 - Let the sink consume `StageRuntimeUpdate.visualizations` plus resolved
-  payload refs; add a visualization adapter only if stage output DTOs need
-  conversion before they become sink-facing `VisualizationItem`s.
+  payload refs.
+- Use stage-local visualization adapters, starting with
+  `pipeline/stages/slam/visualization.py`, to convert semantic stage updates
+  plus runtime-created named refs into sink-facing `VisualizationItem`s.
 - Keep native upstream `.rrd` artifacts as visualization-owned extras, not
   scientific outputs.
 
@@ -2279,23 +2437,23 @@ the next one starts:
 | Attempts/cleanup | `attempt_id` projection for reused run roots, active-attempt summary selection, and `StageConfig.cleanup` config/provenance behavior. |
 | Compatibility cleanup | import audit or grep checks around `prml_vslam.io.datasets` before removing aliases. |
 
-## Recommended Implementation Order
+## Future Recommended Implementation Order
 
-1. Add contracts only: `RunConfig`, `SourceStageConfig`, `StageConfig`,
+1. Implement contracts only: `RunConfig`, `SourceStageConfig`, `StageConfig`,
    `StageExecutionConfig`, `StageTelemetryConfig`, `StageRuntimeStatus`,
    `StageRuntimeUpdate`, `StageResult`, `TransientPayloadRef`, minimal private
    runtime-boundary DTOs, and reconstruction stage config variants.
 2. Update docs and inline issue comments to point to the new ownership decisions.
-3. Add source factory parity and local `SourceRuntime` without changing
+3. Implement source factory parity and local `SourceRuntime` without changing
    behavior; keep packet reading as an internal sidecar.
 4. Introduce `BaseStageRuntime`, `OfflineStageRuntime`,
-   `StreamingStageRuntime`, `StageRuntimeProxy`, hybrid-lazy `RuntimeManager`,
-   `StageRunner`, and `StageResultStore` while adapting existing bounded
-   helpers.
+   `LiveUpdateStageRuntime`, `StreamingStageRuntime`, capability-typed
+   `StageRuntimeProxy`, hybrid-lazy `RuntimeManager`, `StageRunner`, and
+   `StageResultStore` while adapting existing bounded helpers.
 5. Decompose `stage_execution.py` by moving bounded `run_*` bodies into
    stage-local runtimes, leaving only temporary wrappers if needed.
 6. Merge SLAM actor/session surfaces behind the new runtime/proxy protocol.
 7. Route `StageRuntimeUpdate` to live snapshot/status and observer sinks.
-8. Add status querying/projection and finalize-then-mark stop/failure handling.
+8. Implement status querying/projection and finalize-then-mark stop/failure handling.
 9. Convert future metric or reconstruction variants one at a time when their
    real implementations are in scope.

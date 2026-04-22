@@ -41,7 +41,7 @@ These are necessary because they directly simplify the current runtime path:
 | Full `TransientPayloadRef` replacement everywhere | Defer partially | Add target DTO or adapter, but do not migrate every handle path in the first slice. |
 | Full keyed snapshot redesign | Defer | Snapshot cleanup can follow after `StageResult` works; do not add another required summary DTO. |
 | Full `StageRuntimeStatus` telemetry fields | Start minimal | Use lifecycle/progress/error and submitted/completed/failed/in-flight counters first; queue depth is reported only for owned queues or credits. |
-| Full `VisualizationEnvelope` modality system | Defer partially | Support current SLAM/Rerun needs only; avoid designing every future modality now. |
+| Full `VisualizationItem` modality system | Defer partially | Support current SLAM/Rerun needs only; avoid designing every future modality now. |
 | Remote Ray head / multi-machine placement tests | Defer | Keep local/single-node execution stable first. |
 | Full typed resource model with memory, node labels, affinity, retries | Start minimal | CPU, GPU, and restart fields are enough for the first implementation. |
 | Full artifact cleanup implementation | Defer implementation, document policy now | Needs `StageConfig` and final provenance support, but should not block the first runtime simplification slice. |
