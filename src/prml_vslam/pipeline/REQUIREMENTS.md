@@ -10,15 +10,20 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   internal `contracts/` package rather than one monolithic `contracts.py`.
 - The package exposes one authoritative runtime path through
   `PipelineBackend`, `RayPipelineBackend`, and `RunService`.
-- The current executable slice is `ingest`, `slam`, optional `ground.align`,
-  optional `trajectory.evaluate`, and `summary`.
+- The current executable slice still uses the existing persisted key spellings:
+  `ingest`, `slam`, optional `ground.align`, optional
+  `trajectory.evaluate`, and `summary`.
+- Current runtime execution still flows through the Ray coordinator and
+  remaining stateful execution actors; these are migration contacts for the
+  target runtime/proxy model, not the target ownership shape.
 
 ## Responsibilities
 
 - own run requests, plans, events, projected snapshots, manifests, artifacts,
   and summary persistence
-- own offline canonical ingest and execution orchestration through the Ray
-  coordinator plus only the remaining stateful execution actors
+- own pipeline lifecycle, generic stage planning, runtime envelopes, status,
+  artifact references, transient payload references, and source-normalization
+  boundaries
 - remain separate from benchmark policy, app state, and method-wrapper internals
 
 ## Non-Negotiable Requirements
@@ -29,20 +34,55 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - `prml_vslam.pipeline` is the curated public API; `pipeline/contracts/` is not
   a compatibility import hub.
 - The package must not re-export method protocols through the pipeline root.
-- The executable slice must remain linear and deterministic.
+- The target executable slice must remain linear and deterministic:
+  `source`, `slam`, optional `align.ground`, optional
+  `evaluate.trajectory`, optional `reconstruction`, and `summary`.
 - `RunSnapshot` must project durable lifecycle/provenance state from `RunEvent`
   and live status, previews, and transient refs from `StageRuntimeUpdate`;
   it must not become a second mutable runtime truth.
-- stage manifests and run summaries must reuse the shared `StageStatus`
-  vocabulary instead of introducing a second status enum
-- `ground.align` is a derived-artifact stage that may run only after `slam`, in
-  offline execution and streaming finalize; it must never widen the streaming
-  hot path.
+- Stage manifests and run summaries must derive status from terminal
+  `StageOutcome` values. Live and display status must come from
+  `StageRuntimeStatus`; do not introduce or preserve a second status enum as
+  canonical truth.
+- The current `ground.align` executable key is a migration alias for the target
+  `align.ground` stage. Ground alignment may run only after `slam`, in offline
+  execution and streaming finalize; it must never widen the streaming hot path.
 - `summary` must be projection-only; it must not compute trajectory or cloud
   metrics.
 - Trajectory evaluation may run only from prepared benchmark inputs and
   normalized SLAM artifacts; reference reconstruction, cloud evaluation, and
   efficiency stages remain typed placeholders until explicitly implemented.
+
+## Pipeline Stage Refactor Requirements
+
+- `RunConfig` is the target persisted declarative root. It owns the fixed stage
+  bundle and compiles to `RunPlan`; launch compatibility may keep `RunRequest`
+  as a migration contact until the compatibility work package removes it.
+- Stage configs are declarative policy contracts. They validate enablement,
+  planning metadata, execution resources, telemetry, cleanup, and
+  failure-provenance policy; they do not construct runtimes, proxies, Ray
+  actors, sink sidecars, or payload stores.
+- `RuntimeManager` is the only construction authority for stage runtimes,
+  capability-typed `StageRuntimeProxy` instances, payload stores, sink sidecars,
+  and placement-specific runtime wrappers.
+- Runtime capability and deployment stay separate. Stage runners and the
+  coordinator consume protocol-capable proxies, while Ray refs, task refs,
+  mailboxes, and `.remote()` calls stay inside runtime/proxy plumbing.
+- Pipeline-owned runtime DTOs stay generic: terminal `StageResult`, live
+  `StageRuntimeUpdate`, queryable `StageRuntimeStatus`, artifact refs, and
+  transient payload refs. Semantic payload DTOs remain with their domain owner.
+- `RunSnapshot` remains a transport-safe projection derived from durable events
+  plus live runtime updates/status; it must not become mutable runtime truth.
+- Target public stage vocabulary is `source`, `slam`, optional `align.ground`,
+  optional `evaluate.trajectory`, optional `reconstruction`, and `summary`.
+  Preserve `ingest`, `ground.align`, and `reference.reconstruct` as migration
+  aliases until the migration-removal package owns their deletion.
+- Rerun SDK calls belong only in sinks/policy/helper modules. Stage runtimes,
+  DTOs, proxies, and visualization adapters may expose neutral visualization
+  items but must not call the Rerun SDK.
+- The full target module and leaf-symbol tree is canonical in
+  [Pipeline Refactor Target Directory Tree](../../../docs/architecture/pipeline-refactor-target-dir-tree.md);
+  this file records only pipeline-local requirements.
 
 ## Validation
 
@@ -51,3 +91,5 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - streaming runs still surface truthful packet/session telemetry without
   persisting raw arrays in public contracts
 - stage manifests and run summaries remain explicit and durable
+- stage-key aliases preserve old run inspection until the migration-removal
+  package explicitly deletes them

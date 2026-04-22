@@ -187,7 +187,7 @@ src/prml_vslam/pipeline/
 │   │   ├── config.py          # TrajectoryEvaluationStageConfig; stage policy only
 │   │   └── runtime.py         # adapter around TrajectoryEvaluationService
 │   ├── reconstruction/
-│   │   ├── config.py          # ReconstructionStageConfig + backend/mode variants
+│   │   ├── config.py          # ReconstructionStageConfig references reconstruction-owned backend variants
 │   │   ├── visualization.py   # optional future reconstruction VisualizationItem adapter
 │   │   └── runtime.py         # adapter around reconstruction backends
 │   └── summary/
@@ -1134,7 +1134,7 @@ conceptual layer:
 | `StageManifest`, `RunSummary.stage_status`, and `StageOutcome` | keep `StageOutcome` canonical and derive manifests/summaries from terminal outcomes. |
 | `BackendEvent` plus future domain event envelopes | domain-owned semantic event payloads carried by `StageRuntimeUpdate`; do not wrap them in durable pipeline telemetry events by default. |
 | `SourceSpec`, `OfflineSourceResolver`, and streaming source construction helpers | `SourceStageConfig` plus `SourceBackendConfig` variants and `SourceRuntime`. |
-| `ReferenceReconstructionConfig` and reconstruction backend config | `[stages.reconstruction]` with reconstruction backend/mode variants. |
+| `ReferenceReconstructionConfig` and reconstruction backend config | `[stages.reconstruction]` with stage policy in pipeline and backend/mode variants owned by `reconstruction`. |
 
 ### Rename Or Move
 
@@ -1144,6 +1144,7 @@ conceptual layer:
 | `SourceSpec` | `SourceBackendConfig` under `SourceStageConfig`; legacy request variants are migration input. |
 | `StagePlacement` / `PlacementPolicy` | `StageExecutionConfig`, `ResourceSpec`, and `PlacementConstraint`; current Ray retry knobs stay backend/runtime implementation details. |
 | `ingest` stage key | `source` stage key, with an alias/projection mapping during migration so current runs remain inspectable. |
+| `ground.align` stage key | `align.ground` stage key, with an alias/projection mapping during migration so current runs remain inspectable. |
 | `reference.reconstruct` stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants, with an alias/projection mapping during migration. |
 | `EvaluationArtifact` | `TrajectoryEvaluationArtifact` when dense-cloud and efficiency artifacts become first-class. |
 | `ArtifactRef` | move out of `interfaces.slam` to a generic artifact contract owner. |
@@ -1671,7 +1672,7 @@ Rules:
 | --- | --- |
 | `source` | [SourceSpec](../../src/prml_vslam/pipeline/contracts/request.py#L118), [run_ingest_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60), [OfflineSourceResolver](../../src/prml_vslam/pipeline/source_resolver.py) |
 | `slam` | [SlamStageConfig](../../src/prml_vslam/pipeline/contracts/request.py#L150), [BackendConfig](../../src/prml_vslam/methods/configs.py#L251), [OfflineSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L42), [StreamingSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L203) |
-| `align.ground` | [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), [GroundAlignmentService](../../src/prml_vslam/alignment/services.py), [run_ground_alignment_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
+| `align.ground` | current `ground.align` stage key, [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), [GroundAlignmentService](../../src/prml_vslam/alignment/services.py), [run_ground_alignment_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
 | `evaluate.trajectory` | [TrajectoryBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), [TrajectoryEvaluationService](../../src/prml_vslam/eval/services.py), [run_trajectory_evaluation_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137) |
 | `reconstruction` | [ReferenceReconstructionConfig](../../src/prml_vslam/benchmark/contracts.py), current [reference.reconstruct stage](../../src/prml_vslam/pipeline/stage_registry.py#L164), [run_reference_reconstruction_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212), [reconstruction package](../../src/prml_vslam/reconstruction) |
 | `evaluate.cloud` | [CloudBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), [stage placeholders](../../src/prml_vslam/pipeline/stage_registry.py#L171), [eval package](../../src/prml_vslam/eval) |
@@ -2064,6 +2065,9 @@ Rules:
 - Source muxing should follow the same rule: `SourceBackendConfig` variants may
   be `FactoryConfig`s; `SourceStageConfig` remains stage policy and never
   constructs the source stage runtime.
+- Reconstruction backend config variants are reconstruction-owned. The pipeline
+  `ReconstructionStageConfig` references those variants and owns stage policy;
+  it does not become the home for reconstruction backend implementation config.
 
 ### Public Contract Placement
 
@@ -2406,7 +2410,8 @@ It is not part of the docs/requirements consistency patch itself.
 - Keep `BackendConfig` as a discriminated union.
 - Make source configs follow the same discriminated-union and factory pattern
   as method backends.
-- Document reconstruction backend/mode variants under `ReconstructionStageConfig`.
+- Document `ReconstructionStageConfig` as referencing reconstruction-owned
+  backend/mode variants.
 - Avoid adding a parallel enum plus manual `if`/`match` switch when the config
   subtype already identifies the backend/source.
 
