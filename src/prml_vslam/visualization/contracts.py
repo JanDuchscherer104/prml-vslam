@@ -36,5 +36,14 @@ class VisualizationConfig(BaseConfig):
     show_tracking_trajectory: bool = True
     """Whether the repo-owned sink should log the full tracking trajectory polyline."""
 
+    log_source_rgb: bool = False
+    """Whether the repo-owned sink should log original source RGB frames."""
+
+    log_diagnostic_preview: bool = False
+    """Whether the repo-owned sink should log method diagnostic preview images."""
+
+    log_camera_image_rgb: bool = False
+    """Whether the 3D camera branch should also log RGB image planes."""
+
 
 __all__ = ["VisualizationConfig"]

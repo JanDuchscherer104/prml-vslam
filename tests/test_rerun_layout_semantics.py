@@ -45,6 +45,8 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
         log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda stream, *, entity_path, image_rgb: rgb_calls.append(entity_path),
         log_transform=lambda *args, **kwargs: None,
+        log_diagnostic_preview=True,
+        log_camera_image_rgb=True,
     )
 
     with caplog.at_level(logging.WARNING):
@@ -204,7 +206,9 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert layout.views[0].contents == [
         "+ world/alignment/**",
         "+ world/live/tracking/**",
-        "+ world/live/model/camera/**",
+        "+ world/live/model",
+        "- world/live/model/camera/image",
+        "- world/live/model/camera/image/**",
         "- world/live/model/camera/image/depth",
         "- world/live/model/camera/image/depth/**",
         "- world/live/model/points",

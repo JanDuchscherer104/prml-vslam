@@ -51,6 +51,7 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_events() ->
         log_transform=lambda stream, *, entity_path, transform, axis_length=None: calls.append(
             ("pose", entity_path, *_timeline_state(stream))
         ),
+        log_source_rgb=True,
     )
 
     stream.set_time("keyframe", sequence=99)

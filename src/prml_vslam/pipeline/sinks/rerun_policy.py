@@ -11,10 +11,39 @@ import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+
+# TODO(pipeline-refactor/WP-10): Remove legacy backend notice imports after
+# RerunLoggingPolicy.observe_update(...) is the only Rerun live telemetry path.
 from prml_vslam.interfaces.slam import KeyframeVisualizationReady, PoseEstimated
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, PacketObserved, RunEvent, StageCompleted
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.slam.visualization import (
+    COLORS_REF,
+    DEPTH_REF,
+    IMAGE_REF,
+    POINTMAP_REF,
+    ROLE_KEYFRAME_CAMERA_POSE,
+    ROLE_KEYFRAME_CAMERA_WINDOW,
+    ROLE_KEYFRAME_DEPTH,
+    ROLE_KEYFRAME_PINHOLE,
+    ROLE_KEYFRAME_POINTMAP,
+    ROLE_KEYFRAME_POINTS_POSE,
+    ROLE_KEYFRAME_PREVIEW,
+    ROLE_KEYFRAME_RGB,
+    ROLE_LIVE_MODEL_POSE,
+    ROLE_MODEL_CAMERA_RGB,
+    ROLE_MODEL_DEPTH,
+    ROLE_MODEL_PINHOLE,
+    ROLE_MODEL_POINTMAP,
+    ROLE_MODEL_PREVIEW,
+    ROLE_MODEL_RGB,
+    ROLE_SOURCE_RGB,
+    ROLE_TRACKING_POSE,
+    ROLE_TRACKING_TRAJECTORY,
+)
 from prml_vslam.visualization.rerun import MODEL_RGB_2D_ENTITY_PATH
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,10 +72,16 @@ class RerunLoggingPolicy:
     log_transform: Callable[..., None]
     frusta_history_window_streaming: int | None = 20
     show_tracking_trajectory: bool = True
+    log_source_rgb: bool = False
+    log_diagnostic_preview: bool = False
+    log_camera_image_rgb: bool = False
     _warned_fallback_intrinsics: bool = field(default=False, init=False, repr=False)
     _visible_keyframe_camera_indices: deque[int] = field(default_factory=deque, init=False, repr=False)
     _trajectory_positions_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
 
+    # TODO(pipeline-refactor/WP-10): Delete this RunEvent policy path after
+    # Rerun, snapshot, app, and coordinator consumers migrate to
+    # StageRuntimeUpdate.visualizations.
     def observe(self, stream, event: RunEvent, *, payloads: Mapping[str, np.ndarray] | None = None) -> None:
         """Log one pipeline event according to the current Rerun layout policy.
 
@@ -61,6 +96,8 @@ class RerunLoggingPolicy:
         resolved_payloads = {} if payloads is None else payloads
         match event:
             case PacketObserved(packet=packet, frame=frame) if frame is not None:
+                if not self.log_source_rgb:
+                    return
                 image = self._resolve_optional_array(frame, payloads=resolved_payloads)
                 if image is None:
                     return
@@ -87,12 +124,211 @@ class RerunLoggingPolicy:
             case _:
                 return
 
+    def observe_update(
+        self,
+        stream,
+        update: StageRuntimeUpdate,
+        *,
+        payloads: Mapping[str, np.ndarray] | None = None,
+    ) -> None:
+        """Log one live runtime update from neutral visualization items."""
+        # TODO(pipeline-refactor/WP-08): Replace this materialized payload map
+        # with the canonical TransientPayloadRef resolver API once it lands.
+        resolved_payloads = {} if payloads is None else payloads
+        for semantic_event in update.semantic_events:
+            if isinstance(semantic_event, GroundAlignmentMetadata):
+                self._log_ground_alignment(stream, metadata=semantic_event)
+        for item in update.visualizations:
+            self._log_visualization_item(stream, item, payloads=resolved_payloads)
+
+    def _log_visualization_item(
+        self,
+        stream,
+        item: VisualizationItem,
+        *,
+        payloads: Mapping[str, np.ndarray],
+    ) -> None:
+        """Map one SDK-free visualization item to the current Rerun policy."""
+        match item.intent:
+            case VisualizationIntent.RGB_IMAGE:
+                self._log_rgb_item(stream, item, payloads=payloads)
+            case VisualizationIntent.DEPTH_IMAGE:
+                self._log_depth_item(stream, item, payloads=payloads)
+            case VisualizationIntent.POINT_CLOUD:
+                self._log_pointcloud_item(stream, item, payloads=payloads)
+            case VisualizationIntent.TRAJECTORY:
+                self._log_trajectory_item(stream, item)
+            case VisualizationIntent.POSE_TRANSFORM:
+                self._log_pose_item(stream, item)
+            case VisualizationIntent.PINHOLE_CAMERA:
+                self._log_pinhole_item(stream, item, payloads=payloads)
+            case VisualizationIntent.CLEAR:
+                self._log_clear_item(stream, item)
+            case VisualizationIntent.GROUND_PLANE | VisualizationIntent.MESH:
+                return
+
+    def _log_rgb_item(
+        self,
+        stream,
+        item: VisualizationItem,
+        *,
+        payloads: Mapping[str, np.ndarray],
+    ) -> None:
+        image = self._resolve_visualization_array(item.payload_refs.get(IMAGE_REF), payloads=payloads)
+        if image is None:
+            return
+        match item.role:
+            case _ if item.role == ROLE_SOURCE_RGB:
+                if not self.log_source_rgb:
+                    return
+                entity_path = "world/live/source/rgb"
+            case _ if item.role == ROLE_MODEL_RGB:
+                entity_path = MODEL_RGB_2D_ENTITY_PATH
+            case _ if item.role == ROLE_MODEL_CAMERA_RGB:
+                if not self.log_camera_image_rgb:
+                    return
+                entity_path = "world/live/model/camera/image"
+            case _ if item.role == ROLE_MODEL_PREVIEW:
+                if not self.log_diagnostic_preview:
+                    return
+                entity_path = "world/live/model/diag/preview"
+            case _ if item.role == ROLE_KEYFRAME_RGB:
+                keyframe_index = self._require_keyframe_index(item)
+                if keyframe_index is None:
+                    return
+                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/image"
+            case _ if item.role == ROLE_KEYFRAME_PREVIEW:
+                if not self.log_diagnostic_preview:
+                    return
+                keyframe_index = self._require_keyframe_index(item)
+                if keyframe_index is None:
+                    return
+                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/diag/preview"
+            case _:
+                return
+        self._set_item_frame_time(stream, item)
+        self.log_rgb_image(stream, entity_path=entity_path, image_rgb=image)
+
+    def _log_depth_item(
+        self,
+        stream,
+        item: VisualizationItem,
+        *,
+        payloads: Mapping[str, np.ndarray],
+    ) -> None:
+        depth_image = self._resolve_visualization_array(item.payload_refs.get(DEPTH_REF), payloads=payloads)
+        if depth_image is None:
+            return
+        match item.role:
+            case _ if item.role == ROLE_MODEL_DEPTH:
+                entity_path = "world/live/model/camera/image/depth"
+            case _ if item.role == ROLE_KEYFRAME_DEPTH:
+                keyframe_index = self._require_keyframe_index(item)
+                if keyframe_index is None:
+                    return
+                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/image/depth"
+            case _:
+                return
+        self._set_item_frame_time(stream, item)
+        self.log_depth_image(stream, entity_path=entity_path, depth_m=depth_image)
+
+    def _log_pointcloud_item(
+        self,
+        stream,
+        item: VisualizationItem,
+        *,
+        payloads: Mapping[str, np.ndarray],
+    ) -> None:
+        pointmap = self._resolve_visualization_array(item.payload_refs.get(POINTMAP_REF), payloads=payloads)
+        if pointmap is None:
+            return
+        colors = self._resolve_visualization_array(item.payload_refs.get(COLORS_REF), payloads=payloads)
+        match item.role:
+            case _ if item.role == ROLE_MODEL_POINTMAP:
+                entity_path = "world/live/model/points"
+            case _ if item.role == ROLE_KEYFRAME_POINTMAP:
+                keyframe_index = self._require_keyframe_index(item)
+                if keyframe_index is None:
+                    return
+                entity_path = f"world/keyframes/points/{keyframe_index:06d}/points"
+            case _:
+                return
+        self._set_item_frame_time(stream, item)
+        self.log_pointcloud(stream, entity_path=entity_path, pointmap=pointmap, colors=colors)
+
+    def _log_trajectory_item(self, stream, item: VisualizationItem) -> None:
+        if item.role != ROLE_TRACKING_TRAJECTORY or item.pose is None:
+            return
+        self._set_item_frame_time(stream, item)
+        self._log_tracking_trajectory(stream, pose=item.pose)
+
+    def _log_pose_item(self, stream, item: VisualizationItem) -> None:
+        if item.pose is None:
+            return
+        match item.role:
+            case _ if item.role == ROLE_TRACKING_POSE:
+                entity_path = "world/live/tracking/camera"
+            case _ if item.role == ROLE_LIVE_MODEL_POSE:
+                entity_path = "world/live/model"
+            case _ if item.role == ROLE_KEYFRAME_CAMERA_POSE:
+                keyframe_index = self._require_keyframe_index(item)
+                if keyframe_index is None:
+                    return
+                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}"
+            case _ if item.role == ROLE_KEYFRAME_POINTS_POSE:
+                keyframe_index = self._require_keyframe_index(item)
+                if keyframe_index is None:
+                    return
+                entity_path = f"world/keyframes/points/{keyframe_index:06d}"
+            case _:
+                return
+        self._set_item_frame_time(stream, item)
+        self.log_transform(stream, entity_path=entity_path, transform=item.pose, axis_length=0.0)
+
+    def _log_pinhole_item(
+        self,
+        stream,
+        item: VisualizationItem,
+        *,
+        payloads: Mapping[str, np.ndarray],
+    ) -> None:
+        match item.role:
+            case _ if item.role == ROLE_MODEL_PINHOLE:
+                entity_path = "world/live/model/camera/image"
+            case _ if item.role == ROLE_KEYFRAME_PINHOLE:
+                keyframe_index = self._require_keyframe_index(item)
+                if keyframe_index is None:
+                    return
+                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/image"
+            case _:
+                return
+        rgb = self._resolve_visualization_array(item.payload_refs.get(IMAGE_REF), payloads=payloads)
+        depth_image = self._resolve_visualization_array(item.payload_refs.get(DEPTH_REF), payloads=payloads)
+        viewer_intrinsics = self._resolve_viewer_intrinsics(
+            intrinsics=item.intrinsics,
+            rgb=rgb,
+            depth_image=depth_image,
+        )
+        if viewer_intrinsics is None:
+            return
+        self._set_item_frame_time(stream, item)
+        self.log_pinhole(stream, entity_path=entity_path, intrinsics=viewer_intrinsics)
+
+    def _log_clear_item(self, stream, item: VisualizationItem) -> None:
+        if item.role != ROLE_KEYFRAME_CAMERA_WINDOW or item.keyframe_index is None:
+            return
+        self._set_item_frame_time(stream, item)
+        self._evict_stale_keyframe_cameras(stream, keyframe_index=item.keyframe_index)
+
     def _log_ground_alignment(self, stream, *, metadata: GroundAlignmentMetadata | None) -> None:
         """Log one derived ground-plane overlay when the alignment stage completes."""
         if metadata is None or not metadata.applied:
             return
         self.log_ground_plane_patch(stream, metadata=metadata)
 
+    # TODO(pipeline-refactor/WP-10): Delete after KeyframeVisualizationReady is
+    # no longer consumed by the Rerun sink; _log_visualization_item(...) is the
+    # target path.
     def _log_keyframe_visualization(
         self,
         stream,
@@ -132,6 +368,7 @@ class RerunLoggingPolicy:
         )
         self._evict_stale_keyframe_cameras(stream, keyframe_index=notice.keyframe_index)
 
+    # TODO(pipeline-refactor/WP-10): Delete with _log_keyframe_visualization(...).
     def _log_model_branch(
         self,
         stream,
@@ -174,6 +411,7 @@ class RerunLoggingPolicy:
             rgb=rgb,
         )
 
+    # TODO(pipeline-refactor/WP-10): Delete with _log_keyframe_visualization(...).
     def _log_keyframe_branch(
         self,
         stream,
@@ -219,6 +457,8 @@ class RerunLoggingPolicy:
             rgb=rgb,
         )
 
+    # TODO(pipeline-refactor/WP-10): Delete when old ArrayHandle/PreviewHandle
+    # keyframe visualization notices leave the Rerun policy.
     def _log_camera_payloads(
         self,
         stream,
@@ -241,13 +481,13 @@ class RerunLoggingPolicy:
             if rgb is not None or depth_image is not None:
                 self.log_pinhole(stream, entity_path=camera_image_entity, intrinsics=viewer_intrinsics)
 
-            if rgb is not None:
+            if rgb is not None and self.log_camera_image_rgb:
                 self.log_rgb_image(stream, entity_path=camera_image_entity, image_rgb=rgb)
 
             if depth_image is not None:
                 self.log_depth_image(stream, entity_path=f"{camera_image_entity}/depth", depth_m=depth_image)
 
-        if preview_image is not None:
+        if preview_image is not None and self.log_diagnostic_preview:
             self.log_rgb_image(stream, entity_path=preview_entity, image_rgb=preview_image)
 
     def _log_tracking_trajectory(self, stream, *, pose: FrameTransform) -> None:
@@ -274,6 +514,8 @@ class RerunLoggingPolicy:
                 recursive=True,
             )
 
+    # TODO(pipeline-refactor/WP-10): Delete when old keyframe visualization
+    # notices no longer route camera-local pointmaps through this helper.
     def _log_pointmap(
         self,
         stream,
@@ -341,6 +583,21 @@ class RerunLoggingPolicy:
         stream.set_time("frame", sequence=frame_index)
 
     @staticmethod
+    def _set_item_frame_time(stream, item: VisualizationItem) -> None:
+        if item.frame_index is None:
+            return
+        RerunLoggingPolicy._set_frame_time(stream, item.frame_index)
+
+    @staticmethod
+    def _require_keyframe_index(item: VisualizationItem) -> int | None:
+        if item.keyframe_index is None:
+            _LOGGER.warning("Skipping Rerun visualization item '%s' without keyframe_index.", item.role)
+            return None
+        return item.keyframe_index
+
+    # TODO(pipeline-refactor/WP-10): Delete after ArrayHandle/PreviewHandle are
+    # removed from the Rerun path in favor of TransientPayloadRef resolution.
+    @staticmethod
     def _resolve_optional_array(
         handle: ArrayHandle | PreviewHandle | None,
         *,
@@ -349,6 +606,17 @@ class RerunLoggingPolicy:
         if handle is None:
             return None
         payload = payloads.get(handle.handle_id)
+        return None if payload is None else np.asarray(payload)
+
+    @staticmethod
+    def _resolve_visualization_array(
+        ref: TransientPayloadRef | None,
+        *,
+        payloads: Mapping[str, np.ndarray],
+    ) -> np.ndarray | None:
+        if ref is None:
+            return None
+        payload = payloads.get(ref.handle_id)
         return None if payload is None else np.asarray(payload)
 
 

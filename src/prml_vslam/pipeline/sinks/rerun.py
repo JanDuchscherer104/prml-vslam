@@ -12,6 +12,8 @@ import ray
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.pipeline.contracts.events import RunEvent, StageCompleted
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
+from prml_vslam.utils import Console
 from prml_vslam.visualization.rerun import (
     MODEL_RGB_2D_ENTITY_PATH,
     attach_recording_sinks,
@@ -43,7 +45,11 @@ class RerunEventSink:
         recording_id: str | None = None,
         frusta_history_window_streaming: int | None = 20,
         show_tracking_trajectory: bool = True,
+        log_source_rgb: bool = False,
+        log_diagnostic_preview: bool = False,
+        log_camera_image_rgb: bool = False,
     ) -> None:
+        self._console = Console(__name__).child(self.__class__.__name__)
         self._live_stream = None
         self._export_stream = None
         self._live_policy = RerunLoggingPolicy(
@@ -57,6 +63,9 @@ class RerunEventSink:
             log_transform=log_transform,
             frusta_history_window_streaming=frusta_history_window_streaming,
             show_tracking_trajectory=show_tracking_trajectory,
+            log_source_rgb=log_source_rgb,
+            log_diagnostic_preview=log_diagnostic_preview,
+            log_camera_image_rgb=log_camera_image_rgb,
         )
         self._export_policy = RerunLoggingPolicy(
             log_pinhole=log_pinhole,
@@ -69,10 +78,21 @@ class RerunEventSink:
             log_transform=log_transform,
             frusta_history_window_streaming=frusta_history_window_streaming,
             show_tracking_trajectory=show_tracking_trajectory,
+            log_source_rgb=log_source_rgb,
+            log_diagnostic_preview=log_diagnostic_preview,
+            log_camera_image_rgb=log_camera_image_rgb,
         )
         self._recording_id = recording_id
         self._target_path = target_path
         self._latest_ground_alignment: GroundAlignmentMetadata | None = None
+        self._console.info(
+            "Rerun sink policy: source_rgb=%s diagnostic_preview=%s camera_image_rgb=%s trajectory=%s frusta_window=%s.",
+            log_source_rgb,
+            log_diagnostic_preview,
+            log_camera_image_rgb,
+            show_tracking_trajectory,
+            frusta_history_window_streaming,
+        )
 
         if grpc_url is not None:
             self._live_stream = create_recording_stream(app_id="prml-vslam", recording_id=recording_id)
@@ -81,6 +101,9 @@ class RerunEventSink:
             self._export_stream = create_recording_stream(app_id="prml-vslam", recording_id=recording_id)
             attach_recording_sinks(self._export_stream, grpc_url=None, target_path=target_path)
 
+    # TODO(pipeline-refactor/WP-10): Delete this RunEvent observer after the
+    # coordinator, snapshot projector, app, and Rerun paths consume
+    # StageRuntimeUpdate values with resolved TransientPayloadRefs.
     def observe(self, event: RunEvent, *, payloads: Mapping[str, np.ndarray] | None = None) -> None:
         if self._live_stream is not None:
             self._live_policy.observe(self._live_stream, event, payloads=payloads)
@@ -89,6 +112,22 @@ class RerunEventSink:
             return
         if self._export_stream is not None:
             self._export_policy.observe(self._export_stream, event, payloads=payloads)
+
+    def observe_update(
+        self,
+        update: StageRuntimeUpdate,
+        *,
+        payloads: Mapping[str, np.ndarray] | None = None,
+    ) -> None:
+        """Observe one live runtime update without durable `RunEvent` wrapping."""
+        # TODO(pipeline-refactor/WP-08): Replace this materialized payload map
+        # with the canonical TransientPayloadRef resolver API once it lands.
+        if self._live_stream is not None:
+            self._live_policy.observe_update(self._live_stream, update, payloads=payloads)
+        if self._cache_ground_alignment_update(update):
+            return
+        if self._export_stream is not None:
+            self._export_policy.observe_update(self._export_stream, update, payloads=payloads)
 
     def close(self) -> None:
         """Release recording handles and post-process export-only overlays."""
@@ -115,6 +154,8 @@ class RerunEventSink:
     def _is_ground_alignment_completion(event: RunEvent) -> bool:
         return isinstance(event, StageCompleted) and event.stage_key is StageKey.GROUND_ALIGNMENT
 
+    # TODO(pipeline-refactor/WP-10): Remove with observe(event=...) once
+    # ground-alignment visualization reaches the sink through live updates.
     def _cache_ground_alignment(self, event: RunEvent) -> None:
         if not isinstance(event, StageCompleted):
             return
@@ -122,6 +163,13 @@ class RerunEventSink:
         if metadata is None or not metadata.applied:
             return
         self._latest_ground_alignment = metadata
+
+    def _cache_ground_alignment_update(self, update: StageRuntimeUpdate) -> bool:
+        for semantic_event in update.semantic_events:
+            if isinstance(semantic_event, GroundAlignmentMetadata) and semantic_event.applied:
+                self._latest_ground_alignment = semantic_event
+                return True
+        return False
 
 
 @ray.remote(num_cpus=0.25, max_restarts=0, max_task_retries=0)
@@ -136,6 +184,9 @@ class RerunSinkActor:
         recording_id: str | None = None,
         frusta_history_window_streaming: int | None = 20,
         show_tracking_trajectory: bool = True,
+        log_source_rgb: bool = False,
+        log_diagnostic_preview: bool = False,
+        log_camera_image_rgb: bool = False,
     ) -> None:
         self._sink = RerunEventSink(
             grpc_url=grpc_url,
@@ -143,8 +194,14 @@ class RerunSinkActor:
             recording_id=recording_id,
             frusta_history_window_streaming=frusta_history_window_streaming,
             show_tracking_trajectory=show_tracking_trajectory,
+            log_source_rgb=log_source_rgb,
+            log_diagnostic_preview=log_diagnostic_preview,
+            log_camera_image_rgb=log_camera_image_rgb,
         )
 
+    # TODO(pipeline-refactor/WP-10): Delete this actor compatibility method
+    # after callers stop sending RunEvent plus rerun_bindings to the Rerun
+    # sidecar. The target path is observe_update(...).
     def observe_event(
         self,
         *,
@@ -160,6 +217,26 @@ class RerunSinkActor:
             self._sink.observe(event, payloads=payloads)
         except Exception as exc:  # pragma: no cover - best-effort sink guard
             _LOGGER.warning("Skipping Rerun sink event '%s': %s", event.kind, exc)
+
+    def observe_update(
+        self,
+        *,
+        update: StageRuntimeUpdate,
+        payload_bindings: list[tuple[str, np.ndarray]] | None = None,
+    ) -> None:
+        """Forward one live runtime update to the local sink without `ray.get`."""
+        try:
+            # TODO(pipeline-refactor/WP-08): Replace payload_bindings with the
+            # canonical TransientPayloadRef resolver API when observer routing
+            # no longer has to pass materialized arrays to the sidecar.
+            payloads = (
+                {}
+                if payload_bindings is None
+                else {handle_id: np.asarray(payload) for handle_id, payload in payload_bindings}
+            )
+            self._sink.observe_update(update, payloads=payloads)
+        except Exception as exc:  # pragma: no cover - best-effort sink guard
+            _LOGGER.warning("Skipping Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc)
 
     def close(self) -> None:
         self._sink.close()
