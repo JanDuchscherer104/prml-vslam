@@ -10,7 +10,6 @@ from __future__ import annotations
 import time
 import uuid
 from collections import deque
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,7 +48,11 @@ _FPS_WINDOW = 20
 
 @dataclass(frozen=True, slots=True)
 class LegacySlamUpdate:
-    """Compatibility payload for old backend event and handle routing."""
+    """Compatibility payload for old backend event and handle routing.
+
+    The WP-09C cutover keeps this DTO importable for migration callers, but
+    the streaming hot path no longer populates it.
+    """
 
     update: SlamUpdate
     payloads: dict[str, np.ndarray]
@@ -87,7 +90,11 @@ class _TransientPayloadStore:
 
     def read(self, ref: TransientPayloadRef) -> np.ndarray | None:
         """Return a stored payload by transient ref, if still retained."""
-        payload = self._payloads.get(ref.handle_id)
+        return self.read_handle(ref.handle_id)
+
+    def read_handle(self, handle_id: str) -> np.ndarray | None:
+        """Return a stored payload by handle id, if still retained."""
+        payload = self._payloads.get(handle_id)
         return None if payload is None else np.asarray(payload)
 
 
@@ -109,6 +116,8 @@ class SlamStageRuntime:
         self._session: SlamSession | None = None
         self._streaming_input: SlamStreamingStartInput | None = None
         self._pending_updates: list[StageRuntimeUpdate] = []
+        # Migration compatibility only. Streaming execution no longer fills this
+        # list after StageRuntimeUpdate cutover.
         self._legacy_updates: list[LegacySlamUpdate] = []
         self._last_visualization_artifacts: VisualizationArtifacts | None = None
         self._lifecycle_state = StageStatus.QUEUED
@@ -231,6 +240,10 @@ class SlamStageRuntime:
         """Resolve one runtime-owned live payload by transient reference."""
         return self._payload_store.read(ref)
 
+    def read_payload_by_id(self, handle_id: str) -> np.ndarray | None:
+        """Resolve one runtime-owned live payload by handle id."""
+        return self._payload_store.read_handle(handle_id)
+
     @property
     def last_visualization_artifacts(self) -> VisualizationArtifacts | None:
         """Return visualization artifacts collected by the last terminal run."""
@@ -282,21 +295,20 @@ class SlamStageRuntime:
                 runtime_status=self.status(),
             )
             self._pending_updates.append(runtime_update)
-            self._legacy_updates.append(
-                LegacySlamUpdate(
-                    update=update,
-                    payloads={ref_name: np.asarray(payload) for ref_name, payload in _payload_arrays(update).items()},
-                )
-            )
 
     def _payload_refs_for(self, update: SlamUpdate) -> dict[str, TransientPayloadRef]:
         refs: dict[str, TransientPayloadRef] = {}
+        log_diagnostic_preview = (
+            self._streaming_input is not None and self._streaming_input.request.visualization.log_diagnostic_preview
+        )
         for name, payload, payload_kind, media_type in (
             (IMAGE_REF, update.image_rgb, "image", "image/rgb"),
             (DEPTH_REF, update.depth_map, "depth", "application/vnd.prml.depth+numpy"),
             (PREVIEW_REF, update.preview_rgb, "image", "image/rgb"),
             (POINTMAP_REF, update.pointmap, "point_cloud", "application/vnd.prml.pointmap+numpy"),
         ):
+            if name == PREVIEW_REF and not log_diagnostic_preview:
+                continue
             ref = self._payload_store.put(
                 None if payload is None else np.asarray(payload),
                 payload_kind=payload_kind,
@@ -357,36 +369,6 @@ def _semantic_update(update: SlamUpdate) -> SlamUpdate:
     )
 
 
-def _payload_arrays(update: SlamUpdate) -> dict[str, np.ndarray]:
-    payloads: dict[str, np.ndarray] = {}
-    for name, payload in (
-        (IMAGE_REF, update.image_rgb),
-        (DEPTH_REF, update.depth_map),
-        (PREVIEW_REF, update.preview_rgb),
-        (POINTMAP_REF, update.pointmap),
-    ):
-        if payload is not None:
-            payloads[name] = np.asarray(payload)
-    return payloads
-
-
-def payload_bindings_for_updates(
-    runtime: SlamStageRuntime,
-    updates: Iterable[StageRuntimeUpdate],
-) -> list[tuple[str, np.ndarray]]:
-    """Materialize transient payload refs for current Rerun sidecar routing."""
-    # TODO(pipeline-refactor/WP-08): Replace materialized payload bindings with
-    # the canonical TransientPayloadRef resolver once observer routing owns it.
-    bindings: dict[str, np.ndarray] = {}
-    for update in updates:
-        for item in update.visualizations:
-            for ref in item.payload_refs.values():
-                payload = runtime.read_payload(ref)
-                if payload is not None:
-                    bindings[ref.handle_id] = payload
-    return list(bindings.items())
-
-
 def _rolling_fps(timestamps: deque[float]) -> float:
     if len(timestamps) < 2:
         return 0.0
@@ -397,5 +379,4 @@ def _rolling_fps(timestamps: deque[float]) -> float:
 __all__ = [
     "LegacySlamUpdate",
     "SlamStageRuntime",
-    "payload_bindings_for_updates",
 ]

@@ -176,10 +176,8 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     ]
     assert layout.views[1].name == "2D Views"
     assert [view.origin for view in layout.views[1].views] == [
-        "world/live/source/rgb",
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
         "world/live/model/camera/image",
-        "world/live/model/diag/preview",
     ]
     assert len(logged_entities) == 2
     entity_path, payload, static = logged_entities[0]
