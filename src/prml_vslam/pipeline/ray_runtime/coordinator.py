@@ -95,6 +95,8 @@ class RunCoordinatorActor:
         self._jsonl_sink: JsonlEventSink | None = None
         self._rerun_sink: ActorHandle | None = None
         self._rerun_sink_last_call: ray.ObjectRef[None] | None = None
+        self._rerun_sink_submission_count = 0
+        self._rerun_sink_pending_count = 0
         self._worker: threading.Thread | None = None
         self._source_actor = None
         self._slam_actor = None
@@ -414,6 +416,7 @@ class RunCoordinatorActor:
             source=runtime_source,
             initial_credits=DEFAULT_MAX_FRAMES_IN_FLIGHT,
             loop=False,
+            log_source_rgb=request.visualization.log_source_rgb,
         )
 
     def _finalize_streaming(self) -> None:
@@ -538,6 +541,9 @@ class RunCoordinatorActor:
             recording_id=self._run_id,
             frusta_history_window_streaming=request.visualization.frusta_history_window_streaming,
             show_tracking_trajectory=request.visualization.show_tracking_trajectory,
+            log_source_rgb=request.visualization.log_source_rgb,
+            log_diagnostic_preview=request.visualization.log_diagnostic_preview,
+            log_camera_image_rgb=request.visualization.log_camera_image_rgb,
         )
 
     def _stage_actor_options(
@@ -657,12 +663,46 @@ class RunCoordinatorActor:
             self._jsonl_sink.observe(event)
         if self._rerun_sink is not None:
             try:
+                # TODO(pipeline-refactor/WP-10): Replace this legacy
+                # RunEvent/rerun_bindings forwarding with StageRuntimeUpdate
+                # observer routing once WP-06/WP-08 live updates are wired.
+                self._log_rerun_sink_backlog(event=event, rerun_bindings=rerun_bindings)
                 self._rerun_sink_last_call = self._rerun_sink.observe_event.remote(
                     event=event,
                     rerun_bindings=[] if rerun_bindings is None else rerun_bindings,
                 )
             except Exception as exc:  # pragma: no cover - best-effort sidecar submission
                 self._console.warning("Failed to submit Rerun sink event '%s': %s", event.kind, exc)
+
+    def _log_rerun_sink_backlog(
+        self,
+        *,
+        event: RunEvent,
+        rerun_bindings: list[tuple[str, np.ndarray]] | None,
+    ) -> None:
+        # TODO(pipeline-refactor/WP-10): Remove this legacy sidecar backlog
+        # diagnostic when Rerun no longer receives RunEvent/rerun_bindings.
+        self._rerun_sink_submission_count += 1
+        if self._rerun_sink_last_call is None:
+            return
+        ready, _ = ray.wait([self._rerun_sink_last_call], timeout=0.0)
+        if ready:
+            self._rerun_sink_pending_count = 0
+            return
+        self._rerun_sink_pending_count += 1
+        if self._rerun_sink_pending_count == 1 or self._rerun_sink_pending_count % 100 == 0:
+            binding_shapes = [
+                (handle_id, tuple(np.asarray(payload).shape), str(np.asarray(payload).dtype))
+                for handle_id, payload in (rerun_bindings or [])
+            ]
+            self._console.warning(
+                "Rerun sink sidecar is lagging: previous submission still pending before event '%s' "
+                "(submitted=%d, consecutive_pending=%d, bindings=%s). Live viewer may lag behind the exported RRD.",
+                event.kind,
+                self._rerun_sink_submission_count,
+                self._rerun_sink_pending_count,
+                binding_shapes,
+            )
 
     def _remember_handle(self, handle_id: str, payload: HandlePayload) -> None:
         self._handle_refs[handle_id] = payload

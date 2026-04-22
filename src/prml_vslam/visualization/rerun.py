@@ -48,7 +48,9 @@ def build_default_blueprint() -> rrb.Blueprint:
                 contents=[
                     "+ world/alignment/**",
                     "+ world/live/tracking/**",
-                    "+ world/live/model/camera/**",
+                    "+ world/live/model",
+                    "- world/live/model/camera/image",
+                    "- world/live/model/camera/image/**",
                     "- world/live/model/camera/image/depth",
                     "- world/live/model/camera/image/depth/**",
                     "- world/live/model/points",

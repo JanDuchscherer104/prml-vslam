@@ -117,6 +117,7 @@ class PacketSourceActor:
         source: StreamingSequenceSource,
         initial_credits: int = DEFAULT_MAX_FRAMES_IN_FLIGHT,
         loop: bool = False,
+        log_source_rgb: bool = False,
     ) -> None:
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("Packet source actor is already running.")
@@ -129,7 +130,7 @@ class PacketSourceActor:
         )
         self._stop_event.clear()
         self._credits = initial_credits
-        self._thread = threading.Thread(target=self._run_source, args=(source, loop), daemon=True)
+        self._thread = threading.Thread(target=self._run_source, args=(source, loop, log_source_rgb), daemon=True)
         self._thread.start()
 
     def grant_credit(self, count: int = 1) -> None:
@@ -146,7 +147,7 @@ class PacketSourceActor:
             if self._thread.is_alive():
                 self._console.warning("Timed out waiting for packet source worker thread to stop.")
 
-    def _run_source(self, source: StreamingSequenceSource, loop: bool) -> None:
+    def _run_source(self, source: StreamingSequenceSource, loop: bool, log_source_rgb: bool) -> None:
         stream = source.open_stream(loop=loop)
         try:
             stream.connect()
@@ -172,9 +173,12 @@ class PacketSourceActor:
                     ),
                     frame_handle=frame_handle,
                     frame_ref=frame_ref,
+                    # TODO(pipeline-refactor/WP-10): Remove source RGB
+                    # rerun_bindings when PacketObserved no longer feeds the
+                    # Rerun sidecar; target routing uses StageRuntimeUpdate.
                     rerun_bindings=(
                         []
-                        if packet.rgb is None
+                        if not log_source_rgb or packet.rgb is None
                         else [(frame_handle.handle_id, np.asarray(packet.rgb))]
                         if frame_handle is not None
                         else []
@@ -211,6 +215,12 @@ class StreamingSlamStageActor:
         self._accepted_keyframes = 0
         self._keyframe_timestamps = deque(maxlen=FPS_WINDOW)
         self._logged_first_notice = False
+        self._logged_first_pose_update = False
+        self._logged_first_keyframe_update = False
+        self._logged_first_depth_update = False
+        self._logged_first_pointmap_update = False
+        self._logged_first_preview_update = False
+        self._log_diagnostic_preview = False
 
     def start_stage(
         self,
@@ -236,6 +246,7 @@ class StreamingSlamStageActor:
             output_policy=request.slam.outputs,
             artifact_root=plan.artifact_root,
         )
+        self._log_diagnostic_preview = request.visualization.log_diagnostic_preview
 
     def push_frame(
         self,
@@ -269,9 +280,56 @@ class StreamingSlamStageActor:
         )
         notices: list[BackendEvent] = []
         bindings: list[tuple[str, HandlePayload]] = []
+        # TODO(pipeline-refactor/WP-10): Remove rerun_bindings after
+        # StreamingSlamStageActor emits StageRuntimeUpdate visualizations and
+        # the Rerun sink consumes resolved TransientPayloadRefs.
         rerun_bindings: list[tuple[str, np.ndarray]] = []
         now = time.monotonic()
         for update in self._session.try_get_updates():
+            if update.pose is not None and not self._logged_first_pose_update:
+                self._console.info(
+                    "First SLAM pose update: seq=%d source_seq=%s pose_updated=%s.",
+                    update.seq,
+                    update.source_seq,
+                    update.pose_updated,
+                )
+                self._logged_first_pose_update = True
+            if update.is_keyframe and update.keyframe_index is not None and not self._logged_first_keyframe_update:
+                self._console.info(
+                    "First SLAM keyframe update: seq=%d source_seq=%s keyframe_index=%d intrinsics=%s.",
+                    update.seq,
+                    update.source_seq,
+                    update.keyframe_index,
+                    update.camera_intrinsics is not None,
+                )
+                self._logged_first_keyframe_update = True
+            if update.depth_map is not None and not self._logged_first_depth_update:
+                self._console.info(
+                    "First SLAM depth visualization payload: seq=%d source_seq=%s shape=%s dtype=%s.",
+                    update.seq,
+                    update.source_seq,
+                    tuple(np.asarray(update.depth_map).shape),
+                    np.asarray(update.depth_map).dtype,
+                )
+                self._logged_first_depth_update = True
+            if update.pointmap is not None and not self._logged_first_pointmap_update:
+                self._console.info(
+                    "First SLAM pointmap visualization payload: seq=%d source_seq=%s shape=%s dtype=%s.",
+                    update.seq,
+                    update.source_seq,
+                    tuple(np.asarray(update.pointmap).shape),
+                    np.asarray(update.pointmap).dtype,
+                )
+                self._logged_first_pointmap_update = True
+            if update.preview_rgb is not None and not self._logged_first_preview_update:
+                self._console.info(
+                    "First SLAM diagnostic preview payload: seq=%d source_seq=%s shape=%s dtype=%s.",
+                    update.seq,
+                    update.source_seq,
+                    tuple(np.asarray(update.preview_rgb).shape),
+                    np.asarray(update.preview_rgb).dtype,
+                )
+                self._logged_first_preview_update = True
             preview_handle, preview_ref = put_preview_handle(update.preview_rgb)
             image_handle, image_ref = put_array_handle(update.image_rgb)
             depth_handle, depth_payload_ref = put_array_handle(update.depth_map)
@@ -285,7 +343,7 @@ class StreamingSlamStageActor:
                 if handle is not None and ref is not None:
                     bindings.append((handle.handle_id, ref))
             for handle, payload in (
-                (preview_handle, update.preview_rgb),
+                (preview_handle if self._log_diagnostic_preview else None, update.preview_rgb),
                 (image_handle, update.image_rgb),
                 (depth_handle, update.depth_map),
                 (pointmap_handle, update.pointmap),

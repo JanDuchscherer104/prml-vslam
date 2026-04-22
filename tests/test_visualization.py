@@ -26,6 +26,9 @@ def test_visualization_config_serializes_optional_viewer_blueprint_path() -> Non
 
     assert 'viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"' in rendered
     assert reloaded.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
+    assert reloaded.log_source_rgb is False
+    assert reloaded.log_diagnostic_preview is False
+    assert reloaded.log_camera_image_rgb is False
 
 
 def test_attach_recording_sinks_configures_grpc_and_file_together(
@@ -160,7 +163,9 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].contents == [
         "+ world/alignment/**",
         "+ world/live/tracking/**",
-        "+ world/live/model/camera/**",
+        "+ world/live/model",
+        "- world/live/model/camera/image",
+        "- world/live/model/camera/image/**",
         "- world/live/model/camera/image/depth",
         "- world/live/model/camera/image/depth/**",
         "- world/live/model/points",
