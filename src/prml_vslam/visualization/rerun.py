@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import open3d as o3d
 import rerun as rr  # type: ignore[import-not-found]
 import rerun.blueprint as rrb  # type: ignore[import-not-found]
 
@@ -17,6 +18,7 @@ from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
+from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
 
 ROOT_WORLD_ENTITY_PATH = "world"
 """Canonical root entity path for repo-owned Rerun recordings."""
@@ -80,6 +82,7 @@ def build_default_blueprint(
                 name="3D Scene",
                 contents=[
                     "+ world/alignment/**",
+                    "+ world/reconstruction/**",
                     "+ world/live/tracking/**",
                     "+ world/live/model",
                     "- world/live/model/camera/image",
@@ -342,13 +345,49 @@ def log_points3d(
     points_xyz: np.ndarray,
     colors: np.ndarray | None = None,
     radii: float = POINT_CLOUD_RADII,
+    static: bool = False,
 ) -> None:
     """Log explicit XYZ rows to the viewer."""
     positions = np.asarray(points_xyz, dtype=np.float32).reshape(-1, 3)
     if len(positions) == 0:
         return
     color_payload = None if colors is None else np.asarray(colors)
-    recording_stream.log(entity_path, rr.Points3D(positions=positions, colors=color_payload, radii=radii))
+    recording_stream.log(
+        entity_path, rr.Points3D(positions=positions, colors=color_payload, radii=radii), static=static
+    )
+
+
+def log_pointcloud_ply(recording_stream: rr.RecordingStream, *, entity_path: str, path: Path) -> None:
+    """Load and log one world-space PLY point cloud artifact."""
+    points_xyz, colors = load_point_cloud_ply_with_colors(path)
+    log_points3d(recording_stream, entity_path=entity_path, points_xyz=points_xyz, colors=colors, static=True)
+
+
+def log_mesh_ply(recording_stream: rr.RecordingStream, *, entity_path: str, path: Path) -> None:
+    """Load and log one world-space PLY triangle mesh artifact."""
+    if not path.exists():
+        raise FileNotFoundError(f"Mesh artifact '{path}' does not exist.")
+    mesh = o3d.io.read_triangle_mesh(str(path))
+    vertices_xyz = np.asarray(mesh.vertices, dtype=np.float32)
+    triangles = np.asarray(mesh.triangles, dtype=np.uint32)
+    if vertices_xyz.ndim != 2 or vertices_xyz.shape[1] != 3:
+        raise ValueError(f"Expected mesh vertices with shape (N, 3), got {vertices_xyz.shape}.")
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise ValueError(f"Expected mesh triangles with shape (N, 3), got {triangles.shape}.")
+    if len(vertices_xyz) == 0 or len(triangles) == 0:
+        return
+    vertex_colors = None
+    if mesh.has_vertex_colors():
+        colors = np.asarray(mesh.vertex_colors, dtype=np.float32)
+        vertex_colors = np.clip(colors * 255.0, 0.0, 255.0).astype(np.uint8)
+    log_mesh3d(
+        recording_stream,
+        entity_path=entity_path,
+        vertex_positions_xyz=vertices_xyz,
+        triangle_indices=triangles,
+        vertex_colors_rgba=vertex_colors,
+        static=True,
+    )
 
 
 def collect_native_visualization_artifacts(
@@ -439,8 +478,10 @@ __all__ = [
     "log_line_strip3d",
     "log_ground_plane_patch",
     "log_mesh3d",
+    "log_mesh_ply",
     "log_pinhole",
     "log_pointcloud",
+    "log_pointcloud_ply",
     "log_points3d",
     "log_rgb_image",
     "log_root_world_transform",

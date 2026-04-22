@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import numpy as np
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
-from prml_vslam.interfaces.slam import KeyframeVisualizationReady, PoseEstimated
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, FramePacketSummary, PacketObserved
-from prml_vslam.pipeline.contracts.handles import ArrayHandle
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
+from prml_vslam.interfaces.slam import SlamUpdate
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.slam.visualization import (
+    DEPTH_REF,
+    IMAGE_REF,
+    POINTMAP_REF,
+    ROLE_SOURCE_RGB,
+    SlamVisualizationAdapter,
+)
 
 
 class _StrictFakeRecordingStream:
@@ -33,12 +40,73 @@ def _timeline_state(stream: _StrictFakeRecordingStream) -> tuple[int | None, int
     return stream.current_timeline("frame"), stream.current_timeline("keyframe")
 
 
-def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_events() -> None:
+def _payload_ref(handle_id: str, *, payload_kind: str, shape: tuple[int, ...], dtype: str) -> TransientPayloadRef:
+    return TransientPayloadRef(handle_id=handle_id, payload_kind=payload_kind, shape=shape, dtype=dtype)
+
+
+def _source_update(frame_index: int) -> StageRuntimeUpdate:
+    return StageRuntimeUpdate(
+        stage_key=StageKey.INGEST,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.RGB_IMAGE,
+                role=ROLE_SOURCE_RGB,
+                payload_refs={IMAGE_REF: _payload_ref("frame", payload_kind="image", shape=(2, 2, 3), dtype="uint8")},
+                frame_index=frame_index,
+            )
+        ],
+    )
+
+
+def _pose_update(source_seq: int) -> StageRuntimeUpdate:
+    return StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=2,
+        visualizations=SlamVisualizationAdapter().build_items(
+            SlamUpdate(
+                seq=source_seq - 1,
+                timestamp_ns=2,
+                source_seq=source_seq,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            ),
+            {},
+        ),
+    )
+
+
+def _keyframe_update(source_seq: int) -> StageRuntimeUpdate:
+    return StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=3,
+        visualizations=SlamVisualizationAdapter().build_items(
+            SlamUpdate(
+                seq=8,
+                timestamp_ns=3,
+                source_seq=source_seq,
+                source_timestamp_ns=3,
+                is_keyframe=True,
+                keyframe_index=2,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                camera_intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3),
+            ),
+            {
+                IMAGE_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                DEPTH_REF: _payload_ref("depth", payload_kind="depth", shape=(3, 4), dtype="float32"),
+                POINTMAP_REF: _payload_ref("pointmap", payload_kind="point_cloud", shape=(3, 4, 3), dtype="float32"),
+            },
+        ),
+    )
+
+
+def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -> None:
     stream = _StrictFakeRecordingStream()
     calls: list[tuple[str, str, int | None, int | None]] = []
     policy = RerunLoggingPolicy(
         log_pinhole=lambda *args, **kwargs: None,
         log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
         log_line_strip3d=lambda stream, *, entity_path, positions_xyz: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
@@ -55,33 +123,8 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_events() ->
     )
 
     stream.set_time("keyframe", sequence=99)
-    policy.observe(
-        stream,
-        PacketObserved(
-            event_id="1",
-            run_id="run-1",
-            ts_ns=1,
-            packet=FramePacketSummary(seq=5, timestamp_ns=1, provenance=FramePacketProvenance()),
-            frame=ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8"),
-        ),
-        payloads={"frame": np.zeros((2, 2, 3), dtype=np.uint8)},
-    )
-    policy.observe(
-        stream,
-        BackendNoticeReceived(
-            event_id="2",
-            run_id="run-1",
-            ts_ns=2,
-            stage_key=StageKey.SLAM,
-            notice=PoseEstimated(
-                seq=6,
-                timestamp_ns=2,
-                source_seq=7,
-                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            ),
-        ),
-        payloads={},
-    )
+    policy.observe_update(stream, _source_update(5), payloads={"frame": np.zeros((2, 2, 3), dtype=np.uint8)})
+    policy.observe_update(stream, _pose_update(7), payloads={})
 
     assert calls == [
         ("rgb", "world/live/source/rgb", 5, None),
@@ -100,6 +143,8 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         log_pointcloud=lambda stream, *, entity_path, pointmap, colors=None: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
         log_line_strip3d=lambda stream, *, entity_path, positions_xyz: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
@@ -116,26 +161,9 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         ),
     )
 
-    policy.observe(
+    policy.observe_update(
         stream,
-        BackendNoticeReceived(
-            event_id="3",
-            run_id="run-1",
-            ts_ns=3,
-            stage_key=StageKey.SLAM,
-            notice=KeyframeVisualizationReady(
-                seq=8,
-                timestamp_ns=3,
-                source_seq=13,
-                source_timestamp_ns=3,
-                keyframe_index=2,
-                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                image=ArrayHandle(handle_id="rgb", shape=(3, 4, 3), dtype="uint8"),
-                depth=ArrayHandle(handle_id="depth", shape=(3, 4), dtype="float32"),
-                pointmap=ArrayHandle(handle_id="pointmap", shape=(3, 4, 3), dtype="float32"),
-                camera_intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3),
-            ),
-        ),
+        _keyframe_update(13),
         payloads={
             "rgb": np.zeros((3, 4, 3), dtype=np.uint8),
             "depth": np.ones((3, 4), dtype=np.float32),

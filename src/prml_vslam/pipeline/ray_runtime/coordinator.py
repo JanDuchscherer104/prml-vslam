@@ -50,7 +50,6 @@ from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.pipeline.placement import RayActorOptions, actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     EVENT_RING_LIMIT,
@@ -60,13 +59,8 @@ from prml_vslam.pipeline.ray_runtime.common import (
     coordinator_actor_name,
     ts_ns,
 )
-from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, StreamingSlamStageActor
+from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
 from prml_vslam.pipeline.ray_runtime.stage_execution import StageExecutionContext
-from prml_vslam.pipeline.ray_runtime.stage_program import (
-    RuntimeExecutionState,
-    RuntimeStageProgram,
-    StageCompletionPayload,
-)
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
@@ -79,10 +73,10 @@ from prml_vslam.pipeline.stages.base.contracts import (
     VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
+from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability, StageRuntimeProxy
 from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
 from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
-from prml_vslam.pipeline.stages.slam import SlamOfflineInput, SlamStageRuntime
+from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
 from prml_vslam.pipeline.stages.slam.visualization import IMAGE_REF, ROLE_SOURCE_RGB
 from prml_vslam.pipeline.stages.source import SourceRuntime, SourceRuntimeInput
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
@@ -122,15 +116,14 @@ class RunCoordinatorActor:
         self._rerun_sink_submission_count = 0
         self._rerun_sink_pending_count = 0
         self._worker: threading.Thread | None = None
-        self._source_actor = None
-        self._slam_actor = None
+        self._source_actor: ActorHandle | None = None
+        self._streaming_runtime_manager: RuntimeManager | None = None
+        self._slam_runtime_proxy: StageRuntimeProxy | None = None
         self._request: RunRequest | None = None
         self._plan: RunPlan | None = None
         self._backend_descriptor: BackendDescriptor | None = None
         self._result_store = StageResultStore()
         self._stage_runner = StageRunner(self._result_store)
-        self._runtime_state = RuntimeExecutionState()
-        self._stage_program = RuntimeStageProgram.default()
         self._streaming_error: str | None = None
         self._path_config: PathConfig | None = None
 
@@ -149,14 +142,14 @@ class RunCoordinatorActor:
         self._request = request
         self._plan = plan
         self._path_config = path_config
-        self._runtime_state = RuntimeExecutionState()
         self._stop_requested = False
         self._source_finished = False
         self._streaming_finalized = False
         self._in_flight_frames = 0
         self._streaming_done = threading.Event()
         self._source_actor = None
-        self._slam_actor = None
+        self._streaming_runtime_manager = None
+        self._slam_runtime_proxy = None
         self._streaming_error = None
         self._result_store = StageResultStore()
         self._stage_runner = StageRunner(self._result_store)
@@ -188,6 +181,8 @@ class RunCoordinatorActor:
         self._record_event(RunStopRequested(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
         if self._source_actor is not None:
             self._source_actor.stop.remote()
+        if self._slam_runtime_proxy is not None:
+            self._slam_runtime_proxy.stop()
         if self._streaming_done.is_set() and self._snapshot.state not in {RunState.COMPLETED, RunState.FAILED}:
             self._record_event(RunStopped(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
 
@@ -224,11 +219,8 @@ class RunCoordinatorActor:
                 ray.kill(self._source_actor)
             except Exception:
                 pass
-        if self._slam_actor is not None:
-            try:
-                ray.kill(self._slam_actor)
-            except Exception:
-                pass
+        if self._slam_runtime_proxy is not None:
+            self._slam_runtime_proxy.stop()
         if self._worker is not None:
             self._worker.join(timeout=5.0)
         self._close_rerun_sink()
@@ -246,16 +238,15 @@ class RunCoordinatorActor:
         provenance: FramePacketProvenance,
         received_frames: int,
         measured_fps: float,
+        frame_payload_ref: TransientPayloadRef | None = None,
     ) -> None:
         """Record one observed packet and forward it to streaming SLAM.
 
         The packet metadata becomes telemetry immediately, while the payload
         itself remains behind coordinator-owned handles or Ray object refs.
         """
-        bindings: list[tuple[str, HandlePayload]] = []
         if frame_handle is not None and frame_ref is not None:
             self._remember_handle(frame_handle.handle_id, frame_ref)
-            bindings.append((frame_handle.handle_id, frame_ref))
         self._record_event(
             PacketObserved(
                 event_id=self._next_event_id(),
@@ -267,19 +258,45 @@ class RunCoordinatorActor:
                 measured_fps=measured_fps,
             ),
         )
-        self._emit_source_visualization_update(packet=packet, frame_handle=frame_handle)
-        if self._stop_requested or self._slam_actor is None:
+        if frame_payload_ref is None and frame_handle is not None:
+            frame_payload_ref = TransientPayloadRef(
+                handle_id=frame_handle.handle_id,
+                payload_kind="image",
+                media_type="image/rgb",
+                shape=frame_handle.shape,
+                dtype=frame_handle.dtype,
+                metadata={"slot": IMAGE_REF},
+            )
+        self._emit_source_visualization_update(packet=packet, frame_payload_ref=frame_payload_ref)
+        if self._stop_requested or self._slam_runtime_proxy is None:
             return
         self._in_flight_frames += 1
-        self._slam_actor.push_frame.remote(
-            packet=packet,
-            frame_ref=frame_ref,
-            depth_ref=depth_ref,
-            confidence_ref=confidence_ref,
-            intrinsics=intrinsics,
-            pose=pose,
-            provenance=provenance,
-        )
+        frame_accepted = False
+        try:
+            self._submit_frame_to_slam_runtime(
+                packet=packet,
+                frame_ref=frame_ref,
+                depth_ref=depth_ref,
+                confidence_ref=confidence_ref,
+                intrinsics=intrinsics,
+                pose=pose,
+                provenance=provenance,
+            )
+            frame_accepted = True
+        except Exception as exc:
+            self._console.error("Streaming SLAM frame submission failed for run '%s': %s", self._run_id, exc)
+            self._streaming_error = str(exc)
+            self._source_finished = True
+            if self._source_actor is not None:
+                self._source_actor.stop.remote()
+        finally:
+            self._in_flight_frames = max(0, self._in_flight_frames - 1)
+            if frame_accepted and self._source_actor is not None and not self._stop_requested:
+                self._source_actor.grant_credit.remote(1)
+        if frame_accepted:
+            self._publish_slam_runtime_updates(self._drain_slam_runtime_updates())
+        if self._source_finished and self._in_flight_frames == 0:
+            self._finalize_streaming()
 
     def on_slam_notices(
         self,
@@ -328,13 +345,78 @@ class RunCoordinatorActor:
         updates: list[StageRuntimeUpdate],
     ) -> None:
         """Forward live SLAM runtime updates to observer sinks."""
+        self._cache_slam_runtime_payloads(updates)
         with self._lock:
             for update in updates:
                 self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
         if self._rerun_sink is None:
             return
+        payload_resolver = self._self_actor_handle()
         for update in updates:
-            self._submit_rerun_update(update=update, payload_resolver=self._slam_actor)
+            self._submit_rerun_update(update=update, payload_resolver=payload_resolver)
+
+    def _submit_frame_to_slam_runtime(
+        self,
+        *,
+        packet: FramePacketSummary,
+        frame_ref: HandlePayload | None,
+        depth_ref: HandlePayload | None,
+        confidence_ref: HandlePayload | None,
+        intrinsics: CameraIntrinsics | None,
+        pose: FrameTransform | None,
+        provenance: FramePacketProvenance,
+    ) -> None:
+        if self._slam_runtime_proxy is None:
+            raise RuntimeError("Streaming SLAM runtime has not been started.")
+        from prml_vslam.interfaces import FramePacket
+
+        self._stage_runner.submit_stream_item(
+            runtime=self._slam_runtime_proxy.streaming(),
+            item=SlamFrameInput(
+                frame=FramePacket(
+                    seq=packet.seq,
+                    timestamp_ns=packet.timestamp_ns,
+                    rgb=self._resolve_handle_payload(frame_ref),
+                    depth=self._resolve_handle_payload(depth_ref),
+                    confidence=self._resolve_handle_payload(confidence_ref),
+                    intrinsics=intrinsics,
+                    pose=pose,
+                    provenance=provenance,
+                )
+            ),
+        )
+
+    def _drain_slam_runtime_updates(self) -> list[StageRuntimeUpdate]:
+        if self._slam_runtime_proxy is None:
+            return []
+        return self._slam_runtime_proxy.live_updates().drain_runtime_updates(max_items=None)
+
+    def _publish_slam_runtime_updates(self, updates: list[StageRuntimeUpdate]) -> None:
+        if not updates:
+            return
+        try:
+            self.on_slam_runtime_updates(updates=updates)
+        except Exception as exc:  # pragma: no cover - best-effort observer routing
+            self._console.warning("Failed to route live SLAM runtime updates for run '%s': %s", self._run_id, exc)
+
+    def _cache_slam_runtime_payloads(self, updates: list[StageRuntimeUpdate]) -> None:
+        runtime = self._active_slam_runtime()
+        if runtime is None:
+            return
+        for update in updates:
+            for item in update.visualizations:
+                for ref in item.payload_refs.values():
+                    payload = runtime.read_payload(ref)
+                    if payload is not None:
+                        self._remember_handle(ref.handle_id, payload)
+
+    def _active_slam_runtime(self) -> SlamStageRuntime | None:
+        if self._slam_runtime_proxy is None:
+            return None
+        runtime = self._slam_runtime_proxy.runtime
+        if not isinstance(runtime, SlamStageRuntime):
+            return None
+        return runtime
 
     def on_source_eof(self) -> None:
         """Mark the streaming source as exhausted and finalize if drained."""
@@ -434,6 +516,7 @@ class RunCoordinatorActor:
                 ),
                 on_stage_failed=self._record_stage_failure,
             )
+            self._publish_runtime_updates_from_proxy(runtime_proxy)
         terminal_state = "stopped" if self._stop_requested else "completed"
         self._console.info("Offline run '%s' %s.", self._run_id, terminal_state)
         self._record_event(
@@ -456,10 +539,21 @@ class RunCoordinatorActor:
                         capabilities=capabilities,
                     )
                 case StageKey.SLAM:
+                    slam_capabilities = (
+                        frozenset({RuntimeCapability.OFFLINE})
+                        if plan.mode is PipelineMode.OFFLINE
+                        else frozenset(
+                            {
+                                RuntimeCapability.OFFLINE,
+                                RuntimeCapability.LIVE_UPDATES,
+                                RuntimeCapability.STREAMING,
+                            }
+                        )
+                    )
                     manager.register(
                         stage.key,
                         factory=SlamStageRuntime,
-                        capabilities=capabilities,
+                        capabilities=slam_capabilities,
                     )
                 case StageKey.GROUND_ALIGNMENT:
                     manager.register(
@@ -474,10 +568,16 @@ class RunCoordinatorActor:
                         capabilities=capabilities,
                     )
                 case StageKey.REFERENCE_RECONSTRUCTION:
+                    reconstruction_capabilities = frozenset(
+                        {
+                            RuntimeCapability.OFFLINE,
+                            RuntimeCapability.LIVE_UPDATES,
+                        }
+                    )
                     manager.register(
                         stage.key,
                         factory=ReconstructionRuntime,
-                        capabilities=capabilities,
+                        capabilities=reconstruction_capabilities,
                     )
                 case StageKey.SUMMARY:
                     manager.register(
@@ -628,12 +728,12 @@ class RunCoordinatorActor:
                 stage_manifests=stage_manifests,
             )
         )
-        if stage_key is StageKey.GROUND_ALIGNMENT and payload.ground_alignment is not None:
+        if stage_key is StageKey.GROUND_ALIGNMENT and isinstance(payload, GroundAlignmentMetadata):
             self._submit_rerun_update(
                 update=StageRuntimeUpdate(
                     stage_key=StageKey.GROUND_ALIGNMENT,
                     timestamp_ns=ts_ns(),
-                    semantic_events=[payload.ground_alignment],
+                    semantic_events=[payload],
                 ),
                 payload_resolver=None,
             )
@@ -649,16 +749,12 @@ class RunCoordinatorActor:
         if runtime_source is None:
             raise RuntimeError("Streaming runs require an explicit runtime source.")
         context = self._stage_execution_context(request=request, plan=plan, path_config=path_config)
-        self._stage_program.execute_streaming_prepare(
-            plan=plan,
-            context=context,
-            state=self._runtime_state,
-            source=runtime_source,
-            driver=self,
-            emit_stage_started=self._emit_stage_started,
-            record_stage_completion=self._record_stage_completion,
-            record_stage_failure=self._record_stage_failure,
-        )
+        runtime_manager = self._build_runtime_manager(plan=plan, source=runtime_source)
+        runtime_manager.preflight(plan).raise_for_errors()
+        self._streaming_runtime_manager = runtime_manager
+        self._result_store = StageResultStore()
+        self._stage_runner = StageRunner(self._result_store)
+        self._run_streaming_prepare(context=context, runtime_manager=runtime_manager)
         self._source_actor = PacketSourceActor.options(
             **clean_actor_options(
                 {
@@ -683,6 +779,73 @@ class RunCoordinatorActor:
             loop=False,
         )
 
+    def _run_streaming_prepare(self, *, context: StageExecutionContext, runtime_manager: RuntimeManager) -> None:
+        for stage in context.plan.stages:
+            if not stage.available:
+                continue
+            stage_key = stage.key
+            if stage_key is StageKey.INGEST:
+                runtime_proxy = runtime_manager.runtime_for(stage_key)
+                stage_config = runtime_manager.stage_config(stage_key)
+                input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
+                config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
+                self._stage_runner.run_offline_stage(
+                    stage_key=stage_key,
+                    runtime=runtime_proxy.offline(),
+                    input_payload=input_payload,
+                    stage_config=stage_config,
+                    config_hash=config_hash,
+                    input_fingerprint=input_fingerprint,
+                    on_stage_started=self._emit_stage_started,
+                    on_stage_completed=lambda completed_stage_key, result: self._record_stage_result(
+                        completed_stage_key, result
+                    ),
+                    on_stage_failed=self._record_stage_failure,
+                )
+                continue
+            if stage_key is StageKey.SLAM:
+                self._start_streaming_slam_runtime(context=context, runtime_manager=runtime_manager)
+        if self._slam_runtime_proxy is None:
+            raise RuntimeError("Streaming run requires an available SLAM runtime stage.")
+
+    def _start_streaming_slam_runtime(
+        self,
+        *,
+        context: StageExecutionContext,
+        runtime_manager: RuntimeManager,
+    ) -> None:
+        stage_key = StageKey.SLAM
+        runtime_proxy = runtime_manager.runtime_for(stage_key)
+        stage_config = runtime_manager.stage_config(stage_key)
+        config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
+        try:
+            self._stage_runner.start_streaming_stage(
+                stage_key=stage_key,
+                runtime=runtime_proxy.streaming(),
+                input_payload=SlamStreamingStartInput(
+                    request=context.request,
+                    plan=context.plan,
+                    path_config=context.path_config,
+                    session_init=SlamSessionInit(
+                        sequence_manifest=self._result_store.require_sequence_manifest(),
+                        benchmark_inputs=self._result_store.require_benchmark_inputs(),
+                        baseline_source=context.request.benchmark.trajectory.baseline_source,
+                    ),
+                ),
+                on_stage_started=self._emit_stage_started,
+            )
+        except Exception as exc:
+            self._record_stage_failure(
+                stage_key,
+                stage_config.failure_outcome(
+                    error_message=str(exc),
+                    config_hash=config_hash,
+                    input_fingerprint=input_fingerprint,
+                ),
+            )
+            raise
+        self._slam_runtime_proxy = runtime_proxy
+
     def _finalize_streaming(self) -> None:
         if self._streaming_finalized:
             return
@@ -699,15 +862,9 @@ class RunCoordinatorActor:
             request = self._require_request()
             plan = self._require_plan()
             context = self._stage_execution_context(request=request, plan=plan)
-            self._stage_program.execute_streaming_finalize(
-                plan=plan,
-                context=context,
-                state=self._runtime_state,
-                driver=self,
-                emit_stage_started=self._emit_stage_started,
-                record_stage_completion=self._record_stage_completion,
-                record_stage_failure=self._record_stage_failure,
-            )
+            self._publish_slam_runtime_updates(self._drain_slam_runtime_updates())
+            self._finalize_slam_streaming_stage(context=context)
+            self._run_streaming_finalize_stages(context=context)
             if self._streaming_error is not None:
                 self._console.error("Streaming run '%s' failed: %s", self._run_id, self._streaming_error)
                 self._record_event(
@@ -727,70 +884,103 @@ class RunCoordinatorActor:
         finally:
             self._streaming_done.set()
 
-    @property
-    def stop_requested(self) -> bool:
-        return self._stop_requested
-
-    @property
-    def streaming_error(self) -> str | None:
-        return self._streaming_error
-
-    def start_streaming_slam_stage(self, *, context: StageExecutionContext) -> None:
-        """Construct and start the ordered streaming SLAM actor for this run."""
-        self._slam_actor = StreamingSlamStageActor.options(
-            **self._stage_actor_options(
-                stage_key=StageKey.SLAM,
-                request=context.request,
-                default_num_cpus=2.0,
-                default_num_gpus=0.0,
-                inherit_backend_defaults=True,
-            )
-        ).remote(
-            coordinator_name=coordinator_actor_name(context.plan.run_id),
-            namespace=self._namespace,
-        )
+    def _finalize_slam_streaming_stage(self, *, context: StageExecutionContext) -> None:
+        if self._slam_runtime_proxy is None:
+            return
+        runtime_manager = self._require_streaming_runtime_manager()
+        stage_key = StageKey.SLAM
+        stage_config = runtime_manager.stage_config(stage_key)
+        config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
         try:
-            sequence_manifest = self._runtime_state.sequence_manifest
-            if sequence_manifest is None:
-                raise RuntimeError("Streaming SLAM stage requires a prepared sequence manifest before startup.")
-            ray.get(
-                self._slam_actor.start_stage.remote(
-                    request=context.request,
-                    plan=context.plan,
-                    path_config=context.path_config,
-                    session_init=SlamSessionInit(
-                        sequence_manifest=sequence_manifest,
-                        benchmark_inputs=self._runtime_state.benchmark_inputs,
-                        baseline_source=context.request.benchmark.trajectory.baseline_source,
+            slam_result = self._stage_runner.finish_streaming_stage(
+                stage_key=stage_key,
+                runtime=self._slam_runtime_proxy.streaming(),
+            )
+        except Exception as exc:
+            error_message = str(exc)
+            self._streaming_error = error_message
+            outcome = stage_config.failure_outcome(
+                error_message=error_message,
+                config_hash=config_hash,
+                input_fingerprint=input_fingerprint,
+            )
+            self._result_store.put(
+                StageResult(
+                    stage_key=stage_key,
+                    payload=None,
+                    outcome=outcome,
+                    final_runtime_status=self._slam_runtime_proxy.status().model_copy(
+                        update={"lifecycle_state": StageStatus.FAILED, "last_error": error_message}
                     ),
                 )
             )
-        except Exception:
-            if self._slam_actor is not None:
-                try:
-                    ray.kill(self._slam_actor, no_restart=True)
-                except Exception:
-                    pass
-                self._slam_actor = None
-            raise
+            self._record_stage_failure(stage_key, outcome)
+            return
 
-    def close_streaming_slam_stage(
-        self,
-        *,
-        context: StageExecutionContext,
-        sequence_manifest: SequenceManifest,
-    ) -> StageCompletionPayload:
-        """Close the streaming SLAM actor and adapt its result for the stage program."""
-        if self._slam_actor is None:
-            raise RuntimeError("Streaming SLAM actor has not been started.")
-        result = ray.get(
-            self._slam_actor.close_stage.remote(
-                request=context.request,
-                plan=context.plan,
-                sequence_manifest=sequence_manifest,
+        if self._streaming_error is not None:
+            failed_outcome = stage_config.failure_outcome(
+                error_message=self._streaming_error,
+                config_hash=config_hash,
+                input_fingerprint=input_fingerprint,
+                artifacts=slam_result.outcome.artifacts,
             )
-        )
-        return result
+            failed_result = slam_result.model_copy(
+                update={
+                    "outcome": failed_outcome,
+                    "final_runtime_status": slam_result.final_runtime_status.model_copy(
+                        update={
+                            "lifecycle_state": StageStatus.FAILED,
+                            "last_error": self._streaming_error,
+                        }
+                    ),
+                }
+            )
+            self._result_store.put(failed_result)
+            self._record_stage_failure(stage_key, failed_outcome)
+            return
+
+        if self._stop_requested and slam_result.outcome.status is not StageStatus.STOPPED:
+            slam_result = slam_result.model_copy(
+                update={
+                    "outcome": slam_result.outcome.model_copy(update={"status": StageStatus.STOPPED}),
+                    "final_runtime_status": slam_result.final_runtime_status.model_copy(
+                        update={"lifecycle_state": StageStatus.STOPPED}
+                    ),
+                }
+            )
+            self._result_store.put(slam_result)
+        self._record_stage_result(stage_key, slam_result)
+
+    def _run_streaming_finalize_stages(self, *, context: StageExecutionContext) -> None:
+        runtime_manager = self._require_streaming_runtime_manager()
+        for stage in context.plan.stages:
+            if not stage.available:
+                continue
+            stage_key = stage.key
+            if stage_key in {StageKey.INGEST, StageKey.SLAM}:
+                continue
+            if stage_key is StageKey.TRAJECTORY_EVALUATION and (
+                self._streaming_error is not None or self._stop_requested
+            ):
+                continue
+            runtime_proxy = runtime_manager.runtime_for(stage_key)
+            stage_config = runtime_manager.stage_config(stage_key)
+            input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
+            config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
+            self._stage_runner.run_offline_stage(
+                stage_key=stage_key,
+                runtime=runtime_proxy.offline(),
+                input_payload=input_payload,
+                stage_config=stage_config,
+                config_hash=config_hash,
+                input_fingerprint=input_fingerprint,
+                on_stage_started=self._emit_stage_started,
+                on_stage_completed=lambda completed_stage_key, result: self._record_stage_result(
+                    completed_stage_key, result
+                ),
+                on_stage_failed=self._record_stage_failure,
+            )
+            self._publish_runtime_updates_from_proxy(runtime_proxy)
 
     def _build_rerun_sink(self, *, request: RunRequest, run_paths: RunArtifactPaths) -> ActorHandle | None:
         if not (request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd):
@@ -810,28 +1000,6 @@ class RunCoordinatorActor:
             log_camera_image_rgb=request.visualization.log_camera_image_rgb,
         )
 
-    def _stage_actor_options(
-        self,
-        *,
-        stage_key: StageKey,
-        request: RunRequest,
-        default_num_cpus: float,
-        default_num_gpus: float,
-        restartable: bool = False,
-        inherit_backend_defaults: bool = False,
-    ) -> RayActorOptions:
-        return clean_actor_options(
-            actor_options_for_stage(
-                stage_key=stage_key,
-                request=request,
-                backend=self._require_backend_descriptor(),
-                default_num_cpus=default_num_cpus,
-                default_num_gpus=default_num_gpus,
-                restartable=restartable,
-                inherit_backend_defaults=inherit_backend_defaults,
-            )
-        )
-
     def _emit_stage_started(self, stage_key: StageKey) -> None:
         self._console.info("Stage '%s' started for run '%s'.", stage_key.value, self._run_id)
         self._record_event(
@@ -839,42 +1007,6 @@ class RunCoordinatorActor:
         )
         self._record_event(
             StageStarted(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns(), stage_key=stage_key)
-        )
-
-    def _record_stage_completion(self, stage_key: StageKey, payload: StageCompletionPayload) -> None:
-        for artifact_key, artifact in payload.outcome.artifacts.items():
-            self._record_event(
-                ArtifactRegistered(
-                    event_id=self._next_event_id(),
-                    run_id=self._run_id,
-                    ts_ns=ts_ns(),
-                    stage_key=stage_key,
-                    artifact_key=artifact_key,
-                    artifact=artifact,
-                )
-            )
-        self._console.info(
-            "Stage '%s' finished for run '%s' with status '%s' and %d artifacts.",
-            stage_key.value,
-            self._run_id,
-            payload.outcome.status.value,
-            len(payload.outcome.artifacts),
-        )
-        self._record_event(
-            StageCompleted(
-                event_id=self._next_event_id(),
-                run_id=self._run_id,
-                ts_ns=ts_ns(),
-                stage_key=stage_key,
-                outcome=payload.outcome,
-                sequence_manifest=payload.sequence_manifest,
-                benchmark_inputs=payload.benchmark_inputs,
-                slam=payload.slam,
-                ground_alignment=payload.ground_alignment,
-                visualization=payload.visualization,
-                summary=payload.summary,
-                stage_manifests=payload.stage_manifests,
-            )
         )
 
     def _record_stage_failure(self, stage_key: StageKey, outcome: StageOutcome) -> None:
@@ -931,18 +1063,10 @@ class RunCoordinatorActor:
         self,
         *,
         packet: FramePacketSummary,
-        frame_handle: ArrayHandle | None,
+        frame_payload_ref: TransientPayloadRef | None,
     ) -> None:
-        if self._request is None or not self._request.visualization.log_source_rgb or frame_handle is None:
+        if self._request is None or not self._request.visualization.log_source_rgb or frame_payload_ref is None:
             return
-        ref = TransientPayloadRef(
-            handle_id=frame_handle.handle_id,
-            payload_kind="image",
-            media_type="image/rgb",
-            shape=frame_handle.shape,
-            dtype=frame_handle.dtype,
-            metadata={"slot": IMAGE_REF},
-        )
         update = StageRuntimeUpdate(
             stage_key=StageKey.INGEST,
             timestamp_ns=ts_ns(),
@@ -950,7 +1074,7 @@ class RunCoordinatorActor:
                 VisualizationItem(
                     intent=VisualizationIntent.RGB_IMAGE,
                     role=ROLE_SOURCE_RGB,
-                    payload_refs={IMAGE_REF: ref},
+                    payload_refs={IMAGE_REF: frame_payload_ref},
                     frame_index=packet.seq,
                     space="source_raster",
                 )
@@ -978,6 +1102,18 @@ class RunCoordinatorActor:
             self._console.warning(
                 "Failed to submit Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc
             )
+
+    def _publish_runtime_updates_from_proxy(self, runtime_proxy: StageRuntimeProxy) -> None:
+        if RuntimeCapability.LIVE_UPDATES not in runtime_proxy.supported_capabilities:
+            return
+        updates = runtime_proxy.live_updates().drain_runtime_updates(max_items=None)
+        if not updates:
+            return
+        with self._lock:
+            for update in updates:
+                self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
+        for update in updates:
+            self._submit_rerun_update(update=update, payload_resolver=None)
 
     def _self_actor_handle(self) -> ActorHandle:
         return ray.get_actor(coordinator_actor_name(self._run_id), namespace=self._namespace)
@@ -1067,15 +1203,10 @@ class RunCoordinatorActor:
             raise RuntimeError("Path config is not initialized.")
         return self._path_config
 
-    def _require_sequence_manifest(self) -> SequenceManifest:
-        if self._runtime_state.sequence_manifest is None:
-            raise RuntimeError("Sequence manifest is not available.")
-        return self._runtime_state.sequence_manifest
-
-    def _require_slam_artifacts(self) -> SlamArtifacts:
-        if self._runtime_state.slam is None:
-            raise RuntimeError("SLAM artifacts are not available.")
-        return self._runtime_state.slam
+    def _require_streaming_runtime_manager(self) -> RuntimeManager:
+        if self._streaming_runtime_manager is None:
+            raise RuntimeError("Streaming runtime manager is not initialized.")
+        return self._streaming_runtime_manager
 
     def _stage_execution_context(
         self,

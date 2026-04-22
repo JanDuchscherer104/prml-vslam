@@ -1,9 +1,7 @@
-"""Typed stage vocabulary owned by the pipeline registry.
+"""Typed stage vocabulary and planning helper contracts.
 
-This module contains the shared stage ids and availability payloads that
-:mod:`prml_vslam.pipeline.stage_registry` uses to compile :class:`RunPlan`
-values. It does not execute stages itself; it only names and describes the
-stage vocabulary the rest of the pipeline agrees on.
+This module names the canonical stage keys shared across planning, runtime
+state, and artifact provenance. It does not execute stages itself.
 """
 
 from __future__ import annotations
@@ -40,8 +38,8 @@ class StageKey(StrEnum):
         }[self]
 
 
-# TODO(pipeline-refactor/WP-02): Collapse availability into RunPlanStage
-# diagnostics once the stage registry no longer returns separate DTOs.
+# TODO(pipeline-refactor/WP-10): Remove after stage config helpers stop using
+# this transitional availability DTO.
 class StageAvailability(TransportModel):
     """Record whether one stage is executable for one request/backend pairing."""
 
@@ -49,16 +47,7 @@ class StageAvailability(TransportModel):
     reason: str | None = None
 
 
-# TODO(pipeline-refactor/WP-02): Remove after RunPlanStage and stage configs
-# carry planning metadata directly.
-class StageDefinition(TransportModel):
-    """Carry the stable identity for one stage registered in the planner."""
-
-    key: StageKey
-
-
 __all__ = [
     "StageAvailability",
-    "StageDefinition",
     "StageKey",
 ]

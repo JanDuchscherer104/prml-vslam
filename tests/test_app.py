@@ -31,9 +31,9 @@ from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.slam import KeyframeVisualizationReady
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunStarted
+from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunStarted, StageOutcome
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import StageManifest, StageStatus
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -433,14 +433,14 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
                 "model_preview:image": preview_ref,
             }
         },
-        stage_manifests=[
-            StageManifest(
-                stage_id="slam",
+        stage_outcomes={
+            StageKey.SLAM: StageOutcome(
+                stage_key=StageKey.SLAM,
+                status=StageStatus.COMPLETED,
                 config_hash="cfg",
                 input_fingerprint="inp",
-                status=StageStatus.COMPLETED,
             )
-        ],
+        },
     )
     notice_event = BackendNoticeReceived(
         event_id="2",
@@ -492,7 +492,7 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
     }
     assert model.streaming.backend_notice is not None
     assert model.streaming.backend_notice.camera_intrinsics is not None
-    assert model.stage_manifest_rows[0]["Stage"] == "slam"
+    assert model.stage_outcome_rows[0]["Stage"] == "slam"
     assert model.recent_events[-1]["kind"] == "backend.notice"
 
 

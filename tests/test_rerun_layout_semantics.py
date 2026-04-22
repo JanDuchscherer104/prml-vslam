@@ -10,11 +10,12 @@ import pytest
 
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.slam import KeyframeVisualizationReady
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, StageCompleted, StageOutcome, StageStatus
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.interfaces.slam import SlamUpdate
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.slam.visualization import DEPTH_REF, IMAGE_REF, PREVIEW_REF, SlamVisualizationAdapter
 from prml_vslam.visualization import rerun as rerun_helpers
 
 
@@ -32,6 +33,29 @@ class _FakeRecordingStream:
         raise AssertionError(f"disable_timeline must not be used: {timeline}")
 
 
+def _payload_ref(handle_id: str, *, payload_kind: str, shape: tuple[int, ...], dtype: str) -> TransientPayloadRef:
+    return TransientPayloadRef(handle_id=handle_id, payload_kind=payload_kind, shape=shape, dtype=dtype)
+
+
+def _keyframe_update(*, refs: dict[str, TransientPayloadRef]) -> StageRuntimeUpdate:
+    return StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=1,
+        visualizations=SlamVisualizationAdapter().build_items(
+            SlamUpdate(
+                seq=1,
+                timestamp_ns=1,
+                source_seq=2,
+                source_timestamp_ns=1,
+                is_keyframe=True,
+                keyframe_index=7,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            ),
+            refs,
+        ),
+    )
+
+
 def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pytest.LogCaptureFixture) -> None:
     stream = _FakeRecordingStream()
     pinhole_calls: list[tuple[str, object]] = []
@@ -39,6 +63,8 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
     policy = RerunLoggingPolicy(
         log_pinhole=lambda stream, *, entity_path, intrinsics: pinhole_calls.append((entity_path, intrinsics)),
         log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
         log_line_strip3d=lambda *args, **kwargs: None,
         log_clear=lambda *args, **kwargs: None,
         log_depth_image=lambda *args, **kwargs: None,
@@ -50,24 +76,14 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
     )
 
     with caplog.at_level(logging.WARNING):
-        policy.observe(
+        policy.observe_update(
             stream,
-            BackendNoticeReceived(
-                event_id="1",
-                run_id="run-1",
-                ts_ns=1,
-                stage_key=StageKey.SLAM,
-                notice=KeyframeVisualizationReady(
-                    seq=1,
-                    timestamp_ns=1,
-                    source_seq=2,
-                    source_timestamp_ns=1,
-                    keyframe_index=7,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                    image=ArrayHandle(handle_id="rgb", shape=(3, 4, 3), dtype="uint8"),
-                    depth=ArrayHandle(handle_id="depth", shape=(3, 4), dtype="float32"),
-                    preview=PreviewHandle(handle_id="preview", width=4, height=3, channels=3, dtype="uint8"),
-                ),
+            _keyframe_update(
+                refs={
+                    IMAGE_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                    DEPTH_REF: _payload_ref("depth", payload_kind="depth", shape=(3, 4), dtype="float32"),
+                    PREVIEW_REF: _payload_ref("preview", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                }
             ),
             payloads={
                 "rgb": np.zeros((3, 4, 3), dtype=np.uint8),
@@ -96,6 +112,8 @@ def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
     policy = RerunLoggingPolicy(
         log_pinhole=lambda *args, **kwargs: None,
         log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
         log_line_strip3d=lambda *args, **kwargs: None,
         log_clear=lambda *args, **kwargs: None,
         log_depth_image=lambda *args, **kwargs: None,
@@ -105,23 +123,13 @@ def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
     )
 
     with pytest.raises(ValueError, match="must share the same raster shape"):
-        policy.observe(
+        policy.observe_update(
             stream,
-            BackendNoticeReceived(
-                event_id="2",
-                run_id="run-1",
-                ts_ns=2,
-                stage_key=StageKey.SLAM,
-                notice=KeyframeVisualizationReady(
-                    seq=1,
-                    timestamp_ns=1,
-                    source_seq=2,
-                    source_timestamp_ns=1,
-                    keyframe_index=1,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                    image=ArrayHandle(handle_id="rgb", shape=(3, 4, 3), dtype="uint8"),
-                    depth=ArrayHandle(handle_id="depth", shape=(2, 4), dtype="float32"),
-                ),
+            _keyframe_update(
+                refs={
+                    IMAGE_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                    DEPTH_REF: _payload_ref("depth", payload_kind="depth", shape=(2, 4), dtype="float32"),
+                }
             ),
             payloads={
                 "rgb": np.zeros((3, 4, 3), dtype=np.uint8),
@@ -205,6 +213,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     layout = sent_blueprints[0].layout
     assert layout.views[0].contents == [
         "+ world/alignment/**",
+        "+ world/reconstruction/**",
         "+ world/live/tracking/**",
         "+ world/live/model",
         "- world/live/model/camera/image",
@@ -231,7 +240,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert logged_entities[1][2] is True
 
 
-def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_completion() -> None:
+def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_update() -> None:
     stream = _FakeRecordingStream()
     ground_calls: list[GroundAlignmentMetadata] = []
     metadata = GroundAlignmentMetadata(
@@ -243,6 +252,8 @@ def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_completion()
     policy = RerunLoggingPolicy(
         log_pinhole=lambda *args, **kwargs: None,
         log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
         log_line_strip3d=lambda *args, **kwargs: None,
         log_clear=lambda *args, **kwargs: None,
         log_depth_image=lambda *args, **kwargs: None,
@@ -251,20 +262,12 @@ def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_completion()
         log_transform=lambda *args, **kwargs: None,
     )
 
-    policy.observe(
+    policy.observe_update(
         stream,
-        StageCompleted(
-            event_id="1",
-            run_id="run-1",
-            ts_ns=1,
+        StageRuntimeUpdate(
             stage_key=StageKey.GROUND_ALIGNMENT,
-            outcome=StageOutcome(
-                stage_key=StageKey.GROUND_ALIGNMENT,
-                status=StageStatus.COMPLETED,
-                config_hash="cfg",
-                input_fingerprint="inp",
-            ),
-            ground_alignment=metadata,
+            timestamp_ns=1,
+            semantic_events=[metadata],
         ),
     )
 

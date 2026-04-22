@@ -35,7 +35,7 @@ from prml_vslam.interfaces import (
     RgbdObservationSequenceIndex,
     RgbdObservationSequenceRef,
 )
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.interfaces.slam import (
     ArtifactRef,
     BackendWarning,
@@ -59,7 +59,6 @@ from prml_vslam.pipeline.contracts.events import (
     StageCompleted,
     StageFailed,
     StageOutcome,
-    StageProgress,
     StageStatus,
 )
 from prml_vslam.pipeline.contracts.handles import ArrayHandle
@@ -83,18 +82,21 @@ from prml_vslam.pipeline.ray_runtime.stage_execution import (
     StageExecutionContext,
     run_reference_reconstruction_stage,
 )
-from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.runner import StageRunner
+from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
 from prml_vslam.pipeline.stage_registry import StageRegistry
 from prml_vslam.pipeline.stages.base.contracts import (
+    StageResult,
     StageRuntimeStatus,
     StageRuntimeUpdate,
     VisualizationIntent,
     VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
@@ -497,8 +499,13 @@ def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
     snapshot = RunSnapshot(
         run_id="run-1",
         state=RunState.RUNNING,
-        stage_status={StageKey.INGEST: StageStatus.RUNNING},
-        stage_progress={StageKey.INGEST: StageProgress(message="streaming")},
+        stage_runtime_status={
+            StageKey.INGEST: StageRuntimeStatus(
+                stage_key=StageKey.INGEST,
+                lifecycle_state=StageStatus.RUNNING,
+                progress_message="streaming",
+            )
+        },
         artifacts={"before": ArtifactRef(path=Path("/tmp/before"), kind="txt", fingerprint="before")},
     )
 
@@ -519,11 +526,9 @@ def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
         ),
     )
 
-    assert updated.stage_status == snapshot.stage_status
-    assert updated.stage_progress == snapshot.stage_progress
+    assert updated.stage_runtime_status == snapshot.stage_runtime_status
     assert updated.artifacts == snapshot.artifacts
-    assert updated.stage_status is not snapshot.stage_status
-    assert updated.stage_progress is not snapshot.stage_progress
+    assert updated.stage_runtime_status is not snapshot.stage_runtime_status
     assert updated.artifacts is not snapshot.artifacts
 
 
@@ -533,7 +538,9 @@ def test_snapshot_projector_clears_current_stage_on_stage_failed() -> None:
         run_id="run-1",
         state=RunState.RUNNING,
         current_stage_key=StageKey.SLAM,
-        stage_status={StageKey.SLAM: StageStatus.RUNNING},
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING)
+        },
     )
 
     updated = projector.apply(
@@ -555,6 +562,7 @@ def test_snapshot_projector_clears_current_stage_on_stage_failed() -> None:
 
     assert updated.current_stage_key is None
     assert updated.stage_status[StageKey.SLAM] is StageStatus.FAILED
+    assert StageKey.SLAM not in updated.stage_runtime_status
     assert updated.error_message == "boom"
     assert updated.stage_outcomes[StageKey.SLAM].status is StageStatus.FAILED
 
@@ -644,7 +652,13 @@ def test_snapshot_projector_runtime_update_skips_empty_progress_projection() -> 
     projector = SnapshotProjector()
     snapshot = RunSnapshot(
         run_id="run-1",
-        stage_progress={StageKey.SLAM: StageProgress(message="old")},
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(
+                stage_key=StageKey.SLAM,
+                lifecycle_state=StageStatus.RUNNING,
+                progress_message="old",
+            )
+        },
     )
     update = StageRuntimeUpdate(
         stage_key=StageKey.SLAM,
@@ -885,6 +899,163 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
     assert coordinator._rerun_sink_last_call == "rerun-call-1"
 
 
+def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted: list[tuple[StageRuntimeUpdate, Any]] = []
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+        timestamp_ns=1,
+        runtime_status=StageRuntimeStatus(
+            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+            lifecycle_state=StageStatus.COMPLETED,
+        ),
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role="reconstruction_point_cloud",
+            )
+        ],
+    )
+
+    class FakeObserveUpdateRemote:
+        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: Any) -> str:
+            submitted.append((update, payload_resolver))
+            return "rerun-call-1"
+
+    class FakeReconstructionRuntime:
+        def __init__(self) -> None:
+            self.drained = False
+
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.REFERENCE_RECONSTRUCTION)
+
+        def stop(self) -> None:
+            return None
+
+        def run_offline(self, input_payload) -> StageResult:
+            del input_payload
+            raise AssertionError("routing test should not run the stage")
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            if self.drained:
+                return []
+            self.drained = True
+            return [update]
+
+    runtime_manager = RuntimeManager()
+    runtime_manager.register(
+        StageKey.REFERENCE_RECONSTRUCTION,
+        factory=FakeReconstructionRuntime,
+        capabilities=frozenset({RuntimeCapability.OFFLINE, RuntimeCapability.LIVE_UPDATES}),
+    )
+    runtime_proxy = runtime_manager.runtime_for(StageKey.REFERENCE_RECONSTRUCTION)
+    coordinator._rerun_sink = SimpleNamespace(observe_update=FakeObserveUpdateRemote())
+
+    coordinator._publish_runtime_updates_from_proxy(runtime_proxy)
+
+    assert submitted == [(update, None)]
+    assert coordinator._rerun_sink_last_call == "rerun-call-1"
+    assert (
+        coordinator.snapshot().stage_runtime_status[StageKey.REFERENCE_RECONSTRUCTION].lifecycle_state
+        is StageStatus.COMPLETED
+    )
+    assert runtime_proxy.live_updates().drain_runtime_updates() == []
+
+
+def test_run_coordinator_runtime_manager_registers_reconstruction_live_updates(tmp_path: Path) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    request = RunRequest(
+        experiment_name="demo",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.REFERENCE_RECONSTRUCTION],
+    )
+
+    runtime_manager = coordinator._build_runtime_manager(plan=plan, source=FakeOfflineSource())
+    runtime_proxy = runtime_manager.runtime_for(StageKey.REFERENCE_RECONSTRUCTION)
+
+    assert RuntimeCapability.OFFLINE in runtime_proxy.supported_capabilities
+    assert RuntimeCapability.LIVE_UPDATES in runtime_proxy.supported_capabilities
+
+
+def test_run_coordinator_releases_streaming_credit_before_update_observer_routing() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    call_order: list[str] = []
+    credits: list[int] = []
+
+    class _FakeStreamingRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING)
+
+        def stop(self) -> None:
+            return None
+
+        def start_streaming(self, input_payload) -> None:
+            del input_payload
+
+        def submit_stream_item(self, item) -> None:
+            del item
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            return [
+                StageRuntimeUpdate(
+                    stage_key=StageKey.SLAM,
+                    timestamp_ns=1,
+                    runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+                )
+            ]
+
+        def finish_streaming(self) -> StageResult:
+            raise AssertionError("finish_streaming should not be called in this test")
+
+    runtime_manager = RuntimeManager()
+    runtime_manager.register(
+        StageKey.SLAM,
+        factory=_FakeStreamingRuntime,
+        capabilities=frozenset({RuntimeCapability.LIVE_UPDATES, RuntimeCapability.STREAMING}),
+    )
+    coordinator._slam_runtime_proxy = runtime_manager.runtime_for(StageKey.SLAM)
+    coordinator._source_actor = SimpleNamespace(
+        grant_credit=SimpleNamespace(remote=lambda count: call_order.append("credit") or credits.append(count)),
+    )
+
+    def _fail_update_routing(*, updates: list[StageRuntimeUpdate]) -> None:
+        del updates
+        call_order.append("updates")
+        raise RuntimeError("observer routing failed")
+
+    coordinator.on_slam_runtime_updates = _fail_update_routing
+
+    coordinator.on_packet(
+        packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
+        frame_handle=ArrayHandle(handle_id="frame-1", shape=(2, 2, 3), dtype="uint8"),
+        frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_ref=None,
+        confidence_ref=None,
+        intrinsics=None,
+        pose=None,
+        provenance=FramePacketProvenance(),
+        received_frames=1,
+        measured_fps=30.0,
+    )
+
+    assert credits == [1]
+    assert call_order == ["credit", "updates"]
+    assert coordinator._in_flight_frames == 0
+    assert coordinator._streaming_error is None
+
+
 def test_run_coordinator_records_stage_failed_events() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
@@ -1011,15 +1182,15 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
     )
 
     snapshot = coordinator.snapshot()
-    assert snapshot.sequence_manifest is not None
-    assert snapshot.slam is not None
-    assert snapshot.summary is not None
+    assert snapshot.stage_outcomes[StageKey.INGEST].status is StageStatus.COMPLETED
+    assert snapshot.stage_outcomes[StageKey.SLAM].status is StageStatus.COMPLETED
+    assert snapshot.stage_outcomes[StageKey.SUMMARY].status is StageStatus.COMPLETED
+    assert "trajectory_tum" in snapshot.artifacts
+    assert "run_summary" in snapshot.artifacts
     assert snapshot.state is RunState.COMPLETED
 
 
-def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path: Path) -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="streaming-dispatch", namespace="pytest-unit")
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
@@ -1045,84 +1216,155 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
     slam_artifacts = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),
     )
-    slam_result = StageCompletionPayload(
-        outcome=StageOutcome(
-            stage_key=StageKey.SLAM,
-            status=StageStatus.COMPLETED,
-            config_hash="slam",
-            input_fingerprint="slam",
-            artifacts={"trajectory_tum": slam_artifacts.trajectory_tum},
-        ),
-        slam=slam_artifacts,
-        visualization=None,
-    )
     calls: list[str] = []
 
-    class _RemoteCall:
-        def __init__(self, value):
-            self._value = value
+    class _FakeSlamRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING)
 
-        def remote(self, **_kwargs):
-            return self._value
+        def stop(self) -> None:
+            return None
 
-    class FakeSlamActor:
-        close_stage = _RemoteCall(slam_result)
+        def start_streaming(self, input_payload) -> None:
+            del input_payload
 
-    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.get", lambda value: value)
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_program.run_trajectory_evaluation_stage",
-        lambda *, context, sequence_manifest, benchmark_inputs, slam: (
-            sequence_manifest == coordinator._runtime_state.sequence_manifest
-            and benchmark_inputs is None
-            and slam == slam_artifacts
-            and calls.append("trajectory")
-            or StageCompletionPayload(
+        def submit_stream_item(self, item) -> None:
+            del item
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            return []
+
+        def finish_streaming(self) -> StageResult:
+            calls.append("slam.finish")
+            return StageResult(
+                stage_key=StageKey.SLAM,
+                payload=slam_artifacts,
+                outcome=StageOutcome(
+                    stage_key=StageKey.SLAM,
+                    status=StageStatus.COMPLETED,
+                    config_hash="slam",
+                    input_fingerprint="slam",
+                    artifacts={"trajectory_tum": slam_artifacts.trajectory_tum},
+                ),
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    lifecycle_state=StageStatus.COMPLETED,
+                ),
+            )
+
+    class _FakeTrajectoryRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.TRAJECTORY_EVALUATION, lifecycle_state=StageStatus.RUNNING)
+
+        def stop(self) -> None:
+            return None
+
+        def run_offline(self, input_payload) -> StageResult:
+            assert input_payload.sequence_manifest == sequence_manifest
+            assert input_payload.benchmark_inputs is None
+            assert input_payload.slam == slam_artifacts
+            calls.append("trajectory")
+            return StageResult(
+                stage_key=StageKey.TRAJECTORY_EVALUATION,
+                payload=None,
                 outcome=StageOutcome(
                     stage_key=StageKey.TRAJECTORY_EVALUATION,
                     status=StageStatus.COMPLETED,
                     config_hash="trajectory",
                     input_fingerprint="trajectory",
-                )
+                ),
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.TRAJECTORY_EVALUATION,
+                    lifecycle_state=StageStatus.COMPLETED,
+                ),
             )
-        ),
-    )
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_program.run_summary_stage",
-        lambda *, context, stage_outcomes: (
-            len(stage_outcomes) == 2
-            and calls.append("summary")
-            or StageCompletionPayload(
+
+    class _FakeSummaryRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.SUMMARY, lifecycle_state=StageStatus.RUNNING)
+
+        def stop(self) -> None:
+            return None
+
+        def run_offline(self, input_payload) -> StageResult:
+            calls.append("summary")
+            assert [outcome.stage_key for outcome in input_payload.stage_outcomes] == [
+                StageKey.INGEST,
+                StageKey.SLAM,
+                StageKey.TRAJECTORY_EVALUATION,
+            ]
+            return StageResult(
+                stage_key=StageKey.SUMMARY,
+                payload=RunSummary(
+                    run_id=input_payload.plan.run_id,
+                    artifact_root=input_payload.plan.artifact_root,
+                    stage_status={
+                        StageKey.INGEST: StageStatus.COMPLETED,
+                        StageKey.SLAM: StageStatus.COMPLETED,
+                        StageKey.TRAJECTORY_EVALUATION: StageStatus.COMPLETED,
+                    },
+                ),
                 outcome=StageOutcome(
                     stage_key=StageKey.SUMMARY,
                     status=StageStatus.COMPLETED,
                     config_hash="summary",
                     input_fingerprint="summary",
                 ),
-                summary=RunSummary(
-                    run_id=context.plan.run_id,
-                    artifact_root=context.plan.artifact_root,
-                    stage_status={
-                        StageKey.SLAM: StageStatus.COMPLETED,
-                        StageKey.TRAJECTORY_EVALUATION: StageStatus.COMPLETED,
-                    },
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.SUMMARY,
+                    lifecycle_state=StageStatus.COMPLETED,
                 ),
-                stage_manifests=[],
             )
-        ),
+
+    runtime_manager = RuntimeManager()
+    slam_runtime = _FakeSlamRuntime()
+    runtime_manager.register(
+        StageKey.SLAM,
+        factory=lambda: slam_runtime,
+        capabilities=frozenset({RuntimeCapability.LIVE_UPDATES, RuntimeCapability.STREAMING}),
+    )
+    runtime_manager.register(
+        StageKey.TRAJECTORY_EVALUATION,
+        factory=_FakeTrajectoryRuntime,
+        capabilities=frozenset({RuntimeCapability.OFFLINE}),
+    )
+    runtime_manager.register(
+        StageKey.SUMMARY,
+        factory=_FakeSummaryRuntime,
+        capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
     coordinator._request = request
     coordinator._plan = plan
     coordinator._path_config = path_config
     coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
     coordinator._snapshot = RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
-    coordinator._runtime_state.sequence_manifest = sequence_manifest
-    coordinator._slam_actor = FakeSlamActor()
+    coordinator._streaming_runtime_manager = runtime_manager
+    coordinator._slam_runtime_proxy = runtime_manager.runtime_for(StageKey.SLAM)
+    coordinator._result_store.put(
+        StageResult(
+            stage_key=StageKey.INGEST,
+            payload=SourceStageOutput(sequence_manifest=sequence_manifest, benchmark_inputs=None),
+            outcome=StageOutcome(
+                stage_key=StageKey.INGEST,
+                status=StageStatus.COMPLETED,
+                config_hash="ingest",
+                input_fingerprint="ingest",
+            ),
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.INGEST,
+                lifecycle_state=StageStatus.COMPLETED,
+            ),
+        )
+    )
+    coordinator._stage_runner = StageRunner(coordinator._result_store)
 
     coordinator._finalize_streaming()
 
-    assert calls == ["trajectory", "summary"]
+    assert calls == ["slam.finish", "trajectory", "summary"]
     snapshot = coordinator.snapshot()
-    assert snapshot.slam == slam_artifacts
+    assert snapshot.stage_outcomes[StageKey.SLAM].artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
+    assert snapshot.artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
     assert snapshot.state is RunState.COMPLETED
 
 
@@ -1910,17 +2152,16 @@ def test_run_coordinator_logs_stage_start_and_completion(
         "prml_vslam.pipeline.ray_runtime.coordinator.RunCoordinatorActor.demo",
     ):
         coordinator._emit_stage_started(StageKey.SLAM)
-        coordinator._record_stage_completion(
+        coordinator._record_stage_result(
             StageKey.SLAM,
-            SimpleNamespace(
+            StageResult(
+                stage_key=StageKey.SLAM,
+                payload=None,
                 outcome=outcome,
-                sequence_manifest=None,
-                benchmark_inputs=None,
-                slam=None,
-                ground_alignment=None,
-                visualization=None,
-                summary=None,
-                stage_manifests=[],
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    lifecycle_state=StageStatus.COMPLETED,
+                ),
             ),
         )
 
@@ -1960,7 +2201,7 @@ def test_packet_source_actor_logs_start_and_eof(
     actor._packet_timestamps = deque(maxlen=20)
     monkeypatch.setattr(
         "prml_vslam.pipeline.ray_runtime.stage_actors.put_array_handle",
-        lambda array: (SimpleNamespace(handle_id="frame"), np.asarray(array)),
+        lambda array: (ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8"), np.asarray(array)),
     )
 
     with _capture_logger(
@@ -1995,8 +2236,8 @@ def test_run_service_offline_mock_smoke(tmp_path: Path) -> None:
     snapshot = _wait_for_terminal_snapshot(service)
 
     assert snapshot.state is RunState.COMPLETED
-    assert snapshot.sequence_manifest is not None
-    assert snapshot.slam is not None
+    assert snapshot.stage_outcomes[StageKey.INGEST].status is StageStatus.COMPLETED
+    assert snapshot.stage_outcomes[StageKey.SLAM].status is StageStatus.COMPLETED
     assert "trajectory_tum" in snapshot.artifacts
     service.shutdown()
 

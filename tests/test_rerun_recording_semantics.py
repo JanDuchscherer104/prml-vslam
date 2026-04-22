@@ -11,11 +11,18 @@ import rerun as rr
 import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-from prml_vslam.interfaces.slam import KeyframeVisualizationReady
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.interfaces.slam import SlamUpdate
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.slam.visualization import (
+    DEPTH_REF,
+    IMAGE_REF,
+    POINTMAP_REF,
+    PREVIEW_REF,
+    SlamVisualizationAdapter,
+)
 from prml_vslam.visualization import rerun as rerun_helpers
 
 
@@ -223,6 +230,8 @@ def _build_repo_owned_recording(*, tmp_path: Path, payloads: Sequence[_Synthetic
     policy = RerunLoggingPolicy(
         log_pinhole=rerun_helpers.log_pinhole,
         log_pointcloud=rerun_helpers.log_pointcloud,
+        log_pointcloud_ply=rerun_helpers.log_pointcloud_ply,
+        log_mesh_ply=rerun_helpers.log_mesh_ply,
         log_line_strip3d=rerun_helpers.log_line_strip3d,
         log_clear=rerun_helpers.log_clear,
         log_depth_image=rerun_helpers.log_depth_image,
@@ -230,30 +239,69 @@ def _build_repo_owned_recording(*, tmp_path: Path, payloads: Sequence[_Synthetic
         log_rgb_image=rerun_helpers.log_rgb_image,
         log_transform=rerun_helpers.log_transform,
     )
+    adapter = SlamVisualizationAdapter()
     for payload in payloads:
-        policy.observe(
+        policy.observe_update(
             stream,
-            BackendNoticeReceived(
-                event_id=str(payload.keyframe_index),
-                run_id="run-1",
-                ts_ns=payload.frame_index,
+            StageRuntimeUpdate(
                 stage_key=StageKey.SLAM,
-                notice=KeyframeVisualizationReady(
-                    seq=payload.frame_index,
-                    timestamp_ns=payload.frame_index,
-                    source_seq=payload.frame_index,
-                    source_timestamp_ns=payload.frame_index,
-                    keyframe_index=payload.keyframe_index,
-                    pose=payload.pose,
-                    preview=PreviewHandle(handle_id="preview", width=4, height=3, channels=3, dtype="uint8"),
-                    image=ArrayHandle(handle_id="rgb", shape=payload.rgb.shape, dtype=str(payload.rgb.dtype)),
-                    depth=ArrayHandle(handle_id="depth", shape=payload.depth_m.shape, dtype=str(payload.depth_m.dtype)),
-                    pointmap=ArrayHandle(
-                        handle_id="pointmap",
-                        shape=payload.pointmap_xyz_camera.shape,
-                        dtype=str(payload.pointmap_xyz_camera.dtype),
+                timestamp_ns=payload.frame_index,
+                visualizations=adapter.build_items(
+                    SlamUpdate(
+                        seq=payload.frame_index,
+                        timestamp_ns=payload.frame_index,
+                        source_seq=payload.frame_index,
+                        source_timestamp_ns=payload.frame_index,
+                        pose=payload.pose,
                     ),
-                    camera_intrinsics=payload.intrinsics,
+                    {},
+                ),
+            ),
+            payloads={},
+        )
+        refs = {
+            PREVIEW_REF: TransientPayloadRef(
+                handle_id="preview",
+                payload_kind="image",
+                shape=payload.preview_rgb.shape,
+                dtype=str(payload.preview_rgb.dtype),
+            ),
+            IMAGE_REF: TransientPayloadRef(
+                handle_id="rgb",
+                payload_kind="image",
+                shape=payload.rgb.shape,
+                dtype=str(payload.rgb.dtype),
+            ),
+            DEPTH_REF: TransientPayloadRef(
+                handle_id="depth",
+                payload_kind="depth",
+                shape=payload.depth_m.shape,
+                dtype=str(payload.depth_m.dtype),
+            ),
+            POINTMAP_REF: TransientPayloadRef(
+                handle_id="pointmap",
+                payload_kind="point_cloud",
+                shape=payload.pointmap_xyz_camera.shape,
+                dtype=str(payload.pointmap_xyz_camera.dtype),
+            ),
+        }
+        policy.observe_update(
+            stream,
+            StageRuntimeUpdate(
+                stage_key=StageKey.SLAM,
+                timestamp_ns=payload.frame_index,
+                visualizations=adapter.build_items(
+                    SlamUpdate(
+                        seq=payload.frame_index,
+                        timestamp_ns=payload.frame_index,
+                        source_seq=payload.frame_index,
+                        source_timestamp_ns=payload.frame_index,
+                        is_keyframe=True,
+                        keyframe_index=payload.keyframe_index,
+                        pose=payload.pose,
+                        camera_intrinsics=payload.intrinsics,
+                    ),
+                    refs,
                 ),
             ),
             payloads={

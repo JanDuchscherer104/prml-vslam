@@ -162,6 +162,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].origin == "world"
     assert layout.views[0].contents == [
         "+ world/alignment/**",
+        "+ world/reconstruction/**",
         "+ world/live/tracking/**",
         "+ world/live/model",
         "- world/live/model/camera/image",

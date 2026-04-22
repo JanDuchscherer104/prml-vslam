@@ -232,10 +232,11 @@ class RunRequest(BaseConfig):
         """Compile the canonical :class:`RunPlan` for this request.
 
         Planning is deterministic and side-effect free. It validates
-        request-level invariants and delegates stage compilation to
-        :class:`prml_vslam.pipeline.stage_registry.StageRegistry`.
+        request-level invariants and then projects into
+        :class:`prml_vslam.pipeline.config.RunConfig` for direct stage-section
+        plan compilation.
         """
-        from prml_vslam.pipeline.stage_registry import StageRegistry
+        from prml_vslam.pipeline.config import RunConfig
 
         if self.benchmark.cloud.enabled and not self.slam.outputs.emit_dense_points:
             raise ValueError("Cloud evaluation requires `slam.outputs.emit_dense_points=True`.")
@@ -244,7 +245,7 @@ class RunRequest(BaseConfig):
         ):
             raise ValueError("Ground alignment requires at least one point-cloud output from the SLAM stage.")
         config = PathConfig() if path_config is None else path_config
-        return StageRegistry.default().compile(request=self, path_config=config)
+        return RunConfig.from_run_request(self).compile_plan(path_config=config)
 
 
 def build_run_request(

@@ -17,7 +17,6 @@ from prml_vslam.interfaces.slam import KeyframeVisualizationReady
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunEvent
-from prml_vslam.pipeline.contracts.provenance import StageManifest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
@@ -98,7 +97,7 @@ class PipelineSnapshotRenderModel:
     notice: PipelineNoticeRenderModel
     is_offline: bool
     plan_rows: list[dict[str, str]]
-    stage_manifest_rows: list[dict[str, str]]
+    stage_outcome_rows: list[dict[str, str]]
     recent_events: list[JsonObject]
     stage_outcomes_json: str | None
     artifacts_json: str | None
@@ -108,16 +107,20 @@ class PipelineSnapshotRenderModel:
 
 def resolve_evo_preview(snapshot: RunSnapshot) -> tuple[TrajectoryEvaluationPreview | None, str | None]:
     """Resolve a cached in-memory evo APE preview for a completed pipeline snapshot."""
-    if (
-        snapshot.slam is None
-        or snapshot.slam.trajectory_tum is None
-        or snapshot.benchmark_inputs is None
-        or not snapshot.benchmark_inputs.reference_trajectories
-    ):
+    estimate = snapshot.artifacts.get("trajectory_tum")
+    reference = next(
+        (
+            artifact
+            for artifact_key, artifact in snapshot.artifacts.items()
+            if artifact_key.startswith("reference_tum:")
+        ),
+        None,
+    )
+    if estimate is None or reference is None:
         return None, None
 
-    reference_path = snapshot.benchmark_inputs.reference_trajectories[0].path
-    estimate_path = snapshot.slam.trajectory_tum.path
+    reference_path = reference.path
+    estimate_path = estimate.path
     if not reference_path.exists() or not estimate_path.exists():
         return None, None
     try:
@@ -216,7 +219,7 @@ def build_pipeline_snapshot_render_model(
         notice=_pipeline_notice(snapshot, is_offline=is_offline),
         is_offline=is_offline,
         plan_rows=[] if snapshot.plan is None else snapshot.plan.stage_rows(),
-        stage_manifest_rows=[] if not snapshot.stage_manifests else StageManifest.table_rows(snapshot.stage_manifests),
+        stage_outcome_rows=_stage_outcome_rows(snapshot),
         recent_events=_recent_event_rows(run_service.tail_events(limit=10)),
         stage_outcomes_json=_json_dump_mapping(
             {stage_key.value: outcome.model_dump(mode="json") for stage_key, outcome in snapshot.stage_outcomes.items()}
@@ -412,6 +415,20 @@ def _streaming_trajectory_empty_message(method: MethodId | None) -> str:
     if method is MethodId.VISTA:
         return "ViSTA-SLAM has not accepted a keyframe pose yet, so no live trajectory is available."
     return "The selected SLAM backend has not produced any trajectory points yet."
+
+
+def _stage_outcome_rows(snapshot: RunSnapshot) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for stage_key, outcome in sorted(snapshot.stage_outcomes.items(), key=lambda item: item[0].value):
+        rows.append(
+            {
+                "Stage": stage_key.value,
+                "Status": outcome.status.value,
+                "Config Hash": outcome.config_hash,
+                "Outputs": ", ".join(sorted(artifact.path.name for artifact in outcome.artifacts.values())),
+            }
+        )
+    return rows
 
 
 __all__ = [

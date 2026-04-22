@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -109,6 +112,7 @@ def test_visualization_item_carries_transient_payload_refs_without_sdk_fields() 
         intent=VisualizationIntent.RGB_IMAGE,
         role="model_rgb",
         payload_refs={"image": image_ref},
+        artifact_refs={"mesh": ArtifactRef(path=Path("mesh.ply"), kind="ply", fingerprint="mesh")},
         pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
         frame_index=2,
         keyframe_index=1,
@@ -119,6 +123,7 @@ def test_visualization_item_carries_transient_payload_refs_without_sdk_fields() 
     dumped = item.model_dump(mode="json")
 
     assert dumped["payload_refs"]["image"]["handle_id"] == "payload-1"
+    assert dumped["artifact_refs"]["mesh"]["path"] == "mesh.ply"
     assert dumped["intent"] == "rgb_image"
     assert "rerun" not in dumped
     assert "entity_path" not in dumped

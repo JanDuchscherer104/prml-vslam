@@ -29,7 +29,6 @@ from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.demo import (
@@ -38,6 +37,7 @@ from prml_vslam.pipeline.demo import (
     load_run_config_toml,
 )
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
 
@@ -293,8 +293,8 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
             del run_id, after_event_id, limit
             return []
 
-        def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None):
-            del run_id, handle
+        def read_payload(self, run_id: str, ref: TransientPayloadRef | None):
+            del run_id, ref
             return None
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
