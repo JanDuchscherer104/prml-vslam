@@ -42,7 +42,6 @@ from prml_vslam.interfaces.slam import (
     KeyframeVisualizationReady,
     PoseEstimated,
     SlamArtifacts,
-    SlamSessionInit,
     SlamUpdate,
 )
 from prml_vslam.methods import MethodId
@@ -72,16 +71,13 @@ from prml_vslam.pipeline.contracts.request import (
 )
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.execution_context import StageExecutionContext
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ingest import _max_frames_for_request, materialize_offline_manifest
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import backend_config_payload, clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
-from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, StreamingSlamStageActor
-from prml_vslam.pipeline.ray_runtime.stage_execution import (
-    StageExecutionContext,
-    run_reference_reconstruction_stage,
-)
+from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.runner import StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
@@ -97,6 +93,7 @@ from prml_vslam.pipeline.stages.base.contracts import (
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
+from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
@@ -450,14 +447,20 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
     )
     benchmark_inputs = _rgbd_benchmark_inputs(tmp_path)
 
-    payload = run_reference_reconstruction_stage(context=context, benchmark_inputs=benchmark_inputs)
+    result = ReconstructionRuntime().run_offline(
+        ReconstructionRuntimeInput(
+            request=request,
+            run_paths=context.run_paths,
+            benchmark_inputs=benchmark_inputs,
+        )
+    )
 
-    assert payload.outcome.stage_key is StageKey.REFERENCE_RECONSTRUCTION
-    assert payload.outcome.status is StageStatus.COMPLETED
-    assert payload.outcome.artifacts["reference_cloud"].path.exists()
-    assert payload.outcome.artifacts["reconstruction_metadata"].path.exists()
-    assert payload.outcome.artifacts["reference_mesh"].path.exists()
-    assert payload.outcome.metrics["observation_count"] == 1
+    assert result.outcome.stage_key is StageKey.REFERENCE_RECONSTRUCTION
+    assert result.outcome.status is StageStatus.COMPLETED
+    assert result.outcome.artifacts["reference_cloud"].path.exists()
+    assert result.outcome.artifacts["reconstruction_metadata"].path.exists()
+    assert result.outcome.artifacts["reference_mesh"].path.exists()
+    assert result.outcome.metrics["observation_count"] == 1
 
 
 def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
@@ -1366,238 +1369,6 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     assert snapshot.stage_outcomes[StageKey.SLAM].artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
     assert snapshot.artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
     assert snapshot.state is RunState.COMPLETED
-
-
-def test_streaming_slam_close_stage_fingerprints_normalized_sequence_manifest(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor_cls = StreamingSlamStageActor.__ray_metadata__.modified_class
-    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.stage_actors.ray.get_actor", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        "prml_vslam.visualization.rerun.collect_native_visualization_artifacts",
-        lambda **kwargs: None,
-    )
-    actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
-    trajectory_artifact = ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")
-    actor._session = SimpleNamespace(
-        close=lambda: SlamArtifacts(trajectory_tum=trajectory_artifact),
-    )
-    request = RunRequest(
-        experiment_name="streaming-fingerprint",
-        mode=PipelineMode.STREAMING,
-        output_dir=tmp_path / ".artifacts",
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
-    plan = _plan_with_stages(
-        tmp_path=tmp_path,
-        request=request,
-        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
-    )
-    sequence_manifest = SequenceManifest(sequence_id="normalized-sequence")
-
-    result = actor.close_stage(request=request, plan=plan, sequence_manifest=sequence_manifest)
-
-    assert result.outcome.input_fingerprint == stable_hash(sequence_manifest)
-
-
-def test_streaming_slam_stage_resolves_materialized_payloads_without_ray_get() -> None:
-    payload = np.zeros((2, 2, 3), dtype=np.uint8)
-
-    resolved = StreamingSlamStageActor.__ray_metadata__.modified_class._resolve_payload(payload)
-
-    assert resolved is not None
-    assert np.array_equal(resolved, payload)
-
-
-def test_streaming_slam_stage_passes_sequence_manifest_and_benchmark_inputs_to_backend(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor_cls = StreamingSlamStageActor.__ray_metadata__.modified_class
-    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.stage_actors.ray.get_actor", lambda *args, **kwargs: None)
-    captured: dict[str, object] = {}
-
-    class FakeBackend:
-        method_id = MethodId.MOCK
-
-        def start_session(self, **kwargs):
-            captured.update(kwargs)
-            return SimpleNamespace(step=lambda *_args, **_kwargs: None, try_get_updates=lambda: [], close=lambda: None)
-
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.slam.runtime.BackendFactory.build",
-        lambda self, backend_spec, path_config=None: FakeBackend(),
-    )
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_actors.put_array_handle",
-        lambda array: (
-            None
-            if array is None
-            else ArrayHandle(
-                handle_id=uuid.uuid4().hex, shape=np.asarray(array).shape, dtype=str(np.asarray(array).dtype)
-            ),
-            None if array is None else np.asarray(array),
-        ),
-    )
-    actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
-    request = RunRequest(
-        experiment_name="streaming-start",
-        mode=PipelineMode.STREAMING,
-        output_dir=tmp_path / ".artifacts",
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
-    plan = _plan_with_stages(
-        tmp_path=tmp_path,
-        request=request,
-        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
-    )
-    sequence_manifest = SequenceManifest(sequence_id="normalized-sequence")
-    benchmark_inputs = PreparedBenchmarkInputs()
-
-    actor.start_stage(
-        request=request,
-        plan=plan,
-        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
-        session_init=SlamSessionInit(
-            sequence_manifest=sequence_manifest,
-            benchmark_inputs=benchmark_inputs,
-            baseline_source=ReferenceSource.GROUND_TRUTH,
-        ),
-    )
-
-    session_init = captured["session_init"]
-    assert isinstance(session_init, SlamSessionInit)
-    assert session_init.sequence_manifest == sequence_manifest
-    assert session_init.benchmark_inputs == benchmark_inputs
-    assert session_init.baseline_source is ReferenceSource.GROUND_TRUTH
-
-
-def test_streaming_slam_stage_forwards_runtime_updates_before_credit_release(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor_cls = StreamingSlamStageActor.__ray_metadata__.modified_class
-    captured: dict[str, object] = {}
-    calls: list[str] = []
-
-    class _Remote:
-        def __init__(self, label: str, fn):
-            self._label = label
-            self.remote = fn
-
-    fake_coordinator = SimpleNamespace(
-        grant_slam_source_credit=_Remote(
-            "credit",
-            lambda **kwargs: calls.append("credit") or captured.setdefault("credit", kwargs),
-        ),
-        on_slam_runtime_updates=_Remote(
-            "updates",
-            lambda **kwargs: calls.append("updates") or captured.setdefault("updates", kwargs),
-        ),
-        on_slam_notices=_Remote(
-            "notices",
-            lambda **kwargs: calls.append("notices") or captured.setdefault("notices", kwargs),
-        ),
-    )
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_actors.ray.get_actor",
-        lambda *args, **kwargs: fake_coordinator,
-    )
-
-    class FakeSession:
-        def __init__(self) -> None:
-            self.pending: list[SlamUpdate] = []
-
-        def step(self, frame) -> None:
-            self.pending.append(
-                SlamUpdate(
-                    seq=frame.seq,
-                    timestamp_ns=frame.timestamp_ns,
-                    source_seq=frame.seq,
-                    is_keyframe=True,
-                    keyframe_index=0,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                    image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
-                    pointmap=np.ones((2, 2, 3), dtype=np.float32),
-                )
-            )
-
-        def try_get_updates(self) -> list[SlamUpdate]:
-            updates = self.pending
-            self.pending = []
-            return updates
-
-        def close(self) -> SlamArtifacts:
-            return SlamArtifacts(
-                trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")
-            )
-
-    class FakeBackend:
-        method_id = MethodId.MOCK
-
-        def start_session(self, **kwargs):
-            del kwargs
-            return FakeSession()
-
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.slam.runtime.BackendFactory.build",
-        lambda self, backend_spec, path_config=None: FakeBackend(),
-    )
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_actors.put_array_handle",
-        lambda array: (
-            None
-            if array is None
-            else ArrayHandle(
-                handle_id=uuid.uuid4().hex,
-                shape=tuple(np.asarray(array).shape),
-                dtype=str(np.asarray(array).dtype),
-            ),
-            None if array is None else np.asarray(array),
-        ),
-    )
-    request = RunRequest(
-        experiment_name="streaming-updates",
-        mode=PipelineMode.STREAMING,
-        output_dir=tmp_path / ".artifacts",
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
-    plan = _plan_with_stages(
-        tmp_path=tmp_path,
-        request=request,
-        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
-    )
-    actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
-    actor.start_stage(
-        request=request,
-        plan=plan,
-        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
-        session_init=SlamSessionInit(sequence_manifest=SequenceManifest(sequence_id="seq-1")),
-    )
-
-    actor.push_frame(
-        packet=FramePacketSummary(seq=1, timestamp_ns=10, provenance=FramePacketProvenance(source_id="fake")),
-        frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
-        depth_ref=None,
-        confidence_ref=None,
-        intrinsics=None,
-        pose=None,
-        provenance=FramePacketProvenance(source_id="fake"),
-    )
-
-    assert len(captured["updates"]["updates"]) == 1
-    assert "payload_bindings" not in captured["updates"]
-    assert captured["credit"]["credit_count"] == 1
-    assert captured["notices"]["notices"] == []
-    assert captured["notices"]["bindings"] == []
-    assert captured["notices"]["released_credits"] == 1
-    assert captured["notices"]["grant_source_credit"] is False
-    assert captured["notices"]["project_to_snapshot"] is False
-    assert calls == ["credit", "updates", "notices"]
 
 
 def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
