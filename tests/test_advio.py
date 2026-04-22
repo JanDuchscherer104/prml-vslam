@@ -502,6 +502,21 @@ def test_advio_benchmark_inputs_skip_invalid_optional_provider_trajectory(tmp_pa
     assert not (sequence_dir / "evaluation" / "arcore.tum").exists()
 
 
+def test_advio_benchmark_inputs_skip_invalid_optional_tango_cloud_trajectory(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    _write_pose_csv_rows(
+        sequence_dir / "tango" / "area-learning.csv",
+        rows=((0.0, 1.0, 2.0, 3.0), (0.0, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)),
+    )
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    benchmark_inputs = sequence.to_benchmark_inputs()
+
+    assert {reference.source.value for reference in benchmark_inputs.reference_clouds} == {"tango_raw"}
+    assert [reference.source.value for reference in benchmark_inputs.reference_point_cloud_sequences] == ["tango_raw"]
+    assert not (sequence_dir / "evaluation" / "tango_area_learning.tum").exists()
+
+
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
 

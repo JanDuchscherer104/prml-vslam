@@ -73,9 +73,8 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.execution_context import StageExecutionContext
 from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.pipeline.ingest import _max_frames_for_request, materialize_offline_manifest
 from prml_vslam.pipeline.placement import actor_options_for_stage
-from prml_vslam.pipeline.ray_runtime.common import backend_config_payload, clean_actor_options
+from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
 from prml_vslam.pipeline.run_service import RunService
@@ -94,6 +93,7 @@ from prml_vslam.pipeline.stages.base.contracts import (
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.source.runtime import _max_frames_for_request
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
@@ -1371,7 +1371,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     assert snapshot.state is RunState.COMPLETED
 
 
-def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
+def test_slam_backend_config_normalizes_legacy_backend_kind_for_vista() -> None:
     request = RunRequest.model_validate(
         {
             "experiment_name": "vista",
@@ -1382,9 +1382,7 @@ def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
         }
     )
 
-    payload = backend_config_payload(request)
-
-    assert payload.max_frames == 9
+    assert request.slam.backend.max_frames == 9
 
 
 def test_streaming_requests_cap_ingest_by_backend_max_frames() -> None:
@@ -1749,158 +1747,6 @@ def test_source_resolver_delegates_video_resolution(tmp_path: Path) -> None:
     resolved = resolver.resolve(VideoSourceSpec(video_path=video_path))
 
     assert resolved.label == "Video 'resolver-demo.mp4'"
-
-
-def test_materialize_offline_manifest_logs_cache_hit(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    artifact_root = tmp_path / "artifacts"
-    run_paths = RunArtifactPaths.build(artifact_root)
-    run_paths.input_frames_dir.mkdir(parents=True, exist_ok=True)
-    video_path = tmp_path / "captures" / "demo.mp4"
-    video_path.parent.mkdir(parents=True, exist_ok=True)
-    video_path.write_bytes(b"")
-    (run_paths.input_frames_dir / "000000.png").write_bytes(b"png")
-    (run_paths.input_frames_dir / ".ingest_metadata.json").write_text(
-        f'{{"video_path": "{video_path.resolve()}", "frame_stride": 1, "max_frames": null}}',
-        encoding="utf-8",
-    )
-    request = RunRequest(
-        experiment_name="ingest-cache",
-        mode=PipelineMode.OFFLINE,
-        output_dir=tmp_path / ".artifacts",
-        source=VideoSourceSpec(video_path=video_path, frame_stride=1),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
-    prepared_manifest = SequenceManifest(sequence_id="ingest-cache", video_path=video_path)
-
-    with _capture_logger(
-        caplog,
-        monkeypatch,
-        "prml_vslam.pipeline.ingest.materialize_offline_manifest",
-    ):
-        manifest = materialize_offline_manifest(
-            request=request,
-            prepared_manifest=prepared_manifest,
-            run_paths=run_paths,
-        )
-
-    assert manifest.rgb_dir == run_paths.input_frames_dir.resolve()
-    assert any("Materializing offline manifest for sequence 'ingest-cache'." in r.message for r in caplog.records)
-    assert any("Reusing extracted frames" in r.message for r in caplog.records)
-
-
-def test_materialize_offline_manifest_normalizes_tum_rgbd_timestamps(tmp_path: Path) -> None:
-    artifact_root = tmp_path / "artifacts"
-    run_paths = RunArtifactPaths.build(artifact_root)
-    rgb_dir = tmp_path / "rgb"
-    rgb_dir.mkdir(parents=True)
-    timestamps_path = tmp_path / "rgb.txt"
-    timestamps_path.write_text(
-        "\n".join(
-            [
-                "# color images",
-                "# timestamp filename",
-                "0.000000000 rgb/000000.png",
-                "0.200000000 rgb/000001.png",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    request = RunRequest(
-        experiment_name="tum-ingest",
-        mode=PipelineMode.OFFLINE,
-        output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_room"),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
-    prepared_manifest = SequenceManifest(
-        sequence_id="freiburg1_room",
-        rgb_dir=rgb_dir,
-        timestamps_path=timestamps_path,
-    )
-
-    manifest = materialize_offline_manifest(
-        request=request,
-        prepared_manifest=prepared_manifest,
-        run_paths=run_paths,
-    )
-
-    assert manifest.timestamps_path == run_paths.input_timestamps_path.resolve()
-    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
-    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
-
-
-def test_materialize_offline_manifest_normalizes_advio_csv_timestamps(tmp_path: Path) -> None:
-    artifact_root = tmp_path / "artifacts"
-    run_paths = RunArtifactPaths.build(artifact_root)
-    rgb_dir = tmp_path / "rgb"
-    rgb_dir.mkdir(parents=True)
-    timestamps_path = tmp_path / "frames.csv"
-    timestamps_path.write_text("0.000000000,1\n0.100000000,2\n", encoding="utf-8")
-    request = RunRequest(
-        experiment_name="advio-ingest",
-        mode=PipelineMode.OFFLINE,
-        output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(
-            dataset_id="advio",
-            sequence_id="advio-15",
-            dataset_serving={
-                "dataset_id": "advio",
-                "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
-            },
-        ),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
-    prepared_manifest = SequenceManifest(
-        sequence_id="advio-15",
-        rgb_dir=rgb_dir,
-        timestamps_path=timestamps_path,
-    )
-
-    manifest = materialize_offline_manifest(
-        request=request,
-        prepared_manifest=prepared_manifest,
-        run_paths=run_paths,
-    )
-
-    assert manifest.timestamps_path == run_paths.input_timestamps_path.resolve()
-    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
-    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 100_000_000]}
-
-
-def test_materialize_offline_manifest_does_not_double_sample_dataset_timestamps(tmp_path: Path) -> None:
-    artifact_root = tmp_path / "artifacts"
-    run_paths = RunArtifactPaths.build(artifact_root)
-    rgb_dir = tmp_path / "rgb"
-    rgb_dir.mkdir(parents=True)
-    timestamps_path = tmp_path / "sampled-rgb.txt"
-    timestamps_path.write_text("0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n", encoding="utf-8")
-    request = RunRequest(
-        experiment_name="sampled-dataset-ingest",
-        mode=PipelineMode.OFFLINE,
-        output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_room", frame_stride=2),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
-    prepared_manifest = SequenceManifest(
-        sequence_id="freiburg1_room",
-        rgb_dir=rgb_dir,
-        timestamps_path=timestamps_path,
-    )
-
-    manifest = materialize_offline_manifest(
-        request=request,
-        prepared_manifest=prepared_manifest,
-        run_paths=run_paths,
-    )
-
-    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
-    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
 
 
 def test_run_coordinator_logs_stage_start_and_completion(

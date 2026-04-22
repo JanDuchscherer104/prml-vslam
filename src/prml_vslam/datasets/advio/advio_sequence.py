@@ -397,7 +397,16 @@ def _build_reference_point_cloud_sequences(
     ):
         if trajectory_csv_path is None or not trajectory_csv_path.exists():
             continue
-        trajectory_path = _ensure_advio_tum(trajectory_csv_path, evaluation_dir / tum_name)
+        try:
+            trajectory_path = _ensure_advio_tum(trajectory_csv_path, evaluation_dir / tum_name)
+        except ValueError as exc:
+            _CONSOLE.warning(
+                "Skipping invalid optional ADVIO %s point-cloud trajectory '%s': %s",
+                source.value,
+                trajectory_csv_path,
+                exc,
+            )
+            continue
         native_frame = f"advio_{source.value}_world"
         sequences.append(
             ReferencePointCloudSequenceRef(
