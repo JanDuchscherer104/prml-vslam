@@ -1,8 +1,8 @@
 """Deterministic planning contracts for the pipeline.
 
 This module owns the side-effect-free plan representation returned from
-:meth:`prml_vslam.pipeline.contracts.request.RunRequest.build`. It captures what
-the pipeline intends to execute before any runtime actor, backend wrapper, or
+:meth:`prml_vslam.pipeline.config.RunConfig.compile_plan`. It captures what the
+pipeline intends to execute before any runtime actor, backend wrapper, or
 source stream is started.
 """
 
@@ -35,7 +35,7 @@ class RunPlanStage(BaseData):
 
 
 class RunPlan(BaseData):
-    """Represent the deterministic plan compiled from one :class:`RunRequest`.
+    """Represent the deterministic plan compiled from one launch config.
 
     The plan is the bridge between request-time policy and runtime execution.
     UI code, CLI code, and the backend layer all consume this DTO instead of

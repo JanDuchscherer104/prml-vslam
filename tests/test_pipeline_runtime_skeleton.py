@@ -281,6 +281,24 @@ def test_runtime_manager_constructs_proxy_lazily() -> None:
     assert status.in_flight_count == 0
 
 
+def test_runtime_manager_rejects_unimplemented_ray_proxy_deployment() -> None:
+    manager = RuntimeManager()
+    manager.register(
+        StageKey.INGEST,
+        factory=_FakeOfflineRuntime,
+        capabilities=frozenset({RuntimeCapability.OFFLINE}),
+        deployment_kind="ray",
+    )
+
+    preflight = manager.preflight(_plan())
+    assert preflight.unsupported_deployments == {StageKey.INGEST: "ray"}
+    with pytest.raises(RuntimeError, match="unsupported deployment kinds"):
+        preflight.raise_for_errors()
+
+    with pytest.raises(NotImplementedError, match="requested deployment_kind='ray'"):
+        manager.runtime_for(StageKey.INGEST)
+
+
 def test_stage_runtime_proxy_exposes_only_supported_views() -> None:
     manager = RuntimeManager()
     manager.register(

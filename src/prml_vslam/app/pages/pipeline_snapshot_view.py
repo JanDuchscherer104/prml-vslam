@@ -40,9 +40,14 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
         st.info("Streaming telemetry is not available for this run.")
         return
     packet_metadata = model.streaming.packet_metadata
+    has_frame_data = (
+        packet_metadata is not None
+        or model.streaming.frame_image is not None
+        or model.streaming.preview_image is not None
+    )
     tabs = st.tabs(["Frames", "Trajectory", "Plan", "Artifacts"])
     with tabs[0]:
-        if packet_metadata is None:
+        if not has_frame_data:
             st.info("No frame has been processed yet.")
         else:
             preview_left, preview_right = st.columns(2, gap="large")
@@ -69,7 +74,10 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
                     st.json(model.streaming.backend_notice.payload, expanded=False)
             with details_right:
                 st.markdown("**Frame Metadata**")
-                st.json(packet_metadata, expanded=False)
+                if packet_metadata is None:
+                    st.info("Stage runtime metadata is not available yet.")
+                else:
+                    st.json(packet_metadata, expanded=False)
                 if model.streaming.backend_notice is not None:
                     st.markdown("**Camera Intrinsics**")
                     render_camera_intrinsics(
@@ -138,22 +146,22 @@ def _render_pipeline_plan_tab(model: PipelineSnapshotRenderModel) -> None:
 
 
 def _render_pipeline_artifacts_tab(model: PipelineSnapshotRenderModel) -> None:
-    if model.sequence_manifest_json is None and model.slam_json is None and model.summary_json is None:
-        st.info("Run the demo to inspect the materialized manifest, SLAM artifacts, and run summary.")
+    if model.stage_outcomes_json is None and model.artifacts_json is None and model.stage_runtime_status_json is None:
+        st.info("Run the demo to inspect stage outcomes, stage runtime status, and materialized artifacts.")
         return
 
     left, right = st.columns(2, gap="large")
     with left:
-        if model.sequence_manifest_json is not None:
-            st.markdown("**Sequence Manifest**")
-            st.code(model.sequence_manifest_json, language="json")
-        if model.summary_json is not None:
-            st.markdown("**Run Summary**")
-            st.code(model.summary_json, language="json")
+        if model.stage_outcomes_json is not None:
+            st.markdown("**Stage Outcomes**")
+            st.code(model.stage_outcomes_json, language="json")
+        if model.stage_runtime_status_json is not None:
+            st.markdown("**Stage Runtime Status**")
+            st.code(model.stage_runtime_status_json, language="json")
     with right:
-        if model.slam_json is not None:
-            st.markdown("**SLAM Artifacts**")
-            st.code(model.slam_json, language="json")
+        if model.artifacts_json is not None:
+            st.markdown("**Artifacts**")
+            st.code(model.artifacts_json, language="json")
 
 
 def _render_pipeline_notice(model: PipelineSnapshotRenderModel) -> None:

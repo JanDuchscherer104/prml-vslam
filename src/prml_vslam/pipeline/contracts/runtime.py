@@ -15,12 +15,13 @@ from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
-from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageProgress, StageStatus
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.events import StageOutcome, StageProgress, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 
 
 # TODO: this is a dto / data model that should be defined in a shared model module! given that it contains only transport-model definitions!
@@ -35,20 +36,32 @@ class RunState(StrEnum):
     FAILED = "failed"
 
 
-# TODO(pipeline-refactor/WP-08): Replace top-level stage projection fields and
-# stage_status with keyed outcomes, artifact refs, runtime status, and live refs.
+# TODO(pipeline-refactor/WP-10): Remove compatibility projection fields such as
+# stage_status, stage_progress, and stage-specific top-level payloads after
+# app/CLI reads keyed outcomes, runtime status, artifact refs, and live refs.
 class RunSnapshot(TransportModel):
     """Project the latest run state from the append-only event stream.
 
     Callers should treat this DTO as a convenience view for status displays and
-    polling loops. Durable outcomes still live in artifacts and summaries, while
-    runtime truth still lives in :class:`prml_vslam.pipeline.contracts.events.RunEvent`.
+    polling loops. Durable state is projected from
+    :class:`prml_vslam.pipeline.contracts.events.RunEvent` values, while live
+    status and payload refs are projected from
+    :class:`prml_vslam.pipeline.stages.base.contracts.StageRuntimeUpdate`.
     """
 
     run_id: str = ""
     state: RunState = RunState.IDLE
     plan: RunPlan | None = None
     current_stage_key: StageKey | None = None
+    stage_outcomes: dict[StageKey, StageOutcome] = Field(default_factory=dict)
+    """Target keyed terminal outcomes. Compatibility fields remain below."""
+
+    stage_runtime_status: dict[StageKey, StageRuntimeStatus] = Field(default_factory=dict)
+    """Target keyed live runtime status projected from StageRuntimeUpdate."""
+
+    live_refs: dict[StageKey, dict[str, TransientPayloadRef]] = Field(default_factory=dict)
+    """Target live-only payload refs by stage and semantic slot."""
+
     stage_status: dict[StageKey, StageStatus] = Field(default_factory=dict)
     stage_progress: dict[StageKey, StageProgress] = Field(default_factory=dict)
     artifacts: dict[str, ArtifactRef] = Field(default_factory=dict)
@@ -63,24 +76,6 @@ class RunSnapshot(TransportModel):
     visualization: VisualizationArtifacts | None = None
     summary: RunSummary | None = None
     stage_manifests: list[StageManifest] = Field(default_factory=list)
-    latest_packet: FramePacketSummary | None = None
-    latest_frame: ArrayHandle | None = None
-    latest_preview: PreviewHandle | None = None
 
 
-# TODO(pipeline-refactor/WP-08): Collapse streaming-specific fields into keyed
-# RunSnapshot stage_runtime_status, stage_outcomes, and live refs.
-class StreamingRunSnapshot(RunSnapshot):
-    """Extend :class:`RunSnapshot` with bounded streaming telemetry fields."""
-
-    received_frames: int = 0
-    measured_fps: float = 0.0
-    accepted_keyframes: int = 0
-    backend_fps: float = 0.0
-    num_sparse_points: int = 0
-    num_dense_points: int = 0
-    trajectory_positions_xyz: list[tuple[float, float, float]] = Field(default_factory=list)
-    trajectory_timestamps_s: list[float] = Field(default_factory=list)
-
-
-__all__ = ["RunSnapshot", "RunState", "StreamingRunSnapshot"]
+__all__ = ["RunSnapshot", "RunState"]

@@ -31,6 +31,7 @@ from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.ray_runtime.common import coordinator_actor_name
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import Console, PathConfig
 
 _DEFAULT_NAMESPACE = "prml_vslam.local"
@@ -122,9 +123,19 @@ class RayPipelineBackend(PipelineBackend):
 
     def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
         """Resolve one coordinator-owned live payload handle."""
+        # TODO(pipeline-refactor/WP-10): Delete after all live payload callers
+        # use read_payload(..., TransientPayloadRef).
         if handle is None:
             return None
         return ray.get(self._coordinator_for(run_id).read_array.remote(handle.handle_id))
+
+    def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:
+        """Resolve one coordinator-owned target transient payload ref."""
+        # TODO(pipeline-refactor/WP-08): Return a typed not-found result
+        # instead of None once payload resolver contracts land.
+        if ref is None:
+            return None
+        return ray.get(self._coordinator_for(run_id).read_payload.remote(ref.handle_id))
 
     def shutdown(self, *, preserve_local_head: bool = False) -> None:
         """Detach from Ray and stop any backend-owned shared infrastructure."""
@@ -195,7 +206,7 @@ class RayPipelineBackend(PipelineBackend):
         init_kwargs = {
             "namespace": self._namespace,
             "ignore_reinit_error": True,
-            "log_to_driver": False,
+            "log_to_driver": True,
             "include_dashboard": False,
             "_skip_env_hook": True,
         }

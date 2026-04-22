@@ -40,16 +40,4 @@ class PreviewHandle(TransportModel):
     backend: Literal["ray-object-store"] = "ray-object-store"
 
 
-# TODO(pipeline-refactor/WP-01): Collapse into TransientPayloadRef after generic
-# binary live payloads use the target resolver.
-class BlobHandle(TransportModel):
-    """Refer to one transient non-array binary payload."""
-
-    kind: Literal["blob"] = "blob"
-    handle_id: str
-    media_type: str = "application/octet-stream"
-    size_bytes: int | None = None
-    backend: Literal["ray-object-store"] = "ray-object-store"
-
-
-__all__ = ["ArrayHandle", "BlobHandle", "PreviewHandle"]
+__all__ = ["ArrayHandle", "PreviewHandle"]

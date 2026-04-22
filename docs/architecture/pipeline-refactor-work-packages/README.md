@@ -67,6 +67,7 @@ code.
 | WP-00B | [DTO Class Inventory Audit](./WP-00B-dto-class-inventory-audit.md) | Complete | WP-00 |
 | WP-01 | [Contracts](./WP-01-contracts.md) | Draft | WP-00, WP-00A, WP-00B |
 | WP-02 | [Config Planning](./WP-02-config-planning.md) | Draft | WP-00, WP-00A, WP-00B, WP-01 |
+| WP-02B | [Target Config Completion](./WP-02B-target-config-completion.md) | Draft | WP-00A, WP-00B, WP-02, WP-04, WP-05, WP-06 |
 | WP-03A | [Telemetry Status](./WP-03A-telemetry-status.md) | Draft | WP-00A, WP-00B, WP-01 |
 | WP-03 | [Runtime Skeleton](./WP-03-runtime-skeleton.md) | Draft | WP-00A, WP-00B, WP-01, WP-02, WP-03A |
 | WP-04 | [Source Runtime](./WP-04-source-runtime.md) | Draft | WP-00A, WP-00B, WP-03 |
@@ -74,8 +75,12 @@ code.
 | WP-06 | [SLAM Runtime Live Updates](./WP-06-slam-runtime-live-updates.md) | Draft | WP-00A, WP-00B, WP-03, WP-03A, WP-07 |
 | WP-07 | [Visualization Rerun](./WP-07-visualization-rerun.md) | Draft | WP-00A, WP-00B, WP-01, WP-03A |
 | WP-08 | [Snapshot Events Payloads](./WP-08-snapshot-events-payloads.md) | Draft | WP-00A, WP-00B, WP-03, WP-03A, WP-06, WP-07 |
-| WP-09 | [App CLI Compat](./WP-09-app-cli-compat.md) | Draft | WP-00A, WP-00B, WP-02, WP-08 |
-| WP-10 | [Migration Removal](./WP-10-migration-removal.md) | Draft | WP-00A, WP-00B, WP-01 through WP-09 complete, WP-03A |
+| WP-09 | [App CLI Compat](./WP-09-app-cli-compat.md) | Draft | WP-00A, WP-00B, WP-02, WP-02B, WP-08 |
+| WP-09A | [Target Config Launch Cutover](./WP-09A-target-config-launch-cutover.md) | Draft | WP-00A, WP-02, WP-02B, WP-04, WP-05, WP-06 |
+| WP-09B | [Runtime Coordinator Cutover](./WP-09B-runtime-coordinator-cutover.md) | Draft | WP-00A, WP-03, WP-03A, WP-04, WP-05, WP-06, WP-09A |
+| WP-09C | [Live Events Handles Cutover](./WP-09C-live-events-handles-cutover.md) | Draft | WP-00A, WP-01, WP-03A, WP-06, WP-07, WP-08, WP-09B |
+| WP-09D | [App CLI Target Snapshot Cutover](./WP-09D-app-cli-target-snapshot-cutover.md) | Draft | WP-00A, WP-08, WP-09A, WP-09C |
+| WP-10 | [Migration Removal](./WP-10-migration-removal.md) | Draft | WP-00A, WP-00B, WP-01 through WP-09D complete, WP-03A |
 
 ## Recurring Gates
 

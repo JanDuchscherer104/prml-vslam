@@ -12,6 +12,7 @@ from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeS
 from prml_vslam.pipeline.stages.ground_alignment.contracts import GroundAlignmentRuntimeInput
 
 
+# TODO: why is this class not derived from common StageRuntime base class?
 class GroundAlignmentRuntime:
     """Adapt :class:`GroundAlignmentService` to the generic bounded runtime API."""
 

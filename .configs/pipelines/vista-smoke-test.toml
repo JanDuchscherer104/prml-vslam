@@ -2,15 +2,42 @@ experiment_name = "smoke-test"
 mode = "offline"
 output_dir = ".artifacts"
 
-[source]
+[stages.source]
+enabled = true
+
+[stages.source.backend]
+source_id = "video"
 video_path = "external/vista-slam/media/tumrgbd_room.mp4"
 frame_stride = 1
 
-[slam]
+[stages.slam]
+enabled = true
 
-[slam.backend]
+[stages.slam.outputs]
+emit_dense_points = true
+emit_sparse_points = true
+
+[stages.slam.backend]
 method_id = "vista"
 max_frames = 50
+
+[stages.align_ground]
+enabled = false
+
+[stages.evaluate_trajectory]
+enabled = false
+
+[stages.reconstruction]
+enabled = false
+
+[stages.evaluate_cloud]
+enabled = false
+
+[stages.evaluate_efficiency]
+enabled = false
+
+[stages.summary]
+enabled = true
 
 [benchmark.reference]
 enabled = false

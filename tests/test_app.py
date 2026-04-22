@@ -27,17 +27,18 @@ from prml_vslam.app.pipeline_controller import (
     sync_pipeline_page_state_from_template,
 )
 from prml_vslam.datasets.advio import AdvioServingConfig
-from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.slam import KeyframeVisualizationReady
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, FramePacketSummary, RunStarted
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunStarted
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
-from prml_vslam.pipeline.contracts.runtime import RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import PathConfig
 
 
@@ -410,21 +411,28 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
         artifact_root=tmp_path / "streaming-demo",
         source=request.source,
     )
-    snapshot = StreamingRunSnapshot(
+    frame_ref = TransientPayloadRef(handle_id="frame-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
+    preview_ref = TransientPayloadRef(handle_id="preview-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
+    snapshot = RunSnapshot(
         run_id="streaming-demo",
         state=RunState.RUNNING,
         plan=plan,
-        latest_packet=FramePacketSummary(seq=4, timestamp_ns=44, provenance=FramePacketProvenance(source_id="demo")),
-        latest_frame=ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8"),
-        latest_preview=PreviewHandle(handle_id="preview", width=2, height=2, channels=3, dtype="uint8"),
-        received_frames=4,
-        measured_fps=20.0,
-        accepted_keyframes=2,
-        backend_fps=5.0,
-        num_sparse_points=7,
-        num_dense_points=9,
-        trajectory_positions_xyz=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
-        trajectory_timestamps_s=[0.0, 1.0],
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(
+                stage_key=StageKey.SLAM,
+                lifecycle_state=StageStatus.RUNNING,
+                processed_items=4,
+                fps=20.0,
+                throughput=5.0,
+                updated_at_ns=44,
+            )
+        },
+        live_refs={
+            StageKey.SLAM: {
+                "model_rgb:image": frame_ref,
+                "model_preview:image": preview_ref,
+            }
+        },
         stage_manifests=[
             StageManifest(
                 stage_id="slam",
@@ -451,13 +459,13 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
     )
 
     class FakeRunService:
-        def read_array(self, handle):
-            if handle is None:
+        def read_payload(self, ref: TransientPayloadRef | None):
+            if ref is None:
                 return None
             return {
-                "frame": np.ones((2, 2, 3), dtype=np.uint8),
-                "preview": np.zeros((2, 2, 3), dtype=np.uint8),
-            }[handle.handle_id]
+                "frame-ref": np.ones((2, 2, 3), dtype=np.uint8),
+                "preview-ref": np.zeros((2, 2, 3), dtype=np.uint8),
+            }[ref.handle_id]
 
         def tail_events(self, *, limit: int = 200, after_event_id: str | None = None):
             del limit, after_event_id
@@ -476,14 +484,83 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
     assert model.streaming.frame_image is not None
     assert model.streaming.preview_image is not None
     assert model.streaming.packet_metadata == {
-        "seq": 4,
-        "timestamp_ns": 44,
-        "provenance": {"source_id": "demo"},
+        "stage": "slam",
+        "processed_items": 4,
+        "fps": 20.0,
+        "throughput": 5.0,
+        "updated_at_ns": 44,
     }
     assert model.streaming.backend_notice is not None
     assert model.streaming.backend_notice.camera_intrinsics is not None
     assert model.stage_manifest_rows[0]["Stage"] == "slam"
     assert model.recent_events[-1]["kind"] == "backend.notice"
+
+
+def test_pipeline_snapshot_render_model_prefers_target_live_refs(tmp_path: Path) -> None:
+    request = RunRequest(
+        experiment_name="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-01",
+            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+        ),
+        slam=SlamStageConfig(backend={"kind": "vista"}),
+    )
+    plan = RunPlan(
+        run_id="streaming-demo",
+        mode=PipelineMode.STREAMING,
+        artifact_root=tmp_path / "streaming-demo",
+        source=request.source,
+    )
+    frame_ref = TransientPayloadRef(handle_id="frame-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
+    preview_ref = TransientPayloadRef(handle_id="preview-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
+    snapshot = RunSnapshot(
+        run_id="streaming-demo",
+        state=RunState.RUNNING,
+        plan=plan,
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(
+                stage_key=StageKey.SLAM,
+                lifecycle_state=StageStatus.RUNNING,
+                processed_items=3,
+                fps=12.5,
+                throughput=2.5,
+            )
+        },
+        live_refs={
+            StageKey.SLAM: {
+                "model_rgb:image": frame_ref,
+                "model_preview:image": preview_ref,
+            }
+        },
+    )
+
+    class FakeRunService:
+        def read_payload(self, ref: TransientPayloadRef | None):
+            if ref is None:
+                return None
+            return {
+                "frame-ref": np.ones((2, 2, 3), dtype=np.uint8),
+                "preview-ref": np.zeros((2, 2, 3), dtype=np.uint8),
+            }[ref.handle_id]
+
+        def tail_events(self, *, limit: int = 200, after_event_id: str | None = None):
+            del limit, after_event_id
+            return []
+
+    model = build_pipeline_snapshot_render_model(
+        snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
+    )
+
+    assert model.streaming is not None
+    assert model.streaming.frame_image is not None
+    assert model.streaming.preview_image is not None
+    assert model.streaming.preview_status_message == "Current keyframe artifact."
+    assert ("Received Frames", "3") in model.metrics
+    assert ("Packet FPS", "12.50 fps") in model.metrics
+    assert ("Keyframe FPS", "2.50 fps") in model.metrics
 
 
 def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path) -> None:
@@ -504,11 +581,11 @@ def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path
         artifact_root=tmp_path / "streaming-demo",
         source=request.source,
     )
-    snapshot = StreamingRunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
+    snapshot = RunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
 
     class FakeRunService:
-        def read_array(self, handle):
-            del handle
+        def read_payload(self, ref: TransientPayloadRef | None):
+            del ref
             return None
 
         def tail_events(self, *, limit: int = 200, after_event_id: str | None = None):
@@ -545,7 +622,7 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
         artifact_root=tmp_path / "streaming-demo",
         source=request.source,
     )
-    snapshot = StreamingRunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
+    snapshot = RunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
     calls = {"count": 0}
 
     def fake_resolve_evo_preview(_snapshot):
@@ -553,8 +630,8 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
         return None, "preview boom"
 
     class FakeRunService:
-        def read_array(self, handle):
-            del handle
+        def read_payload(self, ref: TransientPayloadRef | None):
+            del ref
             return None
 
         def tail_events(self, *, limit: int = 200, after_event_id: str | None = None):

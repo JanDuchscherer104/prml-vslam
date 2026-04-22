@@ -15,6 +15,7 @@ from pathlib import Path
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, RunRequest
 from prml_vslam.pipeline.contracts.stages import StageAvailability, StageDefinition, StageKey
@@ -115,6 +116,20 @@ class StageRegistry:
                 )
                 for entry in active_entries
             ],
+        )
+
+    def compile_run_config(
+        self,
+        *,
+        run_config: RunConfig,
+        path_config: PathConfig,
+        backend: BackendDescriptor | None = None,
+    ) -> RunPlan:
+        """Compile one deterministic :class:`RunPlan` from :class:`RunConfig`."""
+        return self.compile(
+            request=run_config.to_run_request(),
+            path_config=path_config,
+            backend=backend,
         )
 
     def _stage_for_entry(

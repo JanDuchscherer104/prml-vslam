@@ -16,18 +16,33 @@ from pydantic import ConfigDict, Field, model_validator
 
 from prml_vslam.alignment.contracts import AlignmentConfig
 from prml_vslam.benchmark import BenchmarkConfig
+from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.interfaces import Record3DTransportId
+from prml_vslam.methods.config_contracts import SlamOutputPolicy
+from prml_vslam.methods.configs import BackendConfig
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import (
+    DatasetSourceSpec,
     PipelineMode,
     PlacementPolicy,
+    Record3DLiveSourceSpec,
     RunRequest,
     RunRuntimeConfig,
     SlamStageConfig,
     SourceSpec,
     StagePlacement,
+    VideoSourceSpec,
 )
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import ResourceSpec, StageConfig
+from prml_vslam.pipeline.stages.source.config import (
+    AdvioSourceConfig,
+    Record3DSourceConfig,
+    SourceBackendConfig,
+    TumRgbdSourceConfig,
+    VideoSourceConfig,
+    source_backend_config_from_source_spec,
+)
 from prml_vslam.utils import BaseConfig, PathConfig
 from prml_vslam.visualization.contracts import VisualizationConfig
 
@@ -79,15 +94,42 @@ SECTION_TO_TARGET_STAGE_KEYS: dict[str, TargetStageKey] = {
 ExecutionPayload = dict[str, dict[str, float | dict[str, float]]]
 
 
+class SourceStageSectionConfig(StageConfig):
+    """Target source stage section with optional source backend config."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stage_key: StageKey | None = StageKey.INGEST
+    """Current executable stage key used during migration."""
+
+    backend: SourceBackendConfig | None = None
+    """Concrete source backend config used for RunConfig launch/planning."""
+
+
+class SlamStageSectionConfig(StageConfig):
+    """Target SLAM stage section with backend and output policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stage_key: StageKey | None = StageKey.SLAM
+    """Current executable stage key used during migration."""
+
+    backend: BackendConfig | None = None
+    """Selected SLAM backend config."""
+
+    outputs: SlamOutputPolicy = Field(default_factory=SlamOutputPolicy)
+    """SLAM output materialization policy."""
+
+
 class StageBundle(BaseConfig):
     """Fixed target stage-section bundle for one run config."""
 
     model_config = ConfigDict(extra="forbid")
 
-    source: StageConfig = Field(default_factory=lambda: StageConfig(stage_key=StageKey.INGEST))
+    source: SourceStageSectionConfig = Field(default_factory=SourceStageSectionConfig)
     """Source-normalization stage section."""
 
-    slam: StageConfig = Field(default_factory=lambda: StageConfig(stage_key=StageKey.SLAM))
+    slam: SlamStageSectionConfig = Field(default_factory=SlamStageSectionConfig)
     """SLAM stage section."""
 
     align_ground: StageConfig = Field(
@@ -151,8 +193,15 @@ class StageBundle(BaseConfig):
     def from_run_request(cls, request: RunRequest) -> StageBundle:
         """Project current request gates into the target section bundle."""
         return cls(
-            source={"execution": _execution_payload_from_placement(request.placement, StageKey.INGEST)},
-            slam={"execution": _execution_payload_from_placement(request.placement, StageKey.SLAM)},
+            source={
+                "execution": _execution_payload_from_placement(request.placement, StageKey.INGEST),
+                "backend": source_backend_config_from_source_spec(request.source),
+            },
+            slam={
+                "execution": _execution_payload_from_placement(request.placement, StageKey.SLAM),
+                "backend": request.slam.backend,
+                "outputs": request.slam.outputs,
+            },
             align_ground={
                 "enabled": request.alignment.ground.enabled,
                 "execution": _execution_payload_from_placement(request.placement, StageKey.GROUND_ALIGNMENT),
@@ -260,8 +309,8 @@ class RunConfig(BaseConfig):
     def to_run_request(self) -> RunRequest:
         """Project this config into the current request contract."""
         self._validate_required_compatibility_sections()
-        if self.source is None or self.slam is None:
-            raise ValueError("RunConfig.to_run_request() requires compatibility `source` and `slam` fields.")
+        source = self._resolve_runtime_source_spec()
+        slam = self._resolve_runtime_slam_stage_config()
         benchmark = self.benchmark.model_copy(
             update={
                 "reference": self.benchmark.reference.model_copy(
@@ -284,8 +333,8 @@ class RunConfig(BaseConfig):
             experiment_name=self.experiment_name,
             mode=self.mode,
             output_dir=self.output_dir,
-            source=self.source,
-            slam=self.slam,
+            source=source,
+            slam=slam,
             benchmark=benchmark,
             alignment=alignment,
             visualization=self.visualization,
@@ -296,9 +345,11 @@ class RunConfig(BaseConfig):
     # TODO(pipeline-refactor/WP-03): Compile directly from RunConfig once
     # StageRegistry/RuntimeManager consume target stage config sections.
     def compile_plan(self, path_config: PathConfig | None = None, *, fail_on_unavailable: bool = False) -> RunPlan:
-        """Compile a deterministic plan through the current planner."""
-        request = self.to_run_request()
-        plan = request.build(path_config)
+        """Compile a deterministic plan through the stage registry."""
+        from prml_vslam.pipeline.stage_registry import StageRegistry
+
+        config = PathConfig() if path_config is None else path_config
+        plan = StageRegistry.default().compile_run_config(run_config=self, path_config=config)
         if fail_on_unavailable:
             unavailable = [stage for stage in plan.stages if not stage.available]
             if unavailable:
@@ -322,7 +373,7 @@ class RunConfig(BaseConfig):
         ]
         if disabled_required:
             names = ", ".join(section_for_target_stage(section) for section in disabled_required)
-            raise ValueError(f"Compatibility RunRequest projection requires enabled stage section(s): {names}.")
+            raise ValueError(f"RunConfig launch requires enabled stage section(s): {names}.")
 
     def _project_placement_policy(self) -> PlacementPolicy:
         by_stage = dict(self.placement.by_stage)
@@ -334,6 +385,27 @@ class RunConfig(BaseConfig):
             if resources:
                 by_stage[stage_config.stage_key] = StagePlacement(resources=resources)
         return self.placement.model_copy(update={"by_stage": by_stage})
+
+    def _resolve_runtime_source_spec(self) -> SourceSpec:
+        if self.source is not None:
+            return self.source
+        backend = self.stages.source.backend
+        if backend is None:
+            raise ValueError(
+                "RunConfig launch requires one source definition via compatibility `source` "
+                "or `[stages.source.backend]`."
+            )
+        return _source_spec_from_backend_config(backend)
+
+    def _resolve_runtime_slam_stage_config(self) -> SlamStageConfig:
+        if self.slam is not None:
+            return self.slam
+        backend = self.stages.slam.backend
+        if backend is None:
+            raise ValueError(
+                "RunConfig launch requires one SLAM backend via compatibility `slam` or `[stages.slam.backend]`."
+            )
+        return SlamStageConfig(backend=backend, outputs=self.stages.slam.outputs)
 
 
 # TODO(pipeline-refactor/WP-10): Remove current-key alias helper functions after
@@ -413,6 +485,50 @@ def _placement_resources_from_resource_spec(resource_spec: ResourceSpec) -> dict
     if resource_spec.num_gpus is not None:
         resources["GPU"] = resource_spec.num_gpus
     return resources
+
+
+def _source_spec_from_backend_config(backend: SourceBackendConfig) -> SourceSpec:
+    match backend:
+        case VideoSourceConfig(video_path=video_path, frame_stride=frame_stride, target_fps=target_fps):
+            return VideoSourceSpec(video_path=video_path, frame_stride=frame_stride, target_fps=target_fps)
+        case AdvioSourceConfig(
+            sequence_id=sequence_id,
+            frame_stride=frame_stride,
+            target_fps=target_fps,
+            dataset_serving=dataset_serving,
+            respect_video_rotation=respect_video_rotation,
+        ):
+            return DatasetSourceSpec(
+                dataset_id=DatasetId.ADVIO,
+                sequence_id=sequence_id,
+                frame_stride=frame_stride,
+                target_fps=target_fps,
+                dataset_serving=dataset_serving,
+                respect_video_rotation=respect_video_rotation,
+            )
+        case TumRgbdSourceConfig(sequence_id=sequence_id, frame_stride=frame_stride, target_fps=target_fps):
+            return DatasetSourceSpec(
+                dataset_id=DatasetId.TUM_RGBD,
+                sequence_id=sequence_id,
+                frame_stride=frame_stride,
+                target_fps=target_fps,
+            )
+        case Record3DSourceConfig(
+            frame_stride=frame_stride,
+            target_fps=target_fps,
+            transport=transport,
+            device_index=device_index,
+            device_address=device_address,
+        ):
+            if frame_stride != 1 or target_fps is not None:
+                raise ValueError(
+                    "RunRequest compatibility launch does not support non-default Record3D source sampling policy."
+                )
+            return Record3DLiveSourceSpec(
+                transport=transport,
+                device_index=device_index if transport is Record3DTransportId.USB else None,
+                device_address=device_address if transport is Record3DTransportId.WIFI else "",
+            )
 
 
 # TODO(pipeline-refactor/WP-09): Remove legacy RunRequest shape parsing after

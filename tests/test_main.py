@@ -27,11 +27,16 @@ from prml_vslam.main import (
 )
 from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
-from prml_vslam.pipeline.demo import build_advio_demo_request, build_runtime_source_from_request, load_run_request_toml
+from prml_vslam.pipeline.demo import (
+    build_advio_demo_request,
+    build_runtime_source_from_request,
+    load_run_config_toml,
+)
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
@@ -66,6 +71,67 @@ def _advio_source_payload(sequence_id: str = "advio-01") -> dict[str, object]:
             "pose_frame_mode": "provider_world",
         },
     }
+
+
+def _run_config_from_request(request: RunRequest) -> RunConfig:
+    return RunConfig.from_run_request(request)
+
+
+def test_load_run_request_toml_accepts_projectable_run_config(tmp_path: Path) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    config_path = tmp_path / "target-compatible.toml"
+    config_path.write_text(
+        """
+experiment_name = "target-compatible"
+mode = "offline"
+output_dir = ".artifacts"
+
+[stages.source]
+enabled = true
+
+[stages.source.backend]
+source_id = "video"
+video_path = "captures/demo.mp4"
+
+[stages.slam]
+enabled = true
+
+[stages.slam.backend]
+method_id = "mock"
+
+[stages.summary]
+enabled = true
+""".strip()
+    )
+
+    request = load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
+
+    assert request.experiment_name == "target-compatible"
+    assert request.slam.backend.method_id is MethodId.MOCK
+
+
+def test_load_run_request_toml_rejects_target_config_without_compatibility_fields(tmp_path: Path) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    config_path = tmp_path / "target-only.toml"
+    config_path.write_text(
+        """
+experiment_name = "target-only"
+mode = "offline"
+output_dir = ".artifacts"
+
+[stages.source]
+enabled = true
+
+[stages.slam]
+enabled = true
+
+[stages.summary]
+enabled = true
+""".strip()
+    )
+
+    with pytest.raises(ValueError, match="RunConfig launch requires one source definition"):
+        load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
 
 
 def test_print_pipeline_demo_snapshot_accepts_projected_snapshot(tmp_path: Path) -> None:
@@ -137,12 +203,12 @@ def test_build_advio_demo_request_keeps_streaming_replay_controls(tmp_path: Path
 def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
-    def fake_build(self: RunRequest, path_config: PathConfig | None = None):
-        del path_config
+    def fake_compile_plan(self: RunConfig, path_config: PathConfig | None = None, *, fail_on_unavailable: bool = False):
+        del path_config, fail_on_unavailable
         captured["connect_live_viewer"] = self.visualization.connect_live_viewer
         return type("Plan", (), {"model_dump": lambda self, mode="json": {"ok": True}})()
 
-    monkeypatch.setattr(RunRequest, "build", fake_build)
+    monkeypatch.setattr(RunConfig, "compile_plan", fake_compile_plan)
     monkeypatch.setattr("prml_vslam.main.console.plog", lambda payload: captured.setdefault("payload", payload))
 
     plan_run(
@@ -181,17 +247,18 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
             captured["preserve_local_head"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: runtime_source)
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: runtime_source)
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr("prml_vslam.main._wait_for_pipeline_terminal_snapshot", lambda *args, **kwargs: RunSnapshot())
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
     run_config(Path(".configs/pipelines/vista-full.toml"))
 
-    assert captured["request"] is request
+    assert isinstance(captured["request"], RunRequest)
+    assert captured["request"].model_dump(mode="json") == request.model_dump(mode="json")
     assert captured["runtime_source"] is runtime_source
     assert captured["preserve_local_head"] is False
 
@@ -238,9 +305,39 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
             super().__init__(path_config=path_config, backend=FakeBackend())
             captured["path_config"] = path_config
 
-    def load_and_patch_request(*, path_config: PathConfig, config_path: Path) -> RunRequest:
-        request = load_run_request_toml(path_config=path_config, config_path=config_path)
-        return request.model_copy(
+    config_path = tmp_path / "target-run-config.toml"
+    config_path.write_text(
+        """
+experiment_name = "target-smoke"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[stages.source]
+enabled = true
+
+[stages.source.backend]
+source_id = "advio"
+sequence_id = "advio-01"
+
+[stages.source.backend.dataset_serving]
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
+
+[stages.slam]
+enabled = true
+
+[stages.slam.backend]
+method_id = "mock"
+
+[stages.summary]
+enabled = true
+""".strip(),
+        encoding="utf-8",
+    )
+
+    def load_and_patch_run_config(*, path_config: PathConfig, config_path: Path) -> RunConfig:
+        request = load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
+        patched_request = request.model_copy(
             update={
                 "output_dir": path_config.artifacts_dir,
                 "slam": request.slam.model_copy(
@@ -253,17 +350,18 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
                 ),
             }
         )
+        return _run_config_from_request(patched_request)
 
     monkeypatch.setenv("PRML_VSLAM_RAY_NAMESPACE", f"pytest-{uuid.uuid4().hex}")
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", load_and_patch_request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", load_and_patch_run_config)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: FakeStreamingSource())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: FakeStreamingSource())
     monkeypatch.setattr("prml_vslam.main.RunService", CapturingRunService)
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
-    run_config(Path(".configs/pipelines/vista-full.toml"))
+    run_config(config_path)
 
     assert captured["path_config"] == path_config
     assert isinstance(captured["runtime_source"], FakeStreamingSource)
@@ -304,10 +402,10 @@ def test_run_config_preserves_local_head_for_reusable_completed_run(
             captured["preserve_local_head"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr(
         "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
@@ -349,10 +447,10 @@ def test_run_config_does_not_preserve_local_head_for_reusable_failed_run(
             captured["preserve_local_head"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr(
         "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
@@ -382,7 +480,7 @@ def test_build_rerun_viewer_command_uses_blueprint_when_configured(tmp_path: Pat
         }
     )
 
-    command = _build_rerun_viewer_command(request=request, path_config=path_config)
+    command = _build_rerun_viewer_command(run_config=_run_config_from_request(request), path_config=path_config)
 
     assert command == [
         "uv",
@@ -408,17 +506,45 @@ def test_build_rerun_viewer_command_omits_blueprint_when_unset(tmp_path: Path) -
         }
     )
 
-    command = _build_rerun_viewer_command(request=request, path_config=path_config)
+    command = _build_rerun_viewer_command(run_config=_run_config_from_request(request), path_config=path_config)
 
     assert command == ["uv", "run", "--extra", "vista", "rerun", "--serve-web"]
 
 
-def test_build_rerun_viewer_command_resolves_vista_full_blueprint_path() -> None:
+def test_build_rerun_viewer_command_resolves_vista_full_blueprint_path(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     path_config = PathConfig(root=repo_root)
-    request = load_run_request_toml(path_config=path_config, config_path=Path(".configs/pipelines/vista-full.toml"))
+    config_path = tmp_path / "target-blueprint-test.toml"
+    config_path.write_text(
+        """
+experiment_name = "target-blueprint"
+mode = "offline"
+output_dir = ".artifacts"
 
-    command = _build_rerun_viewer_command(request=request, path_config=path_config)
+[stages.source]
+enabled = true
+
+[stages.source.backend]
+source_id = "video"
+video_path = "captures/demo.mp4"
+
+[stages.slam]
+enabled = true
+
+[stages.slam.backend]
+method_id = "mock"
+
+[stages.summary]
+enabled = true
+
+[visualization]
+viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
+""".strip(),
+        encoding="utf-8",
+    )
+    run_cfg = load_run_config_toml(path_config=path_config, config_path=config_path)
+
+    command = _build_rerun_viewer_command(run_config=run_cfg, path_config=path_config)
 
     assert command[-2] == (repo_root / ".configs/visualization/vista_blueprint.rbl").resolve().as_posix()
 
@@ -453,7 +579,7 @@ def test_launch_rerun_viewer_is_noop_when_live_viewer_disabled(
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("viewer subprocess must not be launched")),
     )
 
-    assert _launch_rerun_viewer(request=request, path_config=path_config) is None
+    assert _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config) is None
 
 
 def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -486,7 +612,7 @@ def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.Mon
     monkeypatch.setattr("prml_vslam.main.subprocess.Popen", fake_popen)
     monkeypatch.setattr("prml_vslam.main.time.sleep", lambda _: None)
 
-    viewer = _launch_rerun_viewer(request=request, path_config=path_config)
+    viewer = _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config)
 
     assert viewer is not None
     assert captured["command"] == ["uv", "run", "--extra", "vista", "rerun", "--serve-web"]
@@ -519,7 +645,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_startup_failure(
     )
     monkeypatch.setattr("prml_vslam.main.console.warning", lambda message, *args: warnings.append(message % args))
 
-    viewer = _launch_rerun_viewer(request=request, path_config=path_config)
+    viewer = _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config)
 
     assert viewer is None
     assert warnings == ["Failed to launch the Rerun viewer subprocess: boom"]
@@ -554,7 +680,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_early_exit(
     monkeypatch.setattr("prml_vslam.main.time.sleep", lambda _: None)
     monkeypatch.setattr("prml_vslam.main.console.warning", lambda message, *args: warnings.append(message % args))
 
-    viewer = _launch_rerun_viewer(request=request, path_config=path_config)
+    viewer = _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config)
 
     assert viewer is None
     assert warnings == ["Rerun viewer exited early with code 2; continuing without auto-launched live viewer."]
@@ -657,17 +783,18 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
             captured["shutdown"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: captured.setdefault("viewer", viewer))
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr("prml_vslam.main._wait_for_pipeline_terminal_snapshot", lambda *args, **kwargs: RunSnapshot())
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
     run_config(Path(".configs/pipelines/vista-full.toml"))
 
-    assert captured["request"] is request
+    assert isinstance(captured["request"], RunRequest)
+    assert captured["request"].model_dump(mode="json") == request.model_dump(mode="json")
     assert captured["viewer"] is None
 
 
@@ -703,14 +830,14 @@ def test_run_config_prints_output_then_waits_for_viewer_after_normal_completion(
             events.append(f"run-shutdown:{preserve_local_head}")
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer",
         lambda current: events.append(f"viewer-shutdown:{current is viewer}"),
     )
     monkeypatch.setattr("prml_vslam.main._wait_for_rerun_viewer_close", lambda current: events.append("viewer-wait"))
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr(
         "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
@@ -755,14 +882,14 @@ def test_run_config_keeps_failed_run_viewer_open_until_wait_finishes(
             events.append(f"run-shutdown:{preserve_local_head}")
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer",
         lambda current: events.append(f"viewer-shutdown:{current is viewer}"),
     )
     monkeypatch.setattr("prml_vslam.main._wait_for_rerun_viewer_close", lambda current: events.append("viewer-wait"))
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr(
         "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
@@ -825,13 +952,13 @@ def test_run_config_ctrl_c_during_post_run_viewer_wait_does_not_stop_finished_ru
             events.append(f"run-shutdown:{preserve_local_head}")
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer",
         lambda current: events.append(f"viewer-shutdown:{current is viewer}"),
     )
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr(
         "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
@@ -882,12 +1009,12 @@ def test_run_config_shuts_down_viewer_after_active_pipeline_keyboard_interrupt(
             captured["shutdown"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer", lambda current: captured.setdefault("viewer", current)
     )
-    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
     monkeypatch.setattr(
         "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
@@ -963,23 +1090,22 @@ def test_build_runtime_source_from_request_caps_streaming_replay(
     fake_source = FakeStreamingSource()
     captured: dict[str, object] = {}
 
-    class FakeAdvioService:
+    class FakeAdvioSourceConfig:
         def __init__(self, path_config: PathConfig) -> None:
-            del path_config
+            self.path_config = path_config
 
-        def resolve_sequence_id(self, sequence_id: str) -> str:
-            return sequence_id
-
-        def build_streaming_source(self, **kwargs: object) -> FakeStreamingSource:
-            captured.update(kwargs)
+        def setup_target(self, *, path_config: PathConfig) -> FakeStreamingSource:
+            captured["path_config"] = path_config
             return fake_source
 
-    monkeypatch.setattr("prml_vslam.pipeline.demo.AdvioDatasetService", FakeAdvioService)
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.demo.source_backend_config_from_source_spec",
+        lambda source: FakeAdvioSourceConfig(path_config),
+    )
 
     capped_source = build_runtime_source_from_request(request=request, path_config=path_config)
     assert capped_source is not None
-    assert captured["dataset_serving"] == request.source.dataset_serving
-    assert captured["respect_video_rotation"] is True
+    assert captured["path_config"] == path_config
 
     stream = capped_source.open_stream(loop=False)
     stream.connect()

@@ -18,26 +18,25 @@ from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.descriptors import BackendDescriptor
-from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
+from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
-    artifact_ref,
     clean_actor_options,
 )
 from prml_vslam.pipeline.ray_runtime.stage_actors import OfflineSlamStageActor
 from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
 from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.source.runtime import SourceRuntime, SourceRuntimeInput
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
 from prml_vslam.pipeline.stages.trajectory_eval import (
     TrajectoryEvaluationRuntime,
     TrajectoryEvaluationRuntimeInput,
 )
-from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
+from prml_vslam.protocols.source import OfflineSequenceSource
 from prml_vslam.reconstruction import ReconstructionArtifacts
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
@@ -45,6 +44,8 @@ if TYPE_CHECKING:
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
 
+# TODO(pipeline-refactor/WP-10): Collapse this shared free-helper context after
+# StageRunner and stage-local runtimes own production invocation inputs.
 @dataclass(frozen=True, slots=True)
 class StageExecutionContext:
     """Immutable run-scoped execution context shared by bounded stage helpers.
@@ -71,6 +72,8 @@ def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceS
     The helper persists the normalized :class:`SequenceManifest` and any
     prepared benchmark-side inputs before returning the ingest stage outcome.
     """
+    # TODO(pipeline-refactor/WP-10): Delete this migration wrapper when
+    # RuntimeStageProgram no longer consumes StageCompletionPayload.
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
     # TODO(pipeline-refactor/WP-10): Delete this legacy StageCompletionPayload

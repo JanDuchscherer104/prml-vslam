@@ -170,6 +170,7 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
     refs = [ref for item in update.visualizations for ref in item.payload_refs.values()]
     assert refs
     assert all(runtime.read_payload(ref) is not None for ref in refs)
+    assert runtime.drain_legacy_updates() == []
     assert not any("TransientPayloadRef" in repr(field.annotation) for field in SlamUpdate.model_fields.values())
 
     result = runtime.finish_streaming()

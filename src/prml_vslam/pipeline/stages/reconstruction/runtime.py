@@ -11,6 +11,8 @@ from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeS
 from prml_vslam.pipeline.stages.reconstruction.contracts import ReconstructionRuntimeInput
 from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig, ReconstructionArtifacts
 
+# TODO: why is this class not derived from common StageRuntime base class?
+
 
 class ReconstructionRuntime:
     """Adapt reconstruction-owned Open3D TSDF execution to the bounded runtime API."""

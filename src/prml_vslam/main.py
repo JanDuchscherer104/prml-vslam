@@ -26,12 +26,15 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, VideoSourceSpec, build_run_request
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import (
     build_advio_demo_request,
     build_runtime_source_from_request,
-    load_run_request_toml,
+    build_runtime_source_from_run_config,
+    load_run_config_toml,
     persist_advio_demo_request,
 )
 from prml_vslam.pipeline.run_service import RunService
@@ -62,10 +65,10 @@ class _RerunViewerProcess:
     forwarder: threading.Thread
 
 
-def _build_rerun_viewer_command(*, request: RunRequest, path_config: PathConfig) -> list[str]:
+def _build_rerun_viewer_command(*, run_config: RunConfig, path_config: PathConfig) -> list[str]:
     """Build the authoritative `uv run ... rerun --serve-web` command."""
     command = ["uv", "run", "--extra", "vista", "rerun"]
-    blueprint_path = request.visualization.viewer_blueprint_path
+    blueprint_path = run_config.visualization.viewer_blueprint_path
     if blueprint_path is not None:
         command.append(path_config.resolve_repo_path(blueprint_path).as_posix())
     command.append("--serve-web")
@@ -84,11 +87,11 @@ def _forward_rerun_viewer_stdout(*, stream: TextIO, target: TextIO = sys.stdout)
         stream.close()
 
 
-def _launch_rerun_viewer(*, request: RunRequest, path_config: PathConfig) -> _RerunViewerProcess | None:
+def _launch_rerun_viewer(*, run_config: RunConfig, path_config: PathConfig) -> _RerunViewerProcess | None:
     """Start the best-effort CLI-owned Rerun web viewer when configured."""
-    if not request.visualization.connect_live_viewer:
+    if not run_config.visualization.connect_live_viewer:
         return None
-    command = _build_rerun_viewer_command(request=request, path_config=path_config)
+    command = _build_rerun_viewer_command(run_config=run_config, path_config=path_config)
     try:
         process = subprocess.Popen(
             command,
@@ -244,7 +247,7 @@ def plan_run(
         evaluate_efficiency=evaluate_efficiency,
         connect_live_viewer=True,
     )
-    plan = request.build()
+    plan = RunConfig.from_run_request(request).compile_plan()
     console.plog(plan.model_dump(mode="json"))
 
 
@@ -253,7 +256,7 @@ def plan_run_config(
     config_path: Annotated[
         Path,
         typer.Argument(
-            help="Path to a RunRequest TOML file (repo-relative paths are resolved via PathConfig).",
+            help="Path to a pipeline config TOML file (repo-relative paths are resolved via PathConfig).",
         ),
     ],
     dataset_frame_stride: Annotated[
@@ -268,13 +271,13 @@ def plan_run_config(
     """Build a typed benchmark run plan from a TOML config file."""
     path_config = get_path_config()
     try:
-        request = load_run_request_toml(path_config=path_config, config_path=config_path)
-        request = _apply_dataset_sampling_overrides(
-            request,
+        run_cfg = load_run_config_toml(path_config=path_config, config_path=config_path)
+        run_cfg = _apply_dataset_sampling_overrides_to_run_config(
+            run_cfg,
             dataset_frame_stride=dataset_frame_stride,
             dataset_target_fps=dataset_target_fps,
         )
-        plan = request.build(path_config)
+        plan = run_cfg.compile_plan(path_config)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
@@ -286,7 +289,7 @@ def run_config(
     config_path: Annotated[
         Path,
         typer.Argument(
-            help="Path to an offline RunRequest TOML file (repo-relative paths are resolved via PathConfig).",
+            help="Path to a pipeline config TOML file (repo-relative paths are resolved via PathConfig).",
         ),
     ],
     dataset_frame_stride: Annotated[
@@ -298,29 +301,29 @@ def run_config(
         typer.Option("--dataset-target-fps", min=0.01, help="Override dataset target FPS from the TOML source."),
     ] = None,
 ) -> None:
-    """Run one offline or streaming pipeline request from a TOML config file."""
+    """Run one offline or streaming pipeline config from a TOML file."""
     path_config = get_path_config()
     run_service: RunService | None = None
     viewer: _RerunViewerProcess | None = None
-    request: RunRequest | None = None
+    run_cfg: RunConfig | None = None
     snapshot = RunSnapshot()
     preserve_local_head = False
     reached_terminal_snapshot = False
     try:
-        request = load_run_request_toml(path_config=path_config, config_path=config_path)
-        request = _apply_dataset_sampling_overrides(
-            request,
+        run_cfg = load_run_config_toml(path_config=path_config, config_path=config_path)
+        run_cfg = _apply_dataset_sampling_overrides_to_run_config(
+            run_cfg,
             dataset_frame_stride=dataset_frame_stride,
             dataset_target_fps=dataset_target_fps,
         )
-        viewer = _launch_rerun_viewer(request=request, path_config=path_config)
-        runtime_source = build_runtime_source_from_request(request=request, path_config=path_config)
+        viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
+        runtime_source = build_runtime_source_from_run_config(run_config=run_cfg, path_config=path_config)
         run_service = RunService(path_config=path_config)
-        run_service.start_run(request=request, runtime_source=runtime_source)
+        run_service.start_run(request=run_cfg.to_run_request(), runtime_source=runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
         reached_terminal_snapshot = True
         preserve_local_head = (
-            snapshot.state is RunState.COMPLETED and request.runtime.ray.local_head_lifecycle == "reusable"
+            snapshot.state is RunState.COMPLETED and run_cfg.runtime.ray.local_head_lifecycle == "reusable"
         )
     except KeyboardInterrupt as exc:
         if run_service is not None:
@@ -607,6 +610,22 @@ def _resolve_demo_sequence_id(service: AdvioDatasetService, *, explicit_sequence
     return previewable_ids[0]
 
 
+def _apply_dataset_sampling_overrides_to_run_config(
+    run_config: RunConfig,
+    *,
+    dataset_frame_stride: int | None,
+    dataset_target_fps: float | None,
+) -> RunConfig:
+    if dataset_frame_stride is None and dataset_target_fps is None:
+        return run_config
+    request = _apply_dataset_sampling_overrides(
+        run_config.to_run_request(),
+        dataset_frame_stride=dataset_frame_stride,
+        dataset_target_fps=dataset_target_fps,
+    )
+    return run_config.model_copy(update={"source": request.source})
+
+
 def _apply_dataset_sampling_overrides(
     request: RunRequest,
     *,
@@ -635,7 +654,7 @@ def _wait_for_pipeline_terminal_snapshot(
 ) -> RunSnapshot:
     """Poll the run service until the current demo session reaches a terminal state."""
     previous_state: RunState | None = None
-    previous_received_frames = -1
+    previous_processed_items = -1
     while True:
         snapshot = run_service.snapshot()
         if snapshot.state is not previous_state:
@@ -644,14 +663,20 @@ def _wait_for_pipeline_terminal_snapshot(
                 "Pipeline demo state: %s%s", snapshot.state.value, "" if plan_run_id is None else f" ({plan_run_id})"
             )
             previous_state = snapshot.state
-        if isinstance(snapshot, StreamingRunSnapshot) and snapshot.received_frames != previous_received_frames:
+        slam_runtime_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
+        processed_items = 0 if slam_runtime_status is None else slam_runtime_status.processed_items
+        if processed_items != previous_processed_items and processed_items > 0:
             pipeline_demo_console.info(
-                "Frames=%d sparse=%d dense=%d",
-                snapshot.received_frames,
-                snapshot.num_sparse_points,
-                snapshot.num_dense_points,
+                "SLAM processed=%d fps=%s throughput=%s",
+                processed_items,
+                "n/a"
+                if slam_runtime_status is None or slam_runtime_status.fps is None
+                else f"{slam_runtime_status.fps:.2f}",
+                "n/a"
+                if slam_runtime_status is None or slam_runtime_status.throughput is None
+                else f"{slam_runtime_status.throughput:.2f}",
             )
-            previous_received_frames = snapshot.received_frames
+            previous_processed_items = processed_items
         if snapshot.state not in {RunState.PREPARING, RunState.RUNNING}:
             return snapshot
         time.sleep(poll_interval_seconds)
@@ -663,16 +688,17 @@ def _print_pipeline_demo_snapshot(snapshot: RunSnapshot) -> None:
         "state": snapshot.state.value,
         "error_message": snapshot.error_message or None,
         "plan": None if snapshot.plan is None else snapshot.plan.model_dump(mode="json"),
-        "sequence_manifest": None
-        if snapshot.sequence_manifest is None
-        else snapshot.sequence_manifest.model_dump(mode="json"),
-        "slam": None if snapshot.slam is None else snapshot.slam.model_dump(mode="json"),
-        "summary": None if snapshot.summary is None else snapshot.summary.model_dump(mode="json"),
+        "stage_outcomes": {
+            stage_key.value: outcome.model_dump(mode="json") for stage_key, outcome in snapshot.stage_outcomes.items()
+        },
+        "stage_runtime_status": {
+            stage_key.value: status.model_dump(mode="json")
+            for stage_key, status in snapshot.stage_runtime_status.items()
+        },
+        "artifacts": {
+            artifact_key: artifact.model_dump(mode="json") for artifact_key, artifact in snapshot.artifacts.items()
+        },
     }
-    if isinstance(snapshot, StreamingRunSnapshot):
-        payload["received_frames"] = snapshot.received_frames
-        payload["num_sparse_points"] = snapshot.num_sparse_points
-        payload["num_dense_points"] = snapshot.num_dense_points
     console.plog(payload)
 
 

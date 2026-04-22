@@ -431,6 +431,113 @@ connect_live_viewer = false
 executor = "ray"
 ```
 
+Target source config detail:
+
+```mermaid
+classDiagram
+    class RunConfig {
+        +experiment_name
+        +mode
+        +output_dir
+        +stages: StageBundle
+        +visualization
+        +runtime
+        +compile_plan()
+    }
+
+    class StageBundle {
+        +source: SourceStageConfig
+        +slam
+        +align_ground
+        +evaluate_trajectory
+        +reconstruction
+        +summary
+    }
+
+    class StageConfig {
+        +stage_key
+        +enabled
+        +execution
+        +telemetry
+        +cleanup
+        +availability()
+        +declared_outputs()
+        +failure_outcome()
+    }
+
+    class SourceStageConfig {
+        +backend: SourceBackendConfig
+    }
+
+    class SourceBackendConfig {
+        <<discriminated union>>
+        source_id
+        frame_stride
+        target_fps
+        +setup_target()
+    }
+
+    class VideoSourceConfig {
+        +source_id = "video"
+        +video_path
+        +frame_stride
+        +target_fps
+        +setup_target()
+    }
+
+    class TumRgbdSourceConfig {
+        +source_id = "tum_rgbd"
+        +sequence_id
+        +frame_stride
+        +target_fps
+        +setup_target()
+    }
+
+    class AdvioSourceConfig {
+        +source_id = "advio"
+        +sequence_id
+        +frame_stride
+        +target_fps
+        +dataset_serving
+        +respect_video_rotation
+        +setup_target()
+    }
+
+    class Record3DSourceConfig {
+        +source_id = "record3d"
+        +frame_stride
+        +target_fps
+        +transport
+        +device_index
+        +device_address
+        +setup_target()
+    }
+
+    class RuntimeManager {
+        +preflight(run_plan)
+        +runtime_for(stage_key)
+    }
+
+    RunConfig --> StageBundle
+    StageBundle --> SourceStageConfig
+    StageConfig <|-- SourceStageConfig
+    SourceStageConfig --> SourceBackendConfig
+    SourceBackendConfig <|-- VideoSourceConfig
+    SourceBackendConfig <|-- TumRgbdSourceConfig
+    SourceBackendConfig <|-- AdvioSourceConfig
+    SourceBackendConfig <|-- Record3DSourceConfig
+    RuntimeManager --> SourceStageConfig
+```
+
+`frame_stride` and `target_fps` are shared source backend policy. A source
+variant may translate them differently based on its substrate: dataset replay
+uses timestamp-aware stride selection, raw video uses frame extraction policy,
+and live Record3D treats them as best-effort packet filtering before SLAM.
+Only one sampling mode may be active. `dataset_serving` remains ADVIO-owned
+because it selects ADVIO pose provider and frame semantics; do not promote it
+to the common source backend base until another dataset exposes equivalent
+serving choices.
+
 Per-stage cleanup is available through an optional nested
 `[stages.<stage>.cleanup]` table once the active config model supports
 `StageConfig.cleanup`. The cleanup policy selects artifacts by stage artifact
@@ -2068,6 +2175,13 @@ Rules:
 - Source muxing should follow the same rule: `SourceBackendConfig` variants may
   be `FactoryConfig`s; `SourceStageConfig` remains stage policy and never
   constructs the source stage runtime.
+- Source backend variants share `frame_stride` and `target_fps` sampling
+  policy so operators get one sampling model across video, dataset replay, and
+  live sources. Live sources apply this as best-effort packet filtering before
+  the SLAM hot path.
+- Keep source-specific semantics on their owning variant. For example,
+  `AdvioSourceConfig.dataset_serving` owns ADVIO pose-provider and frame-mode
+  selection; TUM RGB-D and raw video do not carry that field.
 - Reconstruction backend config variants are reconstruction-owned. The pipeline
   `ReconstructionStageConfig` references those variants and owns stage policy;
   it does not become the home for reconstruction backend implementation config.

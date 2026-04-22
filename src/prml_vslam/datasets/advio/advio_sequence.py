@@ -31,7 +31,7 @@ from prml_vslam.interfaces.ingest import (
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.io.cv2_producer import Cv2FramePayload, Cv2FrameProducer, Cv2ProducerConfig
 from prml_vslam.protocols import FramePacketStream
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, Console
 
 from . import advio_layout, advio_loading
 from .advio_geometry import (
@@ -55,6 +55,8 @@ from .advio_replay_adapter import (
 
 if TYPE_CHECKING:
     from prml_vslam.interfaces.ingest import SequenceManifest
+
+_CONSOLE = Console(__name__).child("AdvioSequence")
 
 
 class AdvioSequencePaths(BaseData):
@@ -226,18 +228,18 @@ class AdvioSequence(BaseData):
             )
         ]
         if paths.arcore_csv_path.exists():
-            references.append(
-                ReferenceTrajectoryRef(
-                    source=ReferenceSource.ARCORE,
-                    path=_ensure_advio_tum(paths.arcore_csv_path, evaluation_dir / "arcore.tum"),
-                )
+            _append_optional_reference_trajectory(
+                references,
+                source=ReferenceSource.ARCORE,
+                source_path=paths.arcore_csv_path,
+                target_path=evaluation_dir / "arcore.tum",
             )
         if paths.arkit_csv_path is not None:
-            references.append(
-                ReferenceTrajectoryRef(
-                    source=ReferenceSource.ARKIT,
-                    path=_ensure_advio_tum(paths.arkit_csv_path, evaluation_dir / "arkit.tum"),
-                )
+            _append_optional_reference_trajectory(
+                references,
+                source=ReferenceSource.ARKIT,
+                source_path=paths.arkit_csv_path,
+                target_path=evaluation_dir / "arkit.tum",
             )
         return PreparedBenchmarkInputs(
             reference_trajectories=references,
@@ -314,6 +316,29 @@ def _ensure_advio_tum(source_path: Path, target_path: Path) -> Path:
     if not target_path.exists():
         advio_loading.write_advio_pose_tum(source_path, target_path)
     return target_path
+
+
+def _append_optional_reference_trajectory(
+    references: list[ReferenceTrajectoryRef],
+    *,
+    source: ReferenceSource,
+    source_path: Path,
+    target_path: Path,
+) -> None:
+    try:
+        references.append(
+            ReferenceTrajectoryRef(
+                source=source,
+                path=_ensure_advio_tum(source_path, target_path),
+            )
+        )
+    except ValueError as exc:
+        _CONSOLE.warning(
+            "Skipping invalid optional ADVIO %s trajectory '%s': %s",
+            source.value,
+            source_path,
+            exc,
+        )
 
 
 def _build_advio_payload_provider(

@@ -18,6 +18,7 @@ from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 
 PipelineRuntimeSource: TypeAlias = OfflineSequenceSource | StreamingSequenceSource | None
@@ -83,6 +84,14 @@ class PipelineBackend(Protocol):
         substrate. Durable stage outputs should still be consumed through
         artifact paths rather than through this method.
         """
+        # TODO(pipeline-refactor/WP-10): Delete after all live payload callers
+        # use read_payload(..., TransientPayloadRef).
+
+    @abstractmethod
+    def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:
+        """Resolve one target transient payload ref into a local array."""
+        # TODO(pipeline-refactor/WP-08): Replace the nullable return with a
+        # typed payload-resolution result before old handle APIs are removed.
 
     @abstractmethod
     def shutdown(self, *, preserve_local_head: bool = False) -> None:
