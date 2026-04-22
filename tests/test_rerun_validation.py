@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +43,17 @@ def test_write_validation_bundle_emits_report_and_projection_images(tmp_path: Pa
     assert artifacts.map_xz_png.exists()
     assert '"keyed_point_clouds"' in artifacts.summary_json.read_text(encoding="utf-8")
     assert "# Rerun Validation Summary" in artifacts.summary_markdown.read_text(encoding="utf-8")
+
+
+def test_write_validation_bundle_respects_explicit_keyed_cloud_limit(tmp_path: Path) -> None:
+    recording_path = _write_synthetic_recording(tmp_path)
+    output_dir = tmp_path / "validation"
+
+    artifacts = write_validation_bundle(recording_path, output_dir=output_dir, max_keyed_clouds=1)
+    summary = json.loads(artifacts.summary_json.read_text(encoding="utf-8"))
+
+    assert len(summary["keyed_point_clouds"]) == 1
+    assert summary["keyed_point_clouds"][0]["entity_path"].startswith("/world/keyframes/points/")
 
 
 def _write_synthetic_recording(tmp_path: Path) -> Path:
