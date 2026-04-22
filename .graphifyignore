@@ -1,0 +1,30 @@
+# Keep the default graph focused on maintained project code and docs.
+external/
+graphify-out/
+.agents/
+.codex/
+.git/
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+build/
+dist/
+*.egg-info/
+
+# Local/generated artifacts and agent transcripts.
+codex-*.jsonl
+.artifacts/
+.data/
+.logs/
+docs/report/build/
+docs/slides/build/
+README_files/
+src/prml_vslam/app/README.html
+
+# Agent instructions are graphify integration inputs, not product knowledge.
+AGENTS.md
+CLAUDE.md
+GEMINI.md

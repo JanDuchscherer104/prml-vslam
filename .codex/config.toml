@@ -21,6 +21,21 @@ project_doc_fallback_filenames = ["AGENTS.md"]
     command = "uvx"
     args    = ["code-index-mcp"]
 
+    [mcp_servers.graphify]
+    type    = "stdio"
+    command = "uv"
+    args    = [
+        "run",
+        "--preview-features",
+        "extra-build-dependencies",
+        "--group",
+        "dev",
+        "python",
+        "-m",
+        "graphify.serve",
+        "graphify-out/graph.json",
+    ]
+
 [features]
 unified_exec = true
 multi_agent  = true

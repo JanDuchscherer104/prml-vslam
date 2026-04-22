@@ -48,5 +48,7 @@ This project has a graphify knowledge graph at graphify-out/.
 Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- Use `make graphify` for a quick graphify artifact/runtime status check plus the report summary
+- Use `make graphify` for a concise graphify artifact, runtime, hook, and freshness dashboard
+- Use `make graphify-report` when you need the report summary without the full community listing
 - After modifying code files in this session, run `make graphify-rebuild` to keep the graph current
+- Use `make graphify-hook-install` once per clone to enable local post-commit/post-checkout graph refreshes

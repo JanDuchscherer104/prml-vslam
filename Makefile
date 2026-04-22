@@ -17,7 +17,8 @@ GRAPHIFY_DIR ?= graphify-out
 GRAPHIFY_REPORT ?= $(GRAPHIFY_DIR)/GRAPH_REPORT.md
 GRAPHIFY_GRAPH ?= $(GRAPHIFY_DIR)/graph.json
 GRAPHIFY_HTML ?= $(GRAPHIFY_DIR)/graph.html
-GRAPHIFY_PYTHON ?= $(UV_RUN) --group dev python
+GRAPHIFY_PYTHON ?= $(UV_RUN) --preview-features extra-build-dependencies --group dev python
+GRAPHIFY_CLI ?= $(UV_RUN) --preview-features extra-build-dependencies --group dev graphify
 
 BIB_FILE ?= docs/references.bib
 BIB_CACHE_DIR ?= .cache/bib
@@ -43,7 +44,7 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py open3d-stubs graphify graphify-status graphify-report graphify-rebuild graphify-view
+.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py open3d-stubs graphify graphify-status graphify-report graphify-rebuild graphify-hook-status graphify-hook-install graphify-view
 
 lint: ## Auto-format Python files and apply Ruff fixes
 	$(RUFF) format .
@@ -78,7 +79,7 @@ loc: ## Alias for loc-py (pass flags with LOC_ARGS="--todo --fixme")
 open3d-stubs: ## Regenerate repo-local Open3D .pyi files
 	$(UV_RUN) --extra dev python scripts/generate_open3d_stubs.py
 
-graphify: graphify-status graphify-report ## Show graphify status and report summary
+graphify: graphify-status ## Show a concise graphify dashboard
 
 graphify-status: ## Check graphify artifacts and Python runtime availability
 	@test -d "$(GRAPHIFY_DIR)" || { echo "Missing graphify directory: $(GRAPHIFY_DIR)"; exit 1; }
@@ -88,15 +89,23 @@ graphify-status: ## Check graphify artifacts and Python runtime availability
 	@printf "report: %s\n" "$(GRAPHIFY_REPORT)"
 	@printf "graph data: %s\n" "$(GRAPHIFY_GRAPH)"
 	@test ! -f "$(GRAPHIFY_HTML)" || printf "viewer: %s\n" "$(GRAPHIFY_HTML)"
-	@$(GRAPHIFY_PYTHON) -c "import importlib.util; parent = importlib.util.find_spec('graphify'); spec = importlib.util.find_spec('graphify.watch') if parent else None; print('runtime: ' + ('available' if spec else 'missing'))"
+	@$(GRAPHIFY_PYTHON) -c 'from importlib.metadata import version; print("runtime: available (graphifyy " + version("graphifyy") + ")")'
+	@$(GRAPHIFY_PYTHON) -c 'import json, re; from pathlib import Path; report = Path("$(GRAPHIFY_REPORT)").read_text(encoding="utf-8"); graph = json.loads(Path("$(GRAPHIFY_GRAPH)").read_text(encoding="utf-8")); date = re.search(r"^# Graph Report - .*\(([^)]*)\)", report, re.M); summary = re.search(r"^- (\d+) nodes .+? (\d+) edges .+? (\d+) communities detected", report, re.M); nodes = graph.get("nodes", []); links = graph.get("links", graph.get("edges", [])); print("graph date: " + (date.group(1) if date else "unknown")); print("nodes: " + (summary.group(1) if summary else str(len(nodes)))); print("links: " + (summary.group(2) if summary else str(len(links)))); print("communities: " + (summary.group(3) if summary else "unknown"))'
+	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then dirty=$$(git status --short -- "$(GRAPHIFY_REPORT)" "$(GRAPHIFY_GRAPH)" "$(GRAPHIFY_HTML)"); if [ -n "$$dirty" ]; then echo "artifact dirty state: modified"; else echo "artifact dirty state: clean"; fi; fi
+	@printf "next: make graphify-report | make graphify-rebuild | make graphify-hook-install\n"
 
 graphify-report: ## Print the top of the graphify report
 	@test -f "$(GRAPHIFY_REPORT)" || { echo "Missing graphify report: $(GRAPHIFY_REPORT)"; exit 1; }
-	@sed -n '1,80p' "$(GRAPHIFY_REPORT)"
+	@$(GRAPHIFY_PYTHON) -c 'import re; from pathlib import Path; report = Path("$(GRAPHIFY_REPORT)").read_text(encoding="utf-8"); print(report.splitlines()[0]); wanted = ("Corpus Check", "Summary", "Suggested Questions"); [print("\n## " + name + "\n" + match.group(1).strip()) for name in wanted for match in [re.search(r"^## " + re.escape(name) + r"\n(.*?)(?=^## |\Z)", report, re.M | re.S)] if match]'
 
 graphify-rebuild: ## Rebuild graphify code artifacts for this repository
-	@$(GRAPHIFY_PYTHON) -c "import importlib.util, sys; parent = importlib.util.find_spec('graphify'); spec = importlib.util.find_spec('graphify.watch') if parent else None; sys.exit(0 if spec else 1)" || { echo "Missing graphify runtime. Install the package that provides graphify.watch or set GRAPHIFY_PYTHON."; exit 1; }
-	$(GRAPHIFY_PYTHON) -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"
+	$(GRAPHIFY_CLI) update .
+
+graphify-hook-status: ## Show local graphify git hook status without failing
+	@$(GRAPHIFY_CLI) hook status || true
+
+graphify-hook-install: ## Install local graphify post-commit/post-checkout hooks
+	$(GRAPHIFY_CLI) hook install
 
 graphify-view: ## Print the graphify HTML viewer path
 	@test -f "$(GRAPHIFY_HTML)" || { echo "Missing graphify viewer: $(GRAPHIFY_HTML)"; exit 1; }

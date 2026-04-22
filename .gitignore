@@ -222,6 +222,7 @@ docs/slides/**/*.svgz
 # Codex workspace state
 .codex/*
 !.codex/config.toml
+!.codex/hooks.json
 
 # Agent scratch space
 .agents/tmp/
