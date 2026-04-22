@@ -44,6 +44,10 @@ def chats_source_root() -> Path:
     return sources_root() / "chats"
 
 
+def windows_codex_home() -> Path:
+    return Path("/mnt/c/Users/jandu/.codex")
+
+
 def _load_codex_history_module():
     module_path = repo_root() / ".agents" / "scripts" / "codex_history.py"
     spec = importlib.util.spec_from_file_location("codex_history", module_path)
@@ -53,6 +57,56 @@ def _load_codex_history_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _candidate_codex_homes(history) -> list[Path]:
+    candidates = list(history._candidate_codex_homes())
+    windows_home = windows_codex_home()
+    if windows_home.exists():
+        candidates.append(windows_home)
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if resolved in seen or not resolved.exists():
+            continue
+        seen.add(resolved)
+        unique.append(resolved)
+    return unique
+
+
+def _repo_codex_homes(history) -> list[Path]:
+    root = repo_root()
+    scoped = [
+        candidate
+        for candidate in _candidate_codex_homes(history)
+        if history._has_repo_scoped_sessions(candidate, repo_root=root)
+    ]
+    if scoped:
+        return scoped
+    return [history._resolve_codex_home(None, repo_root=root)]
+
+
+def _dedupe_records(records: list[dict]) -> list[dict]:
+    unique: dict[tuple, dict] = {}
+    for record in records:
+        key = (
+            record.get("session_id"),
+            record.get("speaker"),
+            record.get("phase"),
+            record.get("timestamp_utc"),
+            record.get("message_index_in_session"),
+            record.get("message"),
+        )
+        unique.setdefault(key, record)
+    return sorted(
+        unique.values(),
+        key=lambda record: (
+            record.get("timestamp_utc") or "",
+            record.get("session_id") or "",
+            record.get("message_index_in_session") or 0,
+        ),
+    )
 
 
 def _mempalace_env() -> dict[str, str]:
@@ -76,7 +130,8 @@ def run_python_module(module: str, *args: str, capture_output: bool = False) -> 
 def ensure_runtime() -> None:
     if not venv_python().exists():
         raise RuntimeError(f"Missing repo venv python at {venv_python()}")
-    run_python_module("mempalace", "--version", capture_output=True)
+    command = [str(venv_python()), "-c", "import mempalace"]
+    subprocess.run(command, cwd=repo_root(), env=_mempalace_env(), text=True, check=True)
 
 
 def _clear_directory(path: Path) -> None:
@@ -122,8 +177,16 @@ def sync_docs_sources() -> list[Path]:
 
 def refresh_history_exports() -> None:
     history = _load_codex_history_module()
-    codex_home = history._resolve_codex_home(None, repo_root=repo_root())
-    combined, users = history.build_repo_exports(codex_home=codex_home, repo_root=repo_root(), timezone=TIMEZONE)
+    combined = []
+    users = []
+    for codex_home in _repo_codex_homes(history):
+        home_combined, home_users = history.build_repo_exports(
+            codex_home=codex_home, repo_root=repo_root(), timezone=TIMEZONE
+        )
+        combined.extend(home_combined)
+        users.extend(home_users)
+    combined = _dedupe_records(combined)
+    users = _dedupe_records(users)
     history._write_jsonl(repo_root() / "codex-messages-prml-vslam.jsonl", combined)
     history._write_jsonl(repo_root() / "codex-user-messages-prml-vslam.jsonl", users)
 
@@ -132,13 +195,16 @@ def sync_chat_sources() -> list[Path]:
     target_root = chats_source_root()
     _clear_directory(target_root)
     history = _load_codex_history_module()
-    codex_home = history._resolve_codex_home(None, repo_root=repo_root())
-    sessions = history._session_lookup(
-        codex_home,
-        repo_root=repo_root(),
-        worktrees_root=history._worktrees_root(repo_root()),
-        tz=history.ZoneInfo(TIMEZONE),
-    )
+    sessions = {}
+    for codex_home in _repo_codex_homes(history):
+        sessions.update(
+            history._session_lookup(
+                codex_home,
+                repo_root=repo_root(),
+                worktrees_root=history._worktrees_root(repo_root()),
+                tz=history.ZoneInfo(TIMEZONE),
+            )
+        )
     copied: list[Path] = []
     for session_id, (_meta, session_path) in sorted(sessions.items()):
         destination = target_root / f"{session_id}.jsonl"
