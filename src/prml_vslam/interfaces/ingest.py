@@ -108,6 +108,16 @@ class PreparedBenchmarkInputs(BaseData):
         return next(iter(self.rgbd_observation_sequences), None)
 
 
+class SourceStageOutput(BaseData):
+    """Normalized source-stage payload retained for downstream runtime stages."""
+
+    sequence_manifest: SequenceManifest
+    """Canonical normalized sequence manifest for the run-owned input layout."""
+
+    benchmark_inputs: PreparedBenchmarkInputs | None = None
+    """Optional prepared reference and replay inputs for benchmark stages."""
+
+
 __all__ = [
     "AdvioManifestAssets",
     "AdvioRawPoseRefs",
@@ -120,4 +130,5 @@ __all__ = [
     "ReferenceTrajectoryRef",
     "RgbdObservationSequenceRef",
     "SequenceManifest",
+    "SourceStageOutput",
 ]

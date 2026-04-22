@@ -15,7 +15,7 @@ import ray
 
 from prml_vslam.alignment import GroundAlignmentService
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
@@ -24,7 +24,6 @@ from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
-from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     artifact_ref,
@@ -74,43 +73,22 @@ def run_ingest_stage(*, context: StageExecutionContext, source: OfflineSequenceS
     """
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
-    prepared_manifest = source.prepare_sequence_manifest(context.run_paths.sequence_manifest_path.parent)
-    benchmark_inputs = None
-    if isinstance(source, BenchmarkInputSource):
-        benchmark_inputs = source.prepare_benchmark_inputs(context.run_paths.benchmark_inputs_path.parent)
-        if benchmark_inputs is not None:
-            write_json(context.run_paths.benchmark_inputs_path, benchmark_inputs)
-    sequence_manifest = materialize_offline_manifest(
-        request=context.request,
-        prepared_manifest=prepared_manifest,
-        run_paths=context.run_paths,
+    # TODO(pipeline-refactor/WP-10): Delete this legacy StageCompletionPayload
+    # adapter after RuntimeStageProgram no longer invokes free stage helpers
+    # and the coordinator consumes SourceRuntime StageResult values directly.
+    result = SourceRuntime(source=source).run_offline(
+        SourceRuntimeInput(
+            request=context.request,
+            artifact_root=context.plan.artifact_root,
+        )
     )
-    write_json(context.run_paths.sequence_manifest_path, sequence_manifest)
-    artifacts = {
-        "sequence_manifest": artifact_ref(context.run_paths.sequence_manifest_path, kind="json"),
-    }
-    if sequence_manifest.rgb_dir is not None:
-        artifacts["rgb_dir"] = artifact_ref(sequence_manifest.rgb_dir, kind="dir")
-    if sequence_manifest.timestamps_path is not None:
-        artifacts["timestamps"] = artifact_ref(sequence_manifest.timestamps_path, kind="json")
-    if sequence_manifest.intrinsics_path is not None:
-        artifacts["intrinsics"] = artifact_ref(sequence_manifest.intrinsics_path, kind="yaml")
-    if sequence_manifest.rotation_metadata_path is not None:
-        artifacts["rotation_metadata"] = artifact_ref(sequence_manifest.rotation_metadata_path, kind="json")
-    if benchmark_inputs is not None:
-        artifacts["benchmark_inputs"] = artifact_ref(context.run_paths.benchmark_inputs_path, kind="json")
-        for reference in benchmark_inputs.reference_trajectories:
-            artifacts[f"reference_tum:{reference.source.value}"] = artifact_ref(reference.path, kind="tum")
+    output = result.payload
+    if not isinstance(output, SourceStageOutput):
+        raise RuntimeError("SourceRuntime returned an invalid source-stage payload.")
     return StageCompletionPayload(
-        outcome=StageOutcome(
-            stage_key=StageKey.INGEST,
-            status=StageStatus.COMPLETED,
-            config_hash=stable_hash(context.request.source),
-            input_fingerprint=stable_hash(context.request.source),
-            artifacts=artifacts,
-        ),
-        sequence_manifest=sequence_manifest,
-        benchmark_inputs=benchmark_inputs,
+        outcome=result.outcome,
+        sequence_manifest=output.sequence_manifest,
+        benchmark_inputs=output.benchmark_inputs,
     )
 
 
