@@ -1857,6 +1857,9 @@ sidecar.
 reading, credits, source EOF/error callbacks, and transport state remain in an
 internal sidecar actor or collaborator. Packet reading is not a public stage
 unless persisted capture artifacts become a durable benchmark output.
+The concrete source-stage `StageResult.payload` is `SourceStageOutput`, which
+bundles the manifest and optional prepared benchmark inputs as one shared
+source payload.
 
 Migration contact points: [OfflineSourceResolver](../../src/prml_vslam/pipeline/source_resolver.py#L46),
 [build_runtime_source_from_request](../../src/prml_vslam/pipeline/demo.py),

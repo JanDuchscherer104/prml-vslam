@@ -82,11 +82,12 @@ The runtime truth is event-first:
 The default execution substrate is Ray, but Ray does not own the public
 contracts.
 
-The shared offline boundary stays `SequenceManifest`. Canonical scientific
-artifacts remain TUM trajectories, PLY clouds, manifests, and stage summaries.
-Normalized `.rrd` recordings are viewer/export artifacts, not the scientific
-source of truth. Bulk arrays stay out of persisted/public contracts and move
-through repo-owned opaque handles instead.
+The shared offline source boundary is `SourceStageOutput`: a
+`SequenceManifest` plus optional prepared benchmark inputs. Canonical
+scientific artifacts remain TUM trajectories, PLY clouds, manifests, and stage
+summaries. Normalized `.rrd` recordings are viewer/export artifacts, not the
+scientific source of truth. Bulk arrays stay out of persisted/public contracts
+and move through repo-owned opaque handles instead.
 
 Streaming method startup is intentionally symmetric with offline execution: a
 backend session can receive the normalized `SequenceManifest`, optional
