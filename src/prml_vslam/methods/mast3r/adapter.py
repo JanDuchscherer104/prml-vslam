@@ -83,7 +83,6 @@ class _InProcessManager:
         return []
 
 
-
 class Mast3rSlamSession:
     """Stateful streaming session over the upstream MASt3R-SLAM runtime."""
 
@@ -156,7 +155,6 @@ class Mast3rSlamSession:
         self._model = load_mast3r(path=checkpoint, device=self._device)
         self._model.share_memory()
 
-
     # ---- streaming step -------------------------------------------------
 
     def step(self, frame: FramePacket) -> None:
@@ -170,18 +168,18 @@ class Mast3rSlamSession:
             from mast3r_slam.frame import SharedKeyframes, SharedStates
             from mast3r_slam.tracker import FrameTracker
 
-            # 1. Tatsächliche Größe aus dem ersten Bild ermitteln
+            # Probe the actual output size from the first frame.
             img_f32_dummy = frame.rgb.astype(np.float32) / 255.0
             probe = resize_img(img_f32_dummy, self._img_size)
             self._h, self._w = int(probe["img"].shape[2]), int(probe["img"].shape[3])
-            
-            # 2. Puffer und Tracker mit korrekten Maßen erstellen
+
+            # Build shared state buffers and tracker with the correct dimensions.
             self._manager = _InProcessManager()
             self._keyframes = SharedKeyframes(self._manager, self._h, self._w, device=self._device)
             self._states = SharedStates(self._manager, self._h, self._w, device=self._device)
             self._tracker = FrameTracker(self._model, self._keyframes, self._device)
 
-            # 3. Backend Thread erst jetzt starten
+            # Start the backend thread now that dimensions are known.
             self._backend_stop.clear()
             self._backend_thread = threading.Thread(
                 target=self._backend_loop, name="mast3r-backend", daemon=True
