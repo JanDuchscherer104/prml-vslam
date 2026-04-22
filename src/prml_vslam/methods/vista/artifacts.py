@@ -14,15 +14,17 @@ from pathlib import Path
 import numpy as np
 import open3d as o3d
 
-from prml_vslam.interfaces import FrameTransform
+from prml_vslam.interfaces import CameraIntrinsicsSeries, FrameTransform
 from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.methods.config_contracts import SlamOutputPolicy
+from prml_vslam.methods.vista.artifact_io import load_vista_intrinsics_matrices, load_vista_view_names
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
+_VISTA_MODEL_RASTER_SIZE_PX = 224
 
 
 def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
@@ -60,26 +62,41 @@ def build_vista_artifacts(
     trajectory_se3 = np.load(trajectory_npy).astype(np.float64)
     poses = [_frame_transform_from_vista_pose(transform) for transform in trajectory_se3]
     trajectory_path = write_tum_trajectory(artifact_root / "slam" / "trajectory.tum", poses, timestamps_s)
+    run_paths = RunArtifactPaths.build(artifact_root)
 
     sparse_points_ref: ArtifactRef | None = None
     dense_points_ref: ArtifactRef | None = None
     pointcloud_ply = native_output_dir / "pointcloud.ply"
     if pointcloud_ply.exists() and (output_policy.emit_sparse_points or output_policy.emit_dense_points):
-        point_cloud = o3d.io.read_point_cloud(str(pointcloud_ply))
+        point_cloud = o3d.io.read_point_cloud(pointcloud_ply)
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
-        run_paths = RunArtifactPaths.build(artifact_root)
-        point_cloud_path = write_point_cloud_ply(run_paths.point_cloud_path, points_xyz)
+        colors_rgb = np.asarray(point_cloud.colors, dtype=np.float64) if point_cloud.has_colors() else None
+        point_cloud_path = write_point_cloud_ply(run_paths.point_cloud_path, points_xyz, colors_rgb=colors_rgb)
         canonical_ref = _artifact_ref(point_cloud_path, kind="ply")
         if output_policy.emit_sparse_points:
             sparse_points_ref = canonical_ref
         if output_policy.emit_dense_points:
             dense_points_ref = canonical_ref
 
+    estimated_intrinsics_ref: ArtifactRef | None = None
+    native_intrinsics_path = native_output_dir / "intrinsics.npy"
+    if native_intrinsics_path.exists():
+        estimated_intrinsics = _build_estimated_intrinsics_series(
+            native_intrinsics_path=native_intrinsics_path,
+            native_output_dir=native_output_dir,
+            timestamps_s=timestamps_s,
+        )
+        run_paths.estimated_intrinsics_path.parent.mkdir(parents=True, exist_ok=True)
+        run_paths.estimated_intrinsics_path.write_text(estimated_intrinsics.model_dump_json(indent=2), encoding="utf-8")
+        estimated_intrinsics_ref = _artifact_ref(run_paths.estimated_intrinsics_path, kind="json")
+
     extras = {
         path.name: _artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
         for path in sorted(native_output_dir.glob("*"))
         if path.is_file() and path.name not in {"trajectory.npy", "pointcloud.ply", "rerun_recording.rrd"}
     }
+    if estimated_intrinsics_ref is not None:
+        extras[run_paths.estimated_intrinsics_path.name] = estimated_intrinsics_ref
     return SlamArtifacts(
         trajectory_tum=_artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=sparse_points_ref,
@@ -101,6 +118,35 @@ def _frame_transform_from_vista_pose(matrix: np.ndarray) -> FrameTransform:
         max_frobenius_error=_VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR,
     )
     return FrameTransform.from_matrix(normalized)
+
+
+def _build_estimated_intrinsics_series(
+    *,
+    native_intrinsics_path: Path,
+    native_output_dir: Path,
+    timestamps_s: Sequence[float],
+) -> CameraIntrinsicsSeries:
+    intrinsics = load_vista_intrinsics_matrices(native_intrinsics_path, expected_length=len(timestamps_s))
+    if len(intrinsics) != len(timestamps_s):
+        raise ValueError(
+            "Expected one native ViSTA intrinsics matrix per trajectory timestamp, "
+            f"got {len(intrinsics)} intrinsics and {len(timestamps_s)} timestamps."
+        )
+    return CameraIntrinsicsSeries.from_matrices(
+        intrinsics,
+        raster_space="vista_model",
+        source="native/intrinsics.npy",
+        method_id="vista",
+        width_px=_VISTA_MODEL_RASTER_SIZE_PX,
+        height_px=_VISTA_MODEL_RASTER_SIZE_PX,
+        keyframe_indices=list(range(len(intrinsics))),
+        timestamps_ns=[int(round(float(timestamp_s) * 1e9)) for timestamp_s in timestamps_s],
+        view_names=load_vista_view_names(native_output_dir / "view_graph.npz", count=len(intrinsics)),
+        metadata={
+            "native_intrinsics_path": native_intrinsics_path.name,
+            "preprocessing": "vista_image_only_center_crop_resize",
+        },
+    )
 
 
 __all__ = ["build_vista_artifacts"]

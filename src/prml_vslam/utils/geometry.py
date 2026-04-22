@@ -73,7 +73,7 @@ def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTraje
     )
 
 
-def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
+def write_point_cloud_ply(path: Path, points_xyz: np.ndarray, colors_rgb: np.ndarray | None = None) -> Path:
     """Write an XYZ point cloud to PLY using the repository's Open3D dependency."""
     positions = np.asarray(points_xyz, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 3:
@@ -81,6 +81,10 @@ def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(positions)
+    if colors_rgb is not None:
+        point_cloud.colors = o3d.utility.Vector3dVector(
+            _normalize_point_colors(colors_rgb, expected_length=len(positions))
+        )
     if not o3d.io.write_point_cloud(path, point_cloud, write_ascii=True):
         raise RuntimeError(f"Failed to write point cloud to '{path}'.")
     return path.resolve()
@@ -97,6 +101,34 @@ def load_point_cloud_ply(path: Path) -> np.ndarray:
     if points_xyz.size == 0:
         return np.empty((0, 3), dtype=np.float64)
     return points_xyz
+
+
+def load_point_cloud_ply_with_colors(path: Path) -> tuple[np.ndarray, np.ndarray | None]:
+    """Load XYZ points and optional RGB colors from PLY using Open3D."""
+    if not path.exists():
+        raise FileNotFoundError(f"Point cloud '{path}' does not exist.")
+    point_cloud = o3d.io.read_point_cloud(path)
+    points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
+    if points_xyz.ndim != 2 or (points_xyz.size > 0 and points_xyz.shape[1] != 3):
+        raise ValueError(f"Expected Open3D to return shape (N, 3) for '{path}', got {points_xyz.shape}.")
+    colors_rgb = np.asarray(point_cloud.colors, dtype=np.float64) if point_cloud.has_colors() else None
+    if colors_rgb is not None and colors_rgb.shape != points_xyz.shape:
+        raise ValueError(f"Expected point colors to match point shape {points_xyz.shape}, got {colors_rgb.shape}.")
+    if points_xyz.size == 0:
+        return np.empty((0, 3), dtype=np.float64), None if colors_rgb is None else np.empty((0, 3), dtype=np.float64)
+    return points_xyz, colors_rgb
+
+
+def _normalize_point_colors(colors_rgb: np.ndarray, *, expected_length: int) -> np.ndarray:
+    colors = np.asarray(colors_rgb)
+    if colors.ndim != 2 or colors.shape != (expected_length, 3):
+        raise ValueError(f"Expected point colors shape ({expected_length}, 3), got {colors.shape}.")
+    normalized = colors.astype(np.float64)
+    if np.issubdtype(colors.dtype, np.integer):
+        normalized = normalized / 255.0
+    if np.any(normalized < 0.0) or np.any(normalized > 1.0):
+        raise ValueError("Point colors must be in [0, 1] for floats or [0, 255] for integers.")
+    return normalized
 
 
 def transform_points_world_camera(
@@ -143,6 +175,7 @@ def pointmap_from_depth(
 
 __all__ = [
     "load_point_cloud_ply",
+    "load_point_cloud_ply_with_colors",
     "load_tum_trajectory",
     "pointmap_from_depth",
     "transform_points_world_camera",

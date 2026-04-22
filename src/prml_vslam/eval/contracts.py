@@ -17,6 +17,7 @@ from jaxtyping import Float
 from pydantic import Field
 
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.utils import BaseData
 
@@ -83,6 +84,31 @@ class TrajectoryEvaluationPreview(BaseData):
     estimate: TrajectorySeries
     error_series: ErrorSeries
     stats: MetricStats
+
+
+class IntrinsicsComparisonDiagnostics(BaseData):
+    """Estimated-vs-reference intrinsics residuals in one raster space."""
+
+    raster_space: str
+    """Raster space for both estimated and reference intrinsics."""
+
+    reference: CameraIntrinsics
+    """Reference camera model in the comparison raster."""
+
+    mean_estimate: CameraIntrinsics
+    """Mean estimated camera model across all samples."""
+
+    fx_residual_px: list[float] = Field(default_factory=list)
+    """Per-sample `fx_est - fx_ref` residuals in pixels."""
+
+    fy_residual_px: list[float] = Field(default_factory=list)
+    """Per-sample `fy_est - fy_ref` residuals in pixels."""
+
+    cx_residual_px: list[float] = Field(default_factory=list)
+    """Per-sample `cx_est - cx_ref` residuals in pixels."""
+
+    cy_residual_px: list[float] = Field(default_factory=list)
+    """Per-sample `cy_est - cy_ref` residuals in pixels."""
 
 
 class TrajectoryEvaluationSemantics(BaseData):
@@ -253,6 +279,7 @@ __all__ = [
     "EvaluationSelection",
     "EfficiencyEvaluationArtifact",
     "EfficiencyEvaluationSelection",
+    "IntrinsicsComparisonDiagnostics",
     "MetricStats",
     "SelectionSnapshot",
     "TrajectoryAlignmentMode",

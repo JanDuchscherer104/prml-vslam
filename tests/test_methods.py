@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from prml_vslam.benchmark import ReferenceCloudCoordinateStatus, ReferenceCloudSource, ReferenceSource
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, FramePacket, FrameTransform
 from prml_vslam.interfaces.ingest import (
     PreparedBenchmarkInputs,
     ReferenceCloudRef,
@@ -25,7 +25,12 @@ from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import Console
-from prml_vslam.utils.geometry import load_tum_trajectory, write_point_cloud_ply, write_tum_trajectory
+from prml_vslam.utils.geometry import (
+    load_point_cloud_ply_with_colors,
+    load_tum_trajectory,
+    write_point_cloud_ply,
+    write_tum_trajectory,
+)
 
 
 def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1314,6 +1319,58 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
     assert "rerun_recording.rrd" not in artifacts.extras
     assert artifacts.extras["session.json"].fingerprint == stable_hash(
         {"path": str(extra_path.resolve()), "kind": "json"}
+    )
+
+
+def test_vista_artifact_builder_preserves_point_cloud_colors_and_standardizes_intrinsics(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.artifacts import build_vista_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    np.save(native_output_dir / "trajectory.npy", np.eye(4, dtype=np.float64)[None, :, :])
+    np.save(
+        native_output_dir / "intrinsics.npy",
+        np.asarray([[[280.0, 0.0, 112.0], [0.0, 281.0, 113.0], [0.0, 0.0, 1.0]]], dtype=np.float32),
+    )
+    np.savez(
+        native_output_dir / "view_graph.npz",
+        view_graph=np.asarray({0: []}, dtype=object),
+        loop_min_dist=np.asarray(40),
+        view_names=np.asarray(["frame_000000"]),
+    )
+    point_cloud_path = write_point_cloud_ply(
+        native_output_dir / "pointcloud.ply",
+        np.asarray([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]], dtype=np.float64),
+        colors_rgb=np.asarray([[255, 0, 0], [0, 255, 128]], dtype=np.uint8),
+    )
+    assert point_cloud_path.exists()
+
+    artifacts = build_vista_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=tmp_path / "artifacts",
+        output_policy=SlamOutputPolicy(),
+        timestamps_s=[0.0],
+    )
+
+    assert artifacts.dense_points_ply is not None
+    _, colors = load_point_cloud_ply_with_colors(artifacts.dense_points_ply.path)
+    assert colors is not None
+    np.testing.assert_allclose(colors[0], np.asarray([1.0, 0.0, 0.0]), atol=1 / 255.0)
+    estimated_ref = artifacts.extras["estimated_intrinsics.json"]
+    series = CameraIntrinsicsSeries.model_validate_json(estimated_ref.path.read_text(encoding="utf-8"))
+    assert series.raster_space == "vista_model"
+    assert series.source == "native/intrinsics.npy"
+    assert series.method_id == "vista"
+    assert series.width_px == 224
+    assert series.height_px == 224
+    assert series.samples[0].view_name == "frame_000000"
+    assert series.samples[0].intrinsics == CameraIntrinsics(
+        fx=280.0,
+        fy=281.0,
+        cx=112.0,
+        cy=113.0,
+        width_px=224,
+        height_px=224,
     )
 
 

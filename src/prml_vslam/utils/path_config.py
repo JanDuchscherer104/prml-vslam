@@ -58,6 +58,8 @@ class RunArtifactPaths(BaseData):
     """Path to the exported trajectory."""
     point_cloud_path: Path
     """Path to the canonical exported point cloud."""
+    estimated_intrinsics_path: Path
+    """Path to the canonical estimated camera-intrinsics series."""
     sparse_points_path: Path
     """Path to the exported sparse point cloud."""
     dense_points_path: Path
@@ -98,6 +100,7 @@ class RunArtifactPaths(BaseData):
             benchmark_inputs_path=(resolved_root / "benchmark" / "inputs.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
             point_cloud_path=(resolved_root / "slam" / "point_cloud.ply").resolve(),
+            estimated_intrinsics_path=(resolved_root / "slam" / "estimated_intrinsics.json").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),
