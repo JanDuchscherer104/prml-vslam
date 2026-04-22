@@ -1094,8 +1094,34 @@ def test_streaming_slam_stage_passes_sequence_manifest_and_benchmark_inputs_to_b
             return SimpleNamespace(step=lambda *_args, **_kwargs: None, try_get_updates=lambda: [], close=lambda: None)
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_actors.BackendFactory.build",
+        "prml_vslam.pipeline.stages.slam.runtime.BackendFactory.build",
         lambda self, backend_spec, path_config=None: FakeBackend(),
+    )
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.put_array_handle",
+        lambda array: (
+            None
+            if array is None
+            else ArrayHandle(
+                handle_id=uuid.uuid4().hex, shape=np.asarray(array).shape, dtype=str(np.asarray(array).dtype)
+            ),
+            None if array is None else np.asarray(array),
+        ),
+    )
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.put_preview_handle",
+        lambda array: (
+            None
+            if array is None
+            else PreviewHandle(
+                handle_id=uuid.uuid4().hex,
+                width=int(np.asarray(array).shape[1]),
+                height=int(np.asarray(array).shape[0]),
+                channels=1 if np.asarray(array).ndim == 2 else int(np.asarray(array).shape[2]),
+                dtype=str(np.asarray(array).dtype),
+            ),
+            None if array is None else np.asarray(array),
+        ),
     )
     actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
     request = RunRequest(
@@ -1129,6 +1155,129 @@ def test_streaming_slam_stage_passes_sequence_manifest_and_benchmark_inputs_to_b
     assert session_init.sequence_manifest == sequence_manifest
     assert session_init.benchmark_inputs == benchmark_inputs
     assert session_init.baseline_source is ReferenceSource.GROUND_TRUTH
+
+
+def test_streaming_slam_stage_forwards_runtime_updates_before_credit_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor_cls = StreamingSlamStageActor.__ray_metadata__.modified_class
+    captured: dict[str, object] = {}
+
+    class _Remote:
+        def __init__(self, fn):
+            self.remote = fn
+
+    fake_coordinator = SimpleNamespace(
+        on_slam_runtime_updates=_Remote(lambda **kwargs: captured.setdefault("updates", kwargs)),
+        on_slam_notices=_Remote(lambda **kwargs: captured.setdefault("notices", kwargs)),
+    )
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.ray.get_actor",
+        lambda *args, **kwargs: fake_coordinator,
+    )
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.pending: list[SlamUpdate] = []
+
+        def step(self, frame) -> None:
+            self.pending.append(
+                SlamUpdate(
+                    seq=frame.seq,
+                    timestamp_ns=frame.timestamp_ns,
+                    source_seq=frame.seq,
+                    is_keyframe=True,
+                    keyframe_index=0,
+                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                    image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+                    pointmap=np.ones((2, 2, 3), dtype=np.float32),
+                )
+            )
+
+        def try_get_updates(self) -> list[SlamUpdate]:
+            updates = self.pending
+            self.pending = []
+            return updates
+
+        def close(self) -> SlamArtifacts:
+            return SlamArtifacts(
+                trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")
+            )
+
+    class FakeBackend:
+        method_id = MethodId.MOCK
+
+        def start_session(self, **kwargs):
+            del kwargs
+            return FakeSession()
+
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.stages.slam.runtime.BackendFactory.build",
+        lambda self, backend_spec, path_config=None: FakeBackend(),
+    )
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.put_array_handle",
+        lambda array: (
+            None
+            if array is None
+            else ArrayHandle(
+                handle_id=uuid.uuid4().hex,
+                shape=tuple(np.asarray(array).shape),
+                dtype=str(np.asarray(array).dtype),
+            ),
+            None if array is None else np.asarray(array),
+        ),
+    )
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.put_preview_handle",
+        lambda array: (
+            None
+            if array is None
+            else PreviewHandle(
+                handle_id=uuid.uuid4().hex,
+                width=int(np.asarray(array).shape[1]),
+                height=int(np.asarray(array).shape[0]),
+                channels=1 if np.asarray(array).ndim == 2 else int(np.asarray(array).shape[2]),
+                dtype=str(np.asarray(array).dtype),
+            ),
+            None if array is None else np.asarray(array),
+        ),
+    )
+    request = RunRequest(
+        experiment_name="streaming-updates",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        request=request,
+        stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
+    )
+    actor = actor_cls(coordinator_name="demo", namespace="pytest-unit")
+    actor.start_stage(
+        request=request,
+        plan=plan,
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
+        session_init=SlamSessionInit(sequence_manifest=SequenceManifest(sequence_id="seq-1")),
+    )
+
+    actor.push_frame(
+        packet=FramePacketSummary(seq=1, timestamp_ns=10, provenance=FramePacketProvenance(source_id="fake")),
+        frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_ref=None,
+        confidence_ref=None,
+        intrinsics=None,
+        pose=None,
+        provenance=FramePacketProvenance(source_id="fake"),
+    )
+
+    assert len(captured["updates"]["updates"]) == 1
+    assert captured["updates"]["payload_bindings"]
+    assert captured["notices"]["released_credits"] == 1
+    assert captured["notices"]["forward_to_rerun"] is False
 
 
 def test_backend_config_payload_strips_backend_kind_for_vista() -> None:
