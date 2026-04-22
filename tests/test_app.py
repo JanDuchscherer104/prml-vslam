@@ -57,6 +57,15 @@ def test_artifact_page_is_registered_and_state_round_trips() -> None:
             reconstruction_target_triangles=60_000,
             reconstruction_mesh_opacity=0.55,
             reconstruction_mesh_color="#7b1fa2",
+            comparison_show_slam_cloud=False,
+            comparison_show_reference_cloud=True,
+            comparison_show_reference_mesh=False,
+            comparison_show_trajectories=True,
+            comparison_slam_max_points=30_000,
+            comparison_reference_max_points=20_000,
+            comparison_target_triangles=10_000,
+            rerun_validation_max_keyed_clouds=7,
+            rerun_validation_max_render_points=8_000,
         )
     )
 
@@ -71,6 +80,15 @@ def test_artifact_page_is_registered_and_state_round_trips() -> None:
     assert reloaded.artifacts.reconstruction_target_triangles == 60_000
     assert reloaded.artifacts.reconstruction_mesh_opacity == 0.55
     assert reloaded.artifacts.reconstruction_mesh_color == "#7b1fa2"
+    assert reloaded.artifacts.comparison_show_slam_cloud is False
+    assert reloaded.artifacts.comparison_show_reference_cloud is True
+    assert reloaded.artifacts.comparison_show_reference_mesh is False
+    assert reloaded.artifacts.comparison_show_trajectories is True
+    assert reloaded.artifacts.comparison_slam_max_points == 30_000
+    assert reloaded.artifacts.comparison_reference_max_points == 20_000
+    assert reloaded.artifacts.comparison_target_triangles == 10_000
+    assert reloaded.artifacts.rerun_validation_max_keyed_clouds == 7
+    assert reloaded.artifacts.rerun_validation_max_render_points == 8_000
 
 
 def test_graphify_page_is_registered() -> None:

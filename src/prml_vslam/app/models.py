@@ -222,6 +222,33 @@ class ArtifactInspectorPageState(BaseData):
     reconstruction_mesh_color: str = "#2f6fed"
     """Mesh color used for the reconstruction Plotly trace."""
 
+    comparison_show_slam_cloud: bool = True
+    """Whether the SLAM-vs-reference comparison should render the SLAM cloud."""
+
+    comparison_show_reference_cloud: bool = True
+    """Whether the SLAM-vs-reference comparison should render the reference cloud."""
+
+    comparison_show_reference_mesh: bool = True
+    """Whether the SLAM-vs-reference comparison should render the reference mesh."""
+
+    comparison_show_trajectories: bool = True
+    """Whether the SLAM-vs-reference comparison should render available trajectories."""
+
+    comparison_slam_max_points: int = 80_000
+    """Maximum sampled SLAM cloud points rendered in comparison plots."""
+
+    comparison_reference_max_points: int = 80_000
+    """Maximum sampled reference cloud points rendered in comparison plots."""
+
+    comparison_target_triangles: int = 120_000
+    """Target reference mesh triangles rendered in comparison plots."""
+
+    rerun_validation_max_keyed_clouds: int = 20
+    """Maximum keyed clouds included in generated Rerun validation bundles."""
+
+    rerun_validation_max_render_points: int = 30_000
+    """Maximum points rendered per cloud in generated Rerun validation plots."""
+
 
 class Record3DPageState(BaseData):
     """Persisted selector state for the Record3D live-stream page."""

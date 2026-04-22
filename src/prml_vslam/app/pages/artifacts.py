@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, TypeAlias
 
 import streamlit as st
 
+from prml_vslam.methods.vista.diagnostics import load_vista_native_slam_diagnostics
 from prml_vslam.pipeline.artifact_inspection import (
     RunArtifactCandidate,
     RunArtifactInspection,
@@ -19,11 +20,19 @@ from prml_vslam.plotting import (
     DEFAULT_MESH_COLOR,
     build_3d_trajectory_figure,
     build_bev_trajectory_figure,
+    build_intrinsics_residual_figure,
+    build_native_confidence_figure,
+    build_native_intrinsics_figure,
+    build_native_scale_figure,
+    build_native_timing_figure,
     build_reference_reconstruction_figure,
+    build_slam_reference_comparison_figure,
     build_speed_profile_figure,
+    build_view_graph_figure,
 )
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import load_tum_trajectory
+from prml_vslam.visualization.validation import write_validation_bundle
 
 from ..state import save_model_updates
 from ..ui import render_page_intro
@@ -76,8 +85,8 @@ def render(context: AppContext) -> None:
             for error in inspection.load_errors:
                 st.warning(error)
 
-    overview_tab, paths_tab, trajectories_tab, reconstruction_tab, raw_tab = st.tabs(
-        ["Overview", "Paths", "Trajectories", "Reconstruction", "Raw"]
+    overview_tab, paths_tab, trajectories_tab, reconstruction_tab, diagnostics_tab, raw_tab = st.tabs(
+        ["Overview", "Paths", "Trajectories", "Reconstruction", "Diagnostics", "Raw"]
     )
     with overview_tab:
         _render_overview(inspection)
@@ -87,6 +96,8 @@ def render(context: AppContext) -> None:
         _render_trajectories(inspection)
     with reconstruction_tab:
         _render_reconstruction(context, inspection)
+    with diagnostics_tab:
+        _render_diagnostics(context, inspection)
     with raw_tab:
         _render_raw_previews(inspection)
 
@@ -168,6 +179,7 @@ def _render_overview(inspection: RunArtifactInspection) -> None:
     with right:
         st.markdown("**File Inventory**")
         st.dataframe(_inventory_rows(inspection), hide_index=True, width="stretch")
+    _render_input_and_attempts(inspection)
 
 
 def _render_paths(inspection: RunArtifactInspection) -> None:
@@ -301,6 +313,201 @@ def _render_reconstruction(context: AppContext, inspection: RunArtifactInspectio
     st.json(summary.model_dump(mode="json"), expanded=False)
 
 
+def _render_diagnostics(context: AppContext, inspection: RunArtifactInspection) -> None:
+    _render_native_diagnostics(inspection)
+    st.divider()
+    _render_slam_reference_comparison(context, inspection)
+    st.divider()
+    _render_rerun_validation(context, inspection)
+
+
+def _render_native_diagnostics(inspection: RunArtifactInspection) -> None:
+    st.subheader("Native SLAM Diagnostics")
+    st.caption("Native arrays are loaded only when requested.")
+    if not st.button("Load native diagnostics", type="primary"):
+        st.info("Load `confs.npz`, `scales.npy`, `intrinsics.npy`, `trajectory.npy`, and `view_graph.npz`.")
+        return
+    try:
+        diagnostics = load_vista_native_slam_diagnostics(inspection.artifact_root)
+    except _HEAVY_ARTIFACT_ERRORS as exc:
+        st.error(str(exc))
+        return
+    metrics = (
+        ("Keyframes", str(len(diagnostics.keyframe_indices))),
+        (
+            "Confidence threshold",
+            "n/a" if diagnostics.confidence_threshold is None else f"{diagnostics.confidence_threshold:.3f}",
+        ),
+        ("View graph nodes", "n/a" if diagnostics.view_graph is None else str(diagnostics.view_graph.node_count)),
+        ("Loop-like edges", "n/a" if diagnostics.view_graph is None else str(len(diagnostics.view_graph.loop_edges))),
+    )
+    for column, (label, value) in zip(st.columns(4, gap="small"), metrics, strict=True):
+        column.metric(label, value)
+    rows = [
+        [build_native_confidence_figure(diagnostics), build_native_scale_figure(diagnostics)],
+        [build_native_intrinsics_figure(diagnostics), build_native_timing_figure(diagnostics)],
+    ]
+    for figures in rows:
+        for column, figure in zip(st.columns(2, gap="large"), figures, strict=True):
+            column.plotly_chart(figure, width="stretch")
+    if diagnostics.view_graph is not None:
+        st.plotly_chart(build_view_graph_figure(diagnostics), width="stretch")
+        with st.expander("Top connected view-graph nodes", expanded=False):
+            st.dataframe(
+                [{"Node": item.node, "Degree": item.degree} for item in diagnostics.view_graph.top_degree_nodes],
+                hide_index=True,
+                width="stretch",
+            )
+    if diagnostics.intrinsics_comparison is not None:
+        st.plotly_chart(build_intrinsics_residual_figure(diagnostics), width="stretch")
+        with st.expander("Intrinsics comparison summary", expanded=False):
+            comparison = diagnostics.intrinsics_comparison
+            st.json(
+                {
+                    "raster_space": comparison.raster_space,
+                    "reference": comparison.reference.model_dump(mode="json"),
+                    "mean_estimate": comparison.mean_estimate.model_dump(mode="json"),
+                },
+                expanded=False,
+            )
+
+
+def _render_slam_reference_comparison(context: AppContext, inspection: RunArtifactInspection) -> None:
+    state = context.state.artifacts
+    st.subheader("SLAM vs Reference")
+    with st.form("artifact_slam_reference_comparison_form"):
+        modality_columns = st.columns(4, gap="small")
+        show_slam_cloud = modality_columns[0].checkbox("SLAM cloud", value=state.comparison_show_slam_cloud)
+        show_reference_cloud = modality_columns[1].checkbox(
+            "Reference cloud",
+            value=state.comparison_show_reference_cloud,
+        )
+        show_reference_mesh = modality_columns[2].checkbox("Reference mesh", value=state.comparison_show_reference_mesh)
+        show_trajectories = modality_columns[3].checkbox("Trajectories", value=state.comparison_show_trajectories)
+        budget_columns = st.columns(3, gap="small")
+        slam_max_points = int(
+            budget_columns[0].number_input(
+                "SLAM max points",
+                min_value=1_000,
+                max_value=1_000_000,
+                value=state.comparison_slam_max_points,
+                step=10_000,
+            )
+        )
+        reference_max_points = int(
+            budget_columns[1].number_input(
+                "Reference max points",
+                min_value=1_000,
+                max_value=1_000_000,
+                value=state.comparison_reference_max_points,
+                step=10_000,
+            )
+        )
+        target_triangles = int(
+            budget_columns[2].number_input(
+                "Reference target triangles",
+                min_value=1_000,
+                max_value=1_000_000,
+                value=state.comparison_target_triangles,
+                step=10_000,
+            )
+        )
+        render_requested = st.form_submit_button(
+            "Render SLAM vs reference",
+            type="primary",
+            disabled=not any((show_slam_cloud, show_reference_cloud, show_reference_mesh, show_trajectories)),
+        )
+    save_model_updates(
+        context.store,
+        context.state,
+        state,
+        comparison_show_slam_cloud=show_slam_cloud,
+        comparison_show_reference_cloud=show_reference_cloud,
+        comparison_show_reference_mesh=show_reference_mesh,
+        comparison_show_trajectories=show_trajectories,
+        comparison_slam_max_points=slam_max_points,
+        comparison_reference_max_points=reference_max_points,
+        comparison_target_triangles=target_triangles,
+    )
+    if not any((show_slam_cloud, show_reference_cloud, show_reference_mesh, show_trajectories)):
+        st.warning("Select at least one comparison modality.")
+        return
+    if not render_requested:
+        st.info("Submit the form to load the selected comparison artifacts.")
+        return
+    try:
+        figure, summary = build_slam_reference_comparison_figure(
+            inspection.artifact_root,
+            show_slam_cloud=show_slam_cloud,
+            show_reference_cloud=show_reference_cloud,
+            show_reference_mesh=show_reference_mesh,
+            show_trajectories=show_trajectories,
+            slam_max_points=slam_max_points,
+            reference_max_points=reference_max_points,
+            target_triangles=target_triangles,
+        )
+    except _HEAVY_ARTIFACT_ERRORS as exc:
+        st.error(str(exc))
+        return
+    st.plotly_chart(figure, width="stretch")
+    st.json(summary.model_dump(mode="json"), expanded=False)
+
+
+def _render_rerun_validation(context: AppContext, inspection: RunArtifactInspection) -> None:
+    state = context.state.artifacts
+    st.subheader("Rerun Validation Bundle")
+    recording_path = inspection.run_paths.viewer_rrd_path
+    if not recording_path.exists():
+        st.info(f"No repo-owned Rerun recording exists at `{recording_path}`.")
+        return
+    with st.form("artifact_rerun_validation_form"):
+        columns = st.columns(2, gap="small")
+        max_keyed_clouds = int(
+            columns[0].number_input(
+                "Max keyed clouds",
+                min_value=1,
+                max_value=200,
+                value=state.rerun_validation_max_keyed_clouds,
+                step=1,
+            )
+        )
+        max_render_points = int(
+            columns[1].number_input(
+                "Max render points",
+                min_value=1_000,
+                max_value=250_000,
+                value=state.rerun_validation_max_render_points,
+                step=5_000,
+            )
+        )
+        generate = st.form_submit_button("Generate validation bundle", type="primary")
+    save_model_updates(
+        context.store,
+        context.state,
+        state,
+        rerun_validation_max_keyed_clouds=max_keyed_clouds,
+        rerun_validation_max_render_points=max_render_points,
+    )
+    if not generate:
+        st.info("Generate the bundle explicitly; `.rrd` files can be large.")
+        return
+    try:
+        artifacts = write_validation_bundle(
+            recording_path,
+            output_dir=recording_path.parent / "validation",
+            max_keyed_clouds=max_keyed_clouds,
+            max_render_points=max_render_points,
+        )
+    except _HEAVY_ARTIFACT_ERRORS as exc:
+        st.error(str(exc))
+        return
+    st.success(f"Validation bundle written to `{artifacts.summary_json.parent}`.")
+    st.json(artifacts.model_dump(mode="json"), expanded=False)
+    preview_columns = st.columns(2, gap="large")
+    preview_columns[0].image(str(artifacts.map_xy_png), caption="Map XY")
+    preview_columns[1].image(str(artifacts.map_xz_png), caption="Map XZ")
+
+
 def _render_raw_previews(inspection: RunArtifactInspection) -> None:
     preview_paths = [
         row.path
@@ -320,6 +527,22 @@ def _render_raw_previews(inspection: RunArtifactInspection) -> None:
     st.code(_raw_preview_text(selected_path), language=_raw_preview_language(selected_path))
 
 
+def _render_input_and_attempts(inspection: RunArtifactInspection) -> None:
+    columns = st.columns(2, gap="large")
+    with columns[0]:
+        st.markdown("**Input Diagnostics**")
+        if inspection.input_diagnostics is None:
+            st.info("Input diagnostics are not available.")
+        else:
+            st.json(inspection.input_diagnostics.model_dump(mode="json"), expanded=False)
+    with columns[1]:
+        st.markdown("**Run Attempts**")
+        if not inspection.attempts:
+            st.info("No run attempts were found in the event log.")
+        else:
+            st.dataframe(_attempt_rows(inspection), hide_index=True, width="stretch")
+
+
 def _metadata_json(label: str, value: BaseData | None) -> None:
     if value is None:
         st.caption(f"{label}: missing")
@@ -336,6 +559,20 @@ def _inventory_rows(inspection: RunArtifactInspection) -> list[TableRow]:
             "Size": row.size_label,
         }
         for row in inspection.file_inventory
+    ]
+
+
+def _attempt_rows(inspection: RunArtifactInspection) -> list[TableRow]:
+    return [
+        {
+            "Attempt": attempt.attempt_index,
+            "State": attempt.state,
+            "Events": attempt.event_count,
+            "First": attempt.first_event_id,
+            "Last": attempt.last_event_id,
+            "Failed Stage": attempt.failed_stage_key,
+        }
+        for attempt in inspection.attempts
     ]
 
 

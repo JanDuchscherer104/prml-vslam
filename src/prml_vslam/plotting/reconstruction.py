@@ -9,8 +9,9 @@ import open3d as o3d
 import plotly.graph_objects as go
 
 from prml_vslam.utils import BaseData
+from prml_vslam.utils.geometry import load_tum_trajectory
 
-from .theme import apply_standard_3d_layout
+from .theme import BLUE, GREEN, ORANGE, PURPLE, apply_standard_3d_layout
 
 DEFAULT_MAX_POINTS = 80_000
 DEFAULT_TARGET_TRIANGLES = 120_000
@@ -50,6 +51,34 @@ class ReconstructionVisualizationSummary(BaseData):
 
     bounds_max_xyz: tuple[float, float, float]
     """Maximum XYZ bounds across the source cloud and mesh."""
+
+
+class SlamReferenceComparisonSummary(BaseData):
+    """Summary of one SLAM-vs-reference comparison figure."""
+
+    slam_point_count: int = 0
+    """Number of points in the source SLAM cloud."""
+
+    plotted_slam_point_count: int = 0
+    """Number of SLAM points rendered."""
+
+    reference_point_count: int = 0
+    """Number of points in the source reference cloud."""
+
+    plotted_reference_point_count: int = 0
+    """Number of reference points rendered."""
+
+    reference_triangle_count: int = 0
+    """Number of source reference mesh triangles."""
+
+    plotted_reference_triangle_count: int = 0
+    """Number of reference mesh triangles rendered."""
+
+    slam_trajectory_poses: int = 0
+    """Number of SLAM trajectory poses rendered."""
+
+    reference_trajectory_poses: int = 0
+    """Number of reference trajectory poses rendered."""
 
 
 def build_reference_reconstruction_figure(
@@ -112,6 +141,102 @@ def build_reference_reconstruction_figure(
     )
 
 
+def build_slam_reference_comparison_figure(
+    artifact_root: Path,
+    *,
+    show_slam_cloud: bool = True,
+    show_reference_cloud: bool = True,
+    show_reference_mesh: bool = True,
+    show_trajectories: bool = True,
+    slam_max_points: int = DEFAULT_MAX_POINTS,
+    reference_max_points: int = DEFAULT_MAX_POINTS,
+    target_triangles: int = DEFAULT_TARGET_TRIANGLES,
+    random_seed: int = 43,
+) -> tuple[go.Figure, SlamReferenceComparisonSummary]:
+    """Build a sampled SLAM-vs-reference spatial comparison figure."""
+    if not any((show_slam_cloud, show_reference_cloud, show_reference_mesh, show_trajectories)):
+        raise ValueError("Select at least one comparison modality to render.")
+    resolved_root = artifact_root.expanduser().resolve()
+    figure = go.Figure()
+    summary = SlamReferenceComparisonSummary()
+    bounds_inputs: list[np.ndarray] = []
+
+    if show_slam_cloud:
+        slam_points_xyz = _load_point_cloud(resolved_root / "slam" / "point_cloud.ply")
+        slam_points_view = _sample_points(slam_points_xyz, max_points=slam_max_points, random_seed=random_seed)
+        _add_point_cloud_trace(
+            figure,
+            slam_points_view,
+            name=f"SLAM cloud ({len(slam_points_view):,}/{len(slam_points_xyz):,})",
+            color=BLUE,
+        )
+        bounds_inputs.append(slam_points_view)
+        summary.slam_point_count = len(slam_points_xyz)
+        summary.plotted_slam_point_count = len(slam_points_view)
+
+    if show_reference_cloud:
+        reference_points_xyz = _load_point_cloud(resolved_root / "reference" / "reference_cloud.ply")
+        reference_points_view = _sample_points(
+            reference_points_xyz,
+            max_points=reference_max_points,
+            random_seed=random_seed + 1,
+        )
+        _add_point_cloud_trace(
+            figure,
+            reference_points_view,
+            name=f"Reference cloud ({len(reference_points_view):,}/{len(reference_points_xyz):,})",
+            color=GREEN,
+        )
+        bounds_inputs.append(reference_points_view)
+        summary.reference_point_count = len(reference_points_xyz)
+        summary.plotted_reference_point_count = len(reference_points_view)
+
+    if show_reference_mesh:
+        mesh_vertices_xyz, mesh_triangles = _load_mesh(resolved_root / "reference" / "reference_mesh.ply")
+        mesh_vertices_view, mesh_triangles_view = _decimate_mesh(
+            vertices_xyz=mesh_vertices_xyz,
+            triangles=mesh_triangles,
+            target_triangles=target_triangles,
+        )
+        figure.add_trace(
+            go.Mesh3d(
+                x=mesh_vertices_view[:, 0],
+                y=mesh_vertices_view[:, 1],
+                z=mesh_vertices_view[:, 2],
+                i=mesh_triangles_view[:, 0],
+                j=mesh_triangles_view[:, 1],
+                k=mesh_triangles_view[:, 2],
+                name=f"Reference mesh ({len(mesh_triangles_view):,}/{len(mesh_triangles):,})",
+                color=PURPLE,
+                opacity=0.36,
+            )
+        )
+        bounds_inputs.append(mesh_vertices_view)
+        summary.reference_triangle_count = len(mesh_triangles)
+        summary.plotted_reference_triangle_count = len(mesh_triangles_view)
+
+    if show_trajectories:
+        slam_trajectory_path = resolved_root / "slam" / "trajectory.tum"
+        reference_trajectory_path = resolved_root / "benchmark" / "ground_truth.tum"
+        if slam_trajectory_path.exists():
+            slam_trajectory = load_tum_trajectory(slam_trajectory_path)
+            positions = np.asarray(slam_trajectory.positions_xyz, dtype=np.float64)
+            _add_trajectory_trace(figure, positions, name="SLAM trajectory", color=ORANGE)
+            bounds_inputs.append(positions)
+            summary.slam_trajectory_poses = len(positions)
+        if reference_trajectory_path.exists():
+            reference_trajectory = load_tum_trajectory(reference_trajectory_path)
+            positions = np.asarray(reference_trajectory.positions_xyz, dtype=np.float64)
+            _add_trajectory_trace(figure, positions, name="Reference trajectory", color=GREEN)
+            bounds_inputs.append(positions)
+            summary.reference_trajectory_poses = len(positions)
+
+    if not bounds_inputs:
+        raise ValueError("Selected comparison artifacts were unavailable or empty.")
+    _apply_comparison_layout(figure)
+    return figure, summary
+
+
 def _load_point_cloud(path: Path) -> np.ndarray:
     if not path.exists():
         raise FileNotFoundError(f"Reference point cloud does not exist: {path}")
@@ -167,6 +292,47 @@ def _decimate_mesh(
 def _combined_bounds(*position_arrays: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     positions = np.concatenate(position_arrays, axis=0)
     return positions.min(axis=0), positions.max(axis=0)
+
+
+def _add_point_cloud_trace(figure: go.Figure, points_xyz: np.ndarray, *, name: str, color: str) -> None:
+    figure.add_trace(
+        go.Scatter3d(
+            x=points_xyz[:, 0],
+            y=points_xyz[:, 1],
+            z=points_xyz[:, 2],
+            mode="markers",
+            name=name,
+            marker={"size": 1.4, "color": color, "opacity": 0.55},
+        )
+    )
+
+
+def _add_trajectory_trace(figure: go.Figure, positions_xyz: np.ndarray, *, name: str, color: str) -> None:
+    if len(positions_xyz) == 0:
+        return
+    figure.add_trace(
+        go.Scatter3d(
+            x=positions_xyz[:, 0],
+            y=positions_xyz[:, 1],
+            z=positions_xyz[:, 2],
+            mode="lines",
+            name=name,
+            line={"color": color, "width": 5},
+        )
+    )
+
+
+def _apply_comparison_layout(figure: go.Figure) -> None:
+    apply_standard_3d_layout(
+        figure,
+        title="SLAM vs Reference",
+        scene={
+            "aspectmode": "data",
+            "xaxis_title": "X",
+            "yaxis_title": "Y",
+            "zaxis_title": "Z",
+        },
+    )
 
 
 def _build_figure(
@@ -228,5 +394,7 @@ __all__ = [
     "DEFAULT_MAX_POINTS",
     "DEFAULT_TARGET_TRIANGLES",
     "ReconstructionVisualizationSummary",
+    "SlamReferenceComparisonSummary",
     "build_reference_reconstruction_figure",
+    "build_slam_reference_comparison_figure",
 ]
