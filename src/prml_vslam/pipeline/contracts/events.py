@@ -30,6 +30,8 @@ class EventTier(StrEnum):
     TELEMETRY = "telemetry"
 
 
+# TODO(pipeline-refactor/WP-08): Collapse into StageRuntimeStatus.progress or
+# live StageRuntimeUpdate when progress leaves durable event projection.
 class StageProgress(TransportModel):
     """Carry lightweight human-readable progress details for one running stage."""
 
@@ -39,6 +41,8 @@ class StageProgress(TransportModel):
     unit: str | None = None
 
 
+# TODO(pipeline-refactor/WP-08): Move packet telemetry to live source/runtime
+# updates instead of durable RunEvent payloads.
 class FramePacketSummary(TransportModel):
     """Summarize one observed :class:`prml_vslam.interfaces.FramePacket` for telemetry."""
 
@@ -101,6 +105,8 @@ class StageStarted(_RunEventBase):
     stage_key: StageKey
 
 
+# TODO(pipeline-refactor/WP-08): Remove after progress is projected from
+# StageRuntimeStatus or StageRuntimeUpdate.
 class StageProgressed(_RunEventBase):
     """Emit telemetry progress for one running stage."""
 
@@ -120,6 +126,8 @@ class ArtifactRegistered(_RunEventBase):
     artifact: ArtifactRef
 
 
+# TODO(pipeline-refactor/WP-08): Replace with live source/runtime update
+# telemetry once packet status no longer travels through RunEvent.
 class PacketObserved(_RunEventBase):
     """Emit telemetry about one observed streaming packet and related handles."""
 
@@ -131,6 +139,8 @@ class PacketObserved(_RunEventBase):
     measured_fps: float = 0.0
 
 
+# TODO(pipeline-refactor/WP-08): Replace with StageRuntimeUpdate.semantic_events
+# and VisualizationItem routing for backend notices.
 class BackendNoticeReceived(_RunEventBase):
     """Emit translated method-layer telemetry from one streaming backend."""
 
@@ -140,6 +150,8 @@ class BackendNoticeReceived(_RunEventBase):
     notice: BackendEvent
 
 
+# TODO(pipeline-refactor/WP-08): Remove rich stage payload fields after
+# StageCompleted carries only StageOutcome and durable artifact references.
 class StageCompleted(_RunEventBase):
     """Record durable completion for one stage plus any normalized outputs."""
 

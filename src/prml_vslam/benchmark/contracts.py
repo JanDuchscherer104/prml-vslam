@@ -40,6 +40,8 @@ class ReferenceCloudCoordinateStatus(StrEnum):
     ALIGNED = "aligned"
 
 
+# TODO(pipeline-refactor/WP-02): Replace with [stages.reconstruction] reference
+# mode policy once ReconstructionStageConfig covers current reference behavior.
 class ReferenceReconstructionConfig(BaseConfig):
     """Policy toggle for the optional reference-reconstruction stage."""
 

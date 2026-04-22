@@ -40,6 +40,8 @@ class StageKey(StrEnum):
         }[self]
 
 
+# TODO(pipeline-refactor/WP-02): Collapse availability into RunPlanStage
+# diagnostics once the stage registry no longer returns separate DTOs.
 class StageAvailability(TransportModel):
     """Record whether one stage is executable for one request/backend pairing."""
 
@@ -47,6 +49,8 @@ class StageAvailability(TransportModel):
     reason: str | None = None
 
 
+# TODO(pipeline-refactor/WP-02): Remove after RunPlanStage and stage configs
+# carry planning metadata directly.
 class StageDefinition(TransportModel):
     """Carry the stable identity for one stage registered in the planner."""
 

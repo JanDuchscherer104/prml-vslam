@@ -35,6 +35,8 @@ from prml_vslam.pipeline.ray_runtime.stage_execution import (
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 
 
+# TODO(pipeline-refactor/WP-03): Replace with StageResultStore once stage-local
+# runtimes read typed dependencies from the result store.
 @dataclass(slots=True)
 class RuntimeExecutionState:
     """Mutable cross-stage state accumulated during one run.
@@ -57,6 +59,8 @@ class RuntimeExecutionState:
     stage_outcomes: list[StageOutcome] = field(default_factory=list)
 
 
+# TODO(pipeline-refactor/WP-03): Replace with StageResult after all stage
+# helpers and actors return the canonical completion DTO.
 @dataclass(frozen=True, slots=True)
 class StageCompletionPayload:
     """Bundle returned by one successful stage implementation.
@@ -75,6 +79,8 @@ class StageCompletionPayload:
     stage_manifests: list[StageManifest] = field(default_factory=list)
 
 
+# TODO(pipeline-refactor/WP-03): Replace coordinator driver hooks with
+# RuntimeManager-created runtime proxies.
 class RuntimeStageDriver(Protocol):
     """Coordinator-facing hooks required by streaming-capable stage execution."""
 
@@ -115,6 +121,8 @@ FailureOutcomeFn = Callable[
 ]
 
 
+# TODO(pipeline-refactor/WP-03): Replace function-pointer routing with
+# stage-local runtimes invoked by StageRunner.
 @dataclass(frozen=True, slots=True)
 class StageRuntimeSpec:
     """Bind one :class:`StageKey` to its executable runtime entrypoints."""

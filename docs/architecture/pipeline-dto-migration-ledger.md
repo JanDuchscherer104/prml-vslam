@@ -173,3 +173,127 @@ current owners.
 | `RunArtifactInspection` | `pipeline.artifact_inspection` | Keep artifact inspection DTO. | pipeline inspection | Artifact inspection tests. |
 | `ReconstructionVisualizationSummary` | `plotting.reconstruction` | Keep plotting DTO. | plotting | Plotting tests. |
 | `SlamReferenceComparisonSummary` | `plotting.reconstruction` | Keep plotting DTO. | plotting | Plotting tests. |
+
+## WP-00B AST Inventory Coverage Addendum
+
+WP-00B audited 207 classes under `src/prml_vslam/**/*.py` whose direct bases
+include `BaseData`, `BaseConfig`, `TransportModel`, `BaseModel`, `Protocol`,
+`StrEnum`, `Enum`, or `IntEnum`. The rows below classify audited symbols that
+were not already named in the ledger sections above. These rows are coverage
+and ownership records only; they do not authorize DTO movement or deletion.
+
+### Additional Pipeline And Runtime Migration Contacts
+
+| Current symbol | Current owner | Target action | Owning scope | Verification |
+| --- | --- | --- | --- | --- |
+| `EventTier` | `pipeline.contracts.events` | Keep current event-tier discriminator until durable/live event split lands. | pipeline migration | Event JSONL and snapshot tests. |
+| `_RunEventBase` | `pipeline.contracts.events` | Keep private transport base while current `RunEvent` union exists. | pipeline migration | Event serialization tests. |
+| `RunPlan` | `pipeline.contracts.plan` | Keep canonical planning DTO. | pipeline | Planning tests. |
+| `StageStatus` | `pipeline.contracts.provenance` | Keep as current summary/manifest vocabulary; target derives from terminal `StageOutcome` and live `StageRuntimeStatus`. | pipeline migration | Summary/manifest projection tests. |
+| `RunSummary` | `pipeline.contracts.provenance` | Keep pipeline-owned generic provenance DTO. | pipeline | Summary artifact tests. |
+| `PipelineMode` | `pipeline.contracts.request` | Keep current request-mode enum until `RunConfig.mode` supersedes it. | pipeline migration | Config parsing and CLI tests. |
+| `RunState` | `pipeline.contracts.runtime` | Keep coarse run lifecycle projection. | pipeline | Snapshot and app/CLI tests. |
+| `StageAvailability` | `pipeline.contracts.stages` | Collapse target availability into `RunPlanStage.available` and `availability_reason`; keep while current registry uses it. | pipeline migration | Planning diagnostics tests. |
+| `TransportModel` | `pipeline.contracts.transport` | Keep current transport-safe base for events/snapshots until target contracts land. | pipeline migration | Transport serialization tests. |
+| `RuntimeStageDriver` | `pipeline.ray_runtime.stage_program` | Replace with runtime manager/proxy protocol hooks; keep while current streaming SLAM driver hooks remain. | pipeline migration | Runtime skeleton and streaming tests. |
+| `FrameSample` | `pipeline.workspace` | Keep workspace-local helper DTO. | pipeline workspace | Workspace/materialization tests. |
+| `CaptureManifest` | `pipeline.workspace` | Keep workspace-local helper DTO. | pipeline workspace | Workspace/materialization tests. |
+
+### Additional Kept Shared, Domain, And Protocol Symbols
+
+| Current symbol | Current owner | Target action | Owning scope | Verification |
+| --- | --- | --- | --- | --- |
+| `ReferenceSource` | `benchmark.contracts` | Keep benchmark-owned baseline/source policy enum. | benchmark | Planning and trajectory-eval tests. |
+| `ReferenceCloudSource` | `benchmark.contracts` | Keep benchmark-owned reference-cloud source enum. | benchmark | Reference-cloud and mock-backend tests. |
+| `ReferenceCloudCoordinateStatus` | `benchmark.contracts` | Keep benchmark-owned coordinate-status enum for prepared reference clouds. | benchmark | Reference-cloud metadata tests. |
+| `TrajectoryMetricId` | `eval.contracts` | Keep eval-owned metric identifier enum. | eval | Eval service tests. |
+| `TrajectoryAlignmentMode` | `eval.contracts` | Keep eval-owned metric alignment enum. | eval | Eval service tests. |
+| `TrajectoryEvaluator` | `eval.protocols` | Keep eval-owned protocol seam. | eval | Eval service/protocol tests. |
+| `DenseCloudEvaluator` | `eval.protocols` | Keep eval-owned future dense-cloud protocol. | eval | Future dense-cloud eval tests. |
+| `EfficiencyEvaluator` | `eval.protocols` | Keep eval-owned future efficiency protocol. | eval | Future efficiency eval tests. |
+| `AdvioRawPoseRefs` | `interfaces.ingest` | Keep shared ingest DTO for ADVIO-native pose refs. | interfaces | Ingest and ADVIO tests. |
+| `AdvioManifestAssets` | `interfaces.ingest` | Keep shared ingest DTO for ADVIO-specific normalized assets. | interfaces | Ingest and ADVIO tests. |
+| `Record3DTransportId` | `interfaces.runtime` | Keep shared transport enum used by live/replay frame sources. | interfaces | Record3D and streaming tests. |
+| `SlamArtifacts` | `interfaces.slam` | Keep shared normalized SLAM artifact bundle. | interfaces | SLAM, evaluation, alignment, and artifact tests. |
+| `PoseEstimated` | `interfaces.slam` | Move/retire with method-owned live SLAM semantic events. | methods / WP-06, WP-10 | Live update and Rerun tests. |
+| `KeyframeAccepted` | `interfaces.slam` | Move/retire with method-owned live SLAM semantic events. | methods / WP-06, WP-10 | Live update and Rerun tests. |
+| `MapStatsUpdated` | `interfaces.slam` | Move/retire with method-owned live SLAM semantic events. | methods / WP-06, WP-10 | Live update and Rerun tests. |
+| `BackendWarning` | `interfaces.slam` | Move/retire with method-owned backend notice/event DTOs. | methods / WP-06, WP-10 | Backend notice tests. |
+| `BackendError` | `interfaces.slam` | Move/retire with method-owned backend notice/event DTOs. | methods / WP-06, WP-10 | Backend error tests. |
+| `SessionClosed` | `interfaces.slam` | Move/retire with method-owned backend notice/event DTOs. | methods / WP-06, WP-10 | Streaming finalization tests. |
+| `MethodId` | `methods.config_contracts` | Keep method-owned backend discriminator enum. | methods | Backend config tests. |
+| `BackendFactoryProtocol` | `methods.factory` | Keep method-owned factory protocol until backend construction is simplified. | methods | Backend factory tests. |
+| `SlamSession` | `methods.protocols` | Keep method-owned streaming session protocol behind target SLAM runtime. | methods / WP-06 | SLAM runtime tests. |
+| `OfflineSlamBackend` | `methods.protocols` | Keep method-owned offline backend protocol. | methods | Backend tests. |
+| `StreamingSlamBackend` | `methods.protocols` | Keep method-owned streaming backend protocol. | methods | Streaming backend tests. |
+| `SlamBackend` | `methods.protocols` | Keep combined method backend protocol. | methods | Backend tests. |
+| `PipelineBackend` | `pipeline.backend` | Move to pipeline-local protocol owner when target public surface cleanup lands. | pipeline migration | App/CLI run-service tests. |
+| `RgbdObservationSource` | `protocols.rgbd` | Keep shared RGB-D observation source protocol. | protocols | Reconstruction source tests. |
+| `FramePacketStream` | `protocols.runtime` | Keep shared runtime packet-stream protocol. | protocols | Streaming tests. |
+| `OfflineSequenceSource` | `protocols.source` | Keep shared offline source protocol. | protocols | Source/ingest tests. |
+| `BenchmarkInputSource` | `protocols.source` | Keep shared benchmark-input source protocol. | protocols | Source/ingest/eval tests. |
+| `StreamingSequenceSource` | `protocols.source` | Keep shared streaming source protocol. | protocols | Streaming source tests. |
+| `ReconstructionMethodId` | `reconstruction.contracts` | Keep reconstruction-owned backend id enum. | reconstruction | Reconstruction config tests. |
+| `OfflineReconstructionBackend` | `reconstruction.protocols` | Keep reconstruction-owned offline backend protocol. | reconstruction | Reconstruction backend tests. |
+| `ReconstructionSession` | `reconstruction.protocols` | Keep reconstruction-owned future streaming session protocol. | reconstruction | Future reconstruction tests. |
+| `StreamingReconstructionBackend` | `reconstruction.protocols` | Keep reconstruction-owned future streaming backend protocol. | reconstruction | Future reconstruction tests. |
+| `_ConfigFactory` | `utils.base_config` | Keep private utility protocol for config factories. | utils | Config tests. |
+| `BaseConfig` | `utils.base_config` | Keep shared config base. | utils | Config serialization tests. |
+| `BaseData` | `utils.base_data` | Keep shared data base. | utils | DTO serialization tests. |
+| `RunArtifactPaths` | `utils.path_config` | Keep utility path DTO. | utils | PathConfig tests. |
+| `PathConfig` | `utils.path_config` | Keep canonical repo path config. | utils | PathConfig tests. |
+| `ExtractedVideoFrames` | `utils.video_frames` | Keep utility DTO for extracted frame batches. | utils | Video-frame helper tests. |
+
+### Additional Explicitly Out-Of-Scope Audited Symbols
+
+| Current symbol | Current owner | Target action | Owning scope | Verification |
+| --- | --- | --- | --- | --- |
+| `AppPageId` | `app.models` | Keep app navigation enum. | app | App tests. |
+| `PreviewStreamState` | `app.models` | Keep app preview lifecycle enum. | app | App preview tests. |
+| `AdvioDownloadFormData` | `app.models` | Keep app form DTO. | app | App tests. |
+| `AdvioPreviewFormData` | `app.models` | Keep app form DTO. | app | App tests. |
+| `AdvioPageData` | `app.models` | Keep app render DTO. | app | App tests. |
+| `PipelineSourceId` | `app.models` | Keep app-local source selector enum. | app | Pipeline page tests. |
+| `GraphifySourceScope` | `app.pages.graphify` | Keep app page enum. | app | Graphify page tests. |
+| `GraphifyViewerFilter` | `app.pages.graphify` | Keep app page enum. | app | Graphify page tests. |
+| `TangoCloudMetadata` | `datasets.advio.advio_geometry` | Keep dataset-local geometry metadata. | datasets | ADVIO geometry tests. |
+| `Sim3Alignment` | `datasets.advio.advio_geometry` | Keep dataset-local alignment helper DTO. | datasets | ADVIO geometry tests. |
+| `AdvioCalibration` | `datasets.advio.advio_loading` | Keep dataset-local calibration DTO. | datasets | ADVIO loading tests. |
+| `AdvioEnvironment` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |
+| `AdvioPeopleLevel` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |
+| `AdvioModality` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |
+| `AdvioDownloadPreset` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO download tests. |
+| `AdvioUpstreamMetadata` | `datasets.advio.advio_models` | Keep dataset-local catalog DTO. | datasets | ADVIO catalog tests. |
+| `AdvioSceneMetadata` | `datasets.advio.advio_models` | Keep dataset-local catalog DTO. | datasets | ADVIO catalog tests. |
+| `AdvioCatalog` | `datasets.advio.advio_models` | Keep dataset-local catalog DTO. | datasets | ADVIO catalog tests. |
+| `AdvioSequencePaths` | `datasets.advio.advio_sequence` | Keep dataset-local path DTO. | datasets | ADVIO sequence tests. |
+| `AdvioOfflineSample` | `datasets.advio.advio_sequence` | Keep dataset-local sample DTO. | datasets | ADVIO sequence tests. |
+| `AdvioSequence` | `datasets.advio.advio_sequence` | Keep dataset-local sequence DTO. | datasets | ADVIO sequence tests. |
+| `DatasetId` | `datasets.contracts` | Keep dataset id enum. | datasets | Dataset tests. |
+| `AdvioPoseSource` | `datasets.contracts` | Keep dataset pose-source enum. | datasets | ADVIO tests. |
+| `AdvioPoseFrameMode` | `datasets.contracts` | Keep dataset pose-frame enum. | datasets | ADVIO tests. |
+| `TumRgbdFrameAssociation` | `datasets.tum_rgbd.tum_rgbd_loading` | Keep dataset-local association DTO. | datasets | TUM RGB-D loading tests. |
+| `TumRgbdOfflineSample` | `datasets.tum_rgbd.tum_rgbd_loading` | Keep dataset-local sample DTO. | datasets | TUM RGB-D loading tests. |
+| `TumRgbdPoseSource` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local enum. | datasets | TUM RGB-D tests. |
+| `TumRgbdModality` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local enum. | datasets | TUM RGB-D tests. |
+| `TumRgbdDownloadPreset` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local enum. | datasets | TUM RGB-D download tests. |
+| `TumRgbdSceneMetadata` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local catalog DTO. | datasets | TUM RGB-D catalog tests. |
+| `TumRgbdCatalog` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local catalog DTO. | datasets | TUM RGB-D catalog tests. |
+| `TumRgbdSequencePaths` | `datasets.tum_rgbd.tum_rgbd_sequence` | Keep dataset-local path DTO. | datasets | TUM RGB-D sequence tests. |
+| `TumRgbdSequence` | `datasets.tum_rgbd.tum_rgbd_sequence` | Keep dataset-local sequence DTO. | datasets | TUM RGB-D sequence tests. |
+| `Cv2ReplayMode` | `io.cv2_producer` | Keep IO-local replay enum. | io | CV2 producer tests. |
+| `Record3DDeviceType` | `io.record3d` | Keep IO-local device enum. | io | Record3D tests. |
+| `VistaViewGraphArtifact` | `methods.vista.artifact_io` | Keep ViSTA-native artifact DTO. | methods.vista | ViSTA artifact tests. |
+| `VistaViewGraphEdge` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |
+| `VistaViewGraphNodeDegree` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |
+| `VistaViewGraphDiagnostics` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |
+| `VistaNativeSlamDiagnostics` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |
+| `_VistaImageDataset` | `methods.vista.preprocess` | Keep private ViSTA preprocess protocol. | methods.vista | ViSTA preprocess tests. |
+| `VistaFramePreprocessor` | `methods.vista.preprocess` | Keep ViSTA preprocess protocol. | methods.vista | ViSTA preprocess tests. |
+| `VistaFlowTracker` | `methods.vista.runtime` | Keep private ViSTA runtime protocol. | methods.vista | ViSTA runtime tests. |
+| `VistaOnlineSlam` | `methods.vista.runtime` | Keep private ViSTA runtime protocol. | methods.vista | ViSTA runtime tests. |
+| `_DbowVocabulary` | `methods.vista.runtime` | Keep private ViSTA runtime protocol. | methods.vista | ViSTA runtime tests. |
+| `_DbowModule` | `methods.vista.runtime` | Keep private ViSTA runtime protocol. | methods.vista | ViSTA runtime tests. |
+| `RerunPointCloudSnapshot` | `visualization.validation` | Keep visualization validation DTO until validation cleanup package moves it. | visualization | Rerun validation tests. |
+| `RerunValidationSummary` | `visualization.validation` | Keep visualization validation DTO until validation cleanup package moves it. | visualization | Rerun validation tests. |
+| `RerunValidationArtifacts` | `visualization.validation` | Keep visualization validation DTO until validation cleanup package moves it. | visualization | Rerun validation tests. |

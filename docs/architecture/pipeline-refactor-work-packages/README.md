@@ -64,7 +64,7 @@ code.
 | --- | --- | --- | --- |
 | WP-00 | [Spec Freeze](./WP-00-spec-freeze.md) | Frozen | none |
 | WP-00A | [Baseline Acceptance](./WP-00A-baseline-acceptance.md) | Draft | WP-00 |
-| WP-00B | [DTO Class Inventory Audit](./WP-00B-dto-class-inventory-audit.md) | Draft | WP-00, WP-00A |
+| WP-00B | [DTO Class Inventory Audit](./WP-00B-dto-class-inventory-audit.md) | Complete | WP-00 |
 | WP-01 | [Contracts](./WP-01-contracts.md) | Draft | WP-00, WP-00A, WP-00B |
 | WP-02 | [Config Planning](./WP-02-config-planning.md) | Draft | WP-00, WP-00A, WP-00B, WP-01 |
 | WP-03A | [Telemetry Status](./WP-03A-telemetry-status.md) | Draft | WP-00A, WP-00B, WP-01 |
