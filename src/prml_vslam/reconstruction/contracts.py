@@ -18,7 +18,7 @@ from prml_vslam.utils import BaseData
 
 
 class ReconstructionMethodId(StrEnum):
-    """Name the reconstruction backends supported by the package."""
+    """Name reconstruction backends supported by package-owned configs."""
 
     OPEN3D_TSDF = "open3d_tsdf"
 
@@ -35,7 +35,13 @@ ReconstructionObservation = RgbdObservation
 
 
 class ReconstructionMetadata(BaseData):
-    """Persist minimal side metadata for one normalized reconstruction output."""
+    """Persist side metadata for one normalized reconstruction output.
+
+    PLY geometry alone cannot explain which backend produced the cloud, how
+    many RGB-D observations were fused, or what metric TSDF parameters shaped
+    the result. Keep those values here so later evaluation and visualization
+    can reason about the artifact without inspecting Open3D internals.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -68,7 +74,13 @@ class ReconstructionMetadata(BaseData):
 
 
 class ReconstructionArtifacts(BaseData):
-    """Describe the normalized durable outputs from one reconstruction run."""
+    """Describe normalized durable outputs from one reconstruction run.
+
+    The minimal public contract is one world-space reference cloud plus typed
+    metadata. Meshes and backend diagnostics may be preserved as optional extras
+    but must not replace the point-cloud contract consumed by pipeline and
+    evaluation stages.
+    """
 
     reference_cloud_path: Path
     """Filesystem path to the normalized world-space reference cloud."""

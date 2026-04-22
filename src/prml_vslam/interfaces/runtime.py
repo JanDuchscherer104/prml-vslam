@@ -96,9 +96,15 @@ class FramePacket(BaseData):
 
     This is the shared packet boundary between ingress code and runtime method
     sessions. It may carry only RGB for simple video replay, or richer payloads
-    such as depth, confidence, pointmaps, intrinsics, pose, and provenance when
-    the source can provide them. Downstream code should treat it as the live
-    counterpart to :class:`prml_vslam.pipeline.contracts.sequence.SequenceManifest`.
+    such as depth, confidence, intrinsics, pose, and provenance when the source
+    can provide them. Downstream code should treat it as the live counterpart
+    to :class:`prml_vslam.interfaces.ingest.SequenceManifest` and should not
+    rely on it as a durable artifact format.
+
+    Coordinate and raster semantics are producer-owned and must be documented
+    by the source adapter. When :attr:`pose` is present it follows the canonical
+    repo convention ``world <- camera`` through
+    :class:`prml_vslam.interfaces.transforms.FrameTransform`.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

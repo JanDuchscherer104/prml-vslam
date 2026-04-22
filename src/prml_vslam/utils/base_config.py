@@ -119,8 +119,11 @@ class FactoryConfig(Generic[TTarget]):
     """Mixin for configs that construct one runtime owner or adapter.
 
     This pattern keeps construction policy close to the typed config while
-    avoiding ad hoc dict-based factories. It is used heavily by dataset
-    adapters, IO transports, and backend wrappers throughout the package.
+    avoiding ad hoc dict-based factories. It is appropriate for concrete
+    domain/source/backend variants such as method backends, Record3D sources,
+    and reconstruction backends. It should not be used for pipeline stage
+    policy configs, because target stage runtime construction belongs to
+    :class:`prml_vslam.pipeline.runtime_manager.RuntimeManager`.
     """
 
     @property

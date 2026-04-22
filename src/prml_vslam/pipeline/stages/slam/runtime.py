@@ -32,6 +32,11 @@ from prml_vslam.pipeline.ray_runtime.common import (
 )
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.base.protocols import (
+    LiveUpdateStageRuntime,
+    OfflineStageRuntime,
+    StreamingStageRuntime,
+)
 from prml_vslam.pipeline.stages.slam.contracts import SlamFrameInput, SlamOfflineInput, SlamStreamingStartInput
 from prml_vslam.pipeline.stages.slam.visualization import (
     DEPTH_REF,
@@ -98,7 +103,11 @@ class _TransientPayloadStore:
         return None if payload is None else np.asarray(payload)
 
 
-class SlamStageRuntime:
+class SlamStageRuntime(
+    OfflineStageRuntime[SlamOfflineInput],
+    LiveUpdateStageRuntime,
+    StreamingStageRuntime[SlamStreamingStartInput, SlamFrameInput],
+):
     """Pipeline-facing runtime for offline and streaming SLAM execution."""
 
     def __init__(

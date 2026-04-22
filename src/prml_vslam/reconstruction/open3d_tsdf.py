@@ -1,4 +1,10 @@
-"""Minimal Open3D TSDF reconstruction backend."""
+"""Minimal Open3D TSDF reconstruction backend.
+
+This module is the first executable reconstruction implementation. It adapts
+repo-normalized RGB-D observations into Open3D's ScalableTSDFVolume API and
+writes normalized reconstruction artifacts without owning pipeline stage
+policy, benchmark enablement, or Rerun logging.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +26,13 @@ from .contracts import (
 
 
 class Open3dTsdfBackend:
-    """Reconstruct one world-space reference cloud using Open3D TSDF fusion."""
+    """Reconstruct one world-space reference cloud using Open3D TSDF fusion.
+
+    The backend expects each observation to provide metric depth in meters,
+    matching intrinsics, optional RGB, and a canonical ``T_world_camera`` pose.
+    It implements the reconstruction package protocol directly against the
+    repository-pinned Open3D API.
+    """
 
     method_id = ReconstructionMethodId.OPEN3D_TSDF
 
@@ -34,7 +46,11 @@ class Open3dTsdfBackend:
         backend_config: ReconstructionBackendConfig,
         artifact_root: Path,
     ) -> ReconstructionArtifacts:
-        """Integrate one offline RGB-D sequence into a fused world-space cloud."""
+        """Integrate one offline RGB-D sequence into a fused world-space cloud.
+
+        The output point cloud is extracted in the observation world frame and
+        persisted as ``reference_cloud.ply`` alongside typed side metadata.
+        """
         if not isinstance(backend_config, Open3dTsdfBackendConfig):
             raise TypeError(f"Open3dTsdfBackend requires Open3dTsdfBackendConfig, got {type(backend_config).__name__}.")
 

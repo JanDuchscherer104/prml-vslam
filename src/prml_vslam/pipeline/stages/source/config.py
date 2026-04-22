@@ -31,7 +31,12 @@ from prml_vslam.utils import FactoryConfig, PathConfig
 
 
 class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSource]):
-    """Configure one raw-video source adapter."""
+    """Configure one raw-video source adapter.
+
+    Raw video sources only provide the primary frame sequence. Reference
+    trajectories, depth, and dataset-specific calibration must come from other
+    source variants or later benchmark preparation.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -51,7 +56,13 @@ class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSourc
 
 
 class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
-    """Configure one TUM RGB-D dataset source adapter."""
+    """Configure one TUM RGB-D dataset source adapter.
+
+    TUM RGB-D sources can provide RGB, metric depth, ground-truth poses, and
+    prepared RGB-D observation sequences for reconstruction. The source config
+    selects sequence and sampling policy; metric/evaluation policy remains
+    benchmark- or eval-owned.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -73,7 +84,12 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
 
 
 class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
-    """Configure one ADVIO dataset source adapter."""
+    """Configure one ADVIO dataset source adapter.
+
+    ADVIO adds dataset-serving policy for pose source, video rotation, and
+    optional Tango reference payloads. Those semantics stay ADVIO-owned rather
+    than being promoted into the generic source backend base.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -101,7 +117,13 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
 
 
 class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
-    """Configure one live Record3D source adapter."""
+    """Configure one live Record3D source adapter.
+
+    The source owns transport-level capture for USB or Wi-Fi Preview and emits
+    normalized :class:`prml_vslam.interfaces.runtime.FramePacket` values. It
+    does not own app session state, pipeline stage order, or SLAM backend
+    selection.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -144,7 +166,13 @@ SourceBackendConfig: TypeAlias = Annotated[
 
 
 class SourceStageConfig(StageConfig):
-    """Target source stage policy plus source backend selection."""
+    """Target source stage policy plus source backend selection.
+
+    Stage policy such as enablement, telemetry, cleanup, and resources lives on
+    the inherited :class:`prml_vslam.pipeline.stages.base.config.StageConfig`.
+    Concrete source construction lives in :attr:`backend` so adding a new source
+    follows the same config-as-factory pattern as methods and reconstruction.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

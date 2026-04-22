@@ -75,7 +75,14 @@ class RuntimePreflightResult(BaseData):
 # TODO(pipeline-refactor/WP-03/WP-10): Wire this manager into
 # RunCoordinatorActor before treating it as the production construction path.
 class RuntimeManager:
-    """Preflight and lazily construct capability-typed stage runtime proxies."""
+    """Preflight and lazily construct capability-typed stage runtime proxies.
+
+    The manager is the target construction authority for stage runtimes and
+    proxy metadata. Stage configs validate policy, but this object decides
+    which runtime factory, capability set, deployment kind, executor id, and
+    resource assignment are used for a planned stage. During migration the
+    legacy coordinator may still bypass it for production execution.
+    """
 
     def __init__(
         self,

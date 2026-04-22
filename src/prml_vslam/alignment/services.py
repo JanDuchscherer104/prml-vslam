@@ -63,13 +63,31 @@ class _PlaneCandidate:
 
 
 class GroundAlignmentService:
-    """Detect a dominant ground plane and derive viewer-scoped alignment metadata."""
+    """Detect dominant ground planes without rewriting native SLAM artifacts.
+
+    The service reads normalized SLAM trajectory and point-cloud artifacts,
+    scores candidate planes against camera motion, and returns explicit
+    :class:`prml_vslam.interfaces.alignment.GroundAlignmentMetadata`. The output
+    transform maps native ``world`` into a derived ``viewer_world`` frame, so
+    callers can visualize or inspect an aligned view while preserving backend
+    outputs as the scientific source of truth.
+    """
 
     def __init__(self, *, config: GroundAlignmentConfig | None = None) -> None:
         self._config = GroundAlignmentConfig() if config is None else config
 
     def estimate_from_slam_artifacts(self, *, slam: SlamArtifacts) -> GroundAlignmentMetadata:
-        """Estimate one dominant ground plane from normalized SLAM artifacts."""
+        """Estimate one dominant ground plane from normalized SLAM artifacts.
+
+        Args:
+            slam: Normalized SLAM artifact bundle containing a TUM trajectory
+                and at least one point-cloud candidate.
+
+        Returns:
+            Alignment metadata with either an applied ``T_viewer_world_world``
+            transform and visualization hint or explicit skip diagnostics when
+            the artifacts are missing, too small, or below confidence.
+        """
         point_cloud_source, point_cloud_path = self._resolve_point_cloud_path(slam)
         if point_cloud_path is None:
             return GroundAlignmentMetadata(

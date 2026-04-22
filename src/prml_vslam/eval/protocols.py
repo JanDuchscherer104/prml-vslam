@@ -26,7 +26,13 @@ from prml_vslam.eval.contracts import (
 
 @runtime_checkable
 class TrajectoryEvaluator(Protocol):
-    """Load or compute trajectory evaluation over normalized run artifacts."""
+    """Load or compute trajectory evaluation over normalized run artifacts.
+
+    Implementations resolve a dataset/run selection, read TUM trajectories, and
+    persist explicit metric semantics. App pages should call these methods only
+    from explicit user actions; implicit recomputation during reruns would make
+    benchmark state hard to audit.
+    """
 
     @abstractmethod
     def discover_runs(self, sequence_slug: str | None) -> list[DiscoveredRun]:
@@ -57,7 +63,12 @@ class TrajectoryEvaluator(Protocol):
 
 @runtime_checkable
 class DenseCloudEvaluator(Protocol):
-    """Load or compute dense-cloud evaluation over normalized run artifacts."""
+    """Load or compute dense-cloud evaluation over normalized run artifacts.
+
+    The protocol is a future-stage seam. Concrete implementations should use
+    normalized PLY artifacts and typed coordinate-status metadata rather than
+    inferring frame semantics from filenames.
+    """
 
     @abstractmethod
     def load_dense_evaluation(
@@ -80,7 +91,12 @@ class DenseCloudEvaluator(Protocol):
 
 @runtime_checkable
 class EfficiencyEvaluator(Protocol):
-    """Load or compute runtime-efficiency evaluation over normalized run artifacts."""
+    """Load or compute runtime-efficiency evaluation over normalized run artifacts.
+
+    Future implementations should derive metrics from durable events and live
+    runtime status summaries instead of adding ad hoc timers to unrelated
+    pipeline stages.
+    """
 
     @abstractmethod
     def load_efficiency_evaluation(

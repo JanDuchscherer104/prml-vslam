@@ -27,8 +27,14 @@ from prml_vslam.utils import BaseData
 class FrameTransform(BaseData):
     """Serializable rigid transform with explicit frame direction.
 
-    When frame labels are omitted, the repository default is the canonical
-    runtime camera pose convention: `camera -> world`.
+    The transform maps coordinates from :attr:`source_frame` into
+    :attr:`target_frame`. When frame labels are omitted, the repository default
+    is the canonical runtime camera pose convention ``world <- camera``:
+    translation is the camera origin expressed in world coordinates, and
+    rotation maps camera-frame vectors into the named world frame. Cross-system
+    alignment transforms should use explicit frame names such as
+    ``viewer_world`` or ``tango_world`` rather than assuming all ``world``
+    labels are interchangeable.
     """
 
     model_config = ConfigDict(frozen=True)

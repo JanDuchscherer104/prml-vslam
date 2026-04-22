@@ -112,7 +112,13 @@ class IntrinsicsComparisonDiagnostics(BaseData):
 
 
 class TrajectoryEvaluationSemantics(BaseData):
-    """Persist the exact metric semantics needed to interpret one evaluation result."""
+    """Persist the exact metric semantics needed to interpret one result.
+
+    The same numeric error series can mean different things depending on pose
+    relation, trajectory alignment, and timestamp association tolerance. This
+    DTO makes those choices durable alongside the metrics produced through the
+    thin `evo <https://github.com/MichaelGrupp/evo>`_ adapter.
+    """
 
     metric_id: TrajectoryMetricId = TrajectoryMetricId.APE_TRANSLATION
     pose_relation: str = "translation_part"
@@ -126,7 +132,13 @@ class TrajectoryEvaluationSemantics(BaseData):
 # TODO(pipeline-refactor/future-eval): Rename or specialize once cloud and
 # efficiency evaluation artifacts become first-class stage outputs.
 class EvaluationArtifact(BaseData):
-    """Represent one loaded or freshly computed persisted trajectory-evaluation artifact."""
+    """Represent one loaded or freshly computed trajectory-evaluation artifact.
+
+    This is currently trajectory-specific even though the class name is generic;
+    future dense-cloud and efficiency stages should specialize rather than
+    overloading this payload. The artifact is app/plotting friendly but still
+    preserves reference and estimate paths plus metric semantics for review.
+    """
 
     path: Path
     title: str

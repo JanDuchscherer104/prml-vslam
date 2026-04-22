@@ -26,7 +26,14 @@ class StageDependencyError(RuntimeError):
 
 
 class StageResultStore:
-    """Store completed stage results by stage key."""
+    """Store completed stage results by stage key for downstream input builders.
+
+    The store replaces broad mutable handoff bags with one keyed result map.
+    It may expose common accessors for shared payloads such as
+    :class:`prml_vslam.interfaces.ingest.SequenceManifest` and
+    :class:`prml_vslam.interfaces.slam.SlamArtifacts`, but individual stage
+    modules remain responsible for building their own stage-specific input DTOs.
+    """
 
     def __init__(self) -> None:
         self._results: dict[StageKey, StageResult] = {}
@@ -76,7 +83,15 @@ class StageResultStore:
 
 
 class StageRunner:
-    """Run target runtime protocol calls and record results generically."""
+    """Own generic stage lifecycle around capability protocol calls.
+
+    ``StageRunner`` handles start/completion/failure callbacks, converts
+    exceptions into failed :class:`prml_vslam.pipeline.contracts.events.StageOutcome`
+    values through the stage config, and stores successful
+    :class:`prml_vslam.pipeline.stages.base.contracts.StageResult` objects. It
+    deliberately does not know how to build source, SLAM, alignment, or
+    evaluation inputs.
+    """
 
     def __init__(self, result_store: StageResultStore) -> None:
         self._result_store = result_store

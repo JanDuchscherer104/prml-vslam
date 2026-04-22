@@ -1,4 +1,9 @@
-"""File-backed RGB-D observation source for reconstruction backends."""
+"""File-backed RGB-D observation source for reconstruction backends.
+
+The source reads durable ``rgbd_observation_sequence.v1`` indexes and resolves
+RGB/depth payload paths into normalized :class:`RgbdObservation` objects. It
+keeps storage mechanics separate from reconstruction backends.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +23,12 @@ from prml_vslam.protocols import RgbdObservationSource
 
 
 class FileRgbdObservationSource(RgbdObservationSource):
-    """Open a durable RGB-D observation sequence index from local files."""
+    """Open a durable RGB-D observation sequence index from local files.
+
+    The source validates that the referenced index matches the sequence ref
+    before yielding observations, so reconstruction backends can trust source
+    id, sequence id, observation count, and payload-root semantics.
+    """
 
     def __init__(self, sequence_ref: RgbdObservationSequenceRef) -> None:
         self._sequence_ref = sequence_ref
@@ -29,7 +39,11 @@ class FileRgbdObservationSource(RgbdObservationSource):
         return f"{self._sequence_ref.source_id}:{self._sequence_ref.sequence_id}"
 
     def iter_observations(self) -> Iterator[RgbdObservation]:
-        """Yield observations by resolving payload paths from the sequence ref."""
+        """Yield observations by resolving payload paths from the sequence ref.
+
+        RGB payloads are optional; depth payloads are required and converted to
+        meters with each row's scale factor before constructing the DTO.
+        """
         index = load_rgbd_observation_sequence_index(self._sequence_ref.index_path)
         _validate_index_matches_ref(index, self._sequence_ref)
         for row in index.rows:
@@ -47,7 +61,11 @@ class FileRgbdObservationSource(RgbdObservationSource):
 
 
 def load_rgbd_observation_sequence_index(path: Path) -> RgbdObservationSequenceIndex:
-    """Load and validate one durable RGB-D observation sequence index."""
+    """Load and validate one durable RGB-D observation sequence index.
+
+    The JSON payload is validated through the shared interface model so schema
+    errors surface before reconstruction begins.
+    """
     if not path.exists():
         raise FileNotFoundError(f"RGB-D observation index does not exist: {path}")
     return RgbdObservationSequenceIndex.model_validate(json.loads(path.read_text(encoding="utf-8")))

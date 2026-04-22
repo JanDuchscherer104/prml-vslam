@@ -42,8 +42,12 @@ class VisualizationIntent(StrEnum):
 class StageRuntimeStatus(TransportModel):
     """Expose queryable live status for one stage runtime.
 
-    Time-domain semantics are owned by WP-03A. This first contract slice names
-    the fields without implementing runtime-specific counters or telemetry.
+    This DTO is the live status counterpart to durable
+    :class:`prml_vslam.pipeline.contracts.events.StageOutcome`. Runtimes and
+    proxies update it for queue depth, progress, latency, throughput, and
+    resource assignment; summaries and manifests still derive terminal truth
+    from stage outcomes. Runtime timestamps use nanoseconds so callers can
+    choose monotonic or wall-clock semantics according to the emitting runtime.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -157,7 +161,13 @@ class VisualizationItem(TransportModel):
 
 
 class StageRuntimeUpdate(TransportModel):
-    """Live observer update emitted by a running stage runtime."""
+    """Live observer update emitted by a running stage runtime.
+
+    Updates are immutable, best-effort observer records. They can carry
+    domain-owned semantic events, neutral visualization descriptors, and a
+    status snapshot, but downstream stages must not depend on them for terminal
+    inputs. Cross-stage handoff remains :class:`StageResult`.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -178,7 +188,14 @@ class StageRuntimeUpdate(TransportModel):
 
 
 class StageResult(TransportModel):
-    """Canonical terminal handoff bundle for one completed stage."""
+    """Canonical terminal handoff bundle for one completed stage.
+
+    Store this in :class:`prml_vslam.pipeline.runner.StageResultStore` after a
+    runtime finishes. The payload is an in-memory domain object used by later
+    stages, while :attr:`outcome` is the durable subset written into events,
+    manifests, and summaries. Do not persist full ``StageResult`` objects as
+    scientific provenance.
+    """
 
     model_config = ConfigDict(frozen=True)
 

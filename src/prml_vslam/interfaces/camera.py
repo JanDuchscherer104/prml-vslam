@@ -29,9 +29,12 @@ class CameraIntrinsics(BaseData):
     Use this DTO whenever a package boundary needs stable focal lengths,
     principal point, optional raster size, and optional distortion metadata
     without depending on an upstream-specific calibration format. The object is
-    shared by :class:`prml_vslam.interfaces.FramePacket`,
-    :class:`prml_vslam.datasets.contracts.AdvioManifestAssets`, and method live
-    updates such as :class:`prml_vslam.methods.updates.SlamUpdate`.
+    shared by :class:`prml_vslam.interfaces.runtime.FramePacket`,
+    :class:`prml_vslam.interfaces.ingest.AdvioManifestAssets`, and current
+    method live updates such as :class:`prml_vslam.interfaces.slam.SlamUpdate`.
+    The width and height describe the same raster as ``fx``, ``fy``, ``cx``,
+    and ``cy``; method wrappers that crop or resize images must either update
+    the intrinsics or persist preprocessing metadata before exporting them.
     """
 
     model_config = ConfigDict(frozen=True)

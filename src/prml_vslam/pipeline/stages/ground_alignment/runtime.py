@@ -9,12 +9,17 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.ray_runtime.common import artifact_ref
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
+from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
 from prml_vslam.pipeline.stages.ground_alignment.contracts import GroundAlignmentRuntimeInput
 
 
-# TODO: why is this class not derived from common StageRuntime base class?
-class GroundAlignmentRuntime:
-    """Adapt :class:`GroundAlignmentService` to the generic bounded runtime API."""
+class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
+    """Adapt :class:`GroundAlignmentService` to the generic bounded runtime API.
+
+    The runtime owns stage-result construction, artifact registration, and live
+    status for the pipeline. Plane fitting and frame semantics remain
+    alignment-owned in :mod:`prml_vslam.alignment.services`.
+    """
 
     def __init__(self, *, service_type: type[GroundAlignmentService] | None = None) -> None:
         self._service_type = GroundAlignmentService if service_type is None else service_type
@@ -29,7 +34,12 @@ class GroundAlignmentRuntime:
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
     def run_offline(self, input_payload: GroundAlignmentRuntimeInput) -> StageResult:
-        """Detect and persist the derived ground-alignment artifact."""
+        """Detect and persist the derived ground-alignment artifact.
+
+        Returns a skipped stage outcome when the alignment service explicitly
+        declines to apply a transform, preserving a durable diagnostic record
+        without failing the run.
+        """
         self._status = self._status.model_copy(
             update={
                 "lifecycle_state": StageStatus.RUNNING,

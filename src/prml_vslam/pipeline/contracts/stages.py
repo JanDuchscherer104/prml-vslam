@@ -12,7 +12,14 @@ from .transport import TransportModel
 
 
 class StageKey(StrEnum):
-    """Name the canonical linear stage vocabulary for the repository pipeline."""
+    """Name the current executable linear stage vocabulary.
+
+    These values are persisted in existing run events, summaries, and manifests.
+    The target public vocabulary uses names such as ``source``,
+    ``align.ground``, and ``evaluate.trajectory``; aliases are handled by
+    :mod:`prml_vslam.pipeline.config` until the migration-removal work package
+    retires the current spellings.
+    """
 
     INGEST = "ingest"
     SLAM = "slam"

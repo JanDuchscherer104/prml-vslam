@@ -21,7 +21,12 @@ ROLE_RECONSTRUCTION_MESH = "reconstruction_mesh"
 
 
 class ReconstructionVisualizationAdapter:
-    """Build neutral visualization descriptors for reconstruction artifacts."""
+    """Build neutral visualization descriptors for reconstruction artifacts.
+
+    The adapter keeps reconstruction output sink-ready without importing Rerun.
+    It maps durable reconstruction artifacts into roles and intents that the
+    observer layer can place into the viewer according to visualization policy.
+    """
 
     def build_items(
         self,
@@ -30,7 +35,17 @@ class ReconstructionVisualizationAdapter:
         *,
         reconstruction_id: str = "reference",
     ) -> list[VisualizationItem]:
-        """Return sink-facing visualization items for completed reconstruction outputs."""
+        """Return sink-facing visualization items for completed reconstruction outputs.
+
+        Args:
+            artifacts: Reconstruction-owned durable artifact bundle.
+            artifact_refs: Pipeline artifact refs keyed by stage artifact name.
+            reconstruction_id: Stable role suffix for the reconstruction mode.
+
+        Returns:
+            Neutral point-cloud or mesh visualization descriptors, when the
+            corresponding durable artifacts exist.
+        """
         items: list[VisualizationItem] = []
         point_cloud_ref = artifact_refs.get("reference_cloud")
         if point_cloud_ref is not None:

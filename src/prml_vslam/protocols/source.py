@@ -25,7 +25,7 @@ class OfflineSequenceSource(Protocol):
     """Materialize the normalized offline input boundary for one run.
 
     Implementations are responsible for producing a
-    :class:`prml_vslam.pipeline.contracts.sequence.SequenceManifest`, not for
+    :class:`prml_vslam.interfaces.ingest.SequenceManifest`, not for
     deciding which stages run next. This keeps source-specific setup in the
     source owner while leaving orchestration to :mod:`prml_vslam.pipeline`.
     """

@@ -52,7 +52,11 @@ class SlamBackendConfig(BaseConfig):
     """Provide the method-owned runtime contract shared by backend configs.
 
     Concrete configs implement the capabilities and factory behavior that the
-    rest of the package queries before runtime execution begins.
+    rest of the package queries before runtime execution begins. This is a
+    method/backend config, so :meth:`prml_vslam.utils.FactoryConfig.setup_target`
+    is appropriate here. Pipeline stage configs deliberately do not use this
+    construction pattern; they describe execution policy and leave runtime
+    construction to :class:`prml_vslam.pipeline.runtime_manager.RuntimeManager`.
     """
 
     model_config = ConfigDict(extra="forbid")
