@@ -22,6 +22,8 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "BackendEvent",
         "BackendWarning",
         "CameraIntrinsics",
+        "CameraIntrinsicsSample",
+        "CameraIntrinsicsSeries",
         "FramePacket",
         "FramePacketProvenance",
         "FrameTransform",

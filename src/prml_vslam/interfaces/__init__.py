@@ -1,7 +1,7 @@
 """Repo-wide canonical shared DTOs."""
 
 from .alignment import GroundAlignmentMetadata, GroundPlaneModel, GroundPlaneVisualizationHint
-from .camera import CameraIntrinsics
+from .camera import CameraIntrinsics, CameraIntrinsicsSample, CameraIntrinsicsSeries
 from .ingest import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
@@ -45,6 +45,8 @@ __all__ = [
     "BackendEvent",
     "BackendWarning",
     "CameraIntrinsics",
+    "CameraIntrinsicsSample",
+    "CameraIntrinsicsSeries",
     "FramePacket",
     "FramePacketProvenance",
     "FrameTransform",
