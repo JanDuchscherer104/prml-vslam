@@ -11,6 +11,7 @@ Dependencies:
 
 Owned paths:
 - `src/prml_vslam/pipeline/config.py`
+- `src/prml_vslam/pipeline/stages/base/config.py`
 - planning/config tests under `tests/`
 
 Read-only context paths:
@@ -44,6 +45,9 @@ Implementation notes:
 - WP-02 owns shared planning/config scaffolding and stage-key/config-section
   mapping. Individual stage packages own their stage-specific `config.py`
   implementations.
+- WP-02 owns the base stage config and execution-policy contracts:
+  `StageConfig`, `StageExecutionConfig`, `ResourceSpec`,
+  `PlacementConstraint`, `StageTelemetryConfig`, and `StageCleanupPolicy`.
 - Backend/source/reconstruction variant configs may use `FactoryConfig.setup_target()` for domain/source implementation targets.
 - Add alias/projection policy for `ingest -> source`, `ground.align -> align.ground`, and `reference.reconstruct -> reconstruction`; keep current executable keys working in the first slice.
 - Use Pydantic v2 patterns and existing `BaseConfig` / `BaseData` conventions.
