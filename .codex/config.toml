@@ -22,9 +22,9 @@ project_doc_fallback_filenames = ["AGENTS.md"]
     args    = ["code-index-mcp"]
 
     [mcp_servers.graphify]
-    type    = "stdio"
+    type = "stdio"
     command = "uv"
-    args    = [
+    args = [
         "run",
         "--preview-features",
         "extra-build-dependencies",

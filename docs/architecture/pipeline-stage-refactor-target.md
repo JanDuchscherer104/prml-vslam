@@ -660,6 +660,11 @@ classDiagram
     BaseStageRuntime --> StageRuntimeStatus
 ```
 
+`StageRuntimeProxy` exposes capability-specific protocol views selected during
+preflight. The UML edges to `OfflineStageRuntime`, `LiveUpdateStageRuntime`,
+and `StreamingStageRuntime` are conditional views, not a universal proxy that
+supports every method for every runtime.
+
 Migration contact points:
 
 - [RuntimeStageDriver](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L77)
@@ -803,7 +808,7 @@ collapses those responsibilities into explicit owners:
 | Completion application | `_apply_completion()` | `StageResultStore.put(result)`. |
 | Failure outcome hooks | `build_failure_outcome` callbacks and `_failure_builder(...)` | `StageConfig.failure_outcome(...)` plus shared `StageOutcome` helpers. |
 | Completion/failure event callbacks | `record_stage_completion` / `record_stage_failure` callbacks | coordinator event recorder methods invoked by `StageRunner`. |
-| SLAM actor/session lifecycle | separate offline and streaming SLAM actors | one `SlamStageRuntime` implementing offline and streaming protocols, optionally Ray-hosted behind `StageRuntimeProxy`. |
+| SLAM actor/session lifecycle | separate offline and streaming SLAM actors | one `SlamStageRuntime` implementing offline, streaming, and live-update protocols, optionally Ray-hosted behind `StageRuntimeProxy`. |
 | Streaming SLAM driver hooks | `RuntimeStageDriver.start_streaming_slam_stage()` / `close_streaming_slam_stage()` | `RuntimeManager` constructs the runtime; coordinator calls runtime protocol methods. |
 | Runtime construction and placement | coordinator helpers and stage helpers | hybrid-lazy `RuntimeManager`. |
 | Live payload resolution and eviction | coordinator handle cache | runtime-managed payload store behind `TransientPayloadRef`. |
