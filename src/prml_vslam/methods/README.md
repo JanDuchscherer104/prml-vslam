@@ -12,7 +12,7 @@ The package is intentionally small. The public center of gravity is
 [`MethodId`](./contracts.py#L12),
 [`SlamBackendConfig`](./contracts.py#L41),
 [`SlamOutputPolicy`](./contracts.py#L31),
-[`SlamSession`](./protocols.py#L17),
+[`StreamingSlamBackend`](./protocols.py#L17),
 [`OfflineSlamBackend`](./protocols.py#L31),
 [`StreamingSlamBackend`](./protocols.py#L49),
 [`BackendDescriptor`](./descriptors.py#L21),
@@ -37,9 +37,9 @@ The actual execution seams live in [`protocols.py`](./protocols.py#L16). Offline
 backends implement [`run_sequence()`](./protocols.py#L36) over a normalized
 [`SequenceManifest`](../pipeline/contracts/sequence.py#L10), optional prepared
 benchmark inputs, and a method-owned output policy. Streaming backends implement
-[`start_session()`](./protocols.py#L54), which receives one method-owned
+[`start_streaming(...)`](./protocols.py#L54), which receives one method-owned
 session-init bundle plus the runtime controls before returning a
-[`SlamSession`](./protocols.py#L17) that consumes incremental
+[`StreamingSlamBackend`](./protocols.py#L17) that consumes incremental
 [`FramePacket`](../interfaces/runtime.py#L68) values and produces
 [`SlamUpdate`](./updates.py#L13) telemetry before closing into the same
 normalized [`SlamArtifacts`](../pipeline/contracts/artifacts.py#L25) contract.
@@ -125,9 +125,9 @@ src/prml_vslam/methods
 ├── mock_vslam.py                                  # repository-local mock backend
 │   ├── MockSlamBackendConfig                      # mock backend config
 │   ├── MockSlamBackend                            # mock offline/streaming backend
-│   └── MockSlamSession                            # mock streaming session
+│   └── MockStreamingSlamBackend                            # mock streaming runtime
 ├── protocols.py                                   # backend and session seams
-│   ├── SlamSession                                # incremental session protocol
+│   ├── StreamingSlamBackend                                # streaming backend protocol
 │   ├── OfflineSlamBackend                         # offline execution protocol
 │   ├── StreamingSlamBackend                       # streaming execution protocol
 │   └── SlamBackend                                # combined offline + streaming protocol
@@ -139,7 +139,7 @@ src/prml_vslam/methods
     ├── __init__.py                                # ViSTA export surface
     │   ├── VistaSlamBackend                       # ViSTA backend export
     │   ├── VistaSlamBackendConfig                 # ViSTA config export
-    │   └── VistaSlamSession                       # ViSTA session export
+    │   └── VistaSlamRuntime                       # ViSTA session export
     ├── adapter.py                                 # thin backend adapter
     │   └── VistaSlamBackend                       # offline + streaming ViSTA wrapper
     ├── artifacts.py                               # native-export normalization
@@ -156,8 +156,8 @@ src/prml_vslam/methods
     │   ├── build_vista_runtime_components         # upstream runtime builder
     │   └── resolve_vocab_path                     # vocabulary cache resolver
     └── session.py                                 # streaming session wrapper
-        ├── VistaSlamSession                       # live session adapter
-        └── create_vista_session                   # session construction helper
+        ├── VistaSlamRuntime                       # live session adapter
+        └── create_vista_runtime                   # session construction helper
 ```
 
 ## Core Contracts
@@ -283,7 +283,7 @@ and Rerun layout notes, read [`methods/vista/README.md`](./vista/README.md).
 If you need to orient yourself quickly, start with
 [`MethodId`](./contracts.py#L12),
 [`SlamBackendConfig`](./contracts.py#L41),
-[`SlamSession`](./protocols.py#L17),
+[`StreamingSlamBackend`](./protocols.py#L17),
 [`BackendFactory`](./factory.py#L25), and
 [`SlamUpdate`](./updates.py#L13). Then read either
 [`mock_vslam.py`](./mock_vslam.py#L32) for the minimum wrapper shape or

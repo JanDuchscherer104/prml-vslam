@@ -13,7 +13,6 @@ from typing import Literal
 from .transport import TransportModel
 
 
-# TODO: add module level doc string explaining the motivation for handle contracts!
 # TODO(pipeline-refactor/WP-01): Collapse into TransientPayloadRef after the
 # payload resolver replaces Ray-specific live array handles.
 class ArrayHandle(TransportModel):

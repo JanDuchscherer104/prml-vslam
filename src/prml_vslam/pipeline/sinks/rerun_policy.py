@@ -139,26 +139,26 @@ class RerunLoggingPolicy:
         if image is None:
             return
         match item.role:
-            case _ if item.role == ROLE_SOURCE_RGB:
+            case role if role == ROLE_SOURCE_RGB:
                 if not self.log_source_rgb:
                     return
                 entity_path = "world/live/source/rgb"
-            case _ if item.role == ROLE_MODEL_RGB:
+            case role if role == ROLE_MODEL_RGB:
                 entity_path = MODEL_RGB_2D_ENTITY_PATH
-            case _ if item.role == ROLE_MODEL_CAMERA_RGB:
+            case role if role == ROLE_MODEL_CAMERA_RGB:
                 if not self.log_camera_image_rgb:
                     return
                 entity_path = "world/live/model/camera/image"
-            case _ if item.role == ROLE_MODEL_PREVIEW:
+            case role if role == ROLE_MODEL_PREVIEW:
                 if not self.log_diagnostic_preview:
                     return
                 entity_path = "world/live/model/diag/preview"
-            case _ if item.role == ROLE_KEYFRAME_RGB:
+            case role if role == ROLE_KEYFRAME_RGB:
                 keyframe_index = self._require_keyframe_index(item)
                 if keyframe_index is None:
                     return
                 entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/image"
-            case _ if item.role == ROLE_KEYFRAME_PREVIEW:
+            case role if role == ROLE_KEYFRAME_PREVIEW:
                 if not self.log_diagnostic_preview:
                     return
                 keyframe_index = self._require_keyframe_index(item)

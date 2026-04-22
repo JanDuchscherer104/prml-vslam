@@ -94,7 +94,7 @@ src/prml_vslam/
 ├── eval/                # metric contracts and services
 ├── alignment/           # ground alignment config/service
 ├── visualization/       # Rerun helpers, config, validation DTOs
-├── io/                  # transport adapters, plus an io.datasets alias
+├── io/                  # transport adapters
 └── datasets/            # dataset catalogs, normalization, benchmark references
 ```
 
@@ -228,7 +228,7 @@ then executes only the entrypoints that apply to the current phase:
 | --- | --- | --- | --- |
 | `ingest` | `_run_ingest()` -> [run_ingest_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60) | `_run_ingest()` -> [run_ingest_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60) | none |
 | `slam` | `_run_slam_offline()` -> [run_offline_slam_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L101) -> [OfflineSlamStageActor.run()](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L46) | `_run_slam_streaming_prepare()` -> [RunCoordinatorActor.start_streaming_slam_stage()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L471) | `_run_slam_streaming_finalize()` -> [RunCoordinatorActor.close_streaming_slam_stage()](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L510) |
-| `ground.align` | `_run_ground_alignment()` -> [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) | none | `_run_ground_alignment()` -> [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
+| `gravity.align` | `_run_ground_alignment()` -> [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) | none | `_run_ground_alignment()` -> [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
 | `trajectory.evaluate` | `_run_trajectory()` -> [run_trajectory_evaluation_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137) | none | `_run_trajectory()` -> [run_trajectory_evaluation_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137), skipped after streaming error or stop |
 | `reference.reconstruct` | `_run_reference_reconstruction()` -> [run_reference_reconstruction_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212) | none | `_run_reference_reconstruction()` -> [run_reference_reconstruction_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212) |
 | `summary` | `_run_summary()` -> [run_summary_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L257) | none | `_run_summary()` -> [run_summary_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L257) |
@@ -320,7 +320,7 @@ observer/event policy.
 | --- | --- | --- | --- | --- | --- |
 | `ingest` | `RunRequest.source` through `SourceSpec` | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L140) | [run_ingest_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60) | `StageCompletionPayload.sequence_manifest`, `benchmark_inputs` | No `IngestStageConfig`, `IngestStageInput`, or `IngestStageOutput`; source muxing is not factory-aligned with backend muxing. |
 | `slam` | [SlamStageConfig](../../src/prml_vslam/pipeline/contracts/request.py#L150) with method-owned backend config | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L145) | [OfflineSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L42) and [StreamingSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L203) | `StageCompletionPayload.slam`, `visualization` | Offline and streaming are separate actors; stage lifecycle is not represented by one stage runtime target. |
-| `ground.align` | [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), enabled through `request.alignment.ground` | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L150) | [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) | `StageCompletionPayload.ground_alignment` | Config is package-local but injected through a top-level request field, not a stage config; output DTO is implicit. |
+| `gravity.align` | [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), enabled through `request.alignment.ground` | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L150) | [run_ground_alignment_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) | `StageCompletionPayload.ground_alignment` | Config is package-local but injected through a top-level request field, not a stage config; output DTO is implicit. |
 | `trajectory.evaluate` | [TrajectoryBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), enabled through `request.benchmark.trajectory` | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L156) | [run_trajectory_evaluation_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137) | artifact map only; `EvaluationArtifact` not retained in payload | Benchmark policy and eval computation are split, but output retention is inconsistent with other stages. |
 | `reference.reconstruct` | [ReferenceReconstructionConfig](../../src/prml_vslam/benchmark/contracts.py) | [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L164), available only for TUM RGB-D dataset sources | [run_reference_reconstruction_stage()](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212) | `reference_cloud`, reconstruction metadata, optional mesh | Stage now has a bounded runtime helper, but no stage-local config/input/output DTO or clear reconstruction package runtime owner. |
 | `cloud.evaluate` | [CloudBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py) | placeholder unavailable in [StageRegistry](../../src/prml_vslam/pipeline/stage_registry.py#L171) | none | expected output path only | Stage key exists but metric owner and DTO ownership are not fully wired. |
@@ -638,11 +638,11 @@ runtime failures, but do make inspection and evaluation ambiguous:
 
 | Contact | Present issue | Why this matters for planning |
 | --- | --- | --- |
-| [io/__init__.py](../../src/prml_vslam/io/__init__.py#L20) | `io.datasets` alias and explicit uncertainty about dataset ownership | Keep datasets top-level; remove alias after import audit. |
-| [datasets/__init__.py](../../src/prml_vslam/datasets/__init__.py) | mirror alias for `prml_vslam.io.datasets` | Same cleanup as above. |
+| [io/__init__.py](../../src/prml_vslam/io/__init__.py#L20) | `io.datasets` alias and explicit uncertainty about dataset ownership | Removed; datasets stays top-level. |
+| [datasets/__init__.py](../../src/prml_vslam/datasets/__init__.py) | mirror alias for `prml_vslam.io.datasets` | Removed; datasets stays top-level. |
 | [interfaces/__init__.py](../../src/prml_vslam/interfaces/__init__.py#L63) | unclear DTO/protocol/module organization | Document and enforce shared DTO vs package-local contract rule. |
 | [benchmark/__init__.py](../../src/prml_vslam/benchmark/__init__.py#L25) | benchmark/eval responsibility conflict | Keep benchmark as policy, eval as computation/result owner. |
-| [methods/protocols.py](../../src/prml_vslam/methods/protocols.py#L22) | unclear need for both `SlamSession` and `SlamBackend` | Document backend as factory/execution owner and session as stateful streaming lifecycle. |
+| [methods/protocols.py](../../src/prml_vslam/methods/protocols.py#L22) | former split between `SlamSession` and `SlamBackend` | Resolved: streaming lifecycle now lives on `StreamingSlamBackend` and pipeline ownership lives in `SlamStageRuntime`. |
 | [visualization/validation.py](../../src/prml_vslam/visualization/validation.py#L27) | DTOs in validation implementation module | Move DTOs to visualization contracts. |
 | [pipeline/contracts/handles.py](../../src/prml_vslam/pipeline/contracts/handles.py#L16) | missing module motivation | Explain transient handle ownership and why arrays stay out of public persisted contracts. |
 | [pipeline/backend.py](../../src/prml_vslam/pipeline/backend.py#L26) | protocol in ambiguously named module | Move to `pipeline/protocols.py` or explicitly codify `backend.py` as substrate protocol owner. |

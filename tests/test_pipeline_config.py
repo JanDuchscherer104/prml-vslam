@@ -112,7 +112,7 @@ def test_stage_key_section_alias_mapping_covers_current_and_target_names() -> No
     expected = {
         StageKey.INGEST: (TargetStageKey.SOURCE, "source"),
         StageKey.SLAM: (TargetStageKey.SLAM, "slam"),
-        StageKey.GROUND_ALIGNMENT: (TargetStageKey.ALIGN_GROUND, "align_ground"),
+        StageKey.GRAVITY_ALIGNMENT: (TargetStageKey.ALIGN_GROUND, "align_ground"),
         StageKey.TRAJECTORY_EVALUATION: (
             TargetStageKey.EVALUATE_TRAJECTORY,
             "evaluate_trajectory",

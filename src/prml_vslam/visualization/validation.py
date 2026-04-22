@@ -22,9 +22,9 @@ _LIVE_MODEL_POINTS_ENTITY = "/world/live/model/points"
 _TRACKING_CAMERA_ENTITY = "/world/live/tracking/camera"
 _KEYED_POINTS_PREFIX = "/world/keyframes/points/"
 _KEYED_CAMERAS_PREFIX = "/world/keyframes/cameras/"
+_RECONSTRUCTION_PREFIX = "/world/reconstruction/"
 
 
-# TODO: This is a DTO / data model, it should hence be defined in a dedicated dto / data model module!
 class RerunPointCloudSnapshot(BaseData):
     """Summary of one populated point-cloud entity in a recording."""
 
@@ -36,9 +36,6 @@ class RerunPointCloudSnapshot(BaseData):
     bounds_max_xyz: tuple[float, float, float]
 
 
-# TODO: This is a DTO / data model, it should hence be defined in a dedicated dto / data model module!
-
-
 class RerunValidationSummary(BaseData):
     """Deterministic semantic summary extracted from one `.rrd` recording."""
 
@@ -46,11 +43,9 @@ class RerunValidationSummary(BaseData):
     entity_paths: list[str] = Field(default_factory=list)
     live_model_points: RerunPointCloudSnapshot | None = None
     keyed_point_clouds: list[RerunPointCloudSnapshot] = Field(default_factory=list)
+    reconstruction_point_clouds: list[RerunPointCloudSnapshot] = Field(default_factory=list)
     keyed_camera_entities: list[str] = Field(default_factory=list)
     tracking_positions_xyz: list[tuple[float, float, float]] = Field(default_factory=list)
-
-
-# TODO: This is a DTO / data model, it should hence be defined in a dedicated dto / data model module!
 
 
 class RerunValidationArtifacts(BaseData):
@@ -69,11 +64,13 @@ def load_recording_summary(recording_path: Path) -> RerunValidationSummary:
 
     live_model_snapshot, _ = _latest_live_model_snapshot(recording)
     keyed_snapshots, _ = _keyed_point_cloud_snapshots(recording)
+    reconstruction_snapshots, _ = _reconstruction_point_cloud_snapshots(recording)
     return RerunValidationSummary(
         recording_path=recording_path.resolve(),
         entity_paths=entity_paths,
         live_model_points=live_model_snapshot,
         keyed_point_clouds=keyed_snapshots,
+        reconstruction_point_clouds=reconstruction_snapshots,
         keyed_camera_entities=sorted(
             path
             for path in entity_paths
@@ -97,12 +94,14 @@ def write_validation_bundle(
 
     live_snapshot, live_world_points = _latest_live_model_snapshot(recording)
     keyed_snapshots, keyed_world_points = _keyed_point_cloud_snapshots(recording, max_keyed_clouds=max_keyed_clouds)
+    reconstruction_snapshots, reconstruction_world_points = _reconstruction_point_cloud_snapshots(recording)
     tracking_positions = np.asarray(summary.tracking_positions_xyz, dtype=np.float64).reshape(-1, 3)
 
     summary = summary.model_copy(
         update={
             "live_model_points": live_snapshot,
             "keyed_point_clouds": keyed_snapshots,
+            "reconstruction_point_clouds": reconstruction_snapshots,
         }
     )
 
@@ -116,7 +115,7 @@ def write_validation_bundle(
     _write_projection_plot(
         output_path=map_xy_png,
         live_world_points=live_world_points,
-        keyed_world_points=keyed_world_points,
+        keyed_world_points=[*keyed_world_points, *reconstruction_world_points],
         tracking_positions_xyz=tracking_positions,
         axis_x=0,
         axis_y=1,
@@ -130,7 +129,7 @@ def write_validation_bundle(
     _write_projection_plot(
         output_path=map_xz_png,
         live_world_points=live_world_points,
-        keyed_world_points=keyed_world_points,
+        keyed_world_points=[*keyed_world_points, *reconstruction_world_points],
         tracking_positions_xyz=tracking_positions,
         axis_x=0,
         axis_y=2,
@@ -193,6 +192,19 @@ def _component_columns(recording: rdf.Recording):
 def _rows_for_index(recording: rdf.Recording, *, index_name: str, contents: str) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     reader = recording.view(index=index_name, contents=contents).select()
+    for batch in reader:
+        data = batch.to_pydict()
+        if not data:
+            continue
+        row_count = len(next(iter(data.values())))
+        for row_index in range(row_count):
+            rows.append({column: values[row_index] for column, values in data.items()})
+    return rows
+
+
+def _static_rows(recording: rdf.Recording, *, contents: str) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    reader = recording.view(index="log_tick", contents=contents).select_static()
     for batch in reader:
         data = batch.to_pydict()
         if not data:
@@ -386,6 +398,52 @@ def _keyed_point_cloud_snapshots(
     return snapshots, world_points_payloads
 
 
+def _reconstruction_point_cloud_snapshots(
+    recording: rdf.Recording,
+) -> tuple[list[RerunPointCloudSnapshot], list[np.ndarray]]:
+    point_entities = sorted(
+        column.entity_path
+        for column in _component_columns(recording)
+        if column.component == "Points3D:positions" and column.entity_path.startswith(_RECONSTRUCTION_PREFIX)
+    )
+    snapshots: list[RerunPointCloudSnapshot] = []
+    world_points_payloads: list[np.ndarray] = []
+    for points_entity in point_entities:
+        latest_points: np.ndarray | None = None
+        latest_index_name = "log_tick"
+        latest_index_value = 0
+        for row in _static_rows(recording, contents=points_entity):
+            world_points = _points_array(row.get(f"{points_entity}:Points3D:positions"))
+            if len(world_points) == 0:
+                continue
+            latest_points = world_points
+            latest_index_name = "static"
+            latest_index_value = 0
+        for index_name in ("frame", "log_tick"):
+            for row in _rows_for_index(recording, index_name=index_name, contents=points_entity):
+                index_value = row.get(index_name)
+                if index_value is None:
+                    continue
+                world_points = _points_array(row.get(f"{points_entity}:Points3D:positions"))
+                if len(world_points) == 0:
+                    continue
+                latest_points = world_points
+                latest_index_name = index_name
+                latest_index_value = int(index_value)
+        if latest_points is None:
+            continue
+        snapshots.append(
+            _point_cloud_snapshot(
+                entity_path=points_entity,
+                index_name=latest_index_name,
+                index_value=latest_index_value,
+                world_points=latest_points,
+            )
+        )
+        world_points_payloads.append(latest_points)
+    return snapshots, world_points_payloads
+
+
 def _tracking_positions(recording: rdf.Recording) -> list[tuple[float, float, float]]:
     rows = _rows_for_index(recording, index_name="frame", contents=_TRACKING_CAMERA_ENTITY)
     positions: list[tuple[float, float, float]] = []
@@ -422,6 +480,7 @@ def _summary_markdown(summary: RerunValidationSummary) -> str:
         f"- recording: `{summary.recording_path}`",
         f"- live model points: `{summary.live_model_points.point_count if summary.live_model_points else 0}`",
         f"- keyed point clouds with populated rows: `{len(summary.keyed_point_clouds)}`",
+        f"- reconstruction point clouds with populated rows: `{len(summary.reconstruction_point_clouds)}`",
         f"- keyed camera entities present: `{len(summary.keyed_camera_entities)}`",
         f"- tracking positions: `{len(summary.tracking_positions_xyz)}`",
         "",
@@ -431,6 +490,16 @@ def _summary_markdown(summary: RerunValidationSummary) -> str:
         lines.append("- none")
     else:
         for snapshot in summary.keyed_point_clouds[:20]:
+            lines.append(
+                "- "
+                f"`{snapshot.entity_path}` @ {snapshot.index_name}={snapshot.index_value} "
+                f"points={snapshot.point_count}"
+            )
+    lines.extend(["", "## Reconstruction Point Clouds"])
+    if not summary.reconstruction_point_clouds:
+        lines.append("- none")
+    else:
+        for snapshot in summary.reconstruction_point_clouds[:20]:
             lines.append(
                 "- "
                 f"`{snapshot.entity_path}` @ {snapshot.index_name}={snapshot.index_value} "

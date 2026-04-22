@@ -21,9 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces.camera import CameraIntrinsics
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.transport import TransportModel
@@ -62,23 +60,6 @@ class SlamArtifacts(BaseData):
     sparse_points_ply: ArtifactRef | None = None
     dense_points_ply: ArtifactRef | None = None
     extras: dict[str, ArtifactRef] = Field(default_factory=dict)
-
-
-# TODO(pipeline-refactor/WP-06): Replace with a private SlamStageRuntime start
-# input or method-owned init DTO once streaming SLAM is behind the stage runtime.
-class SlamSessionInit(BaseData):
-    """Context injected once when a streaming SLAM session starts.
-
-    Streaming startup mirrors offline execution: the backend receives the
-    normalized :class:`prml_vslam.interfaces.ingest.SequenceManifest`, optional
-    prepared benchmark references, and the selected trajectory baseline before
-    any :class:`prml_vslam.interfaces.runtime.FramePacket` arrives. The target
-    runtime hides this DTO behind a stage-local streaming-start input.
-    """
-
-    sequence_manifest: SequenceManifest
-    benchmark_inputs: PreparedBenchmarkInputs | None = None
-    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
 
 
 # TODO(pipeline-refactor/WP-06): Move live SLAM update semantics to
@@ -245,6 +226,5 @@ __all__ = [
     "PoseEstimated",
     "SessionClosed",
     "SlamArtifacts",
-    "SlamSessionInit",
     "SlamUpdate",
 ]

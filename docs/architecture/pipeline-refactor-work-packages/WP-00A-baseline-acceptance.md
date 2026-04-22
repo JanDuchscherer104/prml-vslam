@@ -74,8 +74,8 @@ Use clean copies derived from `.configs/pipelines/vista-full.toml`:
 
 | Smoke | Config copy requirement | Command | Expected current executable stages |
 | --- | --- | --- | --- |
-| Offline ViSTA full | Copy keeps `mode = "offline"`; optionally sets `visualization.connect_live_viewer = false`; must not mutate the committed config. | `uv run prml-vslam run-config <offline-copy.toml>` | `ingest`, `slam`, `ground.align`, `reference.reconstruct`, `summary` |
-| Streaming ViSTA full | Copy changes only `mode = "streaming"` plus non-semantic smoke controls such as live-viewer launch suppression; must keep the same source/backend/output policy. | `uv run prml-vslam run-config <streaming-copy.toml>` | streaming prepare: `ingest`, `slam`; streaming finalize: `slam`, `ground.align`, `reference.reconstruct`, `summary` when the stream closes cleanly |
+| Offline ViSTA full | Copy keeps `mode = "offline"`; optionally sets `visualization.connect_live_viewer = false`; must not mutate the committed config. | `uv run prml-vslam run-config <offline-copy.toml>` | `ingest`, `slam`, `gravity.align`, `reference.reconstruct`, `summary` |
+| Streaming ViSTA full | Copy changes only `mode = "streaming"` plus non-semantic smoke controls such as live-viewer launch suppression; must keep the same source/backend/output policy. | `uv run prml-vslam run-config <streaming-copy.toml>` | streaming prepare: `ingest`, `slam`; streaming finalize: `slam`, `gravity.align`, `reference.reconstruct`, `summary` when the stream closes cleanly |
 
 Recommended smoke-copy helper:
 
@@ -126,7 +126,7 @@ reported by `plan-run-config` or the CLI terminal snapshot.
     prepared by the source
   - `slam` includes normalized trajectory and point-cloud artifacts expected by
     the selected ViSTA output policy
-  - `ground.align` includes `alignment/ground_alignment.json` when enabled
+  - `gravity.align` includes `alignment/ground_alignment.json` when enabled
   - `reference.reconstruct` includes `reference/reference_cloud.ply` plus
     reconstruction metadata when enabled and available
   - `summary` includes summary and stage-manifest artifact refs

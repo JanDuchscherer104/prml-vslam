@@ -40,7 +40,6 @@ from .slam import (
     PoseEstimated,
     SessionClosed,
     SlamArtifacts,
-    SlamSessionInit,
     SlamUpdate,
 )
 from .transforms import FrameTransform
@@ -80,9 +79,6 @@ __all__ = [
     "SequenceManifest",
     "SessionClosed",
     "SlamArtifacts",
-    "SlamSessionInit",
     "SlamUpdate",
     "VisualizationArtifacts",
 ]
-
-# TODO: how should we optimally distinguish between interfaces / protocols and DTOs / data models in terms of module organization and naming conventions? Should we define all dtos + modules that are stage specific as many here in the stage specific modules or should we define all of them in a dedicated dto module where the leav module indicates the stage?

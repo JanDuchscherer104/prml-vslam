@@ -19,7 +19,7 @@ from ray.actor import ActorHandle
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.ingest import SequenceManifest, SourceStageOutput
-from prml_vslam.interfaces.slam import BackendError, BackendEvent, SlamArtifacts, SlamSessionInit
+from prml_vslam.interfaces.slam import ArtifactRef, BackendError, BackendEvent, SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.methods.factory import BackendFactory
@@ -76,6 +76,12 @@ from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability, StageRuntimeProxy
 from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
 from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.reconstruction.visualization import (
+    MESH_ARTIFACT,
+    POINT_CLOUD_ARTIFACT,
+    ROLE_RECONSTRUCTION_MESH,
+    ROLE_RECONSTRUCTION_POINT_CLOUD,
+)
 from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
 from prml_vslam.pipeline.stages.slam.visualization import IMAGE_REF, ROLE_SOURCE_RGB
 from prml_vslam.pipeline.stages.source import SourceRuntime, SourceRuntimeInput
@@ -88,6 +94,44 @@ from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequence
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
+
+
+def _artifact_visualizations(artifacts: dict[str, ArtifactRef]) -> list[VisualizationItem]:
+    visualizations: list[VisualizationItem] = []
+    dense_points = artifacts.get("dense_points_ply")
+    if dense_points is not None:
+        visualizations.append(
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_RECONSTRUCTION_POINT_CLOUD,
+                artifact_refs={POINT_CLOUD_ARTIFACT: dense_points},
+                space="world",
+                metadata={"reconstruction_id": "slam"},
+            )
+        )
+    reference_cloud = artifacts.get("reference_cloud")
+    if reference_cloud is not None:
+        visualizations.append(
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_RECONSTRUCTION_POINT_CLOUD,
+                artifact_refs={POINT_CLOUD_ARTIFACT: reference_cloud},
+                space="world",
+                metadata={"reconstruction_id": "reference"},
+            )
+        )
+    reference_mesh = artifacts.get("reference_mesh")
+    if reference_mesh is not None:
+        visualizations.append(
+            VisualizationItem(
+                intent=VisualizationIntent.MESH,
+                role=ROLE_RECONSTRUCTION_MESH,
+                artifact_refs={MESH_ARTIFACT: reference_mesh},
+                space="world",
+                metadata={"reconstruction_id": "reference"},
+            )
+        )
+    return visualizations
 
 
 @ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0)
@@ -555,7 +599,7 @@ class RunCoordinatorActor:
                         factory=SlamStageRuntime,
                         capabilities=slam_capabilities,
                     )
-                case StageKey.GROUND_ALIGNMENT:
+                case StageKey.GRAVITY_ALIGNMENT:
                     manager.register(
                         stage.key,
                         factory=GroundAlignmentRuntime,
@@ -604,7 +648,7 @@ class RunCoordinatorActor:
                     sequence_manifest=self._result_store.require_sequence_manifest(),
                     benchmark_inputs=self._result_store.require_benchmark_inputs(),
                 )
-            case StageKey.GROUND_ALIGNMENT:
+            case StageKey.GRAVITY_ALIGNMENT:
                 return GroundAlignmentRuntimeInput(
                     request=context.request,
                     run_paths=context.run_paths,
@@ -642,7 +686,7 @@ class RunCoordinatorActor:
             case StageKey.SLAM:
                 config_payload = context.request.slam
                 input_payload = self._result_store.require_sequence_manifest()
-            case StageKey.GROUND_ALIGNMENT:
+            case StageKey.GRAVITY_ALIGNMENT:
                 slam = self._result_store.require_slam_artifacts()
                 config_payload = context.request.alignment.ground
                 input_payload = {
@@ -728,15 +772,25 @@ class RunCoordinatorActor:
                 stage_manifests=stage_manifests,
             )
         )
-        if stage_key is StageKey.GROUND_ALIGNMENT and isinstance(payload, GroundAlignmentMetadata):
+        if stage_key is StageKey.GRAVITY_ALIGNMENT and isinstance(payload, GroundAlignmentMetadata):
             self._submit_rerun_update(
                 update=StageRuntimeUpdate(
-                    stage_key=StageKey.GROUND_ALIGNMENT,
+                    stage_key=StageKey.GRAVITY_ALIGNMENT,
                     timestamp_ns=ts_ns(),
                     semantic_events=[payload],
                 ),
                 payload_resolver=None,
             )
+        self._submit_artifact_visualization_update(stage_key=stage_key, outcome=result.outcome)
+
+    def _submit_artifact_visualization_update(self, *, stage_key: StageKey, outcome: StageOutcome) -> None:
+        visualizations = _artifact_visualizations(outcome.artifacts)
+        if not visualizations:
+            return
+        self._submit_rerun_update(
+            update=StageRuntimeUpdate(stage_key=stage_key, timestamp_ns=ts_ns(), visualizations=visualizations),
+            payload_resolver=None,
+        )
 
     def _run_streaming(
         self,
@@ -826,11 +880,9 @@ class RunCoordinatorActor:
                     request=context.request,
                     plan=context.plan,
                     path_config=context.path_config,
-                    session_init=SlamSessionInit(
-                        sequence_manifest=self._result_store.require_sequence_manifest(),
-                        benchmark_inputs=self._result_store.require_benchmark_inputs(),
-                        baseline_source=context.request.benchmark.trajectory.baseline_source,
-                    ),
+                    sequence_manifest=self._result_store.require_sequence_manifest(),
+                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
+                    baseline_source=context.request.benchmark.trajectory.baseline_source,
                 ),
                 on_stage_started=self._emit_stage_started,
             )
@@ -1169,6 +1221,7 @@ class RunCoordinatorActor:
         if self._rerun_sink is None:
             return
         try:
+            self._submit_final_artifact_rerun_update()
             if self._rerun_sink_last_call is not None:
                 ray.get(self._rerun_sink_last_call)
             self._rerun_sink_last_call = self._rerun_sink.close.remote()
@@ -1182,6 +1235,15 @@ class RunCoordinatorActor:
                 pass
             self._rerun_sink = None
             self._rerun_sink_last_call = None
+
+    def _submit_final_artifact_rerun_update(self) -> None:
+        visualizations = _artifact_visualizations(self._snapshot.artifacts)
+        if not visualizations:
+            return
+        self._submit_rerun_update(
+            update=StageRuntimeUpdate(stage_key=StageKey.SUMMARY, timestamp_ns=ts_ns(), visualizations=visualizations),
+            payload_resolver=None,
+        )
 
     def _require_request(self) -> RunRequest:
         if self._request is None:

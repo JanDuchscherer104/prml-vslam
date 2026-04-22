@@ -20,7 +20,6 @@ from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 
 
-# TODO: this is a dto / data model that should be defined in a shared model module! given that it contains only transport-model definitions!
 class RunState(StrEnum):
     """Name the coarse lifecycle states exposed to app and CLI consumers."""
 

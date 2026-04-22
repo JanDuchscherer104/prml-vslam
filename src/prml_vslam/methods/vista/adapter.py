@@ -10,13 +10,13 @@ import cv2
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import SlamArtifacts, SlamSessionInit
+from prml_vslam.interfaces.slam import SlamArtifacts, SlamUpdate
 from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import VistaSlamBackendConfig
-from prml_vslam.methods.protocols import SlamBackend, SlamSession
+from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.utils import Console, PathConfig
 
-from .session import create_vista_session
+from .session import VistaSlamRuntime, create_vista_runtime
 
 
 class VistaSlamBackend(SlamBackend):
@@ -32,17 +32,20 @@ class VistaSlamBackend(SlamBackend):
         self._cfg = config
         self._path_config = path_config or PathConfig()
         self._console = Console(__name__).child(self.__class__.__name__)
+        self._streaming_runtime: VistaSlamRuntime | None = None
 
-    def start_session(
+    def start_streaming(
         self,
-        session_init: SlamSessionInit,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
-    ) -> SlamSession:
-        """Load upstream OnlineSLAM and return a ready in-process session."""
-        del session_init, backend_config
-        return create_vista_session(
+    ) -> None:
+        """Load upstream OnlineSLAM and retain backend-owned streaming state."""
+        del sequence_manifest, benchmark_inputs, baseline_source, backend_config
+        self._streaming_runtime = create_vista_runtime(
             config=self._cfg,
             path_config=self._path_config,
             console=self._console,
@@ -50,6 +53,21 @@ class VistaSlamBackend(SlamBackend):
             artifact_root=artifact_root,
             live_mode=True,
         )
+
+    def step_streaming(self, frame: FramePacket) -> None:
+        """Consume one streaming frame through the active ViSTA runtime."""
+        self._require_streaming_runtime().step(frame)
+
+    def drain_streaming_updates(self) -> list[SlamUpdate]:
+        """Retrieve pending ViSTA live updates without exposing runtime state."""
+        return self._require_streaming_runtime().drain_updates()
+
+    def finish_streaming(self) -> SlamArtifacts:
+        """Finalize the active ViSTA streaming runtime and clear it."""
+        runtime = self._require_streaming_runtime()
+        artifacts = runtime.finish()
+        self._streaming_runtime = None
+        return artifacts
 
     def run_sequence(
         self,
@@ -66,7 +84,7 @@ class VistaSlamBackend(SlamBackend):
             sequence=sequence,
             max_frames=backend_config.max_frames,
         )
-        session = create_vista_session(
+        runtime = create_vista_runtime(
             config=self._cfg,
             path_config=self._path_config,
             console=self._console,
@@ -80,8 +98,13 @@ class VistaSlamBackend(SlamBackend):
             if bgr is None:
                 raise RuntimeError(f"Failed to read input frame '{image_path}'.")
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            session.step(FramePacket(seq=seq, timestamp_ns=timestamp_ns, rgb=rgb))
-        return session.close()
+            runtime.step(FramePacket(seq=seq, timestamp_ns=timestamp_ns, rgb=rgb))
+        return runtime.finish()
+
+    def _require_streaming_runtime(self) -> VistaSlamRuntime:
+        if self._streaming_runtime is None:
+            raise RuntimeError("ViSTA-SLAM streaming backend has not been started.")
+        return self._streaming_runtime
 
 
 def _load_offline_frame_inputs(

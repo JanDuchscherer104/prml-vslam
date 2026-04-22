@@ -16,7 +16,6 @@ def stable_hash(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-# TODO: should be handle dby BaseConfig or via native BaseModel functionalities!
 def write_json(path: Path, payload: object) -> None:
     """Persist one JSON artifact with deterministic formatting."""
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -128,7 +128,10 @@ class RerunEventSink:
         """Observe one live runtime update without durable `RunEvent` wrapping."""
         resolved_payloads = self._resolve_update_payloads(update, payloads=payloads, payload_resolver=payload_resolver)
         if self._live_stream is not None:
-            self._live_policy.observe_update(self._live_stream, update, payloads=resolved_payloads)
+            try:
+                self._live_policy.observe_update(self._live_stream, update, payloads=resolved_payloads)
+            except Exception as exc:  # pragma: no cover - live viewer is best effort
+                _LOGGER.warning("Skipping live Rerun update for stage '%s': %s", update.stage_key.value, exc)
         if self._cache_ground_alignment_update(update):
             return
         if self._export_stream is not None:

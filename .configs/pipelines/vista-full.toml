@@ -31,7 +31,7 @@ enabled = true
     max_frames = 1500
 
     # Maximum number of keyframes the pose graph may hold.
-    max_view_num = 50
+    max_view_num = 400
 
     # Optical-flow magnitude threshold that triggers a new keyframe.
     # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
@@ -109,7 +109,7 @@ local_head_lifecycle = "ephemeral"
 # ------------------------------------------
 [visualization]
 # Whether to connect the Rerun live viewer via gRPC.
-connect_live_viewer = true
+connect_live_viewer = false
 
 # Whether one canonical repo-owned `.rrd` recording should be exported.
 export_viewer_rrd = true

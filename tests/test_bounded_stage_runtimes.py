@@ -67,7 +67,7 @@ def test_ground_alignment_runtime_returns_stage_result(
         GroundAlignmentRuntimeInput(request=request, run_paths=run_paths, slam=slam)
     )
 
-    assert result.stage_key is StageKey.GROUND_ALIGNMENT
+    assert result.stage_key is StageKey.GRAVITY_ALIGNMENT
     assert result.outcome.status is StageStatus.SKIPPED
     assert result.final_runtime_status.lifecycle_state is StageStatus.SKIPPED
     assert isinstance(result.payload, GroundAlignmentMetadata)

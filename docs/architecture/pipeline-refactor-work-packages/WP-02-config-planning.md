@@ -80,7 +80,6 @@ Implementation notes:
   keeping current executable keys and old-run inspection working in the first
   slice:
   - `ingest -> source`
-  - `ground.align -> align.ground`
   - `trajectory.evaluate -> evaluate.trajectory`
   - `reference.reconstruct -> reconstruction`
   - `cloud.evaluate -> evaluate.cloud`

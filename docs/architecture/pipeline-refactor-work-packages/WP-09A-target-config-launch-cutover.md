@@ -68,7 +68,7 @@ Implementation notes:
 - Compile `RunConfig -> RunPlan` directly. Do not delegate through
   `RunRequest.build()`.
 - Replace current executable stage keys with target public keys:
-  `source`, `align.ground`, `evaluate.trajectory`, `reconstruction`,
+  `source`, `gravity.align`, `evaluate.trajectory`, `reconstruction`,
   `evaluate.cloud`, and `evaluate.efficiency`.
 - Remove alias maps such as `CURRENT_TO_TARGET_STAGE_KEYS` only after every
   stage registry, plan, runtime, app, CLI, manifest, and test call site uses the
@@ -105,7 +105,7 @@ Required checks:
 - `uv run pytest tests/test_pipeline_config.py tests/test_main.py tests/test_app.py`
 - stale-symbol greps for `RunRequest`, `SourceSpec`, `StagePlacement`,
   `PlacementPolicy`, `StageDefinition`, `StageAvailability`, `ingest`,
-  `ground.align`, `trajectory.evaluate`, and `reference.reconstruct`
+  `gravity.align`, `trajectory.evaluate`, and `reference.reconstruct`
 - `make lint`
 - `git diff --check`
 
