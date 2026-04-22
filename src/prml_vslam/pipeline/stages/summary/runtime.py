@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from prml_vslam.pipeline.contracts.provenance import StageManifest, StageStatus
+from prml_vslam.interfaces.slam import ArtifactRef
+from prml_vslam.pipeline.contracts.events import StageOutcome
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import project_summary
+from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
 from prml_vslam.pipeline.stages.summary.contracts import SummaryRuntimeInput
@@ -53,7 +55,7 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
             }
         )
         try:
-            summary, stage_manifests, outcome = project_summary(
+            summary, stage_manifests, outcome = _project_summary(
                 request=input_payload.request,
                 plan=input_payload.plan,
                 run_paths=input_payload.run_paths,
@@ -84,6 +86,53 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
         )
         self._status = result.final_runtime_status
         return result
+
+
+def _project_summary(
+    *,
+    request,
+    plan,
+    run_paths,
+    stage_outcomes: list[StageOutcome],
+) -> tuple[RunSummary, list[StageManifest], StageOutcome]:
+    """Project persisted provenance from terminal stage outcomes."""
+    stage_manifests = [
+        StageManifest(
+            stage_id=outcome.stage_key,
+            config_hash=outcome.config_hash,
+            input_fingerprint=outcome.input_fingerprint,
+            output_paths={name: artifact.path for name, artifact in outcome.artifacts.items()},
+            status=outcome.status,
+        )
+        for outcome in stage_outcomes
+    ]
+    summary = RunSummary(
+        run_id=plan.run_id,
+        artifact_root=plan.artifact_root,
+        stage_status={manifest.stage_id: manifest.status for manifest in stage_manifests},
+    )
+    write_json(run_paths.summary_path, summary)
+    write_json(run_paths.stage_manifests_path, stage_manifests)
+    summary_outcome = StageOutcome(
+        stage_key=StageKey.SUMMARY,
+        status=StageStatus.COMPLETED,
+        config_hash=stable_hash({"experiment_name": request.experiment_name, "mode": request.mode.value}),
+        input_fingerprint=stable_hash(stage_outcomes),
+        artifacts={
+            "run_summary": ArtifactRef(
+                path=run_paths.summary_path,
+                kind="json",
+                fingerprint=stable_hash(summary),
+            ),
+            "stage_manifests": ArtifactRef(
+                path=run_paths.stage_manifests_path,
+                kind="json",
+                fingerprint=stable_hash(stage_manifests),
+            ),
+        },
+        metrics={"stage_count": len(stage_outcomes)},
+    )
+    return summary, stage_manifests, summary_outcome
 
 
 __all__ = ["SummaryRuntime", "SummaryRuntimeInput"]

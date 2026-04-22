@@ -1,80 +1,12 @@
-"""Pure helpers for summary projection and stable artifact serialization.
-
-These helpers turn executed :class:`StageOutcome` values into durable pipeline
-provenance without reaching back into runtime actors. They are intentionally
-side-effect light and deterministic apart from the explicit JSON writes they
-perform, which makes this module the final durable handoff from runtime
-execution into persisted summaries.
-"""
+"""Shared stable artifact serialization helpers."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from prml_vslam.interfaces.slam import ArtifactRef
-from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
-from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.utils import BaseConfig, RunArtifactPaths
-
-if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.plan import RunPlan
-    from prml_vslam.pipeline.contracts.request import RunRequest
-
-
-def project_summary(
-    *,
-    request: RunRequest,
-    plan: RunPlan,
-    run_paths: RunArtifactPaths,
-    stage_outcomes: list[StageOutcome],
-) -> tuple[RunSummary, list[StageManifest], StageOutcome]:
-    """Project persisted provenance from terminal stage outcomes.
-
-    Returns:
-        The run-level summary, the per-stage manifests derived from the passed
-        outcomes, and the summary stage's own :class:`StageOutcome`.
-    """
-    stage_manifests = [
-        StageManifest(
-            stage_id=outcome.stage_key,
-            config_hash=outcome.config_hash,
-            input_fingerprint=outcome.input_fingerprint,
-            output_paths={name: artifact.path for name, artifact in outcome.artifacts.items()},
-            status=outcome.status,
-        )
-        for outcome in stage_outcomes
-    ]
-    summary = RunSummary(
-        run_id=plan.run_id,
-        artifact_root=plan.artifact_root,
-        stage_status={manifest.stage_id: manifest.status for manifest in stage_manifests},
-    )
-    write_json(run_paths.summary_path, summary)
-    write_json(run_paths.stage_manifests_path, stage_manifests)
-    summary_outcome = StageOutcome(
-        stage_key=StageKey.SUMMARY,
-        status=StageStatus.COMPLETED,
-        config_hash=stable_hash({"experiment_name": request.experiment_name, "mode": request.mode.value}),
-        input_fingerprint=stable_hash(stage_outcomes),
-        artifacts={
-            "run_summary": ArtifactRef(
-                path=run_paths.summary_path,
-                kind="json",
-                fingerprint=stable_hash(summary),
-            ),
-            "stage_manifests": ArtifactRef(
-                path=run_paths.stage_manifests_path,
-                kind="json",
-                fingerprint=stable_hash(stage_manifests),
-            ),
-        },
-        metrics={"stage_count": len(stage_outcomes)},
-    )
-    return summary, stage_manifests, summary_outcome
+from prml_vslam.utils import BaseConfig
 
 
 def stable_hash(payload: object) -> str:
@@ -92,7 +24,6 @@ def write_json(path: Path, payload: object) -> None:
 
 
 __all__ = [
-    "project_summary",
     "stable_hash",
     "write_json",
 ]

@@ -26,7 +26,6 @@ from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import (
-    backend_config_payload,
     slam_artifacts_map,
     visualization_artifact_map,
 )
@@ -175,7 +174,7 @@ class SlamStageRuntime(
                 input_payload.sequence_manifest,
                 input_payload.benchmark_inputs,
                 input_payload.request.benchmark.trajectory.baseline_source,
-                backend_config=backend_config_payload(input_payload.request),
+                backend_config=input_payload.request.slam.backend,
                 output_policy=input_payload.request.slam.outputs,
                 artifact_root=input_payload.plan.artifact_root,
             )
@@ -202,7 +201,7 @@ class SlamStageRuntime(
             )
         self._session = backend.start_session(
             session_init=input_payload.session_init,
-            backend_config=backend_config_payload(input_payload.request),
+            backend_config=input_payload.request.slam.backend,
             output_policy=input_payload.request.slam.outputs,
             artifact_root=input_payload.plan.artifact_root,
         )

@@ -11,7 +11,7 @@ from pytransform3d.transformations import transform, vectors_to_points
 from prml_vslam.benchmark import ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.ingest import ReferenceCloudRef
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, Console
 from prml_vslam.utils.geometry import write_point_cloud_ply
 
 from .advio_loading import load_advio_trajectory
@@ -21,6 +21,7 @@ _DEFAULT_POINT_STRIDE = 8
 _ALIGNMENT_MAX_DIFF_S = 0.02
 _MIN_ALIGNMENT_PAIRS = 3
 _GT_WORLD_FRAME = "advio_gt_world"
+_CONSOLE = Console(__name__).child("tango_reference_clouds")
 
 
 class TangoCloudMetadata(BaseData):
@@ -86,13 +87,22 @@ def build_advio_tango_reference_clouds(
         if trajectory_path is None or not trajectory_path.exists():
             continue
         native_frame = f"advio_{source.value}_world"
-        source_trajectory = load_advio_trajectory(trajectory_path)
-        points_xyz_source, payloads_used = load_bounded_tango_point_clouds(
-            index_path=tango_point_cloud_index_path,
-            trajectory=source_trajectory,
-            max_reference_points=max_reference_points,
-            point_stride=point_stride,
-        )
+        try:
+            source_trajectory = load_advio_trajectory(trajectory_path)
+            points_xyz_source, payloads_used = load_bounded_tango_point_clouds(
+                index_path=tango_point_cloud_index_path,
+                trajectory=source_trajectory,
+                max_reference_points=max_reference_points,
+                point_stride=point_stride,
+            )
+        except ValueError as exc:
+            _CONSOLE.warning(
+                "Skipping invalid optional ADVIO %s reference cloud trajectory '%s': %s",
+                source.value,
+                trajectory_path,
+                exc,
+            )
+            continue
         if len(points_xyz_source) == 0:
             continue
         refs.append(

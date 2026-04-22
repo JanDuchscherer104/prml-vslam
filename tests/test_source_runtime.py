@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces.ingest import (
@@ -12,7 +16,13 @@ from prml_vslam.interfaces.ingest import (
     SourceStageOutput,
 )
 from prml_vslam.pipeline.contracts.provenance import StageStatus
-from prml_vslam.pipeline.contracts.request import RunRequest, VideoSourceSpec
+from prml_vslam.pipeline.contracts.request import (
+    DatasetSourceSpec,
+    PipelineMode,
+    RunRequest,
+    SlamStageConfig,
+    VideoSourceSpec,
+)
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.source.config import (
     AdvioSourceConfig,
@@ -20,7 +30,7 @@ from prml_vslam.pipeline.stages.source.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.pipeline.stages.source.runtime import SourceRuntime, SourceRuntimeInput
+from prml_vslam.pipeline.stages.source.runtime import SourceRuntime, SourceRuntimeInput, _materialize_manifest
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 
@@ -100,6 +110,196 @@ def test_source_runtime_preserves_benchmark_inputs_and_artifacts(tmp_path: Path)
     assert run_paths.benchmark_inputs_path.exists()
     assert "benchmark_inputs" in result.outcome.artifacts
     assert "reference_tum:ground_truth" in result.outcome.artifacts
+
+
+def test_source_runtime_materialization_reuses_extraction_cache(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "artifacts")
+    run_paths.input_frames_dir.mkdir(parents=True, exist_ok=True)
+    video_path = tmp_path / "captures" / "demo.mp4"
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.write_bytes(b"")
+    (run_paths.input_frames_dir / "000000.png").write_bytes(b"png")
+    (run_paths.input_frames_dir / ".ingest_metadata.json").write_text(
+        f'{{"video_path": "{video_path.resolve()}", "frame_stride": 1, "max_frames": null}}',
+        encoding="utf-8",
+    )
+    request = RunRequest(
+        experiment_name="ingest-cache",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=VideoSourceSpec(video_path=video_path, frame_stride=1),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+
+    manifest = _materialize_manifest(
+        request=request,
+        prepared_manifest=SequenceManifest(sequence_id="ingest-cache", video_path=video_path),
+        run_paths=run_paths,
+    )
+
+    assert manifest.rgb_dir == run_paths.input_frames_dir.resolve()
+
+
+def test_source_runtime_materialization_normalizes_tum_rgbd_timestamps(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "artifacts")
+    rgb_dir = tmp_path / "rgb"
+    rgb_dir.mkdir(parents=True)
+    timestamps_path = tmp_path / "rgb.txt"
+    timestamps_path.write_text(
+        "\n".join(
+            [
+                "# color images",
+                "# timestamp filename",
+                "0.000000000 rgb/000000.png",
+                "0.200000000 rgb/000001.png",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    request = RunRequest(
+        experiment_name="tum-ingest",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_room"),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+
+    manifest = _materialize_manifest(
+        request=request,
+        prepared_manifest=SequenceManifest(
+            sequence_id="freiburg1_room",
+            rgb_dir=rgb_dir,
+            timestamps_path=timestamps_path,
+        ),
+        run_paths=run_paths,
+    )
+
+    assert manifest.timestamps_path == run_paths.input_timestamps_path.resolve()
+    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
+
+
+def test_source_runtime_materialization_normalizes_advio_csv_timestamps(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "artifacts")
+    rgb_dir = tmp_path / "rgb"
+    rgb_dir.mkdir(parents=True)
+    timestamps_path = tmp_path / "frames.csv"
+    timestamps_path.write_text("0.000000000,1\n0.100000000,2\n", encoding="utf-8")
+    request = RunRequest(
+        experiment_name="advio-ingest",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-15",
+            dataset_serving={
+                "dataset_id": "advio",
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
+        ),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+
+    manifest = _materialize_manifest(
+        request=request,
+        prepared_manifest=SequenceManifest(
+            sequence_id="advio-15",
+            rgb_dir=rgb_dir,
+            timestamps_path=timestamps_path,
+        ),
+        run_paths=run_paths,
+    )
+
+    assert manifest.timestamps_path == run_paths.input_timestamps_path.resolve()
+    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 100_000_000]}
+
+
+def test_source_runtime_materialization_applies_advio_video_frame_stride(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "artifacts")
+    video_path = tmp_path / "advio" / "iphone" / "frames.mov"
+    video_path.parent.mkdir(parents=True)
+    video_path.write_bytes(b"video")
+    timestamps_path = tmp_path / "advio" / "iphone" / "frames.csv"
+    timestamps_path.write_text(
+        "0.000000000,0\n0.100000000,1\n0.200000000,2\n0.300000000,3\n",
+        encoding="utf-8",
+    )
+    request = RunRequest(
+        experiment_name="advio-video-ingest",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(
+            dataset_id="advio",
+            sequence_id="advio-15",
+            frame_stride=3,
+            dataset_serving={
+                "dataset_id": "advio",
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
+        ),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+    calls: list[dict[str, object]] = []
+
+    def fake_extract_video_frames(**kwargs):
+        calls.append(kwargs)
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "000000.png").write_bytes(b"png")
+        (output_dir / "000001.png").write_bytes(b"png")
+        return SimpleNamespace(rgb_dir=output_dir.resolve(), timestamps_ns=[0, 300_000_000])
+
+    monkeypatch.setattr("prml_vslam.pipeline.stages.source.runtime.extract_video_frames", fake_extract_video_frames)
+
+    manifest = _materialize_manifest(
+        request=request,
+        prepared_manifest=SequenceManifest(
+            sequence_id="advio-15",
+            video_path=video_path,
+            timestamps_path=timestamps_path,
+        ),
+        run_paths=run_paths,
+    )
+
+    assert calls[0]["frame_stride"] == 3
+    assert manifest.rgb_dir == run_paths.input_frames_dir.resolve()
+    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    assert payload == {"frame_stride": 3, "timestamps_ns": [0, 300_000_000]}
+
+
+def test_source_runtime_materialization_does_not_double_sample_dataset_timestamps(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "artifacts")
+    rgb_dir = tmp_path / "rgb"
+    rgb_dir.mkdir(parents=True)
+    timestamps_path = tmp_path / "sampled-rgb.txt"
+    timestamps_path.write_text("0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n", encoding="utf-8")
+    request = RunRequest(
+        experiment_name="sampled-dataset-ingest",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source=DatasetSourceSpec(dataset_id="tum_rgbd", sequence_id="freiburg1_room", frame_stride=2),
+        slam=SlamStageConfig(backend={"kind": "mock"}),
+    )
+
+    manifest = _materialize_manifest(
+        request=request,
+        prepared_manifest=SequenceManifest(
+            sequence_id="freiburg1_room",
+            rgb_dir=rgb_dir,
+            timestamps_path=timestamps_path,
+        ),
+        run_paths=run_paths,
+    )
+
+    payload = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
 
 
 def test_video_source_config_constructs_video_adapter(tmp_path: Path) -> None:

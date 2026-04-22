@@ -13,9 +13,7 @@ import ray
 
 from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
-from prml_vslam.methods.config_contracts import SlamBackendConfig
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions
 
@@ -105,11 +103,6 @@ def visualization_artifact_map(visualization: VisualizationArtifacts | None) -> 
     return artifacts
 
 
-def backend_config_payload(request: RunRequest) -> SlamBackendConfig:
-    """Build the executable backend-config model expected by current backends."""
-    return request.slam.backend
-
-
 def clean_actor_options(options: RayActorOptions) -> RayActorOptions:
     """Remove empty Ray actor options before `.options(...)`."""
     return {key: value for key, value in options.items() if value is not None and value != {}}
@@ -127,7 +120,6 @@ __all__ = [
     "HANDLE_LIMIT",
     "HandlePayload",
     "artifact_ref",
-    "backend_config_payload",
     "clean_actor_options",
     "coordinator_actor_name",
     "put_array_handle",
