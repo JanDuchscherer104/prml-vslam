@@ -208,7 +208,6 @@ flowchart TB
         ExecutionConfig["StageExecutionConfig"]
         Resources["ResourceSpec<br/>num_cpus, num_gpus,<br/>memory_bytes, custom_resources"]
         Placement["PlacementConstraint<br/>node_ip_address,<br/>node_labels, affinity"]
-        Retry["RetryPolicy<br/>max_restarts,<br/>max_task_retries"]
         Telemetry["StageTelemetryConfig<br/>progress, queue, latency,<br/>throughput/FPS, sampling"]
         RuntimeStatus["StageRuntimeStatus"]
         StageResult["StageResult"]
@@ -235,7 +234,6 @@ flowchart TB
     StageConfig --> ExecutionConfig
     ExecutionConfig --> Resources
     ExecutionConfig --> Placement
-    ExecutionConfig --> Retry
     StageConfig --> Telemetry
     BaseProtocol --> RuntimeStatus
     OfflineProtocol --> StageResult
@@ -300,7 +298,8 @@ classDiagram
     class StageConfig {
         +stage_key
         +enabled
-        +runtime_policy
+        +execution
+        +telemetry
         +cleanup
         +availability(context)
         +declared_outputs(paths)
@@ -440,7 +439,8 @@ classDiagram
     class StageConfig {
         +stage_key
         +enabled
-        +runtime_policy
+        +execution
+        +telemetry
         +cleanup
         +availability()
         +declared_outputs()
@@ -476,15 +476,9 @@ classDiagram
         +mode
     }
 
-    class StageRuntimePolicy {
-        +execution
-        +telemetry
-    }
-
     class StageExecutionConfig {
         +resources
         +placement
-        +retries
         +runtime_env
     }
 
@@ -501,11 +495,6 @@ classDiagram
         +affinity
     }
 
-    class RetryPolicy {
-        +max_restarts
-        +max_task_retries
-    }
-
     class StageTelemetryConfig {
         +emit_progress
         +emit_queue_metrics
@@ -516,12 +505,10 @@ classDiagram
 
     RunConfig --> StageBundle
     StageBundle --> StageConfig
-    StageConfig --> StageRuntimePolicy
-    StageRuntimePolicy --> StageExecutionConfig
-    StageRuntimePolicy --> StageTelemetryConfig
+    StageConfig --> StageExecutionConfig
+    StageConfig --> StageTelemetryConfig
     StageExecutionConfig --> ResourceSpec
     StageExecutionConfig --> PlacementConstraint
-    StageExecutionConfig --> RetryPolicy
     SourceStageConfig --> SourceBackendConfig
     SlamStageConfig --> BackendConfig
     ReconstructionStageConfig --> ReconstructionBackendConfig
@@ -538,6 +525,12 @@ Config/factory boundary:
 
 - `RunConfig`, `StageConfig`, `SourceStageConfig`, and `SlamStageConfig`
   validate and describe stage policy. They are not runtime factories.
+- `StageConfig` owns `execution`, `telemetry`, and `cleanup` directly. Do not
+  add a separate runtime-policy wrapper unless it gains independent semantics
+  beyond grouping fields.
+- Do not add a public retry DTO in the first target slice. Current Ray
+  retry knobs remain backend/runtime implementation details until the project
+  needs a repo-level retry contract.
 - `BackendConfig` and `SourceBackendConfig` variants may implement
   `FactoryConfig.setup_target()` because they construct domain/source
   implementation targets, not pipeline stage runtimes.
@@ -1070,7 +1063,9 @@ conceptual layer:
 | `StageProgress` | collapse into `StageRuntimeStatus.progress` | Too narrow to carry queue, latency, throughput, status, and resource state. |
 | `BackendNoticeReceived` | remove from durable target path | Method telemetry should travel through `StageRuntimeUpdate` to live projection and Rerun, not durable JSONL. |
 | `PacketObserved` and `FramePacketSummary` | make live-update payloads | Packet telemetry is live-only unless capture becomes a public durable stage. |
-| `StageDefinition` | remove or keep only as migration scaffolding | It currently wraps `StageKey`; stage configs and `RunPlanStage` should own meaningful planning metadata. |
+| `StageProgressed` | remove from target `RunEvent` | Progress belongs in `StageRuntimeStatus` or `StageRuntimeUpdate`, not durable provenance. |
+| `StageDefinition` | remove | It currently wraps `StageKey`; stage configs and `RunPlanStage` should own meaningful planning metadata. |
+| separate stage availability DTO | remove | Availability collapses into `RunPlanStage.available` and `RunPlanStage.availability_reason`; do not keep a separate migration DTO. |
 
 ### Collapse
 
@@ -1078,7 +1073,7 @@ conceptual layer:
 | --- | --- |
 | `StageCompletionPayload`, rich `StageCompleted` fields, and `RuntimeExecutionState` | `StageResult` plus keyed result store; `StageCompleted` carries only durable `StageOutcome` and artifact references. |
 | `ArrayHandle`, `PreviewHandle`, and `BlobHandle` | one `TransientPayloadRef` with payload kind, media type, shape, dtype, size, and metadata. |
-| `RunSnapshot.sequence_manifest`, `slam`, `ground_alignment`, `summary`, and future top-level stage fields | keyed maps of `StageOutcome`, artifact refs, `StageRuntimeStatus`, and transient live refs, with optional convenience views only when the app needs them. |
+| `RunSnapshot.sequence_manifest`, `slam`, `ground_alignment`, `summary`, `stage_status`, and future top-level stage fields | keyed maps of `StageOutcome`, artifact refs, `StageRuntimeStatus`, and transient live refs; derive display status at read time instead of storing a third status map. |
 | `StageManifest`, `RunSummary.stage_status`, and `StageOutcome` | keep `StageOutcome` canonical and derive manifests/summaries from terminal outcomes. |
 | `BackendEvent` plus future domain event envelopes | domain-owned semantic event payloads carried by `StageRuntimeUpdate`; do not wrap them in durable pipeline telemetry events by default. |
 | `SourceSpec`, `OfflineSourceResolver`, and streaming source construction helpers | `SourceStageConfig` plus `SourceBackendConfig` variants and `SourceRuntime`. |
@@ -1090,7 +1085,7 @@ conceptual layer:
 | --- | --- |
 | `RunRequest` | `RunConfig`, the persisted declarative root. |
 | `SourceSpec` | `SourceBackendConfig` under `SourceStageConfig`; legacy request variants are migration input. |
-| `StagePlacement` / `PlacementPolicy` | `StageExecutionConfig`, `ResourceSpec`, `PlacementConstraint`, and `RetryPolicy`. |
+| `StagePlacement` / `PlacementPolicy` | `StageExecutionConfig`, `ResourceSpec`, and `PlacementConstraint`; current Ray retry knobs stay backend/runtime implementation details. |
 | `reference.reconstruct` stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants. |
 | `EvaluationArtifact` | `TrajectoryEvaluationArtifact` when dense-cloud and efficiency artifacts become first-class. |
 | `ArtifactRef` | move out of `interfaces.slam` to a generic artifact contract owner. |
@@ -1118,8 +1113,8 @@ overlap:
 
 - `StageResult`: canonical internal runtime completion shape
 - `StageRuntimeStatus`: unified live status/progress/throughput/resource DTO
-- `StageRuntimeUpdate`: live update envelope for semantic events,
-  visualization intents, transient refs, typed payloads, and status
+- `StageRuntimeUpdate`: live update envelope for domain-owned semantic event
+  DTOs, sink-facing visualization items, and runtime status
 - `TransientPayloadRef`: backend-agnostic reference to live bulk payloads
 - private stage input/output wrappers for runtime call boundaries only
 
@@ -1198,14 +1193,12 @@ classDiagram
         +timestamp_ns
         +semantic_events
         +visualizations
-        +payload_refs
         +runtime_status
     }
 
     class DomainStageEvent {
-        <<domain-owned StrEnum + payload>>
-        +event_kind
-        +payload
+        <<conceptual label>>
+        domain_event_dtos
     }
 
     class VisualizationItem {
@@ -1240,8 +1233,8 @@ classDiagram
 
     StageRuntimeUpdate --> DomainStageEvent
     StageRuntimeUpdate --> VisualizationItem
-    StageRuntimeUpdate --> TransientPayloadRef
     VisualizationItem --> VisualizationIntent
+    VisualizationItem --> TransientPayloadRef
     StageRuntimeUpdate --> LiveSnapshotProjection
     VisualizationItem --> RerunSink
     StageResult --> RunEvent
@@ -1256,9 +1249,11 @@ Rules:
 - `StageRuntimeUpdate` remains the live observer feed. A stage may emit zero,
   one, or many updates during execution or near completion; these updates may
   be dropped by observers without invalidating stage correctness.
-- Stage runtimes may return domain-owned StrEnum semantic events, neutral
-  `VisualizationItem` values, transient payload refs, and runtime status in one
-  update.
+- Stage runtimes may return domain-owned semantic event DTOs, neutral
+  `VisualizationItem` values, and runtime status in one update.
+- `DomainStageEvent` is a conceptual diagram label for concrete domain-owned
+  event DTOs such as `SlamUpdate`; the pipeline does not add a generic
+  wrapper around them.
 - `VisualizationItem` is a small immutable sink-facing descriptor. It carries
   `VisualizationIntent`, role, payload refs by semantic slot, optional pose,
   intrinsics, frame/keyframe indices, coordinate-space hints such as
@@ -1267,6 +1262,10 @@ Rules:
   entity paths, timelines, styling, SDK objects, or SDK commands. Bulk images,
   depth maps, points, and meshes live behind `TransientPayloadRef` or durable
   artifact refs.
+- `StageRuntimeUpdate` does not carry a generic top-level payload-ref bucket.
+  `TransientPayloadRef`s live inside the object that gives them meaning:
+  `VisualizationItem.payload_refs` for sink-facing visual payloads, or
+  domain-owned semantic event DTO fields for nonvisual live payloads.
 - `StageRuntimeUpdate` is routed to live snapshot/status state and observer
   sinks. The exact first-slice routing can stay compatible with the current
   coordinator/Rerun sidecar structure; the target only requires that live
@@ -1291,28 +1290,42 @@ Rules:
   `[width, height]`; camera-local geometry stays under posed camera entities;
   world-space geometry stays under world-space entities; depth payloads use a
   `DepthImage(..., meter=...)` scale matching their native units.
-- Methods/backends should emit method-owned semantic data to the stage runtime
-  or actor; they should not emit pipeline `RunEvent`s directly.
+- Methods/backends should emit method-owned semantic data to the stage runtime;
+  they should not emit pipeline `RunEvent`s directly.
 - For the first implementation slice, support the current SLAM/Rerun surfaces:
   source RGB, model RGB, model depth, camera pose, pinhole, camera-local
   pointmap, tracking trajectory, keyframe history, and ground-plane overlay.
   A full modality system for reconstruction and future evaluation
   visualizations can remain deferred.
 
-## Event Durability Tiers
+## Durable Run Events And Live Updates
 
-The target event model has two explicit tiers:
+The target event model has two explicit channels:
 
-- durable semantic events: run submitted/started/stopped/failed, stage
-  started/completed/failed, artifact produced, summary persisted
-- ephemeral telemetry events: queue depth, instantaneous throughput/FPS, live
-  previews, transient payload refs, non-replayable live status
+- durable `RunEvent` values: run submitted/started/stopped/failed, stage
+  started/completed/failed, artifact produced, summary persisted, and other
+  replayable provenance records
+- ephemeral `StageRuntimeUpdate` values: queue depth, instantaneous
+  throughput/FPS, live previews, transient payload refs, non-replayable live
+  status, and observer-facing semantic events
 
 `RunSnapshot` can project from durable events plus live `StageRuntimeUpdate`
 values, but durable JSONL/provenance logs persist only durable lifecycle and
 artifact events. Live telemetry is in-memory and Rerun-facing only in the
 target architecture. It must not be required for scientific provenance or final
 benchmark summaries.
+
+Target `RunEvent` is a discriminated durable event union with common run/event
+identity fields such as `event_id`, `run_id`, `attempt_id`, and `ts_ns`.
+Durable variants include run lifecycle events, stage lifecycle events, artifact
+registration, terminal stage outcomes, and summary persistence. `StageCompleted`
+and `StageFailed` carry `StageOutcome`; they do not carry live payload refs,
+runtime telemetry, or full `StageResult` payloads.
+
+Current `RunEvent` telemetry variants such as `StageProgressed`,
+`PacketObserved`, and `BackendNoticeReceived` are migration contacts only. Once
+telemetry moves to `StageRuntimeUpdate`, `RunEvent` is durable-only and no tier
+discriminator is needed.
 
 ## Transient Payload Handles
 
@@ -1342,10 +1355,12 @@ classDiagram
         +read_payload(run_id, ref)
     }
 
-    class RunEvent
+    class VisualizationItem
+    class StageRuntimeUpdate
     class RunSnapshot
 
-    RunEvent --> TransientPayloadRef
+    VisualizationItem --> TransientPayloadRef
+    StageRuntimeUpdate --> VisualizationItem
     RunSnapshot --> TransientPayloadRef
     PipelineBackend --> PayloadResolver
     PayloadResolver --> TransientPayloadRef
@@ -1355,10 +1370,11 @@ Rules:
 
 - `TransientPayloadRef` is transport-safe metadata only.
 - Runtime backends own run-scoped resolution, eviction, and release semantics.
-- Live updates and snapshots may carry refs, but durable scientific artifacts remain
-  `ArtifactRef`s, not transient payload refs.
-- `TransientPayloadRef` may appear in live event buses, live snapshots, and
-  backend resolver APIs. It must not appear in manifests or summaries.
+- Live updates and snapshots may expose refs, but durable scientific artifacts
+  remain `ArtifactRef`s, not transient payload refs.
+- `TransientPayloadRef` may appear in `VisualizationItem.payload_refs`,
+  domain-owned live event DTOs, live snapshots, and backend resolver APIs. It
+  must not appear in durable `RunEvent`s, manifests, or summaries.
 - Read-after-eviction returns a typed not-found result rather than leaking a
   backend-specific error.
 - UI/app callers resolve payloads through the pipeline backend/service, never
@@ -1453,8 +1469,8 @@ SLAM migration contact points:
 ## Target Snapshot Shape
 
 `RunSnapshot` should be a generic keyed projection rather than a growing object
-with stage-specific top-level fields. Durable fields project from `RunEvent`s;
-live status, previews, and transient refs may also project from
+with stage-specific top-level fields. Durable fields project from durable
+`RunEvent`s; live status, previews, and transient refs may also project from
 `StageRuntimeUpdate` values that are not persisted to durable JSONL.
 
 ```mermaid
@@ -1463,21 +1479,47 @@ classDiagram
         +run_id
         +state
         +current_stage_key
-        +stage_status
         +stage_runtime_status
         +stage_outcomes
-        +artifacts
+        +artifact_refs
         +live_refs
         +last_event_id
     }
 
-    class StageOutcome
-    class StageRuntimeStatus
-    class StageStatus
-    class ArtifactRef
-    class TransientPayloadRef
+    class StageOutcome {
+        <<terminal provenance>>
+        +status
+        +config_hash
+        +input_fingerprint
+        +artifacts
+        +metrics
+        +error_message
+    }
 
-    RunSnapshot --> StageStatus
+    class StageRuntimeStatus {
+        <<live runtime status>>
+        +lifecycle_state
+        +progress
+        +queue_depth_optional
+        +throughput
+        +latency
+        +last_error
+    }
+
+    class ArtifactRef {
+        <<durable artifact>>
+        +path
+        +kind
+        +fingerprint
+    }
+
+    class TransientPayloadRef {
+        <<live-only payload ref>>
+        +handle_id
+        +payload_kind
+        +metadata
+    }
+
     RunSnapshot --> StageRuntimeStatus
     RunSnapshot --> StageOutcome
     RunSnapshot --> ArtifactRef
@@ -1486,8 +1528,14 @@ classDiagram
 
 Rules:
 
-- Stage status, runtime status, terminal outcomes, artifact refs, and live refs
-  are keyed by `StageKey`.
+- Runtime status, terminal outcomes, artifact refs, and live refs are keyed by
+  `StageKey`.
+- `stage_outcomes` and `stage_runtime_status` are canonical for per-stage state;
+  do not store a third `stage_status` map in the target snapshot.
+- UI and CLI derive display status at read time from terminal
+  `StageOutcome.status` when a terminal outcome exists, otherwise from live
+  `StageRuntimeStatus.lifecycle_state`, otherwise from plan availability and
+  current-stage context.
 - Top-level artifact indexes are derived convenience views over keyed stage
   outcome/artifact maps, not independent canonical state.
 - Keep only minimal convenience live-view fields if the app truly needs them.
@@ -1761,7 +1809,9 @@ classDiagram
     class StageConfig {
         +stage_key
         +enabled
-        +runtime_policy
+        +execution
+        +telemetry
+        +cleanup
     }
 
     class SlamStageConfig {
@@ -1910,10 +1960,11 @@ Specific target placement:
 
 Decision: output/update DTOs may expose neutral visualization items, but no
 DTO, stage runtime, or runtime proxy talks to the Rerun SDK.
-`StageRuntimeUpdate` carries domain-owned StrEnum events, visualization items,
-runtime status, and transient refs. The runtime driver routes those updates to
-live snapshot/status state and observer sinks; they do not need to become
-telemetry `RunEvent`s first. The Rerun sink logs only from
+`StageRuntimeUpdate` carries domain-owned semantic event DTOs, visualization items,
+and runtime status. Transient payload refs live inside visualization items or
+domain event DTO fields. The runtime driver routes those updates to live
+snapshot/status state and observer sinks; they do not need to become telemetry
+`RunEvent`s first. The Rerun sink logs only from
 `StageRuntimeUpdate.visualizations` plus resolved payload refs and remains the
 only SDK caller.
 
@@ -1969,16 +2020,17 @@ Target execution policy models:
 - `StageExecutionConfig`
 - `ResourceSpec`
 - `PlacementConstraint`
-- `RetryPolicy`
 - optional runtime environment tag
 
 Ray translation happens only in the Ray backend/runtime layer. Keep legacy
-`{"CPU": ..., "GPU": ...}` parsing only as a migration adapter if needed.
+`{"CPU": ..., "GPU": ...}` parsing and current Ray retry options only as
+migration adapters if needed.
 
 Reasoning: the loose-alias issue identified in
 [placement.py](../../src/prml_vslam/pipeline/placement.py#L16) is real. The
-target needs CPU, GPU, memory, custom resources, node/IP hints, restart policy,
-and task retry policy.
+target needs CPU, GPU, memory, custom resources, and node/IP hints. Do not add
+a public retry DTO until the project has a concrete repo-level retry
+requirement beyond Ray actor option translation.
 
 Migration contact points: [StagePlacement](../../src/prml_vslam/pipeline/contracts/request.py#L124),
 [actor_options_for_stage](../../src/prml_vslam/pipeline/placement.py#L22),
@@ -2112,16 +2164,15 @@ Migration contact points: [RunService](../../src/prml_vslam/pipeline/run_service
 
 ### Contract Additions
 
-- Add `StageConfig`, `StageRuntimePolicy`, `StageExecutionConfig`,
-  `ResourceSpec`, `PlacementConstraint`, `RetryPolicy`,
-  `StageTelemetryConfig`, `StageConfig.cleanup`, and `StageRuntimeStatus`
-  under pipeline-owned contracts.
+- Add `StageConfig`, `StageExecutionConfig`, `ResourceSpec`,
+  `PlacementConstraint`, `StageTelemetryConfig`, `StageConfig.cleanup`, and
+  `StageRuntimeStatus` under pipeline-owned contracts.
 - Add `StageResult` as the canonical runtime stage handoff.
 - Keep durable `StageCompleted` and `StageFailed` events centered on
   `StageOutcome`; do not persist full `StageResult` payloads.
 - Add `StageRuntimeUpdate` as the generic live-update envelope carrying
-  domain-owned StrEnum events, neutral visualization items, runtime status, and
-  transient payload refs.
+  domain-owned semantic event DTOs, neutral visualization items, and runtime
+  status.
 - Add `TransientPayloadRef` as the backend-agnostic transient payload handle.
 - Keep `RunSummary`, `StageManifest`, and `StageOutcome` as pipeline-owned
   generic provenance DTOs.
@@ -2215,7 +2266,7 @@ the next one starts:
 
 | Slice | Required acceptance tests |
 | --- | --- |
-| Contracts | `StageResult`, `StageRuntimeUpdate`, `StageRuntimeStatus`, `TransientPayloadRef`, runtime policy, resource config, and stage config parsing. |
+| Contracts | `StageResult`, `StageRuntimeUpdate`, `StageRuntimeStatus`, `TransientPayloadRef`, direct stage execution/telemetry config, resource config, and stage config parsing. |
 | Planning | diagnostic unavailable rows, fail-fast launch preflight, stage-key to config-section mapping, and `[stages.reconstruction]` variant selection. |
 | Runtime manager | hybrid-lazy construction, preflight without Ray allocation, lazy in-process/Ray-hosted runtime proxy creation, Ray task-ref tracking, and no direct coordinator construction path. |
 | Stage runner/store | `StageRunner` lifecycle success/failure paths, `StageResultStore` typed accessors, missing dependency errors, and stage config failure provenance. |
@@ -2231,9 +2282,9 @@ the next one starts:
 ## Recommended Implementation Order
 
 1. Add contracts only: `RunConfig`, `SourceStageConfig`, `StageConfig`,
-   `StageRuntimePolicy`, `StageExecutionConfig`, `StageRuntimeStatus`,
-   `StageRuntimeUpdate`, `StageResult`, `TransientPayloadRef`, minimal
-   private runtime-boundary DTOs, and reconstruction stage config variants.
+   `StageExecutionConfig`, `StageTelemetryConfig`, `StageRuntimeStatus`,
+   `StageRuntimeUpdate`, `StageResult`, `TransientPayloadRef`, minimal private
+   runtime-boundary DTOs, and reconstruction stage config variants.
 2. Update docs and inline issue comments to point to the new ownership decisions.
 3. Add source factory parity and local `SourceRuntime` without changing
    behavior; keep packet reading as an internal sidecar.
