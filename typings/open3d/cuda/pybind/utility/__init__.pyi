@@ -3,11 +3,34 @@ import numpy
 import typing
 import typing_extensions
 from . import random
-__all__: list[str] = ['Debug', 'DoubleVector', 'Error', 'Info', 'IntVector', 'Matrix3dVector', 'Matrix4dVector', 'Vector2dVector', 'Vector2iVector', 'Vector3dVector', 'Vector3iVector', 'Vector4iVector', 'VerbosityContextManager', 'VerbosityLevel', 'Warning', 'get_verbosity_level', 'random', 'reset_print_function', 'set_verbosity_level']
+
+__all__: list[str] = [
+    "Debug",
+    "DoubleVector",
+    "Error",
+    "Info",
+    "IntVector",
+    "Matrix3dVector",
+    "Matrix4dVector",
+    "Vector2dVector",
+    "Vector2iVector",
+    "Vector3dVector",
+    "Vector3iVector",
+    "Vector4iVector",
+    "VerbosityContextManager",
+    "VerbosityLevel",
+    "Warning",
+    "get_verbosity_level",
+    "random",
+    "reset_print_function",
+    "set_verbosity_level",
+]
+
 class DoubleVector:
     """
     Convert float64 numpy array of shape ``(n,)`` to Open3D format.
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -17,10 +40,8 @@ class DoubleVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> DoubleVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> DoubleVector:
-        ...
+    def __copy__(self) -> DoubleVector: ...
+    def __deepcopy__(self, arg0: dict) -> DoubleVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -31,43 +52,34 @@ class DoubleVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: DoubleVector) -> bool:
-        ...
+    def __eq__(self, arg0: DoubleVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> DoubleVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> float:
-        ...
+    def __getitem__(self, arg0: int) -> float: ...
     @typing.overload
-    def __init__(self, arg0: typing_extensions.Buffer) -> None:
-        ...
+    def __init__(self, arg0: typing_extensions.Buffer) -> None: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
     def __init__(self, arg0: DoubleVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[float]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: DoubleVector) -> bool:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[float]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: DoubleVector) -> bool: ...
     def __repr__(self) -> str:
         """
         Return the canonical string representation of this list.
         """
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: float) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: float) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: DoubleVector) -> None:
         """
@@ -113,10 +125,12 @@ class DoubleVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class IntVector:
     """
     Convert int32 numpy array of shape ``(n,)`` to Open3D format.
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -126,10 +140,8 @@ class IntVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> IntVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> IntVector:
-        ...
+    def __copy__(self) -> IntVector: ...
+    def __deepcopy__(self, arg0: dict) -> IntVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -140,43 +152,34 @@ class IntVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: IntVector) -> bool:
-        ...
+    def __eq__(self, arg0: IntVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> IntVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> int:
-        ...
+    def __getitem__(self, arg0: int) -> int: ...
     @typing.overload
-    def __init__(self, arg0: typing_extensions.Buffer) -> None:
-        ...
+    def __init__(self, arg0: typing_extensions.Buffer) -> None: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
     def __init__(self, arg0: IntVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[int]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: IntVector) -> bool:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[int]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: IntVector) -> bool: ...
     def __repr__(self) -> str:
         """
         Return the canonical string representation of this list.
         """
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: int) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: int) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: IntVector) -> None:
         """
@@ -222,10 +225,12 @@ class IntVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class Matrix3dVector:
     """
     Convert float64 numpy array of shape ``(n, 3, 3)`` to Open3D format.
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -235,10 +240,8 @@ class Matrix3dVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> Matrix3dVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> Matrix3dVector:
-        ...
+    def __copy__(self) -> Matrix3dVector: ...
+    def __deepcopy__(self, arg0: dict) -> Matrix3dVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -249,38 +252,29 @@ class Matrix3dVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: Matrix3dVector) -> bool:
-        ...
+    def __eq__(self, arg0: Matrix3dVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> Matrix3dVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> numpy.ndarray:
-        ...
+    def __getitem__(self, arg0: int) -> numpy.ndarray: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
     def __init__(self, arg0: Matrix3dVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[numpy.ndarray]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: Matrix3dVector) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[numpy.ndarray]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: Matrix3dVector) -> bool: ...
+    def __repr__(self) -> str: ...
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Matrix3dVector) -> None:
         """
@@ -326,10 +320,12 @@ class Matrix3dVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class Matrix4dVector:
     """
     Convert float64 numpy array of shape ``(n, 4, 4)`` to Open3D format.
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -339,10 +335,8 @@ class Matrix4dVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> Matrix4dVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> Matrix4dVector:
-        ...
+    def __copy__(self) -> Matrix4dVector: ...
+    def __deepcopy__(self, arg0: dict) -> Matrix4dVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -353,38 +347,29 @@ class Matrix4dVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: Matrix4dVector) -> bool:
-        ...
+    def __eq__(self, arg0: Matrix4dVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> Matrix4dVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> numpy.ndarray:
-        ...
+    def __getitem__(self, arg0: int) -> numpy.ndarray: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
     def __init__(self, arg0: Matrix4dVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[numpy.ndarray]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: Matrix4dVector) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[numpy.ndarray]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: Matrix4dVector) -> bool: ...
+    def __repr__(self) -> str: ...
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Matrix4dVector) -> None:
         """
@@ -430,10 +415,12 @@ class Matrix4dVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class Vector2dVector:
     """
     Convert float64 numpy array of shape ``(n, 2)`` to Open3D format.
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -443,10 +430,8 @@ class Vector2dVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> Vector2dVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> Vector2dVector:
-        ...
+    def __copy__(self) -> Vector2dVector: ...
+    def __deepcopy__(self, arg0: dict) -> Vector2dVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -457,41 +442,31 @@ class Vector2dVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: Vector2dVector) -> bool:
-        ...
+    def __eq__(self, arg0: Vector2dVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> Vector2dVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> numpy.ndarray:
-        ...
+    def __getitem__(self, arg0: int) -> numpy.ndarray: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
-    def __init__(self, arg0: numpy.ndarray) -> None:
-        ...
+    def __init__(self, arg0: numpy.ndarray) -> None: ...
     @typing.overload
     def __init__(self, arg0: Vector2dVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[numpy.ndarray]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: Vector2dVector) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[numpy.ndarray]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: Vector2dVector) -> bool: ...
+    def __repr__(self) -> str: ...
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Vector2dVector) -> None:
         """
@@ -537,10 +512,12 @@ class Vector2dVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class Vector2iVector:
     """
     Convert int32 numpy array of shape ``(n, 2)`` to Open3D format.
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -550,10 +527,8 @@ class Vector2iVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> Vector2iVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> Vector2iVector:
-        ...
+    def __copy__(self) -> Vector2iVector: ...
+    def __deepcopy__(self, arg0: dict) -> Vector2iVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -564,41 +539,31 @@ class Vector2iVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: Vector2iVector) -> bool:
-        ...
+    def __eq__(self, arg0: Vector2iVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> Vector2iVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> numpy.ndarray:
-        ...
+    def __getitem__(self, arg0: int) -> numpy.ndarray: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
-    def __init__(self, arg0: numpy.ndarray) -> None:
-        ...
+    def __init__(self, arg0: numpy.ndarray) -> None: ...
     @typing.overload
     def __init__(self, arg0: Vector2iVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[numpy.ndarray]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: Vector2iVector) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[numpy.ndarray]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: Vector2iVector) -> bool: ...
+    def __repr__(self) -> str: ...
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Vector2iVector) -> None:
         """
@@ -644,26 +609,28 @@ class Vector2iVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class Vector3dVector:
     """
     Convert float64 numpy array of shape ``(n, 3)`` to Open3D format.
-    
+
     Example usage
-    
+
     .. code-block:: python
-    
+
         import open3d
         import numpy as np
-    
+
         pcd = open3d.geometry.PointCloud()
         np_points = np.random.rand(100, 3)
-    
+
         # From numpy to Open3D
         pcd.points = open3d.utility.Vector3dVector(np_points)
-    
+
         # From Open3D to numpy
         np_points = np.asarray(pcd.points)
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -673,10 +640,8 @@ class Vector3dVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> Vector3dVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> Vector3dVector:
-        ...
+    def __copy__(self) -> Vector3dVector: ...
+    def __deepcopy__(self, arg0: dict) -> Vector3dVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -687,41 +652,31 @@ class Vector3dVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: Vector3dVector) -> bool:
-        ...
+    def __eq__(self, arg0: Vector3dVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> Vector3dVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> numpy.ndarray:
-        ...
+    def __getitem__(self, arg0: int) -> numpy.ndarray: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
-    def __init__(self, arg0: numpy.ndarray) -> None:
-        ...
+    def __init__(self, arg0: numpy.ndarray) -> None: ...
     @typing.overload
     def __init__(self, arg0: Vector3dVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[numpy.ndarray]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: Vector3dVector) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[numpy.ndarray]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: Vector3dVector) -> bool: ...
+    def __repr__(self) -> str: ...
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Vector3dVector) -> None:
         """
@@ -767,6 +722,7 @@ class Vector3dVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class Vector3iVector:
     """
     Convert int32 numpy array of shape ``(n, 3)`` to Open3D format..
@@ -804,6 +760,7 @@ class Vector3iVector:
         # From Open3D to numpy
         np_triangles = np.asarray(mesh.triangles)
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -813,10 +770,8 @@ class Vector3iVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> Vector3iVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> Vector3iVector:
-        ...
+    def __copy__(self) -> Vector3iVector: ...
+    def __deepcopy__(self, arg0: dict) -> Vector3iVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -827,41 +782,31 @@ class Vector3iVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: Vector3iVector) -> bool:
-        ...
+    def __eq__(self, arg0: Vector3iVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> Vector3iVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> numpy.ndarray:
-        ...
+    def __getitem__(self, arg0: int) -> numpy.ndarray: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
-    def __init__(self, arg0: numpy.ndarray) -> None:
-        ...
+    def __init__(self, arg0: numpy.ndarray) -> None: ...
     @typing.overload
     def __init__(self, arg0: Vector3iVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[numpy.ndarray]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: Vector3iVector) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[numpy.ndarray]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: Vector3iVector) -> bool: ...
+    def __repr__(self) -> str: ...
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Vector3iVector) -> None:
         """
@@ -907,10 +852,12 @@ class Vector3iVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class Vector4iVector:
     """
     Convert int numpy array of shape ``(n, 4)`` to Open3D format.
     """
+
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -920,10 +867,8 @@ class Vector4iVector:
         """
         Return true the container contains ``x``
         """
-    def __copy__(self) -> Vector4iVector:
-        ...
-    def __deepcopy__(self, arg0: dict) -> Vector4iVector:
-        ...
+    def __copy__(self) -> Vector4iVector: ...
+    def __deepcopy__(self, arg0: dict) -> Vector4iVector: ...
     @typing.overload
     def __delitem__(self, arg0: int) -> None:
         """
@@ -934,41 +879,31 @@ class Vector4iVector:
         """
         Delete list elements using a slice object
         """
-    def __eq__(self, arg0: Vector4iVector) -> bool:
-        ...
+    def __eq__(self, arg0: Vector4iVector) -> bool: ...
     @typing.overload
     def __getitem__(self, s: slice) -> Vector4iVector:
         """
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: int) -> numpy.ndarray:
-        ...
+    def __getitem__(self, arg0: int) -> numpy.ndarray: ...
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
-    def __init__(self, arg0: numpy.ndarray) -> None:
-        ...
+    def __init__(self, arg0: numpy.ndarray) -> None: ...
     @typing.overload
     def __init__(self, arg0: Vector4iVector) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, arg0: typing.Iterable) -> None:
-        ...
-    def __iter__(self) -> typing.Iterator[numpy.ndarray]:
-        ...
-    def __len__(self) -> int:
-        ...
-    def __ne__(self, arg0: Vector4iVector) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(self, arg0: typing.Iterable) -> None: ...
+    def __iter__(self) -> typing.Iterator[numpy.ndarray]: ...
+    def __len__(self) -> int: ...
+    def __ne__(self, arg0: Vector4iVector) -> bool: ...
+    def __repr__(self) -> str: ...
     @typing.overload
-    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None:
-        ...
+    def __setitem__(self, arg0: int, arg1: numpy.ndarray) -> None: ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Vector4iVector) -> None:
         """
@@ -1014,6 +949,7 @@ class Vector4iVector:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
+
 class VerbosityContextManager:
     """
     A context manager to temporally change the verbosity level of Open3D
@@ -1030,68 +966,56 @@ class VerbosityContextManager:
         """
         Create a VerbosityContextManager with a given VerbosityLevel
         """
+
 class VerbosityLevel:
     """
     Enum class for VerbosityLevel.
     """
+
     Debug: typing.ClassVar[VerbosityLevel]
     Error: typing.ClassVar[VerbosityLevel]
     Info: typing.ClassVar[VerbosityLevel]
     Warning: typing.ClassVar[VerbosityLevel]
     __members__: typing.ClassVar[dict[str, VerbosityLevel]]
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __ge__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __gt__(self, other: typing.Any) -> bool:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: int) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    def __le__(self, other: typing.Any) -> bool:
-        ...
-    def __lt__(self, other: typing.Any) -> bool:
-        ...
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: int) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
+    def __eq__(self, other: typing.Any) -> bool: ...
+    def __ge__(self, other: typing.Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __gt__(self, other: typing.Any) -> bool: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __init__(self, value: int) -> None: ...
+    def __int__(self) -> int: ...
+    def __le__(self, other: typing.Any) -> bool: ...
+    def __lt__(self, other: typing.Any) -> bool: ...
+    def __ne__(self, other: typing.Any) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, state: int) -> None: ...
+    def __str__(self) -> str: ...
     @property
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
     @property
-    def value(self) -> int:
-        ...
+    def value(self) -> int: ...
+
 def get_verbosity_level() -> VerbosityLevel:
     """
     Get global verbosity level of Open3D
-    
+
     Returns:
         open3d.cuda.pybind.utility.VerbosityLevel
     """
-def reset_print_function() -> None:
-    ...
+
+def reset_print_function() -> None: ...
 def set_verbosity_level(verbosity_level: VerbosityLevel) -> None:
     """
     Set global verbosity level of Open3D
-    
+
     Args:
         verbosity_level (open3d.cuda.pybind.utility.VerbosityLevel): Messages with equal or less than ``verbosity_level`` verbosity will be printed.
-    
+
     Returns:
         None
     """
+
 Debug: VerbosityLevel
 Error: VerbosityLevel
 Info: VerbosityLevel

@@ -1,7 +1,9 @@
 from __future__ import annotations
 import open3d.cuda.pybind.core
 import typing
-__all__: list[str] = ['NearestNeighborSearch']
+
+__all__: list[str] = ["NearestNeighborSearch"]
+
 class NearestNeighborSearch:
     """
     NearestNeighborSearch class for nearest neighbor search.
@@ -32,8 +34,9 @@ class NearestNeighborSearch:
 
 
     """
-    def __init__(self, dataset_points: open3d.cuda.pybind.core.Tensor, index_dtype: open3d.cuda.pybind.core.Dtype = ...) -> None:
-        ...
+    def __init__(
+        self, dataset_points: open3d.cuda.pybind.core.Tensor, index_dtype: open3d.cuda.pybind.core.Dtype = ...
+    ) -> None: ...
     def fixed_radius_index(self, radius: float | None = None) -> bool:
         """
         Initialize the index for fixed-radius search.
@@ -47,7 +50,9 @@ class NearestNeighborSearch:
         Returns:
             True on success.
         """
-    def fixed_radius_search(self, query_points: open3d.cuda.pybind.core.Tensor, radius: float, sort: bool | None = None) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
+    def fixed_radius_search(
+        self, query_points: open3d.cuda.pybind.core.Tensor, radius: float, sort: bool | None = None
+    ) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
         """
         Perform fixed-radius search.
 
@@ -115,7 +120,9 @@ class NearestNeighborSearch:
         Returns:
             True on success.
         """
-    def hybrid_search(self, query_points: open3d.cuda.pybind.core.Tensor, radius: float, max_knn: int) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
+    def hybrid_search(
+        self, query_points: open3d.cuda.pybind.core.Tensor, radius: float, max_knn: int
+    ) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
         """
         Perform hybrid search.
 
@@ -148,7 +155,9 @@ class NearestNeighborSearch:
         Returns:
             True on success.
         """
-    def knn_search(self, query_points: open3d.cuda.pybind.core.Tensor, knn: int) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
+    def knn_search(
+        self, query_points: open3d.cuda.pybind.core.Tensor, knn: int
+    ) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
         """
         Perform knn search.
 
@@ -192,7 +201,9 @@ class NearestNeighborSearch:
         Returns:
                 True on success.
         """
-    def multi_radius_search(self, query_points: open3d.cuda.pybind.core.Tensor, radii: open3d.cuda.pybind.core.Tensor) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
+    def multi_radius_search(
+        self, query_points: open3d.cuda.pybind.core.Tensor, radii: open3d.cuda.pybind.core.Tensor
+    ) -> tuple[open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor, open3d.cuda.pybind.core.Tensor]:
         """
         Perform multi-radius search. Each query point has an independent radius.
 
