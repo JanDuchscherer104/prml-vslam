@@ -596,6 +596,32 @@ intended layering. Either handles/transport base need to be promoted to a
 shared runtime contract, or SLAM streaming notice DTOs should remain
 pipeline/method boundary contracts rather than `interfaces`.
 
+## Artifact Handling Gaps
+
+Recent offline ViSTA runs expose several artifact-handling gaps that are not
+runtime failures, but do make inspection and evaluation ambiguous:
+
+- ViSTA preserves important native arrays such as `intrinsics.npy`,
+  `confs.npz`, `scales.npy`, `trajectory.npy`, and `view_graph.npz`, but they
+  currently remain mostly raw `SlamArtifacts.extras` rather than typed,
+  raster/frame-annotated repo artifacts.
+- Estimated ViSTA intrinsics are not standardized. Native `intrinsics.npy`
+  represents per-keyframe camera models in the ViSTA model raster, while
+  `input/intrinsics.yaml` represents the source TUM RGB-D raster. Directly
+  comparing those values is misleading without persisted source-to-model
+  preprocessing metadata.
+- The source-to-model raster relationship used by the upstream image-only
+  crop/resize path is documented, but not persisted as a run artifact. This
+  blocks reliable ground-truth intrinsics projection into ViSTA model space.
+- Normalizing `native/pointcloud.ply` into `slam/point_cloud.ply` currently
+  risks losing native RGB colors when the generic writer only persists XYZ.
+  Generic color-preserving PLY IO should be a shared helper, while the decision
+  to preserve ViSTA colors belongs in the ViSTA artifact normalizer.
+- `summary/run-events.jsonl` can accumulate repeated attempts for the same run
+  id when a run root is reused. The final summary may look clean while older
+  failed attempts remain in the event log, so run/attempt inspection should be
+  pipeline-owned and explicit.
+
 ## Current Redundancies
 
 | Redundant / overlapping concept | Current locations | Problem |

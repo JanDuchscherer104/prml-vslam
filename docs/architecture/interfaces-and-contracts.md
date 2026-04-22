@@ -31,6 +31,37 @@ contract split after the offline/streaming refactor.
     the CLI remains responsible for auto-launching and supervising external
     viewer subprocesses
 
+## Artifact And Raster Ownership
+
+- `prml_vslam.interfaces.camera`
+  - owns shared camera datamodels such as `CameraIntrinsics`
+  - owns reusable camera-intrinsics artifact DTOs, such as a future
+    `CameraIntrinsicsSeries`, when multiple packages consume the same
+    per-frame or per-keyframe camera-model semantics
+  - owns pure camera-model transforms such as crop/resize intrinsics updates
+    when they are independent of a method's workflow policy
+- `prml_vslam.methods.vista`
+  - owns ViSTA-native artifact normalization, including conversion of native
+    `intrinsics.npy` into typed repo artifacts
+  - owns ViSTA preprocessing metadata, such as the source-raster to 224x224
+    model-raster relationship needed to interpret estimated intrinsics
+- `prml_vslam.eval`
+  - owns typed intrinsics-comparison results if those residuals or statistics
+    become persisted diagnostics or benchmark artifacts
+  - no `evaluate.calibration` stage is implied until calibration metrics become
+    a planned pipeline stage
+- `prml_vslam.utils`
+  - owns only generic low-level helpers such as color-preserving PLY IO or
+    serialization primitives
+  - does not own method-native semantics, artifact policy, or benchmark
+    comparison results
+- `prml_vslam.visualization`
+  - owns Rerun validation DTOs and validation-bundle generation for `.rrd`
+    viewer artifacts
+- `prml_vslam.plotting`
+  - owns figures only; it must not decide artifact semantics or raster-space
+    policy
+
 ## Pipeline Center
 
 The architectural center is an artifact-first pipeline with one public
