@@ -13,7 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from prml_vslam.alignment.contracts import AlignmentConfig
 from prml_vslam.benchmark import (
@@ -64,6 +64,8 @@ class PipelineMode(StrEnum):
 class VideoSourceSpec(FrameSelectionConfig):
     """Describe one raw video source that the pipeline should normalize offline."""
 
+    model_config = ConfigDict(extra="forbid")
+
     video_path: Path
     """Path to the input video that will be processed."""
 
@@ -77,6 +79,8 @@ class DatasetSourceSpec(FrameSelectionConfig):
     actual normalization to :mod:`prml_vslam.datasets` and source resolution in
     :mod:`prml_vslam.pipeline.source_resolver`.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     dataset_id: DatasetId
     """Dataset family that owns the sequence."""
@@ -104,6 +108,8 @@ class DatasetSourceSpec(FrameSelectionConfig):
 # SourceStageConfig plus IO-owned Record3D transport config.
 class Record3DLiveSourceSpec(BaseConfig):
     """Describe one live Record3D source selected for streaming execution."""
+
+    model_config = ConfigDict(extra="forbid")
 
     source_id: Literal["record3d"] = "record3d"
     """Stable live-source identifier for Record3D-backed runs."""

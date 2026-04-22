@@ -141,6 +141,17 @@ def _shutdown_rerun_viewer(viewer: _RerunViewerProcess | None) -> None:
     viewer.forwarder.join(timeout=1.0)
 
 
+def _wait_for_rerun_viewer_close(viewer: _RerunViewerProcess | None) -> None:
+    """Keep an auto-launched viewer alive after the pipeline reaches terminal state."""
+    if viewer is None or viewer.process.poll() is not None:
+        return
+    console.info("Rerun viewer is still running; press Ctrl+C to close it.")
+    try:
+        viewer.process.wait()
+    except KeyboardInterrupt:
+        return
+
+
 def _terminate_process_group(process: subprocess.Popen[str], sig: signal.Signals) -> None:
     """Signal a viewer process group, falling back to the direct child."""
     pid = getattr(process, "pid", None)
@@ -294,6 +305,7 @@ def run_config(
     request: RunRequest | None = None
     snapshot = RunSnapshot()
     preserve_local_head = False
+    reached_terminal_snapshot = False
     try:
         request = load_run_request_toml(path_config=path_config, config_path=config_path)
         request = _apply_dataset_sampling_overrides(
@@ -306,6 +318,7 @@ def run_config(
         run_service = RunService(path_config=path_config)
         run_service.start_run(request=request, runtime_source=runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
+        reached_terminal_snapshot = True
         preserve_local_head = (
             snapshot.state is RunState.COMPLETED and request.runtime.ray.local_head_lifecycle == "reusable"
         )
@@ -321,8 +334,11 @@ def run_config(
     finally:
         if run_service is not None:
             run_service.shutdown(preserve_local_head=preserve_local_head)
-        _shutdown_rerun_viewer(viewer)
+        if not reached_terminal_snapshot:
+            _shutdown_rerun_viewer(viewer)
     _print_pipeline_demo_snapshot(snapshot)
+    _wait_for_rerun_viewer_close(viewer)
+    _shutdown_rerun_viewer(viewer)
     if snapshot.state is RunState.FAILED:
         raise typer.Exit(code=1)
 

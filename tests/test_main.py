@@ -20,6 +20,7 @@ from prml_vslam.main import (
     _print_pipeline_demo_snapshot,
     _RerunViewerProcess,
     _shutdown_rerun_viewer,
+    _wait_for_rerun_viewer_close,
     pipeline_demo_console,
     plan_run,
     run_config,
@@ -53,6 +54,18 @@ def _capture_logger(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.Monkey
         logger.handlers = old_handlers
         logger.setLevel(old_level)
         logger.propagate = old_propagate
+
+
+def _advio_source_payload(sequence_id: str = "advio-01") -> dict[str, object]:
+    return {
+        "dataset_id": "advio",
+        "sequence_id": sequence_id,
+        "dataset_serving": {
+            "dataset_id": "advio",
+            "pose_source": "ground_truth",
+            "pose_frame_mode": "provider_world",
+        },
+    }
 
 
 def test_print_pipeline_demo_snapshot_accepts_projected_snapshot(tmp_path: Path) -> None:
@@ -272,7 +285,7 @@ def test_run_config_preserves_local_head_for_reusable_completed_run(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
         }
@@ -317,7 +330,7 @@ def test_run_config_does_not_preserve_local_head_for_reusable_failed_run(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
         }
@@ -360,7 +373,7 @@ def test_build_rerun_viewer_command_uses_blueprint_when_configured(tmp_path: Pat
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {
                 "connect_live_viewer": True,
@@ -389,7 +402,7 @@ def test_build_rerun_viewer_command_omits_blueprint_when_unset(tmp_path: Path) -
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
@@ -429,7 +442,7 @@ def test_launch_rerun_viewer_is_noop_when_live_viewer_disabled(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": False},
         }
@@ -450,7 +463,7 @@ def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.Mon
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
@@ -494,7 +507,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_startup_failure(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
@@ -522,7 +535,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_early_exit(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(tmp_path / ".artifacts"),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
@@ -590,6 +603,31 @@ def test_shutdown_rerun_viewer_terminates_process_and_joins_forwarder() -> None:
     assert viewer.process.stdout.closed is True
 
 
+def test_wait_for_rerun_viewer_close_handles_keyboard_interrupt() -> None:
+    observed: dict[str, object] = {}
+
+    class FakeProcess:
+        def poll(self) -> int | None:
+            return None
+
+        def wait(self) -> None:
+            observed["waited"] = True
+            raise KeyboardInterrupt
+
+    class FakeThread:
+        def join(self, timeout: float) -> None:
+            del timeout
+
+    viewer = _RerunViewerProcess(
+        process=FakeProcess(),  # type: ignore[arg-type]
+        forwarder=FakeThread(),  # type: ignore[arg-type]
+    )
+
+    _wait_for_rerun_viewer_close(viewer)
+
+    assert observed["waited"] is True
+
+
 def test_run_config_continues_when_viewer_launcher_returns_none(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -600,7 +638,7 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
@@ -633,7 +671,7 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
     assert captured["viewer"] is None
 
 
-def test_run_config_shuts_down_viewer_after_normal_completion(
+def test_run_config_prints_output_then_waits_for_viewer_after_normal_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -643,12 +681,12 @@ def test_run_config_shuts_down_viewer_after_normal_completion(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }
     )
-    captured: dict[str, object] = {}
+    events: list[str] = []
     viewer = _RerunViewerProcess(
         process=object(),  # type: ignore[arg-type]
         forwarder=object(),  # type: ignore[arg-type]
@@ -662,26 +700,30 @@ def test_run_config_shuts_down_viewer_after_normal_completion(
             del request, runtime_source
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
-            captured["shutdown"] = preserve_local_head
+            events.append(f"run-shutdown:{preserve_local_head}")
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
     monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
-        "prml_vslam.main._shutdown_rerun_viewer", lambda current: captured.setdefault("viewer", current)
+        "prml_vslam.main._shutdown_rerun_viewer",
+        lambda current: events.append(f"viewer-shutdown:{current is viewer}"),
     )
+    monkeypatch.setattr("prml_vslam.main._wait_for_rerun_viewer_close", lambda current: events.append("viewer-wait"))
     monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
     monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
-    monkeypatch.setattr("prml_vslam.main._wait_for_pipeline_terminal_snapshot", lambda *args, **kwargs: RunSnapshot())
-    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
+    monkeypatch.setattr(
+        "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
+        lambda *args, **kwargs: RunSnapshot(state=RunState.COMPLETED),
+    )
+    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: events.append("print"))
 
     run_config(Path(".configs/pipelines/vista-full.toml"))
 
-    assert captured["viewer"] is viewer
-    assert captured["shutdown"] is False
+    assert events == ["run-shutdown:False", "print", "viewer-wait", "viewer-shutdown:True"]
 
 
-def test_run_config_shuts_down_viewer_after_keyboard_interrupt(
+def test_run_config_keeps_failed_run_viewer_open_until_wait_finishes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -691,7 +733,128 @@ def test_run_config_shuts_down_viewer_after_keyboard_interrupt(
             "experiment_name": "demo-streaming",
             "mode": "streaming",
             "output_dir": str(path_config.artifacts_dir),
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": _advio_source_payload(),
+            "slam": {"backend": {"method_id": "mock"}},
+            "visualization": {"connect_live_viewer": True},
+        }
+    )
+    events: list[str] = []
+    viewer = _RerunViewerProcess(
+        process=object(),  # type: ignore[arg-type]
+        forwarder=object(),  # type: ignore[arg-type]
+    )
+
+    class FakeRunService:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            del path_config
+
+        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
+            del request, runtime_source
+
+        def shutdown(self, *, preserve_local_head: bool = False) -> None:
+            events.append(f"run-shutdown:{preserve_local_head}")
+
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
+    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
+    monkeypatch.setattr(
+        "prml_vslam.main._shutdown_rerun_viewer",
+        lambda current: events.append(f"viewer-shutdown:{current is viewer}"),
+    )
+    monkeypatch.setattr("prml_vslam.main._wait_for_rerun_viewer_close", lambda current: events.append("viewer-wait"))
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
+    monkeypatch.setattr(
+        "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
+        lambda *args, **kwargs: RunSnapshot(state=RunState.FAILED),
+    )
+    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: events.append("print"))
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_config(Path(".configs/pipelines/vista-full.toml"))
+
+    assert exc_info.value.exit_code == 1
+    assert events == ["run-shutdown:False", "print", "viewer-wait", "viewer-shutdown:True"]
+
+
+def test_run_config_ctrl_c_during_post_run_viewer_wait_does_not_stop_finished_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest.model_validate(
+        {
+            "experiment_name": "demo-streaming",
+            "mode": "streaming",
+            "output_dir": str(path_config.artifacts_dir),
+            "source": _advio_source_payload(),
+            "slam": {"backend": {"method_id": "mock"}},
+            "visualization": {"connect_live_viewer": True},
+        }
+    )
+    events: list[str] = []
+
+    class FakeProcess:
+        def poll(self) -> int | None:
+            return None
+
+        def wait(self) -> None:
+            events.append("viewer-wait")
+            raise KeyboardInterrupt
+
+    class FakeThread:
+        def join(self, timeout: float) -> None:
+            del timeout
+
+    viewer = _RerunViewerProcess(
+        process=FakeProcess(),  # type: ignore[arg-type]
+        forwarder=FakeThread(),  # type: ignore[arg-type]
+    )
+
+    class FakeRunService:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            del path_config
+
+        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
+            del request, runtime_source
+
+        def stop_run(self) -> None:
+            events.append("stop-run")
+
+        def shutdown(self, *, preserve_local_head: bool = False) -> None:
+            events.append(f"run-shutdown:{preserve_local_head}")
+
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
+    monkeypatch.setattr("prml_vslam.main.load_run_request_toml", lambda **kwargs: request)
+    monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
+    monkeypatch.setattr(
+        "prml_vslam.main._shutdown_rerun_viewer",
+        lambda current: events.append(f"viewer-shutdown:{current is viewer}"),
+    )
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_request", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
+    monkeypatch.setattr(
+        "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
+        lambda *args, **kwargs: RunSnapshot(state=RunState.COMPLETED),
+    )
+    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: events.append("print"))
+
+    run_config(Path(".configs/pipelines/vista-full.toml"))
+
+    assert events == ["run-shutdown:False", "print", "viewer-wait", "viewer-shutdown:True"]
+
+
+def test_run_config_shuts_down_viewer_after_active_pipeline_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    request = RunRequest.model_validate(
+        {
+            "experiment_name": "demo-streaming",
+            "mode": "streaming",
+            "output_dir": str(path_config.artifacts_dir),
+            "source": _advio_source_payload(),
             "slam": {"backend": {"method_id": "mock"}},
             "visualization": {"connect_live_viewer": True},
         }

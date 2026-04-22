@@ -6,13 +6,18 @@
 # "Pipeline Config" selector.
 
 experiment_name = "vista-full-tuning"
-mode            = "offline"
+mode            = "streaming"
 output_dir      = ".artifacts"
 
 [source]
-dataset_id   = "tum_rgbd"
-sequence_id  = "freiburg1_room"
-frame_stride = 5
+dataset_id             = "advio"
+sequence_id            = "advio-20"
+respect_video_rotation = false
+
+[source.dataset_serving]
+dataset_id       = "advio"
+pose_source      = "ground_truth"
+pose_frame_mode  = "provider_world"
 
 [slam]
     [slam.outputs]
@@ -61,7 +66,7 @@ frame_stride = 5
     random_seed = 43
 
 [benchmark.reference]
-enabled      = true
+enabled      = false
 extract_mesh = true
 
 [benchmark.trajectory]
