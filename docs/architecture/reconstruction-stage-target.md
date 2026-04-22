@@ -1,8 +1,8 @@
 # Reconstruction Stage Target Architecture
 
-This document defines the target architecture for making the reserved
-`reference.reconstruct` stage executable without changing the broader pipeline
-into a generic workflow engine. It is a focused companion to
+This document defines the target architecture for the public `reconstruction`
+stage without changing the broader pipeline into a generic workflow engine. It
+is a focused companion to
 [Pipeline Stage Refactor Target Architecture](./pipeline-stage-refactor-target.md)
 and should be read together with the current-stage diagnosis and executable
 protocol references.
@@ -52,9 +52,9 @@ should integrate into the broader stage refactor.
 - Do not require every reconstruction backend to be a Ray actor.
 - Do not put Rerun SDK calls or entity-path policy in reconstruction DTOs.
 - Do not make datasets depend on `prml_vslam.reconstruction` contracts.
-- Do not make `reference.reconstruct` responsible for cloud metrics; dense
-  cloud metrics belong to `cloud.evaluate` and the `eval` package.
-- Do not make `reference.reconstruct` mutate native SLAM outputs or align them
+- Do not make `reconstruction` responsible for cloud metrics; dense
+  cloud metrics belong to `evaluate.cloud` and the `eval` package.
+- Do not make `reconstruction` mutate native SLAM outputs or align them
   silently into a benchmark frame.
 
 ## Ownership And Normalization Boundary
@@ -108,10 +108,12 @@ should therefore consume `RgbdObservation`, not `FramePacket`.
 
 ## Stage Vocabulary And Runtime Scope
 
-The public stage key remains `reference.reconstruct` for the first executable
-slice because it produces a reference cloud for later dense-cloud comparison.
-It should be implemented as the reconstruction stage package in the target
-pipeline layout:
+The public target stage key is `reconstruction`. Reference reconstruction,
+3DGS, and future reconstruction methods are backend/mode variants under
+`[stages.reconstruction]`, not separate public stage keys. The current
+`reference.reconstruct` key is a migration contact for executable code only.
+The stage should be implemented as the reconstruction stage package in the
+target pipeline layout:
 
 ```text
 src/prml_vslam/pipeline/stages/reconstruction/
@@ -124,7 +126,7 @@ Runtime classification:
 
 | Stage | Target runtime | Initial executable source | Backend | Output |
 | --- | --- | --- | --- | --- |
-| `reference.reconstruct` | in-process runtime first | TUM RGB-D prepared observations | Open3D TSDF | reference cloud + metadata |
+| `reconstruction` with reference mode | in-process runtime first | TUM RGB-D prepared observations | Open3D TSDF | reference cloud + metadata |
 | ViSTA-derived reconstruction | unavailable target-compatible source path | persisted or live ViSTA keyframes | Open3D TSDF after RGB-D normalization | SLAM-local reconstructed scene |
 | pointmap fusion | future separate backend/source path | ViSTA pointmaps or other pointmaps | not Open3D RGB-D TSDF v1 | point-cloud or mesh artifact |
 
@@ -345,7 +347,7 @@ flowchart LR
     Backend["Open3dTsdfBackend"]
     Output["ReconstructionStageOutput<br/>ReconstructionArtifacts"]
     Outcome["StageResult / StageOutcome"]
-    CloudEval["cloud.evaluate<br/>future consumer"]
+    CloudEval["evaluate.cloud<br/>future consumer"]
 
     Source --> Prepared
     Prepared --> StageInput
@@ -360,29 +362,31 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Catalog as StageCatalog
+    participant Plan as RunPlan
+    participant RuntimeMgr as RuntimeManager
     participant Runtime as ReconstructionStageRuntime
     participant Source as RgbdObservationSource
     participant Backend as Open3dTsdfBackend
     participant Events as RunEvent stream
 
-    Catalog->>Runtime: build runtime from stage config
+    Plan->>RuntimeMgr: reconstruction stage row
+    RuntimeMgr->>Runtime: build runtime from stage config
     Runtime->>Source: open observation_sequence
     Runtime->>Backend: run_sequence(observations, config, artifact_root)
     loop each observation
         Source-->>Backend: RgbdObservation
     end
     Backend-->>Runtime: ReconstructionArtifacts
-    Runtime->>Events: StageCompleted(reference.reconstruct)
+    Runtime->>Events: StageCompleted(reconstruction)
 ```
 
 The stage should be unavailable during planning when no
 `RgbdObservationSequenceRef` exists. In v1, this means TUM RGB-D can enable the
 stage after source preparation, while ADVIO-only monocular video cannot.
 
-The stage output should be usable by `cloud.evaluate` later, but cloud metrics
-must remain a separate stage. `reference.reconstruct` produces reference
-geometry; it does not score SLAM output quality.
+The stage output should be usable by `evaluate.cloud` later, but cloud metrics
+must remain a separate stage. `reconstruction` produces geometry; it does not
+score SLAM output quality.
 
 ## Rerun And Event Integration
 
@@ -391,12 +395,12 @@ SDK. Rerun SDK calls remain inside the pipeline sink.
 
 Target event behavior:
 
-- `StageStarted(reference.reconstruct)` records stage start.
+- `StageStarted(reconstruction)` records stage start.
 - Optional `StageRuntimeStatus` updates report observation count, throughput,
   and last warning/error.
 - `ArtifactRegistered` records `reference_cloud`, metadata, and optional mesh
   artifacts.
-- `StageCompleted(reference.reconstruct)` carries `ReconstructionStageOutput`
+- `StageCompleted(reconstruction)` carries `ReconstructionStageOutput`
   through `StageResult` or the target stage-output summary.
 
 If Rerun export of reconstruction outputs is added later, the sink should map
@@ -483,7 +487,7 @@ Assumptions:
 - V1 implementation target is TUM RGB-D reference reconstruction.
 - Only one reconstruction source is selected per run.
 - Open3D TSDF is the first reconstruction backend.
-- `reference.reconstruct` remains separate from `cloud.evaluate`.
+- `reconstruction` remains separate from `evaluate.cloud`.
 - ViSTA support requires later keyframe RGB-D persistence or a live sidecar.
 
 Deferred decisions:

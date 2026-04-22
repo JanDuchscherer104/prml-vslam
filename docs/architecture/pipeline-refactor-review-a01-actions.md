@@ -101,15 +101,33 @@ Action items:
 - Keep `StageRuntimeStatus` as the canonical live status DTO.
 - Defer generic owned queues/mailboxes for all stages.
 - In the first runtime slice, report lifecycle, progress, errors, wall time,
-  and current streaming credits/counters.
+  submitted/completed/failed/in-flight work counts, and current streaming
+  credits/counters.
 - Treat queue depth/backlog metrics as accurate only where the pipeline owns
   the counter, such as current streaming source-to-SLAM credits.
+- For Ray-backed runtimes, prefer Ray-native actor task refs and
+  application-level metrics for FPS, latency, throughput, and owned
+  queue/credit counters; do not expose raw Ray mailbox depth as a portable
+  pipeline contract.
 
 Acceptance criteria for future implementation:
 
 - offline stages report status/progress/timing
 - streaming SLAM reports current credit/backpressure counters
 - docs do not promise generic queue-depth metrics until owned queues exist
+
+Ray observability references:
+
+- [Ray actors](https://docs.ray.io/en/latest/ray-core/actors.html): methods
+  called on the same actor execute serially in call order by default.
+- [Ray State CLI/API](https://docs.ray.io/en/latest/ray-observability/reference/cli.html):
+  useful for task/actor diagnostics, but alpha and not guaranteed to return a
+  fully live, complete snapshot.
+- [Ray custom metrics](https://docs.ray.io/en/latest/ray-observability/user-guides/add-app-metrics.html):
+  use `Counter`, `Gauge`, and `Histogram` for actor/stage application metrics.
+- [Ray actor termination](https://docs.ray.io/en/latest/ray-core/actors/terminating-actors.html):
+  immediate kill fails current, pending, and future tasks, while graceful actor
+  exit waits for previously submitted tasks.
 
 ### Rerun / Update Observer Flow
 
@@ -158,6 +176,8 @@ Action items:
 - Keep `pipeline/stages/<stage>/actor.py` only for stateful, streaming,
   GPU-heavy, or remote-placement stages.
 - Make `RuntimeManager` build and wire runtimes.
+- Use `StageRunner` for generic lifecycle handling and `StageResultStore` for
+  shared dependency access between stages.
 - Make `RunCoordinatorActor` sequence only through runtime protocols.
 - Define `stage_program.py` and `stage_execution.py` as migration scaffolding,
   not target architecture.
@@ -201,7 +221,7 @@ Initial map:
 | Current name | Target name | Notes |
 | --- | --- | --- |
 | `ingest` | `source` | Source normalization and prepared benchmark inputs. |
-| `slam` | `slam` | Same public stage concept, but one unified `SlamStageActor`. |
+| `slam` | `slam` | Same public stage concept; target runtime is `SlamStageRuntime` through `StageRuntimeHandle`, with `SlamStageActor` as the Ray worker. |
 | `ground.align` | `align.ground` | Target docs use compact verb namespace. |
 | `trajectory.evaluate` | `evaluate.trajectory` | Target docs use compact verb namespace. |
 | `reference.reconstruct` | `reconstruction` | Target umbrella stage with reference/3DGS/future variants. |
@@ -255,7 +275,7 @@ The first runtime simplification slice remains focused on:
 - `StageResult`
 - keyed result store
 - stage-local runtimes
-- unified `SlamStageActor`
+- unified `SlamStageRuntime` through `StageRuntimeHandle`
 - minimal `RuntimeManager`
 - compatible source, Rerun, and snapshot behavior
 
