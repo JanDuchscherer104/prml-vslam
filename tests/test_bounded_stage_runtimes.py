@@ -21,8 +21,13 @@ from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
 from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.reconstruction.visualization import (
+    ROLE_RECONSTRUCTION_MESH,
+    ROLE_RECONSTRUCTION_POINT_CLOUD,
+)
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
 from prml_vslam.pipeline.stages.trajectory_eval import (
     TrajectoryEvaluationRuntime,
@@ -152,7 +157,8 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
         FakeRgbdObservationSource,
     )
 
-    result = ReconstructionRuntime().run_offline(
+    runtime = ReconstructionRuntime()
+    result = runtime.run_offline(
         ReconstructionRuntimeInput(
             request=request,
             run_paths=run_paths,
@@ -169,6 +175,75 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
         "reconstruction_metadata",
         "reference_mesh",
     }
+    updates = runtime.drain_runtime_updates()
+    assert len(updates) == 1
+    assert updates[0].stage_key is StageKey.REFERENCE_RECONSTRUCTION
+    assert [(item.intent, item.role) for item in updates[0].visualizations] == [
+        (VisualizationIntent.POINT_CLOUD, ROLE_RECONSTRUCTION_POINT_CLOUD),
+        (VisualizationIntent.MESH, ROLE_RECONSTRUCTION_MESH),
+    ]
+    assert updates[0].runtime_status == result.final_runtime_status
+    assert all(item.frame_index is None for item in updates[0].visualizations)
+    assert all(item.keyframe_index is None for item in updates[0].visualizations)
+    assert runtime.drain_runtime_updates() == []
+
+
+def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _plan, run_paths = _request_plan_paths(
+        tmp_path,
+        benchmark={"reference": {"enabled": True, "extract_mesh": False}},
+    )
+
+    class FakeBackendConfig(BaseData):
+        extract_mesh: bool = False
+
+        def setup_target(self):
+            return FakeBackend()
+
+    class FakeBackend:
+        def run_sequence(self, observations, *, backend_config, artifact_root: Path) -> ReconstructionArtifacts:
+            del observations, backend_config
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            cloud = artifact_root / "reference_cloud.ply"
+            metadata = artifact_root / "reconstruction_metadata.json"
+            cloud.write_text("ply\n", encoding="utf-8")
+            metadata.write_text("{}\n", encoding="utf-8")
+            return ReconstructionArtifacts(reference_cloud_path=cloud, metadata_path=metadata, mesh_path=None)
+
+    class FakeRgbdObservationSource:
+        def __init__(self, sequence_ref: RgbdObservationSequenceRef) -> None:
+            self.sequence_ref = sequence_ref
+
+        def iter_observations(self):
+            return iter(())
+
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.stages.reconstruction.runtime.Open3dTsdfBackendConfig",
+        FakeBackendConfig,
+    )
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.stages.reconstruction.runtime.FileRgbdObservationSource",
+        FakeRgbdObservationSource,
+    )
+
+    runtime = ReconstructionRuntime()
+    result = runtime.run_offline(
+        ReconstructionRuntimeInput(
+            request=request,
+            run_paths=run_paths,
+            benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
+        )
+    )
+
+    assert set(result.outcome.artifacts) == {"reference_cloud", "reconstruction_metadata"}
+    updates = runtime.drain_runtime_updates()
+    assert len(updates) == 1
+    assert [(item.intent, item.role) for item in updates[0].visualizations] == [
+        (VisualizationIntent.POINT_CLOUD, ROLE_RECONSTRUCTION_POINT_CLOUD),
+    ]
 
 
 def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Path) -> None:

@@ -26,6 +26,7 @@ from prml_vslam.pipeline.ray_runtime.common import (
     slam_artifacts_map,
     visualization_artifact_map,
 )
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
 from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
@@ -148,6 +149,7 @@ class PacketSourceActor:
                 self._received_frames += 1
                 self._packet_timestamps.append(time.monotonic())
                 frame_handle, frame_ref = put_array_handle(packet.rgb)
+                frame_payload_ref = self._source_payload_ref(frame_handle)
                 depth_ref = None if packet.depth is None else ray.put(np.asarray(packet.depth))
                 confidence_ref = None if packet.confidence is None else ray.put(np.asarray(packet.confidence))
                 self._coordinator.on_packet.remote(
@@ -165,6 +167,7 @@ class PacketSourceActor:
                     provenance=packet.provenance.model_copy(deep=True),
                     received_frames=self._received_frames,
                     measured_fps=rolling_fps(self._packet_timestamps),
+                    frame_payload_ref=frame_payload_ref,
                 )
         except EOFError:
             self._console.debug("Streaming source reached EOF.")
@@ -177,6 +180,19 @@ class PacketSourceActor:
                 stream.disconnect()
             except Exception:
                 pass
+
+    @staticmethod
+    def _source_payload_ref(frame_handle) -> TransientPayloadRef | None:
+        if frame_handle is None:
+            return None
+        return TransientPayloadRef(
+            handle_id=frame_handle.handle_id,
+            payload_kind="image",
+            media_type="image/rgb",
+            shape=frame_handle.shape,
+            dtype=frame_handle.dtype,
+            metadata={"slot": "image"},
+        )
 
 
 # TODO(pipeline-refactor/WP-10): Delete this SLAM actor after RuntimeManager

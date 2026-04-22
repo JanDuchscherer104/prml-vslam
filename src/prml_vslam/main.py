@@ -695,6 +695,10 @@ def _print_pipeline_demo_snapshot(snapshot: RunSnapshot) -> None:
             stage_key.value: status.model_dump(mode="json")
             for stage_key, status in snapshot.stage_runtime_status.items()
         },
+        "live_refs": {
+            stage_key.value: {ref_key: ref.model_dump(mode="json") for ref_key, ref in refs.items()}
+            for stage_key, refs in snapshot.live_refs.items()
+        },
         "artifacts": {
             artifact_key: artifact.model_dump(mode="json") for artifact_key, artifact in snapshot.artifacts.items()
         },

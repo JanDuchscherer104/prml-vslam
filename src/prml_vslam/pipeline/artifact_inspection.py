@@ -209,6 +209,9 @@ class RunArtifactInspection(BaseData):
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     """Typed benchmark input manifest."""
 
+    slam: SlamArtifacts | None = None
+    """Derived normalized SLAM artifacts, when trajectory outputs are present."""
+
     reconstruction_metadata: ReconstructionMetadata | None = None
     """Typed reference reconstruction metadata."""
 
@@ -283,15 +286,8 @@ def inspect_run_artifacts(artifact_root: Path) -> RunArtifactInspection:
     )
 
     stage_manifests = [] if stage_manifests is None else stage_manifests
-    snapshot = _apply_fallbacks(
-        snapshot=snapshot,
-        summary=summary,
-        stage_manifests=stage_manifests,
-        sequence_manifest=sequence_manifest,
-        benchmark_inputs=benchmark_inputs,
-        ground_alignment=ground_alignment,
-        run_paths=run_paths,
-    )
+    snapshot = _apply_snapshot_fallbacks(snapshot=snapshot, summary=summary)
+    slam = _derive_slam_artifacts(run_paths=run_paths, stage_manifests=stage_manifests)
 
     return RunArtifactInspection(
         artifact_root=resolved_root,
@@ -302,6 +298,7 @@ def inspect_run_artifacts(artifact_root: Path) -> RunArtifactInspection:
         stage_manifests=stage_manifests,
         sequence_manifest=sequence_manifest,
         benchmark_inputs=benchmark_inputs,
+        slam=slam,
         reconstruction_metadata=reconstruction_metadata,
         ground_alignment=ground_alignment,
         input_diagnostics=_load_input_diagnostics(run_paths),
@@ -368,33 +365,10 @@ def _read_json_payload(path: Path) -> JsonValue:
         return None
 
 
-def _apply_fallbacks(
-    *,
-    snapshot: RunSnapshot,
-    summary: RunSummary | None,
-    stage_manifests: list[StageManifest],
-    sequence_manifest: SequenceManifest | None,
-    benchmark_inputs: PreparedBenchmarkInputs | None,
-    ground_alignment: GroundAlignmentMetadata | None,
-    run_paths: RunArtifactPaths,
-) -> RunSnapshot:
+def _apply_snapshot_fallbacks(*, snapshot: RunSnapshot, summary: RunSummary | None) -> RunSnapshot:
     updates: dict[str, SnapshotUpdateValue] = {}
-    if summary is not None and snapshot.summary is None:
-        updates["summary"] = summary
-        if not snapshot.run_id:
-            updates["run_id"] = summary.run_id
-    if stage_manifests and not snapshot.stage_manifests:
-        updates["stage_manifests"] = stage_manifests
-    if sequence_manifest is not None and snapshot.sequence_manifest is None:
-        updates["sequence_manifest"] = sequence_manifest
-    if benchmark_inputs is not None and snapshot.benchmark_inputs is None:
-        updates["benchmark_inputs"] = benchmark_inputs
-    if ground_alignment is not None and snapshot.ground_alignment is None:
-        updates["ground_alignment"] = ground_alignment
-    if snapshot.slam is None:
-        slam = _derive_slam_artifacts(run_paths=run_paths, stage_manifests=stage_manifests)
-        if slam is not None:
-            updates["slam"] = slam
+    if summary is not None and not snapshot.run_id:
+        updates["run_id"] = summary.run_id
     return snapshot.model_copy(update=updates) if updates else snapshot
 
 

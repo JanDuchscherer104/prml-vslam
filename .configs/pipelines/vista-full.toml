@@ -12,58 +12,58 @@ output_dir      = ".artifacts"
 [stages.source]
 enabled = true
 
-[stages.source.backend]
-source_id   = "tum_rgbd"
-sequence_id = "freiburg1_room"
-frame_stride = 5
+    [stages.source.backend]
+    source_id    = "tum_rgbd"
+    sequence_id  = "freiburg1_room"
+    frame_stride = 5
 
 [stages.slam]
 enabled = true
 
-[stages.slam.outputs]
-# ViSTA only emits dense pointmaps
-emit_dense_points  = true
-emit_sparse_points = false
+    [stages.slam.outputs]
+    # ViSTA only emits dense pointmaps
+    emit_dense_points  = true
+    emit_sparse_points = false
 
-[stages.slam.backend]
-method_id = "vista"
-# Frame cap to stop the backend after N frames.
-max_frames = 100
+    [stages.slam.backend]
+    method_id = "vista"
+    # Frame cap to stop the backend after N frames.
+    max_frames = 1500
 
-# Maximum number of keyframes the pose graph may hold.
-max_view_num = 50
+    # Maximum number of keyframes the pose graph may hold.
+    max_view_num = 50
 
-# Optical-flow magnitude threshold that triggers a new keyframe.
-# Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
-# and test true backpressure.
-flow_thres = 20
+    # Optical-flow magnitude threshold that triggers a new keyframe.
+    # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
+    # and test true backpressure.
+    flow_thres = 20
 
-# Number of temporal-neighbor edges per keyframe in the pose graph.
-neighbor_edge_num = 3
+    # Number of temporal-neighbor edges per keyframe in the pose graph.
+    neighbor_edge_num = 3
 
-# Maximum number of loop-closure edges added per keyframe.
-loop_edge_num = 3
+    # Maximum number of loop-closure edges added per keyframe.
+    loop_edge_num = 3
 
-# Minimum frame distance for a valid loop-closure candidate.
-loop_dist_min = 40
+    # Minimum frame distance for a valid loop-closure candidate.
+    loop_dist_min = 40
 
-# Non-maximum suppression window for loop-closure candidates.
-loop_nms = 40
+    # Non-maximum suppression window for loop-closure candidates.
+    loop_nms = 40
 
-# Loop candidate must share more neighbours than this threshold.
-loop_cand_thresh_neighbor = 5
+    # Loop candidate must share more neighbours than this threshold.
+    loop_cand_thresh_neighbor = 5
 
-# Minimum point-confidence score retained in the reconstruction.
-point_conf_thres = 4.2
+    # Minimum point-confidence score retained in the reconstruction.
+    point_conf_thres = 4.2
 
-# Maximum relative-pose uncertainty accepted for an edge.
-rel_pose_thres = 0.75
+    # Maximum relative-pose uncertainty accepted for an edge.
+    rel_pose_thres = 0.75
 
-# Pose-graph optimisation interval in keyframes.
-pgo_every = 500
+    # Pose-graph optimisation interval in keyframes.
+    pgo_every = 500
 
-# Random seed set before model initialisation for reproducibility.
-random_seed = 43
+    # Random seed set before model initialisation for reproducibility.
+    random_seed = 43
 
 [stages.align_ground]
 enabled = true

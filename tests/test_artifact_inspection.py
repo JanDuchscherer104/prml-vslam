@@ -115,8 +115,11 @@ def test_inspect_run_artifacts_projects_events_and_typed_metadata(tmp_path: Path
 
     assert inspection.snapshot.run_id == "demo-run"
     assert inspection.snapshot.state.value == "completed"
-    assert inspection.snapshot.sequence_manifest == sequence_manifest
-    assert inspection.snapshot.slam == slam
+    assert inspection.sequence_manifest == sequence_manifest
+    assert inspection.slam is not None
+    assert inspection.slam.trajectory_tum.path == slam.trajectory_tum.path
+    assert inspection.slam.dense_points_ply is not None
+    assert inspection.slam.dense_points_ply.path == slam.dense_points_ply.path
     assert inspection.summary == summary
     assert inspection.stage_manifests == stage_manifests
     assert inspection.reconstruction_metadata == reconstruction_metadata

@@ -18,9 +18,10 @@ from prml_vslam.alignment.contracts import AlignmentConfig
 from prml_vslam.benchmark import BenchmarkConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import Record3DTransportId
-from prml_vslam.methods.config_contracts import SlamOutputPolicy
+from prml_vslam.methods.config_contracts import MethodId, SlamOutputPolicy
 from prml_vslam.methods.configs import BackendConfig
-from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
     PipelineMode,
@@ -43,7 +44,7 @@ from prml_vslam.pipeline.stages.source.config import (
     VideoSourceConfig,
     source_backend_config_from_source_spec,
 )
-from prml_vslam.utils import BaseConfig, PathConfig
+from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
 
 
@@ -342,14 +343,16 @@ class RunConfig(BaseConfig):
             runtime=self.runtime,
         )
 
-    # TODO(pipeline-refactor/WP-03): Compile directly from RunConfig once
-    # StageRegistry/RuntimeManager consume target stage config sections.
-    def compile_plan(self, path_config: PathConfig | None = None, *, fail_on_unavailable: bool = False) -> RunPlan:
-        """Compile a deterministic plan through the stage registry."""
-        from prml_vslam.pipeline.stage_registry import StageRegistry
-
+    def compile_plan(
+        self,
+        path_config: PathConfig | None = None,
+        *,
+        fail_on_unavailable: bool = False,
+        backend: BackendDescriptor | None = None,
+    ) -> RunPlan:
+        """Compile a deterministic plan directly from target stage sections."""
         config = PathConfig() if path_config is None else path_config
-        plan = StageRegistry.default().compile_run_config(run_config=self, path_config=config)
+        plan = _compile_run_plan(run_config=self, path_config=config, backend=backend)
         if fail_on_unavailable:
             unavailable = [stage for stage in plan.stages if not stage.available]
             if unavailable:
@@ -406,6 +409,180 @@ class RunConfig(BaseConfig):
                 "RunConfig launch requires one SLAM backend via compatibility `slam` or `[stages.slam.backend]`."
             )
         return SlamStageConfig(backend=backend, outputs=self.stages.slam.outputs)
+
+
+def _compile_run_plan(
+    *,
+    run_config: RunConfig,
+    path_config: PathConfig,
+    backend: BackendDescriptor | None = None,
+) -> RunPlan:
+    run_config._validate_required_compatibility_sections()
+    source = run_config._resolve_runtime_source_spec()
+    slam = run_config._resolve_runtime_slam_stage_config()
+    run_paths = path_config.plan_run_paths(
+        experiment_name=run_config.experiment_name,
+        method_slug=slam.backend.method_id.value,
+        output_dir=run_config.output_dir,
+    )
+    resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
+    slam_available, slam_reason = _slam_stage_availability(run_config=run_config, slam=slam, backend=backend)
+    plan_stages: list[RunPlanStage] = [
+        _plan_stage(key=StageKey.INGEST, outputs=_source_outputs(resolved_run_paths)),
+        _plan_stage(
+            key=StageKey.SLAM,
+            outputs=_slam_outputs(slam=slam, run_paths=resolved_run_paths),
+            available=slam_available,
+            availability_reason=slam_reason,
+        ),
+    ]
+
+    if run_config.stages.align_ground.enabled:
+        alignment_available, alignment_reason = _ground_alignment_stage_availability(slam=slam, backend=backend)
+        plan_stages.append(
+            _plan_stage(
+                key=StageKey.GROUND_ALIGNMENT,
+                outputs=[resolved_run_paths.ground_alignment_path],
+                available=alignment_available,
+                availability_reason=alignment_reason,
+            )
+        )
+    if run_config.stages.evaluate_trajectory.enabled:
+        trajectory_available, trajectory_reason = _trajectory_stage_availability(slam=slam, backend=backend)
+        plan_stages.append(
+            _plan_stage(
+                key=StageKey.TRAJECTORY_EVALUATION,
+                outputs=[resolved_run_paths.trajectory_metrics_path],
+                available=trajectory_available,
+                availability_reason=trajectory_reason,
+            )
+        )
+    if run_config.stages.reconstruction.enabled:
+        reconstruction_available, reconstruction_reason = _reference_reconstruction_stage_availability(source=source)
+        plan_stages.append(
+            _plan_stage(
+                key=StageKey.REFERENCE_RECONSTRUCTION,
+                outputs=[resolved_run_paths.reference_cloud_path],
+                available=reconstruction_available,
+                availability_reason=reconstruction_reason,
+            )
+        )
+    if run_config.stages.evaluate_cloud.enabled:
+        plan_stages.append(
+            _plan_stage(
+                key=StageKey.CLOUD_EVALUATION,
+                outputs=[resolved_run_paths.cloud_metrics_path],
+                available=False,
+                availability_reason="Dense-cloud evaluation remains a planned placeholder in this refactor.",
+            )
+        )
+    if run_config.stages.evaluate_efficiency.enabled:
+        plan_stages.append(
+            _plan_stage(
+                key=StageKey.EFFICIENCY_EVALUATION,
+                outputs=[resolved_run_paths.efficiency_metrics_path],
+                available=False,
+                availability_reason="Efficiency evaluation remains a planned placeholder in this refactor.",
+            )
+        )
+    plan_stages.append(
+        _plan_stage(
+            key=StageKey.SUMMARY,
+            outputs=[resolved_run_paths.summary_path, resolved_run_paths.stage_manifests_path],
+        )
+    )
+
+    return RunPlan(
+        run_id=path_config.slugify_experiment_name(run_config.experiment_name),
+        mode=run_config.mode,
+        artifact_root=run_paths.artifact_root,
+        source=source,
+        stages=plan_stages,
+    )
+
+
+def _plan_stage(
+    *,
+    key: StageKey,
+    outputs: list[Path],
+    available: bool = True,
+    availability_reason: str | None = None,
+) -> RunPlanStage:
+    return RunPlanStage(
+        key=key,
+        outputs=outputs,
+        available=available,
+        availability_reason=availability_reason,
+    )
+
+
+def _slam_stage_availability(
+    *,
+    run_config: RunConfig,
+    slam: SlamStageConfig,
+    backend: BackendDescriptor | None,
+) -> tuple[bool, str | None]:
+    display_name = slam.backend.display_name if backend is None else backend.display_name
+    supports_offline = slam.backend.supports_offline if backend is None else backend.capabilities.offline
+    supports_streaming = slam.backend.supports_streaming if backend is None else backend.capabilities.streaming
+    if run_config.mode is PipelineMode.OFFLINE and not supports_offline:
+        return False, f"{display_name} does not support offline execution."
+    if run_config.mode is PipelineMode.STREAMING and not supports_streaming:
+        return False, f"{display_name} does not support streaming execution."
+    return True, None
+
+
+def _trajectory_stage_availability(
+    *,
+    slam: SlamStageConfig,
+    backend: BackendDescriptor | None,
+) -> tuple[bool, str | None]:
+    display_name = slam.backend.display_name if backend is None else backend.display_name
+    supports_trajectory = (
+        slam.backend.supports_trajectory_benchmark
+        if backend is None
+        else backend.capabilities.trajectory_benchmark_support
+    )
+    if not supports_trajectory:
+        return False, f"{display_name} does not support repository trajectory evaluation."
+    return True, None
+
+
+def _ground_alignment_stage_availability(
+    *,
+    slam: SlamStageConfig,
+    backend: BackendDescriptor | None,
+) -> tuple[bool, str | None]:
+    display_name = slam.backend.display_name if backend is None else backend.display_name
+    supports_dense_points = slam.backend.supports_dense_points if backend is None else backend.capabilities.dense_points
+    if not supports_dense_points:
+        return False, f"{display_name} does not expose point-cloud outputs for ground alignment."
+    if not (slam.outputs.emit_dense_points or slam.outputs.emit_sparse_points):
+        return False, "Ground alignment requires sparse or dense point-cloud outputs from the SLAM stage."
+    return True, None
+
+
+def _reference_reconstruction_stage_availability(*, source: SourceSpec) -> tuple[bool, str | None]:
+    if not isinstance(source, DatasetSourceSpec) or source.dataset_id is not DatasetId.TUM_RGBD:
+        return False, "Reference reconstruction currently requires a TUM RGB-D dataset source."
+    return True, None
+
+
+def _source_outputs(run_paths: RunArtifactPaths) -> list[Path]:
+    return [run_paths.sequence_manifest_path, run_paths.benchmark_inputs_path]
+
+
+def _slam_outputs(*, slam: SlamStageConfig, run_paths: RunArtifactPaths) -> list[Path]:
+    outputs = [run_paths.trajectory_path]
+    if slam.backend.method_id is MethodId.VISTA:
+        if slam.outputs.emit_sparse_points or slam.outputs.emit_dense_points:
+            outputs.append(run_paths.point_cloud_path)
+        return outputs
+    if slam.outputs.emit_sparse_points:
+        outputs.append(run_paths.sparse_points_path)
+    if slam.outputs.emit_dense_points:
+        outputs.append(run_paths.dense_points_path)
+    return outputs
 
 
 # TODO(pipeline-refactor/WP-10): Remove current-key alias helper functions after

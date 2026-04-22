@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import time
+
+from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import artifact_ref
-from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
+from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.reconstruction.contracts import ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.reconstruction.visualization import ReconstructionVisualizationAdapter
 from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig, ReconstructionArtifacts
 
 # TODO: why is this class not derived from common StageRuntime base class?
@@ -17,10 +21,14 @@ from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBacke
 class ReconstructionRuntime:
     """Adapt reconstruction-owned Open3D TSDF execution to the bounded runtime API."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, visualization_adapter: ReconstructionVisualizationAdapter | None = None) -> None:
         # TODO(pipeline-refactor/WP-10): Switch to the target `reconstruction`
         # stage key after persisted stage-key aliases are removed.
         self._status = StageRuntimeStatus(stage_key=StageKey.REFERENCE_RECONSTRUCTION)
+        self._visualization_adapter = (
+            ReconstructionVisualizationAdapter() if visualization_adapter is None else visualization_adapter
+        )
+        self._pending_updates: list[StageRuntimeUpdate] = []
 
     def status(self) -> StageRuntimeStatus:
         """Return the latest reconstruction runtime status."""
@@ -29,6 +37,16 @@ class ReconstructionRuntime:
     def stop(self) -> None:
         """Mark the bounded runtime as stopped."""
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
+
+    def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+        """Return pending reconstruction visualization updates without blocking."""
+        if max_items is None:
+            updates = self._pending_updates
+            self._pending_updates = []
+            return updates
+        updates = self._pending_updates[:max_items]
+        self._pending_updates = self._pending_updates[max_items:]
+        return updates
 
     def run_offline(self, input_payload: ReconstructionRuntimeInput) -> StageResult:
         """Build the reference reconstruction and return a canonical stage result."""
@@ -70,39 +88,59 @@ class ReconstructionRuntime:
             backend_config=backend_config,
             artifact_root=input_payload.run_paths.reference_cloud_path.parent,
         )
+        artifact_map = _artifact_map(artifacts)
         outcome = StageOutcome(
             stage_key=StageKey.REFERENCE_RECONSTRUCTION,
             status=StageStatus.COMPLETED,
             config_hash=stable_hash(backend_config),
             input_fingerprint=stable_hash(sequence_ref),
-            artifacts=_artifact_map(artifacts),
+            artifacts=artifact_map,
             metrics={"observation_count": sequence_ref.observation_count},
         )
+        final_status = StageRuntimeStatus(
+            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+            lifecycle_state=StageStatus.COMPLETED,
+            progress_message="Reference reconstruction complete.",
+            completed_steps=sequence_ref.observation_count,
+            total_steps=sequence_ref.observation_count,
+            progress_unit="observations",
+            processed_items=sequence_ref.observation_count,
+        )
+        visualizations = self._visualization_adapter.build_items(
+            artifacts,
+            artifact_map,
+            reconstruction_id="reference",
+        )
+        if visualizations:
+            self._pending_updates.append(
+                StageRuntimeUpdate(
+                    stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+                    timestamp_ns=time.time_ns(),
+                    visualizations=visualizations,
+                    runtime_status=final_status,
+                )
+            )
         return StageResult(
             stage_key=StageKey.REFERENCE_RECONSTRUCTION,
             payload=artifacts,
             outcome=outcome,
-            final_runtime_status=StageRuntimeStatus(
-                stage_key=StageKey.REFERENCE_RECONSTRUCTION,
-                lifecycle_state=StageStatus.COMPLETED,
-                progress_message="Reference reconstruction complete.",
-                completed_steps=sequence_ref.observation_count,
-                total_steps=sequence_ref.observation_count,
-                progress_unit="observations",
-                processed_items=sequence_ref.observation_count,
-            ),
+            final_runtime_status=final_status,
         )
 
 
-def _artifact_map(artifacts: ReconstructionArtifacts):
+def _artifact_map(artifacts: ReconstructionArtifacts) -> dict[str, ArtifactRef]:
     artifact_map = {
         "reference_cloud": artifact_ref(artifacts.reference_cloud_path, kind="ply"),
         "reconstruction_metadata": artifact_ref(artifacts.metadata_path, kind="json"),
     }
     if artifacts.mesh_path is not None:
         artifact_map["reference_mesh"] = artifact_ref(artifacts.mesh_path, kind="ply")
-    for key, path in artifacts.extras.items():
-        artifact_map[f"extra:{key}"] = artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
+    artifact_map.update(
+        {
+            f"extra:{key}": artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
+            for key, path in artifacts.extras.items()
+        }
+    )
     return artifact_map
 
 

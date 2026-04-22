@@ -24,7 +24,6 @@ from prml_vslam.pipeline.contracts.events import (
     RunSubmitted,
     StageCompleted,
     StageFailed,
-    StageProgress,
     StageProgressed,
     StageQueued,
     StageStarted,
@@ -72,27 +71,64 @@ class SnapshotProjector:
                 if isinstance(event, RunStarted):
                     updated.state = RunState.PREPARING
             case StageQueued(stage_key=stage_key):
-                updated.stage_status[stage_key] = StageStatus.QUEUED
+                status = updated.stage_runtime_status.get(stage_key)
+                updated.stage_runtime_status[stage_key] = (
+                    StageRuntimeStatus(stage_key=stage_key, lifecycle_state=StageStatus.QUEUED)
+                    if status is None
+                    else status.model_copy(update={"lifecycle_state": StageStatus.QUEUED})
+                )
             case StageStarted(stage_key=stage_key):
                 updated.current_stage_key = stage_key
-                updated.stage_status[stage_key] = StageStatus.RUNNING
+                status = updated.stage_runtime_status.get(stage_key)
+                updated.stage_runtime_status[stage_key] = (
+                    StageRuntimeStatus(stage_key=stage_key, lifecycle_state=StageStatus.RUNNING)
+                    if status is None
+                    else status.model_copy(update={"lifecycle_state": StageStatus.RUNNING})
+                )
                 if updated.state is not RunState.STOPPED:
                     updated.state = RunState.PREPARING if stage_key is StageKey.INGEST else RunState.RUNNING
             case StageProgressed(stage_key=stage_key, progress=progress):
-                # TODO(pipeline-refactor/WP-10): Delete this compatibility
-                # branch after progress projection reads StageRuntimeUpdate.
-                updated.stage_progress[stage_key] = progress
+                status = updated.stage_runtime_status.get(stage_key)
+                if status is None:
+                    updated.stage_runtime_status[stage_key] = StageRuntimeStatus(
+                        stage_key=stage_key,
+                        lifecycle_state=StageStatus.RUNNING,
+                        progress_message=progress.message,
+                        completed_steps=progress.completed_steps,
+                        total_steps=progress.total_steps,
+                        progress_unit=progress.unit,
+                    )
+                else:
+                    updated.stage_runtime_status[stage_key] = status.model_copy(
+                        update={
+                            "progress_message": progress.message,
+                            "completed_steps": progress.completed_steps,
+                            "total_steps": progress.total_steps,
+                            "progress_unit": progress.unit,
+                        }
+                    )
             case ArtifactRegistered(artifact_key=artifact_key, artifact=artifact):
                 updated.artifacts[artifact_key] = artifact
             case PacketObserved(packet=packet, frame=frame, received_frames=received_frames, measured_fps=measured_fps):
                 # TODO(pipeline-refactor/WP-10): Delete this compatibility
                 # branch after packet telemetry is projected from live updates.
                 del packet, frame
-                updated.stage_runtime_status[StageKey.INGEST] = StageRuntimeStatus(
-                    stage_key=StageKey.INGEST,
-                    lifecycle_state=StageStatus.RUNNING,
-                    processed_items=received_frames,
-                    fps=measured_fps,
+                status = updated.stage_runtime_status.get(StageKey.INGEST)
+                updated.stage_runtime_status[StageKey.INGEST] = (
+                    StageRuntimeStatus(
+                        stage_key=StageKey.INGEST,
+                        lifecycle_state=StageStatus.RUNNING,
+                        processed_items=received_frames,
+                        fps=measured_fps,
+                    )
+                    if status is None
+                    else status.model_copy(
+                        update={
+                            "lifecycle_state": StageStatus.RUNNING,
+                            "processed_items": received_frames,
+                            "fps": measured_fps,
+                        }
+                    )
                 )
                 if updated.state is not RunState.STOPPED:
                     updated.state = RunState.RUNNING
@@ -101,43 +137,15 @@ class SnapshotProjector:
                 # branch after backend telemetry is projected from
                 # StageRuntimeUpdate.semantic_events and live refs.
                 del notice
-            case StageCompleted(
-                stage_key=stage_key,
-                outcome=outcome,
-                sequence_manifest=sequence_manifest,
-                benchmark_inputs=benchmark_inputs,
-                slam=slam,
-                ground_alignment=ground_alignment,
-                visualization=visualization,
-                summary=summary,
-                stage_manifests=stage_manifests,
-            ):
+            case StageCompleted(stage_key=stage_key, outcome=outcome):
                 updated.stage_outcomes[stage_key] = outcome
-                updated.stage_status[stage_key] = StageStatus.COMPLETED
                 updated.stage_runtime_status.pop(stage_key, None)
-                updated.stage_progress.pop(stage_key, None)
                 if updated.current_stage_key is stage_key:
                     updated.current_stage_key = None
                 updated.artifacts.update(outcome.artifacts)
-                if sequence_manifest is not None:
-                    updated.sequence_manifest = sequence_manifest
-                if benchmark_inputs is not None:
-                    updated.benchmark_inputs = benchmark_inputs
-                if slam is not None:
-                    updated.slam = slam
-                if ground_alignment is not None:
-                    updated.ground_alignment = ground_alignment
-                if visualization is not None:
-                    updated.visualization = visualization
-                if summary is not None:
-                    updated.summary = summary
-                if stage_manifests:
-                    updated.stage_manifests = stage_manifests
             case StageFailed(stage_key=stage_key, outcome=outcome):
                 updated.stage_outcomes[stage_key] = outcome
-                updated.stage_status[stage_key] = StageStatus.FAILED
                 updated.stage_runtime_status.pop(stage_key, None)
-                updated.stage_progress.pop(stage_key, None)
                 if updated.current_stage_key is stage_key:
                     updated.current_stage_key = None
                 updated.error_message = outcome.error_message
@@ -168,16 +176,6 @@ class SnapshotProjector:
         stage_key = update.stage_key
         if update.runtime_status is not None:
             updated.stage_runtime_status[stage_key] = update.runtime_status
-            updated.stage_status[stage_key] = update.runtime_status.lifecycle_state
-            if _has_progress_content(update.runtime_status):
-                updated.stage_progress[stage_key] = StageProgress(
-                    message=update.runtime_status.progress_message,
-                    completed_steps=update.runtime_status.completed_steps,
-                    total_steps=update.runtime_status.total_steps,
-                    unit=update.runtime_status.progress_unit,
-                )
-            else:
-                updated.stage_progress.pop(stage_key, None)
         for item in update.visualizations:
             if item.payload_refs:
                 stage_refs = updated.live_refs.setdefault(stage_key, {})
@@ -194,19 +192,8 @@ class SnapshotProjector:
         updated.stage_outcomes = dict(snapshot.stage_outcomes)
         updated.stage_runtime_status = dict(snapshot.stage_runtime_status)
         updated.live_refs = {stage_key: dict(refs) for stage_key, refs in snapshot.live_refs.items()}
-        updated.stage_status = dict(snapshot.stage_status)
-        updated.stage_progress = dict(snapshot.stage_progress)
         updated.artifacts = dict(snapshot.artifacts)
         return updated
-
-
-def _has_progress_content(status: StageRuntimeStatus) -> bool:
-    return (
-        bool(status.progress_message)
-        or status.completed_steps is not None
-        or status.total_steps is not None
-        or status.progress_unit is not None
-    )
 
 
 __all__ = ["SnapshotProjector"]

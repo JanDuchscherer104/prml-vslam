@@ -133,11 +133,11 @@ def _render_pipeline_plan_tab(model: PipelineSnapshotRenderModel) -> None:
         st.markdown("**Planned Stages**")
         st.dataframe(model.plan_rows, hide_index=True, width="stretch")
     with right:
-        st.markdown("**Stage Manifests**")
-        if model.stage_manifest_rows:
-            st.dataframe(model.stage_manifest_rows, hide_index=True, width="stretch")
+        st.markdown("**Stage Outcomes**")
+        if model.stage_outcome_rows:
+            st.dataframe(model.stage_outcome_rows, hide_index=True, width="stretch")
         else:
-            st.info("Stage manifests will appear once the run starts writing outputs.")
+            st.info("Stage outcomes will appear once the run starts writing outputs.")
         st.markdown("**Recent Events**")
         if not model.recent_events:
             st.info("Recent events will appear once the run starts.")

@@ -9,11 +9,12 @@ import numpy as np
 import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-from prml_vslam.interfaces.slam import KeyframeVisualizationReady, PoseEstimated
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived
-from prml_vslam.pipeline.contracts.handles import ArrayHandle
+from prml_vslam.interfaces.slam import SlamUpdate
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.slam.visualization import IMAGE_REF, POINTMAP_REF, SlamVisualizationAdapter
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.validation import load_recording_summary, write_validation_bundle
 
@@ -61,6 +62,8 @@ def _write_synthetic_recording(tmp_path: Path) -> Path:
     policy = RerunLoggingPolicy(
         log_pinhole=rerun_helpers.log_pinhole,
         log_pointcloud=rerun_helpers.log_pointcloud,
+        log_pointcloud_ply=rerun_helpers.log_pointcloud_ply,
+        log_mesh_ply=rerun_helpers.log_mesh_ply,
         log_line_strip3d=rerun_helpers.log_line_strip3d,
         log_clear=rerun_helpers.log_clear,
         log_depth_image=rerun_helpers.log_depth_image,
@@ -82,40 +85,55 @@ def _write_synthetic_recording(tmp_path: Path) -> Path:
     intrinsics = CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3)
 
     for frame_index, (pose, pointmap) in enumerate(zip(poses, pointmaps, strict=True), start=1):
-        policy.observe(
+        adapter = SlamVisualizationAdapter()
+        policy.observe_update(
             stream,
-            BackendNoticeReceived(
-                event_id=f"pose-{frame_index}",
-                run_id="run-1",
-                ts_ns=frame_index,
+            StageRuntimeUpdate(
                 stage_key=StageKey.SLAM,
-                notice=PoseEstimated(
-                    seq=frame_index,
-                    timestamp_ns=frame_index,
-                    source_seq=frame_index,
-                    source_timestamp_ns=frame_index,
-                    pose=pose,
+                timestamp_ns=frame_index,
+                visualizations=adapter.build_items(
+                    SlamUpdate(
+                        seq=frame_index,
+                        timestamp_ns=frame_index,
+                        source_seq=frame_index,
+                        source_timestamp_ns=frame_index,
+                        pose=pose,
+                    ),
+                    {},
                 ),
             ),
             payloads={},
         )
-        policy.observe(
+        policy.observe_update(
             stream,
-            BackendNoticeReceived(
-                event_id=f"keyframe-{frame_index}",
-                run_id="run-1",
-                ts_ns=frame_index,
+            StageRuntimeUpdate(
                 stage_key=StageKey.SLAM,
-                notice=KeyframeVisualizationReady(
-                    seq=frame_index,
-                    timestamp_ns=frame_index,
-                    source_seq=frame_index,
-                    source_timestamp_ns=frame_index,
-                    keyframe_index=frame_index - 1,
-                    pose=pose,
-                    image=ArrayHandle(handle_id=f"rgb-{frame_index}", shape=(3, 4, 3), dtype="uint8"),
-                    pointmap=ArrayHandle(handle_id=f"pointmap-{frame_index}", shape=pointmap.shape, dtype="float32"),
-                    camera_intrinsics=intrinsics,
+                timestamp_ns=frame_index,
+                visualizations=adapter.build_items(
+                    SlamUpdate(
+                        seq=frame_index,
+                        timestamp_ns=frame_index,
+                        source_seq=frame_index,
+                        source_timestamp_ns=frame_index,
+                        is_keyframe=True,
+                        keyframe_index=frame_index - 1,
+                        pose=pose,
+                        camera_intrinsics=intrinsics,
+                    ),
+                    {
+                        IMAGE_REF: TransientPayloadRef(
+                            handle_id=f"rgb-{frame_index}",
+                            payload_kind="image",
+                            shape=(3, 4, 3),
+                            dtype="uint8",
+                        ),
+                        POINTMAP_REF: TransientPayloadRef(
+                            handle_id=f"pointmap-{frame_index}",
+                            payload_kind="point_cloud",
+                            shape=pointmap.shape,
+                            dtype="float32",
+                        ),
+                    },
                 ),
             ),
             payloads={

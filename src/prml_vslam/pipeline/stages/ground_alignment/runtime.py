@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prml_vslam.alignment import GroundAlignmentService
+from prml_vslam.alignment.services import GroundAlignmentService
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -89,6 +89,7 @@ class GroundAlignmentRuntime:
         )
 
 
+# TODO: remove this boilerplate!
 def _final_status(
     *,
     stage_key: StageKey,

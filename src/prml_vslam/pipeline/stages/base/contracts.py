@@ -13,6 +13,7 @@ from enum import StrEnum
 from pydantic import ConfigDict, Field, SerializeAsAny
 
 from prml_vslam.interfaces.camera import CameraIntrinsics
+from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -132,6 +133,9 @@ class VisualizationItem(TransportModel):
 
     payload_refs: dict[str, TransientPayloadRef] = Field(default_factory=dict)
     """Named live payload references, keyed by semantic slot."""
+
+    artifact_refs: dict[str, ArtifactRef] = Field(default_factory=dict)
+    """Named durable artifact references, keyed by semantic slot."""
 
     pose: FrameTransform | None = None
     """Optional pose or transform associated with the item."""

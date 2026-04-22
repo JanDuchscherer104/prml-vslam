@@ -11,8 +11,6 @@ import ray
 from ray.actor import ActorHandle
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.pipeline.contracts.events import RunEvent, StageCompleted
-from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import Console
@@ -25,8 +23,10 @@ from prml_vslam.visualization.rerun import (
     log_depth_image,
     log_ground_plane_patch,
     log_line_strip3d,
+    log_mesh_ply,
     log_pinhole,
     log_pointcloud,
+    log_pointcloud_ply,
     log_rgb_image,
     log_transform,
 )
@@ -59,10 +59,12 @@ class RerunEventSink:
             log_pinhole=log_pinhole,
             log_pointcloud=log_pointcloud,
             log_line_strip3d=log_line_strip3d,
+            log_mesh_ply=log_mesh_ply,
             log_clear=log_clear,
             log_depth_image=log_depth_image,
             log_ground_plane_patch=log_ground_plane_patch,
             log_rgb_image=log_rgb_image,
+            log_pointcloud_ply=log_pointcloud_ply,
             log_transform=log_transform,
             frusta_history_window_streaming=frusta_history_window_streaming,
             show_tracking_trajectory=show_tracking_trajectory,
@@ -74,10 +76,12 @@ class RerunEventSink:
             log_pinhole=log_pinhole,
             log_pointcloud=log_pointcloud,
             log_line_strip3d=log_line_strip3d,
+            log_mesh_ply=log_mesh_ply,
             log_clear=log_clear,
             log_depth_image=log_depth_image,
             log_ground_plane_patch=log_ground_plane_patch,
             log_rgb_image=log_rgb_image,
+            log_pointcloud_ply=log_pointcloud_ply,
             log_transform=log_transform,
             frusta_history_window_streaming=frusta_history_window_streaming,
             show_tracking_trajectory=show_tracking_trajectory,
@@ -113,18 +117,6 @@ class RerunEventSink:
                 show_diagnostic_preview=log_diagnostic_preview,
             )
             attach_recording_sinks(self._export_stream, grpc_url=None, target_path=target_path)
-
-    # TODO(pipeline-refactor/WP-10): Delete this RunEvent observer after the
-    # coordinator, snapshot projector, app, and Rerun paths consume
-    # StageRuntimeUpdate values with resolved TransientPayloadRefs.
-    def observe(self, event: RunEvent, *, payloads: Mapping[str, np.ndarray] | None = None) -> None:
-        if self._live_stream is not None:
-            self._live_policy.observe(self._live_stream, event, payloads=payloads)
-        if self._is_ground_alignment_completion(event):
-            self._cache_ground_alignment(event)
-            return
-        if self._export_stream is not None:
-            self._export_policy.observe(self._export_stream, event, payloads=payloads)
 
     def observe_update(
         self,
@@ -162,20 +154,6 @@ class RerunEventSink:
             return
         stream.flush(blocking=True)
         stream.disconnect()
-
-    @staticmethod
-    def _is_ground_alignment_completion(event: RunEvent) -> bool:
-        return isinstance(event, StageCompleted) and event.stage_key is StageKey.GROUND_ALIGNMENT
-
-    # TODO(pipeline-refactor/WP-10): Remove with observe(event=...) once
-    # ground-alignment visualization reaches the sink through live updates.
-    def _cache_ground_alignment(self, event: RunEvent) -> None:
-        if not isinstance(event, StageCompleted):
-            return
-        metadata = event.ground_alignment
-        if metadata is None or not metadata.applied:
-            return
-        self._latest_ground_alignment = metadata
 
     def _cache_ground_alignment_update(self, update: StageRuntimeUpdate) -> bool:
         for semantic_event in update.semantic_events:
@@ -232,25 +210,6 @@ class RerunSinkActor:
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
         )
-
-    # TODO(pipeline-refactor/WP-10): Delete this actor compatibility method
-    # after callers stop sending RunEvent plus rerun_bindings to the Rerun
-    # sidecar. The target path is observe_update(...).
-    def observe_event(
-        self,
-        *,
-        event: RunEvent,
-        rerun_bindings: list[tuple[str, np.ndarray]] | None = None,
-    ) -> None:
-        try:
-            payloads = (
-                {}
-                if rerun_bindings is None
-                else {handle_id: np.asarray(payload) for handle_id, payload in rerun_bindings}
-            )
-            self._sink.observe(event, payloads=payloads)
-        except Exception as exc:  # pragma: no cover - best-effort sink guard
-            _LOGGER.warning("Skipping Rerun sink event '%s': %s", event.kind, exc)
 
     def observe_update(
         self,
