@@ -18,6 +18,7 @@ from prml_vslam.datasets import DatasetId
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend
 from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.mast3r.adapter import Mast3rSlamBackend
 from prml_vslam.methods.multiprocess import (
     MultiprocessSlamSession,
 )
@@ -1435,9 +1436,9 @@ def test_default_slam_backend_factory_maps_mock_to_mock_backend(tmp_path: Path) 
     assert isinstance(backend, MockSlamBackendConfig().target_type)
 
 
-def test_default_slam_backend_factory_rejects_mast3r_until_backend_exists(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="mast3r.*support execution"):
-        _default_slam_backend_factory(MethodId.MAST3R)
+def test_default_slam_backend_factory_maps_mast3r_to_real_backend(tmp_path: Path) -> None:
+    backend = _default_slam_backend_factory(MethodId.MAST3R)
+    assert isinstance(backend, Mast3rSlamBackend)
 
 
 def _build_request(
