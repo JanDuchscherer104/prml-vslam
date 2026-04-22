@@ -137,7 +137,7 @@ Action items:
   metrics/status, UI, and Rerun forwarding.
 - Keep `StageResult` and typed payloads as the stage-to-stage execution
   contract.
-- Keep `VisualizationEnvelope` sink-facing only.
+- Keep `VisualizationItem` sink-facing only.
 - Do not introduce a new observer bus abstraction in the first slice; use
   simple coordinator/update forwarding.
 - Forbid stages and DTOs from emitting Rerun entity paths, timelines, or SDK
@@ -255,7 +255,7 @@ Action items:
 - Add prefix or sliding-window alignment drift.
 - Add plots over path length for global bias, per-pose residuals, per-edge
   residuals, and prefix/window drift.
-- Optionally emit neutral visualization/update payloads for the Rerun sink or
+- Optionally emit neutral `VisualizationItem` values for the Rerun sink or
   plotting layer.
 - Document that evo's Umeyama alignment is position-based and does not prove
   full pose-orientation consistency.

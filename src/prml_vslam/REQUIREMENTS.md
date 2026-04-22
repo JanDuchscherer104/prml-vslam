@@ -35,10 +35,15 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own evaluation policy or method-specific execution
 - `eval`
   - owns explicit evaluation logic and typed evaluation contracts
+  - owns typed comparison artifacts and statistics, including future persisted
+    estimated-vs-reference intrinsics comparisons
   - does not own method execution, source normalization, or app state
 - `interfaces`
   - owns repo-wide shared datamodels only
   - examples include `CameraIntrinsics`, `FrameTransform`, and `FramePacket`
+  - owns reusable camera artifact datamodels and pure camera-model transforms
+    when the same intrinsics semantics cross method, evaluation, plotting, and
+    app boundaries
 - `benchmark`
   - owns thin benchmark-policy composition such as evaluation enablement and baseline selection
 - `visualization`
@@ -49,6 +54,8 @@ Use this file for package-root ownership rules and cross-package contract constr
 - `methods`
   - owns backend-specific execution seams and thin method-wrapper integration
   - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend` and `SlamSession`
+  - owns backend-native artifact interpretation and standardization, including
+    method-specific preprocessing metadata needed to interpret native outputs
   - does not own pipeline planning or evaluation policy
 - `pipeline`
   - owns orchestration, run contracts, artifact layout, stage planning, events,
@@ -64,6 +71,8 @@ Use this file for package-root ownership rules and cross-package contract constr
   - examples include `FramePacketStream`, `OfflineSequenceSource`, and `StreamingSequenceSource`
 - `utils`
   - owns shared low-level infrastructure such as config helpers, path handling, logging, and generic geometry/runtime helpers
+  - may own generic reusable IO/math helpers, such as color-preserving PLY IO,
+    but not method-native artifact semantics or benchmark comparison policy
   - does not own package-specific workflow policy
 
 ## Non-Negotiable Requirements
@@ -88,20 +97,13 @@ Use this file for package-root ownership rules and cross-package contract constr
   semantics, and backend placement policy; Ray-specific refs and mailboxes stay
   backend-private.
 - External-method wrappers must stay thin and normalize into repo-owned pipeline artifacts instead of inventing parallel public result shapes.
+- Method-native artifact standardization belongs with the method wrapper; shared
+  DTOs and low-level helpers may be imported from `interfaces` and `utils`,
+  but the pipeline must not interpret backend-native arrays directly.
+- Persisted diagnostic or benchmark comparisons belong in `eval`; app pages and
+  plotting helpers may render them but must not define their semantics.
 - Record3D live pipeline requests must use a transport-aware typed source contract instead of encoding USB or Wi-Fi details into ad hoc `source_id` strings alone.
 - `PathConfig` remains the single owner of repo-owned path semantics.
-
-## Stage Runtime Requirements
-
-- Pipeline stages must be constructed from typed config objects instead of loose dictionaries or long argument lists.
-- Top-level stage configs must expose a common runtime contract that lets the pipeline reason uniformly about target construction and resource placement.
-- Stateful Ray-backed stages must resolve from config into the runtime actor class that the pipeline schedules.
-- Runtime placement metadata such as CPU, GPU, memory, and remote-node requirements belongs in typed stage config surfaces.
-- Stage configs should compose nested child configs and use typed discriminators for backend or variant selection.
-- Every stage must define explicit DTOs for offline and streaming inputs and outputs.
-- Stage output DTOs that participate in visualization must convert into repo-owned Rerun event payloads rather than calling the Rerun SDK directly.
-- The Rerun sink is the only component that talks directly to the Rerun SDK.
-- Running stages must expose typed status telemetry, including queue depth, throughput, and latency where the stage can measure them.
 
 ## Explicit Non-Goals
 
@@ -116,3 +118,25 @@ Use this file for package-root ownership rules and cross-package contract constr
 - It gives one clear answer to “which top-level package owns this concern?”
 - It does not restate package-local requirements that already belong in lower package docs.
 - It stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.
+
+## Pipeline Stage Refactor Requirements
+
+- Stage configs are declarative policy contracts. They validate stage policy,
+  resource hints, telemetry, cleanup, and failure-provenance settings; they do
+  not construct runtime objects or Ray actors.
+- `RuntimeManager` is the construction authority for stage runtimes,
+  capability-typed `StageRuntimeProxy` instances, sink sidecars, payload
+  stores, and placement-specific runtime wrappers.
+- Backend, source, and reconstruction variant configs may use
+  `FactoryConfig.setup_target()` when they construct concrete domain or source
+  implementations. Stage policy configs must not duplicate that construction
+  role.
+- Stage runtime boundaries use explicit typed contracts for terminal results,
+  live updates, status, inputs, and private runtime-only wrappers where those
+  wrappers carry real boundary semantics.
+- DTOs, stage runtimes, and runtime proxies must not implement Rerun SDK
+  conversion. Stage/domain-specific visualization adapters create neutral
+  visualization items; Rerun sinks are the only SDK callers.
+- Stage runtimes must expose queryable live status through pipeline-owned
+  status DTOs for lifecycle, progress, throughput/FPS, latency, queue or
+  credit counters that the runtime actually owns, and resource assignment.
