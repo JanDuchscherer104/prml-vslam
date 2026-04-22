@@ -123,7 +123,14 @@ class SlamStageSectionConfig(StageConfig):
 
 
 class StageBundle(BaseConfig):
-    """Fixed target stage-section bundle for one run config."""
+    """Fixed target stage-section bundle for one run config.
+
+    The bundle keeps public TOML shape readable with named sections such as
+    ``[stages.source]`` and ``[stages.evaluate_trajectory]`` while preserving
+    deterministic linear stage order. During migration each section still maps
+    to the current executable :class:`prml_vslam.pipeline.contracts.stages.StageKey`
+    so old run inspection and current launch paths remain compatible.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -232,7 +239,16 @@ class StageBundle(BaseConfig):
 
 
 class RunConfig(BaseConfig):
-    """Target persisted root config with a current-planner compatibility bridge."""
+    """Target persisted root config with a current-planner compatibility bridge.
+
+    ``RunConfig`` is the declarative, TOML-friendly root described by the
+    pipeline refactor target. It owns stage policy, visualization policy, and
+    run runtime policy, then compiles to a deterministic
+    :class:`prml_vslam.pipeline.contracts.plan.RunPlan`. It does not construct
+    runtime objects; launch code should hand the compiled plan to
+    :class:`prml_vslam.pipeline.runtime_manager.RuntimeManager` or the current
+    backend compatibility path.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

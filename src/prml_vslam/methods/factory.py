@@ -1,4 +1,10 @@
-"""Typed backend factory for pipeline-owned orchestration."""
+"""Typed backend factory for method-owned SLAM backend construction.
+
+The factory is the method package's construction seam. Pipeline planning may
+ask it for descriptors and runtime code may ask it to instantiate a backend,
+but the factory does not own stage lifecycle, resource placement, event
+recording, or benchmark policy.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +18,7 @@ from prml_vslam.utils import PathConfig
 
 
 class BackendFactoryProtocol(Protocol):
-    """Factory surface consumed by the pipeline."""
+    """Factory surface consumed by pipeline runtimes and tests."""
 
     def describe(self, backend_config: SlamBackendConfig) -> BackendDescriptor:
         """Return the descriptor for one backend config."""
@@ -22,9 +28,20 @@ class BackendFactoryProtocol(Protocol):
 
 
 class BackendFactory(BackendFactoryProtocol):
-    """Repository-local backend factory."""
+    """Build method backends from the repository's discriminated config union.
+
+    Concrete backend configs own their factory behavior through
+    :class:`prml_vslam.utils.FactoryConfig`. This class centralizes validation
+    and descriptor creation so pipeline code does not switch on method ids in
+    multiple places.
+    """
 
     def describe(self, backend_config: SlamBackendConfig) -> BackendDescriptor:
+        """Return capability metadata without constructing the backend.
+
+        The descriptor is safe for plan previews and app controls because it is
+        derived from config properties only.
+        """
         method_id = _require_method_id(backend_config)
         return BackendDescriptor(
             key=method_id.value,
@@ -42,6 +59,17 @@ class BackendFactory(BackendFactoryProtocol):
         )
 
     def build(self, backend_config: BackendConfig, *, path_config: PathConfig | None = None) -> SlamBackend:
+        """Instantiate one executable backend from its typed config.
+
+        Args:
+            backend_config: Concrete method-owned backend config.
+            path_config: Optional repository path policy needed by external
+                wrappers such as ViSTA.
+
+        Returns:
+            Backend implementing the method protocols for offline and/or
+            streaming execution.
+        """
         method_id = _require_method_id(backend_config)
         if method_id is MethodId.MAST3R:
             raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")

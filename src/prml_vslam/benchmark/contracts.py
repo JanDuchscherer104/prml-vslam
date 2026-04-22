@@ -1,4 +1,11 @@
-"""Thin benchmark-policy contracts kept outside the pipeline core."""
+"""Thin benchmark-policy contracts kept outside the pipeline core.
+
+Benchmark config answers which comparison or reference-preparation stages are
+requested and which baseline source they should use. It does not compute
+metrics, execute SLAM methods, or own artifact formats; those responsibilities
+remain in :mod:`prml_vslam.eval`, :mod:`prml_vslam.methods`, and
+:mod:`prml_vslam.pipeline`.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +17,12 @@ from prml_vslam.utils import BaseConfig
 
 
 class ReferenceSource(StrEnum):
-    """Typed source identifier for one available reference trajectory."""
+    """Typed source identifier for one available reference trajectory.
+
+    Dataset ingest can expose several trajectories, but evaluation must choose
+    one explicitly. ARCore and ARKit are optional external baselines, while
+    ``GROUND_TRUTH`` is the preferred benchmark reference when available.
+    """
 
     GROUND_TRUTH = "ground_truth"
     ARCORE = "arcore"
@@ -43,7 +55,12 @@ class ReferenceCloudCoordinateStatus(StrEnum):
 # TODO(pipeline-refactor/WP-02): Replace with [stages.reconstruction] reference
 # mode policy once ReconstructionStageConfig covers current reference behavior.
 class ReferenceReconstructionConfig(BaseConfig):
-    """Policy toggle for the optional reference-reconstruction stage."""
+    """Migration policy toggle for optional reference reconstruction.
+
+    The target public pipeline stage is ``reconstruction`` with backend/mode
+    variants. This config remains benchmark-owned compatibility policy until
+    target reconstruction stage config covers the same reference-mode behavior.
+    """
 
     enabled: bool = False
     """Whether the run should include the corresponding stage."""
@@ -53,7 +70,12 @@ class ReferenceReconstructionConfig(BaseConfig):
 
 
 class TrajectoryBenchmarkConfig(BaseConfig):
-    """Policy for trajectory evaluation."""
+    """Policy for trajectory evaluation stage enablement and baseline choice.
+
+    Metric computation, alignment mode, and persisted result schema belong to
+    :mod:`prml_vslam.eval`. This config only requests the stage and names the
+    reference trajectory source prepared by ingest.
+    """
 
     enabled: bool = False
     """Whether the run should include trajectory evaluation."""
@@ -77,7 +99,12 @@ class EfficiencyBenchmarkConfig(BaseConfig):
 
 
 class BenchmarkConfig(BaseConfig):
-    """Thin benchmark-policy bundle attached to one run request."""
+    """Bundle benchmark-stage policy without becoming a runtime owner.
+
+    Pipeline planning reads this bundle to mark evaluation/reconstruction stages
+    requested or unavailable. Runtime execution and result DTOs stay in their
+    owning packages so benchmark policy remains a small composition layer.
+    """
 
     reference: ReferenceReconstructionConfig = Field(default_factory=ReferenceReconstructionConfig)
     """Reference-reconstruction policy."""

@@ -87,7 +87,12 @@ class RunArtifactPaths(BaseData):
 
     @classmethod
     def build(cls, artifact_root: Path) -> RunArtifactPaths:
-        """Build the canonical artifact layout from an explicit root."""
+        """Build the canonical artifact layout from an explicit root.
+
+        The returned paths are deterministic and stage-addressable. Callers may
+        create directories as needed, but construction itself is side-effect
+        free so planning can preview outputs before execution starts.
+        """
         resolved_root = artifact_root.expanduser().resolve()
         return cls(
             artifact_root=resolved_root,
@@ -253,7 +258,12 @@ class PathConfig(BaseConfig):
         must_exist: bool = False,
         create_parent: bool = False,
     ) -> Path:
-        """Resolve a TOML file path relative to the repository root."""
+        """Resolve a TOML file path relative to the repository root.
+
+        Use this for repo-owned persisted configs such as pipeline requests and
+        target run configs. It enforces the ``.toml`` suffix and can optionally
+        create the parent directory without creating the config file itself.
+        """
         resolved = self.resolve_repo_path(path, base_dir=base_dir)
         if resolved.suffix != ".toml":
             raise ValueError(f"Config path must be a .toml file, got {resolved}")
@@ -294,7 +304,12 @@ class PathConfig(BaseConfig):
     def plan_run_paths(
         self, *, experiment_name: str, method_slug: str, output_dir: str | Path | None = None
     ) -> RunArtifactPaths:
-        """Build the canonical artifact layout used by :mod:`prml_vslam.pipeline` for one run."""
+        """Build the canonical artifact layout used by the pipeline for one run.
+
+        The run root is ``output_dir / slugified_experiment_name / method_slug``.
+        This convention keeps method outputs grouped while leaving stage-level
+        artifact filenames centralized in :class:`RunArtifactPaths`.
+        """
         return RunArtifactPaths.build(
             self.resolve_output_dir(output_dir) / self.slugify_experiment_name(experiment_name) / method_slug
         )

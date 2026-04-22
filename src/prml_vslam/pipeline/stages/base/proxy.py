@@ -38,7 +38,14 @@ class RuntimeCapability(StrEnum):
 
 @dataclass
 class StageRuntimeProxy(BaseStageRuntime):
-    """Wrap one runtime and expose explicit capability-specific views."""
+    """Wrap one runtime and expose explicit capability-specific views.
+
+    The proxy is deployment plumbing, not a second runtime abstraction. Callers
+    ask for an offline, streaming, or live-update view during preflight and then
+    invoke only that protocol. The proxy owns submitted/completed/failed
+    counters and resource-assignment metadata so coordinator and app code never
+    need Ray object refs or task bookkeeping.
+    """
 
     stage_key: StageKey
     runtime: BaseStageRuntime

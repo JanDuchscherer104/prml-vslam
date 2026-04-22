@@ -9,7 +9,12 @@ from prml_vslam.utils import BaseData, RunArtifactPaths
 
 
 class SummaryRuntimeInput(BaseData):
-    """Inputs required to project durable summary artifacts."""
+    """Inputs required to project durable summary artifacts.
+
+    Summary is projection-only: it consumes terminal stage outcomes and the run
+    plan to write manifests and the final run summary. It must not compute new
+    metrics or reinterpret domain payloads.
+    """
 
     # TODO(pipeline-refactor/WP-09): Replace RunRequest with target RunConfig
     # summary policy once launch paths submit RunConfig directly.

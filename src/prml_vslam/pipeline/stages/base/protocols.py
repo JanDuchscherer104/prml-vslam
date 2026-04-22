@@ -21,7 +21,13 @@ TStreamItem = TypeVar("TStreamItem", bound=BaseData | FramePacket)
 
 @runtime_checkable
 class BaseStageRuntime(Protocol):
-    """Common lifecycle surface implemented by every stage runtime."""
+    """Common lifecycle surface implemented by every stage runtime.
+
+    The base protocol is deployment-neutral: an in-process runtime and a
+    Ray-hosted proxy both expose the same status and stop surface. Capability
+    protocols below add bounded, live-update, or streaming behavior without
+    encoding where the runtime executes.
+    """
 
     @abstractmethod
     def status(self) -> StageRuntimeStatus:
@@ -34,7 +40,12 @@ class BaseStageRuntime(Protocol):
 
 @runtime_checkable
 class OfflineStageRuntime(BaseStageRuntime, Protocol[TOfflineInput]):
-    """Capability surface for bounded or batch-like stage execution."""
+    """Capability surface for bounded or batch-like stage execution.
+
+    ``Offline`` means the invocation has a finite input payload and returns one
+    terminal :class:`prml_vslam.pipeline.stages.base.contracts.StageResult`; it
+    does not imply the work is small or single-frame.
+    """
 
     @abstractmethod
     def run_offline(self, input_payload: TOfflineInput) -> StageResult:
@@ -43,7 +54,12 @@ class OfflineStageRuntime(BaseStageRuntime, Protocol[TOfflineInput]):
 
 @runtime_checkable
 class LiveUpdateStageRuntime(BaseStageRuntime, Protocol):
-    """Capability surface for runtimes that emit live observer updates."""
+    """Capability surface for runtimes that emit live observer updates.
+
+    Draining is non-blocking and observer-oriented. Missing or dropped updates
+    must not change terminal stage correctness because downstream stages read
+    completed :class:`StageResult` values instead.
+    """
 
     @abstractmethod
     def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
@@ -52,7 +68,12 @@ class LiveUpdateStageRuntime(BaseStageRuntime, Protocol):
 
 @runtime_checkable
 class StreamingStageRuntime(BaseStageRuntime, Protocol[TStreamingInput, TStreamItem]):
-    """Capability surface for active runtimes that accept stream items."""
+    """Capability surface for active runtimes that accept stream items.
+
+    Streaming runtimes separate session startup, hot-path item submission, and
+    finalization. This models SLAM-style sessions where frames arrive
+    incrementally but completion still returns one durable stage result.
+    """
 
     @abstractmethod
     def start_streaming(self, input_payload: TStreamingInput) -> None:

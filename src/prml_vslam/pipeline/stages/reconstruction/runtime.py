@@ -11,15 +11,20 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import artifact_ref
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.protocols import LiveUpdateStageRuntime, OfflineStageRuntime
 from prml_vslam.pipeline.stages.reconstruction.contracts import ReconstructionRuntimeInput
 from prml_vslam.pipeline.stages.reconstruction.visualization import ReconstructionVisualizationAdapter
 from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig, ReconstructionArtifacts
 
-# TODO: why is this class not derived from common StageRuntime base class?
 
+class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], LiveUpdateStageRuntime):
+    """Adapt reconstruction-owned Open3D TSDF execution to the bounded runtime API.
 
-class ReconstructionRuntime:
-    """Adapt reconstruction-owned Open3D TSDF execution to the bounded runtime API."""
+    The runtime turns prepared RGB-D observation references into a
+    reconstruction-owned backend call, then wraps the durable output in generic
+    stage result/status contracts. Open3D TSDF parameters, output metadata, and
+    reconstruction artifact semantics stay in :mod:`prml_vslam.reconstruction`.
+    """
 
     def __init__(self, *, visualization_adapter: ReconstructionVisualizationAdapter | None = None) -> None:
         # TODO(pipeline-refactor/WP-10): Switch to the target `reconstruction`
@@ -49,7 +54,12 @@ class ReconstructionRuntime:
         return updates
 
     def run_offline(self, input_payload: ReconstructionRuntimeInput) -> StageResult:
-        """Build the reference reconstruction and return a canonical stage result."""
+        """Build the reference reconstruction and return a canonical stage result.
+
+        The method expects exactly one prepared RGB-D sequence. Future
+        reconstruction modes can widen the stage config, but should preserve
+        the same artifact-first ``StageResult`` handoff.
+        """
         self._status = self._status.model_copy(
             update={
                 "lifecycle_state": StageStatus.RUNNING,

@@ -6,11 +6,18 @@ from prml_vslam.pipeline.contracts.provenance import StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import project_summary
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
+from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
 from prml_vslam.pipeline.stages.summary.contracts import SummaryRuntimeInput
 
 
-class SummaryRuntime:
-    """Project durable run summaries from terminal stage outcomes."""
+class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
+    """Project durable run summaries from terminal stage outcomes.
+
+    The runtime is the final pipeline stage and should remain pure projection:
+    it hashes, records, and writes what earlier stages already produced. New
+    trajectory, cloud, or efficiency metrics belong in eval-owned stages before
+    summary executes.
+    """
 
     def __init__(self) -> None:
         self._status = StageRuntimeStatus(stage_key=StageKey.SUMMARY)
@@ -33,7 +40,12 @@ class SummaryRuntime:
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
     def run_offline(self, input_payload: SummaryRuntimeInput) -> StageResult:
-        """Project summary artifacts and return a canonical stage result."""
+        """Project summary artifacts and return a canonical stage result.
+
+        The result payload is the pipeline-owned :class:`RunSummary`; the
+        stage-manifest side channel remains a migration compatibility surface
+        until manifests are consumed only through durable artifacts.
+        """
         self._status = self._status.model_copy(
             update={
                 "lifecycle_state": StageStatus.RUNNING,

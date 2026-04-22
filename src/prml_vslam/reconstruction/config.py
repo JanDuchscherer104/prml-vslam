@@ -1,4 +1,10 @@
-"""Canonical reconstruction backend configs."""
+"""Canonical reconstruction backend configs.
+
+These are package-owned method-selection contracts for reconstruction
+implementations. They may use :class:`prml_vslam.utils.FactoryConfig` because
+they construct concrete reconstruction backends; pipeline reconstruction stage
+configs should reference them rather than duplicating TSDF or Open3D policy.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +21,11 @@ if TYPE_CHECKING:
 
 
 class ReconstructionBackendConfig(BaseConfig):
-    """Provide the package-local runtime contract shared by reconstruction configs."""
+    """Provide the package-local runtime contract shared by reconstruction configs.
+
+    The discriminator names the reconstruction backend. Stage enablement,
+    resource placement, and failure provenance stay in pipeline stage configs.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -29,7 +39,14 @@ class ReconstructionBackendConfig(BaseConfig):
 
 
 class Open3dTsdfBackendConfig(ReconstructionBackendConfig, FactoryConfig["Open3dTsdfBackend"]):
-    """Configure the minimal Open3D TSDF reconstruction backend."""
+    """Configure the minimal Open3D TSDF reconstruction backend.
+
+    The repo targets Open3D ``0.19.x`` and uses its
+    ``ScalableTSDFVolume`` integration path directly. Inputs must be metric RGB-D
+    observations with coherent intrinsics and ``T_world_camera`` poses; this
+    config controls TSDF parameters, not source normalization or pipeline
+    scheduling.
+    """
 
     method_id: Literal[ReconstructionMethodId.OPEN3D_TSDF] = ReconstructionMethodId.OPEN3D_TSDF
     """Stable backend discriminator."""

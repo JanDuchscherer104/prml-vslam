@@ -45,13 +45,24 @@ _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 
 
 class TrajectoryEvaluationService(TrajectoryEvaluator):
-    """Discover runs and compute or reload explicit `evo` trajectory metrics."""
+    """Discover runs and compute or reload explicit `evo` trajectory metrics.
+
+    The service is the eval-owned implementation behind metrics pages and the
+    trajectory-evaluation pipeline stage. It consumes normalized TUM
+    trajectories and prepared references, persists metric semantics, and keeps
+    evaluation execution explicit rather than tied to app rerenders.
+    """
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
 
     def discover_runs(self, sequence_slug: str | None) -> list[DiscoveredRun]:
-        """Return all runs under the artifacts root that match one sequence slug."""
+        """Return all runs under the artifacts root that match one sequence slug.
+
+        Discovery is read-only and based on normalized ``slam/trajectory.tum``
+        outputs. It does not validate metric availability or compute missing
+        results.
+        """
         if sequence_slug is None:
             return []
         return [
@@ -92,7 +103,12 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         preferred_sequence_slug: str | None,
         preferred_run_root: Path | None,
     ) -> EvaluationSelection:
-        """Resolve dataset sequences, runs, and the current metrics-page selection."""
+        """Resolve dataset sequences, runs, and the current metrics-page selection.
+
+        This method keeps UI state deterministic by turning optional preferred
+        values into one concrete selection snapshot when local references and
+        run artifacts are available.
+        """
         dataset_root = self.path_config.resolve_dataset_dir(dataset.value)
         artifacts_root = self.path_config.artifacts_dir
         sequence_slugs = list_sequence_slugs(dataset, dataset_root)
@@ -135,7 +151,11 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         *,
         selection: SelectionSnapshot,
     ) -> EvaluationArtifact | None:
-        """Load a persisted `evo` evaluation when it exists."""
+        """Load a persisted `evo` evaluation when it exists.
+
+        Returns ``None`` when either the reference or metrics artifact is
+        missing, leaving callers free to render an explicit compute action.
+        """
         reference_path = selection.reference_path
         result_path = self.result_path(selection.run.artifact_root)
         if reference_path is None or not result_path.exists():
@@ -157,7 +177,12 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         *,
         selection: SelectionSnapshot,
     ) -> EvaluationArtifact:
-        """Compute and persist trajectory APE via the `evo` Python API."""
+        """Compute and persist trajectory APE via the `evo` Python API.
+
+        The current executable metric is translation APE with timestamp
+        association only. The persisted payload records those semantics so
+        future RPE or alignment modes can coexist without ambiguity.
+        """
         reference_path = selection.reference_path
         if reference_path is None:
             raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
@@ -199,7 +224,12 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         benchmark_inputs: PreparedBenchmarkInputs | None,
         slam: SlamArtifacts | None,
     ) -> EvaluationArtifact | None:
-        """Compute the trajectory-evaluation stage for one pipeline run."""
+        """Compute the trajectory-evaluation stage for one pipeline run.
+
+        The stage path uses prepared benchmark inputs instead of rediscovering
+        references from dataset folders. Missing requested baselines are runtime
+        errors because the request explicitly enabled trajectory evaluation.
+        """
         if not request.benchmark.trajectory.enabled:
             return None
         if sequence_manifest is None or benchmark_inputs is None or slam is None:
@@ -237,7 +267,12 @@ def compute_trajectory_ape_preview(
     estimate_path: Path,
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
 ) -> TrajectoryEvaluationPreview:
-    """Compute in-memory translation APE for two normalized TUM trajectory artifacts."""
+    """Compute in-memory translation APE for two normalized TUM trajectory artifacts.
+
+    Uses evo's timestamp association and APE implementation over
+    :class:`evo.core.trajectory.PoseTrajectory3D`. The helper returns a preview
+    DTO and leaves persistence to :class:`TrajectoryEvaluationService`.
+    """
     reference_trajectory = load_tum_trajectory(reference_path)
     estimate_trajectory = load_tum_trajectory(estimate_path)
     try:

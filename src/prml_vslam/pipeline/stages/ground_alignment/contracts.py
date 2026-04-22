@@ -8,7 +8,12 @@ from prml_vslam.utils import BaseData, RunArtifactPaths
 
 
 class GroundAlignmentRuntimeInput(BaseData):
-    """Inputs required to derive ground-alignment metadata from SLAM outputs."""
+    """Inputs required to derive ground-alignment metadata from SLAM outputs.
+
+    The stage consumes completed SLAM artifacts and current alignment policy,
+    then writes a derived metadata artifact. It does not alter the native
+    trajectory or point cloud referenced by :attr:`slam`.
+    """
 
     # TODO(pipeline-refactor/WP-09): Replace RunRequest with target RunConfig
     # stage policy once bounded runtimes are constructed from stage configs.

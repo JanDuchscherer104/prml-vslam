@@ -54,7 +54,12 @@ class PipelineMode(StrEnum):
 # TODO(pipeline-refactor/WP-02): Replace SourceSpec request variants with
 # SourceStageConfig plus source-owned backend config variants.
 class VideoSourceSpec(FrameSelectionConfig):
-    """Describe one raw video source that the pipeline should normalize offline."""
+    """Describe one raw video source that the pipeline should normalize offline.
+
+    Raw-video requests provide image data only. Any reference trajectories,
+    calibration, or RGB-D observations must be supplied by another source type
+    or by later explicit benchmark preparation.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -99,7 +104,13 @@ class DatasetSourceSpec(FrameSelectionConfig):
 # TODO(pipeline-refactor/WP-02): Replace SourceSpec request variants with
 # SourceStageConfig plus IO-owned Record3D transport config.
 class Record3DLiveSourceSpec(BaseConfig):
-    """Describe one live Record3D source selected for streaming execution."""
+    """Describe one live Record3D source selected for streaming execution.
+
+    USB and Wi-Fi Preview are both supported typed transports. This request
+    object selects transport and device addressing only; live packet decoding
+    belongs to :mod:`prml_vslam.io`, and SLAM backend selection belongs to the
+    separate :class:`SlamStageConfig`.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -128,7 +139,13 @@ RayLocalHeadLifecycle: TypeAlias = Literal["ephemeral", "reusable"]
 # TODO(pipeline-refactor/WP-02): Replace per-stage placement request fragments
 # with StageExecutionConfig, ResourceSpec, and PlacementConstraint.
 class StagePlacement(BaseConfig):
-    """Record scheduling preferences for one individual stage."""
+    """Record legacy scheduling preferences for one individual stage.
+
+    This is a migration contact for target
+    :class:`prml_vslam.pipeline.stages.base.config.StageExecutionConfig` and
+    :class:`prml_vslam.pipeline.stages.base.config.ResourceSpec`. Keep new code
+    stage-config-oriented unless it is preserving old request compatibility.
+    """
 
     resources: dict[str, float] = Field(default_factory=dict)
 
@@ -162,7 +179,13 @@ class RunRuntimeConfig(BaseConfig):
 # TODO(pipeline-refactor/WP-02): Rehome as stage-local declarative
 # SlamStageConfig; backend config remains method-owned.
 class SlamStageConfig(BaseConfig):
-    """Bundle the selected backend config and SLAM output policy for the run."""
+    """Bundle the selected backend config and SLAM output policy for the run.
+
+    This current request section is the migration predecessor of the
+    stage-local target SLAM config. Backend config remains method-owned, output
+    materialization policy remains method-owned, and pipeline code owns only
+    stage lifecycle and run association for the resulting artifacts.
+    """
 
     outputs: SlamOutputPolicy = Field(default_factory=SlamOutputPolicy)
     """Output materialization wishes for the selected backend."""
@@ -191,11 +214,14 @@ class SlamStageConfig(BaseConfig):
 class RunRequest(BaseConfig):
     """Represent the full typed entry contract for one pipeline run.
 
-    A :class:`RunRequest` is the main click-through starting point for the
-    package architecture. It brings together the normalized source selection,
-    backend configuration, optional benchmark and alignment stages, viewer
-    policy, and runtime placement hints that eventually compile into a
-    :class:`prml_vslam.pipeline.contracts.plan.RunPlan`.
+    A :class:`RunRequest` is the current compatibility starting point for the
+    package architecture. It brings together source selection, method backend
+    config, optional benchmark and alignment stages, viewer policy, and runtime
+    placement hints that eventually compile into a
+    :class:`prml_vslam.pipeline.contracts.plan.RunPlan`. New persisted configs
+    should prefer :class:`prml_vslam.pipeline.config.RunConfig`, which keeps
+    target stage sections explicit while preserving this request shape for
+    existing app and CLI launch paths.
     """
 
     experiment_name: str

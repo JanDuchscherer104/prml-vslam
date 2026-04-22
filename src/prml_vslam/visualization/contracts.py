@@ -1,4 +1,10 @@
-"""Thin visualization-policy contracts."""
+"""Thin visualization-policy contracts.
+
+Visualization policy controls viewer attachment and `.rrd` export, not
+scientific artifact semantics. Rerun recordings are observer artifacts; TUM
+trajectories, PLY clouds, manifests, and stage summaries remain the benchmark
+source of truth.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +16,13 @@ from prml_vslam.utils import BaseConfig
 
 
 class VisualizationConfig(BaseConfig):
-    """Viewer-export policy attached to one run request."""
+    """Viewer-export policy attached to one run request or target run config.
+
+    The config can ask the pipeline to connect a live Rerun sink, export a
+    repo-owned recording, preserve upstream-native recordings, and tune bounded
+    viewer history. Stage runtimes and DTOs must not call the Rerun SDK
+    directly; they emit neutral visualization items for sinks to interpret.
+    """
 
     connect_live_viewer: bool = False
     """Whether streaming runs should attach a live gRPC viewer sink."""

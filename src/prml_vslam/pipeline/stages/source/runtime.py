@@ -20,13 +20,20 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
+from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
 from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import BaseData, PathConfig, RunArtifactPaths
 
 
 class SourceRuntimeInput(BaseData):
-    """Run-scoped input required to prepare one normalized source stage."""
+    """Run-scoped input required to prepare one normalized source stage.
+
+    This is a migration input while launch still submits
+    :class:`prml_vslam.pipeline.contracts.request.RunRequest`. The target
+    source runtime should eventually receive target source-stage config plus
+    run context instead of reading source policy from the full request.
+    """
 
     # TODO(pipeline-refactor/WP-09): Replace this RunRequest compatibility
     # field with target source-stage config/input once RunConfig drives launch
@@ -38,8 +45,15 @@ class SourceRuntimeInput(BaseData):
     """Root directory for run-owned source artifacts."""
 
 
-class SourceRuntime:
-    """Prepare the normalized source output for offline or streaming runs."""
+class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
+    """Prepare the normalized source output for offline or streaming runs.
+
+    The runtime is method-agnostic: it materializes a
+    :class:`prml_vslam.interfaces.ingest.SequenceManifest`, optional
+    :class:`prml_vslam.interfaces.ingest.PreparedBenchmarkInputs`, and a
+    terminal :class:`prml_vslam.pipeline.stages.base.contracts.StageResult`.
+    It does not resize images for a SLAM backend or choose evaluation policy.
+    """
 
     def __init__(self, *, source: OfflineSequenceSource) -> None:
         self._source = source
@@ -62,7 +76,12 @@ class SourceRuntime:
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
     def run_offline(self, input_payload: SourceRuntimeInput) -> StageResult:
-        """Prepare and persist the canonical source-stage output."""
+        """Prepare and persist the canonical source-stage output.
+
+        The result payload is :class:`prml_vslam.interfaces.ingest.SourceStageOutput`.
+        Downstream stages should read this payload from the result store rather
+        than reaching back into source adapters or dataset services.
+        """
         self._status = self._status.model_copy(
             update={
                 "lifecycle_state": StageStatus.RUNNING,

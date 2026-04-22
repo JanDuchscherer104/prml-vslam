@@ -11,14 +11,18 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import artifact_ref
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
+from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
 from prml_vslam.pipeline.stages.trajectory_eval.contracts import TrajectoryEvaluationRuntimeInput
 from prml_vslam.utils import PathConfig
 
-# TODO: why is this class not derived from common StageRuntime base class?
 
+class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationRuntimeInput]):
+    """Adapt eval-owned trajectory metric computation to the bounded runtime API.
 
-class TrajectoryEvaluationRuntime:
-    """Adapt eval-owned trajectory metric computation to the bounded runtime API."""
+    The runtime builds pipeline outcomes and status, while
+    :class:`prml_vslam.eval.services.TrajectoryEvaluationService` owns metric
+    computation, persisted evaluation schema, and the thin evo integration.
+    """
 
     def __init__(self) -> None:
         self._status = StageRuntimeStatus(stage_key=StageKey.TRAJECTORY_EVALUATION)
@@ -32,7 +36,12 @@ class TrajectoryEvaluationRuntime:
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
     def run_offline(self, input_payload: TrajectoryEvaluationRuntimeInput) -> StageResult:
-        """Compute trajectory metrics and return a canonical stage result."""
+        """Compute trajectory metrics and return a canonical stage result.
+
+        The result payload is an eval-owned artifact. The durable stage outcome
+        records the metrics artifact and the exact source/estimate inputs used
+        for provenance.
+        """
         self._status = self._status.model_copy(
             update={
                 "lifecycle_state": StageStatus.RUNNING,

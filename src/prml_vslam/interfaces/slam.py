@@ -1,4 +1,16 @@
-"""Canonical SLAM-stage DTOs shared across methods and pipeline."""
+"""SLAM artifact and live-update DTOs used at method/pipeline boundaries.
+
+This module is the current compatibility home for normalized SLAM artifacts
+and streaming notices. Durable outputs such as :class:`SlamArtifacts` are
+shared repository semantics, while live DTOs such as :class:`SlamUpdate` and
+the :data:`BackendEvent` union are migration contacts for the target
+architecture described in
+``docs/architecture/pipeline-stage-refactor-target.md``. New code should read
+these docstrings together with :mod:`prml_vslam.methods.protocols`,
+:mod:`prml_vslam.pipeline.stages.slam.runtime`, and
+:mod:`prml_vslam.pipeline.stages.base.contracts` so it can distinguish
+scientific artifacts from live observer telemetry.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +33,14 @@ from prml_vslam.utils import BaseData
 # TODO(pipeline-refactor/WP-08/WP-10): Move this generic artifact reference out
 # of SLAM-owned interfaces after artifact/provenance imports migrate.
 class ArtifactRef(BaseData):
-    """Reference to one materialized artifact owned by the repository."""
+    """Reference one materialized repository artifact by path and fingerprint.
+
+    This DTO is intentionally small: it identifies a durable output that lives
+    under a run artifact root and can be named from manifests, events, and
+    summaries. It is currently located in ``interfaces.slam`` for compatibility,
+    but it is not SLAM-specific; the target refactor moves generic artifact
+    references toward pipeline provenance or a shared artifact contract.
+    """
 
     path: Path
     kind: str
@@ -29,7 +48,15 @@ class ArtifactRef(BaseData):
 
 
 class SlamArtifacts(BaseData):
-    """Materialized outputs produced by the SLAM stage."""
+    """Normalize durable outputs produced by a SLAM backend.
+
+    The bundle is the scientific handoff from method execution into evaluation,
+    alignment, reconstruction, artifact inspection, and reporting. Paths should
+    point at repo-normalized artifacts such as TUM trajectories and PLY point
+    clouds; backend-native diagnostics belong in :attr:`extras` unless another
+    package owns a typed artifact with explicit raster, frame, or metric
+    semantics.
+    """
 
     trajectory_tum: ArtifactRef
     sparse_points_ply: ArtifactRef | None = None
@@ -40,7 +67,14 @@ class SlamArtifacts(BaseData):
 # TODO(pipeline-refactor/WP-06): Replace with a private SlamStageRuntime start
 # input or method-owned init DTO once streaming SLAM is behind the stage runtime.
 class SlamSessionInit(BaseData):
-    """Normalized context injected once when a streaming session starts."""
+    """Context injected once when a streaming SLAM session starts.
+
+    Streaming startup mirrors offline execution: the backend receives the
+    normalized :class:`prml_vslam.interfaces.ingest.SequenceManifest`, optional
+    prepared benchmark references, and the selected trajectory baseline before
+    any :class:`prml_vslam.interfaces.runtime.FramePacket` arrives. The target
+    runtime hides this DTO behind a stage-local streaming-start input.
+    """
 
     sequence_manifest: SequenceManifest
     benchmark_inputs: PreparedBenchmarkInputs | None = None
@@ -50,7 +84,16 @@ class SlamSessionInit(BaseData):
 # TODO(pipeline-refactor/WP-06): Move live SLAM update semantics to
 # methods.contracts and keep transient refs out of pure domain DTOs.
 class SlamUpdate(BaseData):
-    """Incremental SLAM update emitted by streaming-capable backends."""
+    """Represent one method-owned incremental SLAM update.
+
+    Backends emit this rich in-memory object because it can carry arrays,
+    camera intrinsics, keyframe markers, map counters, and the canonical
+    ``T_world_camera`` pose together. It is not a durable event and should not
+    embed pipeline payload handles. The current pipeline translates it through
+    :func:`prml_vslam.methods.events.translate_slam_update`; the target runtime
+    turns it into ``StageRuntimeUpdate`` semantic events plus neutral
+    visualization items.
+    """
 
     seq: int
     timestamp_ns: int
@@ -73,7 +116,13 @@ class SlamUpdate(BaseData):
 # TODO(pipeline-refactor/WP-06): Move backend notice variants to method-owned
 # semantic events carried by StageRuntimeUpdate.
 class PoseEstimated(TransportModel):
-    """Pose estimate emitted by a streaming backend."""
+    """Transport-safe pose notice derived from a live SLAM update.
+
+    The pose follows the repo convention ``world <- camera`` through
+    :class:`prml_vslam.interfaces.transforms.FrameTransform`. This notice is a
+    current durable-event migration contact; target live status and observers
+    should receive method semantic events through ``StageRuntimeUpdate``.
+    """
 
     kind: Literal["pose.estimated"] = "pose.estimated"
     seq: int
@@ -87,7 +136,12 @@ class PoseEstimated(TransportModel):
 # TODO(pipeline-refactor/WP-06): Move backend notice variants to method-owned
 # semantic events carried by StageRuntimeUpdate.
 class KeyframeAccepted(TransportModel):
-    """Keyframe-acceptance notice emitted by a streaming backend."""
+    """Transport-safe notice that a backend accepted a keyframe.
+
+    The notice carries counters and timing hints only. Keyframe rasters,
+    depth, and pointmaps travel through separate visualization payload
+    references so that transient arrays do not become durable event payloads.
+    """
 
     kind: Literal["keyframe.accepted"] = "keyframe.accepted"
     seq: int
@@ -100,7 +154,14 @@ class KeyframeAccepted(TransportModel):
 # TODO(pipeline-refactor/WP-07): Replace handle-bearing backend event with
 # VisualizationItem values created by SlamVisualizationAdapter.
 class KeyframeVisualizationReady(TransportModel):
-    """Visualization payload handles emitted for one accepted keyframe."""
+    """Legacy handle-bearing visualization notice for one accepted keyframe.
+
+    The handles point at transient runtime payloads, not durable artifacts.
+    This is a compatibility bridge for the existing Rerun sink and snapshot
+    projector. Target code should prefer
+    :class:`prml_vslam.pipeline.stages.base.contracts.VisualizationItem` values
+    created by :class:`prml_vslam.pipeline.stages.slam.visualization.SlamVisualizationAdapter`.
+    """
 
     kind: Literal["keyframe.visualization_ready"] = "keyframe.visualization_ready"
     seq: int
@@ -119,7 +180,7 @@ class KeyframeVisualizationReady(TransportModel):
 # TODO(pipeline-refactor/WP-06): Move backend notice variants to method-owned
 # semantic events carried by StageRuntimeUpdate.
 class MapStatsUpdated(TransportModel):
-    """Map-size telemetry emitted by a streaming backend."""
+    """Transport-safe map-size telemetry emitted by a streaming backend."""
 
     kind: Literal["map.stats"] = "map.stats"
     seq: int
@@ -131,7 +192,7 @@ class MapStatsUpdated(TransportModel):
 # TODO(pipeline-refactor/WP-06): Move backend warning notices to method-owned
 # semantic events carried by StageRuntimeUpdate.
 class BackendWarning(TransportModel):
-    """Non-fatal backend warning."""
+    """Non-fatal backend warning surfaced without failing the active run."""
 
     kind: Literal["backend.warning"] = "backend.warning"
     message: str
@@ -142,7 +203,7 @@ class BackendWarning(TransportModel):
 # TODO(pipeline-refactor/WP-06): Move backend error notices to method-owned
 # semantic events carried by StageRuntimeUpdate.
 class BackendError(TransportModel):
-    """Fatal or actionable backend error."""
+    """Fatal or actionable backend error surfaced from method execution."""
 
     kind: Literal["backend.error"] = "backend.error"
     message: str
@@ -153,7 +214,7 @@ class BackendError(TransportModel):
 # TODO(pipeline-refactor/WP-06): Move session terminal notices to method-owned
 # semantic events carried by StageRuntimeUpdate.
 class SessionClosed(TransportModel):
-    """Terminal backend-session notice."""
+    """Terminal backend-session notice listing newly available artifact keys."""
 
     kind: Literal["session.closed"] = "session.closed"
     artifact_keys: list[str] = Field(default_factory=list)

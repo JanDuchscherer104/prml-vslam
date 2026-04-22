@@ -25,9 +25,12 @@ class SlamSession(Protocol):
     """Consume streaming frames and buffer method-owned live updates.
 
     The lifecycle is ``start_session() -> step(...) -> try_get_updates() ->
-    close()``. The returned :class:`SlamUpdate` values are live telemetry,
-    while :class:`prml_vslam.pipeline.SlamArtifacts` remains the durable output
-    boundary.
+    close()``. The returned :class:`prml_vslam.interfaces.slam.SlamUpdate`
+    values are method-owned live telemetry and may include arrays or backend
+    diagnostics; :class:`prml_vslam.interfaces.slam.SlamArtifacts` remains the
+    durable output boundary. A session owns run-specific mutable algorithm
+    state, while the pipeline SLAM stage owns when that session is created,
+    driven, drained, and finalized.
     """
 
     @abstractmethod
@@ -45,7 +48,14 @@ class SlamSession(Protocol):
 
 @runtime_checkable
 class OfflineSlamBackend(Protocol):
-    """Execute over a normalized offline sequence manifest."""
+    """Execute a backend over a normalized offline sequence manifest.
+
+    Implementations adapt upstream systems such as ViSTA-SLAM or MASt3R-SLAM
+    into repository contracts. They may create backend-native workspaces, but
+    they must return normalized :class:`prml_vslam.interfaces.slam.SlamArtifacts`
+    and keep evaluation, alignment, and viewer policy outside the method
+    wrapper.
+    """
 
     method_id: MethodId
 
@@ -64,7 +74,13 @@ class OfflineSlamBackend(Protocol):
 
 @runtime_checkable
 class StreamingSlamBackend(Protocol):
-    """Start one incremental session over normalized repository inputs."""
+    """Start one incremental session over normalized repository inputs.
+
+    Streaming backends receive the same run context as offline execution before
+    frame packets arrive. This lets dataset-backed replay inputs and benchmark
+    references remain explicit while the hot path consumes only
+    :class:`prml_vslam.interfaces.runtime.FramePacket` values.
+    """
 
     method_id: MethodId
 
@@ -81,7 +97,7 @@ class StreamingSlamBackend(Protocol):
 
 @runtime_checkable
 class SlamBackend(OfflineSlamBackend, StreamingSlamBackend, Protocol):
-    """Combine the offline and streaming method seams into one backend contract."""
+    """Backend that supports both bounded offline runs and streaming sessions."""
 
 
 __all__ = [

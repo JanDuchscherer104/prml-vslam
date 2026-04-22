@@ -10,7 +10,13 @@ from prml_vslam.utils import BaseData
 
 
 class TrajectoryEvaluationRuntimeInput(BaseData):
-    """Inputs required to compute repository trajectory metrics."""
+    """Inputs required to compute repository trajectory metrics.
+
+    The evaluation stage is downstream of source preparation and SLAM
+    completion. It needs the normalized sequence, optional prepared references,
+    and the estimated trajectory artifact; it must not discover references by
+    walking dataset folders independently.
+    """
 
     # TODO(pipeline-refactor/WP-09): Replace RunRequest with target RunConfig
     # benchmark policy once bounded runtimes are constructed from stage configs.

@@ -1,4 +1,13 @@
-"""Repo-wide canonical shared DTOs."""
+"""Curated import surface for repo-wide shared DTOs.
+
+The ``interfaces`` package should expose only datamodels whose semantics are
+identical across multiple top-level packages, such as camera intrinsics,
+runtime frame packets, frame-labelled transforms, ingest manifests, and
+normalized artifact bundles. Live SLAM notices are still re-exported here as
+migration contacts; target ownership moves method-live semantics toward
+``prml_vslam.methods`` and pipeline-live transport toward stage runtime
+contracts.
+"""
 
 from .alignment import GroundAlignmentMetadata, GroundPlaneModel, GroundPlaneVisualizationHint
 from .camera import CameraIntrinsics, CameraIntrinsicsSample, CameraIntrinsicsSeries

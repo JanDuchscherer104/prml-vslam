@@ -1,4 +1,10 @@
-"""Package-local execution seams for reconstruction backends."""
+"""Package-local execution seams for reconstruction backends.
+
+Reconstruction is the dense-geometry analogue of the SLAM method layer: it owns
+backend ids, backend configs, and thin adapters around external libraries such
+as Open3D. Pipeline stages call these protocols but do not interpret
+reconstruction-native state or log directly to Rerun.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +20,13 @@ from .contracts import ReconstructionArtifacts, ReconstructionMethodId
 
 @runtime_checkable
 class OfflineReconstructionBackend(Protocol):
-    """Consume typed RGB-D observations and write normalized reconstruction artifacts."""
+    """Consume typed RGB-D observations and write normalized artifacts.
+
+    Implementations must assume each observation carries coherent
+    ``camera_intrinsics``, RGB, metric depth in meters, and ``T_world_camera``
+    pose semantics. The returned artifact bundle owns durable outputs, not live
+    visualization payloads.
+    """
 
     method_id: ReconstructionMethodId
 
@@ -25,7 +37,18 @@ class OfflineReconstructionBackend(Protocol):
         backend_config: ReconstructionBackendConfig,
         artifact_root: Path,
     ) -> ReconstructionArtifacts:
-        """Reconstruct one scene from an offline sequence of RGB-D observations."""
+        """Reconstruct one scene from an offline sequence of RGB-D observations.
+
+        Args:
+            observations: Ordered normalized RGB-D observations in the repo pose
+                convention.
+            backend_config: Method-private reconstruction config used for this
+                backend.
+            artifact_root: Directory where normalized outputs should be written.
+
+        Returns:
+            Durable reconstruction artifacts and side metadata.
+        """
 
 
 @runtime_checkable
@@ -49,7 +72,12 @@ class ReconstructionSession(Protocol):
 
 @runtime_checkable
 class StreamingReconstructionBackend(Protocol):
-    """Start stateful streaming reconstruction over normalized RGB-D observations."""
+    """Start stateful streaming reconstruction over normalized RGB-D observations.
+
+    This is reserved for future online reconstruction methods. The current
+    Open3D TSDF target remains offline-first until a concrete streaming use
+    case needs a live session.
+    """
 
     method_id: ReconstructionMethodId
 
