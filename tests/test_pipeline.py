@@ -206,6 +206,11 @@ output_dir = ".artifacts"
 dataset_id = "advio"
 sequence_id = "advio-01"
 
+[source.dataset_serving]
+dataset_id = "advio"
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
+
 [slam.backend]
 kind = "mock"
 
@@ -231,6 +236,11 @@ output_dir = ".artifacts"
 [source]
 dataset_id = "advio"
 sequence_id = "advio-01"
+
+[source.dataset_serving]
+dataset_id = "advio"
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
 
 [slam.backend]
 kind = "mock"
@@ -1143,7 +1153,15 @@ def test_streaming_requests_cap_ingest_by_backend_max_frames() -> None:
             "experiment_name": "vista-stream",
             "mode": "streaming",
             "output_dir": ".artifacts",
-            "source": {"dataset_id": "advio", "sequence_id": "advio-01"},
+            "source": {
+                "dataset_id": "advio",
+                "sequence_id": "advio-01",
+                "dataset_serving": {
+                    "dataset_id": "advio",
+                    "pose_source": "ground_truth",
+                    "pose_frame_mode": "provider_world",
+                },
+            },
             "slam": {"backend": {"kind": "vista", "max_frames": 42}},
         }
     )

@@ -19,6 +19,7 @@ from prml_vslam.pipeline.config import (
     target_stage_key_for_section,
 )
 from prml_vslam.pipeline.contracts.request import (
+    DatasetSourceSpec,
     PlacementPolicy,
     RunRequest,
     StagePlacement,
@@ -190,10 +191,30 @@ def test_vista_full_legacy_toml_parses_through_run_config_and_matches_current_pl
     run_config_plan = run_config.compile_plan(path_config)
     legacy_plan = legacy_request.build(path_config)
 
+    assert isinstance(legacy_request.source, DatasetSourceSpec)
+    assert legacy_request.source.dataset_id == "advio"
+    assert legacy_request.source.sequence_id == "advio-20"
+    assert legacy_request.source.dataset_serving is not None
     assert [stage.key for stage in run_config_plan.stages] == [stage.key for stage in legacy_plan.stages]
     assert run_config.stages.align_ground.enabled is True
-    assert run_config.stages.reconstruction.enabled is True
+    assert run_config.stages.reconstruction.enabled is False
     assert run_config.stages.evaluate_trajectory.enabled is False
+
+
+def test_invalid_advio_source_does_not_parse_as_record3d() -> None:
+    payload = {
+        "experiment_name": "invalid-advio",
+        "mode": "streaming",
+        "output_dir": ".artifacts",
+        "source": {
+            "dataset_id": "advio",
+            "sequence_id": "advio-20",
+        },
+        "slam": {"backend": {"method_id": "mock"}},
+    }
+
+    with pytest.raises(ValidationError, match="ADVIO dataset sources must provide `dataset_serving`"):
+        RunRequest.model_validate(payload)
 
 
 def test_target_generic_stages_toml_parses_into_stage_bundle() -> None:
