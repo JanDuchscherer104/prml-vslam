@@ -66,6 +66,7 @@ from prml_vslam.pipeline.ray_runtime.stage_program import (
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
@@ -261,6 +262,7 @@ class RunCoordinatorActor:
         bindings: list[tuple[str, HandlePayload]],
         rerun_bindings: list[tuple[str, np.ndarray]],
         released_credits: int,
+        forward_to_rerun: bool = True,
     ) -> None:
         """Record translated backend notices and release packet credits."""
         for handle_id, ref in bindings:
@@ -275,6 +277,7 @@ class RunCoordinatorActor:
                     notice=notice,
                 ),
                 rerun_bindings=rerun_bindings,
+                forward_to_rerun=forward_to_rerun,
             )
             if isinstance(notice, BackendError):
                 self._streaming_error = notice.message
@@ -283,6 +286,29 @@ class RunCoordinatorActor:
             self._source_actor.grant_credit.remote(released_credits)
         if self._source_finished and self._in_flight_frames == 0:
             self._finalize_streaming()
+
+    def on_slam_runtime_updates(
+        self,
+        *,
+        updates: list[StageRuntimeUpdate],
+        payload_bindings: list[tuple[str, np.ndarray]],
+    ) -> None:
+        # TODO(pipeline-refactor/WP-08): Replace payload_bindings with the
+        # canonical TransientPayloadRef resolver once live observer routing
+        # owns payload resolution.
+        """Forward live SLAM runtime updates to observer sinks."""
+        if self._rerun_sink is None:
+            return
+        for update in updates:
+            try:
+                self._rerun_sink_last_call = self._rerun_sink.observe_update.remote(
+                    update=update,
+                    payload_bindings=payload_bindings,
+                )
+            except Exception as exc:  # pragma: no cover - best-effort sidecar submission
+                self._console.warning(
+                    "Failed to submit Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc
+                )
 
     def on_source_eof(self) -> None:
         """Mark the streaming source as exhausted and finalize if drained."""
@@ -652,6 +678,7 @@ class RunCoordinatorActor:
         event: RunEvent,
         *,
         rerun_bindings: list[tuple[str, np.ndarray]] | None = None,
+        forward_to_rerun: bool = True,
     ) -> None:
         with self._lock:
             self._snapshot = self._projector.apply(self._snapshot, event)
@@ -661,7 +688,7 @@ class RunCoordinatorActor:
                 self._events = self._events[-EVENT_RING_LIMIT:]
         if self._jsonl_sink is not None:
             self._jsonl_sink.observe(event)
-        if self._rerun_sink is not None:
+        if self._rerun_sink is not None and forward_to_rerun:
             try:
                 # TODO(pipeline-refactor/WP-10): Replace this legacy
                 # RunEvent/rerun_bindings forwarding with StageRuntimeUpdate

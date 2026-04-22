@@ -12,10 +12,8 @@ import ray
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import BackendEvent, SlamSessionInit
+from prml_vslam.interfaces.slam import BackendEvent, SlamArtifacts, SlamSessionInit
 from prml_vslam.methods.events import translate_slam_update
-from prml_vslam.methods.factory import BackendFactory
-from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
@@ -25,13 +23,15 @@ from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     FPS_WINDOW,
     HandlePayload,
-    backend_config_payload,
     put_array_handle,
     put_preview_handle,
     rolling_fps,
     slam_artifacts_map,
     visualization_artifact_map,
 )
+from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
+from prml_vslam.pipeline.stages.slam.runtime import payload_bindings_for_updates
+from prml_vslam.pipeline.stages.slam.visualization import DEPTH_REF, IMAGE_REF, POINTMAP_REF, PREVIEW_REF
 from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
@@ -52,6 +52,9 @@ class OfflineSlamStageActor:
         benchmark_inputs: PreparedBenchmarkInputs | None,
         path_config: PathConfig,
     ) -> StageCompletionPayload:
+        # TODO(pipeline-refactor/WP-10): Delete this StageCompletionPayload
+        # actor wrapper after the coordinator invokes SlamStageRuntime through
+        # RuntimeManager/StageRuntimeProxy and consumes StageResult directly.
         from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
         console = Console(__name__).child(self.__class__.__name__)
@@ -60,39 +63,25 @@ class OfflineSlamStageActor:
             request.slam.backend.method_id.value,
             plan.artifact_root,
         )
-        backend = BackendFactory().build(request.slam.backend, path_config=path_config)
-        if not isinstance(backend, OfflineSlamBackend):
-            raise RuntimeError(f"Backend '{request.slam.backend.method_id.value}' does not support offline execution.")
-        slam = backend.run_sequence(
-            sequence_manifest,
-            benchmark_inputs,
-            request.benchmark.trajectory.baseline_source,
-            backend_config=backend_config_payload(request),
-            output_policy=request.slam.outputs,
-            artifact_root=plan.artifact_root,
-        )
-        run_paths = RunArtifactPaths.build(plan.artifact_root)
-        from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
-
-        visualization = collect_native_visualization_artifacts(
-            native_output_dir=run_paths.native_output_dir,
-            preserve_native_rerun=request.visualization.preserve_native_rerun,
+        runtime = SlamStageRuntime()
+        result = runtime.run_offline(
+            SlamOfflineInput(
+                request=request,
+                plan=plan,
+                path_config=path_config,
+                sequence_manifest=sequence_manifest,
+                benchmark_inputs=benchmark_inputs,
+            )
         )
         console.info(
             "Finished offline SLAM with backend '%s'; visualization artifacts %s.",
             request.slam.backend.method_id.value,
-            "collected" if visualization is not None else "not collected",
+            "collected" if runtime.last_visualization_artifacts is not None else "not collected",
         )
         return StageCompletionPayload(
-            outcome=StageOutcome(
-                stage_key=StageKey.SLAM,
-                status=StageStatus.COMPLETED,
-                config_hash=stable_hash(request.slam),
-                input_fingerprint=stable_hash(sequence_manifest),
-                artifacts=slam_artifacts_map(slam) | visualization_artifact_map(visualization),
-            ),
-            slam=slam,
-            visualization=visualization,
+            outcome=result.outcome,
+            slam=result.payload if isinstance(result.payload, SlamArtifacts) else None,
+            visualization=runtime.last_visualization_artifacts,
         )
 
 
@@ -212,6 +201,7 @@ class StreamingSlamStageActor:
         self._console = Console(__name__).child(self.__class__.__name__).child(coordinator_name)
         self._coordinator = ray.get_actor(coordinator_name, namespace=namespace)
         self._session = None
+        self._runtime: SlamStageRuntime | None = None
         self._accepted_keyframes = 0
         self._keyframe_timestamps = deque(maxlen=FPS_WINDOW)
         self._logged_first_notice = False
@@ -230,22 +220,23 @@ class StreamingSlamStageActor:
         path_config: PathConfig,
         session_init: SlamSessionInit,
     ) -> None:
+        # TODO(pipeline-refactor/WP-10): Delete this actor start wrapper after
+        # SlamStageRuntime is deployed directly behind StageRuntimeProxy.
         self._console.info(
             "Starting streaming SLAM actor with backend '%s' at artifact root '%s'.",
             request.slam.backend.method_id.value,
             plan.artifact_root,
         )
-        backend = BackendFactory().build(request.slam.backend, path_config=path_config)
-        if not isinstance(backend, StreamingSlamBackend):
-            raise RuntimeError(
-                f"Backend '{request.slam.backend.method_id.value}' does not support streaming execution."
+        self._runtime = SlamStageRuntime()
+        self._runtime.start_streaming(
+            SlamStreamingStartInput(
+                request=request,
+                plan=plan,
+                path_config=path_config,
+                session_init=session_init,
             )
-        self._session = backend.start_session(
-            session_init=session_init,
-            backend_config=backend_config_payload(request),
-            output_policy=request.slam.outputs,
-            artifact_root=plan.artifact_root,
         )
+        self._session = self._runtime.session_for_migration
         self._log_diagnostic_preview = request.visualization.log_diagnostic_preview
 
     def push_frame(
@@ -259,25 +250,33 @@ class StreamingSlamStageActor:
         pose: FrameTransform | None,
         provenance: FramePacketProvenance,
     ) -> None:
-        if self._session is None:
+        # TODO(pipeline-refactor/WP-10): Delete this push_frame compatibility
+        # wrapper after the coordinator submits SlamFrameInput through the
+        # target StreamingStageRuntime protocol.
+        if self._runtime is None:
             raise RuntimeError("Streaming SLAM actor has not been started.")
         from prml_vslam.interfaces import FramePacket
 
-        rgb = self._resolve_payload(frame_ref)
-        depth = self._resolve_payload(depth_ref)
-        confidence = self._resolve_payload(confidence_ref)
-        self._session.step(
-            FramePacket(
-                seq=packet.seq,
-                timestamp_ns=packet.timestamp_ns,
-                rgb=rgb,
-                depth=depth,
-                confidence=confidence,
-                intrinsics=intrinsics,
-                pose=pose,
-                provenance=provenance,
+        self._runtime.submit_stream_item(
+            SlamFrameInput(
+                frame=FramePacket(
+                    seq=packet.seq,
+                    timestamp_ns=packet.timestamp_ns,
+                    rgb=self._resolve_payload(frame_ref),
+                    depth=self._resolve_payload(depth_ref),
+                    confidence=self._resolve_payload(confidence_ref),
+                    intrinsics=intrinsics,
+                    pose=pose,
+                    provenance=provenance,
+                )
             )
         )
+        runtime_updates = self._runtime.drain_runtime_updates()
+        if runtime_updates:
+            self._coordinator.on_slam_runtime_updates.remote(
+                updates=runtime_updates,
+                payload_bindings=payload_bindings_for_updates(self._runtime, runtime_updates),
+            )
         notices: list[BackendEvent] = []
         bindings: list[tuple[str, HandlePayload]] = []
         # TODO(pipeline-refactor/WP-10): Remove rerun_bindings after
@@ -285,7 +284,8 @@ class StreamingSlamStageActor:
         # the Rerun sink consumes resolved TransientPayloadRefs.
         rerun_bindings: list[tuple[str, np.ndarray]] = []
         now = time.monotonic()
-        for update in self._session.try_get_updates():
+        for legacy_update in self._runtime.drain_legacy_updates():
+            update = legacy_update.update
             if update.pose is not None and not self._logged_first_pose_update:
                 self._console.info(
                     "First SLAM pose update: seq=%d source_seq=%s pose_updated=%s.",
@@ -330,10 +330,10 @@ class StreamingSlamStageActor:
                     np.asarray(update.preview_rgb).dtype,
                 )
                 self._logged_first_preview_update = True
-            preview_handle, preview_ref = put_preview_handle(update.preview_rgb)
-            image_handle, image_ref = put_array_handle(update.image_rgb)
-            depth_handle, depth_payload_ref = put_array_handle(update.depth_map)
-            pointmap_handle, pointmap_payload_ref = put_array_handle(update.pointmap)
+            preview_handle, preview_ref = put_preview_handle(legacy_update.payloads.get(PREVIEW_REF))
+            image_handle, image_ref = put_array_handle(legacy_update.payloads.get(IMAGE_REF))
+            depth_handle, depth_payload_ref = put_array_handle(legacy_update.payloads.get(DEPTH_REF))
+            pointmap_handle, pointmap_payload_ref = put_array_handle(legacy_update.payloads.get(POINTMAP_REF))
             for handle, ref in (
                 (preview_handle, preview_ref),
                 (image_handle, image_ref),
@@ -343,10 +343,10 @@ class StreamingSlamStageActor:
                 if handle is not None and ref is not None:
                     bindings.append((handle.handle_id, ref))
             for handle, payload in (
-                (preview_handle if self._log_diagnostic_preview else None, update.preview_rgb),
-                (image_handle, update.image_rgb),
-                (depth_handle, update.depth_map),
-                (pointmap_handle, update.pointmap),
+                (preview_handle if self._log_diagnostic_preview else None, legacy_update.payloads.get(PREVIEW_REF)),
+                (image_handle, legacy_update.payloads.get(IMAGE_REF)),
+                (depth_handle, legacy_update.payloads.get(DEPTH_REF)),
+                (pointmap_handle, legacy_update.payloads.get(POINTMAP_REF)),
             ):
                 if handle is not None and payload is not None:
                     rerun_bindings.append((handle.handle_id, np.asarray(payload)))
@@ -374,6 +374,7 @@ class StreamingSlamStageActor:
             bindings=bindings,
             rerun_bindings=rerun_bindings,
             released_credits=1,
+            forward_to_rerun=not bool(runtime_updates),
         )
 
     @staticmethod
@@ -391,31 +392,43 @@ class StreamingSlamStageActor:
         plan: RunPlan,
         sequence_manifest: SequenceManifest,
     ) -> StageCompletionPayload:
+        # TODO(pipeline-refactor/WP-10): Delete this StageCompletionPayload
+        # close wrapper after finish_streaming() returns StageResult directly
+        # to the coordinator/runtime runner.
         from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
-        if self._session is None:
+        if self._runtime is None and self._session is None:
             raise RuntimeError("Streaming SLAM actor has not been started.")
         self._console.info("Closing streaming SLAM stage.")
-        slam = self._session.close()
-        run_paths = RunArtifactPaths.build(plan.artifact_root)
-        from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
+        if self._runtime is not None:
+            result = self._runtime.finish_streaming()
+            slam = result.payload if isinstance(result.payload, SlamArtifacts) else None
+            visualization = self._runtime.last_visualization_artifacts
+            outcome = result.outcome
+        else:
+            # TODO(pipeline-refactor/WP-10): Remove this fallback after tests and
+            # callers construct StreamingSlamStageActor through start_stage().
+            slam = self._session.close()
+            run_paths = RunArtifactPaths.build(plan.artifact_root)
+            from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
 
-        visualization = collect_native_visualization_artifacts(
-            native_output_dir=run_paths.native_output_dir,
-            preserve_native_rerun=request.visualization.preserve_native_rerun,
-        )
-        self._console.info(
-            "Finished streaming SLAM close; visualization artifacts %s.",
-            "collected" if visualization is not None else "not collected",
-        )
-        return StageCompletionPayload(
-            outcome=StageOutcome(
+            visualization = collect_native_visualization_artifacts(
+                native_output_dir=run_paths.native_output_dir,
+                preserve_native_rerun=request.visualization.preserve_native_rerun,
+            )
+            outcome = StageOutcome(
                 stage_key=StageKey.SLAM,
                 status=StageStatus.COMPLETED,
                 config_hash=stable_hash(request.slam),
                 input_fingerprint=stable_hash(sequence_manifest),
                 artifacts=slam_artifacts_map(slam) | visualization_artifact_map(visualization),
-            ),
+            )
+        self._console.info(
+            "Finished streaming SLAM close; visualization artifacts %s.",
+            "collected" if visualization is not None else "not collected",
+        )
+        return StageCompletionPayload(
+            outcome=outcome,
             slam=slam,
             visualization=visualization,
         )
