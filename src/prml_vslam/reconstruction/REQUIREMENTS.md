@@ -9,12 +9,25 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 - the package exists as a stub and does not yet own an executable
   reconstruction implementation
 - the pipeline already reserves the stage key `reference.reconstruct`, but that
-  stage remains unavailable today
+  stage remains unavailable today and is now only a migration contact for the
+  target `reconstruction` umbrella stage
 - the repository currently pins `open3d>=0.19.0,<0.20`
+
+## Target State
+
+- The target public pipeline stage is `reconstruction`; reference, 3DGS, and
+  future reconstruction implementations are backend/mode variants under that
+  umbrella rather than separate public stage keys.
+- The pipeline stage config owns only stage lifecycle and policy. Backend
+  config variants, backend ids, protocols, and reconstruction artifact
+  semantics remain reconstruction-owned and are referenced by the stage config.
+- `ReferenceReconstructionConfig` in `prml_vslam.benchmark` and
+  `reference.reconstruct` in pipeline stage keys remain migration inputs until
+  target `[stages.reconstruction]` config fully covers reference mode.
 
 ## Responsibilities
 
-- own reconstruction method ids and reconstruction-private config
+- own reconstruction backend ids and reconstruction-private config variants
 - own reconstruction artifact DTOs and consume shared RGB-D observation DTOs
 - own typed backend configs and protocol seams that switch between
   reconstruction methods
@@ -46,7 +59,9 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
   versions; implement directly against the repo-targeted Open3D API
 - the package must not re-implement TSDF fusion locally while Open3D remains
   sufficient
-- benchmark stage enablement stays in `prml_vslam.benchmark`
+- reconstruction stage enablement belongs to the pipeline stage config.
+  Benchmark may remain a migration source for reference-mode policy until
+  `[stages.reconstruction]` fully covers it.
 - pipeline planning, run events, and stage execution stay in
   `prml_vslam.pipeline`
 
@@ -58,3 +73,5 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
   union and protocol implementation, not widening the pipeline contract
 - DTOs remain usable by the existing Rerun sink without introducing
   reconstruction-owned viewer types
+- old `reference.reconstruct` run inspection remains compatible until the
+  pipeline migration-removal package owns alias deletion

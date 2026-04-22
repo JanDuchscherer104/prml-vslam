@@ -92,11 +92,12 @@ Use this file for package-root ownership rules and cross-package contract constr
 - `prml_vslam.app.models` owns Streamlit-only UI and session state.
 - `services.py` modules own implementations only; they must not become the home of public contract types.
 - The app must stay a launch and monitoring surface rather than a second pipeline implementation.
-- The pipeline owns one SLAM-stage request and one SLAM artifact bundle per backend; backend-private config and output
-  policy belong in `methods`.
-- The pipeline owns public runtime events, projected snapshots, stage registry
-  semantics, and backend placement policy; Ray-specific refs and mailboxes stay
-  backend-private.
+- The pipeline owns SLAM stage lifecycle policy and the run association for
+  normalized SLAM artifact bundles; backend-private config and output policy
+  belong in `methods`.
+- The pipeline owns public runtime events, projected snapshots, stage planning
+  semantics, stage-key/config-section mapping, and execution/resource policy;
+  Ray-specific refs and mailboxes stay behind runtime/proxy plumbing.
 - External-method wrappers must stay thin and normalize into repo-owned pipeline artifacts instead of inventing parallel public result shapes.
 - Method-native artifact standardization belongs with the method wrapper; shared
   DTOs and low-level helpers may be imported from `interfaces` and `utils`,

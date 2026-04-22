@@ -509,9 +509,7 @@ src/prml_vslam/
 │   │   │   ├── __init__.py
 │   │   │   ├── config.py
 │   │   │   │   ├── ReconstructionStageConfig
-│   │   │   │   ├── ReconstructionBackendConfig
-│   │   │   │   ├── ReferenceReconstructionBackendConfig
-│   │   │   │   └── GaussianSplattingReconstructionConfig
+│   │   │   │   └── references to reconstruction-owned backend config variants
 │   │   │   ├── runtime.py
 │   │   │   │   └── ReconstructionRuntime
 │   │   │   └── visualization.py
@@ -543,9 +541,11 @@ src/prml_vslam/
 ├── reconstruction
 │   ├── REQUIREMENTS.md
 │   ├── config.py
-│   │   └── reconstruction config migration contact
+│   │   ├── ReconstructionBackendConfig
+│   │   ├── Open3dTsdfBackendConfig
+│   │   └── future reconstruction backend config variants
 │   ├── configs.py
-│   │   └── reconstruction backend config variants
+│   │   └── reconstruction config compatibility re-exports
 │   ├── contracts.py
 │   │   ├── ReconstructionArtifacts
 │   │   └── ReconstructionMetadata
@@ -634,6 +634,7 @@ new target vocabulary lands.
 | Current key | Target key | Rule |
 | --- | --- | --- |
 | `ingest` | `source` | Keep current key during early runtime slices; add alias/projection tests before persisted public rename. |
+| `ground.align` | `align.ground` | Keep current key during early runtime slices; add alias/projection tests before persisted public rename. |
 | `reference.reconstruct` | `reconstruction` | Keep old run inspection working; model future variants under `[stages.reconstruction]`. |
 
 Deletion of migration aliases belongs in the final migration-removal work
