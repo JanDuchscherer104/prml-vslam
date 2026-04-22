@@ -13,7 +13,6 @@ from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.request import PipelineMode, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.stages.base.config import StageConfig
@@ -119,25 +118,28 @@ def _completed_outcome(stage_key: StageKey) -> StageOutcome:
     )
 
 
-def test_result_store_accepts_stage_result_and_legacy_completion_payloads() -> None:
+def test_result_store_reads_target_source_and_slam_payloads() -> None:
     store = StageResultStore()
     manifest = SequenceManifest(sequence_id="seq-1")
     benchmark_inputs = PreparedBenchmarkInputs()
-    ingest_payload = StageCompletionPayload(
-        outcome=_completed_outcome(StageKey.INGEST),
-        sequence_manifest=manifest,
-        benchmark_inputs=benchmark_inputs,
-    )
     slam_artifacts = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=Path("slam/trajectory.tum"), kind="tum", fingerprint="traj"),
     )
-    slam_payload = StageCompletionPayload(
+    ingest_result = StageResult(
+        stage_key=StageKey.INGEST,
+        payload=SourceStageOutput(sequence_manifest=manifest, benchmark_inputs=benchmark_inputs),
+        outcome=_completed_outcome(StageKey.INGEST),
+        final_runtime_status=StageRuntimeStatus(stage_key=StageKey.INGEST, lifecycle_state=StageStatus.COMPLETED),
+    )
+    slam_result = StageResult(
+        stage_key=StageKey.SLAM,
+        payload=slam_artifacts,
         outcome=_completed_outcome(StageKey.SLAM),
-        slam=slam_artifacts,
+        final_runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.COMPLETED),
     )
 
-    ingest_result = store.put_completion_payload(stage_key=StageKey.INGEST, payload=ingest_payload)
-    store.put_completion_payload(stage_key=StageKey.SLAM, payload=slam_payload)
+    store.put(ingest_result)
+    store.put(slam_result)
 
     assert ingest_result.payload == SourceStageOutput(sequence_manifest=manifest, benchmark_inputs=benchmark_inputs)
     assert store.require_sequence_manifest() == manifest

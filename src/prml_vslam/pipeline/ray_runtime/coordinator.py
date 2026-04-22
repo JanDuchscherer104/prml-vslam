@@ -49,6 +49,7 @@ from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.execution_context import StageExecutionContext
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
@@ -60,7 +61,6 @@ from prml_vslam.pipeline.ray_runtime.common import (
     ts_ns,
 )
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
-from prml_vslam.pipeline.ray_runtime.stage_execution import StageExecutionContext
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink

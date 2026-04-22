@@ -17,8 +17,6 @@ class GroundAlignmentRuntime:
     """Adapt :class:`GroundAlignmentService` to the generic bounded runtime API."""
 
     def __init__(self, *, service_type: type[GroundAlignmentService] | None = None) -> None:
-        # TODO(pipeline-refactor/WP-10): Remove this injectable service seam
-        # after legacy stage_execution monkeypatch tests migrate to runtime tests.
         self._service_type = GroundAlignmentService if service_type is None else service_type
         self._status = StageRuntimeStatus(stage_key=StageKey.GROUND_ALIGNMENT)
 
