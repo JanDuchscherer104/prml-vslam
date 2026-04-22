@@ -14,15 +14,16 @@ from typing import TYPE_CHECKING
 import ray
 
 from prml_vslam.alignment import GroundAlignmentService
-from prml_vslam.eval.services import TrajectoryEvaluationService
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.contracts.events import StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import project_summary, stable_hash, write_json
+from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
@@ -30,8 +31,15 @@ from prml_vslam.pipeline.ray_runtime.common import (
     clean_actor_options,
 )
 from prml_vslam.pipeline.ray_runtime.stage_actors import OfflineSlamStageActor
+from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
+from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
+from prml_vslam.pipeline.stages.trajectory_eval import (
+    TrajectoryEvaluationRuntime,
+    TrajectoryEvaluationRuntimeInput,
+)
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
-from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig
+from prml_vslam.reconstruction import ReconstructionArtifacts
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 if TYPE_CHECKING:
@@ -143,38 +151,20 @@ def run_trajectory_evaluation_stage(
     slam: SlamArtifacts,
 ) -> StageCompletionPayload:
     """Evaluate the normalized SLAM trajectory against prepared references."""
+    # TODO(pipeline-refactor/WP-10): Delete this migration wrapper when
+    # RuntimeStageProgram no longer consumes StageCompletionPayload.
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
-    artifact = TrajectoryEvaluationService(
-        PathConfig(artifacts_dir=context.request.output_dir)
-    ).compute_pipeline_evaluation(
-        request=context.request,
-        plan=context.plan,
-        sequence_manifest=sequence_manifest,
-        benchmark_inputs=benchmark_inputs,
-        slam=slam,
-    )
-    artifacts: dict[str, ArtifactRef] = {}
-    if artifact is not None:
-        artifacts = {
-            "trajectory_metrics": artifact_ref(artifact.path, kind="json"),
-            "reference_tum": artifact_ref(artifact.reference_path, kind="tum"),
-            "estimate_tum": artifact_ref(artifact.estimate_path, kind="tum"),
-        }
-    return StageCompletionPayload(
-        outcome=StageOutcome(
-            stage_key=StageKey.TRAJECTORY_EVALUATION,
-            status=StageStatus.COMPLETED,
-            config_hash=stable_hash(context.request.benchmark.trajectory),
-            input_fingerprint=stable_hash(
-                {
-                    "benchmark_inputs": benchmark_inputs,
-                    "slam_trajectory": slam.trajectory_tum,
-                }
-            ),
-            artifacts=artifacts,
+    result = TrajectoryEvaluationRuntime().run_offline(
+        TrajectoryEvaluationRuntimeInput(
+            request=context.request,
+            plan=context.plan,
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=benchmark_inputs,
+            slam=slam,
         )
     )
+    return StageCompletionPayload(outcome=result.outcome)
 
 
 def run_ground_alignment_stage(
@@ -183,28 +173,22 @@ def run_ground_alignment_stage(
     slam: SlamArtifacts,
 ) -> StageCompletionPayload:
     """Detect one dominant ground plane and persist derived alignment metadata."""
+    # TODO(pipeline-refactor/WP-10): Delete this migration wrapper when
+    # RuntimeStageProgram no longer consumes StageCompletionPayload.
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
-    metadata = GroundAlignmentService(config=context.request.alignment.ground).estimate_from_slam_artifacts(slam=slam)
-    write_json(context.run_paths.ground_alignment_path, metadata)
+    result = GroundAlignmentRuntime(service_type=GroundAlignmentService).run_offline(
+        GroundAlignmentRuntimeInput(
+            request=context.request,
+            run_paths=context.run_paths,
+            slam=slam,
+        )
+    )
+    metadata = result.payload
+    if not isinstance(metadata, GroundAlignmentMetadata):
+        raise RuntimeError("GroundAlignmentRuntime returned an invalid ground-alignment payload.")
     return StageCompletionPayload(
-        outcome=StageOutcome(
-            stage_key=StageKey.GROUND_ALIGNMENT,
-            status=StageStatus.COMPLETED if metadata.applied else StageStatus.SKIPPED,
-            config_hash=stable_hash(context.request.alignment.ground),
-            input_fingerprint=stable_hash(
-                {
-                    "trajectory_tum": slam.trajectory_tum,
-                    "dense_points_ply": slam.dense_points_ply,
-                    "sparse_points_ply": slam.sparse_points_ply,
-                }
-            ),
-            artifacts={"ground_alignment": artifact_ref(context.run_paths.ground_alignment_path, kind="json")},
-            metrics={
-                "confidence": metadata.confidence,
-                "candidate_count": metadata.candidate_count,
-            },
-        ),
+        outcome=result.outcome,
         ground_alignment=metadata,
     )
 
@@ -215,43 +199,20 @@ def run_reference_reconstruction_stage(
     benchmark_inputs: PreparedBenchmarkInputs | None,
 ) -> StageCompletionPayload:
     """Build a reference reconstruction from prepared RGB-D observations."""
+    # TODO(pipeline-refactor/WP-10): Delete this migration wrapper when
+    # RuntimeStageProgram no longer consumes StageCompletionPayload.
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
-    if benchmark_inputs is None:
-        raise RuntimeError("Reference reconstruction requires prepared benchmark inputs.")
-    if len(benchmark_inputs.rgbd_observation_sequences) != 1:
-        raise RuntimeError(
-            "Reference reconstruction requires exactly one prepared RGB-D observation sequence; "
-            f"got {len(benchmark_inputs.rgbd_observation_sequences)}."
-        )
-
-    sequence_ref = benchmark_inputs.rgbd_observation_sequences[0]
-    backend_config = Open3dTsdfBackendConfig(extract_mesh=context.request.benchmark.reference.extract_mesh)
-    backend = backend_config.setup_target()
-    artifacts = backend.run_sequence(
-        FileRgbdObservationSource(sequence_ref).iter_observations(),
-        backend_config=backend_config,
-        artifact_root=context.run_paths.reference_cloud_path.parent,
-    )
-    artifact_map = {
-        "reference_cloud": artifact_ref(artifacts.reference_cloud_path, kind="ply"),
-        "reconstruction_metadata": artifact_ref(artifacts.metadata_path, kind="json"),
-    }
-    if artifacts.mesh_path is not None:
-        artifact_map["reference_mesh"] = artifact_ref(artifacts.mesh_path, kind="ply")
-    for key, path in artifacts.extras.items():
-        artifact_map[f"extra:{key}"] = artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
-
-    return StageCompletionPayload(
-        outcome=StageOutcome(
-            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
-            status=StageStatus.COMPLETED,
-            config_hash=stable_hash(backend_config),
-            input_fingerprint=stable_hash(sequence_ref),
-            artifacts=artifact_map,
-            metrics={"observation_count": sequence_ref.observation_count},
+    result = ReconstructionRuntime().run_offline(
+        ReconstructionRuntimeInput(
+            request=context.request,
+            run_paths=context.run_paths,
+            benchmark_inputs=benchmark_inputs,
         )
     )
+    if not isinstance(result.payload, ReconstructionArtifacts):
+        raise RuntimeError("ReconstructionRuntime returned an invalid reconstruction payload.")
+    return StageCompletionPayload(outcome=result.outcome)
 
 
 def run_summary_stage(
@@ -260,18 +221,26 @@ def run_summary_stage(
     stage_outcomes: list[StageOutcome],
 ) -> StageCompletionPayload:
     """Project durable run summary artifacts from terminal stage outcomes."""
+    # TODO(pipeline-refactor/WP-10): Delete this migration wrapper when
+    # RuntimeStageProgram no longer consumes StageCompletionPayload.
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
-    summary, stage_manifests, outcome = project_summary(
-        request=context.request,
-        plan=context.plan,
-        run_paths=context.run_paths,
-        stage_outcomes=stage_outcomes,
+    runtime = SummaryRuntime()
+    result = runtime.run_offline(
+        SummaryRuntimeInput(
+            request=context.request,
+            plan=context.plan,
+            run_paths=context.run_paths,
+            stage_outcomes=stage_outcomes,
+        )
     )
+    summary = result.payload
+    if not isinstance(summary, RunSummary):
+        raise RuntimeError("SummaryRuntime returned an invalid summary payload.")
     return StageCompletionPayload(
-        outcome=outcome,
+        outcome=result.outcome,
         summary=summary,
-        stage_manifests=stage_manifests,
+        stage_manifests=runtime.stage_manifests,
     )
 
 
