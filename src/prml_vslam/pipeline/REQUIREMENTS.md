@@ -30,8 +30,9 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   a compatibility import hub.
 - The package must not re-export method protocols through the pipeline root.
 - The executable slice must remain linear and deterministic.
-- `RunSnapshot` must be projected from `RunEvent`s rather than maintained as a
-  second mutable runtime truth.
+- `RunSnapshot` must project durable lifecycle/provenance state from `RunEvent`
+  and live status, previews, and transient refs from `StageRuntimeUpdate`;
+  it must not become a second mutable runtime truth.
 - stage manifests and run summaries must reuse the shared `StageStatus`
   vocabulary instead of introducing a second status enum
 - `ground.align` is a derived-artifact stage that may run only after `slam`, in

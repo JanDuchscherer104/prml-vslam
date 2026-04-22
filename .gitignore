@@ -255,3 +255,5 @@ docs/literature/tex-src/*
 !/graphify-out/graph.html
 /graphify-out/cache/
 /graphify-out/.graphify*
+
+docs/architecture/pipeline-refactor-work-packages/

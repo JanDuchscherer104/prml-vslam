@@ -5,6 +5,14 @@ It documents the current executable linear pipeline slice and the typed
 interfaces and DTO boundaries that matter when implementing a new stage or
 backend.
 
+Current/target split: this document describes current executable contracts.
+Target DTO ownership, collapse/removal decisions, owning work packages, and
+deletion gates live in
+[Pipeline DTO Migration Ledger](./pipeline-dto-migration-ledger.md) and
+[Pipeline Stage Refactor Target Architecture](./pipeline-stage-refactor-target.md).
+Refresh this file only when the current executable code changes; do not turn it
+into the target architecture.
+
 The source of truth for what is actually executable remains the code in
 [`StageRegistry.default()`][stage-registry-default] and
 [`RuntimeStageProgram.default()`][runtime-stage-program-default]. The diagrams

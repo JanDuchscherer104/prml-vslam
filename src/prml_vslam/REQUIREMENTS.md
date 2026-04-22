@@ -59,9 +59,10 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own pipeline planning or evaluation policy
 - `pipeline`
   - owns orchestration, run contracts, artifact layout, stage planning, events,
-    projected snapshots, manifests, summaries, one SLAM-stage config and one
-    SLAM artifact bundle per backend, pipeline-owned Ray coordination, and
-    repo-local execution-lifecycle policy on `RunRequest`
+    projected snapshots, manifests, summaries, pipeline-owned runtime
+    coordination, and repo-local execution-lifecycle policy
+  - keeps current `RunRequest` compatibility while the target `RunConfig`,
+    declarative stage configs, and `RuntimeManager` construction model land
   - does not own transport decoding, app rendering, or benchmark metrics logic
 - `plotting`
   - owns reusable figure construction helpers
