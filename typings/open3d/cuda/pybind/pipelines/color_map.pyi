@@ -1,15 +1,35 @@
 """
 Color map optimization pipeline
 """
+
 from __future__ import annotations
 import open3d.cuda.pybind.camera
 import open3d.cuda.pybind.geometry
-__all__: list[str] = ['NonRigidOptimizerOption', 'RigidOptimizerOption', 'run_non_rigid_optimizer', 'run_rigid_optimizer']
+
+__all__: list[str] = [
+    "NonRigidOptimizerOption",
+    "RigidOptimizerOption",
+    "run_non_rigid_optimizer",
+    "run_rigid_optimizer",
+]
+
 class NonRigidOptimizerOption:
     """
     Non Rigid optimizer option class.
     """
-    def __init__(self, number_of_vertical_anchors: int = 16, non_rigid_anchor_point_weight: float = 0.316, maximum_iteration: int = 0, maximum_allowable_depth: float = 2.5, depth_threshold_for_visibility_check: float = 0.03, depth_threshold_for_discontinuity_check: float = 0.1, half_dilation_kernel_size_for_discontinuity_map: int = 3, image_boundary_margin: int = 10, invisible_vertex_color_knn: int = 3, debug_output_dir: str = '') -> None:
+    def __init__(
+        self,
+        number_of_vertical_anchors: int = 16,
+        non_rigid_anchor_point_weight: float = 0.316,
+        maximum_iteration: int = 0,
+        maximum_allowable_depth: float = 2.5,
+        depth_threshold_for_visibility_check: float = 0.03,
+        depth_threshold_for_discontinuity_check: float = 0.1,
+        half_dilation_kernel_size_for_discontinuity_map: int = 3,
+        image_boundary_margin: int = 10,
+        invisible_vertex_color_knn: int = 3,
+        debug_output_dir: str = "",
+    ) -> None:
         """
         Args:
             number_of_vertical_anchors (int, optional, default=16): int: (Default ``16``) Number of vertical anchor points for image wrapping field. The number of horizontal anchor points is computed automatically based on the number of vertical anchor points. This option is only used when non-rigid optimization is enabled.
@@ -23,11 +43,22 @@ class NonRigidOptimizerOption:
             invisible_vertex_color_knn (int, optional, default=3): int: (Default ``3``) If a vertex is invisible from all images, we assign the averaged color of the k nearest visible vertices to fill the invisible vertex. Set to ``0`` to disable this feature and all invisible vertices will be black.
             debug_output_dir (str, optional, default=''): If specified, the intermediate results will be stored in in the debug output dir. Existing files will be overwritten if the names are the same.
         """
+
 class RigidOptimizerOption:
     """
     Rigid optimizer option class.
     """
-    def __init__(self, maximum_iteration: int = 0, maximum_allowable_depth: float = 2.5, depth_threshold_for_visibility_check: float = 0.03, depth_threshold_for_discontinuity_check: float = 0.1, half_dilation_kernel_size_for_discontinuity_map: int = 3, image_boundary_margin: int = 10, invisible_vertex_color_knn: int = 3, debug_output_dir: str = '') -> None:
+    def __init__(
+        self,
+        maximum_iteration: int = 0,
+        maximum_allowable_depth: float = 2.5,
+        depth_threshold_for_visibility_check: float = 0.03,
+        depth_threshold_for_discontinuity_check: float = 0.1,
+        half_dilation_kernel_size_for_discontinuity_map: int = 3,
+        image_boundary_margin: int = 10,
+        invisible_vertex_color_knn: int = 3,
+        debug_output_dir: str = "",
+    ) -> None:
         """
         Args:
             maximum_iteration (int, optional, default=0): int: (Default ``300``) Number of iterations for optimization steps.
@@ -39,11 +70,23 @@ class RigidOptimizerOption:
             invisible_vertex_color_knn (int, optional, default=3): int: (Default ``3``) If a vertex is invisible from all images, we assign the averaged color of the k nearest visible vertices to fill the invisible vertex. Set to ``0`` to disable this feature and all invisible vertices will be black.
             debug_output_dir (str, optional, default=''): If specified, the intermediate results will be stored in in the debug output dir. Existing files will be overwritten if the names are the same.
         """
-def run_non_rigid_optimizer(arg0: open3d.cuda.pybind.geometry.TriangleMesh, arg1: list[open3d.cuda.pybind.geometry.RGBDImage], arg2: open3d.cuda.pybind.camera.PinholeCameraTrajectory, arg3: NonRigidOptimizerOption) -> tuple[open3d.cuda.pybind.geometry.TriangleMesh, open3d.cuda.pybind.camera.PinholeCameraTrajectory]:
+
+def run_non_rigid_optimizer(
+    arg0: open3d.cuda.pybind.geometry.TriangleMesh,
+    arg1: list[open3d.cuda.pybind.geometry.RGBDImage],
+    arg2: open3d.cuda.pybind.camera.PinholeCameraTrajectory,
+    arg3: NonRigidOptimizerOption,
+) -> tuple[open3d.cuda.pybind.geometry.TriangleMesh, open3d.cuda.pybind.camera.PinholeCameraTrajectory]:
     """
     Run non-rigid optimization.
     """
-def run_rigid_optimizer(arg0: open3d.cuda.pybind.geometry.TriangleMesh, arg1: list[open3d.cuda.pybind.geometry.RGBDImage], arg2: open3d.cuda.pybind.camera.PinholeCameraTrajectory, arg3: RigidOptimizerOption) -> tuple[open3d.cuda.pybind.geometry.TriangleMesh, open3d.cuda.pybind.camera.PinholeCameraTrajectory]:
+
+def run_rigid_optimizer(
+    arg0: open3d.cuda.pybind.geometry.TriangleMesh,
+    arg1: list[open3d.cuda.pybind.geometry.RGBDImage],
+    arg2: open3d.cuda.pybind.camera.PinholeCameraTrajectory,
+    arg3: RigidOptimizerOption,
+) -> tuple[open3d.cuda.pybind.geometry.TriangleMesh, open3d.cuda.pybind.camera.PinholeCameraTrajectory]:
     """
     Run rigid optimization.
     """

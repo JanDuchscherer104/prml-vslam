@@ -1,9 +1,22 @@
 """
 Tensor-based robust kernel for outlier rejection.
 """
+
 from __future__ import annotations
 import typing
-__all__: list[str] = ['CauchyLoss', 'GMLoss', 'GeneralizedLoss', 'HuberLoss', 'L1Loss', 'L2Loss', 'RobustKernel', 'RobustKernelMethod', 'TukeyLoss']
+
+__all__: list[str] = [
+    "CauchyLoss",
+    "GMLoss",
+    "GeneralizedLoss",
+    "HuberLoss",
+    "L1Loss",
+    "L2Loss",
+    "RobustKernel",
+    "RobustKernelMethod",
+    "TukeyLoss",
+]
+
 class RobustKernel:
     """
     
@@ -77,64 +90,61 @@ class RobustKernel:
     For more information please also see: **"Adaptive Robust Kernels for
     Non-Linear Least Squares Problems"**, by Nived Chebrolu et al.
     """
-    def __copy__(self) -> RobustKernel:
-        ...
-    def __deepcopy__(self, arg0: dict) -> RobustKernel:
-        ...
+    def __copy__(self) -> RobustKernel: ...
+    def __deepcopy__(self, arg0: dict) -> RobustKernel: ...
     @typing.overload
     def __init__(self, arg0: RobustKernel) -> None:
         """
         Copy constructor
         """
     @typing.overload
-    def __init__(self, type: RobustKernelMethod = ..., scaling_parameter: float = 1.0, shape_parameter: float = 1.0) -> None:
-        ...
-    def __repr__(self) -> str:
-        ...
+    def __init__(
+        self, type: RobustKernelMethod = ..., scaling_parameter: float = 1.0, shape_parameter: float = 1.0
+    ) -> None: ...
+    def __repr__(self) -> str: ...
     @property
     def scaling_parameter(self) -> float:
         """
         Scaling parameter.
         """
     @scaling_parameter.setter
-    def scaling_parameter(self, arg0: float) -> None:
-        ...
+    def scaling_parameter(self, arg0: float) -> None: ...
     @property
     def shape_parameter(self) -> float:
         """
         Shape parameter.
         """
     @shape_parameter.setter
-    def shape_parameter(self, arg0: float) -> None:
-        ...
+    def shape_parameter(self, arg0: float) -> None: ...
     @property
     def type(self) -> RobustKernelMethod:
         """
         Loss type.
         """
     @type.setter
-    def type(self, arg0: RobustKernelMethod) -> None:
-        ...
+    def type(self, arg0: RobustKernelMethod) -> None: ...
+
 class RobustKernelMethod:
     """
     Robust kernel method for outlier rejection.
-    
+
     Members:
-    
+
       L2Loss
-    
+
       L1Loss
-    
+
       HuberLoss
-    
+
       CauchyLoss
-    
+
       GMLoss
-    
+
       TukeyLoss
-    
+
       GeneralizedLoss
     """
+
     CauchyLoss: typing.ClassVar[RobustKernelMethod]
     GMLoss: typing.ClassVar[RobustKernelMethod]
     GeneralizedLoss: typing.ClassVar[RobustKernelMethod]
@@ -143,32 +153,21 @@ class RobustKernelMethod:
     L2Loss: typing.ClassVar[RobustKernelMethod]
     TukeyLoss: typing.ClassVar[RobustKernelMethod]
     __members__: typing.ClassVar[dict[str, RobustKernelMethod]]
-    def __eq__(self, other: typing.Any) -> bool:
-        ...
-    def __getstate__(self) -> int:
-        ...
-    def __hash__(self) -> int:
-        ...
-    def __index__(self) -> int:
-        ...
-    def __init__(self, value: int) -> None:
-        ...
-    def __int__(self) -> int:
-        ...
-    def __ne__(self, other: typing.Any) -> bool:
-        ...
-    def __repr__(self) -> str:
-        ...
-    def __setstate__(self, state: int) -> None:
-        ...
-    def __str__(self) -> str:
-        ...
+    def __eq__(self, other: typing.Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __init__(self, value: int) -> None: ...
+    def __int__(self) -> int: ...
+    def __ne__(self, other: typing.Any) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, state: int) -> None: ...
+    def __str__(self) -> str: ...
     @property
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
     @property
-    def value(self) -> int:
-        ...
+    def value(self) -> int: ...
+
 CauchyLoss: RobustKernelMethod
 GMLoss: RobustKernelMethod
 GeneralizedLoss: RobustKernelMethod

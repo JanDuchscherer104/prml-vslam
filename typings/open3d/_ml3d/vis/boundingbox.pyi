@@ -4,17 +4,20 @@ from __future__ import annotations
 import numpy as np
 import open3d as o3d
 import typing
-__all__: list[str] = ['BoundingBox3D', 'Image', 'ImageDraw', 'np', 'o3d']
+
+__all__: list[str] = ["BoundingBox3D", "Image", "ImageDraw", "np", "o3d"]
+
 class BoundingBox3D:
     """
     Class that defines an axially-oriented bounding box.
     """
+
     next_id: typing.ClassVar[int] = 1
     @staticmethod
-    def create_lines(boxes, lut = None, out_format = 'lineset'):
+    def create_lines(boxes, lut=None, out_format="lineset"):
         """
         Creates a LineSet that can be used to render the boxes.
-        
+
                 Args:
                     boxes: the list of bounding boxes
                     lut: a ml3d.vis.LabelLUT that is used to look up the color based on
@@ -22,19 +25,19 @@ class BoundingBox3D:
                         not provided, a color of 50% grey will be used. (optional)
                     out_format (str): Output format. Can be "lineset" (default) for the
                         Open3D lineset or "dict" for a dictionary of lineset properties.
-        
+
                 Returns:
                     For out_format == "lineset": open3d.geometry.LineSet
                     For out_format == "dict": Dictionary of lineset properties
                         ("vertex_positions", "line_indices", "line_colors", "bbox_labels",
                         "bbox_confidences").
-                
+
         """
     @staticmethod
-    def plot_rect3d_on_img(img, num_rects, rect_corners, line_indices, color = None, thickness = 1):
+    def plot_rect3d_on_img(img, num_rects, rect_corners, line_indices, color=None, thickness=1):
         """
         Plot the boundary lines of 3D rectangular on 2D images.
-        
+
                 Args:
                     img (numpy.array): The numpy array of image.
                     num_rects (int): Number of 3D rectangulars.
@@ -47,13 +50,13 @@ class BoundingBox3D:
                     color (tuple[int]): The color to draw bboxes. Default: (1.0, 1.0,
                         1.0), i.e. white.
                     thickness (int, optional): The thickness of bboxes. Default: 1.
-                
+
         """
     @staticmethod
-    def project_to_img(boxes, img, lidar2img_rt = ..., lut = None):
+    def project_to_img(boxes, img, lidar2img_rt=..., lut=None):
         """
         Returns image with projected 3D bboxes
-        
+
                 Args:
                     boxes: the list of bounding boxes
                     img: an RGB image
@@ -61,15 +64,30 @@ class BoundingBox3D:
                     lut: a ml3d.vis.LabelLUT that is used to look up the color based on
                         the label_class argument of the BoundingBox3D constructor. If
                         not provided, a color of 50% grey will be used. (optional)
-                
+
         """
-    def __init__(self, center, front, up, left, size, label_class, confidence, meta = None, show_class = False, show_confidence = False, show_meta = None, identifier = None, arrow_length = 1.0):
+    def __init__(
+        self,
+        center,
+        front,
+        up,
+        left,
+        size,
+        label_class,
+        confidence,
+        meta=None,
+        show_class=False,
+        show_confidence=False,
+        show_meta=None,
+        identifier=None,
+        arrow_length=1.0,
+    ):
         """
         Creates a bounding box.
-        
+
                 Front, up, left define the axis of the box and must be normalized and
                 mutually orthogonal.
-        
+
                 Args:
                     center: (x, y, z) that defines the center of the box.
                     front: normalized (i, j, k) that defines the front direction of the
@@ -93,7 +111,6 @@ class BoundingBox3D:
                         (optional, will be generated if not provided).
                     arrow_length: the length of the arrow in the front_direct. Set to
                         zero to disable the arrow (optional).
-                
+
         """
-    def __repr__(self):
-        ...
+    def __repr__(self): ...

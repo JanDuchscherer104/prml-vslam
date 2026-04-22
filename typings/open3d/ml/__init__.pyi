@@ -6,4 +6,5 @@ from . import contrib
 from . import datasets
 from . import utils
 from . import vis
-__all__: list[str] = ['configs', 'contrib', 'datasets', 'utils', 'vis']
+
+__all__: list[str] = ["configs", "contrib", "datasets", "utils", "vis"]

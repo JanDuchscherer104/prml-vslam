@@ -4,7 +4,21 @@ import open3d.cuda.pybind.camera
 import open3d.cuda.pybind.geometry
 import open3d.cuda.pybind.t.geometry
 import typing
-__all__: list[str] = ['Camera', 'ColorGrading', 'Gradient', 'MaterialRecord', 'OffscreenRenderer', 'Open3DScene', 'Renderer', 'Scene', 'TextureHandle', 'TriangleMeshModel', 'View']
+
+__all__: list[str] = [
+    "Camera",
+    "ColorGrading",
+    "Gradient",
+    "MaterialRecord",
+    "OffscreenRenderer",
+    "Open3DScene",
+    "Renderer",
+    "Scene",
+    "TextureHandle",
+    "TriangleMeshModel",
+    "View",
+]
+
 class Camera:
     """
     Camera object
@@ -12,97 +26,69 @@ class Camera:
     class FovType:
         """
         Enum class for Camera field of view types.
-        
+
         Members:
-        
+
           Vertical
-        
+
           Horizontal
         """
+
         Horizontal: typing.ClassVar[Camera.FovType]
         Vertical: typing.ClassVar[Camera.FovType]
         __members__: typing.ClassVar[dict[str, Camera.FovType]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __ge__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __gt__(self, other: typing.Any) -> bool:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __le__(self, other: typing.Any) -> bool:
-            ...
-        def __lt__(self, other: typing.Any) -> bool:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __ge__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __gt__(self, other: typing.Any) -> bool: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __le__(self, other: typing.Any) -> bool: ...
+        def __lt__(self, other: typing.Any) -> bool: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
+        def value(self) -> int: ...
+
     class Projection:
         """
         Enum class for Camera projection types.
-        
+
         Members:
-        
+
           Perspective
-        
+
           Ortho
         """
+
         Ortho: typing.ClassVar[Camera.Projection]
         Perspective: typing.ClassVar[Camera.Projection]
         __members__: typing.ClassVar[dict[str, Camera.Projection]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __ge__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __gt__(self, other: typing.Any) -> bool:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __le__(self, other: typing.Any) -> bool:
-            ...
-        def __lt__(self, other: typing.Any) -> bool:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __ge__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __gt__(self, other: typing.Any) -> bool: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __le__(self, other: typing.Any) -> bool: ...
+        def __lt__(self, other: typing.Any) -> bool: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
+        def value(self) -> int: ...
+
     Horizontal: typing.ClassVar[Camera.FovType]
     Ortho: typing.ClassVar[Camera.Projection]
     Perspective: typing.ClassVar[Camera.Projection]
@@ -141,20 +127,38 @@ class Camera:
         """
     def look_at(self, center: numpy.ndarray, eye: numpy.ndarray, up: numpy.ndarray) -> None:
         """
-        Sets the position and orientation of the camera: 
+        Sets the position and orientation of the camera:
         """
     @typing.overload
-    def set_projection(self, field_of_view: float, aspect_ratio: float, near_plane: float, far_plane: float, field_of_view_type: Camera.FovType) -> None:
+    def set_projection(
+        self,
+        field_of_view: float,
+        aspect_ratio: float,
+        near_plane: float,
+        far_plane: float,
+        field_of_view_type: Camera.FovType,
+    ) -> None:
         """
         Sets a perspective projection.
         """
     @typing.overload
-    def set_projection(self, projection_type: Camera.Projection, left: float, right: float, bottom: float, top: float, near: float, far: float) -> None:
+    def set_projection(
+        self,
+        projection_type: Camera.Projection,
+        left: float,
+        right: float,
+        bottom: float,
+        top: float,
+        near: float,
+        far: float,
+    ) -> None:
         """
-        Sets the camera projection via a viewing frustum. 
+        Sets the camera projection via a viewing frustum.
         """
     @typing.overload
-    def set_projection(self, intrinsics: numpy.ndarray, near_plane: float, far_plane: float, image_width: float, image_height: float) -> None:
+    def set_projection(
+        self, intrinsics: numpy.ndarray, near_plane: float, far_plane: float, image_width: float, image_height: float
+    ) -> None:
         """
         Sets the camera projection via intrinsics matrix.
         """
@@ -162,6 +166,7 @@ class Camera:
         """
         Takes the (x, y, z) location in the view, where x, y are the number of pixels from the upper left of the view, and z is the depth value. Returns the world coordinate (x', y', z').
         """
+
 class ColorGrading:
     """
     Parameters to control color grading options
@@ -169,68 +174,59 @@ class ColorGrading:
     class Quality:
         """
         Quality level of color grading operations
-        
+
         Members:
-        
+
           LOW
-        
+
           MEDIUM
-        
+
           HIGH
-        
+
           ULTRA
         """
+
         HIGH: typing.ClassVar[ColorGrading.Quality]
         LOW: typing.ClassVar[ColorGrading.Quality]
         MEDIUM: typing.ClassVar[ColorGrading.Quality]
         ULTRA: typing.ClassVar[ColorGrading.Quality]
         __members__: typing.ClassVar[dict[str, ColorGrading.Quality]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
+        def value(self) -> int: ...
+
     class ToneMapping:
         """
         Specifies the tone-mapping algorithm
-        
+
         Members:
-        
+
           LINEAR
-        
+
           ACES_LEGACY
-        
+
           ACES
-        
+
           FILMIC
-        
+
           UCHIMURA
-        
+
           REINHARD
-        
+
           DISPLAY_RANGE
         """
+
         ACES: typing.ClassVar[ColorGrading.ToneMapping]
         ACES_LEGACY: typing.ClassVar[ColorGrading.ToneMapping]
         DISPLAY_RANGE: typing.ClassVar[ColorGrading.ToneMapping]
@@ -239,66 +235,51 @@ class ColorGrading:
         REINHARD: typing.ClassVar[ColorGrading.ToneMapping]
         UCHIMURA: typing.ClassVar[ColorGrading.ToneMapping]
         __members__: typing.ClassVar[dict[str, ColorGrading.ToneMapping]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
-    def __init__(self, arg0: ColorGrading.Quality, arg1: ColorGrading.ToneMapping) -> None:
-        ...
+        def value(self) -> int: ...
+
+    def __init__(self, arg0: ColorGrading.Quality, arg1: ColorGrading.ToneMapping) -> None: ...
     @property
     def quality(self) -> ColorGrading.Quality:
         """
         Quality of color grading operations. High quality is more accurate but slower
         """
     @quality.setter
-    def quality(self, arg1: ColorGrading.Quality) -> None:
-        ...
+    def quality(self, arg1: ColorGrading.Quality) -> None: ...
     @property
     def temperature(self) -> float:
         """
         White balance color temperature
         """
     @temperature.setter
-    def temperature(self, arg1: float) -> None:
-        ...
+    def temperature(self, arg1: float) -> None: ...
     @property
     def tint(self) -> float:
         """
         Tint on the green/magenta axis. Ranges from -1.0 to 1.0.
         """
     @tint.setter
-    def tint(self, arg1: float) -> None:
-        ...
+    def tint(self, arg1: float) -> None: ...
     @property
     def tone_mapping(self) -> ColorGrading.ToneMapping:
         """
         The tone mapping algorithm to apply. Must be one of Linear, AcesLegacy, Aces, Filmic, Uchimura, Rienhard, Display Range(for debug)
         """
     @tone_mapping.setter
-    def tone_mapping(self, arg1: ColorGrading.ToneMapping) -> None:
-        ...
+    def tone_mapping(self, arg1: ColorGrading.ToneMapping) -> None: ...
+
 class Gradient:
     """
     Manages a gradient for the unlitGradient shader.In gradient mode, the array of points specifies points along the gradient, from 0 to 1 (inclusive). These do need to be evenly spaced.Simple greyscale:    [ ( 0.0, black ),      ( 1.0, white ) ]Rainbow (note the gaps around green):    [ ( 0.000, blue ),      ( 0.125, cornflower blue ),      ( 0.250, cyan ),      ( 0.500, green ),      ( 0.750, yellow ),      ( 0.875, orange ),      ( 1.000, red ) ]The gradient will generate a largish texture, so it should be fairly smooth, but the boundaries may not be exactly as specified due to quantization imposed by the fixed size of the texture.  The points *must* be sorted from the smallest value to the largest. The values must be in the range [0, 1].
@@ -306,83 +287,66 @@ class Gradient:
     class Mode:
         """
         Members:
-        
+
           GRADIENT
-        
+
           LUT
         """
+
         GRADIENT: typing.ClassVar[Gradient.Mode]
         LUT: typing.ClassVar[Gradient.Mode]
         __members__: typing.ClassVar[dict[str, Gradient.Mode]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __ge__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __gt__(self, other: typing.Any) -> bool:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __le__(self, other: typing.Any) -> bool:
-            ...
-        def __lt__(self, other: typing.Any) -> bool:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __ge__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __gt__(self, other: typing.Any) -> bool: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __le__(self, other: typing.Any) -> bool: ...
+        def __lt__(self, other: typing.Any) -> bool: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
+        def value(self) -> int: ...
+
     class Point:
-        def __init__(self, arg0: float, arg1: numpy.ndarray) -> None:
-            ...
-        def __repr__(self) -> str:
-            ...
+        def __init__(self, arg0: float, arg1: numpy.ndarray) -> None: ...
+        def __repr__(self) -> str: ...
         @property
         def color(self) -> numpy.ndarray:
             """
             [R, G, B, A]. Color values must be in [0.0, 1.0]
             """
         @color.setter
-        def color(self, arg0: numpy.ndarray) -> None:
-            ...
+        def color(self, arg0: numpy.ndarray) -> None: ...
         @property
         def value(self) -> float:
             """
             Must be within 0.0 and 1.0
             """
         @value.setter
-        def value(self, arg0: float) -> None:
-            ...
+        def value(self, arg0: float) -> None: ...
+
     GRADIENT: typing.ClassVar[Gradient.Mode]
     LUT: typing.ClassVar[Gradient.Mode]
     mode: Gradient.Mode
     points: list[Gradient.Point]
     @typing.overload
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @typing.overload
-    def __init__(self, arg0: list[Gradient.Point]) -> None:
-        ...
+    def __init__(self, arg0: list[Gradient.Point]) -> None: ...
+
 class MaterialRecord:
     """
     Describes the real-world, physically based (PBR) material used to render a geometry
     """
+
     absorption_color: numpy.ndarray
     absorption_distance: float
     albedo_img: open3d.cuda.pybind.geometry.Image
@@ -416,21 +380,20 @@ class MaterialRecord:
     shader: str
     thickness: float
     transmission: float
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
     @property
     def line_width(self) -> float:
         """
         Requires 'shader' to be 'unlitLine'
         """
     @line_width.setter
-    def line_width(self, arg0: float) -> None:
-        ...
+    def line_width(self, arg0: float) -> None: ...
+
 class OffscreenRenderer:
     """
     Renderer instance that can be used for rendering to an image
     """
-    def __init__(self, width: int, height: int, resource_path: str = '') -> None:
+    def __init__(self, width: int, height: int, resource_path: str = "") -> None:
         """
         Takes width, height and optionally a resource_path.  If unspecified, resource_path will use the resource path from the installed Open3D library.
         """
@@ -443,17 +406,33 @@ class OffscreenRenderer:
         Renders scene to an image, blocking until the image is returned
         """
     @typing.overload
-    def setup_camera(self, vertical_field_of_view: float, center: numpy.ndarray, eye: numpy.ndarray, up: numpy.ndarray, near_clip: float = -1.0, far_clip: float = -1.0) -> None:
+    def setup_camera(
+        self,
+        vertical_field_of_view: float,
+        center: numpy.ndarray,
+        eye: numpy.ndarray,
+        up: numpy.ndarray,
+        near_clip: float = -1.0,
+        far_clip: float = -1.0,
+    ) -> None:
         """
         Sets camera view using bounding box of current geometry if the near_clip and far_clip parameters are not set
         """
     @typing.overload
-    def setup_camera(self, intrinsics: open3d.cuda.pybind.camera.PinholeCameraIntrinsic, extrinsic_matrix: numpy.ndarray) -> None:
+    def setup_camera(
+        self, intrinsics: open3d.cuda.pybind.camera.PinholeCameraIntrinsic, extrinsic_matrix: numpy.ndarray
+    ) -> None:
         """
         Sets the camera view using bounding box of current geometry
         """
     @typing.overload
-    def setup_camera(self, intrinsic_matrix: numpy.ndarray, extrinsic_matrix: numpy.ndarray, intrinsic_width_px: int, intrinsic_height_px: int) -> None:
+    def setup_camera(
+        self,
+        intrinsic_matrix: numpy.ndarray,
+        extrinsic_matrix: numpy.ndarray,
+        intrinsic_width_px: int,
+        intrinsic_height_px: int,
+    ) -> None:
         """
         Sets the camera view using bounding box of current geometry
         """
@@ -462,6 +441,7 @@ class OffscreenRenderer:
         """
         Returns the Open3DScene for this renderer. This scene is destroyed when the renderer is destroyed and should not be accessed after that point.
         """
+
 class Open3DScene:
     """
     High-level scene for rending
@@ -469,73 +449,70 @@ class Open3DScene:
     class LightingProfile:
         """
         Enum for conveniently setting lighting
-        
+
         Members:
-        
+
           HARD_SHADOWS
-        
+
           DARK_SHADOWS
-        
+
           MED_SHADOWS
-        
+
           SOFT_SHADOWS
-        
+
           NO_SHADOWS
         """
+
         DARK_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
         HARD_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
         MED_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
         NO_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
         SOFT_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
         __members__: typing.ClassVar[dict[str, Open3DScene.LightingProfile]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __ge__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __gt__(self, other: typing.Any) -> bool:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __le__(self, other: typing.Any) -> bool:
-            ...
-        def __lt__(self, other: typing.Any) -> bool:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __ge__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __gt__(self, other: typing.Any) -> bool: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __le__(self, other: typing.Any) -> bool: ...
+        def __lt__(self, other: typing.Any) -> bool: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
+        def value(self) -> int: ...
+
     DARK_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
     HARD_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
     MED_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
     NO_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
     SOFT_SHADOWS: typing.ClassVar[Open3DScene.LightingProfile]
-    def __init__(self, arg0: Renderer) -> None:
-        ...
+    def __init__(self, arg0: Renderer) -> None: ...
     @typing.overload
-    def add_geometry(self, name: str, geometry: open3d.cuda.pybind.geometry.Geometry3D, material: MaterialRecord, add_downsampled_copy_for_fast_rendering: bool = True) -> None:
+    def add_geometry(
+        self,
+        name: str,
+        geometry: open3d.cuda.pybind.geometry.Geometry3D,
+        material: MaterialRecord,
+        add_downsampled_copy_for_fast_rendering: bool = True,
+    ) -> None:
         """
         Adds a geometry with the specified name. Default visible is true.
         """
     @typing.overload
-    def add_geometry(self, name: str, geometry: open3d.cuda.pybind.t.geometry.Geometry, material: MaterialRecord, add_downsampled_copy_for_fast_rendering: bool = True) -> None:
+    def add_geometry(
+        self,
+        name: str,
+        geometry: open3d.cuda.pybind.t.geometry.Geometry,
+        material: MaterialRecord,
+        add_downsampled_copy_for_fast_rendering: bool = True,
+    ) -> None:
         """
         Adds a geometry with the specified name. Default visible is true.
         """
@@ -543,8 +520,7 @@ class Open3DScene:
         """
         Adds TriangleMeshModel to the scene.
         """
-    def clear_geometry(self) -> None:
-        ...
+    def clear_geometry(self) -> None: ...
     def geometry_is_visible(self, name: str) -> bool:
         """
         Returns True if the geometry name is visible
@@ -567,7 +543,7 @@ class Open3DScene:
         """
     def set_background(self, color: numpy.ndarray, image: open3d.cuda.pybind.geometry.Image = None) -> None:
         """
-        set_background([r, g, b, a], image=None). Sets the background color and (optionally) image of the scene. 
+        set_background([r, g, b, a], image=None). Sets the background color and (optionally) image of the scene.
         """
     def set_background_color(self, arg0: numpy.ndarray) -> None:
         """
@@ -626,8 +602,7 @@ class Open3DScene:
         Minimum number of points before downsampled point clouds are created and used when rendering speed is important
         """
     @downsample_threshold.setter
-    def downsample_threshold(self, arg1: int) -> None:
-        ...
+    def downsample_threshold(self, arg1: int) -> None: ...
     @property
     def scene(self) -> Scene:
         """
@@ -638,6 +613,7 @@ class Open3DScene:
         """
         The low level view associated with the scene
         """
+
 class Renderer:
     """
     Renderer class that manages 3D resources. Get from gui.Window.
@@ -654,10 +630,13 @@ class Renderer:
         """
         Sets the background color for the renderer, [r, g, b, a]. Applies to everything being rendered, so it essentially acts as the background color of the window
         """
-    def update_texture(self, texture: TextureHandle, image: open3d.cuda.pybind.geometry.Image, is_sRGB: bool = False) -> bool:
+    def update_texture(
+        self, texture: TextureHandle, image: open3d.cuda.pybind.geometry.Image, is_sRGB: bool = False
+    ) -> bool:
         """
         Updates the contents of the texture to be the new image, or returns False and does nothing if the image is a different size. It is more efficient to call update_texture() rather than removing and adding a new texture, especially when changes happen frequently, such as when implementing video. add_texture(geometry.Image, bool). The first parameter is the image, the second parameter is optional and is True if the image is in the sRGB colorspace and False otherwise
         """
+
 class Scene:
     """
     Low-level rendering scene
@@ -665,53 +644,39 @@ class Scene:
     class GroundPlane:
         """
         Plane on which to show ground plane: XZ, XY, or YZ
-        
+
         Members:
-        
+
           XZ
-        
+
           XY
-        
+
           YZ
         """
+
         XY: typing.ClassVar[Scene.GroundPlane]
         XZ: typing.ClassVar[Scene.GroundPlane]
         YZ: typing.ClassVar[Scene.GroundPlane]
         __members__: typing.ClassVar[dict[str, Scene.GroundPlane]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __ge__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __gt__(self, other: typing.Any) -> bool:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __le__(self, other: typing.Any) -> bool:
-            ...
-        def __lt__(self, other: typing.Any) -> bool:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __ge__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __gt__(self, other: typing.Any) -> bool: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __le__(self, other: typing.Any) -> bool: ...
+        def __lt__(self, other: typing.Any) -> bool: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
+        def value(self) -> int: ...
+
     UPDATE_COLORS_FLAG: typing.ClassVar[int] = 4
     UPDATE_NORMALS_FLAG: typing.ClassVar[int] = 2
     UPDATE_POINTS_FLAG: typing.ClassVar[int] = 1
@@ -723,25 +688,60 @@ class Scene:
         """
         Adds a camera to the scene
         """
-    def add_directional_light(self, name: str, color: numpy.ndarray, direction: numpy.ndarray, intensity: float, cast_shadows: bool) -> bool:
+    def add_directional_light(
+        self, name: str, color: numpy.ndarray, direction: numpy.ndarray, intensity: float, cast_shadows: bool
+    ) -> bool:
         """
         Adds a directional light to the scene
         """
     @typing.overload
-    def add_geometry(self, name: str, geometry: open3d.cuda.pybind.geometry.Geometry3D, material: MaterialRecord, downsampled_name: str = '', downsample_threshold: int = 18446744073709551615) -> bool:
+    def add_geometry(
+        self,
+        name: str,
+        geometry: open3d.cuda.pybind.geometry.Geometry3D,
+        material: MaterialRecord,
+        downsampled_name: str = "",
+        downsample_threshold: int = 18446744073709551615,
+    ) -> bool:
         """
         Adds a Geometry with a material to the scene
         """
     @typing.overload
-    def add_geometry(self, name: str, geometry: open3d.cuda.pybind.t.geometry.Geometry, material: MaterialRecord, downsampled_name: str = '', downsample_threshold: int = 18446744073709551615) -> bool:
+    def add_geometry(
+        self,
+        name: str,
+        geometry: open3d.cuda.pybind.t.geometry.Geometry,
+        material: MaterialRecord,
+        downsampled_name: str = "",
+        downsample_threshold: int = 18446744073709551615,
+    ) -> bool:
         """
         Adds a Geometry with a material to the scene
         """
-    def add_point_light(self, name: str, color: numpy.ndarray, position: numpy.ndarray, intensity: float, falloff: float, cast_shadows: bool) -> bool:
+    def add_point_light(
+        self,
+        name: str,
+        color: numpy.ndarray,
+        position: numpy.ndarray,
+        intensity: float,
+        falloff: float,
+        cast_shadows: bool,
+    ) -> bool:
         """
         Adds a point light to the scene.
         """
-    def add_spot_light(self, name: str, color: numpy.ndarray, position: numpy.ndarray, direction: numpy.ndarray, intensity: float, falloff: float, inner_cone_angle: float, outer_cone_angle: float, cast_shadows: bool) -> bool:
+    def add_spot_light(
+        self,
+        name: str,
+        color: numpy.ndarray,
+        position: numpy.ndarray,
+        direction: numpy.ndarray,
+        intensity: float,
+        falloff: float,
+        inner_cone_angle: float,
+        outer_cone_angle: float,
+        cast_shadows: bool,
+    ) -> bool:
         """
         Adds a spot light to the scene.
         """
@@ -753,8 +753,7 @@ class Scene:
         """
         Changes whether a point, spot, or directional light can cast shadows.
         """
-    def enable_sun_light(self, enable: bool) -> None:
-        ...
+    def enable_sun_light(self, enable: bool) -> None: ...
     def geometry_is_visible(self, name: str) -> bool:
         """
         Returns false if the geometry is hidden, True otherwise. Note: this is different from whether or not the geometry is in view.
@@ -815,7 +814,9 @@ class Scene:
         """
         Show or hide the named geometry.
         """
-    def update_geometry(self, name: str, point_cloud: open3d.cuda.pybind.t.geometry.PointCloud, update_flag: int) -> None:
+    def update_geometry(
+        self, name: str, point_cloud: open3d.cuda.pybind.t.geometry.PointCloud, update_flag: int
+    ) -> None:
         """
         Updates the flagged arrays from the tgeometry.PointCloud. The flags should be ORed from Scene.UPDATE_POINTS_FLAG, Scene.UPDATE_NORMALS_FLAG, Scene.UPDATE_COLORS_FLAG, and Scene.UPDATE_UV0_FLAG
         """
@@ -843,26 +844,28 @@ class Scene:
         """
         Changes a point or spot light's position.
         """
+
 class TextureHandle:
     """
     Handle to a texture
     """
+
 class TriangleMeshModel:
     """
     A list of geometry.TriangleMesh and Material that can describe a complex model with multiple meshes, such as might be stored in an FBX, OBJ, or GLTF file
     """
     class MeshInfo:
-        """
-        """
+        """ """
+
         material_idx: int
         mesh: open3d.cuda.pybind.geometry.TriangleMesh
         mesh_name: str
-        def __init__(self, arg0: open3d.cuda.pybind.geometry.TriangleMesh, arg1: str, arg2: int) -> None:
-            ...
+        def __init__(self, arg0: open3d.cuda.pybind.geometry.TriangleMesh, arg1: str, arg2: int) -> None: ...
+
     materials: list[MaterialRecord]
     meshes: list[TriangleMeshModel.MeshInfo]
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
+
 class View:
     """
     Low-level view class
@@ -870,42 +873,32 @@ class View:
     class ShadowType:
         """
         Available shadow mapping algorithm options
-        
+
         Members:
-        
+
           PCF
-        
+
           VSM
         """
+
         PCF: typing.ClassVar[View.ShadowType]
         VSM: typing.ClassVar[View.ShadowType]
         __members__: typing.ClassVar[dict[str, View.ShadowType]]
-        def __eq__(self, other: typing.Any) -> bool:
-            ...
-        def __getstate__(self) -> int:
-            ...
-        def __hash__(self) -> int:
-            ...
-        def __index__(self) -> int:
-            ...
-        def __init__(self, value: int) -> None:
-            ...
-        def __int__(self) -> int:
-            ...
-        def __ne__(self, other: typing.Any) -> bool:
-            ...
-        def __repr__(self) -> str:
-            ...
-        def __setstate__(self, state: int) -> None:
-            ...
-        def __str__(self) -> str:
-            ...
+        def __eq__(self, other: typing.Any) -> bool: ...
+        def __getstate__(self) -> int: ...
+        def __hash__(self) -> int: ...
+        def __index__(self) -> int: ...
+        def __init__(self, value: int) -> None: ...
+        def __int__(self) -> int: ...
+        def __ne__(self, other: typing.Any) -> bool: ...
+        def __repr__(self) -> str: ...
+        def __setstate__(self, state: int) -> None: ...
+        def __str__(self) -> str: ...
         @property
-        def name(self) -> str:
-            ...
+        def name(self) -> str: ...
         @property
-        def value(self) -> int:
-            ...
+        def value(self) -> int: ...
+
     def get_camera(self) -> Camera:
         """
         Returns the Camera associated with this View.
