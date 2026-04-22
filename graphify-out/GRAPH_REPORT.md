@@ -1,12 +1,12 @@
-# Graph Report - .  (2026-04-21)
+# Graph Report - prml-vslam  (2026-04-22)
 
 ## Corpus Check
-- 489 files · ~40,065,753 words
+- 192 files · ~1,224,384 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 8210 nodes · 34909 edges · 522 communities detected
-- Extraction: 20% EXTRACTED · 80% INFERRED · 0% AMBIGUOUS · INFERRED: 27833 edges (avg confidence: 0.56)
+- 3082 nodes · 6949 edges · 179 communities detected
+- Extraction: 61% EXTRACTED · 39% INFERRED · 0% AMBIGUOUS · INFERRED: 2737 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -35,7 +35,6 @@
 - [[_COMMUNITY_Community 22|Community 22]]
 - [[_COMMUNITY_Community 23|Community 23]]
 - [[_COMMUNITY_Community 24|Community 24]]
-- [[_COMMUNITY_Community 25|Community 25]]
 - [[_COMMUNITY_Community 26|Community 26]]
 - [[_COMMUNITY_Community 27|Community 27]]
 - [[_COMMUNITY_Community 28|Community 28]]
@@ -190,3457 +189,1079 @@
 - [[_COMMUNITY_Community 177|Community 177]]
 - [[_COMMUNITY_Community 178|Community 178]]
 - [[_COMMUNITY_Community 179|Community 179]]
-- [[_COMMUNITY_Community 180|Community 180]]
-- [[_COMMUNITY_Community 181|Community 181]]
-- [[_COMMUNITY_Community 182|Community 182]]
-- [[_COMMUNITY_Community 183|Community 183]]
-- [[_COMMUNITY_Community 184|Community 184]]
-- [[_COMMUNITY_Community 185|Community 185]]
-- [[_COMMUNITY_Community 186|Community 186]]
-- [[_COMMUNITY_Community 187|Community 187]]
-- [[_COMMUNITY_Community 188|Community 188]]
-- [[_COMMUNITY_Community 189|Community 189]]
-- [[_COMMUNITY_Community 190|Community 190]]
-- [[_COMMUNITY_Community 191|Community 191]]
-- [[_COMMUNITY_Community 192|Community 192]]
-- [[_COMMUNITY_Community 193|Community 193]]
-- [[_COMMUNITY_Community 194|Community 194]]
-- [[_COMMUNITY_Community 195|Community 195]]
-- [[_COMMUNITY_Community 196|Community 196]]
-- [[_COMMUNITY_Community 197|Community 197]]
-- [[_COMMUNITY_Community 198|Community 198]]
-- [[_COMMUNITY_Community 199|Community 199]]
-- [[_COMMUNITY_Community 200|Community 200]]
-- [[_COMMUNITY_Community 201|Community 201]]
-- [[_COMMUNITY_Community 202|Community 202]]
-- [[_COMMUNITY_Community 203|Community 203]]
-- [[_COMMUNITY_Community 204|Community 204]]
-- [[_COMMUNITY_Community 205|Community 205]]
-- [[_COMMUNITY_Community 206|Community 206]]
-- [[_COMMUNITY_Community 207|Community 207]]
-- [[_COMMUNITY_Community 208|Community 208]]
-- [[_COMMUNITY_Community 209|Community 209]]
-- [[_COMMUNITY_Community 210|Community 210]]
-- [[_COMMUNITY_Community 211|Community 211]]
-- [[_COMMUNITY_Community 212|Community 212]]
-- [[_COMMUNITY_Community 213|Community 213]]
-- [[_COMMUNITY_Community 214|Community 214]]
-- [[_COMMUNITY_Community 215|Community 215]]
-- [[_COMMUNITY_Community 216|Community 216]]
-- [[_COMMUNITY_Community 217|Community 217]]
-- [[_COMMUNITY_Community 218|Community 218]]
-- [[_COMMUNITY_Community 219|Community 219]]
-- [[_COMMUNITY_Community 220|Community 220]]
-- [[_COMMUNITY_Community 221|Community 221]]
-- [[_COMMUNITY_Community 222|Community 222]]
-- [[_COMMUNITY_Community 223|Community 223]]
-- [[_COMMUNITY_Community 224|Community 224]]
-- [[_COMMUNITY_Community 225|Community 225]]
-- [[_COMMUNITY_Community 226|Community 226]]
-- [[_COMMUNITY_Community 227|Community 227]]
-- [[_COMMUNITY_Community 228|Community 228]]
-- [[_COMMUNITY_Community 229|Community 229]]
-- [[_COMMUNITY_Community 230|Community 230]]
-- [[_COMMUNITY_Community 231|Community 231]]
-- [[_COMMUNITY_Community 232|Community 232]]
-- [[_COMMUNITY_Community 233|Community 233]]
-- [[_COMMUNITY_Community 234|Community 234]]
-- [[_COMMUNITY_Community 235|Community 235]]
-- [[_COMMUNITY_Community 236|Community 236]]
-- [[_COMMUNITY_Community 237|Community 237]]
-- [[_COMMUNITY_Community 238|Community 238]]
-- [[_COMMUNITY_Community 239|Community 239]]
-- [[_COMMUNITY_Community 240|Community 240]]
-- [[_COMMUNITY_Community 241|Community 241]]
-- [[_COMMUNITY_Community 242|Community 242]]
-- [[_COMMUNITY_Community 243|Community 243]]
-- [[_COMMUNITY_Community 244|Community 244]]
-- [[_COMMUNITY_Community 245|Community 245]]
-- [[_COMMUNITY_Community 246|Community 246]]
-- [[_COMMUNITY_Community 247|Community 247]]
-- [[_COMMUNITY_Community 248|Community 248]]
-- [[_COMMUNITY_Community 249|Community 249]]
-- [[_COMMUNITY_Community 250|Community 250]]
-- [[_COMMUNITY_Community 251|Community 251]]
-- [[_COMMUNITY_Community 252|Community 252]]
-- [[_COMMUNITY_Community 253|Community 253]]
-- [[_COMMUNITY_Community 254|Community 254]]
-- [[_COMMUNITY_Community 255|Community 255]]
-- [[_COMMUNITY_Community 256|Community 256]]
-- [[_COMMUNITY_Community 257|Community 257]]
-- [[_COMMUNITY_Community 258|Community 258]]
-- [[_COMMUNITY_Community 259|Community 259]]
-- [[_COMMUNITY_Community 260|Community 260]]
-- [[_COMMUNITY_Community 261|Community 261]]
-- [[_COMMUNITY_Community 262|Community 262]]
-- [[_COMMUNITY_Community 263|Community 263]]
-- [[_COMMUNITY_Community 264|Community 264]]
-- [[_COMMUNITY_Community 265|Community 265]]
-- [[_COMMUNITY_Community 266|Community 266]]
-- [[_COMMUNITY_Community 267|Community 267]]
-- [[_COMMUNITY_Community 268|Community 268]]
-- [[_COMMUNITY_Community 269|Community 269]]
-- [[_COMMUNITY_Community 270|Community 270]]
-- [[_COMMUNITY_Community 271|Community 271]]
-- [[_COMMUNITY_Community 272|Community 272]]
-- [[_COMMUNITY_Community 273|Community 273]]
-- [[_COMMUNITY_Community 274|Community 274]]
-- [[_COMMUNITY_Community 275|Community 275]]
-- [[_COMMUNITY_Community 276|Community 276]]
-- [[_COMMUNITY_Community 277|Community 277]]
-- [[_COMMUNITY_Community 278|Community 278]]
-- [[_COMMUNITY_Community 279|Community 279]]
-- [[_COMMUNITY_Community 280|Community 280]]
-- [[_COMMUNITY_Community 281|Community 281]]
-- [[_COMMUNITY_Community 282|Community 282]]
-- [[_COMMUNITY_Community 283|Community 283]]
-- [[_COMMUNITY_Community 284|Community 284]]
-- [[_COMMUNITY_Community 285|Community 285]]
-- [[_COMMUNITY_Community 286|Community 286]]
-- [[_COMMUNITY_Community 287|Community 287]]
-- [[_COMMUNITY_Community 288|Community 288]]
-- [[_COMMUNITY_Community 289|Community 289]]
-- [[_COMMUNITY_Community 290|Community 290]]
-- [[_COMMUNITY_Community 291|Community 291]]
-- [[_COMMUNITY_Community 292|Community 292]]
-- [[_COMMUNITY_Community 293|Community 293]]
-- [[_COMMUNITY_Community 294|Community 294]]
-- [[_COMMUNITY_Community 295|Community 295]]
-- [[_COMMUNITY_Community 296|Community 296]]
-- [[_COMMUNITY_Community 297|Community 297]]
-- [[_COMMUNITY_Community 298|Community 298]]
-- [[_COMMUNITY_Community 299|Community 299]]
-- [[_COMMUNITY_Community 300|Community 300]]
-- [[_COMMUNITY_Community 301|Community 301]]
-- [[_COMMUNITY_Community 302|Community 302]]
-- [[_COMMUNITY_Community 303|Community 303]]
-- [[_COMMUNITY_Community 304|Community 304]]
-- [[_COMMUNITY_Community 305|Community 305]]
-- [[_COMMUNITY_Community 306|Community 306]]
-- [[_COMMUNITY_Community 307|Community 307]]
-- [[_COMMUNITY_Community 308|Community 308]]
-- [[_COMMUNITY_Community 309|Community 309]]
-- [[_COMMUNITY_Community 310|Community 310]]
-- [[_COMMUNITY_Community 311|Community 311]]
-- [[_COMMUNITY_Community 312|Community 312]]
-- [[_COMMUNITY_Community 313|Community 313]]
-- [[_COMMUNITY_Community 314|Community 314]]
-- [[_COMMUNITY_Community 315|Community 315]]
-- [[_COMMUNITY_Community 316|Community 316]]
-- [[_COMMUNITY_Community 317|Community 317]]
-- [[_COMMUNITY_Community 318|Community 318]]
-- [[_COMMUNITY_Community 319|Community 319]]
-- [[_COMMUNITY_Community 320|Community 320]]
-- [[_COMMUNITY_Community 321|Community 321]]
-- [[_COMMUNITY_Community 322|Community 322]]
-- [[_COMMUNITY_Community 323|Community 323]]
-- [[_COMMUNITY_Community 324|Community 324]]
-- [[_COMMUNITY_Community 325|Community 325]]
-- [[_COMMUNITY_Community 326|Community 326]]
-- [[_COMMUNITY_Community 327|Community 327]]
-- [[_COMMUNITY_Community 328|Community 328]]
-- [[_COMMUNITY_Community 329|Community 329]]
-- [[_COMMUNITY_Community 330|Community 330]]
-- [[_COMMUNITY_Community 331|Community 331]]
-- [[_COMMUNITY_Community 332|Community 332]]
-- [[_COMMUNITY_Community 333|Community 333]]
-- [[_COMMUNITY_Community 334|Community 334]]
-- [[_COMMUNITY_Community 335|Community 335]]
-- [[_COMMUNITY_Community 336|Community 336]]
-- [[_COMMUNITY_Community 337|Community 337]]
-- [[_COMMUNITY_Community 338|Community 338]]
-- [[_COMMUNITY_Community 339|Community 339]]
-- [[_COMMUNITY_Community 340|Community 340]]
-- [[_COMMUNITY_Community 341|Community 341]]
-- [[_COMMUNITY_Community 342|Community 342]]
-- [[_COMMUNITY_Community 343|Community 343]]
-- [[_COMMUNITY_Community 344|Community 344]]
-- [[_COMMUNITY_Community 345|Community 345]]
-- [[_COMMUNITY_Community 346|Community 346]]
-- [[_COMMUNITY_Community 347|Community 347]]
-- [[_COMMUNITY_Community 348|Community 348]]
-- [[_COMMUNITY_Community 349|Community 349]]
-- [[_COMMUNITY_Community 350|Community 350]]
-- [[_COMMUNITY_Community 351|Community 351]]
-- [[_COMMUNITY_Community 352|Community 352]]
-- [[_COMMUNITY_Community 353|Community 353]]
-- [[_COMMUNITY_Community 354|Community 354]]
-- [[_COMMUNITY_Community 355|Community 355]]
-- [[_COMMUNITY_Community 356|Community 356]]
-- [[_COMMUNITY_Community 357|Community 357]]
-- [[_COMMUNITY_Community 358|Community 358]]
-- [[_COMMUNITY_Community 359|Community 359]]
-- [[_COMMUNITY_Community 360|Community 360]]
-- [[_COMMUNITY_Community 361|Community 361]]
-- [[_COMMUNITY_Community 362|Community 362]]
-- [[_COMMUNITY_Community 363|Community 363]]
-- [[_COMMUNITY_Community 364|Community 364]]
-- [[_COMMUNITY_Community 365|Community 365]]
-- [[_COMMUNITY_Community 366|Community 366]]
-- [[_COMMUNITY_Community 367|Community 367]]
-- [[_COMMUNITY_Community 368|Community 368]]
-- [[_COMMUNITY_Community 369|Community 369]]
-- [[_COMMUNITY_Community 370|Community 370]]
-- [[_COMMUNITY_Community 371|Community 371]]
-- [[_COMMUNITY_Community 372|Community 372]]
-- [[_COMMUNITY_Community 373|Community 373]]
-- [[_COMMUNITY_Community 374|Community 374]]
-- [[_COMMUNITY_Community 375|Community 375]]
-- [[_COMMUNITY_Community 376|Community 376]]
-- [[_COMMUNITY_Community 377|Community 377]]
-- [[_COMMUNITY_Community 378|Community 378]]
-- [[_COMMUNITY_Community 379|Community 379]]
-- [[_COMMUNITY_Community 380|Community 380]]
-- [[_COMMUNITY_Community 381|Community 381]]
-- [[_COMMUNITY_Community 382|Community 382]]
-- [[_COMMUNITY_Community 383|Community 383]]
-- [[_COMMUNITY_Community 384|Community 384]]
-- [[_COMMUNITY_Community 385|Community 385]]
-- [[_COMMUNITY_Community 386|Community 386]]
-- [[_COMMUNITY_Community 387|Community 387]]
-- [[_COMMUNITY_Community 388|Community 388]]
-- [[_COMMUNITY_Community 389|Community 389]]
-- [[_COMMUNITY_Community 390|Community 390]]
-- [[_COMMUNITY_Community 391|Community 391]]
-- [[_COMMUNITY_Community 392|Community 392]]
-- [[_COMMUNITY_Community 393|Community 393]]
-- [[_COMMUNITY_Community 394|Community 394]]
-- [[_COMMUNITY_Community 395|Community 395]]
-- [[_COMMUNITY_Community 396|Community 396]]
-- [[_COMMUNITY_Community 397|Community 397]]
-- [[_COMMUNITY_Community 398|Community 398]]
-- [[_COMMUNITY_Community 399|Community 399]]
-- [[_COMMUNITY_Community 400|Community 400]]
-- [[_COMMUNITY_Community 401|Community 401]]
-- [[_COMMUNITY_Community 402|Community 402]]
-- [[_COMMUNITY_Community 403|Community 403]]
-- [[_COMMUNITY_Community 404|Community 404]]
-- [[_COMMUNITY_Community 405|Community 405]]
-- [[_COMMUNITY_Community 406|Community 406]]
-- [[_COMMUNITY_Community 407|Community 407]]
-- [[_COMMUNITY_Community 408|Community 408]]
-- [[_COMMUNITY_Community 409|Community 409]]
-- [[_COMMUNITY_Community 410|Community 410]]
-- [[_COMMUNITY_Community 411|Community 411]]
-- [[_COMMUNITY_Community 412|Community 412]]
-- [[_COMMUNITY_Community 413|Community 413]]
-- [[_COMMUNITY_Community 414|Community 414]]
-- [[_COMMUNITY_Community 415|Community 415]]
-- [[_COMMUNITY_Community 416|Community 416]]
-- [[_COMMUNITY_Community 417|Community 417]]
-- [[_COMMUNITY_Community 418|Community 418]]
-- [[_COMMUNITY_Community 419|Community 419]]
-- [[_COMMUNITY_Community 420|Community 420]]
-- [[_COMMUNITY_Community 421|Community 421]]
-- [[_COMMUNITY_Community 422|Community 422]]
-- [[_COMMUNITY_Community 423|Community 423]]
-- [[_COMMUNITY_Community 424|Community 424]]
-- [[_COMMUNITY_Community 425|Community 425]]
-- [[_COMMUNITY_Community 426|Community 426]]
-- [[_COMMUNITY_Community 427|Community 427]]
-- [[_COMMUNITY_Community 428|Community 428]]
-- [[_COMMUNITY_Community 429|Community 429]]
-- [[_COMMUNITY_Community 430|Community 430]]
-- [[_COMMUNITY_Community 431|Community 431]]
-- [[_COMMUNITY_Community 432|Community 432]]
-- [[_COMMUNITY_Community 433|Community 433]]
-- [[_COMMUNITY_Community 434|Community 434]]
-- [[_COMMUNITY_Community 435|Community 435]]
-- [[_COMMUNITY_Community 436|Community 436]]
-- [[_COMMUNITY_Community 437|Community 437]]
-- [[_COMMUNITY_Community 438|Community 438]]
-- [[_COMMUNITY_Community 439|Community 439]]
-- [[_COMMUNITY_Community 440|Community 440]]
-- [[_COMMUNITY_Community 441|Community 441]]
-- [[_COMMUNITY_Community 442|Community 442]]
-- [[_COMMUNITY_Community 443|Community 443]]
-- [[_COMMUNITY_Community 444|Community 444]]
-- [[_COMMUNITY_Community 445|Community 445]]
-- [[_COMMUNITY_Community 446|Community 446]]
-- [[_COMMUNITY_Community 447|Community 447]]
-- [[_COMMUNITY_Community 448|Community 448]]
-- [[_COMMUNITY_Community 449|Community 449]]
-- [[_COMMUNITY_Community 450|Community 450]]
-- [[_COMMUNITY_Community 451|Community 451]]
-- [[_COMMUNITY_Community 452|Community 452]]
-- [[_COMMUNITY_Community 453|Community 453]]
-- [[_COMMUNITY_Community 454|Community 454]]
-- [[_COMMUNITY_Community 455|Community 455]]
-- [[_COMMUNITY_Community 456|Community 456]]
-- [[_COMMUNITY_Community 457|Community 457]]
-- [[_COMMUNITY_Community 458|Community 458]]
-- [[_COMMUNITY_Community 459|Community 459]]
-- [[_COMMUNITY_Community 460|Community 460]]
-- [[_COMMUNITY_Community 461|Community 461]]
-- [[_COMMUNITY_Community 462|Community 462]]
-- [[_COMMUNITY_Community 463|Community 463]]
-- [[_COMMUNITY_Community 464|Community 464]]
-- [[_COMMUNITY_Community 465|Community 465]]
-- [[_COMMUNITY_Community 466|Community 466]]
-- [[_COMMUNITY_Community 467|Community 467]]
-- [[_COMMUNITY_Community 468|Community 468]]
-- [[_COMMUNITY_Community 469|Community 469]]
-- [[_COMMUNITY_Community 470|Community 470]]
-- [[_COMMUNITY_Community 471|Community 471]]
-- [[_COMMUNITY_Community 472|Community 472]]
-- [[_COMMUNITY_Community 473|Community 473]]
-- [[_COMMUNITY_Community 474|Community 474]]
-- [[_COMMUNITY_Community 475|Community 475]]
-- [[_COMMUNITY_Community 476|Community 476]]
-- [[_COMMUNITY_Community 477|Community 477]]
-- [[_COMMUNITY_Community 478|Community 478]]
-- [[_COMMUNITY_Community 479|Community 479]]
-- [[_COMMUNITY_Community 480|Community 480]]
-- [[_COMMUNITY_Community 481|Community 481]]
-- [[_COMMUNITY_Community 482|Community 482]]
-- [[_COMMUNITY_Community 483|Community 483]]
-- [[_COMMUNITY_Community 484|Community 484]]
-- [[_COMMUNITY_Community 485|Community 485]]
-- [[_COMMUNITY_Community 486|Community 486]]
-- [[_COMMUNITY_Community 487|Community 487]]
-- [[_COMMUNITY_Community 488|Community 488]]
-- [[_COMMUNITY_Community 489|Community 489]]
-- [[_COMMUNITY_Community 490|Community 490]]
-- [[_COMMUNITY_Community 491|Community 491]]
-- [[_COMMUNITY_Community 492|Community 492]]
-- [[_COMMUNITY_Community 493|Community 493]]
-- [[_COMMUNITY_Community 494|Community 494]]
-- [[_COMMUNITY_Community 495|Community 495]]
-- [[_COMMUNITY_Community 496|Community 496]]
-- [[_COMMUNITY_Community 497|Community 497]]
-- [[_COMMUNITY_Community 498|Community 498]]
-- [[_COMMUNITY_Community 499|Community 499]]
-- [[_COMMUNITY_Community 500|Community 500]]
-- [[_COMMUNITY_Community 501|Community 501]]
-- [[_COMMUNITY_Community 502|Community 502]]
-- [[_COMMUNITY_Community 503|Community 503]]
-- [[_COMMUNITY_Community 504|Community 504]]
-- [[_COMMUNITY_Community 505|Community 505]]
-- [[_COMMUNITY_Community 506|Community 506]]
-- [[_COMMUNITY_Community 507|Community 507]]
-- [[_COMMUNITY_Community 508|Community 508]]
-- [[_COMMUNITY_Community 509|Community 509]]
-- [[_COMMUNITY_Community 510|Community 510]]
-- [[_COMMUNITY_Community 511|Community 511]]
-- [[_COMMUNITY_Community 512|Community 512]]
-- [[_COMMUNITY_Community 513|Community 513]]
-- [[_COMMUNITY_Community 514|Community 514]]
-- [[_COMMUNITY_Community 515|Community 515]]
-- [[_COMMUNITY_Community 516|Community 516]]
-- [[_COMMUNITY_Community 517|Community 517]]
-- [[_COMMUNITY_Community 518|Community 518]]
-- [[_COMMUNITY_Community 519|Community 519]]
-- [[_COMMUNITY_Community 520|Community 520]]
-- [[_COMMUNITY_Community 521|Community 521]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `StageKey` - 948 edges
-2. `DatasetId` - 880 edges
-3. `RunPlan` - 864 edges
-4. `RunRequest` - 532 edges
-5. `RunSnapshot` - 518 edges
-6. `DatasetSourceSpec` - 492 edges
-7. `ArrayHandle` - 445 edges
-8. `StageManifest` - 427 edges
-9. `Record3DLiveSourceSpec` - 391 edges
-10. `VisualizationConfig` - 374 edges
+1. `PathConfig` - 99 edges
+2. `path()` - 70 edges
+3. `AppContext` - 45 edges
+4. `FrameTransform` - 44 edges
+5. `Record3DDevice` - 44 edges
+6. `DatasetId` - 42 edges
+7. `PacketSessionSnapshot` - 42 edges
+8. `Console` - 41 edges
+9. `RunRequest` - 39 edges
+10. `SlamStageConfig` - 38 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `VisualizationConfig` --uses--> `Tests for repo-owned visualization helpers.`  [INFERRED]
-  src/prml_vslam/visualization/contracts.py → tests/test_visualization.py
-- `MockSlamBackendConfig` --calls--> `test_mock_slam_backend_config_defaults_to_mock_method()`  [INFERRED]
-  src/prml_vslam/methods/configs.py → tests/test_methods.py
-- `SequenceManifest` --uses--> `Small runtime sources used by focused pipeline smoke tests.`  [INFERRED]
-  src/prml_vslam/interfaces/ingest.py → tests/pipeline_testing_support.py
-- `SequenceManifest` --uses--> `Minimal offline source for pipeline smoke tests.`  [INFERRED]
-  src/prml_vslam/interfaces/ingest.py → tests/pipeline_testing_support.py
-- `SequenceManifest` --uses--> `Finite in-memory packet stream for streaming smoke tests.`  [INFERRED]
-  src/prml_vslam/interfaces/ingest.py → tests/pipeline_testing_support.py
+- `plan_run()` --calls--> `test_plan_run_defaults_to_live_viewer()`  [INFERRED]
+  src/prml_vslam/main.py → tests/test_main.py
+- `configure_logging()` --calls--> `test_console_logging_config_uses_namespace_highlighter()`  [INFERRED]
+  src/prml_vslam/utils/console.py → tests/test_console.py
+- `_forward_rerun_viewer_stdout()` --calls--> `test_forward_rerun_viewer_stdout_prefixes_child_output()`  [INFERRED]
+  src/prml_vslam/main.py → tests/test_main.py
+- `run_config()` --calls--> `test_run_config_supports_streaming_requests()`  [INFERRED]
+  src/prml_vslam/main.py → tests/test_main.py
+- `_wait_for_pipeline_terminal_snapshot()` --calls--> `test_wait_for_pipeline_terminal_snapshot_uses_pipeline_demo_namespace()`  [INFERRED]
+  src/prml_vslam/main.py → tests/test_main.py
 
 ## Communities
 
 ### Community 0 - "Community 0"
-Cohesion: 0.0
-Nodes (757): modalities(), validate_dataset_root(), _artifact_ref(), build_vista_artifacts(), _frame_transform_from_vista_pose(), Build one stable artifact reference for a normalized ViSTA output., Normalize native ViSTA exports into repository-owned artifact contracts.      Th, Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO. (+749 more)
+Cohesion: 0.02
+Nodes (204): handle_advio_preview_action(), load_advio_explorer_sample(), Controller helpers for the ADVIO Streamlit page., Persist the current ADVIO download-form state., Persist the current explorer selection and load its offline sample., Keep persisted preview state aligned with the runtime snapshot., Apply one preview-form action and return an error message when it fails., _scene_rows() (+196 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (839): GroundAlignmentMetadata, Result of one derived ground-plane alignment attempt., ArtifactFileRow, ArtifactPathRow, Inspection helpers for persisted pipeline run artifact roots., One output path declared by a stage manifest., Structured inspection result for one persisted pipeline run., Discover method-level run roots under the configured artifact directory. (+831 more)
+Nodes (177): build_advio_page_data(), AdvioDownloadManager, _ensure_directory_parent(), Return one catalog scene by id., Return local availability status for every catalog scene., Download selected ADVIO scenes and extract the requested modalities., archive_member_matches(), list_local_sequence_ids() (+169 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.02
-Nodes (726): BaseConfig, AppContext, Mast3rSlamBackendConfig, MockSlamBackendConfig, AdvioPoseFrameMode, AdvioServingConfig, AlignmentConfig, DatasetId (+718 more)
+Nodes (178): _build_runtime_env(), _can_connect(), _is_local_ray_connectivity_error(), _local_node_ip_address(), _prepare_ray_environment(), Ray-backed backend for plan execution and run attachment.  This module owns subs, Forward a stop request to the named coordinator actor., Fetch the latest projected snapshot from the coordinator actor. (+170 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.01
-Nodes (454): build_advio_comparison_trajectories(), build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), Build a crowd-density composition chart., Build a scene-attribute prevalence chart., Build ADVIO explorer overlays with explicit comparison semantics. (+446 more)
+Cohesion: 0.02
+Nodes (150): GroundAlignmentMetadata, Result of one derived ground-plane alignment attempt., to_jsonable(), BackendNoticeReceived, FramePacketSummary, PacketObserved, Event-first runtime contracts for the pipeline.  This module owns the append-onl, Emit telemetry progress for one running stage. (+142 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.01
-Nodes (438): check_kw_only_arg(), custom_type_setup(), init(), module_local(), name(), release_gil_before_calling_cpp_dtor(), add(), BoWFrame() (+430 more)
+Cohesion: 0.03
+Nodes (143): _load_offline_frame_inputs(), Canonical ViSTA-SLAM backend adapter (offline + streaming)., ViSTA-SLAM backend implementing offline and streaming contracts., Load upstream OnlineSLAM and return a ready in-process session., Run ViSTA-SLAM over a normalized offline manifest and persist artifacts., Load normalized offline RGB paths plus timestamps for ViSTA execution., VistaSlamBackend, _artifact_ref() (+135 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.01
-Nodes (582): _build_runtime_env(), _can_connect(), _is_local_ray_connectivity_error(), _local_node_ip_address(), _prepare_ray_environment(), # TODO: These should be exposed via config! (include_dashboard, log_to_driver), BaseConfig, _ConfigFactory (+574 more)
+Cohesion: 0.02
+Nodes (147): AdvioDownloadPreset, AdvioEnvironment, AdvioModality, AdvioPeopleLevel, Environment labels committed from the official ADVIO scene table., Crowd-density labels committed from the official ADVIO scene table., Downloadable ADVIO modality bundles exposed in the CLI and app., Curated modality bundles for common ADVIO workflows. (+139 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.01
-Nodes (417): build_advio_page_data(), handle_advio_preview_action(), AdvioDownloadManager, _ensure_directory_parent(), Return the cache directory used for downloaded scene archives., Return the cache directory used for downloaded scene archives., Return one catalog scene by id., Return one catalog scene by id. (+409 more)
+Cohesion: 0.02
+Nodes (121): AppContext, build_context(), _build_pages(), _enter_page(), _load_page_module(), Bootstrap helpers for the packaged PRML VSLAM Streamlit app., Typed per-rerun context passed to page renderers., Construct the typed services and persisted state for one rerun. (+113 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.01
-Nodes (412): _load_offline_frame_inputs(), Canonical ViSTA-SLAM backend adapter (offline + streaming)., Stateful streaming session that forwards frames to upstream OnlineSLAM., Write the vocabulary back to disk in the requested format., Create one configured upstream OnlineSLAM session., Subset of the imported DBoW module used by this adapter., Persist upstream outputs and convert to canonical repository artifacts., Construct one vocabulary instance. (+404 more)
+Cohesion: 0.02
+Nodes (109): PipelineBackend, Backend boundary between launch surfaces and execution substrates.  This module, # TODO: This is a protocol that defines public interfaces, it should hence be de, Execute, monitor, and tear down pipeline runs.      Implementations own the conc, Canonical reconstruction backend configs., Provide the package-local runtime contract shared by reconstruction configs., Instantiate the Open3D TSDF backend while ignoring unrelated kwargs., ReconstructionBackendConfig (+101 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.01
-Nodes (347): load_advio_explorer_sample(), Controller helpers for the ADVIO Streamlit page., Apply one preview-form action and return an error message when it fails., Apply one preview-form action and return an error message when it fails., Persist the current ADVIO download-form state., Persist the current explorer selection and load its offline sample., Persist the current ADVIO download-form state., Persist the current ADVIO download-form state. (+339 more)
+Cohesion: 0.03
+Nodes (126): discover_run_artifact_roots(), Discover method-level run roots under the configured artifact directory., build_advio_demo_request(), load_run_request_toml(), persist_advio_demo_request(), Shared helpers for the bounded dataset pipeline demo., Persist a pipeline request TOML through the repo-owned config path helper., Persist the canonical ADVIO demo request under `.configs/pipelines/` by default. (+118 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.01
-Nodes (342): apply_sim3(), _associate_trajectory_positions(), build_advio_tango_reference_clouds(), fit_sim3_alignment(), load_bounded_tango_point_clouds(), load_tango_point_cloud_index(), load_tango_point_cloud_payload(), Load Tango point-cloud timestamps and integer payload indices. (+334 more)
+Cohesion: 0.02
+Nodes (119): apply_sim3(), _associate_trajectory_positions(), build_advio_tango_reference_clouds(), fit_sim3_alignment(), interpolate_trajectory_poses(), load_bounded_tango_point_clouds(), load_tango_point_cloud_index(), load_tango_point_cloud_payload() (+111 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.01
-Nodes (207): AdvioCalibration, _expect_float_list(), _expect_mapping(), _expect_matrix(), _extract_camera_mapping(), load_advio_calibration(), load_advio_frame_timestamps_ns(), load_advio_trajectory() (+199 more)
+Cohesion: 0.02
+Nodes (125): AdvioCalibration, _expect_float_list(), _expect_mapping(), _expect_matrix(), _extract_camera_mapping(), load_advio_calibration(), load_advio_trajectory(), Load an ADVIO trajectory CSV into an `evo` pose trajectory. (+117 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.04
-Nodes (206): Open3dTsdfBackendConfig, Compatibility shim for the canonical ViSTA config surfaces., Algorithm-level hyperparameters forwarded to upstream OnlineSLAM., Return the user-facing reconstruction label., Configure the minimal Open3D TSDF reconstruction backend., Factory config that builds the canonical ViSTA backend., Instantiate the Open3D TSDF backend while ignoring unrelated kwargs., ReconstructionBackendConfig (+198 more)
+Cohesion: 0.03
+Nodes (109): build_advio_comparison_trajectories(), build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), Plotly figure builders for the ADVIO dataset page., Build a crowd-density composition chart., Build a scene-attribute prevalence chart. (+101 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.03
-Nodes (125): setup_target(), parent(), Instantiate or build the runtime object described by this config., Return a child console with additional namespace parts., Decode and return the next sampled RGB frame., wait(), IntEnum, record3d_devices() (+117 more)
+Nodes (79): AdvioDatasetSummary, High-level summary of committed and local ADVIO coverage., DatasetServiceBase, DatasetSummary, One row in a durable RGB-D observation sequence index., Durable ``rgbd_observation_sequence.v1`` index payload., Durable descriptor for a prepared RGB-D observation sequence., Describe where one normalized posed RGB-D observation came from. (+71 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.02
-Nodes (74): MyNvtxRange, DPTOutputAdapter, FeatureFusionBlock_custom, Interpolate, make_fusion_block(), make_scratch(), pair(), Feature fusion block. (+66 more)
+Cohesion: 0.03
+Nodes (100): _apply_fallbacks(), _artifact_ref(), ArtifactFileRow, ArtifactPathRow, _candidate_from_root(), _canonical_path_rows(), _compare_model_intrinsics(), _derive_slam_artifacts() (+92 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.07
-Nodes (20): Capture, _make_explanation(), Output, pytest_assertrepr_compare(), pytest configuration  Extends output capture as needed by pybind11: ignore const, Extended `capsys` with context manager and custom equality operators, Hook to insert custom failure explanation, For triple-quote strings (+12 more)
+Cohesion: 0.04
+Nodes (82): attach_recording_sinks(), augment_viewer_recording_with_ground_plane(), build_default_blueprint(), create_recording_stream(), log_clear(), log_depth_image(), log_ground_plane_patch(), log_line_strip3d() (+74 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.08
-Nodes (6): PYBIND11_MODULE(), PYBIND11_MODULE(), test_exo_planet_pybind11_wrap_very_lonely_traveler(), test_home_planet_wrap_very_lonely_traveler(), wrap_lonely_traveler(), wrap_very_lonely_traveler()
+Cohesion: 0.03
+Nodes (61): BaseConfig, _ConfigFactory, FactoryConfig, _normalize_value(), Shared config and config-as-factory helpers for the repository.  This module own, Render the config as a Rich tree for quick human inspection., Mixin for configs that construct one runtime owner or adapter.      This pattern, Instantiate or build the runtime object described by this config. (+53 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.09
-Nodes (11): Mixing bases with and without static properties should be possible     and the r, Mixing bases with and without dynamic attribute support, Returning an offset (non-first MI) base class pointer should recognize the insta, Tests returning an offset (non-first MI) base class pointer to a derived instanc, Tests extending a Python class from a single inheritor of a MI class, test_mi_base_return(), test_mi_dynamic_attributes(), test_mi_static_properties() (+3 more)
+Cohesion: 0.05
+Nodes (49): Authoritative per-run coordinator for event-first execution.  The coordinator ow, stop_requested(), _build_runtime(), Tests for the Python-side Record3D Wi-Fi transport., test_decode_record3d_wifi_depth_maps_hue_to_depth_range(), test_normalize_record3d_device_address_adds_http_scheme(), test_record3d_wifi_answer_payload_matches_official_demo(), test_record3d_wifi_closed_after_connect_logs_runtime_failure() (+41 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.17
-Nodes (5): get_sys_path_size(), PyWidget, test_override_cache_helper, test_override_cache_helper_trampoline, Widget
+Cohesion: 0.04
+Nodes (34): _CappedPacketStream, _CappedStreamingSource, FramePacketStream, IntEnum, _camera_pose_from_binding(), _device_from_binding(), _import_record3d_module(), _intrinsics_from_binding() (+26 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.18
-Nodes (6): Pydoc needs to be able to provide help() for everything inside a pybind11 module, Registering two things with the same name, Test that all the keys in the builtin modules have type str.      Previous versi, test_builtin_key_type(), test_duplicate_registration(), test_pydoc()
+Cohesion: 0.05
+Nodes (20): MethodId, Typed contracts for external VSLAM method adapters.  This module owns the backen, Name the external or repository-local backends supported by the package., Provide the method-owned runtime contract shared by backend configs.      Concre, SlamBackendConfig, Cv2FramePayload, Cv2FrameProducer, Cv2ReplayMode (+12 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.36
-Nodes (4): test_resolve_issue_moves_record_to_resolved_collection(), test_resolve_refactor_moves_record_to_resolved_collection(), test_resolve_todo_moves_record_to_resolved_collection(), _write_toml()
+Cohesion: 0.08
+Nodes (27): Execute offline SLAM through the dedicated stage actor boundary., run_offline_slam_stage(), _apply_completion(), close_streaming_slam_stage(), _execute_stage(), _failure_builder(), Phase-aware stage executor for the linear Ray-backed pipeline.  This module cont, Bind one :class:`StageKey` to its executable runtime entrypoints. (+19 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.29
-Nodes (0):
+Cohesion: 0.09
+Nodes (29): build_pipeline_snapshot_render_model(), _compute_evo_preview(), latest_backend_notice_view(), _pipeline_metrics(), _pipeline_notice(), PipelineBackendNoticeView, PipelineNoticeRenderModel, PipelineSnapshotRenderModel (+21 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.33
-Nodes (2): DerivedWidget, Widget
+Cohesion: 0.11
+Nodes (18): Describe one planned stage in the deterministic execution order., RunPlanStage, _availability_for_entry(), default(), _ground_alignment_stage_availability(), Registry-backed compiler for the linear pipeline stage vocabulary.  This module, Collect stage metadata and compile deterministic run plans.      This registry i, Register one stage and the rules that make it plan-visible.          Args: (+10 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.7
-Nodes (4): PC, PPCC, test_PC(), test_PPCC()
+Cohesion: 0.22
+Nodes (1): Tests for package-root public export surfaces.
 
 ### Community 23 - "Community 23"
-Cohesion: 0.6
-Nodes (4): event_loop(), get_await_result(), test_await(), test_await_missing()
+Cohesion: 0.31
+Nodes (5): _load_agents_db_module(), test_resolve_issue_moves_record_to_resolved_collection(), test_resolve_refactor_moves_record_to_resolved_collection(), test_resolve_todo_moves_record_to_resolved_collection(), _write_toml()
 
 ### Community 24 - "Community 24"
-Cohesion: 0.5
-Nodes (0):
-
-### Community 25 - "Community 25"
-Cohesion: 0.5
-Nodes (0):
-
-### Community 26 - "Community 26"
-Cohesion: 0.5
-Nodes (0):
-
-### Community 27 - "Community 27"
-Cohesion: 0.67
-Nodes (0):
-
-### Community 28 - "Community 28"
-Cohesion: 0.67
-Nodes (0):
-
-### Community 29 - "Community 29"
-Cohesion: 0.67
-Nodes (1): DBoW3()
-
-### Community 30 - "Community 30"
-Cohesion: 0.67
-Nodes (1): DBoW3()
-
-### Community 31 - "Community 31"
-Cohesion: 0.67
-Nodes (1): DBoW3()
-
-### Community 32 - "Community 32"
-Cohesion: 0.67
-Nodes (1): DBoW3()
-
-### Community 33 - "Community 33"
-Cohesion: 1.0
-Nodes (2): gen(), video()
-
-### Community 34 - "Community 34"
 Cohesion: 1.0
 Nodes (1): Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays
 
-### Community 35 - "Community 35"
+### Community 26 - "Community 26"
 Cohesion: 1.0
-Nodes (0):
+Nodes (1): Attach a Rich logging handler to the ``prml_vslam`` logger tree.
 
-### Community 36 - "Community 36"
+### Community 27 - "Community 27"
 Cohesion: 1.0
-Nodes (0):
+Nodes (1): Create a console using the caller's module and qualified function name.
 
-### Community 37 - "Community 37"
+### Community 28 - "Community 28"
 Cohesion: 1.0
-Nodes (0):
+Nodes (1): Normalize nested config values into JSON-friendly primitives.
 
-### Community 38 - "Community 38"
+### Community 29 - "Community 29"
 Cohesion: 1.0
-Nodes (0):
+Nodes (1): Load the validated config from TOML text, bytes, or a file path.
 
-### Community 39 - "Community 39"
+### Community 30 - "Community 30"
 Cohesion: 1.0
-Nodes (0):
+Nodes (1): Return the runtime type or owner constructed by :meth:`setup_target`.
 
-### Community 40 - "Community 40"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 41 - "Community 41"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 42 - "Community 42"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 43 - "Community 43"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 44 - "Community 44"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 45 - "Community 45"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 46 - "Community 46"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 47 - "Community 47"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 48 - "Community 48"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 49 - "Community 49"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 50 - "Community 50"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 51 - "Community 51"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 52 - "Community 52"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 53 - "Community 53"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 54 - "Community 54"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 55 - "Community 55"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 56 - "Community 56"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 57 - "Community 57"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 58 - "Community 58"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 59 - "Community 59"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 60 - "Community 60"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 61 - "Community 61"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 62 - "Community 62"
-Cohesion: 1.0
-Nodes (1): The CXX standard level. If set, will add the required flags. If left at
-
-### Community 63 - "Community 63"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 64 - "Community 64"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 65 - "Community 65"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 66 - "Community 66"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 67 - "Community 67"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 68 - "Community 68"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 69 - "Community 69"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 70 - "Community 70"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 71 - "Community 71"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 72 - "Community 72"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 73 - "Community 73"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 74 - "Community 74"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 75 - "Community 75"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 76 - "Community 76"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 77 - "Community 77"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 78 - "Community 78"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 79 - "Community 79"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 80 - "Community 80"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 81 - "Community 81"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 82 - "Community 82"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 83 - "Community 83"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 84 - "Community 84"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 85 - "Community 85"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 86 - "Community 86"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 87 - "Community 87"
-Cohesion: 1.0
-Nodes (0):
-
-### Community 88 - "Community 88"
+### Community 31 - "Community 31"
 Cohesion: 1.0
 Nodes (1): Deserialize one IPC payload back into the target validated model type.
 
-### Community 89 - "Community 89"
+### Community 32 - "Community 32"
 Cohesion: 1.0
-Nodes (1): Viewer artifacts associated with one run.
+Nodes (1): Build the canonical artifact layout from an explicit root.
 
-### Community 90 - "Community 90"
+### Community 33 - "Community 33"
 Cohesion: 1.0
-Nodes (1): Return the compact source label used in logs and diagnostics.
+Nodes (1): Alias for input_frames_dir used in early scaffold versions.
 
-### Community 91 - "Community 91"
+### Community 34 - "Community 34"
 Cohesion: 1.0
-Nodes (1): Return the upstream method name shown to users.
+Nodes (1): Return the path to the repo-owned viewer recording.
 
-### Community 92 - "Community 92"
+### Community 35 - "Community 35"
 Cohesion: 1.0
-Nodes (1): Return the user-facing backend label used across planning and UI surfaces.
+Nodes (1): Validate that the configured repository root exists.
 
-### Community 93 - "Community 93"
+### Community 36 - "Community 36"
 Cohesion: 1.0
-Nodes (1): Whether the backend can expose point-cloud outputs.
+Nodes (1): Resolve configured directories against the repository root.
 
-### Community 94 - "Community 94"
+### Community 37 - "Community 37"
 Cohesion: 1.0
-Nodes (1): Whether the backend supports offline execution.
+Nodes (1): Resolve a path relative to the configured repository root.
 
-### Community 95 - "Community 95"
+### Community 38 - "Community 38"
 Cohesion: 1.0
-Nodes (1): Whether the backend supports streaming execution.
+Nodes (1): Resolve a directory and optionally create it.
 
-### Community 96 - "Community 96"
-Cohesion: 1.0
-Nodes (1): Whether the backend can expose point-cloud outputs.
-
-### Community 97 - "Community 97"
-Cohesion: 1.0
-Nodes (1): Whether the backend can emit live preview payloads.
-
-### Community 98 - "Community 98"
-Cohesion: 1.0
-Nodes (1): Whether the backend may emit native visualization artifacts.
-
-### Community 99 - "Community 99"
-Cohesion: 1.0
-Nodes (1): Whether the backend supports repository trajectory evaluation.
-
-### Community 100 - "Community 100"
-Cohesion: 1.0
-Nodes (1): Return backend-owned default Ray resource hints.
-
-### Community 101 - "Community 101"
-Cohesion: 1.0
-Nodes (1): Return backend-specific planning notes surfaced to callers when relevant.
-
-### Community 102 - "Community 102"
-Cohesion: 1.0
-Nodes (1): Apply the upstream crop-and-resize pipeline for image-only SLAM inputs.
-
-### Community 103 - "Community 103"
-Cohesion: 1.0
-Nodes (1): Return the normalized RGB tensor expected by upstream ViSTA.
-
-### Community 104 - "Community 104"
-Cohesion: 1.0
-Nodes (1): Return the normalized RGB tensor expected by upstream ViSTA.
-
-### Community 105 - "Community 105"
-Cohesion: 1.0
-Nodes (1): Return the upstream-ready frame payload.
-
-### Community 106 - "Community 106"
-Cohesion: 1.0
-Nodes (1): Return a one-pass iterator over normalized RGB-D observations.
-
-### Community 107 - "Community 107"
-Cohesion: 1.0
-Nodes (1): Build the shared transform DTO from XYZW quaternion and XYZ translation arrays.
-
-### Community 108 - "Community 108"
-Cohesion: 1.0
-Nodes (1): Build the shared transform DTO from a 4x4 homogeneous matrix.
-
-### Community 109 - "Community 109"
-Cohesion: 1.0
-Nodes (1): Runtime type that exposes shared packet objects.
-
-### Community 110 - "Community 110"
-Cohesion: 1.0
-Nodes (1): Parse the raw Record3D metadata payload.
-
-### Community 111 - "Community 111"
-Cohesion: 1.0
-Nodes (1): Build one spec from one JSON object.
-
-### Community 112 - "Community 112"
-Cohesion: 1.0
-Nodes (1): Apply the shared 2D layout used across workbench figures.
-
-### Community 113 - "Community 113"
-Cohesion: 1.0
-Nodes (1): Apply the shared 3D layout used across workbench figures.
-
-### Community 114 - "Community 114"
-Cohesion: 1.0
-Nodes (1): Summary of one rendered reconstruction artifact view.
-
-### Community 115 - "Community 115"
-Cohesion: 1.0
-Nodes (1): Build an interactive Plotly view for reference reconstruction PLY artifacts.
-
-### Community 116 - "Community 116"
-Cohesion: 1.0
-Nodes (1): Whether the backend supports streaming execution.
-
-### Community 117 - "Community 117"
-Cohesion: 1.0
-Nodes (1): Describe how ADVIO replay poses should be interpreted or normalized.
-
-### Community 118 - "Community 118"
-Cohesion: 1.0
-Nodes (1): Name the reconstruction backends supported by the package.
-
-### Community 119 - "Community 119"
-Cohesion: 1.0
-Nodes (1): Return the default live payloads exported to repo-owned Rerun sinks.
-
-### Community 120 - "Community 120"
-Cohesion: 1.0
-Nodes (1): Return whether the value refers to an actual provider rather than a sentinel.
-
-### Community 121 - "Community 121"
-Cohesion: 1.0
-Nodes (1): Describe the normalized durable outputs from one reconstruction run.
-
-### Community 122 - "Community 122"
-Cohesion: 1.0
-Nodes (1): Top-level alignment policy bundle attached to one run request.
-
-### Community 123 - "Community 123"
-Cohesion: 1.0
-Nodes (1): Summary of one populated point-cloud entity in a recording.
-
-### Community 124 - "Community 124"
-Cohesion: 1.0
-Nodes (1): Artifacts emitted by the repo-owned validation loop.
-
-### Community 125 - "Community 125"
-Cohesion: 1.0
-Nodes (1): Load one `.rrd` and summarize the current repo-owned Rerun surfaces.
-
-### Community 126 - "Community 126"
-Cohesion: 1.0
-Nodes (1): Write a deterministic validation bundle for one `.rrd` recording.
-
-### Community 127 - "Community 127"
-Cohesion: 1.0
-Nodes (1): Run the validation loop on one `.rrd` recording and print the artifact paths.
-
-### Community 128 - "Community 128"
-Cohesion: 1.0
-Nodes (1): Whether the backend can emit live preview payloads.
-
-### Community 129 - "Community 129"
-Cohesion: 1.0
-Nodes (1): Whether the backend may emit native visualization artifacts.
-
-### Community 130 - "Community 130"
-Cohesion: 1.0
-Nodes (1): Whether the backend supports repository trajectory evaluation.
-
-### Community 131 - "Community 131"
-Cohesion: 1.0
-Nodes (1): Return backend-owned default Ray resource hints.
-
-### Community 132 - "Community 132"
-Cohesion: 1.0
-Nodes (1): Return backend-specific planning notes surfaced to callers when relevant.
-
-### Community 133 - "Community 133"
-Cohesion: 1.0
-Nodes (1): Return backend-owned default Ray resource hints.
-
-### Community 134 - "Community 134"
-Cohesion: 1.0
-Nodes (1): Return backend-specific planning notes surfaced to callers when relevant.
-
-### Community 135 - "Community 135"
-Cohesion: 1.0
-Nodes (1): Shared JSON-safe payload aliases for controller and transport helpers.
-
-### Community 136 - "Community 136"
-Cohesion: 1.0
-Nodes (1): ADVIO trajectory providers surfaced through replay and pipeline contracts.
-
-### Community 137 - "Community 137"
-Cohesion: 1.0
-Nodes (1): Prepared benchmark-side inputs discovered for one normalized sequence.
-
-### Community 138 - "Community 138"
-Cohesion: 1.0
-Nodes (1): Carry finite patch geometry that future viewer code can render directly.
-
-### Community 139 - "Community 139"
-Cohesion: 1.0
-Nodes (1): Method-owned backend controls.
-
-### Community 140 - "Community 140"
-Cohesion: 1.0
-Nodes (1): Policy for efficiency evaluation.
-
-### Community 141 - "Community 141"
-Cohesion: 1.0
-Nodes (1): Whether the backend can emit live preview payloads.
-
-### Community 142 - "Community 142"
-Cohesion: 1.0
-Nodes (1): Point to raw ADVIO pose files preserved in the normalized manifest.
-
-### Community 143 - "Community 143"
-Cohesion: 1.0
-Nodes (1): Carry ADVIO-specific assets that do not fit the generic manifest fields.
-
-### Community 144 - "Community 144"
-Cohesion: 1.0
-Nodes (1): Describe shared frame-subsampling policy for dataset-backed sources.
-
-### Community 145 - "Community 145"
-Cohesion: 1.0
-Nodes (1): Ensure callers pick either explicit stride or target FPS, not both.
-
-### Community 146 - "Community 146"
-Cohesion: 1.0
-Nodes (1): Resolve the effective stride for a seconds-based timestamp sequence.
-
-### Community 147 - "Community 147"
-Cohesion: 1.0
-Nodes (1): Collect benchmark-side stage toggles attached to one :class:`RunRequest`.      T
-
-### Community 148 - "Community 148"
-Cohesion: 1.0
-Nodes (1): High-level summary of committed and local dataset coverage.
-
-### Community 149 - "Community 149"
-Cohesion: 1.0
-Nodes (1): Side metadata for one materialized ADVIO Tango reference cloud.
-
-### Community 150 - "Community 150"
-Cohesion: 1.0
-Nodes (1): Similarity transform mapping source-frame positions into target-frame positions.
-
-### Community 151 - "Community 151"
-Cohesion: 1.0
-Nodes (1): Materialize ADVIO Tango source-native and GT-world reference cloud artifacts.
-
-### Community 152 - "Community 152"
-Cohesion: 1.0
-Nodes (1): Load Tango point-cloud timestamps and integer payload indices.
-
-### Community 153 - "Community 153"
-Cohesion: 1.0
-Nodes (1): Load a deterministic bounded subset of Tango payloads transformed into pose-stre
-
-### Community 154 - "Community 154"
-Cohesion: 1.0
-Nodes (1): Load one Tango point-cloud payload as metric XYZ rows.
-
-### Community 155 - "Community 155"
-Cohesion: 1.0
-Nodes (1): Transform all Tango point-cloud payloads into the selected Tango pose-stream wor
-
-### Community 156 - "Community 156"
-Cohesion: 1.0
-Nodes (1): Fit a Sim(3) transform from source trajectory positions to target trajectory pos
-
-### Community 157 - "Community 157"
-Cohesion: 1.0
-Nodes (1): Apply one stored Sim(3) alignment to XYZ points.
-
-### Community 158 - "Community 158"
-Cohesion: 1.0
-Nodes (1): Describe viewer-export policy attached to one :class:`RunRequest`.      These fl
-
-### Community 159 - "Community 159"
-Cohesion: 1.0
-Nodes (1): Coordinate status for one prepared reference cloud.
-
-### Community 160 - "Community 160"
-Cohesion: 1.0
-Nodes (1): One prepared reference cloud available to a benchmark run.
-
-### Community 161 - "Community 161"
-Cohesion: 1.0
-Nodes (1): Whether the backend supports repository trajectory evaluation.
-
-### Community 162 - "Community 162"
-Cohesion: 1.0
-Nodes (1): Return the prepared trajectory baseline for one requested source.
-
-### Community 163 - "Community 163"
-Cohesion: 1.0
-Nodes (1): Summary of one explicit dataset download action.
-
-### Community 164 - "Community 164"
-Cohesion: 1.0
-Nodes (1): Configure trajectory evaluation around normalized run outputs.
-
-### Community 165 - "Community 165"
-Cohesion: 1.0
-Nodes (1): Thin benchmark-policy bundle attached to one run request.
-
-### Community 166 - "Community 166"
-Cohesion: 1.0
-Nodes (1): Toggle runtime-efficiency evaluation for one run.
-
-### Community 167 - "Community 167"
-Cohesion: 1.0
-Nodes (1): Method-owned runtime update contracts.
-
-### Community 168 - "Community 168"
-Cohesion: 1.0
-Nodes (1): Carry one incremental backend update before pipeline translation.      Backends
-
-### Community 169 - "Community 169"
-Cohesion: 1.0
-Nodes (1): # TODO: this is a dto / data model that should be defined in a shared model modu
-
-### Community 170 - "Community 170"
-Cohesion: 1.0
-Nodes (1): Return the user-facing backend label used across planning and UI surfaces.
-
-### Community 171 - "Community 171"
-Cohesion: 1.0
-Nodes (1): Whether the backend supports offline execution.
-
-### Community 172 - "Community 172"
-Cohesion: 1.0
-Nodes (1): Whether the backend supports streaming execution.
-
-### Community 173 - "Community 173"
-Cohesion: 1.0
-Nodes (1): Method-owned streaming session initialization contracts.
-
-### Community 174 - "Community 174"
-Cohesion: 1.0
-Nodes (1): Normalized context injected once when a streaming session starts.
-
-### Community 175 - "Community 175"
-Cohesion: 1.0
-Nodes (1): # TODO: this is a dto / data model that should be defined in a shared model modu
-
-### Community 176 - "Community 176"
-Cohesion: 1.0
-Nodes (1): Describe one durable artifact materialized under the run artifact root.
-
-### Community 177 - "Community 177"
-Cohesion: 1.0
-Nodes (1): Bundle the normalized durable outputs of the SLAM stage.      Method wrappers no
-
-### Community 178 - "Community 178"
-Cohesion: 1.0
-Nodes (1): # TODO: this is a dto / data model that should be defined in a shared model modu
-
-### Community 179 - "Community 179"
-Cohesion: 1.0
-Nodes (1): Carry one incremental backend update before pipeline translation.      Backends
-
-### Community 180 - "Community 180"
-Cohesion: 1.0
-Nodes (1): Normalized context injected once when a streaming session starts.
-
-### Community 181 - "Community 181"
-Cohesion: 1.0
-Nodes (1): Subset of the upstream image dataset API used by the wrapper.
-
-### Community 182 - "Community 182"
-Cohesion: 1.0
-Nodes (1): Apply the upstream crop-and-resize pipeline for image-only SLAM inputs.
-
-### Community 183 - "Community 183"
-Cohesion: 1.0
-Nodes (1): Return the grayscale tensor expected by upstream ViSTA.
-
-### Community 184 - "Community 184"
-Cohesion: 1.0
-Nodes (1): One RGB frame prepared for upstream ViSTA ingestion.
-
-### Community 185 - "Community 185"
-Cohesion: 1.0
-Nodes (1): Prepare one repo RGB frame for upstream ViSTA ingestion.
-
-### Community 186 - "Community 186"
-Cohesion: 1.0
-Nodes (1): Return the upstream-ready frame payload.
-
-### Community 187 - "Community 187"
-Cohesion: 1.0
-Nodes (1): Use the exact upstream ViSTA crop-and-resize helper path.
-
-### Community 188 - "Community 188"
-Cohesion: 1.0
-Nodes (1): Convert one upstream ViSTA array-like payload into a numpy array.
-
-### Community 189 - "Community 189"
-Cohesion: 1.0
-Nodes (1): Consume one frame and prepare an incremental SLAM update.
-
-### Community 190 - "Community 190"
-Cohesion: 1.0
-Nodes (1): Retrieve any pending incremental SLAM updates non-blockingly.
-
-### Community 191 - "Community 191"
-Cohesion: 1.0
-Nodes (1): Run the backend over a materialized sequence and persist artifacts.
-
-### Community 192 - "Community 192"
-Cohesion: 1.0
-Nodes (1): Return a picklable factory that builds one streaming SLAM session.
-
-### Community 193 - "Community 193"
-Cohesion: 1.0
-Nodes (1): Name the external or repository-local backends supported by the package.
-
-### Community 194 - "Community 194"
-Cohesion: 1.0
-Nodes (1): Policy toggle for the optional reference-reconstruction stage.
-
-### Community 195 - "Community 195"
-Cohesion: 1.0
-Nodes (1): Viewer artifacts associated with one run.
-
-### Community 196 - "Community 196"
-Cohesion: 1.0
-Nodes (1): Whether the backend may emit native visualization artifacts.
-
-### Community 197 - "Community 197"
-Cohesion: 1.0
-Nodes (1): Policy for trajectory evaluation.
-
-### Community 198 - "Community 198"
-Cohesion: 1.0
-Nodes (1): Return backend-owned default Ray resource hints.
-
-### Community 199 - "Community 199"
-Cohesion: 1.0
-Nodes (1): Policy for dense-cloud comparison.
-
-### Community 200 - "Community 200"
-Cohesion: 1.0
-Nodes (1): Provide the strict validation baseline for transport-safe pipeline DTOs.
-
-### Community 201 - "Community 201"
-Cohesion: 1.0
-Nodes (1): Return the human-readable source label.
-
-### Community 202 - "Community 202"
-Cohesion: 1.0
-Nodes (1): Coordinate-frame semantics for served ADVIO trajectories.
-
-### Community 203 - "Community 203"
-Cohesion: 1.0
-Nodes (1): Relevant ADVIO raw pose artifacts preserved in the normalized manifest.
-
-### Community 204 - "Community 204"
-Cohesion: 1.0
-Nodes (1): ADVIO-specific manifest payload preserved for downstream consumers.
-
-### Community 205 - "Community 205"
-Cohesion: 1.0
-Nodes (1): Local availability summary for one dataset scene.
-
-### Community 206 - "Community 206"
-Cohesion: 1.0
-Nodes (1): Return the effective ADVIO provider for one optional serving config.
-
-### Community 207 - "Community 207"
-Cohesion: 1.0
-Nodes (1): Incremental SLAM update emitted by streaming-capable backends.
-
-### Community 208 - "Community 208"
-Cohesion: 1.0
-Nodes (1): Protocol for a live SLAM session that consumes incremental frames.
-
-### Community 209 - "Community 209"
-Cohesion: 1.0
-Nodes (1): Consume one frame and prepare an incremental SLAM update.
-
-### Community 210 - "Community 210"
-Cohesion: 1.0
-Nodes (1): Run the backend over a materialized sequence and persist artifacts.
-
-### Community 211 - "Community 211"
-Cohesion: 1.0
-Nodes (1): Protocol for SLAM backends that support incremental streaming execution.
-
-### Community 212 - "Community 212"
-Cohesion: 1.0
-Nodes (1): Method-owned backend controls.
-
-### Community 213 - "Community 213"
-Cohesion: 1.0
-Nodes (1): Whether the backend supports offline execution.
-
-### Community 214 - "Community 214"
-Cohesion: 1.0
-Nodes (1): Return backend-owned default Ray resource hints.
-
-### Community 215 - "Community 215"
-Cohesion: 1.0
-Nodes (1): Return backend-specific planning notes.
-
-### Community 216 - "Community 216"
-Cohesion: 1.0
-Nodes (1): Strict model used for portable pipeline contracts.
-
-### Community 217 - "Community 217"
-Cohesion: 1.0
-Nodes (1): Reference to one materialized artifact owned by the repository.
-
-### Community 218 - "Community 218"
-Cohesion: 1.0
-Nodes (1): Materialized outputs produced by the SLAM stage.
-
-### Community 219 - "Community 219"
-Cohesion: 1.0
-Nodes (1): Device types exposed by the Record3D bindings.
-
-### Community 220 - "Community 220"
-Cohesion: 1.0
-Nodes (1): Import the optional native Record3D bindings.
-
-### Community 221 - "Community 221"
-Cohesion: 1.0
-Nodes (1): Configuration for a USB Record3D streaming session.
-
-### Community 222 - "Community 222"
-Cohesion: 1.0
-Nodes (1): Runtime type that exposes shared packet objects.
-
-### Community 223 - "Community 223"
-Cohesion: 1.0
-Nodes (1): Thin packet-stream adapter around the upstream `record3d.Record3DStream`.
-
-### Community 224 - "Community 224"
-Cohesion: 1.0
-Nodes (1): List the currently connected USB Record3D devices.
-
-### Community 225 - "Community 225"
-Cohesion: 1.0
-Nodes (1): Connect to the configured USB device.
-
-### Community 226 - "Community 226"
-Cohesion: 1.0
-Nodes (1): Disconnect the current USB device if one is active.
-
-### Community 227 - "Community 227"
-Cohesion: 1.0
-Nodes (1): Wait for the next shared packet emitted by the USB device.
-
-### Community 228 - "Community 228"
-Cohesion: 1.0
-Nodes (1): Yield shared packets indefinitely until the caller stops consuming them.
-
-### Community 229 - "Community 229"
-Cohesion: 1.0
-Nodes (1): List currently connected Record3D USB devices through the canonical IO owner.
-
-### Community 230 - "Community 230"
-Cohesion: 1.0
-Nodes (1): Build one shared USB packet stream with explicit runtime validation.
-
-### Community 231 - "Community 231"
-Cohesion: 1.0
-Nodes (1): Build the compact frame-details payload shown by Record3D consumers.
-
-### Community 232 - "Community 232"
-Cohesion: 1.0
-Nodes (1): Replay pacing options for local video samples.
-
-### Community 233 - "Community 233"
-Cohesion: 1.0
-Nodes (1): Config describing one replayable local video sample.
-
-### Community 234 - "Community 234"
-Cohesion: 1.0
-Nodes (1): Config describing one replayable local video sample.
-
-### Community 235 - "Community 235"
-Cohesion: 1.0
-Nodes (1): Open the configured video file and prepare playback state.
-
-### Community 236 - "Community 236"
-Cohesion: 1.0
-Nodes (1): Open the configured video file and prepare playback state.
-
-### Community 237 - "Community 237"
-Cohesion: 1.0
-Nodes (1): Release the underlying OpenCV capture if one is open.
-
-### Community 238 - "Community 238"
-Cohesion: 1.0
-Nodes (1): Decode and return the next sampled RGB frame.
-
-### Community 239 - "Community 239"
-Cohesion: 1.0
-Nodes (1): Viewer-export policy attached to one run request.
-
-### Community 240 - "Community 240"
-Cohesion: 1.0
-Nodes (1): One prepared reference trajectory available to a benchmark run.
-
-### Community 241 - "Community 241"
-Cohesion: 1.0
-Nodes (1): Prepared benchmark-side inputs discovered for one normalized sequence.
-
-### Community 242 - "Community 242"
-Cohesion: 1.0
-Nodes (1): Return the prepared reference trajectory for one requested source.
-
-### Community 243 - "Community 243"
-Cohesion: 1.0
-Nodes (1): Return the prepared point-cloud sequence for one requested source.
-
-### Community 244 - "Community 244"
-Cohesion: 1.0
-Nodes (1): Policy for trajectory evaluation.
-
-### Community 245 - "Community 245"
-Cohesion: 1.0
-Nodes (1): Policy for dense-cloud comparison.
-
-### Community 246 - "Community 246"
-Cohesion: 1.0
-Nodes (1): Serializable rigid transform with explicit frame direction.      When frame labe
-
-### Community 247 - "Community 247"
-Cohesion: 1.0
-Nodes (1): Build a transform from XYZW quaternion and XYZ translation arrays.
-
-### Community 248 - "Community 248"
-Cohesion: 1.0
-Nodes (1): Return the normalized quaternion in XYZW order.
-
-### Community 249 - "Community 249"
-Cohesion: 1.0
-Nodes (1): Return the translation vector in XYZ order.
-
-### Community 250 - "Community 250"
-Cohesion: 1.0
-Nodes (1): Return the transform as a 4x4 matrix.
-
-### Community 251 - "Community 251"
-Cohesion: 1.0
-Nodes (1): Build a transform from a 4x4 homogeneous matrix.
-
-### Community 252 - "Community 252"
-Cohesion: 1.0
-Nodes (1): Return the transform fields in TUM trajectory order.
-
-### Community 253 - "Community 253"
-Cohesion: 1.0
-Nodes (1): Plain validated payload shared by data contracts, state, and results.
-
-### Community 254 - "Community 254"
-Cohesion: 1.0
-Nodes (1): Return a pickle-ready Python payload for IPC transport.
-
-### Community 255 - "Community 255"
-Cohesion: 1.0
-Nodes (1): Serialize this model into Python-mode IPC bytes.
-
-### Community 256 - "Community 256"
-Cohesion: 1.0
-Nodes (1): Deserialize one Python-mode IPC payload into the target model type.
-
-### Community 257 - "Community 257"
-Cohesion: 1.0
-Nodes (1): Thin benchmark-policy bundle attached to one run request.
-
-### Community 258 - "Community 258"
-Cohesion: 1.0
-Nodes (1): Policy for efficiency evaluation.
-
-### Community 259 - "Community 259"
-Cohesion: 1.0
-Nodes (1): Load one Tango point-cloud payload as metric XYZ rows.
-
-### Community 260 - "Community 260"
-Cohesion: 1.0
-Nodes (1): Transform all Tango point-cloud payloads into the selected Tango pose-stream wor
-
-### Community 261 - "Community 261"
-Cohesion: 1.0
-Nodes (1): Fit a Sim(3) transform from source trajectory positions to target trajectory pos
-
-### Community 262 - "Community 262"
-Cohesion: 1.0
-Nodes (1): Apply one stored Sim(3) alignment to XYZ points.
-
-### Community 263 - "Community 263"
-Cohesion: 1.0
-Nodes (1): Replay pacing options for local video samples.
-
-### Community 264 - "Community 264"
-Cohesion: 1.0
-Nodes (1): Config describing one replayable local video sample.
-
-### Community 265 - "Community 265"
-Cohesion: 1.0
-Nodes (1): Blocking RGB frame producer backed by `cv2.VideoCapture`.
-
-### Community 266 - "Community 266"
-Cohesion: 1.0
-Nodes (1): Decode and return the next sampled RGB frame.
-
-### Community 267 - "Community 267"
-Cohesion: 1.0
-Nodes (1): Protocol for a live SLAM session that consumes incremental frames.
-
-### Community 268 - "Community 268"
-Cohesion: 1.0
-Nodes (1): Consume one frame and return an incremental SLAM update.
-
-### Community 269 - "Community 269"
-Cohesion: 1.0
-Nodes (1): Finalize the session and return the persisted SLAM artifacts.
-
-### Community 270 - "Community 270"
-Cohesion: 1.0
-Nodes (1): Finalize the session and return the persisted SLAM artifacts.
-
-### Community 271 - "Community 271"
-Cohesion: 1.0
-Nodes (1): Protocol for SLAM backends that operate on materialized sequences.
-
-### Community 272 - "Community 272"
-Cohesion: 1.0
-Nodes (1): Normalized artifact boundary between input ingestion and benchmark execution.
-
-### Community 273 - "Community 273"
-Cohesion: 1.0
-Nodes (1): Build a stacked venue/environment overview for the catalog.
-
-### Community 274 - "Community 274"
-Cohesion: 1.0
-Nodes (1): Build a high-level local availability summary.
-
-### Community 275 - "Community 275"
-Cohesion: 1.0
-Nodes (1): Build a crowd-density composition chart.
-
-### Community 276 - "Community 276"
-Cohesion: 1.0
-Nodes (1): Build a scene-attribute prevalence chart.
-
-### Community 277 - "Community 277"
-Cohesion: 1.0
-Nodes (1): Build a bird's-eye trajectory overlay for one or more trajectories.
-
-### Community 278 - "Community 278"
-Cohesion: 1.0
-Nodes (1): Build a 3D trajectory overlay and optional sampled pose axes.
-
-### Community 279 - "Community 279"
-Cohesion: 1.0
-Nodes (1): Build a per-trajectory speed-over-time figure.
-
-### Community 280 - "Community 280"
-Cohesion: 1.0
-Nodes (1): Build a Z-over-time profile for one or more trajectories.
-
-### Community 281 - "Community 281"
-Cohesion: 1.0
-Nodes (1): Build a per-series timestamp-spacing profile in milliseconds.
-
-### Community 282 - "Community 282"
-Cohesion: 1.0
-Nodes (1): Return the total path length in metres.
-
-### Community 283 - "Community 283"
-Cohesion: 1.0
-Nodes (1): Lightweight builder for BEV and 3D trajectory views.
-
-### Community 284 - "Community 284"
-Cohesion: 1.0
-Nodes (1): Add one trajectory trace with start and end markers.
-
-### Community 285 - "Community 285"
-Cohesion: 1.0
-Nodes (1): Add sampled local pose axes for a 3D trajectory.
-
-### Community 286 - "Community 286"
-Cohesion: 1.0
-Nodes (1): Finalize the figure layout and return it.
-
-### Community 287 - "Community 287"
-Cohesion: 1.0
-Nodes (1): Dataset-edge frame-graph helpers.
-
-### Community 288 - "Community 288"
-Cohesion: 1.0
-Nodes (1): Thin wrapper around `pytransform3d.TransformManager` for static frame compositio
-
-### Community 289 - "Community 289"
-Cohesion: 1.0
-Nodes (1): Register one static transform.
-
-### Community 290 - "Community 290"
-Cohesion: 1.0
-Nodes (1): Resolve one composed transform back into the repo-owned transform DTO.
-
-### Community 291 - "Community 291"
-Cohesion: 1.0
-Nodes (1): Datasets exposed through evaluation surfaces.
-
-### Community 292 - "Community 292"
+### Community 39 - "Community 39"
 Cohesion: 1.0
 Nodes (1): Return the short user-facing dataset label.
 
-### Community 293 - "Community 293"
+### Community 40 - "Community 40"
 Cohesion: 1.0
-Nodes (1): Build a crowd-density composition chart.
+Nodes (1): Return the user-facing label for the selected dataset sequence.
 
-### Community 294 - "Community 294"
+### Community 41 - "Community 41"
 Cohesion: 1.0
-Nodes (1): Build a scene-attribute prevalence chart.
+Nodes (1): Return the user-facing pose-source label.
 
-### Community 295 - "Community 295"
+### Community 42 - "Community 42"
 Cohesion: 1.0
-Nodes (1): Normalize native ViSTA exports into repository-owned artifact contracts.      Th
+Nodes (1): Return the user-facing modality label shown in TUM RGB-D controls.
 
-### Community 296 - "Community 296"
+### Community 43 - "Community 43"
 Cohesion: 1.0
-Nodes (1): Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO.
+Nodes (1): Return the user-facing preset label shown in TUM RGB-D download controls.
 
-### Community 297 - "Community 297"
+### Community 44 - "Community 44"
 Cohesion: 1.0
-Nodes (1): One RGB frame prepared for upstream ViSTA ingestion.
+Nodes (1): Return the effective modality bundle for the selected preset.
 
-### Community 298 - "Community 298"
+### Community 45 - "Community 45"
 Cohesion: 1.0
-Nodes (1): Feed one frame to OnlineSLAM and buffer incremental telemetry.
+Nodes (1): Build one sequence runtime from its validated config.
 
-### Community 299 - "Community 299"
+### Community 46 - "Community 46"
 Cohesion: 1.0
-Nodes (1): Feed one frame to OnlineSLAM and optionally buffer live telemetry.
+Nodes (1): Return the cache directory used for downloaded scene archives.
 
-### Community 300 - "Community 300"
+### Community 47 - "Community 47"
 Cohesion: 1.0
-Nodes (1): Retrieve and clear any pending incremental SLAM updates.
+Nodes (1): Return the user-facing environment label.
 
-### Community 301 - "Community 301"
+### Community 48 - "Community 48"
 Cohesion: 1.0
-Nodes (1): Persist upstream outputs and convert them into repo-owned artifacts.
+Nodes (1): Return the user-facing crowd-density label.
 
-### Community 302 - "Community 302"
+### Community 49 - "Community 49"
 Cohesion: 1.0
-Nodes (1): Read one upstream view and convert it into live repo telemetry.
+Nodes (1): Return the user-facing modality label shown in ADVIO controls.
 
-### Community 303 - "Community 303"
+### Community 50 - "Community 50"
 Cohesion: 1.0
-Nodes (1): Construct one fully-wired ViSTA session from repo config and paths.
+Nodes (1): Return the user-facing preset label shown in ADVIO download controls.
 
-### Community 304 - "Community 304"
+### Community 51 - "Community 51"
 Cohesion: 1.0
-Nodes (1): Return the effective vocabulary path, building the binary cache when needed.
+Nodes (1): Return the effective modality bundle for the selected preset.
 
-### Community 305 - "Community 305"
-Cohesion: 1.0
-Nodes (1): Prepare one repo RGB frame using the exact upstream image-only helper path.
-
-### Community 306 - "Community 306"
-Cohesion: 1.0
-Nodes (1): Convert one upstream ViSTA array-like payload into a numpy array.
-
-### Community 307 - "Community 307"
-Cohesion: 1.0
-Nodes (1): Count valid metric points in one pointmap.
-
-### Community 308 - "Community 308"
-Cohesion: 1.0
-Nodes (1): Describe a non-fatal pointmap issue for one accepted keyframe.
-
-### Community 309 - "Community 309"
-Cohesion: 1.0
-Nodes (1): Raise a runtime error with actionable detail when prerequisites are missing.
-
-### Community 310 - "Community 310"
-Cohesion: 1.0
-Nodes (1): Load and cache the concrete upstream ViSTA runtime types.
-
-### Community 311 - "Community 311"
-Cohesion: 1.0
-Nodes (1): Register the upstream ``vista_slam`` checkout as an explicit namespace package.
-
-### Community 312 - "Community 312"
-Cohesion: 1.0
-Nodes (1): Import the installed ``DBoW3Py`` dependency with an actionable error.
-
-### Community 313 - "Community 313"
-Cohesion: 1.0
-Nodes (1): Normalize native ViSTA exports into repository-owned artifact contracts.      Th
-
-### Community 314 - "Community 314"
-Cohesion: 1.0
-Nodes (1): Convert one upstream ViSTA array-like payload into a numpy array.
-
-### Community 315 - "Community 315"
-Cohesion: 1.0
-Nodes (1): Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO.
-
-### Community 316 - "Community 316"
-Cohesion: 1.0
-Nodes (1): Subset of the upstream image dataset API used by the wrapper.
-
-### Community 317 - "Community 317"
-Cohesion: 1.0
-Nodes (1): Return the grayscale tensor expected by upstream ViSTA.
-
-### Community 318 - "Community 318"
-Cohesion: 1.0
-Nodes (1): Return the normalized RGB tensor expected by upstream ViSTA.
-
-### Community 319 - "Community 319"
-Cohesion: 1.0
-Nodes (1): One RGB frame prepared for upstream ViSTA ingestion.
-
-### Community 320 - "Community 320"
-Cohesion: 1.0
-Nodes (1): Prepare one repo RGB frame for upstream ViSTA ingestion.
-
-### Community 321 - "Community 321"
-Cohesion: 1.0
-Nodes (1): Return the upstream-ready frame payload.
-
-### Community 322 - "Community 322"
-Cohesion: 1.0
-Nodes (1): Use the exact upstream ViSTA crop-and-resize helper path.
-
-### Community 323 - "Community 323"
-Cohesion: 1.0
-Nodes (1): Normalize native ViSTA outputs into repository-owned artifact contracts.
-
-### Community 324 - "Community 324"
-Cohesion: 1.0
-Nodes (1): Convert one upstream ViSTA array-like payload into a numpy array.
-
-### Community 325 - "Community 325"
-Cohesion: 1.0
-Nodes (1): Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO.
-
-### Community 326 - "Community 326"
-Cohesion: 1.0
-Nodes (1): Stateful streaming session that forwards frames to upstream OnlineSLAM.
-
-### Community 327 - "Community 327"
-Cohesion: 1.0
-Nodes (1): Feed one frame to OnlineSLAM and buffer incremental telemetry.
-
-### Community 328 - "Community 328"
-Cohesion: 1.0
-Nodes (1): Retrieve and clear any pending incremental SLAM updates.
-
-### Community 329 - "Community 329"
-Cohesion: 1.0
-Nodes (1): Persist upstream outputs and convert to canonical repository artifacts.
-
-### Community 330 - "Community 330"
-Cohesion: 1.0
-Nodes (1): Read the latest upstream view state and convert it into live repo telemetry.
-
-### Community 331 - "Community 331"
-Cohesion: 1.0
-Nodes (1): Convert one upstream pointcloud payload into the repository-local dtype.
-
-### Community 332 - "Community 332"
-Cohesion: 1.0
-Nodes (1): Count valid metric points in one pointmap.
-
-### Community 333 - "Community 333"
-Cohesion: 1.0
-Nodes (1): Describe a non-fatal pointmap issue for one accepted keyframe.
-
-### Community 334 - "Community 334"
-Cohesion: 1.0
-Nodes (1): Construct one fully-wired ViSTA session from repo config and paths.
-
-### Community 335 - "Community 335"
-Cohesion: 1.0
-Nodes (1): Blocking RGB frame producer backed by `cv2.VideoCapture`.
-
-### Community 336 - "Community 336"
-Cohesion: 1.0
-Nodes (1): Open the configured video file and prepare playback state.
-
-### Community 337 - "Community 337"
-Cohesion: 1.0
-Nodes (1): Release the underlying OpenCV capture if one is open.
-
-### Community 338 - "Community 338"
-Cohesion: 1.0
-Nodes (1): Decode and return the next sampled RGB frame.
-
-### Community 339 - "Community 339"
-Cohesion: 1.0
-Nodes (1): Return a ready-to-use replay stream for `config`.
-
-### Community 340 - "Community 340"
-Cohesion: 1.0
-Nodes (1): Incremental SLAM update emitted by streaming-capable backends.
-
-### Community 341 - "Community 341"
-Cohesion: 1.0
-Nodes (1): Count valid metric points in one pointmap.
-
-### Community 342 - "Community 342"
-Cohesion: 1.0
-Nodes (1): Raise a runtime error with actionable detail when prerequisites are missing.
-
-### Community 343 - "Community 343"
-Cohesion: 1.0
-Nodes (1): Return the effective vocabulary path, building the binary cache when needed.
-
-### Community 344 - "Community 344"
-Cohesion: 1.0
-Nodes (1): Register the upstream `vista_slam` checkout as an explicit namespace package.
-
-### Community 345 - "Community 345"
-Cohesion: 1.0
-Nodes (1): Import the installed `DBoW3Py` dependency with an actionable error.
-
-### Community 346 - "Community 346"
-Cohesion: 1.0
-Nodes (1): Stateful streaming session that forwards frames to upstream OnlineSLAM.
-
-### Community 347 - "Community 347"
-Cohesion: 1.0
-Nodes (1): Feed one frame to OnlineSLAM and buffer incremental telemetry.
-
-### Community 348 - "Community 348"
-Cohesion: 1.0
-Nodes (1): Retrieve and clear any pending incremental SLAM updates.
-
-### Community 349 - "Community 349"
-Cohesion: 1.0
-Nodes (1): Persist upstream outputs and convert to canonical repository artifacts.
-
-### Community 350 - "Community 350"
-Cohesion: 1.0
-Nodes (1): Read the latest upstream view state and convert it into live repo telemetry.
-
-### Community 351 - "Community 351"
-Cohesion: 1.0
-Nodes (1): Construct one fully-wired ViSTA session from repo config and paths.
-
-### Community 352 - "Community 352"
-Cohesion: 1.0
-Nodes (1): Convert one upstream pointcloud payload into the repository-local dtype.
-
-### Community 353 - "Community 353"
-Cohesion: 1.0
-Nodes (1): Instantiate one configured upstream ViSTA runtime bundle.
-
-### Community 354 - "Community 354"
-Cohesion: 1.0
-Nodes (1): Raise a runtime error with actionable detail when prerequisites are missing.
-
-### Community 355 - "Community 355"
-Cohesion: 1.0
-Nodes (1): Return the effective vocabulary path, building the binary cache when needed.
-
-### Community 356 - "Community 356"
-Cohesion: 1.0
-Nodes (1): Register the upstream `vista_slam` checkout as an explicit namespace package.
-
-### Community 357 - "Community 357"
-Cohesion: 1.0
-Nodes (1): Import the installed `DBoW3Py` dependency with an actionable error.
-
-### Community 358 - "Community 358"
-Cohesion: 1.0
-Nodes (1): Stateful streaming session that forwards frames to upstream OnlineSLAM.
-
-### Community 359 - "Community 359"
-Cohesion: 1.0
-Nodes (1): Retrieve and clear any pending incremental SLAM updates.
-
-### Community 360 - "Community 360"
-Cohesion: 1.0
-Nodes (1): Persist upstream outputs and convert to canonical repository artifacts.
-
-### Community 361 - "Community 361"
-Cohesion: 1.0
-Nodes (1): Read the latest upstream view state and convert it into live repo telemetry.
-
-### Community 362 - "Community 362"
-Cohesion: 1.0
-Nodes (1): Convert one upstream pointcloud payload into the repository-local dtype.
-
-### Community 363 - "Community 363"
-Cohesion: 1.0
-Nodes (1): Rolling packet metrics shared by preview and replay sessions.
-
-### Community 364 - "Community 364"
-Cohesion: 1.0
-Nodes (1): Append one packet arrival to the rolling packet-rate window.
-
-### Community 365 - "Community 365"
-Cohesion: 1.0
-Nodes (1): Append one accepted keyframe sample to the rolling backend window.
-
-### Community 366 - "Community 366"
-Cohesion: 1.0
-Nodes (1): Append one packet arrival and optional keyframe sample.
-
-### Community 367 - "Community 367"
-Cohesion: 1.0
-Nodes (1): Return packet-rate snapshot fields.
-
-### Community 368 - "Community 368"
-Cohesion: 1.0
-Nodes (1): Return backend-keyframe snapshot fields.
-
-### Community 369 - "Community 369"
-Cohesion: 1.0
-Nodes (1): Return the current metrics in snapshot-ready form.
-
-### Community 370 - "Community 370"
-Cohesion: 1.0
-Nodes (1): Own one threaded `FramePacketStream` worker plus its snapshot state.
-
-### Community 371 - "Community 371"
-Cohesion: 1.0
-Nodes (1): Return a deep copy of the latest session snapshot.
-
-### Community 372 - "Community 372"
-Cohesion: 1.0
-Nodes (1): Start a fresh worker after stopping any currently active one.
-
-### Community 373 - "Community 373"
-Cohesion: 1.0
-Nodes (1): Register the active stream for cooperative stop/disconnect handling.
-
-### Community 374 - "Community 374"
-Cohesion: 1.0
-Nodes (1): Apply a partial snapshot update under the internal lock.
-
-### Community 375 - "Community 375"
-Cohesion: 1.0
-Nodes (1): Replace the snapshot under the internal lock.
-
-### Community 376 - "Community 376"
-Cohesion: 1.0
-Nodes (1): Stop the worker, disconnect the stream, and update the terminal snapshot.
-
-### Community 377 - "Community 377"
-Cohesion: 1.0
-Nodes (1): Clear the active worker state and persist the final snapshot.
-
-### Community 378 - "Community 378"
-Cohesion: 1.0
-Nodes (1): Policy for dense-cloud comparison.
-
-### Community 379 - "Community 379"
-Cohesion: 1.0
-Nodes (1): Factory surface consumed by the pipeline.
-
-### Community 380 - "Community 380"
-Cohesion: 1.0
-Nodes (1): Factory surface consumed by the pipeline.
-
-### Community 381 - "Community 381"
-Cohesion: 1.0
-Nodes (1): Return the descriptor for one backend spec.
-
-### Community 382 - "Community 382"
-Cohesion: 1.0
-Nodes (1): Map one backend kind to the repo-level method id.
-
-### Community 383 - "Community 383"
-Cohesion: 1.0
-Nodes (1): Small runtime sources used by focused pipeline smoke tests.
-
-### Community 384 - "Community 384"
-Cohesion: 1.0
-Nodes (1): Minimal offline source for pipeline smoke tests.
-
-### Community 385 - "Community 385"
-Cohesion: 1.0
-Nodes (1): Finite in-memory packet stream for streaming smoke tests.
-
-### Community 386 - "Community 386"
-Cohesion: 1.0
-Nodes (1): Minimal streaming-capable source for pipeline smoke tests.
-
-### Community 387 - "Community 387"
-Cohesion: 1.0
-Nodes (1): # TODO: test mocks like in this file should be moved to tests/ !
-
-### Community 388 - "Community 388"
-Cohesion: 1.0
-Nodes (1): Minimal offline source for pipeline smoke tests.
-
-### Community 389 - "Community 389"
-Cohesion: 1.0
-Nodes (1): Finite in-memory packet stream for streaming smoke tests.
-
-### Community 390 - "Community 390"
-Cohesion: 1.0
-Nodes (1): Minimal streaming-capable source for pipeline smoke tests.
-
-### Community 391 - "Community 391"
-Cohesion: 1.0
-Nodes (1): Serializable rigid transform with explicit frame direction.      When frame labe
-
-### Community 392 - "Community 392"
-Cohesion: 1.0
-Nodes (1): Build a transform from XYZW quaternion and XYZ translation arrays.
-
-### Community 393 - "Community 393"
-Cohesion: 1.0
-Nodes (1): Return the normalized quaternion in XYZW order.
-
-### Community 394 - "Community 394"
-Cohesion: 1.0
-Nodes (1): Return the translation vector in XYZ order.
-
-### Community 395 - "Community 395"
-Cohesion: 1.0
-Nodes (1): Return the transform as a 4x4 matrix.
-
-### Community 396 - "Community 396"
-Cohesion: 1.0
-Nodes (1): Build a transform from a 4x4 homogeneous matrix.
-
-### Community 397 - "Community 397"
-Cohesion: 1.0
-Nodes (1): Return the transform fields in TUM trajectory order.
-
-### Community 398 - "Community 398"
-Cohesion: 1.0
-Nodes (1): Project one near-rotation matrix to the closest valid SO(3) matrix.
-
-### Community 399 - "Community 399"
-Cohesion: 1.0
-Nodes (1): Repository-local backend factory.
-
-### Community 400 - "Community 400"
-Cohesion: 1.0
-Nodes (1): Stable transport identifiers used by the app preview and capture layers.
-
-### Community 401 - "Community 401"
-Cohesion: 1.0
-Nodes (1): Return the user-facing transport label.
-
-### Community 402 - "Community 402"
-Cohesion: 1.0
-Nodes (1): Return the short transport-specific helper text.
-
-### Community 403 - "Community 403"
-Cohesion: 1.0
-Nodes (1): One USB-connected Record3D device.
-
-### Community 404 - "Community 404"
-Cohesion: 1.0
-Nodes (1): Import the optional native Record3D bindings.
-
-### Community 405 - "Community 405"
-Cohesion: 1.0
-Nodes (1): Configuration for a USB Record3D streaming session.
-
-### Community 406 - "Community 406"
-Cohesion: 1.0
-Nodes (1): Thin packet-stream adapter around the upstream `record3d.Record3DStream`.
-
-### Community 407 - "Community 407"
-Cohesion: 1.0
-Nodes (1): List the currently connected USB Record3D devices.
-
-### Community 408 - "Community 408"
-Cohesion: 1.0
-Nodes (1): Connect to the configured USB device.
-
-### Community 409 - "Community 409"
-Cohesion: 1.0
-Nodes (1): Disconnect the current USB device if one is active.
-
-### Community 410 - "Community 410"
-Cohesion: 1.0
-Nodes (1): Wait for the next shared packet emitted by the USB device.
-
-### Community 411 - "Community 411"
-Cohesion: 1.0
-Nodes (1): Yield shared packets indefinitely until the caller stops consuming them.
-
-### Community 412 - "Community 412"
-Cohesion: 1.0
-Nodes (1): List currently connected Record3D USB devices through the canonical IO owner.
-
-### Community 413 - "Community 413"
-Cohesion: 1.0
-Nodes (1): Build one shared USB packet stream with explicit runtime validation.
-
-### Community 414 - "Community 414"
-Cohesion: 1.0
-Nodes (1): Build the compact frame-details payload shown by Record3D consumers.
-
-### Community 415 - "Community 415"
-Cohesion: 1.0
-Nodes (1): Typed metadata returned by the Record3D Wi-Fi HTTP API.
-
-### Community 416 - "Community 416"
-Cohesion: 1.0
-Nodes (1): Parse the raw Record3D metadata payload.
-
-### Community 417 - "Community 417"
-Cohesion: 1.0
-Nodes (1): Decode the HSV-encoded Record3D Wi-Fi depth half into a depth map.
-
-### Community 418 - "Community 418"
-Cohesion: 1.0
-Nodes (1): Convert one Record3D composite WebRTC frame into the shared packet contract.
-
-### Community 419 - "Community 419"
-Cohesion: 1.0
-Nodes (1): Lazily expose heavier backend helpers without eager import cycles.
-
-### Community 420 - "Community 420"
-Cohesion: 1.0
-Nodes (1): Prepare a streaming-capable session for incremental frame updates.
-
-### Community 421 - "Community 421"
-Cohesion: 1.0
-Nodes (1): Protocol for backends that can provide a picklable streaming-session factory.
-
-### Community 422 - "Community 422"
-Cohesion: 1.0
-Nodes (1): Generic threaded runtime support for pipeline runners.
-
-### Community 423 - "Community 423"
-Cohesion: 1.0
-Nodes (1): Own one threaded worker plus its typed snapshot state.
-
-### Community 424 - "Community 424"
-Cohesion: 1.0
-Nodes (1): Return a deep copy of the latest snapshot.
-
-### Community 425 - "Community 425"
-Cohesion: 1.0
-Nodes (1): Start a fresh worker after stopping any currently active one.
-
-### Community 426 - "Community 426"
-Cohesion: 1.0
-Nodes (1): Register a cleanup callback associated with the active worker.
-
-### Community 427 - "Community 427"
-Cohesion: 1.0
-Nodes (1): Apply a partial snapshot update under the internal lock.
-
-### Community 428 - "Community 428"
-Cohesion: 1.0
-Nodes (1): Replace the snapshot under the internal lock.
-
-### Community 429 - "Community 429"
-Cohesion: 1.0
-Nodes (1): Stop the worker and update the terminal snapshot.
-
-### Community 430 - "Community 430"
-Cohesion: 1.0
-Nodes (1): Clear the active worker state and persist the final snapshot.
-
-### Community 431 - "Community 431"
-Cohesion: 1.0
-Nodes (1): Instantiate one executable backend from its typed spec.
-
-### Community 432 - "Community 432"
-Cohesion: 1.0
-Nodes (1): Map one backend kind to the repo-level method id.
-
-### Community 433 - "Community 433"
-Cohesion: 1.0
-Nodes (1): Repository-local backend factory.
-
-### Community 434 - "Community 434"
-Cohesion: 1.0
-Nodes (1): Return the prepared reference trajectory for one requested source.
-
-### Community 435 - "Community 435"
-Cohesion: 1.0
-Nodes (1): Run the backend over a materialized sequence and persist artifacts.
-
-### Community 436 - "Community 436"
-Cohesion: 1.0
-Nodes (1): Bridge canonical repo inputs into ViSTA-SLAM CLI arguments.
-
-### Community 437 - "Community 437"
-Cohesion: 1.0
-Nodes (1): Build the thin offline ViSTA invocation from canonical repo inputs.
-
-### Community 438 - "Community 438"
-Cohesion: 1.0
-Nodes (1): Import native ViSTA-SLAM outputs into repo-owned artifact contracts.
-
-### Community 439 - "Community 439"
-Cohesion: 1.0
-Nodes (1): Normalize native ViSTA outputs into repo-owned artifact contracts.
-
-### Community 440 - "Community 440"
-Cohesion: 1.0
-Nodes (1): Cache and provenance record for one executed stage.
-
-### Community 441 - "Community 441"
-Cohesion: 1.0
-Nodes (1): Return compact tabular rows for manifest summaries.
-
-### Community 442 - "Community 442"
-Cohesion: 1.0
-Nodes (1): Final persisted outcome for one benchmark run.
-
-### Community 443 - "Community 443"
-Cohesion: 1.0
-Nodes (1): Trajectory source used for replay-time pose annotation.
-
-### Community 444 - "Community 444"
-Cohesion: 1.0
-Nodes (1): Environment labels committed from the official ADVIO scene table.
-
-### Community 445 - "Community 445"
-Cohesion: 1.0
-Nodes (1): Downloadable ADVIO modality bundles exposed in the CLI and app.
-
-### Community 446 - "Community 446"
-Cohesion: 1.0
-Nodes (1): Curated modality bundles for common ADVIO workflows.
-
-### Community 447 - "Community 447"
+### Community 52 - "Community 52"
 Cohesion: 1.0
 Nodes (1): Return the compact scene label shown in the app and CLI.
 
-### Community 448 - "Community 448"
-Cohesion: 1.0
-Nodes (1): Explicit ADVIO download selection used by the CLI and Streamlit app.
-
-### Community 449 - "Community 449"
+### Community 53 - "Community 53"
 Cohesion: 1.0
 Nodes (1): Normalize and validate explicit scene selections.
 
-### Community 450 - "Community 450"
+### Community 54 - "Community 54"
 Cohesion: 1.0
-Nodes (1): High-level summary of committed and local ADVIO coverage.
+Nodes (1): Remove duplicate modality overrides while preserving order.
 
-### Community 451 - "Community 451"
+### Community 55 - "Community 55"
 Cohesion: 1.0
-Nodes (1): Config describing one local ADVIO sequence.
+Nodes (1): Return the canonical ADVIO folder name used on disk.
 
-### Community 452 - "Community 452"
+### Community 56 - "Community 56"
 Cohesion: 1.0
-Nodes (1): Return the canonical ADVIO folder name.
+Nodes (1): Reject blank dataset roots before path resolution happens downstream.
 
-### Community 453 - "Community 453"
+### Community 57 - "Community 57"
 Cohesion: 1.0
-Nodes (1): Reject empty dataset roots.
+Nodes (1): Return the expected sequence type for the config.
 
-### Community 454 - "Community 454"
+### Community 58 - "Community 58"
 Cohesion: 1.0
-Nodes (1): Plain validated payload shared by data contracts, state, and results.
+Nodes (1): Load a persisted trajectory evaluation when it exists.
 
-### Community 455 - "Community 455"
+### Community 59 - "Community 59"
 Cohesion: 1.0
-Nodes (1): Resolve the live trajectory figure builder lazily for easier local testing.
+Nodes (1): Compute and persist one trajectory evaluation result.
 
-### Community 456 - "Community 456"
+### Community 60 - "Community 60"
 Cohesion: 1.0
-Nodes (1): Render one fragment-scoped live section.
+Nodes (1): Load a persisted dense-cloud evaluation when it exists.
 
-### Community 457 - "Community 457"
+### Community 61 - "Community 61"
 Cohesion: 1.0
-Nodes (1): Return the fragment refresh interval only while the session is active.
+Nodes (1): Compute and persist one dense-cloud evaluation result.
 
-### Community 458 - "Community 458"
+### Community 62 - "Community 62"
 Cohesion: 1.0
-Nodes (1): Render one explicit start-or-stop button slot and return the requested action fl
+Nodes (1): Load a persisted runtime-efficiency evaluation when it exists.
 
-### Community 459 - "Community 459"
+### Community 63 - "Community 63"
 Cohesion: 1.0
-Nodes (1): Trigger an immediate full-page rerun after a successful explicit action.
+Nodes (1): Compute and persist one runtime-efficiency evaluation result.
 
-### Community 460 - "Community 460"
+### Community 64 - "Community 64"
 Cohesion: 1.0
-Nodes (1): Render the shared notice, metric, and body structure for one live section.
+Nodes (1): Build the shared scalar summary payload from one raw error series.
 
-### Community 461 - "Community 461"
+### Community 65 - "Community 65"
 Cohesion: 1.0
-Nodes (1): Render a compact metric row.
+Nodes (1): Return the deterministic persisted trajectory-metrics path for the controls.
 
-### Community 462 - "Community 462"
+### Community 66 - "Community 66"
 Cohesion: 1.0
-Nodes (1): Render a live trajectory figure or a fallback message.
+Nodes (1): Return the compact source label used in logs and diagnostics.
 
-### Community 463 - "Community 463"
+### Community 67 - "Community 67"
 Cohesion: 1.0
-Nodes (1): Render camera intrinsics using the shared LaTeX presentation.
+Nodes (1): Return the user-facing reconstruction label.
 
-### Community 464 - "Community 464"
+### Community 68 - "Community 68"
 Cohesion: 1.0
-Nodes (1): Render the shared packet, trajectory, and camera tabs for live pages.
+Nodes (1): Return the concrete reconstruction backend type.
 
-### Community 465 - "Community 465"
+### Community 69 - "Community 69"
 Cohesion: 1.0
-Nodes (1): Interpolate between two poses.     :param pose1: Initial pose (4x4 matrix)     :
+Nodes (1): Consume one frame and prepare an incremental SLAM update.
 
-### Community 466 - "Community 466"
+### Community 70 - "Community 70"
 Cohesion: 1.0
-Nodes (1): depth: HxW numpy array (depth in same unit as depth_scale)     color: HxWx3 nump
+Nodes (1): Retrieve any pending incremental SLAM updates non-blockingly.
 
-### Community 467 - "Community 467"
+### Community 71 - "Community 71"
 Cohesion: 1.0
-Nodes (1): view_graph: dict {int: list of int}     camera_centers: np.array (N,3)     Retur
+Nodes (1): Finalize the session and return the persisted SLAM artifacts.
 
-### Community 468 - "Community 468"
+### Community 72 - "Community 72"
 Cohesion: 1.0
-Nodes (1): add a node to the pose graph.         Notice that the absolute pose of the node
+Nodes (1): Prepare a streaming-capable session for incremental frame updates.
 
-### Community 469 - "Community 469"
+### Community 73 - "Community 73"
 Cohesion: 1.0
-Nodes (1): convert 4x4 pose matrix to (t, q)
+Nodes (1): Return the upstream method name shown to users.
 
-### Community 470 - "Community 470"
+### Community 74 - "Community 74"
 Cohesion: 1.0
-Nodes (1): traj_est: estimated trajectory list[np.array[4,4]]     traj_ref: reference traje
+Nodes (1): Return the user-facing backend label used across planning and UI surfaces.
 
-### Community 471 - "Community 471"
+### Community 75 - "Community 75"
 Cohesion: 1.0
-Nodes (1): traj_est: estimated trajectory list[np.array[4,4]]     traj_ref: reference traje
+Nodes (1): Return the legacy backend discriminator string.
 
-### Community 472 - "Community 472"
+### Community 76 - "Community 76"
 Cohesion: 1.0
-Nodes (1): gt_depths: N,H,W     gt_poses: N,4,4     gt_intri: 3,3     est_local_pcls: N,H,W
+Nodes (1): Whether the backend supports offline execution.
 
-### Community 473 - "Community 473"
+### Community 77 - "Community 77"
 Cohesion: 1.0
-Nodes (1): rel_gt_est: None or [R, t, s] for the relative pose between the ground truth and
+Nodes (1): Whether the backend supports streaming execution.
 
-### Community 474 - "Community 474"
+### Community 78 - "Community 78"
 Cohesion: 1.0
-Nodes (1): Open an image or a depthmap with opencv-python.
+Nodes (1): Whether the backend can expose point-cloud outputs.
 
-### Community 475 - "Community 475"
+### Community 79 - "Community 79"
 Cohesion: 1.0
-Nodes (1): Convenience class to aply the same operation to a whole set of images.
+Nodes (1): Whether the backend can emit live preview payloads.
 
-### Community 476 - "Community 476"
+### Community 80 - "Community 80"
 Cohesion: 1.0
-Nodes (1): Jointly rescale a (image, depthmap)     so that (out_width, out_height) >= outpu
+Nodes (1): Whether the backend may emit native visualization artifacts.
 
-### Community 477 - "Community 477"
+### Community 81 - "Community 81"
 Cohesion: 1.0
-Nodes (1): Return a crop of the input view.
+Nodes (1): Whether the backend supports repository trajectory evaluation.
 
-### Community 478 - "Community 478"
+### Community 82 - "Community 82"
 Cohesion: 1.0
-Nodes (1): Track a series of values and provide access to smoothed values over a     window
+Nodes (1): Return backend-owned default Ray resource hints.
 
-### Community 479 - "Community 479"
+### Community 83 - "Community 83"
 Cohesion: 1.0
-Nodes (1): Warning: does not synchronize the deque!
+Nodes (1): Return backend-specific planning notes surfaced to callers when relevant.
 
-### Community 480 - "Community 480"
+### Community 84 - "Community 84"
 Cohesion: 1.0
-Nodes (1): This function disables printing when not in master process
+Nodes (1): Whether the backend supports offline execution.
 
-### Community 481 - "Community 481"
+### Community 85 - "Community 85"
 Cohesion: 1.0
-Nodes (1): Advanced string replacement.     Given a text:     - replace all elements in src
+Nodes (1): Whether the backend supports streaming execution.
 
-### Community 482 - "Community 482"
+### Community 86 - "Community 86"
 Cohesion: 1.0
-Nodes (1): transform a python obj or cmd into a proper filename.     - \1 gets replaced by
+Nodes (1): Whether the backend can expose point-cloud outputs.
 
-### Community 483 - "Community 483"
+### Community 87 - "Community 87"
 Cohesion: 1.0
-Nodes (1): Decay the learning rate with half-cycle cosine after warmup
+Nodes (1): Whether the backend can emit live preview payloads.
 
-### Community 484 - "Community 484"
+### Community 88 - "Community 88"
 Cohesion: 1.0
-Nodes (1): Predict in the correct aspect-ratio,     then transpose the result in landscape
+Nodes (1): Whether the backend may emit native visualization artifacts.
 
-### Community 485 - "Community 485"
+### Community 89 - "Community 89"
 Cohesion: 1.0
-Nodes (1): Estimate camera intrinsic matrix (or matrices) from 3D point maps and confidence
+Nodes (1): Whether the backend supports repository trajectory evaluation.
 
-### Community 486 - "Community 486"
+### Community 90 - "Community 90"
 Cohesion: 1.0
-Nodes (1): Estimate scale s such that Dj ≈ s * Di, using dual confidence weights.      Args
+Nodes (1): Return backend-owned default Ray resource hints.
 
-### Community 487 - "Community 487"
+### Community 91 - "Community 91"
 Cohesion: 1.0
-Nodes (1): Compute dense pixel correspondence from image1 to image2 in a batch.      Inputs
+Nodes (1): Return the mock backend type used for the pipeline demo.
 
-### Community 488 - "Community 488"
+### Community 92 - "Community 92"
 Cohesion: 1.0
-Nodes (1): Vectorized computation of symmetric geometric valid masks between two depth maps
+Nodes (1): Whether the backend supports offline execution.
 
-### Community 489 - "Community 489"
+### Community 93 - "Community 93"
 Cohesion: 1.0
-Nodes (1): For each frame, unproject depth to world, reproject to ±2 neighbor frames,     a
+Nodes (1): Whether the backend supports streaming execution.
 
-### Community 490 - "Community 490"
+### Community 94 - "Community 94"
 Cohesion: 1.0
-Nodes (1): Invert a torch or numpy matrix
+Nodes (1): Whether the backend can expose point-cloud outputs.
 
-### Community 491 - "Community 491"
+### Community 95 - "Community 95"
 Cohesion: 1.0
-Nodes (1): Args:         - depthmap (HxW array):         - camera_intrinsics: a 3x3 matrix
+Nodes (1): Whether the backend can emit live preview payloads.
 
-### Community 492 - "Community 492"
+### Community 96 - "Community 96"
 Cohesion: 1.0
-Nodes (1): Handle images with non-square aspect ratio.     All images in the same batch hav
+Nodes (1): Whether the backend may emit native visualization artifacts.
 
-### Community 493 - "Community 493"
+### Community 97 - "Community 97"
 Cohesion: 1.0
-Nodes (1): Euclidean distance between 3d points
+Nodes (1): Whether the backend supports repository trajectory evaluation.
 
-### Community 494 - "Community 494"
+### Community 98 - "Community 98"
 Cohesion: 1.0
-Nodes (1): Easily combinable losses (also keep track of individual loss values):         lo
+Nodes (1): Return the placeholder backend type.
 
-### Community 495 - "Community 495"
+### Community 99 - "Community 99"
 Cohesion: 1.0
-Nodes (1): Ensure that all 3D points are correct.     Asymmetric loss: view1 is supposed to
+Nodes (1): Return backend-specific planning notes.
 
-### Community 496 - "Community 496"
+### Community 100 - "Community 100"
 Cohesion: 1.0
-Nodes (1): gt_pcds: (B, H, W, 3)         pred_pcds: (B, H, W, 3)         valid_masks: (B, H
+Nodes (1): Whether the backend supports offline execution.
 
-### Community 497 - "Community 497"
+### Community 101 - "Community 101"
 Cohesion: 1.0
-Nodes (1): gt_views : list of dictionaries, each containing 'pts3d' and 'valid_mask'
+Nodes (1): Whether the backend supports streaming execution.
 
-### Community 498 - "Community 498"
+### Community 102 - "Community 102"
 Cohesion: 1.0
-Nodes (1): Weighted regression by learned confidence.         Assuming the input pixel_loss
+Nodes (1): Whether the backend can expose point-cloud outputs.
 
-### Community 499 - "Community 499"
+### Community 103 - "Community 103"
 Cohesion: 1.0
-Nodes (1): grid_size: int of the grid height and width     return:     pos_embed: [grid_siz
+Nodes (1): Whether the backend can emit live preview payloads.
 
-### Community 500 - "Community 500"
+### Community 104 - "Community 104"
 Cohesion: 1.0
-Nodes (1): embed_dim: output dimension for each position     pos: a list of positions to be
+Nodes (1): Whether the backend may emit native visualization artifacts.
 
-### Community 501 - "Community 501"
+### Community 105 - "Community 105"
 Cohesion: 1.0
-Nodes (1): Convert 9D representation to SO(3) using SVD orthogonalization.          Args:
+Nodes (1): Whether the backend supports repository trajectory evaluation.
 
-### Community 502 - "Community 502"
+### Community 106 - "Community 106"
 Cohesion: 1.0
-Nodes (1): Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
+Nodes (1): Return backend-owned default Ray resource hints.
 
-### Community 503 - "Community 503"
+### Community 107 - "Community 107"
 Cohesion: 1.0
-Nodes (1): Residual convolution module.
+Nodes (1): Return backend-specific planning notes.
 
-### Community 504 - "Community 504"
+### Community 108 - "Community 108"
 Cohesion: 1.0
-Nodes (1): Init.         Args:             features (int): number of features
+Nodes (1): Return the backend type instantiated by :meth:`setup_target`.
 
-### Community 505 - "Community 505"
+### Community 109 - "Community 109"
 Cohesion: 1.0
-Nodes (1): Forward pass.         Args:             x (tensor): input         Returns:
+Nodes (1): Consume one prepared keyframe payload through the upstream runtime API.
 
-### Community 506 - "Community 506"
+### Community 110 - "Community 110"
 Cohesion: 1.0
-Nodes (1): Feature fusion block.
+Nodes (1): Persist native ViSTA outputs for later normalization.
 
-### Community 507 - "Community 507"
+### Community 111 - "Community 111"
 Cohesion: 1.0
-Nodes (1): Init.         Args:             features (int): number of features
+Nodes (1): Return one live view payload from the upstream pose graph.
 
-### Community 508 - "Community 508"
+### Community 112 - "Community 112"
 Cohesion: 1.0
-Nodes (1): Forward pass.         Returns:             tensor: output
+Nodes (1): Return preview RGB and dense pointmap payloads for one live view.
 
-### Community 509 - "Community 509"
+### Community 113 - "Community 113"
 Cohesion: 1.0
-Nodes (1): Interpolation module.
+Nodes (1): Load the text vocabulary from disk.
 
-### Community 510 - "Community 510"
+### Community 114 - "Community 114"
 Cohesion: 1.0
-Nodes (1): Init.         Args:             scale_factor (float): scaling             mode (
+Nodes (1): Construct one vocabulary instance.
 
-### Community 511 - "Community 511"
+### Community 115 - "Community 115"
 Cohesion: 1.0
-Nodes (1): Forward pass.         Args:             x (tensor): input         Returns:
+Nodes (1): Apply the upstream crop-and-resize pipeline for image-only SLAM inputs.
 
-### Community 512 - "Community 512"
+### Community 116 - "Community 116"
 Cohesion: 1.0
-Nodes (1): DPT output adapter.      :param num_cahnnels: Number of output channels     :par
+Nodes (1): Return the grayscale tensor expected by upstream ViSTA.
 
-### Community 513 - "Community 513"
+### Community 117 - "Community 117"
 Cohesion: 1.0
-Nodes (1): Initialize parts of decoder that are dependent on dimension of encoder tokens.
+Nodes (1): Return the normalized RGB tensor expected by upstream ViSTA.
 
-### Community 514 - "Community 514"
+### Community 118 - "Community 118"
 Cohesion: 1.0
-Nodes (1): Linear head for dust3r     Each token outputs: - 16x16 3D points (+ confidence)
+Nodes (1): Return the upstream-ready frame payload.
 
-### Community 515 - "Community 515"
+### Community 119 - "Community 119"
 Cohesion: 1.0
-Nodes (1): Drop paths (Stochastic Depth) per sample (when applied in main path of residual
+Nodes (1): Start one run and return the stable run identifier.          Args:             r
 
-### Community 516 - "Community 516"
+### Community 120 - "Community 120"
 Cohesion: 1.0
-Nodes (1): Drop paths (Stochastic Depth) per sample  (when applied in main path of residual
+Nodes (1): Request graceful stop for one active run.
 
-### Community 517 - "Community 517"
+### Community 121 - "Community 121"
 Cohesion: 1.0
-Nodes (1): MLP as used in Vision Transformer, MLP-Mixer and related networks
+Nodes (1): Return the latest projected metadata view for one run.
 
-### Community 518 - "Community 518"
+### Community 122 - "Community 122"
 Cohesion: 1.0
-Nodes (1): Warpper for self-attention module with xformers.     Calculate attention scores
+Nodes (1): Return recent runtime events for one run.          Args:             run_id: Sta
 
-### Community 519 - "Community 519"
+### Community 123 - "Community 123"
 Cohesion: 1.0
-Nodes (1): return positions of patches
+Nodes (1): Resolve one opaque live payload handle into a local array.          The handle i
 
-### Community 520 - "Community 520"
+### Community 124 - "Community 124"
 Cohesion: 1.0
-Nodes (1): just adding _init_weights + position getter compared to timm.models.layers.patch
+Nodes (1): Release backend-owned runtime resources.          Args:             preserve_loc
 
-### Community 521 - "Community 521"
+### Community 125 - "Community 125"
 Cohesion: 1.0
-Nodes (1): # NOTE: drop path for stochastic depth, we shall see if this is better than drop
+Nodes (1): Build the repository-owned default linear stage vocabulary.
+
+### Community 126 - "Community 126"
+Cohesion: 1.0
+Nodes (1): Copy only the mutable containers that projection mutates.
+
+### Community 127 - "Community 127"
+Cohesion: 1.0
+Nodes (1): Return the compact user-facing label for this source.
+
+### Community 128 - "Community 128"
+Cohesion: 1.0
+Nodes (1): Build the process-wide Ray runtime environment for this backend.
+
+### Community 129 - "Community 129"
+Cohesion: 1.0
+Nodes (1): Set environment flags that Ray snapshots at import and init time.
+
+### Community 130 - "Community 130"
+Cohesion: 1.0
+Nodes (1): Construct and start the ordered streaming SLAM stage.
+
+### Community 131 - "Community 131"
+Cohesion: 1.0
+Nodes (1): Close the ordered streaming SLAM stage and return its completion payload.
+
+### Community 132 - "Community 132"
+Cohesion: 1.0
+Nodes (1): Build the repository-owned runtime bindings for executable stages.
+
+### Community 133 - "Community 133"
+Cohesion: 1.0
+Nodes (1): Return the human-readable label shown in plan previews.
+
+### Community 134 - "Community 134"
+Cohesion: 1.0
+Nodes (1): Return the human-readable mode label shown in planning and UI surfaces.
+
+### Community 135 - "Community 135"
+Cohesion: 1.0
+Nodes (1): Enforce that dataset-serving semantics match the selected dataset family.
+
+### Community 136 - "Community 136"
+Cohesion: 1.0
+Nodes (1): Accept the previous `kind` backend discriminator at request boundaries.
+
+### Community 137 - "Community 137"
+Cohesion: 1.0
+Nodes (1): Return compact rows suitable for run summaries and review surfaces.
+
+### Community 138 - "Community 138"
+Cohesion: 1.0
+Nodes (1): Materialize or resolve the normalized :class:`SequenceManifest` for one run.
+
+### Community 139 - "Community 139"
+Cohesion: 1.0
+Nodes (1): Materialize prepared benchmark inputs that complement the offline sequence.
+
+### Community 140 - "Community 140"
+Cohesion: 1.0
+Nodes (1): Open the frame stream that feeds the active SLAM session.
+
+### Community 141 - "Community 141"
+Cohesion: 1.0
+Nodes (1): Connect to the source and prepare subsequent blocking packet reads.
+
+### Community 142 - "Community 142"
+Cohesion: 1.0
+Nodes (1): Disconnect or release the source and any owned runtime resources.
+
+### Community 143 - "Community 143"
+Cohesion: 1.0
+Nodes (1): Wait for and return the next normalized frame packet.
+
+### Community 144 - "Community 144"
+Cohesion: 1.0
+Nodes (1): Return a one-pass iterator over normalized RGB-D observations.
+
+### Community 145 - "Community 145"
+Cohesion: 1.0
+Nodes (1): Build the shared DTO from a conventional 3x3 row-major camera matrix.
+
+### Community 146 - "Community 146"
+Cohesion: 1.0
+Nodes (1): Build the shared DTO from a flat 9-value column-major payload.
+
+### Community 147 - "Community 147"
+Cohesion: 1.0
+Nodes (1): Build the shared DTO from a flat 9-value row-major payload.
+
+### Community 148 - "Community 148"
+Cohesion: 1.0
+Nodes (1): Return the legacy pose field name during the reconstruction DTO migration.
+
+### Community 149 - "Community 149"
+Cohesion: 1.0
+Nodes (1): Validate the geometry and raster invariants required by TSDF fusion.
+
+### Community 150 - "Community 150"
+Cohesion: 1.0
+Nodes (1): Ensure the declared observation count matches the row payload.
+
+### Community 151 - "Community 151"
+Cohesion: 1.0
+Nodes (1): Build the shared transform DTO from XYZW quaternion and XYZ translation arrays.
+
+### Community 152 - "Community 152"
+Cohesion: 1.0
+Nodes (1): Build the shared transform DTO from a 4x4 homogeneous matrix.
+
+### Community 153 - "Community 153"
+Cohesion: 1.0
+Nodes (1): Runtime type that exposes the shared streaming-source contract.
+
+### Community 154 - "Community 154"
+Cohesion: 1.0
+Nodes (1): Return the user-facing label for the configured live Record3D source adapter.
+
+### Community 155 - "Community 155"
+Cohesion: 1.0
+Nodes (1): Runtime type that exposes shared packet objects.
+
+### Community 156 - "Community 156"
+Cohesion: 1.0
+Nodes (1): Parse the raw Record3D metadata payload.
+
+### Community 157 - "Community 157"
+Cohesion: 1.0
+Nodes (1): Return the runtime session type constructed from this config.
+
+### Community 158 - "Community 158"
+Cohesion: 1.0
+Nodes (1): Build one spec from one JSON object.
+
+### Community 159 - "Community 159"
+Cohesion: 1.0
+Nodes (1): Return the user-facing page label.
+
+### Community 160 - "Community 160"
+Cohesion: 1.0
+Nodes (1): Lifecycle states shared by app-owned preview surfaces.
+
+### Community 161 - "Community 161"
+Cohesion: 1.0
+Nodes (1): Common snapshot state shared by app-owned preview runtimes.
+
+### Community 162 - "Community 162"
+Cohesion: 1.0
+Nodes (1): Latest Record3D preview snapshot shared inside the app layer.
+
+### Community 163 - "Community 163"
+Cohesion: 1.0
+Nodes (1): Latest dataset loop-preview snapshot shared inside the app layer.
+
+### Community 164 - "Community 164"
+Cohesion: 1.0
+Nodes (1): Typed ADVIO dataset-download form payload.
+
+### Community 165 - "Community 165"
+Cohesion: 1.0
+Nodes (1): Typed ADVIO preview action payload.
+
+### Community 166 - "Community 166"
+Cohesion: 1.0
+Nodes (1): Computed ADVIO page render payload.
+
+### Community 167 - "Community 167"
+Cohesion: 1.0
+Nodes (1): Persisted selector state for the ADVIO dataset-management page.
+
+### Community 168 - "Community 168"
+Cohesion: 1.0
+Nodes (1): Persisted selector state for the TUM RGB-D dataset-management tab.
+
+### Community 169 - "Community 169"
+Cohesion: 1.0
+Nodes (1): Persisted selector state for the metrics page.
+
+### Community 170 - "Community 170"
+Cohesion: 1.0
+Nodes (1): Persisted selector state for the artifact inspector page.
+
+### Community 171 - "Community 171"
+Cohesion: 1.0
+Nodes (1): Persisted selector state for the Record3D live-stream page.
+
+### Community 172 - "Community 172"
+Cohesion: 1.0
+Nodes (1): Typed Record3D page action payload.
+
+### Community 173 - "Community 173"
+Cohesion: 1.0
+Nodes (1): Resolved Record3D transport inputs for one page render.
+
+### Community 174 - "Community 174"
+Cohesion: 1.0
+Nodes (1): Input-source families supported by the bounded pipeline app surface.
+
+### Community 175 - "Community 175"
+Cohesion: 1.0
+Nodes (1): Return the user-facing source label.
+
+### Community 176 - "Community 176"
+Cohesion: 1.0
+Nodes (1): Persisted selector state for the interactive Pipeline demo.
+
+### Community 177 - "Community 177"
+Cohesion: 1.0
+Nodes (1): Fully typed app state persisted in Streamlit session storage.
+
+### Community 178 - "Community 178"
+Cohesion: 1.0
+Nodes (1): Construct the typed services and persisted state for one rerun.
+
+### Community 179 - "Community 179"
+Cohesion: 1.0
+Nodes (1): Render the packaged Streamlit application.
 
 ## Knowledge Gaps
-- **1149 isolated node(s):** `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`, `Lint the codebase (except for clang-format/tidy).`, `Run the tests (requires a compiler).`, `Run the packaging tests.`, `Build the docs. Pass --non-interactive to avoid serving.` (+1144 more)
+- **988 isolated node(s):** `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`, `CLI entry point for the project scaffold.`, `CLI-owned Rerun web viewer subprocess plus its stdout forwarder thread.`, `Build the authoritative `uv run ... rerun --serve-web` command.`, `Forward merged child output into the main process stdout.` (+983 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 34`** (2 nodes): `streamlit_app.py`, `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`
+- **Thin community `Community 22`** (9 nodes): `Tests for package-root public export surfaces.`, `test_interfaces_package_exports_only_canonical_pose_surface()`, `test_io_package_exports_only_minimal_public_surface()`, `test_methods_package_exports_slam_surfaces()`, `test_pipeline_contracts_package_is_not_a_compatibility_hub()`, `test_pipeline_package_exports_only_minimal_public_surface()`, `test_reconstruction_package_exports_runtime_surfaces_without_harness()`, `test_vista_package_is_the_only_canonical_vista_surface()`, `test_package_exports.py`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 35`** (2 nodes): `operators.h`, `PYBIND11_NAMESPACE_BEGIN()`
+- **Thin community `Community 24`** (2 nodes): `streamlit_app.py`, `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 36`** (2 nodes): `functional.h`, `PYBIND11_NAMESPACE_BEGIN()`
+- **Thin community `Community 26`** (1 nodes): `Attach a Rich logging handler to the ``prml_vslam`` logger tree.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 37`** (2 nodes): `pybind11_conduit_v1.h`, `pybind11_conduit_v1()`
+- **Thin community `Community 27`** (1 nodes): `Create a console using the caller's module and qualified function name.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 38`** (2 nodes): `value_and_holder.h`, `value_and_holder()`
+- **Thin community `Community 28`** (1 nodes): `Normalize nested config values into JSON-friendly primitives.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 39`** (2 nodes): `test_const_name.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 29`** (1 nodes): `Load the validated config from TOML text, bytes, or a file path.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 40`** (2 nodes): `test_union.py`, `test_union()`
+- **Thin community `Community 30`** (1 nodes): `Return the runtime type or owner constructed by :meth:`setup_target`.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 41`** (2 nodes): `test_modules.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 31`** (1 nodes): `Deserialize one IPC payload back into the target validated model type.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 42`** (2 nodes): `test_union.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 32`** (1 nodes): `Build the canonical artifact layout from an explicit root.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 43`** (2 nodes): `test_warnings.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 33`** (1 nodes): `Alias for input_frames_dir used in early scaffold versions.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 44`** (2 nodes): `test_cpp_conduit_traveler_types.h`, `pybind11_tests()`
+- **Thin community `Community 34`** (1 nodes): `Return the path to the repo-owned viewer recording.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 45`** (2 nodes): `test_unnamed_namespace_b.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 35`** (1 nodes): `Validate that the configured repository root exists.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 46`** (2 nodes): `test_class_release_gil_before_calling_cpp_dtor.py`, `test_gil_state_check_results()`
+- **Thin community `Community 36`** (1 nodes): `Resolve configured directories against the repository root.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 47`** (2 nodes): `test_async.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 37`** (1 nodes): `Resolve a path relative to the configured repository root.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 48`** (2 nodes): `test_docstring_options.py`, `test_docstring_options()`
+- **Thin community `Community 38`** (1 nodes): `Resolve a directory and optionally create it.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 49`** (2 nodes): `test_type_caster_std_function_specializations.py`, `test_callback_with_special_return()`
+- **Thin community `Community 39`** (1 nodes): `Return the short user-facing dataset label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 50`** (2 nodes): `PYBIND11_MODULE()`, `eigen_tensor_avoid_stl_array.cpp`
+- **Thin community `Community 40`** (1 nodes): `Return the user-facing label for the selected dataset sequence.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 51`** (2 nodes): `test_unnamed_namespace_a.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 41`** (1 nodes): `Return the user-facing pose-source label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 52`** (2 nodes): `test_chrono.cpp`, `TEST_SUBMODULE()`
+- **Thin community `Community 42`** (1 nodes): `Return the user-facing modality label shown in TUM RGB-D controls.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 53`** (2 nodes): `main.cpp`, `PYBIND11_MODULE()`
+- **Thin community `Community 43`** (1 nodes): `Return the user-facing preset label shown in TUM RGB-D download controls.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 54`** (2 nodes): `PYBIND11_MODULE()`, `external_module.cpp`
+- **Thin community `Community 44`** (1 nodes): `Return the effective modality bundle for the selected preset.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 55`** (2 nodes): `opencv_type_converter.h`, `pybind11()`
+- **Thin community `Community 45`** (1 nodes): `Build one sequence runtime from its validated config.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 56`** (1 nodes): `evaluation_tumrgbdf2f3.py`
+- **Thin community `Community 46`** (1 nodes): `Return the cache directory used for downloaded scene archives.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 57`** (1 nodes): `evaluation_tumrgbd.py`
+- **Thin community `Community 47`** (1 nodes): `Return the user-facing environment label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 58`** (1 nodes): `train.py`
+- **Thin community `Community 48`** (1 nodes): `Return the user-facing crowd-density label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (1 nodes): `evaluation_replica.py`
+- **Thin community `Community 49`** (1 nodes): `Return the user-facing modality label shown in ADVIO controls.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (1 nodes): `evaluation_scannet.py`
+- **Thin community `Community 50`** (1 nodes): `Return the user-facing preset label shown in ADVIO download controls.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (1 nodes): `evaluation_7scenes.py`
+- **Thin community `Community 51`** (1 nodes): `Return the effective modality bundle for the selected preset.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (1 nodes): `The CXX standard level. If set, will add the required flags. If left at`
+- **Thin community `Community 52`** (1 nodes): `Return the compact scene label shown in the app and CLI.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (1 nodes): `gil_safe_call_once.h`
+- **Thin community `Community 53`** (1 nodes): `Normalize and validate explicit scene selections.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (1 nodes): `common.h`
+- **Thin community `Community 54`** (1 nodes): `Remove duplicate modality overrides while preserving order.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (1 nodes): `eigen.h`
+- **Thin community `Community 55`** (1 nodes): `Return the canonical ADVIO folder name used on disk.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (1 nodes): `wrap_include_python_h.h`
+- **Thin community `Community 56`** (1 nodes): `Reject blank dataset roots before path resolution happens downstream.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (1 nodes): `pybind11_platform_abi_id.h`
+- **Thin community `Community 57`** (1 nodes): `Return the expected sequence type for the config.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (1 nodes): `common.h`
+- **Thin community `Community 58`** (1 nodes): `Load a persisted trajectory evaluation when it exists.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `test_eigen_tensor.cpp`
+- **Thin community `Community 59`** (1 nodes): `Compute and persist one trajectory evaluation result.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `test_eval_call.py`
+- **Thin community `Community 60`** (1 nodes): `Load a persisted dense-cloud evaluation when it exists.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `test_exceptions.h`
+- **Thin community `Community 61`** (1 nodes): `Compute and persist one dense-cloud evaluation result.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `test.py`
+- **Thin community `Community 62`** (1 nodes): `Load a persisted runtime-efficiency evaluation when it exists.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `libsize.py`
+- **Thin community `Community 63`** (1 nodes): `Compute and persist one runtime-efficiency evaluation result.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `make_changelog.py`
+- **Thin community `Community 64`** (1 nodes): `Build the shared scalar summary payload from one raw error series.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `test.py`
+- **Thin community `Community 65`** (1 nodes): `Return the deterministic persisted trajectory-metrics path for the controls.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `exports.h`
+- **Thin community `Community 66`** (1 nodes): `Return the compact source label used in logs and diagnostics.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `quicklz.h`
+- **Thin community `Community 67`** (1 nodes): `Return the user-facing reconstruction label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `DBoW3.h`
+- **Thin community `Community 68`** (1 nodes): `Return the concrete reconstruction backend type.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `exports.h`
+- **Thin community `Community 69`** (1 nodes): `Consume one frame and prepare an incremental SLAM update.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `quicklz.h`
+- **Thin community `Community 70`** (1 nodes): `Retrieve any pending incremental SLAM updates non-blockingly.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `DBoW3.h`
+- **Thin community `Community 71`** (1 nodes): `Finalize the session and return the persisted SLAM artifacts.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `__init__.py`
+- **Thin community `Community 72`** (1 nodes): `Prepare a streaming-capable session for incremental frame updates.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `__init__.py`
+- **Thin community `Community 73`** (1 nodes): `Return the upstream method name shown to users.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `setup.py`
+- **Thin community `Community 74`** (1 nodes): `Return the user-facing backend label used across planning and UI surfaces.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `__init__.py`
+- **Thin community `Community 75`** (1 nodes): `Return the legacy backend discriminator string.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `extract_images.py`
+- **Thin community `Community 76`** (1 nodes): `Whether the backend supports offline execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `cam_test_realsense.py`
+- **Thin community `Community 77`** (1 nodes): `Whether the backend supports streaming execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `Deserialize one IPC payload back into the target validated model type.`
+- **Thin community `Community 78`** (1 nodes): `Whether the backend can expose point-cloud outputs.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `Viewer artifacts associated with one run.`
+- **Thin community `Community 79`** (1 nodes): `Whether the backend can emit live preview payloads.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (1 nodes): `Return the compact source label used in logs and diagnostics.`
+- **Thin community `Community 80`** (1 nodes): `Whether the backend may emit native visualization artifacts.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (1 nodes): `Return the upstream method name shown to users.`
+- **Thin community `Community 81`** (1 nodes): `Whether the backend supports repository trajectory evaluation.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (1 nodes): `Return the user-facing backend label used across planning and UI surfaces.`
+- **Thin community `Community 82`** (1 nodes): `Return backend-owned default Ray resource hints.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (1 nodes): `Whether the backend can expose point-cloud outputs.`
+- **Thin community `Community 83`** (1 nodes): `Return backend-specific planning notes surfaced to callers when relevant.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (1 nodes): `Whether the backend supports offline execution.`
+- **Thin community `Community 84`** (1 nodes): `Whether the backend supports offline execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (1 nodes): `Whether the backend supports streaming execution.`
+- **Thin community `Community 85`** (1 nodes): `Whether the backend supports streaming execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (1 nodes): `Whether the backend can expose point-cloud outputs.`
+- **Thin community `Community 86`** (1 nodes): `Whether the backend can expose point-cloud outputs.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (1 nodes): `Whether the backend can emit live preview payloads.`
+- **Thin community `Community 87`** (1 nodes): `Whether the backend can emit live preview payloads.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (1 nodes): `Whether the backend may emit native visualization artifacts.`
+- **Thin community `Community 88`** (1 nodes): `Whether the backend may emit native visualization artifacts.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (1 nodes): `Whether the backend supports repository trajectory evaluation.`
+- **Thin community `Community 89`** (1 nodes): `Whether the backend supports repository trajectory evaluation.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (1 nodes): `Return backend-owned default Ray resource hints.`
+- **Thin community `Community 90`** (1 nodes): `Return backend-owned default Ray resource hints.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (1 nodes): `Return backend-specific planning notes surfaced to callers when relevant.`
+- **Thin community `Community 91`** (1 nodes): `Return the mock backend type used for the pipeline demo.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (1 nodes): `Apply the upstream crop-and-resize pipeline for image-only SLAM inputs.`
+- **Thin community `Community 92`** (1 nodes): `Whether the backend supports offline execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (1 nodes): `Return the normalized RGB tensor expected by upstream ViSTA.`
+- **Thin community `Community 93`** (1 nodes): `Whether the backend supports streaming execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (1 nodes): `Return the normalized RGB tensor expected by upstream ViSTA.`
+- **Thin community `Community 94`** (1 nodes): `Whether the backend can expose point-cloud outputs.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (1 nodes): `Return the upstream-ready frame payload.`
+- **Thin community `Community 95`** (1 nodes): `Whether the backend can emit live preview payloads.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (1 nodes): `Return a one-pass iterator over normalized RGB-D observations.`
+- **Thin community `Community 96`** (1 nodes): `Whether the backend may emit native visualization artifacts.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 107`** (1 nodes): `Build the shared transform DTO from XYZW quaternion and XYZ translation arrays.`
+- **Thin community `Community 97`** (1 nodes): `Whether the backend supports repository trajectory evaluation.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 108`** (1 nodes): `Build the shared transform DTO from a 4x4 homogeneous matrix.`
+- **Thin community `Community 98`** (1 nodes): `Return the placeholder backend type.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 109`** (1 nodes): `Runtime type that exposes shared packet objects.`
+- **Thin community `Community 99`** (1 nodes): `Return backend-specific planning notes.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (1 nodes): `Parse the raw Record3D metadata payload.`
+- **Thin community `Community 100`** (1 nodes): `Whether the backend supports offline execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (1 nodes): `Build one spec from one JSON object.`
+- **Thin community `Community 101`** (1 nodes): `Whether the backend supports streaming execution.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 112`** (1 nodes): `Apply the shared 2D layout used across workbench figures.`
+- **Thin community `Community 102`** (1 nodes): `Whether the backend can expose point-cloud outputs.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 113`** (1 nodes): `Apply the shared 3D layout used across workbench figures.`
+- **Thin community `Community 103`** (1 nodes): `Whether the backend can emit live preview payloads.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 114`** (1 nodes): `Summary of one rendered reconstruction artifact view.`
+- **Thin community `Community 104`** (1 nodes): `Whether the backend may emit native visualization artifacts.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 115`** (1 nodes): `Build an interactive Plotly view for reference reconstruction PLY artifacts.`
+- **Thin community `Community 105`** (1 nodes): `Whether the backend supports repository trajectory evaluation.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 116`** (1 nodes): `Whether the backend supports streaming execution.`
+- **Thin community `Community 106`** (1 nodes): `Return backend-owned default Ray resource hints.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 117`** (1 nodes): `Describe how ADVIO replay poses should be interpreted or normalized.`
+- **Thin community `Community 107`** (1 nodes): `Return backend-specific planning notes.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 118`** (1 nodes): `Name the reconstruction backends supported by the package.`
+- **Thin community `Community 108`** (1 nodes): `Return the backend type instantiated by :meth:`setup_target`.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 119`** (1 nodes): `Return the default live payloads exported to repo-owned Rerun sinks.`
+- **Thin community `Community 109`** (1 nodes): `Consume one prepared keyframe payload through the upstream runtime API.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 120`** (1 nodes): `Return whether the value refers to an actual provider rather than a sentinel.`
+- **Thin community `Community 110`** (1 nodes): `Persist native ViSTA outputs for later normalization.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 121`** (1 nodes): `Describe the normalized durable outputs from one reconstruction run.`
+- **Thin community `Community 111`** (1 nodes): `Return one live view payload from the upstream pose graph.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 122`** (1 nodes): `Top-level alignment policy bundle attached to one run request.`
+- **Thin community `Community 112`** (1 nodes): `Return preview RGB and dense pointmap payloads for one live view.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 123`** (1 nodes): `Summary of one populated point-cloud entity in a recording.`
+- **Thin community `Community 113`** (1 nodes): `Load the text vocabulary from disk.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 124`** (1 nodes): `Artifacts emitted by the repo-owned validation loop.`
+- **Thin community `Community 114`** (1 nodes): `Construct one vocabulary instance.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 125`** (1 nodes): `Load one `.rrd` and summarize the current repo-owned Rerun surfaces.`
+- **Thin community `Community 115`** (1 nodes): `Apply the upstream crop-and-resize pipeline for image-only SLAM inputs.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 126`** (1 nodes): `Write a deterministic validation bundle for one `.rrd` recording.`
+- **Thin community `Community 116`** (1 nodes): `Return the grayscale tensor expected by upstream ViSTA.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 127`** (1 nodes): `Run the validation loop on one `.rrd` recording and print the artifact paths.`
+- **Thin community `Community 117`** (1 nodes): `Return the normalized RGB tensor expected by upstream ViSTA.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 128`** (1 nodes): `Whether the backend can emit live preview payloads.`
+- **Thin community `Community 118`** (1 nodes): `Return the upstream-ready frame payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 129`** (1 nodes): `Whether the backend may emit native visualization artifacts.`
+- **Thin community `Community 119`** (1 nodes): `Start one run and return the stable run identifier.          Args:             r`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 130`** (1 nodes): `Whether the backend supports repository trajectory evaluation.`
+- **Thin community `Community 120`** (1 nodes): `Request graceful stop for one active run.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 131`** (1 nodes): `Return backend-owned default Ray resource hints.`
+- **Thin community `Community 121`** (1 nodes): `Return the latest projected metadata view for one run.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 132`** (1 nodes): `Return backend-specific planning notes surfaced to callers when relevant.`
+- **Thin community `Community 122`** (1 nodes): `Return recent runtime events for one run.          Args:             run_id: Sta`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 133`** (1 nodes): `Return backend-owned default Ray resource hints.`
+- **Thin community `Community 123`** (1 nodes): `Resolve one opaque live payload handle into a local array.          The handle i`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 134`** (1 nodes): `Return backend-specific planning notes surfaced to callers when relevant.`
+- **Thin community `Community 124`** (1 nodes): `Release backend-owned runtime resources.          Args:             preserve_loc`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 135`** (1 nodes): `Shared JSON-safe payload aliases for controller and transport helpers.`
+- **Thin community `Community 125`** (1 nodes): `Build the repository-owned default linear stage vocabulary.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 136`** (1 nodes): `ADVIO trajectory providers surfaced through replay and pipeline contracts.`
+- **Thin community `Community 126`** (1 nodes): `Copy only the mutable containers that projection mutates.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 137`** (1 nodes): `Prepared benchmark-side inputs discovered for one normalized sequence.`
+- **Thin community `Community 127`** (1 nodes): `Return the compact user-facing label for this source.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 138`** (1 nodes): `Carry finite patch geometry that future viewer code can render directly.`
+- **Thin community `Community 128`** (1 nodes): `Build the process-wide Ray runtime environment for this backend.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 139`** (1 nodes): `Method-owned backend controls.`
+- **Thin community `Community 129`** (1 nodes): `Set environment flags that Ray snapshots at import and init time.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 140`** (1 nodes): `Policy for efficiency evaluation.`
+- **Thin community `Community 130`** (1 nodes): `Construct and start the ordered streaming SLAM stage.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 141`** (1 nodes): `Whether the backend can emit live preview payloads.`
+- **Thin community `Community 131`** (1 nodes): `Close the ordered streaming SLAM stage and return its completion payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 142`** (1 nodes): `Point to raw ADVIO pose files preserved in the normalized manifest.`
+- **Thin community `Community 132`** (1 nodes): `Build the repository-owned runtime bindings for executable stages.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 143`** (1 nodes): `Carry ADVIO-specific assets that do not fit the generic manifest fields.`
+- **Thin community `Community 133`** (1 nodes): `Return the human-readable label shown in plan previews.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 144`** (1 nodes): `Describe shared frame-subsampling policy for dataset-backed sources.`
+- **Thin community `Community 134`** (1 nodes): `Return the human-readable mode label shown in planning and UI surfaces.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 145`** (1 nodes): `Ensure callers pick either explicit stride or target FPS, not both.`
+- **Thin community `Community 135`** (1 nodes): `Enforce that dataset-serving semantics match the selected dataset family.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 146`** (1 nodes): `Resolve the effective stride for a seconds-based timestamp sequence.`
+- **Thin community `Community 136`** (1 nodes): `Accept the previous `kind` backend discriminator at request boundaries.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 147`** (1 nodes): `Collect benchmark-side stage toggles attached to one :class:`RunRequest`.      T`
+- **Thin community `Community 137`** (1 nodes): `Return compact rows suitable for run summaries and review surfaces.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 148`** (1 nodes): `High-level summary of committed and local dataset coverage.`
+- **Thin community `Community 138`** (1 nodes): `Materialize or resolve the normalized :class:`SequenceManifest` for one run.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 149`** (1 nodes): `Side metadata for one materialized ADVIO Tango reference cloud.`
+- **Thin community `Community 139`** (1 nodes): `Materialize prepared benchmark inputs that complement the offline sequence.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 150`** (1 nodes): `Similarity transform mapping source-frame positions into target-frame positions.`
+- **Thin community `Community 140`** (1 nodes): `Open the frame stream that feeds the active SLAM session.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 151`** (1 nodes): `Materialize ADVIO Tango source-native and GT-world reference cloud artifacts.`
+- **Thin community `Community 141`** (1 nodes): `Connect to the source and prepare subsequent blocking packet reads.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 152`** (1 nodes): `Load Tango point-cloud timestamps and integer payload indices.`
+- **Thin community `Community 142`** (1 nodes): `Disconnect or release the source and any owned runtime resources.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 153`** (1 nodes): `Load a deterministic bounded subset of Tango payloads transformed into pose-stre`
+- **Thin community `Community 143`** (1 nodes): `Wait for and return the next normalized frame packet.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 154`** (1 nodes): `Load one Tango point-cloud payload as metric XYZ rows.`
+- **Thin community `Community 144`** (1 nodes): `Return a one-pass iterator over normalized RGB-D observations.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 155`** (1 nodes): `Transform all Tango point-cloud payloads into the selected Tango pose-stream wor`
+- **Thin community `Community 145`** (1 nodes): `Build the shared DTO from a conventional 3x3 row-major camera matrix.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 156`** (1 nodes): `Fit a Sim(3) transform from source trajectory positions to target trajectory pos`
+- **Thin community `Community 146`** (1 nodes): `Build the shared DTO from a flat 9-value column-major payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 157`** (1 nodes): `Apply one stored Sim(3) alignment to XYZ points.`
+- **Thin community `Community 147`** (1 nodes): `Build the shared DTO from a flat 9-value row-major payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 158`** (1 nodes): `Describe viewer-export policy attached to one :class:`RunRequest`.      These fl`
+- **Thin community `Community 148`** (1 nodes): `Return the legacy pose field name during the reconstruction DTO migration.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 159`** (1 nodes): `Coordinate status for one prepared reference cloud.`
+- **Thin community `Community 149`** (1 nodes): `Validate the geometry and raster invariants required by TSDF fusion.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 160`** (1 nodes): `One prepared reference cloud available to a benchmark run.`
+- **Thin community `Community 150`** (1 nodes): `Ensure the declared observation count matches the row payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 161`** (1 nodes): `Whether the backend supports repository trajectory evaluation.`
+- **Thin community `Community 151`** (1 nodes): `Build the shared transform DTO from XYZW quaternion and XYZ translation arrays.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 162`** (1 nodes): `Return the prepared trajectory baseline for one requested source.`
+- **Thin community `Community 152`** (1 nodes): `Build the shared transform DTO from a 4x4 homogeneous matrix.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 163`** (1 nodes): `Summary of one explicit dataset download action.`
+- **Thin community `Community 153`** (1 nodes): `Runtime type that exposes the shared streaming-source contract.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 164`** (1 nodes): `Configure trajectory evaluation around normalized run outputs.`
+- **Thin community `Community 154`** (1 nodes): `Return the user-facing label for the configured live Record3D source adapter.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 165`** (1 nodes): `Thin benchmark-policy bundle attached to one run request.`
+- **Thin community `Community 155`** (1 nodes): `Runtime type that exposes shared packet objects.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 166`** (1 nodes): `Toggle runtime-efficiency evaluation for one run.`
+- **Thin community `Community 156`** (1 nodes): `Parse the raw Record3D metadata payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 167`** (1 nodes): `Method-owned runtime update contracts.`
+- **Thin community `Community 157`** (1 nodes): `Return the runtime session type constructed from this config.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 168`** (1 nodes): `Carry one incremental backend update before pipeline translation.      Backends`
+- **Thin community `Community 158`** (1 nodes): `Build one spec from one JSON object.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 169`** (1 nodes): `# TODO: this is a dto / data model that should be defined in a shared model modu`
+- **Thin community `Community 159`** (1 nodes): `Return the user-facing page label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 170`** (1 nodes): `Return the user-facing backend label used across planning and UI surfaces.`
+- **Thin community `Community 160`** (1 nodes): `Lifecycle states shared by app-owned preview surfaces.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 171`** (1 nodes): `Whether the backend supports offline execution.`
+- **Thin community `Community 161`** (1 nodes): `Common snapshot state shared by app-owned preview runtimes.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 172`** (1 nodes): `Whether the backend supports streaming execution.`
+- **Thin community `Community 162`** (1 nodes): `Latest Record3D preview snapshot shared inside the app layer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 173`** (1 nodes): `Method-owned streaming session initialization contracts.`
+- **Thin community `Community 163`** (1 nodes): `Latest dataset loop-preview snapshot shared inside the app layer.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 174`** (1 nodes): `Normalized context injected once when a streaming session starts.`
+- **Thin community `Community 164`** (1 nodes): `Typed ADVIO dataset-download form payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 175`** (1 nodes): `# TODO: this is a dto / data model that should be defined in a shared model modu`
+- **Thin community `Community 165`** (1 nodes): `Typed ADVIO preview action payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 176`** (1 nodes): `Describe one durable artifact materialized under the run artifact root.`
+- **Thin community `Community 166`** (1 nodes): `Computed ADVIO page render payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 177`** (1 nodes): `Bundle the normalized durable outputs of the SLAM stage.      Method wrappers no`
+- **Thin community `Community 167`** (1 nodes): `Persisted selector state for the ADVIO dataset-management page.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 178`** (1 nodes): `# TODO: this is a dto / data model that should be defined in a shared model modu`
+- **Thin community `Community 168`** (1 nodes): `Persisted selector state for the TUM RGB-D dataset-management tab.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 179`** (1 nodes): `Carry one incremental backend update before pipeline translation.      Backends`
+- **Thin community `Community 169`** (1 nodes): `Persisted selector state for the metrics page.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 180`** (1 nodes): `Normalized context injected once when a streaming session starts.`
+- **Thin community `Community 170`** (1 nodes): `Persisted selector state for the artifact inspector page.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 181`** (1 nodes): `Subset of the upstream image dataset API used by the wrapper.`
+- **Thin community `Community 171`** (1 nodes): `Persisted selector state for the Record3D live-stream page.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 182`** (1 nodes): `Apply the upstream crop-and-resize pipeline for image-only SLAM inputs.`
+- **Thin community `Community 172`** (1 nodes): `Typed Record3D page action payload.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 183`** (1 nodes): `Return the grayscale tensor expected by upstream ViSTA.`
+- **Thin community `Community 173`** (1 nodes): `Resolved Record3D transport inputs for one page render.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 184`** (1 nodes): `One RGB frame prepared for upstream ViSTA ingestion.`
+- **Thin community `Community 174`** (1 nodes): `Input-source families supported by the bounded pipeline app surface.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 185`** (1 nodes): `Prepare one repo RGB frame for upstream ViSTA ingestion.`
+- **Thin community `Community 175`** (1 nodes): `Return the user-facing source label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 186`** (1 nodes): `Return the upstream-ready frame payload.`
+- **Thin community `Community 176`** (1 nodes): `Persisted selector state for the interactive Pipeline demo.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 187`** (1 nodes): `Use the exact upstream ViSTA crop-and-resize helper path.`
+- **Thin community `Community 177`** (1 nodes): `Fully typed app state persisted in Streamlit session storage.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 188`** (1 nodes): `Convert one upstream ViSTA array-like payload into a numpy array.`
+- **Thin community `Community 178`** (1 nodes): `Construct the typed services and persisted state for one rerun.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 189`** (1 nodes): `Consume one frame and prepare an incremental SLAM update.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 190`** (1 nodes): `Retrieve any pending incremental SLAM updates non-blockingly.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 191`** (1 nodes): `Run the backend over a materialized sequence and persist artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 192`** (1 nodes): `Return a picklable factory that builds one streaming SLAM session.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 193`** (1 nodes): `Name the external or repository-local backends supported by the package.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 194`** (1 nodes): `Policy toggle for the optional reference-reconstruction stage.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 195`** (1 nodes): `Viewer artifacts associated with one run.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 196`** (1 nodes): `Whether the backend may emit native visualization artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 197`** (1 nodes): `Policy for trajectory evaluation.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 198`** (1 nodes): `Return backend-owned default Ray resource hints.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 199`** (1 nodes): `Policy for dense-cloud comparison.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 200`** (1 nodes): `Provide the strict validation baseline for transport-safe pipeline DTOs.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 201`** (1 nodes): `Return the human-readable source label.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 202`** (1 nodes): `Coordinate-frame semantics for served ADVIO trajectories.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 203`** (1 nodes): `Relevant ADVIO raw pose artifacts preserved in the normalized manifest.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 204`** (1 nodes): `ADVIO-specific manifest payload preserved for downstream consumers.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 205`** (1 nodes): `Local availability summary for one dataset scene.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 206`** (1 nodes): `Return the effective ADVIO provider for one optional serving config.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 207`** (1 nodes): `Incremental SLAM update emitted by streaming-capable backends.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 208`** (1 nodes): `Protocol for a live SLAM session that consumes incremental frames.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 209`** (1 nodes): `Consume one frame and prepare an incremental SLAM update.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 210`** (1 nodes): `Run the backend over a materialized sequence and persist artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 211`** (1 nodes): `Protocol for SLAM backends that support incremental streaming execution.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 212`** (1 nodes): `Method-owned backend controls.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 213`** (1 nodes): `Whether the backend supports offline execution.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 214`** (1 nodes): `Return backend-owned default Ray resource hints.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 215`** (1 nodes): `Return backend-specific planning notes.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 216`** (1 nodes): `Strict model used for portable pipeline contracts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 217`** (1 nodes): `Reference to one materialized artifact owned by the repository.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 218`** (1 nodes): `Materialized outputs produced by the SLAM stage.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 219`** (1 nodes): `Device types exposed by the Record3D bindings.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 220`** (1 nodes): `Import the optional native Record3D bindings.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 221`** (1 nodes): `Configuration for a USB Record3D streaming session.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 222`** (1 nodes): `Runtime type that exposes shared packet objects.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 223`** (1 nodes): `Thin packet-stream adapter around the upstream `record3d.Record3DStream`.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 224`** (1 nodes): `List the currently connected USB Record3D devices.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 225`** (1 nodes): `Connect to the configured USB device.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 226`** (1 nodes): `Disconnect the current USB device if one is active.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 227`** (1 nodes): `Wait for the next shared packet emitted by the USB device.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 228`** (1 nodes): `Yield shared packets indefinitely until the caller stops consuming them.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 229`** (1 nodes): `List currently connected Record3D USB devices through the canonical IO owner.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 230`** (1 nodes): `Build one shared USB packet stream with explicit runtime validation.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 231`** (1 nodes): `Build the compact frame-details payload shown by Record3D consumers.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 232`** (1 nodes): `Replay pacing options for local video samples.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 233`** (1 nodes): `Config describing one replayable local video sample.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 234`** (1 nodes): `Config describing one replayable local video sample.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 235`** (1 nodes): `Open the configured video file and prepare playback state.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 236`** (1 nodes): `Open the configured video file and prepare playback state.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 237`** (1 nodes): `Release the underlying OpenCV capture if one is open.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 238`** (1 nodes): `Decode and return the next sampled RGB frame.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 239`** (1 nodes): `Viewer-export policy attached to one run request.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 240`** (1 nodes): `One prepared reference trajectory available to a benchmark run.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 241`** (1 nodes): `Prepared benchmark-side inputs discovered for one normalized sequence.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 242`** (1 nodes): `Return the prepared reference trajectory for one requested source.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 243`** (1 nodes): `Return the prepared point-cloud sequence for one requested source.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 244`** (1 nodes): `Policy for trajectory evaluation.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 245`** (1 nodes): `Policy for dense-cloud comparison.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 246`** (1 nodes): `Serializable rigid transform with explicit frame direction.      When frame labe`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 247`** (1 nodes): `Build a transform from XYZW quaternion and XYZ translation arrays.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 248`** (1 nodes): `Return the normalized quaternion in XYZW order.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 249`** (1 nodes): `Return the translation vector in XYZ order.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 250`** (1 nodes): `Return the transform as a 4x4 matrix.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 251`** (1 nodes): `Build a transform from a 4x4 homogeneous matrix.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 252`** (1 nodes): `Return the transform fields in TUM trajectory order.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 253`** (1 nodes): `Plain validated payload shared by data contracts, state, and results.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 254`** (1 nodes): `Return a pickle-ready Python payload for IPC transport.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 255`** (1 nodes): `Serialize this model into Python-mode IPC bytes.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 256`** (1 nodes): `Deserialize one Python-mode IPC payload into the target model type.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 257`** (1 nodes): `Thin benchmark-policy bundle attached to one run request.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 258`** (1 nodes): `Policy for efficiency evaluation.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 259`** (1 nodes): `Load one Tango point-cloud payload as metric XYZ rows.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 260`** (1 nodes): `Transform all Tango point-cloud payloads into the selected Tango pose-stream wor`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 261`** (1 nodes): `Fit a Sim(3) transform from source trajectory positions to target trajectory pos`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 262`** (1 nodes): `Apply one stored Sim(3) alignment to XYZ points.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 263`** (1 nodes): `Replay pacing options for local video samples.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 264`** (1 nodes): `Config describing one replayable local video sample.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 265`** (1 nodes): `Blocking RGB frame producer backed by `cv2.VideoCapture`.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 266`** (1 nodes): `Decode and return the next sampled RGB frame.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 267`** (1 nodes): `Protocol for a live SLAM session that consumes incremental frames.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 268`** (1 nodes): `Consume one frame and return an incremental SLAM update.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 269`** (1 nodes): `Finalize the session and return the persisted SLAM artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 270`** (1 nodes): `Finalize the session and return the persisted SLAM artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 271`** (1 nodes): `Protocol for SLAM backends that operate on materialized sequences.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 272`** (1 nodes): `Normalized artifact boundary between input ingestion and benchmark execution.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 273`** (1 nodes): `Build a stacked venue/environment overview for the catalog.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 274`** (1 nodes): `Build a high-level local availability summary.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 275`** (1 nodes): `Build a crowd-density composition chart.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 276`** (1 nodes): `Build a scene-attribute prevalence chart.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 277`** (1 nodes): `Build a bird's-eye trajectory overlay for one or more trajectories.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 278`** (1 nodes): `Build a 3D trajectory overlay and optional sampled pose axes.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 279`** (1 nodes): `Build a per-trajectory speed-over-time figure.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 280`** (1 nodes): `Build a Z-over-time profile for one or more trajectories.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 281`** (1 nodes): `Build a per-series timestamp-spacing profile in milliseconds.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 282`** (1 nodes): `Return the total path length in metres.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 283`** (1 nodes): `Lightweight builder for BEV and 3D trajectory views.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 284`** (1 nodes): `Add one trajectory trace with start and end markers.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 285`** (1 nodes): `Add sampled local pose axes for a 3D trajectory.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 286`** (1 nodes): `Finalize the figure layout and return it.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 287`** (1 nodes): `Dataset-edge frame-graph helpers.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 288`** (1 nodes): `Thin wrapper around `pytransform3d.TransformManager` for static frame compositio`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 289`** (1 nodes): `Register one static transform.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 290`** (1 nodes): `Resolve one composed transform back into the repo-owned transform DTO.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 291`** (1 nodes): `Datasets exposed through evaluation surfaces.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 292`** (1 nodes): `Return the short user-facing dataset label.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 293`** (1 nodes): `Build a crowd-density composition chart.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 294`** (1 nodes): `Build a scene-attribute prevalence chart.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 295`** (1 nodes): `Normalize native ViSTA exports into repository-owned artifact contracts.      Th`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 296`** (1 nodes): `Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 297`** (1 nodes): `One RGB frame prepared for upstream ViSTA ingestion.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 298`** (1 nodes): `Feed one frame to OnlineSLAM and buffer incremental telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 299`** (1 nodes): `Feed one frame to OnlineSLAM and optionally buffer live telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 300`** (1 nodes): `Retrieve and clear any pending incremental SLAM updates.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 301`** (1 nodes): `Persist upstream outputs and convert them into repo-owned artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 302`** (1 nodes): `Read one upstream view and convert it into live repo telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 303`** (1 nodes): `Construct one fully-wired ViSTA session from repo config and paths.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 304`** (1 nodes): `Return the effective vocabulary path, building the binary cache when needed.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 305`** (1 nodes): `Prepare one repo RGB frame using the exact upstream image-only helper path.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 306`** (1 nodes): `Convert one upstream ViSTA array-like payload into a numpy array.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 307`** (1 nodes): `Count valid metric points in one pointmap.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 308`** (1 nodes): `Describe a non-fatal pointmap issue for one accepted keyframe.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 309`** (1 nodes): `Raise a runtime error with actionable detail when prerequisites are missing.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 310`** (1 nodes): `Load and cache the concrete upstream ViSTA runtime types.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 311`** (1 nodes): `Register the upstream ``vista_slam`` checkout as an explicit namespace package.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 312`** (1 nodes): `Import the installed ``DBoW3Py`` dependency with an actionable error.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 313`** (1 nodes): `Normalize native ViSTA exports into repository-owned artifact contracts.      Th`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 314`** (1 nodes): `Convert one upstream ViSTA array-like payload into a numpy array.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 315`** (1 nodes): `Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 316`** (1 nodes): `Subset of the upstream image dataset API used by the wrapper.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 317`** (1 nodes): `Return the grayscale tensor expected by upstream ViSTA.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 318`** (1 nodes): `Return the normalized RGB tensor expected by upstream ViSTA.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 319`** (1 nodes): `One RGB frame prepared for upstream ViSTA ingestion.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 320`** (1 nodes): `Prepare one repo RGB frame for upstream ViSTA ingestion.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 321`** (1 nodes): `Return the upstream-ready frame payload.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 322`** (1 nodes): `Use the exact upstream ViSTA crop-and-resize helper path.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 323`** (1 nodes): `Normalize native ViSTA outputs into repository-owned artifact contracts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 324`** (1 nodes): `Convert one upstream ViSTA array-like payload into a numpy array.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 325`** (1 nodes): `Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 326`** (1 nodes): `Stateful streaming session that forwards frames to upstream OnlineSLAM.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 327`** (1 nodes): `Feed one frame to OnlineSLAM and buffer incremental telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 328`** (1 nodes): `Retrieve and clear any pending incremental SLAM updates.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 329`** (1 nodes): `Persist upstream outputs and convert to canonical repository artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 330`** (1 nodes): `Read the latest upstream view state and convert it into live repo telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 331`** (1 nodes): `Convert one upstream pointcloud payload into the repository-local dtype.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 332`** (1 nodes): `Count valid metric points in one pointmap.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 333`** (1 nodes): `Describe a non-fatal pointmap issue for one accepted keyframe.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 334`** (1 nodes): `Construct one fully-wired ViSTA session from repo config and paths.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 335`** (1 nodes): `Blocking RGB frame producer backed by `cv2.VideoCapture`.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 336`** (1 nodes): `Open the configured video file and prepare playback state.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 337`** (1 nodes): `Release the underlying OpenCV capture if one is open.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 338`** (1 nodes): `Decode and return the next sampled RGB frame.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 339`** (1 nodes): `Return a ready-to-use replay stream for `config`.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 340`** (1 nodes): `Incremental SLAM update emitted by streaming-capable backends.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 341`** (1 nodes): `Count valid metric points in one pointmap.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 342`** (1 nodes): `Raise a runtime error with actionable detail when prerequisites are missing.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 343`** (1 nodes): `Return the effective vocabulary path, building the binary cache when needed.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 344`** (1 nodes): `Register the upstream `vista_slam` checkout as an explicit namespace package.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 345`** (1 nodes): `Import the installed `DBoW3Py` dependency with an actionable error.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 346`** (1 nodes): `Stateful streaming session that forwards frames to upstream OnlineSLAM.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 347`** (1 nodes): `Feed one frame to OnlineSLAM and buffer incremental telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 348`** (1 nodes): `Retrieve and clear any pending incremental SLAM updates.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 349`** (1 nodes): `Persist upstream outputs and convert to canonical repository artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 350`** (1 nodes): `Read the latest upstream view state and convert it into live repo telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 351`** (1 nodes): `Construct one fully-wired ViSTA session from repo config and paths.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 352`** (1 nodes): `Convert one upstream pointcloud payload into the repository-local dtype.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 353`** (1 nodes): `Instantiate one configured upstream ViSTA runtime bundle.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 354`** (1 nodes): `Raise a runtime error with actionable detail when prerequisites are missing.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 355`** (1 nodes): `Return the effective vocabulary path, building the binary cache when needed.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 356`** (1 nodes): `Register the upstream `vista_slam` checkout as an explicit namespace package.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 357`** (1 nodes): `Import the installed `DBoW3Py` dependency with an actionable error.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 358`** (1 nodes): `Stateful streaming session that forwards frames to upstream OnlineSLAM.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 359`** (1 nodes): `Retrieve and clear any pending incremental SLAM updates.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 360`** (1 nodes): `Persist upstream outputs and convert to canonical repository artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 361`** (1 nodes): `Read the latest upstream view state and convert it into live repo telemetry.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 362`** (1 nodes): `Convert one upstream pointcloud payload into the repository-local dtype.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 363`** (1 nodes): `Rolling packet metrics shared by preview and replay sessions.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 364`** (1 nodes): `Append one packet arrival to the rolling packet-rate window.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 365`** (1 nodes): `Append one accepted keyframe sample to the rolling backend window.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 366`** (1 nodes): `Append one packet arrival and optional keyframe sample.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 367`** (1 nodes): `Return packet-rate snapshot fields.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 368`** (1 nodes): `Return backend-keyframe snapshot fields.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 369`** (1 nodes): `Return the current metrics in snapshot-ready form.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 370`** (1 nodes): `Own one threaded `FramePacketStream` worker plus its snapshot state.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 371`** (1 nodes): `Return a deep copy of the latest session snapshot.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 372`** (1 nodes): `Start a fresh worker after stopping any currently active one.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 373`** (1 nodes): `Register the active stream for cooperative stop/disconnect handling.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 374`** (1 nodes): `Apply a partial snapshot update under the internal lock.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 375`** (1 nodes): `Replace the snapshot under the internal lock.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 376`** (1 nodes): `Stop the worker, disconnect the stream, and update the terminal snapshot.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 377`** (1 nodes): `Clear the active worker state and persist the final snapshot.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 378`** (1 nodes): `Policy for dense-cloud comparison.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 379`** (1 nodes): `Factory surface consumed by the pipeline.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 380`** (1 nodes): `Factory surface consumed by the pipeline.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 381`** (1 nodes): `Return the descriptor for one backend spec.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 382`** (1 nodes): `Map one backend kind to the repo-level method id.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 383`** (1 nodes): `Small runtime sources used by focused pipeline smoke tests.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 384`** (1 nodes): `Minimal offline source for pipeline smoke tests.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 385`** (1 nodes): `Finite in-memory packet stream for streaming smoke tests.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 386`** (1 nodes): `Minimal streaming-capable source for pipeline smoke tests.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 387`** (1 nodes): `# TODO: test mocks like in this file should be moved to tests/ !`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 388`** (1 nodes): `Minimal offline source for pipeline smoke tests.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 389`** (1 nodes): `Finite in-memory packet stream for streaming smoke tests.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 390`** (1 nodes): `Minimal streaming-capable source for pipeline smoke tests.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 391`** (1 nodes): `Serializable rigid transform with explicit frame direction.      When frame labe`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 392`** (1 nodes): `Build a transform from XYZW quaternion and XYZ translation arrays.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 393`** (1 nodes): `Return the normalized quaternion in XYZW order.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 394`** (1 nodes): `Return the translation vector in XYZ order.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 395`** (1 nodes): `Return the transform as a 4x4 matrix.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 396`** (1 nodes): `Build a transform from a 4x4 homogeneous matrix.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 397`** (1 nodes): `Return the transform fields in TUM trajectory order.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 398`** (1 nodes): `Project one near-rotation matrix to the closest valid SO(3) matrix.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 399`** (1 nodes): `Repository-local backend factory.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 400`** (1 nodes): `Stable transport identifiers used by the app preview and capture layers.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 401`** (1 nodes): `Return the user-facing transport label.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 402`** (1 nodes): `Return the short transport-specific helper text.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 403`** (1 nodes): `One USB-connected Record3D device.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 404`** (1 nodes): `Import the optional native Record3D bindings.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 405`** (1 nodes): `Configuration for a USB Record3D streaming session.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 406`** (1 nodes): `Thin packet-stream adapter around the upstream `record3d.Record3DStream`.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 407`** (1 nodes): `List the currently connected USB Record3D devices.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 408`** (1 nodes): `Connect to the configured USB device.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 409`** (1 nodes): `Disconnect the current USB device if one is active.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 410`** (1 nodes): `Wait for the next shared packet emitted by the USB device.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 411`** (1 nodes): `Yield shared packets indefinitely until the caller stops consuming them.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 412`** (1 nodes): `List currently connected Record3D USB devices through the canonical IO owner.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 413`** (1 nodes): `Build one shared USB packet stream with explicit runtime validation.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 414`** (1 nodes): `Build the compact frame-details payload shown by Record3D consumers.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 415`** (1 nodes): `Typed metadata returned by the Record3D Wi-Fi HTTP API.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 416`** (1 nodes): `Parse the raw Record3D metadata payload.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 417`** (1 nodes): `Decode the HSV-encoded Record3D Wi-Fi depth half into a depth map.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 418`** (1 nodes): `Convert one Record3D composite WebRTC frame into the shared packet contract.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 419`** (1 nodes): `Lazily expose heavier backend helpers without eager import cycles.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 420`** (1 nodes): `Prepare a streaming-capable session for incremental frame updates.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 421`** (1 nodes): `Protocol for backends that can provide a picklable streaming-session factory.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 422`** (1 nodes): `Generic threaded runtime support for pipeline runners.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 423`** (1 nodes): `Own one threaded worker plus its typed snapshot state.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 424`** (1 nodes): `Return a deep copy of the latest snapshot.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 425`** (1 nodes): `Start a fresh worker after stopping any currently active one.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 426`** (1 nodes): `Register a cleanup callback associated with the active worker.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 427`** (1 nodes): `Apply a partial snapshot update under the internal lock.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 428`** (1 nodes): `Replace the snapshot under the internal lock.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 429`** (1 nodes): `Stop the worker and update the terminal snapshot.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 430`** (1 nodes): `Clear the active worker state and persist the final snapshot.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 431`** (1 nodes): `Instantiate one executable backend from its typed spec.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 432`** (1 nodes): `Map one backend kind to the repo-level method id.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 433`** (1 nodes): `Repository-local backend factory.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 434`** (1 nodes): `Return the prepared reference trajectory for one requested source.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 435`** (1 nodes): `Run the backend over a materialized sequence and persist artifacts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 436`** (1 nodes): `Bridge canonical repo inputs into ViSTA-SLAM CLI arguments.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 437`** (1 nodes): `Build the thin offline ViSTA invocation from canonical repo inputs.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 438`** (1 nodes): `Import native ViSTA-SLAM outputs into repo-owned artifact contracts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 439`** (1 nodes): `Normalize native ViSTA outputs into repo-owned artifact contracts.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 440`** (1 nodes): `Cache and provenance record for one executed stage.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 441`** (1 nodes): `Return compact tabular rows for manifest summaries.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 442`** (1 nodes): `Final persisted outcome for one benchmark run.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 443`** (1 nodes): `Trajectory source used for replay-time pose annotation.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 444`** (1 nodes): `Environment labels committed from the official ADVIO scene table.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 445`** (1 nodes): `Downloadable ADVIO modality bundles exposed in the CLI and app.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 446`** (1 nodes): `Curated modality bundles for common ADVIO workflows.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 447`** (1 nodes): `Return the compact scene label shown in the app and CLI.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 448`** (1 nodes): `Explicit ADVIO download selection used by the CLI and Streamlit app.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 449`** (1 nodes): `Normalize and validate explicit scene selections.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 450`** (1 nodes): `High-level summary of committed and local ADVIO coverage.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 451`** (1 nodes): `Config describing one local ADVIO sequence.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 452`** (1 nodes): `Return the canonical ADVIO folder name.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 453`** (1 nodes): `Reject empty dataset roots.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 454`** (1 nodes): `Plain validated payload shared by data contracts, state, and results.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 455`** (1 nodes): `Resolve the live trajectory figure builder lazily for easier local testing.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 456`** (1 nodes): `Render one fragment-scoped live section.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 457`** (1 nodes): `Return the fragment refresh interval only while the session is active.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 458`** (1 nodes): `Render one explicit start-or-stop button slot and return the requested action fl`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 459`** (1 nodes): `Trigger an immediate full-page rerun after a successful explicit action.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 460`** (1 nodes): `Render the shared notice, metric, and body structure for one live section.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 461`** (1 nodes): `Render a compact metric row.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 462`** (1 nodes): `Render a live trajectory figure or a fallback message.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 463`** (1 nodes): `Render camera intrinsics using the shared LaTeX presentation.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 464`** (1 nodes): `Render the shared packet, trajectory, and camera tabs for live pages.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 465`** (1 nodes): `Interpolate between two poses.     :param pose1: Initial pose (4x4 matrix)     :`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 466`** (1 nodes): `depth: HxW numpy array (depth in same unit as depth_scale)     color: HxWx3 nump`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 467`** (1 nodes): `view_graph: dict {int: list of int}     camera_centers: np.array (N,3)     Retur`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 468`** (1 nodes): `add a node to the pose graph.         Notice that the absolute pose of the node`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 469`** (1 nodes): `convert 4x4 pose matrix to (t, q)`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 470`** (1 nodes): `traj_est: estimated trajectory list[np.array[4,4]]     traj_ref: reference traje`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 471`** (1 nodes): `traj_est: estimated trajectory list[np.array[4,4]]     traj_ref: reference traje`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 472`** (1 nodes): `gt_depths: N,H,W     gt_poses: N,4,4     gt_intri: 3,3     est_local_pcls: N,H,W`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 473`** (1 nodes): `rel_gt_est: None or [R, t, s] for the relative pose between the ground truth and`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 474`** (1 nodes): `Open an image or a depthmap with opencv-python.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 475`** (1 nodes): `Convenience class to aply the same operation to a whole set of images.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 476`** (1 nodes): `Jointly rescale a (image, depthmap)     so that (out_width, out_height) >= outpu`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 477`** (1 nodes): `Return a crop of the input view.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 478`** (1 nodes): `Track a series of values and provide access to smoothed values over a     window`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 479`** (1 nodes): `Warning: does not synchronize the deque!`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 480`** (1 nodes): `This function disables printing when not in master process`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 481`** (1 nodes): `Advanced string replacement.     Given a text:     - replace all elements in src`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 482`** (1 nodes): `transform a python obj or cmd into a proper filename.     - \1 gets replaced by`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 483`** (1 nodes): `Decay the learning rate with half-cycle cosine after warmup`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 484`** (1 nodes): `Predict in the correct aspect-ratio,     then transpose the result in landscape`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 485`** (1 nodes): `Estimate camera intrinsic matrix (or matrices) from 3D point maps and confidence`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 486`** (1 nodes): `Estimate scale s such that Dj ≈ s * Di, using dual confidence weights.      Args`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 487`** (1 nodes): `Compute dense pixel correspondence from image1 to image2 in a batch.      Inputs`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 488`** (1 nodes): `Vectorized computation of symmetric geometric valid masks between two depth maps`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 489`** (1 nodes): `For each frame, unproject depth to world, reproject to ±2 neighbor frames,     a`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 490`** (1 nodes): `Invert a torch or numpy matrix`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 491`** (1 nodes): `Args:         - depthmap (HxW array):         - camera_intrinsics: a 3x3 matrix`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 492`** (1 nodes): `Handle images with non-square aspect ratio.     All images in the same batch hav`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 493`** (1 nodes): `Euclidean distance between 3d points`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 494`** (1 nodes): `Easily combinable losses (also keep track of individual loss values):         lo`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 495`** (1 nodes): `Ensure that all 3D points are correct.     Asymmetric loss: view1 is supposed to`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 496`** (1 nodes): `gt_pcds: (B, H, W, 3)         pred_pcds: (B, H, W, 3)         valid_masks: (B, H`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 497`** (1 nodes): `gt_views : list of dictionaries, each containing 'pts3d' and 'valid_mask'`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 498`** (1 nodes): `Weighted regression by learned confidence.         Assuming the input pixel_loss`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 499`** (1 nodes): `grid_size: int of the grid height and width     return:     pos_embed: [grid_siz`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 500`** (1 nodes): `embed_dim: output dimension for each position     pos: a list of positions to be`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 501`** (1 nodes): `Convert 9D representation to SO(3) using SVD orthogonalization.          Args:`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 502`** (1 nodes): `Converts 6D rotation representation by Zhou et al. [1] to rotation matrix`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 503`** (1 nodes): `Residual convolution module.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 504`** (1 nodes): `Init.         Args:             features (int): number of features`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 505`** (1 nodes): `Forward pass.         Args:             x (tensor): input         Returns:`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 506`** (1 nodes): `Feature fusion block.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 507`** (1 nodes): `Init.         Args:             features (int): number of features`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 508`** (1 nodes): `Forward pass.         Returns:             tensor: output`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 509`** (1 nodes): `Interpolation module.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 510`** (1 nodes): `Init.         Args:             scale_factor (float): scaling             mode (`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 511`** (1 nodes): `Forward pass.         Args:             x (tensor): input         Returns:`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 512`** (1 nodes): `DPT output adapter.      :param num_cahnnels: Number of output channels     :par`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 513`** (1 nodes): `Initialize parts of decoder that are dependent on dimension of encoder tokens.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 514`** (1 nodes): `Linear head for dust3r     Each token outputs: - 16x16 3D points (+ confidence)`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 515`** (1 nodes): `Drop paths (Stochastic Depth) per sample (when applied in main path of residual`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 516`** (1 nodes): `Drop paths (Stochastic Depth) per sample  (when applied in main path of residual`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 517`** (1 nodes): `MLP as used in Vision Transformer, MLP-Mixer and related networks`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 518`** (1 nodes): `Warpper for self-attention module with xformers.     Calculate attention scores`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 519`** (1 nodes): `return positions of patches`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 520`** (1 nodes): `just adding _init_weights + position getter compared to timm.models.layers.patch`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 521`** (1 nodes): `# NOTE: drop path for stochastic depth, we shall see if this is better than drop`
+- **Thin community `Community 179`** (1 nodes): `Render the packaged Streamlit application.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `len()` connect `Community 3` to `Community 0`, `Community 1`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 17`?**
-  _High betweenness centrality (0.110) - this node is a cross-community bridge._
-- **Why does `isinstance()` connect `Community 10` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`, `Community 12`, `Community 13`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
-- **Why does `DatasetId` connect `Community 2` to `Community 1`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`?**
-  _High betweenness centrality (0.042) - this node is a cross-community bridge._
-- **Are the 945 inferred relationships involving `StageKey` (e.g. with `RunArtifactPaths` and `PathConfig`) actually correct?**
-  _`StageKey` has 945 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 878 inferred relationships involving `DatasetId` (e.g. with `Supported pipeline operating modes.` and `Dataset lookup helpers kept outside dataset identifier contracts.`) actually correct?**
-  _`DatasetId` has 878 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 860 inferred relationships involving `RunPlan` (e.g. with `TrajectoryEvaluationService` and `Reusable live-preview services for the packaged Streamlit app. Every component o`) actually correct?**
-  _`RunPlan` has 860 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 527 inferred relationships involving `RunRequest` (e.g. with `TrajectoryEvaluationService` and `Reusable live-preview services for the packaged Streamlit app. Every component o`) actually correct?**
-  _`RunRequest` has 527 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `PathConfig` connect `Community 8` to `Community 1`, `Community 2`, `Community 4`, `Community 6`, `Community 12`?**
+  _High betweenness centrality (0.050) - this node is a cross-community bridge._
+- **Why does `path()` connect `Community 2` to `Community 1`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 12`, `Community 14`, `Community 23`?**
+  _High betweenness centrality (0.036) - this node is a cross-community bridge._
+- **Why does `FrameTransform` connect `Community 3` to `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 9`, `Community 11`, `Community 13`, `Community 14`, `Community 17`?**
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+- **Are the 124 inferred relationships involving `str` (e.g. with `plan_run_config()` and `run_config()`) actually correct?**
+  _`str` has 124 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 80 inferred relationships involving `PathConfig` (e.g. with `AppContext` and `Bootstrap helpers for the packaged PRML VSLAM Streamlit app.`) actually correct?**
+  _`PathConfig` has 80 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 69 inferred relationships involving `path()` (e.g. with `.to_toml()` and `.save_toml()`) actually correct?**
+  _`path()` has 69 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 42 inferred relationships involving `AppContext` (e.g. with `RunState` and `RunService`) actually correct?**
+  _`AppContext` has 42 INFERRED edges - model-reasoned connections that need verification._

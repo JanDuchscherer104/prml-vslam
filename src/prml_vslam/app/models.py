@@ -36,6 +36,7 @@ class AppPageId(StrEnum):
     PIPELINE = "pipeline"
     ARTIFACTS = "artifacts"
     METRICS = "metrics"
+    GRAPHIFY = "graphify"
 
     @property
     def label(self) -> str:

@@ -8,6 +8,16 @@ import numpy as np
 
 from prml_vslam.app.bootstrap import _PAGE_SPECS
 from prml_vslam.app.models import AppPageId, AppState, ArtifactInspectorPageState, PipelineSourceId
+from prml_vslam.app.pages.graphify import (
+    GraphifyFilterOptions,
+    GraphifySourceScope,
+    GraphifyViewerFilter,
+    filter_graphify_graph,
+    load_graphify_graph,
+    load_graphify_summary,
+    render_filtered_graph_html,
+    resolve_graphify_artifacts,
+)
 from prml_vslam.app.pipeline_controller import (
     PipelinePageAction,
     action_from_page_state,
@@ -61,6 +71,132 @@ def test_artifact_page_is_registered_and_state_round_trips() -> None:
     assert reloaded.artifacts.reconstruction_target_triangles == 60_000
     assert reloaded.artifacts.reconstruction_mesh_opacity == 0.55
     assert reloaded.artifacts.reconstruction_mesh_color == "#7b1fa2"
+
+
+def test_graphify_page_is_registered() -> None:
+    assert any(
+        page_id is AppPageId.GRAPHIFY and page_module == "graphify" for page_id, _, page_module, _ in _PAGE_SPECS
+    )
+
+
+def test_graphify_artifact_summary_loads_generated_counts(tmp_path: Path) -> None:
+    graphify_root = tmp_path / "graphify-out"
+    graphify_root.mkdir()
+    (graphify_root / "GRAPH_REPORT.md").write_text(
+        "\n".join(
+            [
+                "# Graph Report - demo  (2026-04-22)",
+                "",
+                "## Summary",
+                "- 2 nodes · 1 edges · 1 communities detected",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (graphify_root / "graph.json").write_text(
+        '{"nodes": [{"id": "a"}, {"id": "b"}], "links": [{"source": "a", "target": "b"}]}',
+        encoding="utf-8",
+    )
+    (graphify_root / "graph.html").write_text("<html></html>", encoding="utf-8")
+
+    artifacts = resolve_graphify_artifacts(tmp_path)
+    summary = load_graphify_summary(artifacts)
+
+    assert artifacts.all_present is True
+    assert summary.report_title == "# Graph Report - demo  (2026-04-22)"
+    assert summary.graph_date == "2026-04-22"
+    assert summary.nodes == 2
+    assert summary.links == 1
+    assert summary.communities == 1
+
+
+def test_graphify_viewer_filters_graph_nodes(tmp_path: Path) -> None:
+    graphify_root = tmp_path / "graphify-out"
+    graphify_root.mkdir()
+    (graphify_root / "graph.json").write_text(
+        """{
+          "directed": false,
+          "multigraph": false,
+          "graph": {},
+          "nodes": [
+            {"id": "pkg", "label": "Package", "source_file": "src/prml_vslam/app/bootstrap.py", "file_type": "code", "community": 0},
+            {"id": "pkg_reason", "label": "Package rationale", "source_file": "src/prml_vslam/app/bootstrap.py", "file_type": "rationale", "community": 0},
+            {"id": "test", "label": "Test", "source_file": "tests/test_app.py", "file_type": "code", "community": 1},
+            {"id": "script", "label": "Script", "source_file": "scripts/tool.py", "file_type": "code", "community": 2}
+          ],
+          "links": [
+            {"source": "pkg", "target": "pkg_reason", "relation": "rationale_for", "confidence": "EXTRACTED"},
+            {"source": "pkg", "target": "test", "relation": "tested_by", "confidence": "INFERRED"}
+          ]
+        }""",
+        encoding="utf-8",
+    )
+    graph = load_graphify_graph(resolve_graphify_artifacts(tmp_path))
+
+    package_graph = filter_graphify_graph(
+        graph,
+        GraphifyFilterOptions(
+            source_scope=GraphifySourceScope.PRML_VSLAM,
+            include_rationale_nodes=False,
+            minimum_degree=1,
+        ),
+    )
+    no_tests_graph = filter_graphify_graph(
+        graph,
+        GraphifyFilterOptions(source_scope=GraphifySourceScope.EXCLUDE_TESTS, minimum_degree=1),
+    )
+
+    assert set(package_graph.nodes) == {"pkg"}
+    assert set(no_tests_graph.nodes) == {"pkg", "pkg_reason"}
+
+
+def test_graphify_filter_options_resolve_multiselect_chips() -> None:
+    package_options = GraphifyFilterOptions.from_selected_filters(
+        [GraphifyViewerFilter.ONLY_PRML_VSLAM, GraphifyViewerFilter.CODE_ONLY],
+        minimum_degree=2,
+    )
+    tests_options = GraphifyFilterOptions.from_selected_filters(
+        [GraphifyViewerFilter.EXCLUDE_TESTS, GraphifyViewerFilter.ONLY_TESTS],
+    )
+
+    assert package_options.source_scope is GraphifySourceScope.PRML_VSLAM
+    assert package_options.include_rationale_nodes is False
+    assert package_options.minimum_degree == 2
+    assert tests_options.source_scope is GraphifySourceScope.TESTS_ONLY
+
+
+def test_filtered_graph_html_uses_graphify_exporter(tmp_path: Path) -> None:
+    graphify_root = tmp_path / "graphify-out"
+    graphify_root.mkdir()
+    (graphify_root / "graph.json").write_text(
+        """{
+          "directed": false,
+          "multigraph": false,
+          "graph": {},
+          "nodes": [
+            {"id": "a", "label": "A", "source_file": "src/prml_vslam/a.py", "file_type": "code", "community": 0},
+            {"id": "b", "label": "B", "source_file": "src/prml_vslam/b.py", "file_type": "code", "community": 0}
+          ],
+          "links": [
+            {"source": "a", "target": "b", "relation": "uses", "confidence": "EXTRACTED"}
+          ]
+        }""",
+        encoding="utf-8",
+    )
+    graph = load_graphify_graph(resolve_graphify_artifacts(tmp_path))
+
+    html = render_filtered_graph_html(graph)
+
+    assert "vis-network" in html
+    assert "A" in html
+    assert "B" in html
+
+
+def test_graphify_artifacts_report_missing_standard_files(tmp_path: Path) -> None:
+    artifacts = resolve_graphify_artifacts(tmp_path)
+
+    assert artifacts.all_present is False
+    assert artifacts.report == tmp_path / "graphify-out" / "GRAPH_REPORT.md"
 
 
 def test_build_request_from_action_derives_backend_kind(tmp_path: Path) -> None:
