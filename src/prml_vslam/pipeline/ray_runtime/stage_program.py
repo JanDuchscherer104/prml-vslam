@@ -159,9 +159,11 @@ class RuntimeStageProgram:
                     build_failure_outcome=_failure_builder(
                         stage_key=StageKey.SLAM,
                         config_payload=lambda context, state: context.request.slam,
-                        input_payload=lambda context, state: state.sequence_manifest
-                        if state.sequence_manifest is not None
-                        else {"run_id": context.plan.run_id, "stage_key": StageKey.SLAM.value},
+                        input_payload=lambda context, state: (
+                            state.sequence_manifest
+                            if state.sequence_manifest is not None
+                            else {"run_id": context.plan.run_id, "stage_key": StageKey.SLAM.value}
+                        ),
                     ),
                 ),
                 StageRuntimeSpec(
@@ -237,8 +239,9 @@ class RuntimeStageProgram:
             emit_stage_started=emit_stage_started,
             record_stage_completion=record_stage_completion,
             record_stage_failure=record_stage_failure,
-            should_skip=lambda spec: spec.run_offline is None
-            or (spec.key is StageKey.TRAJECTORY_EVALUATION and driver.stop_requested),
+            should_skip=lambda spec: (
+                spec.run_offline is None or (spec.key is StageKey.TRAJECTORY_EVALUATION and driver.stop_requested)
+            ),
             invoke=lambda spec: spec.run_offline(context, state, source, driver),
         )
 
@@ -285,10 +288,12 @@ class RuntimeStageProgram:
             emit_stage_started=emit_stage_started,
             record_stage_completion=record_stage_completion,
             record_stage_failure=record_stage_failure,
-            should_skip=lambda spec: spec.run_streaming_finalize is None
-            or (
-                spec.key is StageKey.TRAJECTORY_EVALUATION
-                and (driver.streaming_error is not None or driver.stop_requested)
+            should_skip=lambda spec: (
+                spec.run_streaming_finalize is None
+                or (
+                    spec.key is StageKey.TRAJECTORY_EVALUATION
+                    and (driver.streaming_error is not None or driver.stop_requested)
+                )
             ),
             invoke=lambda spec: spec.run_streaming_finalize(context, state, driver),
         )
@@ -415,9 +420,11 @@ def _run_slam_streaming_finalize(
             outcome=_failure_builder(
                 stage_key=StageKey.SLAM,
                 config_payload=lambda current_context, current_state: current_context.request.slam,
-                input_payload=lambda current_context, current_state: current_state.sequence_manifest
-                if current_state.sequence_manifest is not None
-                else {"run_id": current_context.plan.run_id, "stage_key": StageKey.SLAM.value},
+                input_payload=lambda current_context, current_state: (
+                    current_state.sequence_manifest
+                    if current_state.sequence_manifest is not None
+                    else {"run_id": current_context.plan.run_id, "stage_key": StageKey.SLAM.value}
+                ),
             )(context, state, driver.streaming_error, payload.outcome.artifacts),
         )
     if driver.stop_requested:

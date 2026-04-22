@@ -6,13 +6,13 @@
 # "Pipeline Config" selector.
 
 experiment_name = "vista-full-tuning"
-mode            = "streaming"
+mode            = "offline"
 output_dir      = ".artifacts"
 
 [source]
 dataset_id   = "tum_rgbd"
 sequence_id  = "freiburg1_room"
-frame_stride = 1
+frame_stride = 5
 
 [slam]
     [slam.outputs]
@@ -23,10 +23,10 @@ frame_stride = 1
     [slam.backend]
     method_id = "vista"
     # Frame cap to stop the backend after N frames.
-    max_frames = 1000
+    max_frames = 100
 
     # Maximum number of keyframes the pose graph may hold.
-    max_view_num = 250
+    max_view_num = 50
 
     # Optical-flow magnitude threshold that triggers a new keyframe.
     # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe

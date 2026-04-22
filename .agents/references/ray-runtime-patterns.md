@@ -56,6 +56,12 @@ official Ray docs before implementing non-trivial runtime behavior.
   or runtime layer.
 - Keep CPU, GPU, memory, custom resources, node labels/IP hints, and runtime
   environment selection substrate-neutral in pipeline config.
+- Expose stable Ray initialization policy such as `log_to_driver` and
+  `include_dashboard` through repo-owned runtime config instead of hard-coded
+  `ray.init(...)` kwargs.
+- Keep private or unstable Ray init flags, such as `_skip_env_hook`, internal
+  to the backend/runtime layer unless the project commits to a public contract
+  for them.
 - Treat current Ray retry knobs as implementation details until the project has
   a repo-level retry policy.
 
