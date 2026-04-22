@@ -485,6 +485,23 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert benchmark_inputs.reference_clouds[0].path.exists()
 
 
+def test_advio_benchmark_inputs_skip_invalid_optional_provider_trajectory(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    _write_pose_csv_rows(
+        sequence_dir / "pixel" / "arcore.csv",
+        rows=((0.0, 1.0, 2.0, 3.0), (0.0, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)),
+    )
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    benchmark_inputs = sequence.to_benchmark_inputs()
+
+    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
+        "ground_truth",
+        "arkit",
+    ]
+    assert not (sequence_dir / "evaluation" / "arcore.tum").exists()
+
+
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
 

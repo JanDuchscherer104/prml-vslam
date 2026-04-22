@@ -11,6 +11,7 @@ from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline.config import RunConfig, target_stage_key_for_current
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
@@ -18,7 +19,7 @@ from prml_vslam.pipeline.contracts.request import (
     build_run_request,
 )
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.demo import build_runtime_source_from_request, load_run_request_toml
+from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
 from prml_vslam.utils import BaseData, PathConfig
 
 from .models import PipelinePageState, PipelineSourceId
@@ -168,7 +169,7 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
 def build_preview_plan(request: RunRequest, path_config: PathConfig) -> tuple[RunPlan | None, str | None]:
     """Build the preview run plan while surfacing validation errors as strings."""
     try:
-        return request.build(path_config), None
+        return RunConfig.from_run_request(request).compile_plan(path_config), None
     except Exception as exc:
         return None, str(exc)
 
@@ -194,8 +195,12 @@ def request_support_error(
     unsupported_stage_ids = [stage.key.value for stage in plan.stages if stage.key not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
         return (
-            "The current app demo can execute only ingest, slam, trajectory evaluation, and summary stages. Disable: "
-            + ", ".join(unsupported_stage_ids)
+            "The current app demo can execute only source, slam, evaluate.trajectory, and summary stages. Disable: "
+            + ", ".join(
+                target_stage_key_for_current(stage.key).value
+                for stage in plan.stages
+                if stage.key not in _SUPPORTED_APP_STAGE_IDS
+            )
         )
     match request.source:
         case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
@@ -239,12 +244,13 @@ def handle_pipeline_page_action(context: AppContext, action: PipelinePageAction)
         request, request_error = build_request_from_action(context, action)
         if request is None:
             raise ValueError(request_error or "Failed to build the current request.")
+        run_config = RunConfig.from_run_request(request)
         runtime_source = (
             None
-            if request.mode is PipelineMode.OFFLINE
-            else build_runtime_source_from_request(request=request, path_config=context.path_config)
+            if run_config.mode is PipelineMode.OFFLINE
+            else build_runtime_source_from_run_config(run_config=run_config, path_config=context.path_config)
         )
-        context.run_service.start_run(request=request, runtime_source=runtime_source)
+        context.run_service.start_run(request=run_config.to_run_request(), runtime_source=runtime_source)
         return None
     except Exception as exc:
         return str(exc)
@@ -274,7 +280,7 @@ def pipeline_config_label(path_config: PathConfig, config_path: Path) -> str:
 def load_pipeline_request(path_config: PathConfig, config_path: Path) -> tuple[RunRequest | None, str | None]:
     """Load one persisted pipeline request while surfacing validation errors as strings."""
     try:
-        return load_run_request_toml(path_config=path_config, config_path=config_path), None
+        return load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request(), None
     except Exception as exc:
         return None, str(exc)
 

@@ -14,6 +14,8 @@ from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeS
 from prml_vslam.pipeline.stages.trajectory_eval.contracts import TrajectoryEvaluationRuntimeInput
 from prml_vslam.utils import PathConfig
 
+# TODO: why is this class not derived from common StageRuntime base class?
+
 
 class TrajectoryEvaluationRuntime:
     """Adapt eval-owned trajectory metric computation to the bounded runtime API."""

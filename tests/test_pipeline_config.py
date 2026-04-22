@@ -7,6 +7,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from prml_vslam.datasets.advio import AdvioServingConfig
+from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.interfaces import Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline.config import (
     RunConfig,
@@ -34,6 +37,14 @@ from prml_vslam.pipeline.stages.base.config import (
     StageConfig,
     StageExecutionConfig,
     StageTelemetryConfig,
+)
+from prml_vslam.pipeline.stages.source.config import (
+    AdvioSourceConfig,
+    Record3DSourceConfig,
+    SourceStageConfig,
+    TumRgbdSourceConfig,
+    VideoSourceConfig,
+    source_stage_config_from_source_spec,
 )
 from prml_vslam.utils import PathConfig
 
@@ -180,25 +191,120 @@ def test_run_config_projects_placement_policy_through_stage_execution_config(tmp
     }
 
 
-def test_vista_full_legacy_toml_parses_through_run_config_and_matches_current_plan(tmp_path: Path) -> None:
+def test_vista_full_target_toml_parses_through_run_config_and_matches_launch_plan(tmp_path: Path) -> None:
     repo_root = _repo_root()
     config_path = repo_root / ".configs/pipelines/vista-full.toml"
     path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts")
 
     run_config = RunConfig.from_toml(config_path)
-    legacy_request = RunRequest.from_toml(config_path)
+    launch_request = run_config.to_run_request()
 
     run_config_plan = run_config.compile_plan(path_config)
-    legacy_plan = legacy_request.build(path_config)
+    launch_plan = launch_request.build(path_config)
 
-    assert isinstance(legacy_request.source, DatasetSourceSpec)
-    assert legacy_request.source.dataset_id == "advio"
-    assert legacy_request.source.sequence_id == "advio-20"
-    assert legacy_request.source.dataset_serving is not None
-    assert [stage.key for stage in run_config_plan.stages] == [stage.key for stage in legacy_plan.stages]
+    assert run_config.source is None
+    assert run_config.slam is None
+    assert isinstance(launch_request.source, DatasetSourceSpec)
+    assert launch_request.source.dataset_id is DatasetId.TUM_RGBD
+    assert launch_request.source.sequence_id == "freiburg1_room"
+    assert launch_request.source.frame_stride == 5
+    assert launch_request.source.dataset_serving is None
+    assert [stage.key for stage in run_config_plan.stages] == [stage.key for stage in launch_plan.stages]
     assert run_config.stages.align_ground.enabled is True
-    assert run_config.stages.reconstruction.enabled is False
+    assert run_config.stages.reconstruction.enabled is True
     assert run_config.stages.evaluate_trajectory.enabled is False
+
+
+def test_source_stage_config_parses_discriminated_backend_variants() -> None:
+    video = SourceStageConfig.model_validate(
+        {"backend": {"source_id": "video", "video_path": "captures/demo.mp4", "frame_stride": 2}}
+    )
+    tum = SourceStageConfig.model_validate(
+        {"backend": {"source_id": "tum_rgbd", "sequence_id": "freiburg1_room", "target_fps": 15.0}}
+    )
+    advio = SourceStageConfig.model_validate(
+        {
+            "backend": {
+                "source_id": "advio",
+                "sequence_id": "advio-20",
+                "dataset_serving": {
+                    "pose_source": "ground_truth",
+                    "pose_frame_mode": "reference_world",
+                },
+            }
+        }
+    )
+    record3d = SourceStageConfig.model_validate(
+        {
+            "backend": {
+                "source_id": "record3d",
+                "transport": "usb",
+                "device_index": 0,
+                "frame_stride": 3,
+            }
+        }
+    )
+
+    assert isinstance(video.backend, VideoSourceConfig)
+    assert isinstance(tum.backend, TumRgbdSourceConfig)
+    assert isinstance(advio.backend, AdvioSourceConfig)
+    assert isinstance(advio.backend.dataset_serving, AdvioServingConfig)
+    assert isinstance(record3d.backend, Record3DSourceConfig)
+    assert record3d.backend.transport is Record3DTransportId.USB
+
+
+def test_source_stage_config_sampling_policy_is_shared() -> None:
+    for backend in (
+        {"source_id": "video", "video_path": "captures/demo.mp4"},
+        {"source_id": "tum_rgbd", "sequence_id": "freiburg1_room"},
+        {"source_id": "advio", "sequence_id": "advio-20"},
+        {"source_id": "record3d"},
+    ):
+        with pytest.raises(ValidationError, match="Configure either `frame_stride` or `target_fps`"):
+            SourceStageConfig.model_validate({"backend": {**backend, "frame_stride": 2, "target_fps": 15.0}})
+
+
+def test_source_stage_config_keeps_serving_variant_owned() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        SourceStageConfig.model_validate(
+            {
+                "backend": {
+                    "source_id": "tum_rgbd",
+                    "sequence_id": "freiburg1_room",
+                    "dataset_serving": {"pose_source": "ground_truth"},
+                }
+            }
+        )
+
+    advio = SourceStageConfig.model_validate({"backend": {"source_id": "advio", "sequence_id": "advio-20"}})
+
+    assert isinstance(advio.backend, AdvioSourceConfig)
+    assert advio.backend.dataset_serving.pose_source.value == "ground_truth"
+
+
+def test_legacy_source_spec_projects_to_target_source_stage_config() -> None:
+    advio_source = DatasetSourceSpec(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        target_fps=10.0,
+        dataset_serving=AdvioServingConfig(pose_frame_mode="reference_world"),
+        respect_video_rotation=True,
+    )
+    tum_source = DatasetSourceSpec(
+        dataset_id=DatasetId.TUM_RGBD,
+        sequence_id="freiburg1_room",
+        frame_stride=5,
+    )
+
+    advio_config = source_stage_config_from_source_spec(advio_source)
+    tum_config = source_stage_config_from_source_spec(tum_source)
+
+    assert isinstance(advio_config.backend, AdvioSourceConfig)
+    assert advio_config.backend.target_fps == 10.0
+    assert advio_config.backend.respect_video_rotation is True
+    assert advio_config.backend.dataset_serving.pose_frame_mode.value == "reference_world"
+    assert isinstance(tum_config.backend, TumRgbdSourceConfig)
+    assert tum_config.backend.frame_stride == 5
 
 
 def test_invalid_advio_source_does_not_parse_as_record3d() -> None:

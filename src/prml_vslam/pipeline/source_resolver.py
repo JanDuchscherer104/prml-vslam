@@ -9,38 +9,11 @@ the actual dataset and IO logic still stays in their owning packages.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from prml_vslam.datasets.advio import AdvioDatasetService
-from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService
-from prml_vslam.interfaces.ingest import SequenceManifest
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, Record3DLiveSourceSpec, SourceSpec, VideoSourceSpec
+from prml_vslam.pipeline.contracts.request import SourceSpec
+from prml_vslam.pipeline.stages.source.config import source_backend_config_from_source_spec
 from prml_vslam.protocols.source import OfflineSequenceSource
-from prml_vslam.utils import Console, PathConfig
-
-
-class VideoOfflineSequenceSource:
-    """Adapt a raw video path into the normalized offline source seam."""
-
-    def __init__(self, *, path_config: PathConfig, video_path: Path, frame_stride: int) -> None:
-        self._path_config = path_config
-        self._video_path = video_path
-        self._frame_stride = frame_stride
-
-    @property
-    def label(self) -> str:
-        """Return the compact user-facing label for this source."""
-        return f"Video '{self._video_path.name}'"
-
-    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
-        """Resolve the video path and return the minimal normalized manifest."""
-        del output_dir
-        resolved_video_path = self._path_config.resolve_video_path(self._video_path, must_exist=True)
-        return SequenceManifest(
-            sequence_id=resolved_video_path.stem,
-            video_path=resolved_video_path,
-        )
+from prml_vslam.utils import PathConfig
 
 
 @dataclass(slots=True)
@@ -51,45 +24,9 @@ class OfflineSourceResolver:
 
     def resolve(self, source_spec: SourceSpec) -> OfflineSequenceSource:
         """Resolve one request source spec into the owning offline source adapter."""
-        console = Console(__name__).child(self.__class__.__name__)
-        match source_spec:
-            case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id):
-                service = AdvioDatasetService(self.path_config)
-                numeric_sequence_id = service.resolve_sequence_id(sequence_id)
-                console.info(
-                    "Resolved ADVIO offline source '%s' to normalized sequence id '%s'.",
-                    sequence_id,
-                    numeric_sequence_id,
-                )
-                return service.build_offline_source(
-                    sequence_id=numeric_sequence_id,
-                    dataset_serving=source_spec.dataset_serving,
-                )
-            case DatasetSourceSpec(dataset_id=DatasetId.TUM_RGBD, sequence_id=sequence_id):
-                service = TumRgbdDatasetService(self.path_config)
-                resolved_sequence_id = service.resolve_sequence_id(sequence_id)
-                console.info(
-                    "Resolved TUM RGB-D offline source '%s' to normalized sequence id '%s'.",
-                    sequence_id,
-                    resolved_sequence_id,
-                )
-                return service.build_offline_source(
-                    sequence_id=resolved_sequence_id,
-                    frame_selection=source_spec,
-                )
-            case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride):
-                resolved_video_path = self.path_config.resolve_video_path(video_path, must_exist=True)
-                console.info("Resolved video offline source '%s'.", video_path)
-                console.debug("Resolved video path to '%s'.", resolved_video_path)
-                return VideoOfflineSequenceSource(
-                    path_config=self.path_config,
-                    video_path=resolved_video_path,
-                    frame_stride=frame_stride,
-                )
-            case Record3DLiveSourceSpec():
-                raise RuntimeError("Record3D live sources require `streaming` mode.")
-            case _:
-                raise RuntimeError(f"Unsupported offline source spec: {source_spec!r}")
+        # TODO(pipeline-refactor/WP-10): Delete this resolver once legacy
+        # RunRequest.source callers construct SourceBackendConfig directly.
+        return source_backend_config_from_source_spec(source_spec).setup_target(path_config=self.path_config)
 
 
-__all__ = ["OfflineSourceResolver", "VideoOfflineSequenceSource"]
+__all__ = ["OfflineSourceResolver"]

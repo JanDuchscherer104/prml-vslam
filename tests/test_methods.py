@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -31,6 +32,12 @@ from prml_vslam.utils.geometry import (
     write_point_cloud_ply,
     write_tum_trajectory,
 )
+
+
+def test_mast3r_placeholder_module_imports_after_refactor() -> None:
+    module = importlib.import_module("prml_vslam.methods.mast3r")
+
+    assert module.Mast3rSlamBackend.method_id is MethodId.MAST3R
 
 
 def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:

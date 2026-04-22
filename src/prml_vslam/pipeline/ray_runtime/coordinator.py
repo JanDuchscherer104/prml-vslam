@@ -47,7 +47,7 @@ from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions, actor_options_for_stage
@@ -160,11 +160,7 @@ class RunCoordinatorActor:
         self._streaming_error = None
         self._result_store = StageResultStore()
         self._stage_runner = StageRunner(self._result_store)
-        self._snapshot = (
-            StreamingRunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
-            if plan.mode is PipelineMode.STREAMING
-            else RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
-        )
+        self._snapshot = RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         self._jsonl_sink = JsonlEventSink(run_paths.summary_path.parent / "run-events.jsonl")
         self._console.info("Writing durable run events to '%s'.", self._jsonl_sink.path)
@@ -960,6 +956,8 @@ class RunCoordinatorActor:
                 )
             ],
         )
+        with self._lock:
+            self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
         self._submit_rerun_update(update=update, payload_resolver=self._self_actor_handle())
 
     def _submit_rerun_update(

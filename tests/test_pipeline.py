@@ -62,7 +62,7 @@ from prml_vslam.pipeline.contracts.events import (
     StageProgress,
     StageStatus,
 )
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import (
@@ -71,7 +71,7 @@ from prml_vslam.pipeline.contracts.request import (
     VideoSourceSpec,
     build_run_request,
 )
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ingest import _max_frames_for_request, materialize_offline_manifest
@@ -460,8 +460,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
 
 def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
     projector = SnapshotProjector()
-    preview = PreviewHandle(handle_id="preview", width=16, height=12, channels=3, dtype="uint8")
-    snapshot = StreamingRunSnapshot(run_id="run-1", state=RunState.STOPPED, latest_preview=preview)
+    snapshot = RunSnapshot(run_id="run-1", state=RunState.STOPPED)
 
     updated = projector.apply(
         snapshot,
@@ -477,13 +476,13 @@ def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
     )
 
     assert updated.state is RunState.STOPPED
-    assert isinstance(updated, StreamingRunSnapshot)
-    assert updated.latest_preview == preview
+    assert updated.stage_runtime_status[StageKey.INGEST].processed_items == 1
+    assert updated.stage_runtime_status[StageKey.INGEST].fps == 12.0
 
 
 def test_snapshot_projector_preserves_completed_state_on_run_stopped() -> None:
     projector = SnapshotProjector()
-    snapshot = StreamingRunSnapshot(run_id="run-1", state=RunState.COMPLETED)
+    snapshot = RunSnapshot(run_id="run-1", state=RunState.COMPLETED)
 
     updated = projector.apply(
         snapshot,
@@ -495,14 +494,12 @@ def test_snapshot_projector_preserves_completed_state_on_run_stopped() -> None:
 
 def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
     projector = SnapshotProjector()
-    snapshot = StreamingRunSnapshot(
+    snapshot = RunSnapshot(
         run_id="run-1",
         state=RunState.RUNNING,
         stage_status={StageKey.INGEST: StageStatus.RUNNING},
         stage_progress={StageKey.INGEST: StageProgress(message="streaming")},
         artifacts={"before": ArtifactRef(path=Path("/tmp/before"), kind="txt", fingerprint="before")},
-        trajectory_positions_xyz=[(0.0, 0.0, 0.0)],
-        trajectory_timestamps_s=[0.0],
     )
 
     updated = projector.apply(
@@ -522,10 +519,6 @@ def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
         ),
     )
 
-    assert updated.trajectory_positions_xyz == [(0.0, 0.0, 0.0), (1.0, 2.0, 3.0)]
-    assert updated.trajectory_timestamps_s == [0.0, 2e-9]
-    assert snapshot.trajectory_positions_xyz == [(0.0, 0.0, 0.0)]
-    assert snapshot.trajectory_timestamps_s == [0.0]
     assert updated.stage_status == snapshot.stage_status
     assert updated.stage_progress == snapshot.stage_progress
     assert updated.artifacts == snapshot.artifacts
@@ -622,16 +615,12 @@ def test_snapshot_projector_applies_runtime_update_to_target_and_compat_fields()
         ),
     )
 
-    updated = projector.apply_runtime_update(StreamingRunSnapshot(run_id="run-1"), update)
+    updated = projector.apply_runtime_update(RunSnapshot(run_id="run-1"), update)
 
     assert updated.stage_runtime_status[StageKey.SLAM] == update.runtime_status
     assert updated.stage_status[StageKey.SLAM] is StageStatus.RUNNING
     assert updated.stage_progress[StageKey.SLAM].message == "running"
     assert updated.live_refs[StageKey.SLAM]["model_rgb:image"] == ref
-    assert updated.trajectory_positions_xyz == [(1.0, 2.0, 3.0)]
-    assert updated.accepted_keyframes == 3
-    assert updated.num_sparse_points == 4
-    assert updated.num_dense_points == 5
 
 
 def test_snapshot_projector_runtime_update_preserves_terminal_states() -> None:
@@ -810,7 +799,7 @@ def test_run_coordinator_read_array_accepts_materialized_handle_payloads() -> No
 def test_run_coordinator_applies_slam_runtime_updates_to_snapshot() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="run-1", namespace="pytest-unit")
-    coordinator._snapshot = StreamingRunSnapshot(run_id="run-1")
+    coordinator._snapshot = RunSnapshot(run_id="run-1")
     ref = TransientPayloadRef(handle_id="payload-1", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
     update = StageRuntimeUpdate(
         stage_key=StageKey.SLAM,
@@ -837,7 +826,7 @@ def test_run_coordinator_applies_slam_runtime_updates_to_snapshot() -> None:
 def test_run_coordinator_can_record_backend_notices_without_snapshot_projection() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="run-1", namespace="pytest-unit")
-    coordinator._snapshot = StreamingRunSnapshot(run_id="run-1")
+    coordinator._snapshot = RunSnapshot(run_id="run-1")
 
     coordinator.on_slam_notices(
         notices=[
@@ -853,7 +842,7 @@ def test_run_coordinator_can_record_backend_notices_without_snapshot_projection(
     )
 
     snapshot = coordinator.snapshot()
-    assert snapshot.trajectory_positions_xyz == []
+    assert snapshot.stage_runtime_status == {}
     assert any(isinstance(event, BackendNoticeReceived) for event in coordinator.events())
 
 
@@ -1125,7 +1114,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(
     coordinator._plan = plan
     coordinator._path_config = path_config
     coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
-    coordinator._snapshot = StreamingRunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
+    coordinator._snapshot = RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
     coordinator._runtime_state.sequence_manifest = sequence_manifest
     coordinator._slam_actor = FakeSlamActor()
 
@@ -2031,12 +2020,9 @@ def test_run_service_streaming_mock_smoke(tmp_path: Path) -> None:
     snapshot = _wait_for_terminal_snapshot(service)
 
     assert snapshot.state is RunState.COMPLETED
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.received_frames >= 3
-    assert len(snapshot.trajectory_positions_xyz) >= 1
-    assert snapshot.latest_packet is not None
-    assert snapshot.latest_frame is not None
-    assert service.read_array(snapshot.latest_frame) is not None
+    assert snapshot.stage_runtime_status[StageKey.SLAM].processed_items >= 3
+    source_ref = snapshot.live_refs[StageKey.INGEST]["source_rgb:image"]
+    assert service.read_payload(source_ref) is not None
     service.shutdown()
 
 

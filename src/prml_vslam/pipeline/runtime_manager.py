@@ -38,10 +38,13 @@ class RuntimePreflightResult(BaseData):
     unsupported_capabilities: dict[StageKey, list[RuntimeCapability]] = Field(default_factory=dict)
     """Required capabilities not advertised by a registered runtime."""
 
+    unsupported_deployments: dict[StageKey, DeploymentKind] = Field(default_factory=dict)
+    """Planned stages whose selected deployment kind is not executable."""
+
     @property
     def ok(self) -> bool:
         """Return whether preflight found all required runtimes and capabilities."""
-        return not self.missing_runtime_keys and not self.unsupported_capabilities
+        return not self.missing_runtime_keys and not self.unsupported_capabilities and not self.unsupported_deployments
 
     def raise_for_errors(self) -> None:
         """Raise a clear error when preflight found missing runtime support."""
@@ -57,9 +60,20 @@ class RuntimePreflightResult(BaseData):
                 for stage_key, capabilities in self.unsupported_capabilities.items()
             )
             messages.append(f"unsupported capabilities: {unsupported}")
+        if self.unsupported_deployments:
+            unsupported_deployments = ", ".join(
+                f"{stage_key.value} uses deployment_kind={deployment_kind!r}"
+                for stage_key, deployment_kind in self.unsupported_deployments.items()
+            )
+            messages.append(
+                "unsupported deployment kinds: "
+                f"{unsupported_deployments}; Ray-hosted StageRuntimeProxy invocation is not implemented"
+            )
         raise RuntimeError("; ".join(messages))
 
 
+# TODO(pipeline-refactor/WP-03/WP-10): Wire this manager into
+# RunCoordinatorActor before treating it as the production construction path.
 class RuntimeManager:
     """Preflight and lazily construct capability-typed stage runtime proxies."""
 
@@ -104,10 +118,14 @@ class RuntimeManager:
         planned_stage_keys = [stage.key for stage in plan.stages if stage.available]
         missing_runtime_keys: list[StageKey] = []
         unsupported_capabilities: dict[StageKey, list[RuntimeCapability]] = {}
+        unsupported_deployments: dict[StageKey, DeploymentKind] = {}
         for stage_key in planned_stage_keys:
             if stage_key not in self._runtime_factories:
                 missing_runtime_keys.append(stage_key)
                 continue
+            deployment_kind = self._deployment_kinds.get(stage_key, "in_process")
+            if deployment_kind == "ray":
+                unsupported_deployments[stage_key] = deployment_kind
             required = self.required_capabilities(plan.mode, stage_key)
             unsupported = sorted(
                 required - self._runtime_capabilities.get(stage_key, frozenset()),
@@ -120,6 +138,7 @@ class RuntimeManager:
             planned_stage_keys=planned_stage_keys,
             missing_runtime_keys=missing_runtime_keys,
             unsupported_capabilities=unsupported_capabilities,
+            unsupported_deployments=unsupported_deployments,
         )
 
     def runtime_for(self, stage_key: StageKey) -> StageRuntimeProxy:
@@ -130,12 +149,18 @@ class RuntimeManager:
         factory = self._runtime_factories.get(stage_key)
         if factory is None:
             raise RuntimeError(f"No runtime registered for stage '{stage_key.value}'.")
+        deployment_kind = self._deployment_kinds.get(stage_key, "in_process")
+        if deployment_kind == "ray":
+            raise NotImplementedError(
+                f"Stage '{stage_key.value}' requested deployment_kind='ray', but Ray-hosted StageRuntimeProxy "
+                "invocation is not implemented yet."
+            )
         runtime = factory()
         proxy = StageRuntimeProxy(
             stage_key=stage_key,
             runtime=runtime,
             supported_capabilities=self._runtime_capabilities.get(stage_key, frozenset()),
-            deployment_kind=self._deployment_kinds.get(stage_key, "in_process"),
+            deployment_kind=deployment_kind,
             executor_id=self._executor_ids.get(stage_key),
             resource_assignment=self._resource_assignments.get(stage_key, {}),
         )

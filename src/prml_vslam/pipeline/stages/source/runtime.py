@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.interfaces.ingest import SourceStageOutput
+from prml_vslam.datasets.contracts import FrameSelectionConfig
+from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
+from prml_vslam.interfaces.runtime import FramePacket
 from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -18,8 +20,9 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.ingest import materialize_offline_manifest
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
-from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
-from prml_vslam.utils import BaseData, RunArtifactPaths
+from prml_vslam.protocols.runtime import FramePacketStream
+from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.utils import BaseData, PathConfig, RunArtifactPaths
 
 
 class SourceRuntimeInput(BaseData):
@@ -145,7 +148,95 @@ def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
     )
 
 
+class VideoOfflineSequenceSource:
+    """Adapt a raw video path into the normalized offline source seam."""
+
+    def __init__(self, *, path_config: PathConfig, video_path: Path, frame_stride: int) -> None:
+        self._path_config = path_config
+        self._video_path = video_path
+        self._frame_stride = frame_stride
+
+    @property
+    def label(self) -> str:
+        """Return the compact user-facing label for this source."""
+        return f"Video '{self._video_path.name}'"
+
+    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+        """Resolve the video path and return the minimal normalized manifest."""
+        del output_dir
+        resolved_video_path = self._path_config.resolve_video_path(self._video_path, must_exist=True)
+        return SequenceManifest(
+            sequence_id=resolved_video_path.stem,
+            video_path=resolved_video_path,
+        )
+
+
+class SampledFramePacketStream:
+    """Apply source sampling policy to an existing packet stream."""
+
+    def __init__(self, stream: FramePacketStream, *, frame_selection: FrameSelectionConfig) -> None:
+        self._stream = stream
+        self._frame_selection = frame_selection
+        self._seen_packets = 0
+        self._last_emitted_timestamp_ns: int | None = None
+
+    def connect(self) -> object:
+        """Connect the wrapped stream."""
+        return self._stream.connect()
+
+    def disconnect(self) -> None:
+        """Disconnect the wrapped stream."""
+        self._stream.disconnect()
+
+    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
+        """Return the next packet accepted by the configured sampling policy."""
+        while True:
+            packet = self._stream.wait_for_packet(timeout_seconds=timeout_seconds)
+            self._seen_packets += 1
+            if not self._should_emit(packet):
+                continue
+            self._last_emitted_timestamp_ns = packet.timestamp_ns
+            return packet
+
+    def _should_emit(self, packet: FramePacket) -> bool:
+        if self._frame_selection.target_fps is not None:
+            if self._last_emitted_timestamp_ns is None:
+                return True
+            min_delta_ns = int(round(1e9 / self._frame_selection.target_fps))
+            return packet.timestamp_ns - self._last_emitted_timestamp_ns >= min_delta_ns
+        return (self._seen_packets - 1) % self._frame_selection.frame_stride == 0
+
+
+class SampledStreamingSource(StreamingSequenceSource):
+    """Apply source sampling policy to an existing streaming source."""
+
+    def __init__(self, source: StreamingSequenceSource, *, frame_selection: FrameSelectionConfig) -> None:
+        self._source = source
+        self._frame_selection = frame_selection
+        self.label = source.label
+
+    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+        """Delegate manifest preparation to the wrapped source."""
+        return self._source.prepare_sequence_manifest(output_dir)
+
+    def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs | None:
+        """Delegate benchmark preparation when the wrapped source supports it."""
+        if not isinstance(self._source, BenchmarkInputSource):
+            return None
+        return self._source.prepare_benchmark_inputs(output_dir)
+
+    def open_stream(self, *, loop: bool) -> FramePacketStream:
+        """Open the wrapped source stream with sampling applied."""
+        return SampledFramePacketStream(
+            self._source.open_stream(loop=loop),
+            frame_selection=self._frame_selection,
+        )
+
+
 __all__ = [
+    "SampledFramePacketStream",
+    "SampledStreamingSource",
     "SourceRuntime",
     "SourceRuntimeInput",
+    "VideoOfflineSequenceSource",
 ]

@@ -50,14 +50,6 @@ class PipelineMode(StrEnum):
     OFFLINE = "offline"
     STREAMING = "streaming"
 
-    @property
-    def label(self) -> str:
-        """Return the human-readable mode label shown in planning and UI surfaces."""
-        return {
-            self.OFFLINE: "Offline (batch)",
-            self.STREAMING: "Streaming (incremental)",
-        }[self]
-
 
 # TODO(pipeline-refactor/WP-02): Replace SourceSpec request variants with
 # SourceStageConfig plus source-owned backend config variants.

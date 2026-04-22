@@ -18,6 +18,8 @@ from prml_vslam.pipeline.contracts.transport import TransportModel
 from prml_vslam.utils import BaseData
 
 
+# TODO(pipeline-refactor/WP-08/WP-10): Move this generic artifact reference out
+# of SLAM-owned interfaces after artifact/provenance imports migrate.
 class ArtifactRef(BaseData):
     """Reference to one materialized artifact owned by the repository."""
 
@@ -157,6 +159,8 @@ class SessionClosed(TransportModel):
     artifact_keys: list[str] = Field(default_factory=list)
 
 
+# TODO(pipeline-refactor/WP-08/WP-10): Retire this legacy durable backend-event
+# union after live SLAM semantics route through StageRuntimeUpdate.
 BackendEvent = Annotated[
     PoseEstimated
     | KeyframeAccepted

@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
-from prml_vslam.datasets.advio import AdvioDatasetService, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
+from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
-from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
-    Record3DLiveSourceSpec,
     build_run_request,
 )
+from prml_vslam.pipeline.stages.source.config import source_backend_config_from_source_spec
 from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.utils import PathConfig
@@ -93,9 +93,24 @@ def build_advio_demo_request(
 
 
 def load_run_request_toml(*, path_config: PathConfig, config_path: str | Path) -> RunRequest:
-    """Load a pipeline request TOML through the repo-owned config path helper."""
+    """Load one launchable pipeline config as a compatibility run request."""
+    return load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
+
+
+def load_run_config_toml(*, path_config: PathConfig, config_path: str | Path) -> RunConfig:
+    """Load one launchable pipeline config through the target RunConfig contract."""
     resolved_config_path = path_config.resolve_pipeline_config_path(config_path, must_exist=True)
-    return RunRequest.from_toml(resolved_config_path)
+    payload = tomllib.loads(resolved_config_path.read_text(encoding="utf-8"))
+    legacy_sections = [section for section in ("source", "slam") if section in payload]
+    if legacy_sections:
+        legacy = ", ".join(f"`[{section}]`" for section in legacy_sections)
+        raise RuntimeError(
+            "Legacy top-level launch sections are no longer supported for app/CLI launch: "
+            f"{legacy}. Use `[stages.source.backend]` and `[stages.slam.backend]`."
+        )
+    if "stages" not in payload:
+        raise RuntimeError("RunConfig launch requires a `[stages]` section bundle.")
+    return RunConfig.from_toml(resolved_config_path)
 
 
 def build_runtime_source_from_request(
@@ -111,52 +126,24 @@ def build_runtime_source_from_request(
     """
     if request.mode is PipelineMode.OFFLINE:
         return None
-    match request.source:
-        case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_id):
-            service = AdvioDatasetService(path_config)
-            source = service.build_streaming_source(
-                sequence_id=service.resolve_sequence_id(sequence_id),
-                frame_selection=request.source,
-                dataset_serving=request.source.dataset_serving,
-                respect_video_rotation=request.source.respect_video_rotation,
-            )
-            return (
-                source
-                if request.slam.backend.max_frames is None
-                else _CappedStreamingSource(source, max_frames=request.slam.backend.max_frames)
-            )
-        case DatasetSourceSpec(dataset_id=DatasetId.TUM_RGBD, sequence_id=sequence_id):
-            service = TumRgbdDatasetService(path_config)
-            source = service.build_streaming_source(
-                sequence_id=service.resolve_sequence_id(sequence_id),
-                frame_selection=request.source,
-                pose_source=TumRgbdPoseSource.GROUND_TRUTH,
-                include_depth=True,
-            )
-            return (
-                source
-                if request.slam.backend.max_frames is None
-                else _CappedStreamingSource(source, max_frames=request.slam.backend.max_frames)
-            )
-        case Record3DLiveSourceSpec(
-            transport=transport,
-            device_index=device_index,
-            device_address=device_address,
-        ):
-            source = Record3DStreamingSourceConfig(
-                transport=transport,
-                device_index=0 if device_index is None else device_index,
-                device_address=device_address,
-            ).setup_target()
-            if source is None:
-                raise RuntimeError("Failed to initialize the Record3D streaming source.")
-            return (
-                source
-                if request.slam.backend.max_frames is None
-                else _CappedStreamingSource(source, max_frames=request.slam.backend.max_frames)
-            )
-        case _:
-            raise RuntimeError(f"Unsupported streaming source spec: {request.source!r}")
+    source = source_backend_config_from_source_spec(request.source).setup_target(path_config=path_config)
+    return (
+        source
+        if request.slam.backend.max_frames is None
+        else _CappedStreamingSource(source, max_frames=request.slam.backend.max_frames)
+    )
+
+
+def build_runtime_source_from_run_config(
+    *,
+    run_config: RunConfig,
+    path_config: PathConfig,
+) -> PipelineRuntimeSource:
+    """Build the runtime source required by one target run config."""
+    return build_runtime_source_from_request(
+        request=run_config.to_run_request(),
+        path_config=path_config,
+    )
 
 
 def save_run_request_toml(
@@ -199,7 +186,9 @@ def persist_advio_demo_request(
 
 __all__ = [
     "build_advio_demo_request",
+    "build_runtime_source_from_run_config",
     "build_runtime_source_from_request",
+    "load_run_config_toml",
     "load_run_request_toml",
     "persist_advio_demo_request",
     "save_run_request_toml",

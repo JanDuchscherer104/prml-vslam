@@ -17,6 +17,7 @@ from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import PathConfig
 
 
@@ -72,9 +73,19 @@ class RunService:
 
     def read_array(self, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
         """Resolve one active-run array handle into a local NumPy array."""
+        # TODO(pipeline-refactor/WP-10): Delete after app/CLI live payload
+        # callers use read_payload(..., TransientPayloadRef).
         if self._run_id is None:
             return None
         return self._require_backend().read_array(self._run_id, handle)
+
+    def read_payload(self, ref: TransientPayloadRef | None) -> np.ndarray | None:
+        """Resolve one active-run transient payload ref into a local NumPy array."""
+        # TODO(pipeline-refactor/WP-08): Return a typed not-found result
+        # instead of None once payload resolver contracts land.
+        if self._run_id is None:
+            return None
+        return self._require_backend().read_payload(self._run_id, ref)
 
     def shutdown(self, *, preserve_local_head: bool = False) -> None:
         """Shut down the backing runtime if one has been created."""

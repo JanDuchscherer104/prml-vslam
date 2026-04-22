@@ -132,7 +132,7 @@ def _render_request_identity_controls(
             "Mode",
             options=mode_options,
             index=mode_options.index(default_mode),
-            format_func=lambda item: item.label,
+            format_func=lambda item: item.title(),
         )
         method = st.selectbox(
             "VSLAM Method",

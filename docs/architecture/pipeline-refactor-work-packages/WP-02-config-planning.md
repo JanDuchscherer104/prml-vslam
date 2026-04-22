@@ -39,6 +39,9 @@ Target architecture sections:
 
 Goal:
 - Introduce target `RunConfig`, `StageBundle`, stage config sections, and stage-key/config-section mapping while preserving current request/config compatibility.
+- Provide generic config scaffolding and compatibility adapters only. Full
+  executable target `[stages.*]` parsing is completed by
+  [WP-02B Target Config Completion](./WP-02B-target-config-completion.md).
 
 Out of scope:
 - Runtime construction.
@@ -51,6 +54,14 @@ Out of scope:
 
 Implementation notes:
 - Stage configs are declarative policy contracts only.
+- This package intentionally does not implement stage-specific config sections
+  such as `SourceStageConfig`, `SlamStageConfig`, or
+  `ReconstructionStageConfig`. The generic `StageBundle` accepts only shared
+  `StageConfig` fields until WP-02B integrates those stage-specific modules.
+- `RunConfig.compile_plan()` may delegate through `RunRequest` in this package
+  because current source/backend/output policy still lives on legacy request
+  fields. Direct `RunConfig -> RunPlan` compilation belongs to WP-02B after
+  stage-specific config modules can describe source/backend/output policy.
 - Stage configs must not inherit `FactoryConfig`, implement `setup_target()`,
   construct runtimes, open sources, allocate Ray, or create sink sidecars.
 - WP-02 owns shared planning/config scaffolding and stage-key/config-section
@@ -123,3 +134,6 @@ Known risks:
 - Duplicating Pydantic discriminator switches in factories can create two construction authorities.
 - Letting stage configs construct runtime targets would bypass RuntimeManager
   ownership and blur config/planning with execution.
+- Treating this package as full target-config completion can break WP-03,
+  WP-07, or WP-09 expectations. Full target `[stages.*]` parsing and direct
+  `RunConfig -> RunPlan` compilation are deferred to WP-02B.

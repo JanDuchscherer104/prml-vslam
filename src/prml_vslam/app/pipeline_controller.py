@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -17,7 +18,9 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunEvent
 from prml_vslam.pipeline.contracts.provenance import StageManifest
-from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 
 from .pipeline_controls import (
     JsonObject,
@@ -28,7 +31,6 @@ from .pipeline_controls import (
     build_request_from_action,
     discover_pipeline_config_paths,
     handle_pipeline_page_action,
-    json_dump,
     load_pipeline_request,
     parse_optional_float,
     parse_optional_int,
@@ -98,9 +100,9 @@ class PipelineSnapshotRenderModel:
     plan_rows: list[dict[str, str]]
     stage_manifest_rows: list[dict[str, str]]
     recent_events: list[JsonObject]
-    sequence_manifest_json: str | None
-    summary_json: str | None
-    slam_json: str | None
+    stage_outcomes_json: str | None
+    artifacts_json: str | None
+    stage_runtime_status_json: str | None
     streaming: PipelineStreamingRenderModel | None
 
 
@@ -162,9 +164,20 @@ def build_pipeline_snapshot_render_model(
     """Resolve controller-owned render data for the Pipeline snapshot surface."""
     is_offline = snapshot.plan is not None and snapshot.plan.mode is PipelineMode.OFFLINE
     streaming = None
-    if not is_offline and isinstance(snapshot, StreamingRunSnapshot):
-        packet = snapshot.latest_packet
+    if not is_offline and _has_streaming_projection(snapshot):
+        slam_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
+        packet_metadata = None
+        if slam_status is not None:
+            packet_metadata = {
+                "stage": StageKey.SLAM.value,
+                "processed_items": slam_status.processed_items,
+                "fps": slam_status.fps,
+                "throughput": slam_status.throughput,
+                "updated_at_ns": slam_status.updated_at_ns,
+            }
         backend_notice = latest_backend_notice_view(run_service)
+        frame_image = _resolve_frame_image(run_service, snapshot)
+        preview_image = _resolve_preview_image(run_service, snapshot)
         evo_preview = None
         evo_error = None
         if show_evo_preview:
@@ -172,27 +185,17 @@ def build_pipeline_snapshot_render_model(
         streaming = PipelineStreamingRenderModel(
             frame_panel_title="RGB Frame",
             preview_panel_title="ViSTA Preview Artifact" if method is MethodId.VISTA else "Preview Artifact",
-            frame_image=run_service.read_array(snapshot.latest_frame),
-            preview_image=run_service.read_array(snapshot.latest_preview),
+            frame_image=frame_image,
+            preview_image=preview_image,
             preview_empty_message=_streaming_pointmap_empty_message(method),
-            preview_status_message=None if snapshot.latest_preview is None else "Current keyframe artifact.",
-            packet_metadata=None
-            if packet is None
-            else {
-                "seq": packet.seq,
-                "timestamp_ns": packet.timestamp_ns,
-                "provenance": packet.provenance.compact_payload(),
-            },
+            preview_status_message=None if preview_image is None else "Current keyframe artifact.",
+            packet_metadata=packet_metadata,
             backend_notice=backend_notice,
             backend_notice_empty_message="No SLAM update is available yet.",
             intrinsics=None if backend_notice is None else backend_notice.camera_intrinsics,
             intrinsics_missing_message="Camera intrinsics are not available for the current packet.",
-            positions_xyz=np.asarray(snapshot.trajectory_positions_xyz, dtype=np.float64).reshape(-1, 3),
-            timestamps_s=(
-                None
-                if len(snapshot.trajectory_timestamps_s) == 0
-                else np.asarray(snapshot.trajectory_timestamps_s, dtype=np.float64)
-            ),
+            positions_xyz=_streaming_positions(snapshot),
+            timestamps_s=None,
             trajectory_empty_message=_streaming_trajectory_empty_message(method),
             show_evo_preview=show_evo_preview,
             evo_preview=evo_preview,
@@ -215,9 +218,18 @@ def build_pipeline_snapshot_render_model(
         plan_rows=[] if snapshot.plan is None else snapshot.plan.stage_rows(),
         stage_manifest_rows=[] if not snapshot.stage_manifests else StageManifest.table_rows(snapshot.stage_manifests),
         recent_events=_recent_event_rows(run_service.tail_events(limit=10)),
-        sequence_manifest_json=json_dump(snapshot.sequence_manifest),
-        summary_json=json_dump(snapshot.summary),
-        slam_json=json_dump(snapshot.slam),
+        stage_outcomes_json=_json_dump_mapping(
+            {stage_key.value: outcome.model_dump(mode="json") for stage_key, outcome in snapshot.stage_outcomes.items()}
+        ),
+        artifacts_json=_json_dump_mapping(
+            {artifact_key: artifact.model_dump(mode="json") for artifact_key, artifact in snapshot.artifacts.items()}
+        ),
+        stage_runtime_status_json=_json_dump_mapping(
+            {
+                stage_key.value: status.model_dump(mode="json")
+                for stage_key, status in snapshot.stage_runtime_status.items()
+            }
+        ),
         streaming=streaming,
     )
 
@@ -235,15 +247,20 @@ def _compute_evo_preview(
 
 
 def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[tuple[str, str], ...]:
-    received_frames = snapshot.received_frames if isinstance(snapshot, StreamingRunSnapshot) else 0
-    measured_fps = snapshot.measured_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
-    accepted_keyframes = snapshot.accepted_keyframes if isinstance(snapshot, StreamingRunSnapshot) else 0
-    backend_fps = snapshot.backend_fps if isinstance(snapshot, StreamingRunSnapshot) else 0.0
-    num_sparse_points = snapshot.num_sparse_points if isinstance(snapshot, StreamingRunSnapshot) else 0
-    num_dense_points = snapshot.num_dense_points if isinstance(snapshot, StreamingRunSnapshot) else 0
+    slam_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
+    received_frames = 0 if slam_status is None else slam_status.processed_items
+    measured_fps = 0.0 if slam_status is None or slam_status.fps is None else slam_status.fps
+    backend_fps = 0.0 if slam_status is None or slam_status.throughput is None else slam_status.throughput
+    accepted_keyframes = 0
+    num_sparse_points = 0
+    num_dense_points = 0
+    if (outcome := snapshot.stage_outcomes.get(StageKey.SLAM)) is not None:
+        accepted_keyframes = _coerce_int_metric(outcome.metrics.get("accepted_keyframes"))
+        num_sparse_points = _coerce_int_metric(outcome.metrics.get("num_sparse_points"))
+        num_dense_points = _coerce_int_metric(outcome.metrics.get("num_dense_points"))
     return (
         ("Status", snapshot.state.value.upper()),
-        ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.label),
+        ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.title()),
         ("Received Frames", str(received_frames)),
         ("Packet FPS", f"{measured_fps:.2f} fps"),
         ("Accepted Keyframes", str(accepted_keyframes)),
@@ -307,6 +324,82 @@ def _recent_event_rows(events: list[RunEvent]) -> list[JsonObject]:
         }
         for event in events
     ]
+
+
+def _has_streaming_projection(snapshot: RunSnapshot) -> bool:
+    if snapshot.plan is None or snapshot.plan.mode is not PipelineMode.STREAMING:
+        return False
+    return (
+        snapshot.state is not RunState.IDLE
+        or bool(snapshot.stage_runtime_status)
+        or bool(snapshot.live_refs)
+        or bool(snapshot.stage_outcomes)
+    )
+
+
+def _resolve_frame_image(run_service: RunService, snapshot: RunSnapshot) -> np.ndarray | None:
+    return _resolve_first_payload(
+        run_service,
+        snapshot,
+        (
+            (StageKey.SLAM, "source_rgb:image"),
+            (StageKey.SLAM, "model_rgb:image"),
+            (StageKey.SLAM, "model_camera_rgb:image"),
+            (StageKey.SLAM, "keyframe_rgb:image"),
+            (StageKey.INGEST, "source_rgb:image"),
+        ),
+    )
+
+
+def _resolve_preview_image(run_service: RunService, snapshot: RunSnapshot) -> np.ndarray | None:
+    return _resolve_first_payload(
+        run_service,
+        snapshot,
+        (
+            (StageKey.SLAM, "model_preview:image"),
+            (StageKey.SLAM, "keyframe_preview:image"),
+            (StageKey.SLAM, "preview:image"),
+        ),
+    )
+
+
+def _resolve_first_payload(
+    run_service: RunService,
+    snapshot: RunSnapshot,
+    candidates: tuple[tuple[StageKey, str], ...],
+) -> np.ndarray | None:
+    for stage_key, ref_key in candidates:
+        ref = _live_ref(snapshot, stage_key=stage_key, ref_key=ref_key)
+        if ref is None:
+            continue
+        payload = run_service.read_payload(ref)
+        if payload is not None:
+            return payload
+    return None
+
+
+def _live_ref(snapshot: RunSnapshot, *, stage_key: StageKey, ref_key: str) -> TransientPayloadRef | None:
+    return snapshot.live_refs.get(stage_key, {}).get(ref_key)
+
+
+def _streaming_positions(snapshot: RunSnapshot) -> np.ndarray:
+    return np.empty((0, 3), dtype=np.float64)
+
+
+def _coerce_int_metric(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
+
+
+def _json_dump_mapping(payload: dict[str, object]) -> str | None:
+    if not payload:
+        return None
+    return json.dumps(payload, indent=2, sort_keys=True)
 
 
 def _streaming_pointmap_empty_message(method: MethodId | None) -> str:

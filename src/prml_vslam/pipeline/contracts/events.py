@@ -23,6 +23,9 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
 
 
+# TODO(pipeline-refactor/WP-10): Remove the tier discriminator after durable
+# RunEvent is lifecycle/provenance-only and live telemetry travels only through
+# StageRuntimeUpdate.
 class EventTier(StrEnum):
     """Classify whether an event is durable provenance or live telemetry."""
 
