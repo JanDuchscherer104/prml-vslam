@@ -50,6 +50,9 @@ packages = ["src/prml_vslam"]
 [tool.ruff]
 target-version = "py311"
 line-length    = 120
+exclude = [
+    "external/vista-slam",
+]
 
   [tool.ruff.lint]
   select = ["B", "E", "F", "I", "UP"]
