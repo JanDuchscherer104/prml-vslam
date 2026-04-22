@@ -14,6 +14,8 @@ from .transport import TransportModel
 
 
 # TODO: add module level doc string explaining the motivation for handle contracts!
+# TODO(pipeline-refactor/WP-01): Collapse into TransientPayloadRef after the
+# payload resolver replaces Ray-specific live array handles.
 class ArrayHandle(TransportModel):
     """Refer to one transient array stored in the execution substrate."""
 
@@ -24,6 +26,8 @@ class ArrayHandle(TransportModel):
     backend: Literal["ray-object-store"] = "ray-object-store"
 
 
+# TODO(pipeline-refactor/WP-01): Collapse into TransientPayloadRef after preview
+# payloads use the target live payload resolver.
 class PreviewHandle(TransportModel):
     """Refer to one transient preview image stored in the execution substrate."""
 
@@ -36,6 +40,8 @@ class PreviewHandle(TransportModel):
     backend: Literal["ray-object-store"] = "ray-object-store"
 
 
+# TODO(pipeline-refactor/WP-01): Collapse into TransientPayloadRef after generic
+# binary live payloads use the target resolver.
 class BlobHandle(TransportModel):
     """Refer to one transient non-array binary payload."""
 

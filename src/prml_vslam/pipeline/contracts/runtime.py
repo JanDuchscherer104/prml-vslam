@@ -35,6 +35,8 @@ class RunState(StrEnum):
     FAILED = "failed"
 
 
+# TODO(pipeline-refactor/WP-08): Replace top-level stage projection fields and
+# stage_status with keyed outcomes, artifact refs, runtime status, and live refs.
 class RunSnapshot(TransportModel):
     """Project the latest run state from the append-only event stream.
 
@@ -66,6 +68,8 @@ class RunSnapshot(TransportModel):
     latest_preview: PreviewHandle | None = None
 
 
+# TODO(pipeline-refactor/WP-08): Collapse streaming-specific fields into keyed
+# RunSnapshot stage_runtime_status, stage_outcomes, and live refs.
 class StreamingRunSnapshot(RunSnapshot):
     """Extend :class:`RunSnapshot` with bounded streaming telemetry fields."""
 

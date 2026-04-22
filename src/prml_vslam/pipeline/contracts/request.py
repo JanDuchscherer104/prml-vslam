@@ -59,6 +59,8 @@ class PipelineMode(StrEnum):
         }[self]
 
 
+# TODO(pipeline-refactor/WP-02): Replace SourceSpec request variants with
+# SourceStageConfig plus source-owned backend config variants.
 class VideoSourceSpec(FrameSelectionConfig):
     """Describe one raw video source that the pipeline should normalize offline."""
 
@@ -66,6 +68,8 @@ class VideoSourceSpec(FrameSelectionConfig):
     """Path to the input video that will be processed."""
 
 
+# TODO(pipeline-refactor/WP-02): Replace SourceSpec request variants with
+# SourceStageConfig plus dataset/source-owned backend config variants.
 class DatasetSourceSpec(FrameSelectionConfig):
     """Describe one repository-owned dataset sequence selected for a run.
 
@@ -96,6 +100,8 @@ class DatasetSourceSpec(FrameSelectionConfig):
         return self
 
 
+# TODO(pipeline-refactor/WP-02): Replace SourceSpec request variants with
+# SourceStageConfig plus IO-owned Record3D transport config.
 class Record3DLiveSourceSpec(BaseConfig):
     """Describe one live Record3D source selected for streaming execution."""
 
@@ -121,18 +127,24 @@ BackendSpec: TypeAlias = BackendConfig
 RayLocalHeadLifecycle: TypeAlias = Literal["ephemeral", "reusable"]
 
 
+# TODO(pipeline-refactor/WP-02): Replace per-stage placement request fragments
+# with StageExecutionConfig, ResourceSpec, and PlacementConstraint.
 class StagePlacement(BaseConfig):
     """Record scheduling preferences for one individual stage."""
 
     resources: dict[str, float] = Field(default_factory=dict)
 
 
+# TODO(pipeline-refactor/WP-02): Replace request-level placement collection
+# with stage execution policy on target stage configs.
 class PlacementPolicy(BaseConfig):
     """Collect per-stage placement hints translated only by the backend layer."""
 
     by_stage: dict[StageKey, StagePlacement] = Field(default_factory=dict)
 
 
+# TODO(pipeline-refactor/WP-02): Move runtime lifecycle policy into RunConfig
+# runtime settings without stage construction semantics.
 class RayRuntimeConfig(BaseConfig):
     """Configure repository-owned local Ray lifecycle behavior."""
 
@@ -140,6 +152,8 @@ class RayRuntimeConfig(BaseConfig):
     """Whether the auto-started local Ray head is torn down or preserved after a run."""
 
 
+# TODO(pipeline-refactor/WP-02): Move run lifecycle policy into target
+# RunConfig.runtime and retire RunRequest compatibility.
 class RunRuntimeConfig(BaseConfig):
     """Collect repository-owned execution-lifecycle policy for one run."""
 
@@ -147,6 +161,8 @@ class RunRuntimeConfig(BaseConfig):
     """Local Ray runtime policy translated by the backend layer."""
 
 
+# TODO(pipeline-refactor/WP-02): Rehome as stage-local declarative
+# SlamStageConfig; backend config remains method-owned.
 class SlamStageConfig(BaseConfig):
     """Bundle the selected backend config and SLAM output policy for the run."""
 
@@ -172,6 +188,8 @@ class SlamStageConfig(BaseConfig):
         return normalized
 
 
+# TODO(pipeline-refactor/WP-02): Supersede with RunConfig as the persisted
+# declarative root after app/CLI compatibility lands.
 class RunRequest(BaseConfig):
     """Represent the full typed entry contract for one pipeline run.
 

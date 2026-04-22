@@ -24,6 +24,8 @@ PipelineRuntimeSource: TypeAlias = OfflineSequenceSource | StreamingSequenceSour
 
 
 # TODO: This is a protocol that defines public interfaces, it should hence be defined in a module that clearly indicates that it contains protocol / interface definitions!
+# TODO(pipeline-refactor/WP-03): Move this behavior seam to pipeline/protocols.py
+# when backend implementations are separated from public protocols.
 class PipelineBackend(Protocol):
     """Execute, monitor, and tear down pipeline runs.
 

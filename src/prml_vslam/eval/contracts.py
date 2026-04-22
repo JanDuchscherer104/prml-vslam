@@ -123,6 +123,8 @@ class TrajectoryEvaluationSemantics(BaseData):
     )
 
 
+# TODO(pipeline-refactor/future-eval): Rename or specialize once cloud and
+# efficiency evaluation artifacts become first-class stage outputs.
 class EvaluationArtifact(BaseData):
     """Represent one loaded or freshly computed persisted trajectory-evaluation artifact."""
 

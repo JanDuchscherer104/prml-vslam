@@ -35,6 +35,8 @@ class SlamArtifacts(BaseData):
     extras: dict[str, ArtifactRef] = Field(default_factory=dict)
 
 
+# TODO(pipeline-refactor/WP-06): Replace with a private SlamStageRuntime start
+# input or method-owned init DTO once streaming SLAM is behind the stage runtime.
 class SlamSessionInit(BaseData):
     """Normalized context injected once when a streaming session starts."""
 
@@ -43,6 +45,8 @@ class SlamSessionInit(BaseData):
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
 
 
+# TODO(pipeline-refactor/WP-06): Move live SLAM update semantics to
+# methods.contracts and keep transient refs out of pure domain DTOs.
 class SlamUpdate(BaseData):
     """Incremental SLAM update emitted by streaming-capable backends."""
 
@@ -64,6 +68,8 @@ class SlamUpdate(BaseData):
     backend_warnings: list[str] = Field(default_factory=list)
 
 
+# TODO(pipeline-refactor/WP-06): Move backend notice variants to method-owned
+# semantic events carried by StageRuntimeUpdate.
 class PoseEstimated(TransportModel):
     """Pose estimate emitted by a streaming backend."""
 
@@ -76,6 +82,8 @@ class PoseEstimated(TransportModel):
     pose_updated: bool = True
 
 
+# TODO(pipeline-refactor/WP-06): Move backend notice variants to method-owned
+# semantic events carried by StageRuntimeUpdate.
 class KeyframeAccepted(TransportModel):
     """Keyframe-acceptance notice emitted by a streaming backend."""
 
@@ -87,6 +95,8 @@ class KeyframeAccepted(TransportModel):
     backend_fps: float | None = None
 
 
+# TODO(pipeline-refactor/WP-07): Replace handle-bearing backend event with
+# VisualizationItem values created by SlamVisualizationAdapter.
 class KeyframeVisualizationReady(TransportModel):
     """Visualization payload handles emitted for one accepted keyframe."""
 
@@ -104,6 +114,8 @@ class KeyframeVisualizationReady(TransportModel):
     camera_intrinsics: CameraIntrinsics | None = None
 
 
+# TODO(pipeline-refactor/WP-06): Move backend notice variants to method-owned
+# semantic events carried by StageRuntimeUpdate.
 class MapStatsUpdated(TransportModel):
     """Map-size telemetry emitted by a streaming backend."""
 
@@ -114,6 +126,8 @@ class MapStatsUpdated(TransportModel):
     num_dense_points: int = 0
 
 
+# TODO(pipeline-refactor/WP-06): Move backend warning notices to method-owned
+# semantic events carried by StageRuntimeUpdate.
 class BackendWarning(TransportModel):
     """Non-fatal backend warning."""
 
@@ -123,6 +137,8 @@ class BackendWarning(TransportModel):
     timestamp_ns: int | None = None
 
 
+# TODO(pipeline-refactor/WP-06): Move backend error notices to method-owned
+# semantic events carried by StageRuntimeUpdate.
 class BackendError(TransportModel):
     """Fatal or actionable backend error."""
 
@@ -132,6 +148,8 @@ class BackendError(TransportModel):
     timestamp_ns: int | None = None
 
 
+# TODO(pipeline-refactor/WP-06): Move session terminal notices to method-owned
+# semantic events carried by StageRuntimeUpdate.
 class SessionClosed(TransportModel):
     """Terminal backend-session notice."""
 
