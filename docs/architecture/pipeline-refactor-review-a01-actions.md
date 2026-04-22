@@ -40,7 +40,9 @@ Action items:
 - Document Ray execution modes: local head and attach existing same-LAN Ray
   cluster.
 - Add target config for Ray address, namespace, runtime environment profile,
-  and named coordinator actor lookup.
+  `log_to_driver`, `include_dashboard`, and named coordinator actor lookup.
+  Keep private Ray init flags such as `_skip_env_hook` backend-internal unless
+  the project has a stable public reason to expose them.
 - Keep same-LAN scope explicit: no WAN, cloud, VPN, or artifact service in the
   first distributed target.
 - Preserve first runtime simplification slice as local/single-node compatible.
