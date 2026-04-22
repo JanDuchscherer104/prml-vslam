@@ -342,7 +342,7 @@ class RealSenseSensor(RGBDSensor):
             Configure sensor with custom settings. If this is skipped, default settings will be used. You can enable recording to a bag file by specifying a filename.
         
         Args:
-            sensor_config (open3d::io::RGBDSensorConfig, optional, default=<open3d.cuda.pybind.t.io.RealSenseSensorConfig object at 0x77b8848c6270>): Camera configuration, such as resolution and framerate. A serial number can be entered here to connect to a specific camera.
+            sensor_config (open3d::io::RGBDSensorConfig, optional, default=<open3d.cuda.pybind.t.io.RealSenseSensorConfig object at 0x7cfc8dcacb70>): Camera configuration, such as resolution and framerate. A serial number can be entered here to connect to a specific camera.
             sensor_index (int, optional, default=0): Connect to a camera at this position in the enumeration of RealSense cameras that are currently connected. Use enumerate_devices() or list_devices() to obtain a list of connected cameras. This is ignored if sensor_config contains a serial entry.
             filename (str, optional, default=''): Save frames to a bag file
         
@@ -355,7 +355,7 @@ class RealSenseSensor(RGBDSensor):
             Configure sensor with custom settings. If this is skipped, default settings will be used. You can enable recording to a bag file by specifying a filename.
         
         Args:
-            sensor_config (open3d.cuda.pybind.t.io.RealSenseSensorConfig, optional, default=<open3d.cuda.pybind.t.io.RealSenseSensorConfig object at 0x77b8067f09f0>): Camera configuration, such as resolution and framerate. A serial number can be entered here to connect to a specific camera.
+            sensor_config (open3d.cuda.pybind.t.io.RealSenseSensorConfig, optional, default=<open3d.cuda.pybind.t.io.RealSenseSensorConfig object at 0x7cfc8dca3ef0>): Camera configuration, such as resolution and framerate. A serial number can be entered here to connect to a specific camera.
             sensor_index (int, optional, default=0): Connect to a camera at this position in the enumeration of RealSense cameras that are currently connected. Use enumerate_devices() or list_devices() to obtain a list of connected cameras. This is ignored if sensor_config contains a serial entry.
             filename (str, optional, default=''): Save frames to a bag file
         
