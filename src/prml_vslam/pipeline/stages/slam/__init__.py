@@ -1,7 +1,7 @@
 """SLAM stage runtime adapters and stage-local helpers."""
 
 from .contracts import SlamFrameInput, SlamOfflineInput, SlamStreamingStartInput
-from .runtime import LegacySlamUpdate, SlamStageRuntime, payload_bindings_for_updates
+from .runtime import LegacySlamUpdate, SlamStageRuntime
 from .visualization import SlamVisualizationAdapter
 
 __all__ = [
@@ -11,5 +11,4 @@ __all__ = [
     "SlamStageRuntime",
     "SlamStreamingStartInput",
     "SlamVisualizationAdapter",
-    "payload_bindings_for_updates",
 ]

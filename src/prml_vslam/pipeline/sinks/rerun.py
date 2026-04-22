@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import numpy as np
 import ray
+from ray.actor import ActorHandle
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.pipeline.contracts.events import RunEvent, StageCompleted
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import Console
 from prml_vslam.visualization.rerun import (
     MODEL_RGB_2D_ENTITY_PATH,
@@ -32,6 +34,7 @@ from prml_vslam.visualization.rerun import (
 from .rerun_policy import RerunLoggingPolicy
 
 _LOGGER = logging.getLogger(__name__)
+PayloadResolver = Callable[[TransientPayloadRef], np.ndarray | None]
 
 
 class RerunEventSink:
@@ -95,10 +98,20 @@ class RerunEventSink:
         )
 
         if grpc_url is not None:
-            self._live_stream = create_recording_stream(app_id="prml-vslam", recording_id=recording_id)
+            self._live_stream = create_recording_stream(
+                app_id="prml-vslam",
+                recording_id=recording_id,
+                show_source_rgb=log_source_rgb,
+                show_diagnostic_preview=log_diagnostic_preview,
+            )
             attach_recording_sinks(self._live_stream, grpc_url=grpc_url, target_path=None)
         if target_path is not None:
-            self._export_stream = create_recording_stream(app_id="prml-vslam", recording_id=recording_id)
+            self._export_stream = create_recording_stream(
+                app_id="prml-vslam",
+                recording_id=recording_id,
+                show_source_rgb=log_source_rgb,
+                show_diagnostic_preview=log_diagnostic_preview,
+            )
             attach_recording_sinks(self._export_stream, grpc_url=None, target_path=target_path)
 
     # TODO(pipeline-refactor/WP-10): Delete this RunEvent observer after the
@@ -118,16 +131,16 @@ class RerunEventSink:
         update: StageRuntimeUpdate,
         *,
         payloads: Mapping[str, np.ndarray] | None = None,
+        payload_resolver: PayloadResolver | None = None,
     ) -> None:
         """Observe one live runtime update without durable `RunEvent` wrapping."""
-        # TODO(pipeline-refactor/WP-08): Replace this materialized payload map
-        # with the canonical TransientPayloadRef resolver API once it lands.
+        resolved_payloads = self._resolve_update_payloads(update, payloads=payloads, payload_resolver=payload_resolver)
         if self._live_stream is not None:
-            self._live_policy.observe_update(self._live_stream, update, payloads=payloads)
+            self._live_policy.observe_update(self._live_stream, update, payloads=resolved_payloads)
         if self._cache_ground_alignment_update(update):
             return
         if self._export_stream is not None:
-            self._export_policy.observe_update(self._export_stream, update, payloads=payloads)
+            self._export_policy.observe_update(self._export_stream, update, payloads=resolved_payloads)
 
     def close(self) -> None:
         """Release recording handles and post-process export-only overlays."""
@@ -170,6 +183,27 @@ class RerunEventSink:
                 self._latest_ground_alignment = semantic_event
                 return True
         return False
+
+    @staticmethod
+    def _resolve_update_payloads(
+        update: StageRuntimeUpdate,
+        *,
+        payloads: Mapping[str, np.ndarray] | None,
+        payload_resolver: PayloadResolver | None,
+    ) -> dict[str, np.ndarray]:
+        resolved = (
+            {} if payloads is None else {handle_id: np.asarray(payload) for handle_id, payload in payloads.items()}
+        )
+        if payload_resolver is None:
+            return resolved
+        for item in update.visualizations:
+            for ref in item.payload_refs.values():
+                if ref.handle_id in resolved:
+                    continue
+                payload = payload_resolver(ref)
+                if payload is not None:
+                    resolved[ref.handle_id] = np.asarray(payload)
+        return resolved
 
 
 @ray.remote(num_cpus=0.25, max_restarts=0, max_task_retries=0)
@@ -222,19 +256,18 @@ class RerunSinkActor:
         self,
         *,
         update: StageRuntimeUpdate,
-        payload_bindings: list[tuple[str, np.ndarray]] | None = None,
+        payload_resolver: ActorHandle | None = None,
     ) -> None:
         """Forward one live runtime update to the local sink without `ray.get`."""
         try:
-            # TODO(pipeline-refactor/WP-08): Replace payload_bindings with the
-            # canonical TransientPayloadRef resolver API when observer routing
-            # no longer has to pass materialized arrays to the sidecar.
-            payloads = (
-                {}
-                if payload_bindings is None
-                else {handle_id: np.asarray(payload) for handle_id, payload in payload_bindings}
+            self._sink.observe_update(
+                update,
+                payload_resolver=(
+                    None
+                    if payload_resolver is None
+                    else lambda ref: ray.get(payload_resolver.read_payload.remote(ref.handle_id))
+                ),
             )
-            self._sink.observe_update(update, payloads=payloads)
         except Exception as exc:  # pragma: no cover - best-effort sink guard
             _LOGGER.warning("Skipping Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc)
 

@@ -801,31 +801,48 @@ def test_rerun_sink_actor_forwards_materialized_rerun_bindings_without_ray_get(t
     assert observed["closed"] is True
 
 
-def test_rerun_sink_actor_forwards_stage_runtime_update_bindings_without_ray_get(
+def test_rerun_sink_actor_resolves_stage_runtime_update_payloads_in_sidecar(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     observed: dict[str, object] = {}
+    payload = np.ones((2, 2, 3), dtype=np.uint8)
+    ref = TransientPayloadRef(handle_id="frame", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
 
     class FakeLocalSink:
         def __init__(self, **kwargs: object) -> None:
             observed["init"] = kwargs
 
-        def observe_update(self, update, *, payloads) -> None:
+        def observe_update(self, update, *, payload_resolver=None, payloads=None) -> None:
+            del payloads
             observed["update"] = update
-            observed["payload"] = payloads["frame"]
+            observed["payload"] = payload_resolver(ref)
 
         def close(self) -> None:
             observed["closed"] = True
 
-    monkeypatch.setattr(rerun_sink_module, "RerunEventSink", FakeLocalSink)
-    monkeypatch.setattr(
-        rerun_sink_module.ray,
-        "get",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("sink actor must not call ray.get")),
-    )
+    class FakeReadPayloadRemote:
+        def remote(self, handle_id: str) -> np.ndarray:
+            assert handle_id == "frame"
+            return payload
 
-    update = StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1)
+    class FakeResolver:
+        read_payload = FakeReadPayloadRemote()
+
+    monkeypatch.setattr(rerun_sink_module, "RerunEventSink", FakeLocalSink)
+    monkeypatch.setattr(rerun_sink_module.ray, "get", lambda value: value)
+
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.RGB_IMAGE,
+                role="model_rgb",
+                payload_refs={"image": ref},
+            )
+        ],
+    )
     actor_cls = RerunSinkActor.__ray_metadata__.modified_class
     actor = actor_cls(
         grpc_url=None,
@@ -836,13 +853,13 @@ def test_rerun_sink_actor_forwards_stage_runtime_update_bindings_without_ray_get
     )
     actor.observe_update(
         update=update,
-        payload_bindings=[("frame", np.ones((2, 2, 3), dtype=np.uint8))],
+        payload_resolver=FakeResolver(),
     )
     actor.close()
 
     assert observed["init"]["recording_id"] == "demo"
     assert observed["update"] == update
-    assert np.array_equal(observed["payload"], np.ones((2, 2, 3), dtype=np.uint8))
+    assert np.array_equal(observed["payload"], payload)
     assert observed["closed"] is True
 
 

@@ -17,8 +17,10 @@ import ray
 from ray.actor import ActorHandle
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
-from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.ingest import SequenceManifest, SourceStageOutput
 from prml_vslam.interfaces.slam import BackendError, BackendEvent, SlamArtifacts, SlamSessionInit
+from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
@@ -43,9 +45,11 @@ from prml_vslam.pipeline.contracts.events import (
 )
 from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState, StreamingRunSnapshot
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions, actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
@@ -63,10 +67,29 @@ from prml_vslam.pipeline.ray_runtime.stage_program import (
     RuntimeStageProgram,
     StageCompletionPayload,
 )
+from prml_vslam.pipeline.runner import StageResultStore, StageRunner
+from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
-from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.contracts import (
+    StageResult,
+    StageRuntimeUpdate,
+    VisualizationIntent,
+    VisualizationItem,
+)
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
+from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
+from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.slam import SlamOfflineInput, SlamStageRuntime
+from prml_vslam.pipeline.stages.slam.visualization import IMAGE_REF, ROLE_SOURCE_RGB
+from prml_vslam.pipeline.stages.source import SourceRuntime, SourceRuntimeInput
+from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
+from prml_vslam.pipeline.stages.trajectory_eval import (
+    TrajectoryEvaluationRuntime,
+    TrajectoryEvaluationRuntimeInput,
+)
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
@@ -104,6 +127,8 @@ class RunCoordinatorActor:
         self._request: RunRequest | None = None
         self._plan: RunPlan | None = None
         self._backend_descriptor: BackendDescriptor | None = None
+        self._result_store = StageResultStore()
+        self._stage_runner = StageRunner(self._result_store)
         self._runtime_state = RuntimeExecutionState()
         self._stage_program = RuntimeStageProgram.default()
         self._streaming_error: str | None = None
@@ -133,6 +158,8 @@ class RunCoordinatorActor:
         self._source_actor = None
         self._slam_actor = None
         self._streaming_error = None
+        self._result_store = StageResultStore()
+        self._stage_runner = StageRunner(self._result_store)
         self._snapshot = (
             StreamingRunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
             if plan.mode is PipelineMode.STREAMING
@@ -187,6 +214,10 @@ class RunCoordinatorActor:
         """Resolve one coordinator-owned transient payload handle locally."""
         return self._resolve_handle_payload(self._handle_refs.get(handle_id))
 
+    def read_payload(self, handle_id: str) -> np.ndarray | None:
+        """Resolve one coordinator-owned target transient payload ref locally."""
+        return self._resolve_handle_payload(self._handle_refs.get(handle_id))
+
     def shutdown(self) -> None:
         """Stop worker-owned activity and close observer sidecars."""
         self._console.info("Shutting down run '%s'.", self._run_id)
@@ -212,7 +243,6 @@ class RunCoordinatorActor:
         packet: FramePacketSummary,
         frame_handle: ArrayHandle | None,
         frame_ref: HandlePayload | None,
-        rerun_bindings: list[tuple[str, np.ndarray]] | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
         intrinsics: CameraIntrinsics | None,
@@ -240,8 +270,8 @@ class RunCoordinatorActor:
                 received_frames=received_frames,
                 measured_fps=measured_fps,
             ),
-            rerun_bindings=rerun_bindings,
         )
+        self._emit_source_visualization_update(packet=packet, frame_handle=frame_handle)
         if self._stop_requested or self._slam_actor is None:
             return
         self._in_flight_frames += 1
@@ -260,9 +290,9 @@ class RunCoordinatorActor:
         *,
         notices: list[BackendEvent],
         bindings: list[tuple[str, HandlePayload]],
-        rerun_bindings: list[tuple[str, np.ndarray]],
         released_credits: int,
-        forward_to_rerun: bool = True,
+        grant_source_credit: bool = True,
+        project_to_snapshot: bool = True,
     ) -> None:
         """Record translated backend notices and release packet credits."""
         for handle_id, ref in bindings:
@@ -276,39 +306,39 @@ class RunCoordinatorActor:
                     stage_key=StageKey.SLAM,
                     notice=notice,
                 ),
-                rerun_bindings=rerun_bindings,
-                forward_to_rerun=forward_to_rerun,
+                project_to_snapshot=project_to_snapshot,
             )
             if isinstance(notice, BackendError):
                 self._streaming_error = notice.message
         self._in_flight_frames = max(0, self._in_flight_frames - released_credits)
-        if self._source_actor is not None and not self._stop_requested:
+        if grant_source_credit and self._source_actor is not None and not self._stop_requested:
             self._source_actor.grant_credit.remote(released_credits)
         if self._source_finished and self._in_flight_frames == 0:
             self._finalize_streaming()
+
+    def grant_slam_source_credit(self, *, credit_count: int = 1) -> None:
+        """Release source credits after SLAM accepts a frame without finalizing.
+
+        Streaming finalization remains gated by `on_slam_notices(...)`, so EOF
+        cannot race ahead of legacy notice/update routing for the processed
+        frame.
+        """
+        if self._source_actor is not None and not self._stop_requested:
+            self._source_actor.grant_credit.remote(credit_count)
 
     def on_slam_runtime_updates(
         self,
         *,
         updates: list[StageRuntimeUpdate],
-        payload_bindings: list[tuple[str, np.ndarray]],
     ) -> None:
-        # TODO(pipeline-refactor/WP-08): Replace payload_bindings with the
-        # canonical TransientPayloadRef resolver once live observer routing
-        # owns payload resolution.
         """Forward live SLAM runtime updates to observer sinks."""
+        with self._lock:
+            for update in updates:
+                self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
         if self._rerun_sink is None:
             return
         for update in updates:
-            try:
-                self._rerun_sink_last_call = self._rerun_sink.observe_update.remote(
-                    update=update,
-                    payload_bindings=payload_bindings,
-                )
-            except Exception as exc:  # pragma: no cover - best-effort sidecar submission
-                self._console.warning(
-                    "Failed to submit Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc
-                )
+            self._submit_rerun_update(update=update, payload_resolver=self._slam_actor)
 
     def on_source_eof(self) -> None:
         """Mark the streaming source as exhausted and finalize if drained."""
@@ -381,16 +411,33 @@ class RunCoordinatorActor:
             "injected runtime source" if runtime_source is not None else "request-resolved source",
         )
         context = self._stage_execution_context(request=request, plan=plan, path_config=path_config)
-        self._stage_program.execute_offline(
-            plan=plan,
-            context=context,
-            state=self._runtime_state,
-            source=source,
-            driver=self,
-            emit_stage_started=self._emit_stage_started,
-            record_stage_completion=self._record_stage_completion,
-            record_stage_failure=self._record_stage_failure,
-        )
+        runtime_manager = self._build_runtime_manager(plan=plan, source=source)
+        runtime_manager.preflight(plan).raise_for_errors()
+        self._result_store = StageResultStore()
+        self._stage_runner = StageRunner(self._result_store)
+        for stage in plan.stages:
+            if not stage.available:
+                continue
+            stage_key = stage.key
+            if stage_key is StageKey.TRAJECTORY_EVALUATION and self._stop_requested:
+                continue
+            runtime_proxy = runtime_manager.runtime_for(stage_key)
+            stage_config = runtime_manager.stage_config(stage_key)
+            input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
+            config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
+            self._stage_runner.run_offline_stage(
+                stage_key=stage_key,
+                runtime=runtime_proxy.offline(),
+                input_payload=input_payload,
+                stage_config=stage_config,
+                config_hash=config_hash,
+                input_fingerprint=input_fingerprint,
+                on_stage_started=self._emit_stage_started,
+                on_stage_completed=lambda completed_stage_key, result: self._record_stage_result(
+                    completed_stage_key, result
+                ),
+                on_stage_failed=self._record_stage_failure,
+            )
         terminal_state = "stopped" if self._stop_requested else "completed"
         self._console.info("Offline run '%s' %s.", self._run_id, terminal_state)
         self._record_event(
@@ -398,6 +445,202 @@ class RunCoordinatorActor:
             if self._stop_requested
             else RunCompleted(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns())
         )
+
+    def _build_runtime_manager(self, *, plan: RunPlan, source: OfflineSequenceSource) -> RuntimeManager:
+        manager = RuntimeManager()
+        for stage in plan.stages:
+            if not stage.available:
+                continue
+            capabilities = frozenset({RuntimeCapability.OFFLINE})
+            match stage.key:
+                case StageKey.INGEST:
+                    manager.register(
+                        stage.key,
+                        factory=lambda source=source: SourceRuntime(source=source),
+                        capabilities=capabilities,
+                    )
+                case StageKey.SLAM:
+                    manager.register(
+                        stage.key,
+                        factory=SlamStageRuntime,
+                        capabilities=capabilities,
+                    )
+                case StageKey.GROUND_ALIGNMENT:
+                    manager.register(
+                        stage.key,
+                        factory=GroundAlignmentRuntime,
+                        capabilities=capabilities,
+                    )
+                case StageKey.TRAJECTORY_EVALUATION:
+                    manager.register(
+                        stage.key,
+                        factory=TrajectoryEvaluationRuntime,
+                        capabilities=capabilities,
+                    )
+                case StageKey.REFERENCE_RECONSTRUCTION:
+                    manager.register(
+                        stage.key,
+                        factory=ReconstructionRuntime,
+                        capabilities=capabilities,
+                    )
+                case StageKey.SUMMARY:
+                    manager.register(
+                        stage.key,
+                        factory=SummaryRuntime,
+                        capabilities=capabilities,
+                    )
+                case _:
+                    continue
+        return manager
+
+    def _build_offline_stage_input(self, *, stage_key: StageKey, context: StageExecutionContext):
+        match stage_key:
+            case StageKey.INGEST:
+                return SourceRuntimeInput(
+                    request=context.request,
+                    artifact_root=context.plan.artifact_root,
+                )
+            case StageKey.SLAM:
+                return SlamOfflineInput(
+                    request=context.request,
+                    plan=context.plan,
+                    path_config=context.path_config,
+                    sequence_manifest=self._result_store.require_sequence_manifest(),
+                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
+                )
+            case StageKey.GROUND_ALIGNMENT:
+                return GroundAlignmentRuntimeInput(
+                    request=context.request,
+                    run_paths=context.run_paths,
+                    slam=self._result_store.require_slam_artifacts(),
+                )
+            case StageKey.TRAJECTORY_EVALUATION:
+                return TrajectoryEvaluationRuntimeInput(
+                    request=context.request,
+                    plan=context.plan,
+                    sequence_manifest=self._result_store.require_sequence_manifest(),
+                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
+                    slam=self._result_store.require_slam_artifacts(),
+                )
+            case StageKey.REFERENCE_RECONSTRUCTION:
+                return ReconstructionRuntimeInput(
+                    request=context.request,
+                    run_paths=context.run_paths,
+                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
+                )
+            case StageKey.SUMMARY:
+                return SummaryRuntimeInput(
+                    request=context.request,
+                    plan=context.plan,
+                    run_paths=context.run_paths,
+                    stage_outcomes=self._result_store.ordered_outcomes(),
+                )
+            case _:
+                raise RuntimeError(f"No offline runtime input builder for stage '{stage_key.value}'.")
+
+    def _failure_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
+        match stage_key:
+            case StageKey.INGEST:
+                config_payload = context.request.source
+                input_payload = context.request.source
+            case StageKey.SLAM:
+                config_payload = context.request.slam
+                input_payload = self._result_store.require_sequence_manifest()
+            case StageKey.GROUND_ALIGNMENT:
+                slam = self._result_store.require_slam_artifacts()
+                config_payload = context.request.alignment.ground
+                input_payload = {
+                    "trajectory_tum": slam.trajectory_tum,
+                    "dense_points_ply": slam.dense_points_ply,
+                    "sparse_points_ply": slam.sparse_points_ply,
+                }
+            case StageKey.TRAJECTORY_EVALUATION:
+                slam = self._result_store.require_slam_artifacts()
+                config_payload = context.request.benchmark.trajectory
+                input_payload = {
+                    "benchmark_inputs": self._result_store.require_benchmark_inputs(),
+                    "slam_trajectory": slam.trajectory_tum,
+                }
+            case StageKey.REFERENCE_RECONSTRUCTION:
+                config_payload = context.request.benchmark.reference
+                input_payload = self._result_store.require_benchmark_inputs()
+            case StageKey.SUMMARY:
+                config_payload = {
+                    "experiment_name": context.request.experiment_name,
+                    "mode": context.request.mode.value,
+                }
+                input_payload = self._result_store.ordered_outcomes()
+            case _:
+                config_payload = {"stage_key": stage_key.value}
+                input_payload = {"run_id": context.plan.run_id, "stage_key": stage_key.value}
+        return stable_hash(config_payload), stable_hash(input_payload)
+
+    def _record_stage_result(self, stage_key: StageKey, result: StageResult) -> None:
+        sequence_manifest = None
+        benchmark_inputs = None
+        slam = None
+        ground_alignment = None
+        visualization = None
+        summary = None
+        stage_manifests = []
+        payload = result.payload
+        if isinstance(payload, SourceStageOutput):
+            sequence_manifest = payload.sequence_manifest
+            benchmark_inputs = payload.benchmark_inputs
+        elif isinstance(payload, SequenceManifest):
+            sequence_manifest = payload
+        if isinstance(payload, SlamArtifacts):
+            slam = payload
+        if isinstance(payload, GroundAlignmentMetadata):
+            ground_alignment = payload
+        if isinstance(payload, VisualizationArtifacts):
+            visualization = payload
+        if isinstance(payload, RunSummary):
+            summary = payload
+
+        for artifact_key, artifact in result.outcome.artifacts.items():
+            self._record_event(
+                ArtifactRegistered(
+                    event_id=self._next_event_id(),
+                    run_id=self._run_id,
+                    ts_ns=ts_ns(),
+                    stage_key=stage_key,
+                    artifact_key=artifact_key,
+                    artifact=artifact,
+                )
+            )
+        self._console.info(
+            "Stage '%s' finished for run '%s' with status '%s' and %d artifacts.",
+            stage_key.value,
+            self._run_id,
+            result.outcome.status.value,
+            len(result.outcome.artifacts),
+        )
+        self._record_event(
+            StageCompleted(
+                event_id=self._next_event_id(),
+                run_id=self._run_id,
+                ts_ns=ts_ns(),
+                stage_key=stage_key,
+                outcome=result.outcome,
+                sequence_manifest=sequence_manifest,
+                benchmark_inputs=benchmark_inputs,
+                slam=slam,
+                ground_alignment=ground_alignment,
+                visualization=visualization,
+                summary=summary,
+                stage_manifests=stage_manifests,
+            )
+        )
+        if stage_key is StageKey.GROUND_ALIGNMENT and payload.ground_alignment is not None:
+            self._submit_rerun_update(
+                update=StageRuntimeUpdate(
+                    stage_key=StageKey.GROUND_ALIGNMENT,
+                    timestamp_ns=ts_ns(),
+                    semantic_events=[payload.ground_alignment],
+                ),
+                payload_resolver=None,
+            )
 
     def _run_streaming(
         self,
@@ -442,7 +685,6 @@ class RunCoordinatorActor:
             source=runtime_source,
             initial_credits=DEFAULT_MAX_FRAMES_IN_FLIGHT,
             loop=False,
-            log_source_rgb=request.visualization.log_source_rgb,
         )
 
     def _finalize_streaming(self) -> None:
@@ -677,38 +919,72 @@ class RunCoordinatorActor:
         self,
         event: RunEvent,
         *,
-        rerun_bindings: list[tuple[str, np.ndarray]] | None = None,
-        forward_to_rerun: bool = True,
+        project_to_snapshot: bool = True,
     ) -> None:
         with self._lock:
-            self._snapshot = self._projector.apply(self._snapshot, event)
+            if project_to_snapshot:
+                self._snapshot = self._projector.apply(self._snapshot, event)
             self._events.append(event)
             if len(self._events) > EVENT_RING_LIMIT:
                 self._console.debug("Trimming in-memory event ring to last %d events.", EVENT_RING_LIMIT)
                 self._events = self._events[-EVENT_RING_LIMIT:]
         if self._jsonl_sink is not None:
             self._jsonl_sink.observe(event)
-        if self._rerun_sink is not None and forward_to_rerun:
-            try:
-                # TODO(pipeline-refactor/WP-10): Replace this legacy
-                # RunEvent/rerun_bindings forwarding with StageRuntimeUpdate
-                # observer routing once WP-06/WP-08 live updates are wired.
-                self._log_rerun_sink_backlog(event=event, rerun_bindings=rerun_bindings)
-                self._rerun_sink_last_call = self._rerun_sink.observe_event.remote(
-                    event=event,
-                    rerun_bindings=[] if rerun_bindings is None else rerun_bindings,
-                )
-            except Exception as exc:  # pragma: no cover - best-effort sidecar submission
-                self._console.warning("Failed to submit Rerun sink event '%s': %s", event.kind, exc)
 
-    def _log_rerun_sink_backlog(
+    def _emit_source_visualization_update(
         self,
         *,
-        event: RunEvent,
-        rerun_bindings: list[tuple[str, np.ndarray]] | None,
+        packet: FramePacketSummary,
+        frame_handle: ArrayHandle | None,
     ) -> None:
-        # TODO(pipeline-refactor/WP-10): Remove this legacy sidecar backlog
-        # diagnostic when Rerun no longer receives RunEvent/rerun_bindings.
+        if self._request is None or not self._request.visualization.log_source_rgb or frame_handle is None:
+            return
+        ref = TransientPayloadRef(
+            handle_id=frame_handle.handle_id,
+            payload_kind="image",
+            media_type="image/rgb",
+            shape=frame_handle.shape,
+            dtype=frame_handle.dtype,
+            metadata={"slot": IMAGE_REF},
+        )
+        update = StageRuntimeUpdate(
+            stage_key=StageKey.INGEST,
+            timestamp_ns=ts_ns(),
+            visualizations=[
+                VisualizationItem(
+                    intent=VisualizationIntent.RGB_IMAGE,
+                    role=ROLE_SOURCE_RGB,
+                    payload_refs={IMAGE_REF: ref},
+                    frame_index=packet.seq,
+                    space="source_raster",
+                )
+            ],
+        )
+        self._submit_rerun_update(update=update, payload_resolver=self._self_actor_handle())
+
+    def _submit_rerun_update(
+        self,
+        *,
+        update: StageRuntimeUpdate,
+        payload_resolver: ActorHandle | None,
+    ) -> None:
+        if self._rerun_sink is None:
+            return
+        try:
+            self._log_rerun_update_backlog(update)
+            self._rerun_sink_last_call = self._rerun_sink.observe_update.remote(
+                update=update,
+                payload_resolver=payload_resolver,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort sidecar submission
+            self._console.warning(
+                "Failed to submit Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc
+            )
+
+    def _self_actor_handle(self) -> ActorHandle:
+        return ray.get_actor(coordinator_actor_name(self._run_id), namespace=self._namespace)
+
+    def _log_rerun_update_backlog(self, update: StageRuntimeUpdate) -> None:
         self._rerun_sink_submission_count += 1
         if self._rerun_sink_last_call is None:
             return
@@ -718,17 +994,18 @@ class RunCoordinatorActor:
             return
         self._rerun_sink_pending_count += 1
         if self._rerun_sink_pending_count == 1 or self._rerun_sink_pending_count % 100 == 0:
-            binding_shapes = [
-                (handle_id, tuple(np.asarray(payload).shape), str(np.asarray(payload).dtype))
-                for handle_id, payload in (rerun_bindings or [])
+            payload_refs = [
+                (item.role, slot, ref.payload_kind, ref.shape, ref.dtype)
+                for item in update.visualizations
+                for slot, ref in item.payload_refs.items()
             ]
             self._console.warning(
-                "Rerun sink sidecar is lagging: previous submission still pending before event '%s' "
-                "(submitted=%d, consecutive_pending=%d, bindings=%s). Live viewer may lag behind the exported RRD.",
-                event.kind,
+                "Rerun sink sidecar is lagging: previous runtime update still pending for stage '%s' "
+                "(submitted=%d, consecutive_pending=%d, refs=%s). Live viewer may lag behind the exported RRD.",
+                update.stage_key.value,
                 self._rerun_sink_submission_count,
                 self._rerun_sink_pending_count,
-                binding_shapes,
+                payload_refs,
             )
 
     def _remember_handle(self, handle_id: str, payload: HandlePayload) -> None:

@@ -12,8 +12,7 @@ import ray
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import BackendEvent, SlamArtifacts, SlamSessionInit
-from prml_vslam.methods.events import translate_slam_update
+from prml_vslam.interfaces.slam import SlamArtifacts, SlamSessionInit
 from prml_vslam.pipeline.contracts.events import FramePacketSummary, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
@@ -22,16 +21,12 @@ from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     FPS_WINDOW,
-    HandlePayload,
     put_array_handle,
-    put_preview_handle,
     rolling_fps,
     slam_artifacts_map,
     visualization_artifact_map,
 )
 from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
-from prml_vslam.pipeline.stages.slam.runtime import payload_bindings_for_updates
-from prml_vslam.pipeline.stages.slam.visualization import DEPTH_REF, IMAGE_REF, POINTMAP_REF, PREVIEW_REF
 from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
@@ -39,6 +34,8 @@ if TYPE_CHECKING:
     from prml_vslam.pipeline.ray_runtime.stage_program import StageCompletionPayload
 
 
+# TODO(pipeline-refactor/WP-10): Delete this SLAM actor after RuntimeManager
+# deploys SlamStageRuntime through StageRuntimeProxy.
 @ray.remote(num_cpus=2, max_restarts=0, max_task_retries=0)
 class OfflineSlamStageActor:
     """Run one offline SLAM stage."""
@@ -106,7 +103,6 @@ class PacketSourceActor:
         source: StreamingSequenceSource,
         initial_credits: int = DEFAULT_MAX_FRAMES_IN_FLIGHT,
         loop: bool = False,
-        log_source_rgb: bool = False,
     ) -> None:
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("Packet source actor is already running.")
@@ -119,7 +115,7 @@ class PacketSourceActor:
         )
         self._stop_event.clear()
         self._credits = initial_credits
-        self._thread = threading.Thread(target=self._run_source, args=(source, loop, log_source_rgb), daemon=True)
+        self._thread = threading.Thread(target=self._run_source, args=(source, loop), daemon=True)
         self._thread.start()
 
     def grant_credit(self, count: int = 1) -> None:
@@ -136,7 +132,7 @@ class PacketSourceActor:
             if self._thread.is_alive():
                 self._console.warning("Timed out waiting for packet source worker thread to stop.")
 
-    def _run_source(self, source: StreamingSequenceSource, loop: bool, log_source_rgb: bool) -> None:
+    def _run_source(self, source: StreamingSequenceSource, loop: bool) -> None:
         stream = source.open_stream(loop=loop)
         try:
             stream.connect()
@@ -162,16 +158,6 @@ class PacketSourceActor:
                     ),
                     frame_handle=frame_handle,
                     frame_ref=frame_ref,
-                    # TODO(pipeline-refactor/WP-10): Remove source RGB
-                    # rerun_bindings when PacketObserved no longer feeds the
-                    # Rerun sidecar; target routing uses StageRuntimeUpdate.
-                    rerun_bindings=(
-                        []
-                        if not log_source_rgb or packet.rgb is None
-                        else [(frame_handle.handle_id, np.asarray(packet.rgb))]
-                        if frame_handle is not None
-                        else []
-                    ),
                     depth_ref=depth_ref,
                     confidence_ref=confidence_ref,
                     intrinsics=packet.intrinsics,
@@ -193,6 +179,8 @@ class PacketSourceActor:
                 pass
 
 
+# TODO(pipeline-refactor/WP-10): Delete this SLAM actor after RuntimeManager
+# deploys SlamStageRuntime through StageRuntimeProxy.
 @ray.remote(num_cpus=2, max_restarts=0, max_task_retries=0)
 class StreamingSlamStageActor:
     """Ordered streaming SLAM stage with internal session state."""
@@ -202,15 +190,6 @@ class StreamingSlamStageActor:
         self._coordinator = ray.get_actor(coordinator_name, namespace=namespace)
         self._session = None
         self._runtime: SlamStageRuntime | None = None
-        self._accepted_keyframes = 0
-        self._keyframe_timestamps = deque(maxlen=FPS_WINDOW)
-        self._logged_first_notice = False
-        self._logged_first_pose_update = False
-        self._logged_first_keyframe_update = False
-        self._logged_first_depth_update = False
-        self._logged_first_pointmap_update = False
-        self._logged_first_preview_update = False
-        self._log_diagnostic_preview = False
 
     def start_stage(
         self,
@@ -237,7 +216,6 @@ class StreamingSlamStageActor:
             )
         )
         self._session = self._runtime.session_for_migration
-        self._log_diagnostic_preview = request.visualization.log_diagnostic_preview
 
     def push_frame(
         self,
@@ -272,109 +250,19 @@ class StreamingSlamStageActor:
             )
         )
         runtime_updates = self._runtime.drain_runtime_updates()
+        self._coordinator.grant_slam_source_credit.remote(credit_count=1)
         if runtime_updates:
             self._coordinator.on_slam_runtime_updates.remote(
                 updates=runtime_updates,
-                payload_bindings=payload_bindings_for_updates(self._runtime, runtime_updates),
             )
-        notices: list[BackendEvent] = []
-        bindings: list[tuple[str, HandlePayload]] = []
-        # TODO(pipeline-refactor/WP-10): Remove rerun_bindings after
-        # StreamingSlamStageActor emits StageRuntimeUpdate visualizations and
-        # the Rerun sink consumes resolved TransientPayloadRefs.
-        rerun_bindings: list[tuple[str, np.ndarray]] = []
-        now = time.monotonic()
-        for legacy_update in self._runtime.drain_legacy_updates():
-            update = legacy_update.update
-            if update.pose is not None and not self._logged_first_pose_update:
-                self._console.info(
-                    "First SLAM pose update: seq=%d source_seq=%s pose_updated=%s.",
-                    update.seq,
-                    update.source_seq,
-                    update.pose_updated,
-                )
-                self._logged_first_pose_update = True
-            if update.is_keyframe and update.keyframe_index is not None and not self._logged_first_keyframe_update:
-                self._console.info(
-                    "First SLAM keyframe update: seq=%d source_seq=%s keyframe_index=%d intrinsics=%s.",
-                    update.seq,
-                    update.source_seq,
-                    update.keyframe_index,
-                    update.camera_intrinsics is not None,
-                )
-                self._logged_first_keyframe_update = True
-            if update.depth_map is not None and not self._logged_first_depth_update:
-                self._console.info(
-                    "First SLAM depth visualization payload: seq=%d source_seq=%s shape=%s dtype=%s.",
-                    update.seq,
-                    update.source_seq,
-                    tuple(np.asarray(update.depth_map).shape),
-                    np.asarray(update.depth_map).dtype,
-                )
-                self._logged_first_depth_update = True
-            if update.pointmap is not None and not self._logged_first_pointmap_update:
-                self._console.info(
-                    "First SLAM pointmap visualization payload: seq=%d source_seq=%s shape=%s dtype=%s.",
-                    update.seq,
-                    update.source_seq,
-                    tuple(np.asarray(update.pointmap).shape),
-                    np.asarray(update.pointmap).dtype,
-                )
-                self._logged_first_pointmap_update = True
-            if update.preview_rgb is not None and not self._logged_first_preview_update:
-                self._console.info(
-                    "First SLAM diagnostic preview payload: seq=%d source_seq=%s shape=%s dtype=%s.",
-                    update.seq,
-                    update.source_seq,
-                    tuple(np.asarray(update.preview_rgb).shape),
-                    np.asarray(update.preview_rgb).dtype,
-                )
-                self._logged_first_preview_update = True
-            preview_handle, preview_ref = put_preview_handle(legacy_update.payloads.get(PREVIEW_REF))
-            image_handle, image_ref = put_array_handle(legacy_update.payloads.get(IMAGE_REF))
-            depth_handle, depth_payload_ref = put_array_handle(legacy_update.payloads.get(DEPTH_REF))
-            pointmap_handle, pointmap_payload_ref = put_array_handle(legacy_update.payloads.get(POINTMAP_REF))
-            for handle, ref in (
-                (preview_handle, preview_ref),
-                (image_handle, image_ref),
-                (depth_handle, depth_payload_ref),
-                (pointmap_handle, pointmap_payload_ref),
-            ):
-                if handle is not None and ref is not None:
-                    bindings.append((handle.handle_id, ref))
-            for handle, payload in (
-                (preview_handle if self._log_diagnostic_preview else None, legacy_update.payloads.get(PREVIEW_REF)),
-                (image_handle, legacy_update.payloads.get(IMAGE_REF)),
-                (depth_handle, legacy_update.payloads.get(DEPTH_REF)),
-                (pointmap_handle, legacy_update.payloads.get(POINTMAP_REF)),
-            ):
-                if handle is not None and payload is not None:
-                    rerun_bindings.append((handle.handle_id, np.asarray(payload)))
-            if update.is_keyframe:
-                self._accepted_keyframes += 1
-                self._keyframe_timestamps.append(now)
-                if self._accepted_keyframes == 1:
-                    self._console.debug("Accepted first streaming keyframe.")
-            notices.extend(
-                translate_slam_update(
-                    update=update,
-                    accepted_keyframes=self._accepted_keyframes,
-                    backend_fps=rolling_fps(self._keyframe_timestamps),
-                    preview_handle=preview_handle,
-                    image_handle=image_handle,
-                    depth_handle=depth_handle,
-                    pointmap_handle=pointmap_handle,
-                )
-            )
-        if notices and not self._logged_first_notice:
-            self._console.debug("Translated first backend notice batch with %d notices.", len(notices))
-            self._logged_first_notice = True
+        # Keep the coordinator credit/finalization handshake on the legacy
+        # callback until the dedicated runtime-update credit API lands.
         self._coordinator.on_slam_notices.remote(
-            notices=notices,
-            bindings=bindings,
-            rerun_bindings=rerun_bindings,
+            notices=[],
+            bindings=[],
             released_credits=1,
-            forward_to_rerun=not bool(runtime_updates),
+            grant_source_credit=False,
+            project_to_snapshot=False,
         )
 
     @staticmethod
@@ -384,6 +272,12 @@ class StreamingSlamStageActor:
         if isinstance(ref, np.ndarray):
             return np.asarray(ref)
         return np.asarray(ray.get(ref))
+
+    def read_payload(self, handle_id: str) -> np.ndarray | None:
+        """Resolve one runtime-owned transient payload for observer sidecars."""
+        if self._runtime is None:
+            return None
+        return self._runtime.read_payload_by_id(handle_id)
 
     def close_stage(
         self,

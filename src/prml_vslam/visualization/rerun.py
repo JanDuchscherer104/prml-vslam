@@ -38,8 +38,41 @@ GROUND_PLANE_OUTLINE_RGBA = np.array([[24, 140, 84, 255]], dtype=np.uint8)
 """Opaque outline color for the ground-plane patch."""
 
 
-def build_default_blueprint() -> rrb.Blueprint:
+def build_default_blueprint(
+    *,
+    show_source_rgb: bool = False,
+    show_diagnostic_preview: bool = False,
+) -> rrb.Blueprint:
     """Build the default repo-owned Rerun blueprint."""
+    views = [
+        rrb.Spatial2DView(
+            origin=MODEL_RGB_2D_ENTITY_PATH,
+            contents=MODEL_RGB_2D_ENTITY_PATH,
+            name="Model RGB",
+        ),
+        rrb.Spatial2DView(
+            origin="world/live/model/camera/image",
+            contents="world/live/model/camera/image/depth",
+            name="Model Depth",
+        ),
+    ]
+    if show_source_rgb:
+        views.insert(
+            0,
+            rrb.Spatial2DView(
+                origin="world/live/source/rgb",
+                contents="world/live/source/rgb",
+                name="Source RGB",
+            ),
+        )
+    if show_diagnostic_preview:
+        views.append(
+            rrb.Spatial2DView(
+                origin="world/live/model/diag/preview",
+                contents="world/live/model/diag/preview",
+                name="Preview",
+            )
+        )
     return rrb.Blueprint(
         rrb.Horizontal(
             rrb.Spatial3DView(
@@ -60,37 +93,24 @@ def build_default_blueprint() -> rrb.Blueprint:
                     "+ world/trajectory/tracking",
                 ],
             ),
-            rrb.Tabs(
-                rrb.Spatial2DView(
-                    origin="world/live/source/rgb",
-                    contents="world/live/source/rgb",
-                    name="Source RGB",
-                ),
-                rrb.Spatial2DView(
-                    origin=MODEL_RGB_2D_ENTITY_PATH,
-                    contents=MODEL_RGB_2D_ENTITY_PATH,
-                    name="Model RGB",
-                ),
-                rrb.Spatial2DView(
-                    origin="world/live/model/camera/image",
-                    contents="world/live/model/camera/image/depth",
-                    name="Model Depth",
-                ),
-                rrb.Spatial2DView(
-                    origin="world/live/model/diag/preview",
-                    contents="world/live/model/diag/preview",
-                    name="Preview",
-                ),
-                name="2D Views",
-            ),
+            rrb.Tabs(*views, name="2D Views"),
         ),
     )
 
 
-def create_recording_stream(*, app_id: str, recording_id: str | None = None) -> rr.RecordingStream:
+def create_recording_stream(
+    *,
+    app_id: str,
+    recording_id: str | None = None,
+    show_source_rgb: bool = False,
+    show_diagnostic_preview: bool = False,
+) -> rr.RecordingStream:
     """Create one explicit Rerun recording stream."""
     stream = rr.RecordingStream(application_id=app_id, recording_id=recording_id)
-    blueprint = build_default_blueprint()
+    blueprint = build_default_blueprint(
+        show_source_rgb=show_source_rgb,
+        show_diagnostic_preview=show_diagnostic_preview,
+    )
     stream.send_blueprint(blueprint)
     log_root_world_transform(stream)
     return stream
