@@ -53,7 +53,7 @@ class TargetStageKey(StrEnum):
 
     SOURCE = "source"
     SLAM = "slam"
-    ALIGN_GROUND = "align.ground"
+    ALIGN_GROUND = "gravity.align"
     EVALUATE_TRAJECTORY = "evaluate.trajectory"
     RECONSTRUCTION = "reconstruction"
     EVALUATE_CLOUD = "evaluate.cloud"
@@ -67,7 +67,7 @@ class TargetStageKey(StrEnum):
 CURRENT_TO_TARGET_STAGE_KEYS: dict[StageKey, TargetStageKey] = {
     StageKey.INGEST: TargetStageKey.SOURCE,
     StageKey.SLAM: TargetStageKey.SLAM,
-    StageKey.GROUND_ALIGNMENT: TargetStageKey.ALIGN_GROUND,
+    StageKey.GRAVITY_ALIGNMENT: TargetStageKey.ALIGN_GROUND,
     StageKey.TRAJECTORY_EVALUATION: TargetStageKey.EVALUATE_TRAJECTORY,
     StageKey.REFERENCE_RECONSTRUCTION: TargetStageKey.RECONSTRUCTION,
     StageKey.CLOUD_EVALUATION: TargetStageKey.EVALUATE_CLOUD,
@@ -141,7 +141,7 @@ class StageBundle(BaseConfig):
     """SLAM stage section."""
 
     align_ground: StageConfig = Field(
-        default_factory=lambda: StageConfig(stage_key=StageKey.GROUND_ALIGNMENT, enabled=False)
+        default_factory=lambda: StageConfig(stage_key=StageKey.GRAVITY_ALIGNMENT, enabled=False)
     )
     """Ground-alignment stage section."""
 
@@ -175,7 +175,7 @@ class StageBundle(BaseConfig):
         """Ensure every section carries the expected migration stage key."""
         object.__setattr__(self, "source", _section_config(self.source, StageKey.INGEST))
         object.__setattr__(self, "slam", _section_config(self.slam, StageKey.SLAM))
-        object.__setattr__(self, "align_ground", _section_config(self.align_ground, StageKey.GROUND_ALIGNMENT))
+        object.__setattr__(self, "align_ground", _section_config(self.align_ground, StageKey.GRAVITY_ALIGNMENT))
         object.__setattr__(
             self,
             "evaluate_trajectory",
@@ -212,7 +212,7 @@ class StageBundle(BaseConfig):
             },
             align_ground={
                 "enabled": request.alignment.ground.enabled,
-                "execution": _execution_payload_from_placement(request.placement, StageKey.GROUND_ALIGNMENT),
+                "execution": _execution_payload_from_placement(request.placement, StageKey.GRAVITY_ALIGNMENT),
             },
             evaluate_trajectory={
                 "enabled": request.benchmark.trajectory.enabled,
@@ -457,7 +457,7 @@ def _compile_run_plan(
         alignment_available, alignment_reason = _ground_alignment_stage_availability(slam=slam, backend=backend)
         plan_stages.append(
             _plan_stage(
-                key=StageKey.GROUND_ALIGNMENT,
+                key=StageKey.GRAVITY_ALIGNMENT,
                 outputs=[resolved_run_paths.ground_alignment_path],
                 available=alignment_available,
                 availability_reason=alignment_reason,

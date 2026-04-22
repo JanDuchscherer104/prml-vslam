@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from prml_vslam.benchmark import ReferenceSource
+from prml_vslam.interfaces import FramePacket
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import SlamArtifacts, SlamSessionInit
+from prml_vslam.interfaces.slam import SlamArtifacts, SlamUpdate
 from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import Mast3rSlamBackendConfig
-from prml_vslam.methods.protocols import SlamBackend, SlamSession
+from prml_vslam.methods.protocols import SlamBackend
 
 
 class Mast3rSlamBackend(SlamBackend):
@@ -20,15 +21,30 @@ class Mast3rSlamBackend(SlamBackend):
     def __init__(self, config: Mast3rSlamBackendConfig) -> None:
         self._config = config
 
-    def start_session(
+    def start_streaming(
         self,
-        session_init: SlamSessionInit,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
-    ) -> SlamSession:
+    ) -> None:
         """Fail because MASt3R streaming execution is not implemented."""
-        del session_init, backend_config, output_policy, artifact_root
+        del sequence_manifest, benchmark_inputs, baseline_source, backend_config, output_policy, artifact_root
+        raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
+
+    def step_streaming(self, frame: FramePacket) -> None:
+        """Fail because MASt3R streaming execution is not implemented."""
+        del frame
+        raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
+
+    def drain_streaming_updates(self) -> list[SlamUpdate]:
+        """Fail because MASt3R streaming execution is not implemented."""
+        raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
+
+    def finish_streaming(self) -> SlamArtifacts:
+        """Fail because MASt3R streaming execution is not implemented."""
         raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
 
     def run_sequence(

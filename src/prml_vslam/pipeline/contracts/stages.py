@@ -16,14 +16,14 @@ class StageKey(StrEnum):
 
     These values are persisted in existing run events, summaries, and manifests.
     The target public vocabulary uses names such as ``source``,
-    ``align.ground``, and ``evaluate.trajectory``; aliases are handled by
+    ``gravity.align``, and ``evaluate.trajectory``; aliases are handled by
     :mod:`prml_vslam.pipeline.config` until the migration-removal work package
     retires the current spellings.
     """
 
     INGEST = "ingest"
     SLAM = "slam"
-    GROUND_ALIGNMENT = "ground.align"
+    GRAVITY_ALIGNMENT = "gravity.align"
     TRAJECTORY_EVALUATION = "trajectory.evaluate"
     REFERENCE_RECONSTRUCTION = "reference.reconstruct"
     CLOUD_EVALUATION = "cloud.evaluate"
@@ -36,7 +36,7 @@ class StageKey(StrEnum):
         return {
             StageKey.INGEST: "Normalize Input Sequence",
             StageKey.SLAM: "Run SLAM Backend",
-            StageKey.GROUND_ALIGNMENT: "Detect Ground Plane",
+            StageKey.GRAVITY_ALIGNMENT: "Detect Ground Plane",
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
             StageKey.REFERENCE_RECONSTRUCTION: "Build Reference Reconstruction",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",

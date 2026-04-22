@@ -16,7 +16,6 @@ from pydantic import Field
 from prml_vslam.utils import BaseConfig
 
 
-# TODO: we need to decide where configs are defined? Are they contracts?
 class GroundAlignmentConfig(BaseConfig):
     """Policy for optional dominant-ground detection and viewer alignment.
 
@@ -27,7 +26,7 @@ class GroundAlignmentConfig(BaseConfig):
     """
 
     enabled: bool = False
-    """Whether the `ground.align` stage should run."""
+    """Whether the `gravity.align` stage should run."""
 
     strategy: Literal["ransac_point_cloud"] = "ransac_point_cloud"
     """Detection strategy used to estimate the dominant ground plane."""

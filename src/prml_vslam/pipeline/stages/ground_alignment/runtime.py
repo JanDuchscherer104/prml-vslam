@@ -23,7 +23,7 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
 
     def __init__(self, *, service_type: type[GroundAlignmentService] | None = None) -> None:
         self._service_type = GroundAlignmentService if service_type is None else service_type
-        self._status = StageRuntimeStatus(stage_key=StageKey.GROUND_ALIGNMENT)
+        self._status = StageRuntimeStatus(stage_key=StageKey.GRAVITY_ALIGNMENT)
 
     def status(self) -> StageRuntimeStatus:
         """Return the latest ground-alignment runtime status."""
@@ -66,7 +66,7 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
         write_json(input_payload.run_paths.ground_alignment_path, metadata)
         outcome_status = StageStatus.COMPLETED if metadata.applied else StageStatus.SKIPPED
         outcome = StageOutcome(
-            stage_key=StageKey.GROUND_ALIGNMENT,
+            stage_key=StageKey.GRAVITY_ALIGNMENT,
             status=outcome_status,
             config_hash=stable_hash(input_payload.request.alignment.ground),
             input_fingerprint=stable_hash(
@@ -85,11 +85,11 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
             },
         )
         return StageResult(
-            stage_key=StageKey.GROUND_ALIGNMENT,
+            stage_key=StageKey.GRAVITY_ALIGNMENT,
             payload=metadata,
             outcome=outcome,
             final_runtime_status=_final_status(
-                stage_key=StageKey.GROUND_ALIGNMENT,
+                stage_key=StageKey.GRAVITY_ALIGNMENT,
                 status=outcome_status,
                 processed_items=1,
                 progress_message="Ground alignment complete.",
@@ -97,7 +97,6 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
         )
 
 
-# TODO: remove this boilerplate!
 def _final_status(
     *,
     stage_key: StageKey,

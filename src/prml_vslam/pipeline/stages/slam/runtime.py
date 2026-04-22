@@ -19,7 +19,7 @@ from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts, SlamUpdate
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.factory import BackendFactory, BackendFactoryProtocol
-from prml_vslam.methods.protocols import OfflineSlamBackend, SlamSession, StreamingSlamBackend
+from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.request import RunRequest
@@ -121,7 +121,7 @@ class SlamStageRuntime(
         )
         self._console = Console(__name__).child(self.__class__.__name__)
         self._payload_store = _TransientPayloadStore()
-        self._session: SlamSession | None = None
+        self._streaming_backend: StreamingSlamBackend | None = None
         self._streaming_input: SlamStreamingStartInput | None = None
         self._pending_updates: list[StageRuntimeUpdate] = []
         # Migration compatibility only. Streaming execution no longer fills this
@@ -199,24 +199,27 @@ class SlamStageRuntime(
             raise RuntimeError(
                 f"Backend '{input_payload.request.slam.backend.method_id.value}' does not support streaming execution."
             )
-        self._session = backend.start_session(
-            session_init=input_payload.session_init,
+        backend.start_streaming(
+            sequence_manifest=input_payload.sequence_manifest,
+            benchmark_inputs=input_payload.benchmark_inputs,
+            baseline_source=input_payload.baseline_source,
             backend_config=input_payload.request.slam.backend,
             output_policy=input_payload.request.slam.outputs,
             artifact_root=input_payload.plan.artifact_root,
         )
+        self._streaming_backend = backend
         self._streaming_input = input_payload
         self._lifecycle_state = StageStatus.RUNNING
         self._stopped = False
 
     def submit_stream_item(self, item: SlamFrameInput) -> None:
-        """Submit one frame to the active streaming backend session."""
-        if self._session is None:
+        """Submit one frame to the active streaming backend."""
+        if self._streaming_backend is None:
             raise RuntimeError("SLAM streaming runtime has not been started.")
         if self._stopped:
             return
         try:
-            self._session.step(item.frame)
+            self._streaming_backend.step_streaming(item.frame)
             self._processed_frames += 1
             self._frame_timestamps.append(time.monotonic())
             self._drain_backend_updates()
@@ -257,24 +260,17 @@ class SlamStageRuntime(
         """Return visualization artifacts collected by the last terminal run."""
         return self._last_visualization_artifacts
 
-    @property
-    def session_for_migration(self) -> SlamSession | None:
-        """Return the active method session for legacy actor compatibility."""
-        # TODO(pipeline-refactor/WP-10): Remove after streaming tests and
-        # compatibility actors no longer inspect method session state directly.
-        return self._session
-
     def finish_streaming(self) -> StageResult:
         """Finalize streaming SLAM and return terminal artifacts."""
-        if self._session is None or self._streaming_input is None:
+        if self._streaming_backend is None or self._streaming_input is None:
             raise RuntimeError("SLAM streaming runtime has not been started.")
         self._lifecycle_state = StageStatus.RUNNING
         try:
-            slam = self._session.close()
+            slam = self._streaming_backend.finish_streaming()
             result = self._stage_result(
                 request=self._streaming_input.request,
                 artifact_root=self._streaming_input.plan.artifact_root,
-                sequence_manifest=self._streaming_input.session_init.sequence_manifest,
+                sequence_manifest=self._streaming_input.sequence_manifest,
                 slam=slam,
                 status=StageStatus.COMPLETED if not self._stopped else StageStatus.STOPPED,
             )
@@ -286,9 +282,9 @@ class SlamStageRuntime(
             raise
 
     def _drain_backend_updates(self) -> None:
-        if self._session is None:
+        if self._streaming_backend is None:
             return
-        for update in self._session.try_get_updates():
+        for update in self._streaming_backend.drain_streaming_updates():
             if update.is_keyframe:
                 self._accepted_keyframes += 1
             if update.backend_warnings:

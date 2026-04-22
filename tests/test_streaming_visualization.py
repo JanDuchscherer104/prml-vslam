@@ -88,7 +88,7 @@ def _ground_alignment_metadata() -> GroundAlignmentMetadata:
 
 def _ground_alignment_update() -> StageRuntimeUpdate:
     return StageRuntimeUpdate(
-        stage_key=StageKey.GROUND_ALIGNMENT,
+        stage_key=StageKey.GRAVITY_ALIGNMENT,
         timestamp_ns=1,
         semantic_events=[_ground_alignment_metadata()],
     )

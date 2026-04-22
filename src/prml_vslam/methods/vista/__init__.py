@@ -1,13 +1,12 @@
 """Canonical ViSTA backend public surface.
 
-This package contains the thin adapter, runtime/bootstrap helpers, and session
-wrapper that adapt the upstream ViSTA checkout to the repository's method
-contract.
+This package contains the thin adapter and runtime/bootstrap helpers that adapt
+the upstream ViSTA checkout to the repository's method contract.
 """
 
 from typing import Any
 
-__all__ = ["VistaSlamBackend", "VistaSlamBackendConfig", "VistaSlamSession"]
+__all__ = ["VistaSlamBackend", "VistaSlamBackendConfig", "VistaSlamRuntime"]
 
 
 def __getattr__(name: str) -> Any:
@@ -19,8 +18,8 @@ def __getattr__(name: str) -> Any:
         from ..configs import VistaSlamBackendConfig
 
         return VistaSlamBackendConfig
-    if name == "VistaSlamSession":
-        from .session import VistaSlamSession
+    if name == "VistaSlamRuntime":
+        from .session import VistaSlamRuntime
 
-        return VistaSlamSession
+        return VistaSlamRuntime
     raise AttributeError(name)

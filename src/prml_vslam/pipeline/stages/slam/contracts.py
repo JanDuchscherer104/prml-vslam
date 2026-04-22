@@ -7,9 +7,9 @@ to shared interfaces.
 
 from __future__ import annotations
 
+from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.runtime import FramePacket
-from prml_vslam.interfaces.slam import SlamSessionInit
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.utils import BaseData, PathConfig
@@ -35,7 +35,7 @@ class SlamOfflineInput(BaseData):
 
 
 class SlamStreamingStartInput(BaseData):
-    """Input needed to start one incremental SLAM runtime session."""
+    """Input needed to start one incremental SLAM runtime."""
 
     request: RunRequest
     """Run request carrying backend, output, and visualization policy."""
@@ -46,8 +46,14 @@ class SlamStreamingStartInput(BaseData):
     path_config: PathConfig
     """Repository path configuration for backend construction."""
 
-    session_init: SlamSessionInit
-    """Method/session initialization payload kept as a WP-06 migration contact."""
+    sequence_manifest: SequenceManifest
+    """Normalized source sequence available before the first streaming frame."""
+
+    benchmark_inputs: PreparedBenchmarkInputs | None = None
+    """Optional prepared benchmark-side inputs available at stream start."""
+
+    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
+    """Selected benchmark trajectory baseline used by backend replay helpers."""
 
 
 class SlamFrameInput(BaseData):

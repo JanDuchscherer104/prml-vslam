@@ -355,7 +355,7 @@ src/prml_vslam/
 │       ├── runtime.py
 │       │   └── VistaSlamBackend
 │       └── session.py
-│           └── VistaSlamSession migration contact
+│           └── VistaSlamRuntime migration contact
 ├── pipeline
 │   ├── README.md
 │   ├── REQUIREMENTS.md
@@ -634,7 +634,7 @@ new target vocabulary lands.
 | Current key | Target key | Rule |
 | --- | --- | --- |
 | `ingest` | `source` | Keep current key during early runtime slices; add alias/projection tests before persisted public rename. |
-| `ground.align` | `align.ground` | Keep current key during early runtime slices; add alias/projection tests before persisted public rename. |
+| `gravity.align` | `gravity.align` | Canonical gravity-alignment key; no old `ground.align` spelling should remain. |
 | `reference.reconstruct` | `reconstruction` | Keep old run inspection working; model future variants under `[stages.reconstruction]`. |
 
 Deletion of migration aliases belongs in the final migration-removal work

@@ -28,10 +28,10 @@ from prml_vslam.interfaces.ingest import (
     ReferencePointCloudSequenceRef,
     SequenceManifest,
 )
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts, SlamSessionInit, SlamUpdate
+from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts, SlamUpdate
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import MockSlamBackendConfig
-from prml_vslam.methods.protocols import SlamBackend, SlamSession
+from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply,
     load_tum_trajectory,
@@ -66,22 +66,42 @@ class MockSlamBackend(SlamBackend):
     def __init__(self, config: MockSlamBackendConfig) -> None:
         self.config = config
         self.method_id = config.method_id
+        self._streaming_runtime: MockSlamRuntime | None = None
 
-    def start_session(
+    def start_streaming(
         self,
-        session_init: SlamSessionInit,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
-    ) -> MockSlamSession:
-        """Prepare one streaming-capable session."""
-        return MockSlamSession(
+    ) -> None:
+        """Prepare backend-owned streaming runtime state."""
+        self._streaming_runtime = MockSlamRuntime(
             config=self.config,
-            session_init=session_init,
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=benchmark_inputs,
+            baseline_source=baseline_source,
             backend_config=backend_config,
             output_policy=output_policy,
             artifact_root=artifact_root,
         )
+
+    def step_streaming(self, frame: FramePacket) -> None:
+        """Consume one streaming frame through backend-owned state."""
+        self._require_streaming_runtime().step(frame)
+
+    def drain_streaming_updates(self) -> list[SlamUpdate]:
+        """Retrieve pending streaming updates without exposing runtime state."""
+        return self._require_streaming_runtime().drain_updates()
+
+    def finish_streaming(self) -> SlamArtifacts:
+        """Finalize backend-owned streaming state and clear it."""
+        runtime = self._require_streaming_runtime()
+        artifacts = runtime.finish()
+        self._streaming_runtime = None
+        return artifacts
 
     def run_sequence(
         self,
@@ -94,35 +114,40 @@ class MockSlamBackend(SlamBackend):
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Run the mock backend over a materialized sequence manifest offline."""
-        session = self.start_session(
-            session_init=SlamSessionInit(
-                sequence_manifest=sequence,
-                benchmark_inputs=benchmark_inputs,
-                baseline_source=baseline_source,
-            ),
+        self.start_streaming(
+            sequence_manifest=sequence,
+            benchmark_inputs=benchmark_inputs,
+            baseline_source=baseline_source,
             backend_config=backend_config,
             output_policy=output_policy,
             artifact_root=artifact_root,
         )
-        session.replay_offline()
-        return session.close()
+        self._require_streaming_runtime().replay_offline()
+        return self.finish_streaming()
+
+    def _require_streaming_runtime(self) -> MockSlamRuntime:
+        if self._streaming_runtime is None:
+            raise RuntimeError("Mock SLAM streaming backend has not been started.")
+        return self._streaming_runtime
 
 
-class MockSlamSession(SlamSession):
-    """Stateful mock SLAM session shared by offline and streaming execution."""
+class MockSlamRuntime:
+    """Stateful mock SLAM runtime shared by offline and streaming execution."""
 
     def __init__(
         self,
         *,
         config: MockSlamBackendConfig,
-        session_init: SlamSessionInit,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> None:
         self.config = config
-        self._sequence_manifest = session_init.sequence_manifest
-        self._baseline_source = session_init.baseline_source
+        self._sequence_manifest = sequence_manifest
+        self._baseline_source = baseline_source
         self.backend_config = backend_config
         self.output_policy = output_policy
         self._artifact_root = artifact_root.expanduser().resolve()
@@ -134,16 +159,16 @@ class MockSlamSession(SlamSession):
         self._rng = np.random.default_rng(config.random_seed)
         self._sequence_intrinsics = _load_sequence_intrinsics(self._sequence_manifest)
         self._reference_trajectory = _load_reference_trajectory(
-            session_init.benchmark_inputs,
+            benchmark_inputs,
             self._baseline_source,
         )
         self._reference_point_cloud_sequence = _load_reference_point_cloud_sequence(
-            benchmark_inputs=session_init.benchmark_inputs,
+            benchmark_inputs=benchmark_inputs,
             baseline_source=self._baseline_source,
             reference_trajectory=self._reference_trajectory,
         )
         self._static_reference_points_xyz_world = _load_static_reference_points_xyz_world(
-            benchmark_inputs=session_init.benchmark_inputs,
+            benchmark_inputs=benchmark_inputs,
             baseline_source=self._baseline_source,
         )
 
@@ -242,13 +267,13 @@ class MockSlamSession(SlamSession):
         )
         self._pending_updates.append(update)
 
-    def try_get_updates(self) -> list[SlamUpdate]:
+    def drain_updates(self) -> list[SlamUpdate]:
         """Retrieve and clear any pending incremental SLAM updates."""
         updates = self._pending_updates
         self._pending_updates = []
         return updates
 
-    def close(self) -> SlamArtifacts:
+    def finish(self) -> SlamArtifacts:
         """Finalize the current run and persist the minimal SLAM artifacts."""
         trajectory_path = write_tum_trajectory(
             self._artifact_root / "slam" / "trajectory.tum",
@@ -687,4 +712,4 @@ def _artifact_ref(path: Path, *, kind: str, fingerprint: str) -> ArtifactRef:
     return ArtifactRef(path=path, kind=kind, fingerprint=fingerprint)
 
 
-__all__ = ["MockSlamBackend", "MockSlamBackendConfig", "MockSlamSession"]
+__all__ = ["MockSlamBackend", "MockSlamBackendConfig", "MockSlamRuntime"]

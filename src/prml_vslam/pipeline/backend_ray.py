@@ -29,6 +29,8 @@ from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import coordinator_actor_name
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
@@ -57,6 +59,19 @@ _RAY_NATIVE_THREAD_ENV = {
     "UV_NUM_THREADS": "1",
 }
 RayRuntimeEnvValue = list[str] | dict[str, str] | str
+RayActorOption = str | float | int | dict[str, float] | None
+
+
+def _coordinator_actor_options(request: RunRequest) -> dict[str, RayActorOption]:
+    options = actor_options_for_stage(
+        stage_key=StageKey.SLAM,
+        request=request,
+        default_num_cpus=1.0,
+        default_num_gpus=0.0,
+        restartable=False,
+        inherit_backend_defaults=True,
+    )
+    return {key: value for key, value in options.items() if value is not None and value != {}}
 
 
 class RayPipelineBackend(PipelineBackend):
@@ -77,6 +92,7 @@ class RayPipelineBackend(PipelineBackend):
         self._local_head_address: str | None = None
         self._local_head_log_path: Path | None = None
         self._reuse_local_head = False
+        self._next_coordinator_options: dict[str, object] = {}
 
     def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
         """Build the plan, ensure Ray is available, and boot one coordinator."""
@@ -93,6 +109,7 @@ class RayPipelineBackend(PipelineBackend):
             plan.mode.value,
             len(plan.stages),
         )
+        self._next_coordinator_options = _coordinator_actor_options(request)
         coordinator = self._create_coordinator(plan.run_id)
         coordinator.start.remote(
             request=request,
@@ -153,6 +170,8 @@ class RayPipelineBackend(PipelineBackend):
     def _create_coordinator(self, run_id: str):
         self._shutdown_run(run_id)
         options = {"name": coordinator_actor_name(run_id), "namespace": self._namespace}
+        options.update(self._next_coordinator_options)
+        self._next_coordinator_options = {}
         if not self._namespace.startswith("pytest-"):
             options["lifetime"] = "detached"
         coordinator = RunCoordinatorActor.options(**options).remote(run_id=run_id, namespace=self._namespace)

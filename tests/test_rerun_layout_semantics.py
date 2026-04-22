@@ -265,7 +265,7 @@ def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_update() -> 
     policy.observe_update(
         stream,
         StageRuntimeUpdate(
-            stage_key=StageKey.GROUND_ALIGNMENT,
+            stage_key=StageKey.GRAVITY_ALIGNMENT,
             timestamp_ns=1,
             semantic_events=[metadata],
         ),

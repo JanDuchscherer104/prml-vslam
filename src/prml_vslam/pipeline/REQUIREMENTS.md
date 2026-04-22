@@ -11,7 +11,7 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - The package exposes one authoritative runtime path through
   `PipelineBackend`, `RayPipelineBackend`, and `RunService`.
 - The current executable slice still uses the existing persisted key spellings:
-  `ingest`, `slam`, optional `ground.align`, optional
+  `ingest`, `slam`, optional `gravity.align`, optional
   `trajectory.evaluate`, and `summary`.
 - Current runtime execution still flows through the Ray coordinator and
   remaining stateful execution actors; these are migration contacts for the
@@ -35,7 +35,7 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   a compatibility import hub.
 - The package must not re-export method protocols through the pipeline root.
 - The target executable slice must remain linear and deterministic:
-  `source`, `slam`, optional `align.ground`, optional
+  `source`, `slam`, optional `gravity.align`, optional
   `evaluate.trajectory`, optional `reconstruction`, and `summary`.
 - `RunSnapshot` must project durable lifecycle/provenance state from `RunEvent`
   and live status, previews, and transient refs from `StageRuntimeUpdate`;
@@ -44,8 +44,8 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   `StageOutcome` values. Live and display status must come from
   `StageRuntimeStatus`; do not introduce or preserve a second status enum as
   canonical truth.
-- The current `ground.align` executable key is a migration alias for the target
-  `align.ground` stage. Ground alignment may run only after `slam`, in offline
+- The current `gravity.align` executable key is a migration alias for the target
+  `gravity.align` stage. Ground alignment may run only after `slam`, in offline
   execution and streaming finalize; it must never widen the streaming hot path.
 - `summary` must be projection-only; it must not compute trajectory or cloud
   metrics.
@@ -73,9 +73,9 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   transient payload refs. Semantic payload DTOs remain with their domain owner.
 - `RunSnapshot` remains a transport-safe projection derived from durable events
   plus live runtime updates/status; it must not become mutable runtime truth.
-- Target public stage vocabulary is `source`, `slam`, optional `align.ground`,
+- Target public stage vocabulary is `source`, `slam`, optional `gravity.align`,
   optional `evaluate.trajectory`, optional `reconstruction`, and `summary`.
-  Preserve `ingest`, `ground.align`, and `reference.reconstruct` as migration
+  Preserve `ingest` and `reference.reconstruct` as migration
   aliases until the migration-removal package owns their deletion.
 - Rerun SDK calls belong only in sinks/policy/helper modules. Stage runtimes,
   DTOs, proxies, and visualization adapters may expose neutral visualization

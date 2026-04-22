@@ -21,7 +21,6 @@ from prml_vslam.interfaces.ingest import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.interfaces.slam import SlamSessionInit
 from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.pipeline.finalization import stable_hash
@@ -239,25 +238,20 @@ def test_mock_slam_backend_runs_sequence_manifest_offline(tmp_path: Path) -> Non
     assert trajectory.positions_xyz[:, 0].tolist() == [10.0, 11.0, 12.0]
 
 
-def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Path) -> None:
+def test_mock_slam_backend_emits_incremental_updates_and_artifacts(tmp_path: Path) -> None:
     benchmark_inputs = _write_reference_bundle(tmp_path)
-    session = (
-        MockSlamBackendConfig()
-        .setup_target()
-        .start_session(
-            session_init=SlamSessionInit(
-                sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-                benchmark_inputs=benchmark_inputs,
-                baseline_source=ReferenceSource.GROUND_TRUTH,
-            ),
-            backend_config=VistaSlamBackendConfig(),
-            output_policy=SlamOutputPolicy(),
-            artifact_root=tmp_path / "mock-stream",
-        )
+    backend = MockSlamBackendConfig().setup_target()
+    backend.start_streaming(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=benchmark_inputs,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
+        backend_config=VistaSlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-stream",
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=0, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    session.step(
+    backend.step_streaming(FramePacket(seq=0, timestamp_ns=0, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    backend.step_streaming(
         FramePacket(
             seq=1,
             timestamp_ns=100_000_000,
@@ -266,7 +260,7 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
             pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
         )
     )
-    updates = session.try_get_updates()
+    updates = backend.drain_streaming_updates()
 
     assert len(updates) == 2
     assert updates[0].is_keyframe is True
@@ -275,28 +269,23 @@ def test_mock_slam_session_emits_incremental_updates_and_artifacts(tmp_path: Pat
     assert updates[1].pointmap is not None
     assert updates[1].num_dense_points > 0
 
-    artifacts = session.close()
+    artifacts = backend.finish_streaming()
     assert artifacts.trajectory_tum.path.exists()
 
 
-def test_mock_slam_session_uses_reference_pose_instead_of_stream_packet_pose(tmp_path: Path) -> None:
+def test_mock_slam_backend_uses_reference_pose_instead_of_stream_packet_pose(tmp_path: Path) -> None:
     benchmark_inputs = _write_reference_bundle(tmp_path)
-    session = (
-        MockSlamBackendConfig()
-        .setup_target()
-        .start_session(
-            session_init=SlamSessionInit(
-                sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-                benchmark_inputs=benchmark_inputs,
-                baseline_source=ReferenceSource.ARCORE,
-            ),
-            backend_config=SlamBackendConfig(),
-            output_policy=SlamOutputPolicy(),
-            artifact_root=tmp_path / "mock-stream-ref-pose",
-        )
+    backend = MockSlamBackendConfig().setup_target()
+    backend.start_streaming(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=benchmark_inputs,
+        baseline_source=ReferenceSource.ARCORE,
+        backend_config=SlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-stream-ref-pose",
     )
 
-    session.step(
+    backend.step_streaming(
         FramePacket(
             seq=0,
             timestamp_ns=100_000_000,
@@ -306,7 +295,7 @@ def test_mock_slam_session_uses_reference_pose_instead_of_stream_packet_pose(tmp
         )
     )
 
-    update = session.try_get_updates()[0]
+    update = backend.drain_streaming_updates()[0]
     assert update.pose is not None
     assert update.pose.tx == 11.0
     assert update.pointmap is not None
@@ -344,22 +333,20 @@ def test_mock_slam_backend_nonzero_awgn_is_deterministic_with_fixed_seed(tmp_pat
         point_noise_variance_m2=0.01,
         random_seed=13,
     )
-    session1 = config.setup_target().start_session(
-        session_init=SlamSessionInit(
-            sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-            benchmark_inputs=benchmark_inputs,
-            baseline_source=ReferenceSource.GROUND_TRUTH,
-        ),
+    backend1 = config.setup_target()
+    backend1.start_streaming(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=benchmark_inputs,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
         backend_config=SlamBackendConfig(),
         output_policy=SlamOutputPolicy(),
         artifact_root=tmp_path / "mock-noise-1",
     )
-    session2 = config.setup_target().start_session(
-        session_init=SlamSessionInit(
-            sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-            benchmark_inputs=benchmark_inputs,
-            baseline_source=ReferenceSource.GROUND_TRUTH,
-        ),
+    backend2 = config.setup_target()
+    backend2.start_streaming(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=benchmark_inputs,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
         backend_config=SlamBackendConfig(),
         output_policy=SlamOutputPolicy(),
         artifact_root=tmp_path / "mock-noise-2",
@@ -371,10 +358,10 @@ def test_mock_slam_backend_nonzero_awgn_is_deterministic_with_fixed_seed(tmp_pat
         intrinsics=CameraIntrinsics(fx=100.0, fy=100.0, cx=4.0, cy=4.0, width_px=8, height_px=8),
     )
 
-    session1.step(frame)
-    session2.step(frame)
-    update1 = session1.try_get_updates()[0]
-    update2 = session2.try_get_updates()[0]
+    backend1.step_streaming(frame)
+    backend2.step_streaming(frame)
+    update1 = backend1.drain_streaming_updates()[0]
+    update2 = backend2.drain_streaming_updates()[0]
 
     assert update1.pose is not None and update2.pose is not None
     assert update1.pose.tx == pytest.approx(update2.pose.tx)
@@ -384,24 +371,19 @@ def test_mock_slam_backend_nonzero_awgn_is_deterministic_with_fixed_seed(tmp_pat
     assert np.array_equal(np.nan_to_num(update1.pointmap, nan=-1.0), np.nan_to_num(update2.pointmap, nan=-1.0))
 
 
-def test_mock_slam_session_warns_and_falls_back_when_reference_payload_is_missing(tmp_path: Path) -> None:
+def test_mock_slam_backend_warns_and_falls_back_when_reference_payload_is_missing(tmp_path: Path) -> None:
     benchmark_inputs = _write_reference_bundle(tmp_path)
-    session = (
-        MockSlamBackendConfig()
-        .setup_target()
-        .start_session(
-            session_init=SlamSessionInit(
-                sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-                benchmark_inputs=benchmark_inputs,
-                baseline_source=ReferenceSource.GROUND_TRUTH,
-            ),
-            backend_config=SlamBackendConfig(),
-            output_policy=SlamOutputPolicy(),
-            artifact_root=tmp_path / "mock-stream-missing-payload",
-        )
+    backend = MockSlamBackendConfig().setup_target()
+    backend.start_streaming(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=benchmark_inputs,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
+        backend_config=SlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mock-stream-missing-payload",
     )
 
-    session.step(
+    backend.step_streaming(
         FramePacket(
             seq=0,
             timestamp_ns=10_000_000_000,
@@ -410,7 +392,7 @@ def test_mock_slam_session_warns_and_falls_back_when_reference_payload_is_missin
         )
     )
 
-    update = session.try_get_updates()[0]
+    update = backend.drain_streaming_updates()[0]
     assert update.pointmap is not None
     assert any("falling back to synthetic pointmap generation" in warning for warning in update.backend_warnings)
 
@@ -426,24 +408,26 @@ def test_vista_backend_starts_direct_streaming_session(tmp_path: Path, monkeypat
     assert backend is not None
     monkeypatch.setattr(
         vista_adapter,
-        "create_vista_session",
+        "create_vista_runtime",
         lambda **_: SimpleNamespace(
             step=lambda *_args, **_kwargs: None,
-            try_get_updates=lambda: [],
-            close=lambda: None,
+            drain_updates=lambda: [],
+            finish=lambda: None,
         ),
     )
 
-    session = backend.start_session(
-        session_init=SlamSessionInit(sequence_manifest=SequenceManifest(sequence_id="vista-stream")),
+    backend.start_streaming(
+        sequence_manifest=SequenceManifest(sequence_id="vista-stream"),
+        benchmark_inputs=None,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
         backend_config=SlamBackendConfig(),
         output_policy=SlamOutputPolicy(),
         artifact_root=tmp_path / "vista-stream",
     )
 
-    assert callable(session.step)
-    assert callable(session.try_get_updates)
-    assert callable(session.close)
+    assert callable(backend.step_streaming)
+    assert callable(backend.drain_streaming_updates)
+    assert callable(backend.finish_streaming)
 
 
 def test_vista_backend_builds_binary_vocab_cache_once(tmp_path: Path) -> None:
@@ -551,7 +535,7 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -609,7 +593,7 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
             preview = np.zeros((224, 224, 3), dtype=np.uint8)
             return preview, pointmap
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(),
@@ -619,7 +603,7 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
     )
 
     session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    updates = session.try_get_updates()
+    updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
 
@@ -654,7 +638,7 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from prml_vslam.methods.vista.preprocess import PreparedVistaFrame
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -692,7 +676,7 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
 
     fake_preprocessor = FakePreprocessor()
     slam = FakeSlam()
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=slam,
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=fake_preprocessor,
@@ -702,7 +686,7 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
     )
 
     session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    updates = session.try_get_updates()
+    updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
 
@@ -720,7 +704,7 @@ def test_vista_session_live_outputs_follow_model_raster_not_source_raster(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from prml_vslam.methods.vista.preprocess import PreparedVistaFrame
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -759,7 +743,7 @@ def test_vista_session_live_outputs_follow_model_raster_not_source_raster(
             rgb_tensor = torch.from_numpy(image_rgb).permute(2, 0, 1).float() / 255.0
             return PreparedVistaFrame(image_rgb=image_rgb, gray_u8=gray_u8, rgb_tensor=rgb_tensor)
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=FakePreprocessor(),
@@ -770,7 +754,7 @@ def test_vista_session_live_outputs_follow_model_raster_not_source_raster(
 
     source_rgb = np.zeros((11, 13, 3), dtype=np.uint8)
     session.step(FramePacket(seq=0, timestamp_ns=123, rgb=source_rgb))
-    update = session.try_get_updates()[0]
+    update = session.drain_updates()[0]
 
     assert update.image_rgb is not None
     assert update.image_rgb.shape == (5, 7, 3)
@@ -793,7 +777,7 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -822,7 +806,7 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
             del view_index
             return np.zeros((2, 2, 3), dtype=np.uint8), np.ones((2, 2, 3), dtype=np.float32)
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -832,7 +816,7 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
     )
 
     session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    updates = session.try_get_updates()
+    updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
 
@@ -845,7 +829,7 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -863,7 +847,7 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
         def step(self, value: object) -> None:
             pass
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -873,7 +857,7 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
     )
 
     session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    updates = session.try_get_updates()
+    updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
 
@@ -887,7 +871,7 @@ def test_vista_session_warns_when_dense_pointmap_is_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -906,7 +890,7 @@ def test_vista_session_warns_when_dense_pointmap_is_missing(
         def step(self, value: object) -> None:
             del value
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -916,7 +900,7 @@ def test_vista_session_warns_when_dense_pointmap_is_missing(
     )
 
     session.step(FramePacket(seq=11, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    update = session.try_get_updates()[0]
+    update = session.drain_updates()[0]
 
     assert update.pointmap is None
     assert update.backend_warnings == [
@@ -928,7 +912,7 @@ def test_vista_session_warns_when_dense_pointmap_has_no_valid_points(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -947,7 +931,7 @@ def test_vista_session_warns_when_dense_pointmap_has_no_valid_points(
         def step(self, value: object) -> None:
             del value
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -957,7 +941,7 @@ def test_vista_session_warns_when_dense_pointmap_has_no_valid_points(
     )
 
     session.step(FramePacket(seq=13, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    update = session.try_get_updates()[0]
+    update = session.drain_updates()[0]
 
     assert update.pointmap is not None
     assert update.backend_warnings == [
@@ -969,7 +953,7 @@ def test_vista_session_accepts_tensor_backed_live_pointmap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
     torch = sys.modules["torch"]
@@ -998,7 +982,7 @@ def test_vista_session_accepts_tensor_backed_live_pointmap(
         def step(self, value: object) -> None:
             del value
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -1008,7 +992,7 @@ def test_vista_session_accepts_tensor_backed_live_pointmap(
     )
 
     session.step(FramePacket(seq=17, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    update = session.try_get_updates()[0]
+    update = session.drain_updates()[0]
 
     assert update.pointmap is not None
     assert update.pointmap.dtype == np.float32
@@ -1019,7 +1003,7 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -1071,7 +1055,7 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(
             return preview, pointmap
 
     slam = FakeSlam()
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=slam,
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -1083,7 +1067,7 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(
     session.step(FramePacket(seq=0, timestamp_ns=100, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
     session.step(FramePacket(seq=1, timestamp_ns=200, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
     session.step(FramePacket(seq=2, timestamp_ns=300, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    updates = session.try_get_updates()
+    updates = session.drain_updates()
 
     assert len(updates) == 3
     update0, update1, update2 = updates
@@ -1105,7 +1089,7 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
 
     _install_fake_torch(monkeypatch)
 
@@ -1129,7 +1113,7 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
             del view_index
             return np.zeros((2, 2, 3), dtype=np.uint8), np.zeros((2, 2, 3), dtype=np.float32)
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -1139,7 +1123,7 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
     )
 
     session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    updates = session.try_get_updates()
+    updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
 
@@ -1154,7 +1138,7 @@ def test_vista_session_close_exports_accepted_keyframe_source_timestamps(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from prml_vslam.methods.vista.session import VistaSlamSession
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
     from prml_vslam.utils.geometry import load_tum_trajectory
 
     _install_fake_torch(monkeypatch)
@@ -1194,7 +1178,7 @@ def test_vista_session_close_exports_accepted_keyframe_source_timestamps(
             trajectory[1, 0, 3] = 1.0
             np.save(Path(output_dir) / "trajectory.npy", trajectory)
 
-    session = VistaSlamSession(
+    session = VistaSlamRuntime(
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
@@ -1206,7 +1190,7 @@ def test_vista_session_close_exports_accepted_keyframe_source_timestamps(
     session.step(FramePacket(seq=0, timestamp_ns=100_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
     session.step(FramePacket(seq=1, timestamp_ns=250_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
     session.step(FramePacket(seq=2, timestamp_ns=400_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    artifacts = session.close()
+    artifacts = session.finish()
 
     trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
     assert trajectory.timestamps.tolist() == [0.1, 0.4]
@@ -1400,9 +1384,11 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
 
 def test_vista_config_models_reject_removed_dead_knobs() -> None:
     for payload in (
-        {"device": "cpu"},
         {"stride": 5},
         {"keyframe_detection": "stride"},
     ):
         with pytest.raises(ValidationError):
             VistaSlamBackendConfig.model_validate(payload)
+
+    with pytest.raises(ValidationError):
+        VistaSlamBackendConfig.model_validate({"device": "tpu"})

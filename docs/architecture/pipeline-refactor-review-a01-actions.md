@@ -224,7 +224,7 @@ Initial map:
 | --- | --- | --- |
 | `ingest` | `source` | Source normalization and prepared benchmark inputs. |
 | `slam` | `slam` | Same public stage concept; target runtime is `SlamStageRuntime` implementing offline and streaming protocols, with Ray hosting hidden behind `StageRuntimeProxy` when needed. |
-| `ground.align` | `align.ground` | Target docs use compact verb namespace. |
+| `gravity.align` | `gravity.align` | Canonical gravity-alignment key. |
 | `trajectory.evaluate` | `evaluate.trajectory` | Target docs use compact verb namespace. |
 | `reference.reconstruct` | `reconstruction` | Target umbrella stage with reference/3DGS/future variants. |
 | `cloud.evaluate` | `evaluate.cloud` | Future metric stage. |

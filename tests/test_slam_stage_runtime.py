@@ -9,7 +9,7 @@ import numpy as np
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket, FrameTransform
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts, SlamSessionInit, SlamUpdate
+from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts, SlamUpdate
 from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -34,7 +34,7 @@ class _FakeBackend:
 
     def __init__(self, artifact_root: Path) -> None:
         self.artifact_root = artifact_root
-        self.session = _FakeSession(artifact_root)
+        self.runtime = _FakeStreamingRuntime(artifact_root)
 
     def run_sequence(
         self,
@@ -49,16 +49,26 @@ class _FakeBackend:
         del sequence, benchmark_inputs, baseline_source, backend_config, output_policy
         return _slam_artifacts(artifact_root)
 
-    def start_session(self, **kwargs) -> _FakeSession:
+    def start_streaming(self, **kwargs) -> None:
         del kwargs
-        return self.session
+        self.runtime.started = True
+
+    def step_streaming(self, frame: FramePacket) -> None:
+        self.runtime.step(frame)
+
+    def drain_streaming_updates(self) -> list[SlamUpdate]:
+        return self.runtime.drain_updates()
+
+    def finish_streaming(self) -> SlamArtifacts:
+        return self.runtime.finish()
 
 
-class _FakeSession:
+class _FakeStreamingRuntime:
     def __init__(self, artifact_root: Path) -> None:
         self.artifact_root = artifact_root
         self.pending: list[SlamUpdate] = []
         self.closed = False
+        self.started = False
 
     def step(self, frame: FramePacket) -> None:
         self.pending.append(
@@ -79,12 +89,12 @@ class _FakeSession:
             )
         )
 
-    def try_get_updates(self) -> list[SlamUpdate]:
+    def drain_updates(self) -> list[SlamUpdate]:
         updates = self.pending
         self.pending = []
         return updates
 
-    def close(self) -> SlamArtifacts:
+    def finish(self) -> SlamArtifacts:
         self.closed = True
         return _slam_artifacts(self.artifact_root)
 
@@ -148,7 +158,8 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
             request=request,
             plan=plan,
             path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
-            session_init=SlamSessionInit(sequence_manifest=sequence_manifest),
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=None,
         )
     )
     runtime.submit_stream_item(SlamFrameInput(frame=FramePacket(seq=1, timestamp_ns=10, rgb=np.zeros((2, 3, 3)))))
@@ -176,4 +187,4 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
     result = runtime.finish_streaming()
     assert result.outcome.status is StageStatus.COMPLETED
     assert isinstance(result.payload, SlamArtifacts)
-    assert backend.session.closed is True
+    assert backend.runtime.closed is True

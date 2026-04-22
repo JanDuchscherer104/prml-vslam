@@ -342,7 +342,7 @@ classDiagram
 Rules:
 
 - The public linear order is
-  `source -> slam -> [align.ground] -> [evaluate.trajectory] ->
+  `source -> slam -> [gravity.align] -> [evaluate.trajectory] ->
   [reconstruction] -> summary`.
 - Future metric stages use the same compact verb namespace:
   `evaluate.cloud` and `evaluate.efficiency`. Reconstruction variants are
@@ -952,7 +952,7 @@ Initial classification:
 | --- | --- | --- |
 | `source` | In-process runtime first; streaming source backend may use an internal sidecar | Source backend selection and normalization; live packet readers are collaborators, not public stages. |
 | `slam` | `SlamStageRuntime` through `StageRuntimeProxy`, Ray-hosted when needed | Stateful backend, streaming hot path, GPU placement. |
-| `align.ground` | In-process runtime first | Derived artifact from `SlamArtifacts`; can be upgraded if point-cloud size demands remote placement. |
+| `gravity.align` | In-process runtime first | Derived artifact from `SlamArtifacts`; can be upgraded if point-cloud size demands remote placement. |
 | `evaluate.trajectory` | In-process runtime first | Offline/finalize metric computation over materialized trajectories. |
 | `reconstruction` | Runtime selected by reconstruction backend/mode | Reference reconstruction can stay in-process first; GPU-heavy 3DGS variants use Ray hosting. |
 | `summary` | In-process runtime | Pure projection from `StageOutcome[]`. |
@@ -1079,7 +1079,7 @@ The public stage vocabulary should contain durable benchmark steps only:
 
 - `source`
 - `slam`
-- `align.ground`
+- `gravity.align`
 - `evaluate.trajectory`
 - `reconstruction`
 - `summary`
@@ -1251,7 +1251,7 @@ conceptual layer:
 | `SourceSpec` | `SourceBackendConfig` under `SourceStageConfig`; legacy request variants are migration input. |
 | `StagePlacement` / `PlacementPolicy` | `StageExecutionConfig`, `ResourceSpec`, and `PlacementConstraint`; current Ray retry knobs stay backend/runtime implementation details. |
 | `ingest` stage key | `source` stage key, with an alias/projection mapping during migration so current runs remain inspectable. |
-| `ground.align` stage key | `align.ground` stage key, with an alias/projection mapping during migration so current runs remain inspectable. |
+| `gravity.align` stage key | keep as target public stage key. |
 | `reference.reconstruct` stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants, with an alias/projection mapping during migration. |
 | `EvaluationArtifact` | `TrajectoryEvaluationArtifact` when dense-cloud and efficiency artifacts become first-class. |
 | `ArtifactRef` | move out of `interfaces.slam` to a generic artifact contract owner. |
@@ -1761,7 +1761,7 @@ Rules:
 | --- | --- | --- | --- | --- | --- |
 | `source` | `[stages.source]` | in-process `SourceRuntime`; streaming source backend may own an internal packet sidecar | shared `SequenceManifest` and `PreparedBenchmarkInputs` | durable `StageCompleted`; optional live source `StageRuntimeUpdate` | Replace public `ingest` vocabulary; add `SourceBackendConfig` union with `source_id`; preserve normalized boundary and keep packet reading internal. |
 | `slam` | `[stages.slam]` | `SlamStageRuntime` implements `OfflineStageRuntime`, `StreamingStageRuntime`, and `LiveUpdateStageRuntime`; may be Ray-hosted behind `StageRuntimeProxy` | shared `SlamArtifacts`, visualization-owned artifacts, methods-owned live DTOs | semantic updates -> `StageRuntimeUpdate.semantic_events` -> live observers/status; runtime-created refs + `SlamVisualizationAdapter` -> `StageRuntimeUpdate.visualizations` / `VisualizationItem`s -> Rerun sink; completion -> durable `StageCompleted` | Merge offline/streaming runtime surfaces; hide current actor/session helpers behind migration adapters; keep backend discriminated union. |
-| `align.ground` | `[stages.align_ground]` | in-process runtime first | alignment-owned `GroundAlignmentMetadata` | durable `StageCompleted`; Rerun sink may augment export on close | Keep derived artifact semantics; do not mutate native SLAM outputs. |
+| `gravity.align` | `[stages.align_ground]` | in-process runtime first | alignment-owned `GroundAlignmentMetadata` | durable `StageCompleted`; Rerun sink may augment export on close | Keep derived artifact semantics; do not mutate native SLAM outputs. |
 | `evaluate.trajectory` | `[stages.evaluate_trajectory]` | in-process runtime first | eval-owned trajectory evaluation artifact | durable `StageCompleted` | Keep `benchmark` as policy and `eval` as metric implementation/result owner. |
 | `reconstruction` | `[stages.reconstruction]` | selected by reconstruction backend/mode: in-process for reference, Ray-hosted for GPU-heavy variants | reconstruction-owned artifact bundle | durable `StageCompleted`; optional `StageRuntimeUpdate` visualization items for long-running variants | Replace `reference.reconstruct` target vocabulary with one umbrella reconstruction stage and model reference/3DGS/future methods as variants. |
 | `summary` | `[stages.summary]` | in-process runtime | pipeline-owned generic provenance: `RunSummary`, `StageManifest[]`, `StageOutcome` | durable `StageCompleted(summary)` | Keep projection-only; no metric computation. |
@@ -1779,7 +1779,7 @@ Rules:
 | --- | --- |
 | `source` | [SourceSpec](../../src/prml_vslam/pipeline/contracts/request.py#L118), [run_ingest_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60), [OfflineSourceResolver](../../src/prml_vslam/pipeline/source_resolver.py) |
 | `slam` | [SlamStageConfig](../../src/prml_vslam/pipeline/contracts/request.py#L150), [BackendConfig](../../src/prml_vslam/methods/configs.py#L251), [OfflineSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L42), [StreamingSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L203) |
-| `align.ground` | current `ground.align` stage key, [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), [GroundAlignmentService](../../src/prml_vslam/alignment/services.py), [run_ground_alignment_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
+| `gravity.align` | current `gravity.align` stage key, [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), [GroundAlignmentService](../../src/prml_vslam/alignment/services.py), [run_ground_alignment_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
 | `evaluate.trajectory` | [TrajectoryBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), [TrajectoryEvaluationService](../../src/prml_vslam/eval/services.py), [run_trajectory_evaluation_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137) |
 | `reconstruction` | [ReferenceReconstructionConfig](../../src/prml_vslam/benchmark/contracts.py), current [reference.reconstruct stage](../../src/prml_vslam/pipeline/stage_registry.py#L164), [run_reference_reconstruction_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212), [reconstruction package](../../src/prml_vslam/reconstruction) |
 | `evaluate.cloud` | [CloudBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), [stage placeholders](../../src/prml_vslam/pipeline/stage_registry.py#L171), [eval package](../../src/prml_vslam/eval) |
@@ -2552,8 +2552,8 @@ changes.
 
 - Resolve the issue map in
   [pipeline-stage-present-state-audit.md](./pipeline-stage-present-state-audit.md#inline-todo--issue-map).
-- Remove the `io.datasets` compatibility alias after verifying no imports rely
-  on it.
+- The `io.datasets` compatibility alias has been removed; datasets stays a
+  top-level package.
 - Move Rerun validation DTOs to a visualization contract module.
 - Move generic JSON serialization helpers to shared utilities if reused outside
   pipeline finalization.
@@ -2576,7 +2576,7 @@ the next one starts:
 | Failure/stop | finalize-then-mark behavior, source error, backend error, stop during streaming, downstream skip policy, and terminal run state. |
 | Payloads/Rerun | backend-owned transient refs, typed read-after-eviction, sink failure isolation, and no SDK calls from DTOs, stage runtimes, or proxies. |
 | Attempts/cleanup | `attempt_id` projection for reused run roots, active-attempt summary selection, and `StageConfig.cleanup` config/provenance behavior. |
-| Compatibility cleanup | import audit or grep checks around `prml_vslam.io.datasets` before removing aliases. |
+| Compatibility cleanup | import audit confirms no `prml_vslam.io.datasets` alias remains. |
 
 ## Future Recommended Implementation Order
 

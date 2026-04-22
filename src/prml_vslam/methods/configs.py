@@ -200,6 +200,9 @@ class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"
     random_seed: int = 43
     """Random seed set before model initialisation for reproducibility."""
 
+    device: Literal["auto", "cuda", "cpu"] = "auto"
+    """Torch device policy for the upstream ViSTA runtime."""
+
     @property
     def supports_offline(self) -> bool:
         """Whether the backend supports offline execution."""

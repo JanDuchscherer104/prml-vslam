@@ -1,4 +1,4 @@
-"""Streaming session wrapper for ViSTA-SLAM.
+"""Streaming runtime wrapper for ViSTA-SLAM.
 
 This module exposes the upstream `OnlineSLAM` live path through repo-owned
 runtime contracts without changing ViSTA's native world semantics. The key
@@ -24,8 +24,8 @@ from .preprocess import VistaFramePreprocessor, vista_numpy_array
 from .runtime import VistaFlowTracker, VistaOnlineSlam, build_vista_runtime_components
 
 
-class VistaSlamSession:
-    """Stateful streaming session that forwards frames to upstream OnlineSLAM.
+class VistaSlamRuntime:
+    """Stateful streaming runtime that forwards frames to upstream OnlineSLAM.
 
     The session preserves two different visualization surfaces:
 
@@ -34,7 +34,7 @@ class VistaSlamSession:
     - ViSTA model outputs (`image_rgb`, `depth_map`, `camera_intrinsics`,
       `pointmap`, `preview_rgb`) all live on the preprocessed ViSTA raster.
 
-    The session does not normalize ViSTA's RDF-like world orientation into a
+    The runtime does not normalize ViSTA's RDF-like world orientation into a
     separate repo/world-up basis.
     """
 
@@ -120,13 +120,13 @@ class VistaSlamSession:
         self._accepted_keyframe_count += 1
         self._pending_updates.append(update)
 
-    def try_get_updates(self) -> list[SlamUpdate]:
+    def drain_updates(self) -> list[SlamUpdate]:
         """Retrieve and clear any pending incremental SLAM updates."""
         updates = self._pending_updates
         self._pending_updates = []
         return updates
 
-    def close(self) -> SlamArtifacts:
+    def finish(self) -> SlamArtifacts:
         """Persist upstream outputs and convert to canonical repository artifacts."""
         run_paths = RunArtifactPaths.build(self._artifact_root)
         native_output_dir = run_paths.native_output_dir
@@ -141,7 +141,7 @@ class VistaSlamSession:
             ) from exc
 
         self._console.info(
-            "ViSTA-SLAM session closed after %d frames; native outputs in '%s'.",
+            "ViSTA-SLAM runtime finished after %d frames; native outputs in '%s'.",
             self._source_frame_count,
             native_output_dir,
         )
@@ -280,7 +280,7 @@ def _build_pointmap_warning(
     return None
 
 
-def create_vista_session(
+def create_vista_runtime(
     *,
     config: VistaSlamBackendConfig,
     path_config: PathConfig,
@@ -288,15 +288,15 @@ def create_vista_session(
     artifact_root: Path,
     output_policy: SlamOutputPolicy,
     live_mode: bool,
-) -> VistaSlamSession:
-    """Construct one fully-wired ViSTA session from repo config and paths."""
+) -> VistaSlamRuntime:
+    """Construct one fully-wired ViSTA runtime from repo config and paths."""
     runtime = build_vista_runtime_components(
         config=config,
         path_config=path_config,
         console=console,
         live_mode=live_mode,
     )
-    return VistaSlamSession(
+    return VistaSlamRuntime(
         slam=runtime.slam,
         flow_tracker=runtime.flow_tracker,
         frame_preprocessor=runtime.frame_preprocessor,
@@ -306,4 +306,4 @@ def create_vista_session(
     )
 
 
-__all__ = ["VistaSlamSession", "create_vista_session"]
+__all__ = ["VistaSlamRuntime", "create_vista_runtime"]

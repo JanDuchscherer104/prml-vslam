@@ -11,7 +11,7 @@ The pipeline is a linear benchmark runtime, not a generic workflow engine. The
 current executable order is:
 
 ```text
-source/ingest -> slam -> [ground.align] -> [trajectory.evaluate] -> [reference.reconstruct] -> summary
+source/ingest -> slam -> [gravity.align] -> [trajectory.evaluate] -> [reference.reconstruct] -> summary
 ```
 
 `cloud.evaluate` and `efficiency.evaluate` remain planned placeholders until

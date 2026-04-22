@@ -48,7 +48,6 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "SequenceManifest",
         "SessionClosed",
         "SlamArtifacts",
-        "SlamSessionInit",
         "SlamUpdate",
         "VisualizationArtifacts",
     ]
@@ -101,7 +100,7 @@ def test_vista_package_is_the_only_canonical_vista_surface() -> None:
     assert vista_package.__all__ == [
         "VistaSlamBackend",
         "VistaSlamBackendConfig",
-        "VistaSlamSession",
+        "VistaSlamRuntime",
     ]
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("prml_vslam.methods.vista_slam")

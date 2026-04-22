@@ -116,6 +116,10 @@ def build_vista_runtime_components(
     dbow = _require_dbow_module()
     import torch  # noqa: PLC0415
 
+    device = _resolve_torch_device(torch, config=config)
+    if device.type == "cpu":
+        _patch_xformers_attention_for_cpu(torch)
+
     SLAM_image_only = importlib.import_module("vista_slam.datasets.slam_images_only").SLAM_image_only
     FlowTracker = importlib.import_module("vista_slam.flow_tracker").FlowTracker
     vista_slam_module = importlib.import_module("vista_slam.slam")
@@ -135,37 +139,108 @@ def build_vista_runtime_components(
         )
 
     class _FastOnlineSLAM(OnlineSLAM):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self.device = device
+
         def load_frontend(self, ckpt_path: str):  # type: ignore[override]
             with torch.device("meta"):
                 frontend = STA()
             checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=True, mmap=True)
             frontend.load_state_dict(checkpoint["model"], strict=True, assign=True)
             del checkpoint
-            frontend.to(self.device)
+            frontend.to(device)
             frontend.eval()
             return frontend
 
-    slam = _FastOnlineSLAM(
-        ckpt_path=str(checkpoint_path),
-        vocab_path=str(resolved_vocab_path),
-        max_view_num=1000 if live_mode else config.max_view_num,
-        neighbor_edge_num=2 if live_mode else config.neighbor_edge_num,
-        loop_edge_num=2 if live_mode else config.loop_edge_num,
-        loop_dist_min=config.loop_dist_min,
-        loop_nms=config.loop_nms,
-        loop_cand_thresh_neighbor=config.loop_cand_thresh_neighbor,
-        conf_thres=config.point_conf_thres,
-        rel_pose_thres=config.rel_pose_thres,
-        flow_thres=config.flow_thres,
-        pgo_every=50 if live_mode else config.pgo_every,
-        live_mode=live_mode,
-    )
+    with _patch_online_slam_default_device(torch, device=device):
+        slam = _FastOnlineSLAM(
+            ckpt_path=str(checkpoint_path),
+            vocab_path=str(resolved_vocab_path),
+            max_view_num=1000 if live_mode else config.max_view_num,
+            neighbor_edge_num=2 if live_mode else config.neighbor_edge_num,
+            loop_edge_num=2 if live_mode else config.loop_edge_num,
+            loop_dist_min=config.loop_dist_min,
+            loop_nms=config.loop_nms,
+            loop_cand_thresh_neighbor=config.loop_cand_thresh_neighbor,
+            conf_thres=config.point_conf_thres,
+            rel_pose_thres=config.rel_pose_thres,
+            flow_thres=config.flow_thres,
+            pgo_every=50 if live_mode else config.pgo_every,
+            live_mode=live_mode,
+        )
     image_dataset = SLAM_image_only([], resolution=_VISTA_INPUT_RESOLUTION)
     return VistaRuntimeComponents(
         slam=slam,
         flow_tracker=FlowTracker(config.flow_thres),
         frame_preprocessor=UpstreamVistaFramePreprocessor(image_dataset=image_dataset),
     )
+
+
+def _resolve_torch_device(torch_module: Any, *, config: VistaSlamBackendConfig):
+    if config.device == "cuda":
+        if not torch_module.cuda.is_available():
+            raise RuntimeError("ViSTA-SLAM was configured with device='cuda', but no CUDA GPU is available.")
+        return torch_module.device("cuda")
+    if config.device == "cpu":
+        return torch_module.device("cpu")
+    return torch_module.device("cuda" if torch_module.cuda.is_available() else "cpu")
+
+
+def _patch_xformers_attention_for_cpu(torch_module: Any) -> None:
+    sta_blocks = importlib.import_module("vista_slam.sta_model.blocks.sta_blocks")
+    attention_cls = sta_blocks.XFormer_Attention
+    if getattr(attention_cls, "_prml_cpu_patch", False):
+        return
+
+    def forward(self: Any, x: Any, xpos: Any) -> Any:
+        batch_size, token_count, channel_count = x.shape
+        qkv = self.qkv(x).reshape(
+            batch_size,
+            token_count,
+            3,
+            self.num_heads,
+            channel_count // self.num_heads,
+        )
+        qkv = qkv.transpose(1, 3)
+        q, k, v = [qkv[:, :, index] for index in range(3)]
+
+        if self.rope is not None:
+            q = self.rope(q, xpos)
+            k = self.rope(k, xpos)
+
+        drop_prob = self.attn_drop_prob if self.training else 0.0
+        attended = torch_module.nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=drop_prob,
+            scale=self.scale,
+        )
+        output = attended.transpose(1, 2).reshape(batch_size, token_count, channel_count)
+        output = self.proj(output)
+        return self.proj_drop(output)
+
+    attention_cls.forward = forward
+    attention_cls._prml_cpu_patch = True
+
+
+class _patch_online_slam_default_device:
+    def __init__(self, torch_module: Any, *, device: Any) -> None:
+        self._torch = torch_module
+        self._device = device
+        self._original_device = torch_module.device
+
+    def __enter__(self) -> None:
+        def patched_device(value: Any = None, *args: Any, **kwargs: Any):
+            if value == "cuda":
+                return self._device
+            return self._original_device(value, *args, **kwargs)
+
+        self._torch.device = patched_device
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self._torch.device = self._original_device
 
 
 def resolve_vocab_path(

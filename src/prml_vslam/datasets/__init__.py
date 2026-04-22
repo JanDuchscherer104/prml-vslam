@@ -8,10 +8,6 @@ inputs such as :class:`prml_vslam.pipeline.SequenceManifest` into
 :mod:`prml_vslam.benchmark`.
 """
 
-import sys
-
 from .contracts import DatasetId
 
 __all__ = ["DatasetId"]
-
-sys.modules.setdefault("prml_vslam.io.datasets", sys.modules[__name__])

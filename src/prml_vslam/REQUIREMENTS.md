@@ -53,7 +53,7 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own app session state or benchmark policy
 - `methods`
   - owns backend-specific execution seams and thin method-wrapper integration
-  - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend` and `SlamSession`
+  - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend`
   - owns backend-native artifact interpretation and standardization, including
     method-specific preprocessing metadata needed to interpret native outputs
   - does not own pipeline planning or evaluation policy
@@ -88,7 +88,7 @@ Use this file for package-root ownership rules and cross-package contract constr
 - Package-local DTOs, configs, manifests, requests, and results belong in `<package>/contracts.py` or
   `<package>/contracts/` when a package owns several distinct contract slices.
 - Package-local `Protocol` seams belong in `<package>/protocols.py` when a package truly owns that behavior boundary.
-- `prml_vslam.methods.protocols` owns `SlamBackend` and `SlamSession`.
+- `prml_vslam.methods.protocols` owns `SlamBackend`.
 - `prml_vslam.app.models` owns Streamlit-only UI and session state.
 - `services.py` modules own implementations only; they must not become the home of public contract types.
 - The app must stay a launch and monitoring surface rather than a second pipeline implementation.

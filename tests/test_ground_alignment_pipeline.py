@@ -1,4 +1,4 @@
-"""Focused tests for pipeline integration of the `ground.align` stage."""
+"""Focused tests for pipeline integration of the `gravity.align` stage."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def test_stage_registry_places_ground_alignment_between_slam_and_trajectory(tmp_
     assert [stage.key for stage in plan.stages] == [
         StageKey.INGEST,
         StageKey.SLAM,
-        StageKey.GROUND_ALIGNMENT,
+        StageKey.GRAVITY_ALIGNMENT,
         StageKey.TRAJECTORY_EVALUATION,
         StageKey.SUMMARY,
     ]
@@ -88,7 +88,7 @@ def test_stage_registry_marks_ground_alignment_unavailable_without_backend_point
     )
 
     plan = StageRegistry.default().compile(request=request, backend=backend, path_config=path_config)
-    ground_stage = next(stage for stage in plan.stages if stage.key is StageKey.GROUND_ALIGNMENT)
+    ground_stage = next(stage for stage in plan.stages if stage.key is StageKey.GRAVITY_ALIGNMENT)
 
     assert ground_stage.available is False
     assert "point-cloud" in (ground_stage.availability_reason or "")
@@ -139,7 +139,7 @@ def test_run_ground_alignment_stage_writes_metadata_and_returns_skipped(
         GroundAlignmentRuntimeInput(request=request, run_paths=run_paths, slam=slam)
     )
 
-    assert result.outcome.stage_key is StageKey.GROUND_ALIGNMENT
+    assert result.outcome.stage_key is StageKey.GRAVITY_ALIGNMENT
     assert result.outcome.status.value == "skipped"
     assert run_paths.ground_alignment_path.exists()
     payload = json.loads(run_paths.ground_alignment_path.read_text(encoding="utf-8"))
