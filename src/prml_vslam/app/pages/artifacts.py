@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 
@@ -16,6 +17,7 @@ from prml_vslam.pipeline.artifact_inspection import (
     inspect_run_artifacts,
 )
 from prml_vslam.pipeline.contracts.provenance import StageManifest
+from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_bundle, import_run_bundle
 from prml_vslam.plotting import (
     DEFAULT_MESH_COLOR,
     build_3d_trajectory_figure,
@@ -84,6 +86,8 @@ def render(context: AppContext) -> None:
         with st.expander("Typed load warnings", expanded=False):
             for error in inspection.load_errors:
                 st.warning(error)
+
+    _render_bundle_controls(context, inspection)
 
     overview_tab, paths_tab, trajectories_tab, reconstruction_tab, diagnostics_tab, raw_tab = st.tabs(
         ["Overview", "Paths", "Trajectories", "Reconstruction", "Diagnostics", "Raw"]
@@ -190,6 +194,65 @@ def _render_paths(inspection: RunArtifactInspection) -> None:
         st.dataframe(_stage_output_rows(inspection), hide_index=True, width="stretch")
     else:
         st.info("No persisted stage output paths were found.")
+
+
+def _render_bundle_controls(context: AppContext, inspection: RunArtifactInspection) -> None:
+    with st.container(border=True):
+        st.subheader("Portable Run Bundle")
+        export_column, import_column = st.columns(2, gap="large")
+        with export_column:
+            default_bundle_path = (
+                context.path_config.artifacts_dir
+                / f"{inspection.artifact_root.parent.name}-{inspection.artifact_root.name}.prmlrun.tar.gz"
+            )
+            export_path_text = st.text_input("Export path", value=default_bundle_path.as_posix())
+            if st.button("Export selected run", type="primary"):
+                try:
+                    result = export_run_bundle(
+                        inspection.artifact_root,
+                        context.path_config.resolve_repo_path(export_path_text),
+                    )
+                except (OSError, RuntimeError, ValueError) as exc:
+                    st.error(str(exc))
+                else:
+                    st.success(
+                        f"Exported `{result.manifest.exported_run_id}` "
+                        f"with {len(result.manifest.files)} files to `{result.bundle_path}`."
+                    )
+        with import_column:
+            uploaded_bundle = st.file_uploader("Import `.prmlrun.tar.gz`", type=["gz"])
+            collision_policy = st.selectbox(
+                "Collision policy",
+                options=list(RunBundleCollisionPolicy),
+                format_func=lambda policy: policy.value,
+            )
+            if st.button("Import bundle", disabled=uploaded_bundle is None):
+                if uploaded_bundle is None:
+                    st.warning("Choose a bundle before importing.")
+                    return
+                temp_path = _write_uploaded_bundle(uploaded_bundle.getvalue())
+                try:
+                    result = import_run_bundle(
+                        temp_path,
+                        output_dir=context.path_config.artifacts_dir,
+                        collision_policy=collision_policy,
+                    )
+                except (OSError, RuntimeError, ValueError) as exc:
+                    st.error(str(exc))
+                else:
+                    st.success(f"Imported run to `{result.artifact_root}`.")
+                    if result.warnings:
+                        for warning in result.warnings:
+                            st.warning(warning)
+                    st.rerun()
+                finally:
+                    temp_path.unlink(missing_ok=True)
+
+
+def _write_uploaded_bundle(payload: bytes) -> Path:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".prmlrun.tar.gz") as temp_file:
+        temp_file.write(payload)
+        return Path(temp_file.name)
 
 
 def _render_trajectories(inspection: RunArtifactInspection) -> None:

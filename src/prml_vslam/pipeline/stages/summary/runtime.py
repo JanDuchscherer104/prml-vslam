@@ -16,7 +16,7 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
 
     The runtime is the final pipeline stage and should remain pure projection:
     it hashes, records, and writes what earlier stages already produced. New
-    trajectory, cloud, or efficiency metrics belong in eval-owned stages before
+    trajectory or cloud metrics belong in eval-owned stages before
     summary executes.
     """
 
@@ -55,7 +55,8 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
         )
         try:
             summary, stage_manifests, outcome = _project_summary(
-                run_config=input_payload.run_config,
+                experiment_name=input_payload.experiment_name,
+                mode=input_payload.mode,
                 plan=input_payload.plan,
                 run_paths=input_payload.run_paths,
                 stage_outcomes=input_payload.stage_outcomes,
@@ -89,7 +90,8 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
 
 def _project_summary(
     *,
-    run_config,
+    experiment_name,
+    mode,
     plan,
     run_paths,
     stage_outcomes: list[StageOutcome],
@@ -102,6 +104,7 @@ def _project_summary(
             input_fingerprint=outcome.input_fingerprint,
             output_paths={name: artifact.path for name, artifact in outcome.artifacts.items()},
             status=outcome.status,
+            cache=outcome.cache,
         )
         for outcome in stage_outcomes
     ]
@@ -115,7 +118,7 @@ def _project_summary(
     summary_outcome = StageOutcome(
         stage_key=StageKey.SUMMARY,
         status=StageStatus.COMPLETED,
-        config_hash=stable_hash({"experiment_name": run_config.experiment_name, "mode": run_config.mode.value}),
+        config_hash=stable_hash({"experiment_name": experiment_name, "mode": mode.value}),
         input_fingerprint=stable_hash(stage_outcomes),
         artifacts={
             "run_summary": ArtifactRef(

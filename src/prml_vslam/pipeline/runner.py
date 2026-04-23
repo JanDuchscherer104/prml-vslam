@@ -19,6 +19,7 @@ StreamItem = BaseData | FramePacket
 StageStartedCallback = Callable[[StageKey], None]
 StageCompletedCallback = Callable[[StageKey, StageResult], None]
 StageFailedCallback = Callable[[StageKey, StageOutcome], None]
+StageResultTransform = Callable[[StageResult], StageResult]
 
 
 class StageDependencyError(RuntimeError):
@@ -54,7 +55,7 @@ class StageResultStore:
 
     def require_sequence_manifest(self) -> SequenceManifest:
         """Return the normalized source manifest from completed stage results."""
-        result = self._results.get(StageKey.INGEST)
+        result = self._results.get(StageKey.SOURCE)
         if result is not None and isinstance(result.payload, SourceStageOutput):
             return result.payload.sequence_manifest
         if result is not None and isinstance(result.payload, SequenceManifest):
@@ -63,7 +64,7 @@ class StageResultStore:
 
     def require_benchmark_inputs(self) -> PreparedBenchmarkInputs | None:
         """Return prepared benchmark inputs when the source stage produced them."""
-        result = self._results.get(StageKey.INGEST)
+        result = self._results.get(StageKey.SOURCE)
         if result is not None and isinstance(result.payload, SourceStageOutput):
             return result.payload.benchmark_inputs
         if result is not None and isinstance(result.payload, PreparedBenchmarkInputs):
@@ -108,6 +109,7 @@ class StageRunner:
         on_stage_started: StageStartedCallback | None = None,
         on_stage_completed: StageCompletedCallback | None = None,
         on_stage_failed: StageFailedCallback | None = None,
+        transform_result: StageResultTransform | None = None,
     ) -> StageResult:
         """Invoke one bounded stage runtime and store its result."""
         if on_stage_started is not None:
@@ -123,6 +125,8 @@ class StageRunner:
             if on_stage_failed is not None:
                 on_stage_failed(stage_key, outcome)
             raise
+        if transform_result is not None:
+            result = transform_result(result)
         self._result_store.put(result)
         if on_stage_completed is not None:
             on_stage_completed(stage_key, result)

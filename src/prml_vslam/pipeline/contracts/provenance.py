@@ -32,6 +32,22 @@ class ArtifactRef(BaseData):
     fingerprint: str
 
 
+class StageCacheInfo(BaseData):
+    """Record whether a terminal stage result interacted with the stage cache."""
+
+    cache_key: str
+    """Content-addressed stage cache key."""
+
+    cache_root: Path
+    """Root directory that owns the cache entry."""
+
+    hit: bool = False
+    """Whether the stage result was restored from cache."""
+
+    entry_path: Path | None = None
+    """Concrete cache entry path, when known."""
+
+
 class StageStatus(StrEnum):
     """Shared stage-status vocabulary used in runtime and persisted views."""
 
@@ -68,6 +84,9 @@ class StageManifest(BaseData):
     status: StageStatus
     """Final stage status for this manifest."""
 
+    cache: StageCacheInfo | None = None
+    """Optional cache provenance for this stage outcome."""
+
     @staticmethod
     def table_rows(stage_manifests: list[StageManifest]) -> list[dict[str, str]]:
         """Return compact rows suitable for run summaries and review surfaces."""
@@ -95,4 +114,4 @@ class RunSummary(BaseData):
     """Final status per stage."""
 
 
-__all__ = ["ArtifactRef", "RunSummary", "StageManifest", "StageStatus"]
+__all__ = ["ArtifactRef", "RunSummary", "StageCacheInfo", "StageManifest", "StageStatus"]

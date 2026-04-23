@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import threading
 from collections import deque
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import ray
@@ -19,7 +21,6 @@ from ray.actor import ActorHandle
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.descriptors import BackendDescriptor
-from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import (
@@ -40,7 +41,7 @@ from prml_vslam.pipeline.contracts.events import (
 )
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageCacheInfo
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.execution_context import StageExecutionContext
@@ -59,6 +60,9 @@ from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
+from prml_vslam.pipeline.stage_cache import ContentFingerprinter, StageCacheKey, StageCacheStore
+from prml_vslam.pipeline.stages.base.binding import RuntimeBuildContext, StageInputContext
+from prml_vslam.pipeline.stages.base.config import StageCacheMode, StageConfig
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -68,26 +72,29 @@ from prml_vslam.pipeline.stages.base.contracts import (
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability, StageRuntimeProxy
-from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
-from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.bindings import stage_binding_for
 from prml_vslam.pipeline.stages.reconstruction.visualization import (
     MESH_ARTIFACT,
     POINT_CLOUD_ARTIFACT,
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
+from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamStageRuntime
 from prml_vslam.pipeline.stages.slam.visualization import IMAGE_REF, ROLE_SOURCE_RGB
-from prml_vslam.pipeline.stages.source import SourceRuntime, SourceRuntimeConfigInput, SourceRuntimeInput
-from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
-from prml_vslam.pipeline.stages.trajectory_eval import (
-    TrajectoryEvaluationRuntime,
-    TrajectoryEvaluationRuntimeInput,
-)
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
+
+
+@dataclass(frozen=True, slots=True)
+class _StageCacheRuntimeContext:
+    """Resolved cache state for one stage execution attempt."""
+
+    store: StageCacheStore
+    key: StageCacheKey
+    can_read: bool
+    can_write: bool
 
 
 def _artifact_visualizations(artifacts: dict[str, ArtifactRef]) -> list[VisualizationItem]:
@@ -282,7 +289,7 @@ class RunCoordinatorActor:
         if frame_payload_ref is not None and frame_ref is not None:
             self._remember_handle(frame_payload_ref.handle_id, frame_ref)
         source_status = StageRuntimeStatus(
-            stage_key=StageKey.INGEST,
+            stage_key=StageKey.SOURCE,
             lifecycle_state=StageStatus.RUNNING,
             progress_message=f"received {processed_frame_count} frames",
             completed_steps=processed_frame_count,
@@ -295,7 +302,7 @@ class RunCoordinatorActor:
             self._snapshot = self._projector.apply_runtime_update(
                 self._snapshot,
                 StageRuntimeUpdate(
-                    stage_key=StageKey.INGEST,
+                    stage_key=StageKey.SOURCE,
                     timestamp_ns=ts_ns(),
                     runtime_status=source_status,
                 ),
@@ -449,7 +456,7 @@ class RunCoordinatorActor:
             slam_backend = run_config.stages.slam.backend
             if slam_backend is None:
                 raise RuntimeError("RunConfig execution requires `[stages.slam.backend]`.")
-            self._backend_descriptor = BackendFactory().describe(slam_backend)
+            self._backend_descriptor = slam_backend.describe()
             if plan.mode is PipelineMode.OFFLINE:
                 self._run_offline(
                     run_config=run_config,
@@ -513,6 +520,14 @@ class RunCoordinatorActor:
             stage_config = runtime_manager.stage_config(stage_key)
             input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
             config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
+            stage_cache = self._stage_cache_context(stage_key=stage_key, stage_config=stage_config, context=context)
+            if stage_cache is not None and stage_cache.can_read:
+                cached_result = stage_cache.store.read(stage_cache.key, artifact_root=plan.artifact_root)
+                if cached_result is not None:
+                    self._emit_stage_started(stage_key)
+                    self._result_store.put(cached_result)
+                    self._record_stage_result(stage_key, cached_result)
+                    continue
             self._stage_runner.run_offline_stage(
                 stage_key=stage_key,
                 runtime=runtime_proxy.offline(),
@@ -525,6 +540,15 @@ class RunCoordinatorActor:
                     completed_stage_key, result
                 ),
                 on_stage_failed=self._record_stage_failure,
+                transform_result=(
+                    None
+                    if stage_cache is None
+                    else lambda result, cache=stage_cache: self._apply_stage_cache_result(
+                        cache=cache,
+                        result=result,
+                        artifact_root=plan.artifact_root,
+                    )
+                ),
             )
             self._publish_runtime_updates_from_proxy(runtime_proxy)
         terminal_state = "stopped" if self._stop_requested else "completed"
@@ -540,160 +564,107 @@ class RunCoordinatorActor:
         for stage in plan.stages:
             if not stage.available:
                 continue
-            capabilities = frozenset({RuntimeCapability.OFFLINE})
-            match stage.key:
-                case StageKey.INGEST:
-                    manager.register(
-                        stage.key,
-                        factory=lambda source=source: SourceRuntime(source=source),
-                        capabilities=capabilities,
-                    )
-                case StageKey.SLAM:
-                    slam_capabilities = (
-                        frozenset({RuntimeCapability.OFFLINE})
-                        if plan.mode is PipelineMode.OFFLINE
-                        else frozenset(
-                            {
-                                RuntimeCapability.OFFLINE,
-                                RuntimeCapability.LIVE_UPDATES,
-                                RuntimeCapability.STREAMING,
-                            }
-                        )
-                    )
-                    manager.register(
-                        stage.key,
-                        factory=SlamStageRuntime,
-                        capabilities=slam_capabilities,
-                    )
-                case StageKey.GRAVITY_ALIGNMENT:
-                    manager.register(
-                        stage.key,
-                        factory=GroundAlignmentRuntime,
-                        capabilities=capabilities,
-                    )
-                case StageKey.TRAJECTORY_EVALUATION:
-                    manager.register(
-                        stage.key,
-                        factory=TrajectoryEvaluationRuntime,
-                        capabilities=capabilities,
-                    )
-                case StageKey.REFERENCE_RECONSTRUCTION:
-                    reconstruction_capabilities = frozenset(
-                        {
-                            RuntimeCapability.OFFLINE,
-                            RuntimeCapability.LIVE_UPDATES,
-                        }
-                    )
-                    manager.register(
-                        stage.key,
-                        factory=ReconstructionRuntime,
-                        capabilities=reconstruction_capabilities,
-                    )
-                case StageKey.SUMMARY:
-                    manager.register(
-                        stage.key,
-                        factory=SummaryRuntime,
-                        capabilities=capabilities,
-                    )
-                case _:
-                    continue
+            binding = stage_binding_for(stage.key)
+            factory = binding.runtime_factory(
+                RuntimeBuildContext(
+                    run_config=self._require_run_config(),
+                    plan=plan,
+                    path_config=self._require_path_config(),
+                    source=source,
+                )
+            )
+            if factory is None:
+                continue
+            manager.register(
+                stage.key,
+                factory=factory,
+                capabilities=binding.runtime_capabilities(plan.mode),
+                deployment_kind=binding.deployment_default,
+                stage_config=binding.stage_config(self._require_run_config()),
+            )
         return manager
 
     def _build_offline_stage_input(self, *, stage_key: StageKey, context: StageExecutionContext):
-        match stage_key:
-            case StageKey.INGEST:
-                return SourceRuntimeInput(
-                    config_input=SourceRuntimeConfigInput(
-                        mode=context.run_config.mode,
-                        frame_stride=(
-                            1
-                            if context.run_config.stages.source.backend is None
-                            else context.run_config.stages.source.backend.frame_stride
-                        ),
-                        streaming_max_frames=(
-                            None
-                            if context.run_config.stages.slam.backend is None
-                            else context.run_config.stages.slam.backend.max_frames
-                        ),
-                        config_hash=stable_hash(context.run_config.stages.source.backend),
-                        input_fingerprint=stable_hash(context.run_config.stages.source.backend),
-                    ),
-                    artifact_root=context.plan.artifact_root,
-                )
-            case StageKey.SLAM:
-                return SlamOfflineInput(
-                    run_config=context.run_config,
-                    plan=context.plan,
-                    path_config=context.path_config,
-                    sequence_manifest=self._result_store.require_sequence_manifest(),
-                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
-                )
-            case StageKey.GRAVITY_ALIGNMENT:
-                return GroundAlignmentRuntimeInput(
-                    run_config=context.run_config,
-                    run_paths=context.run_paths,
-                    slam=self._result_store.require_slam_artifacts(),
-                )
-            case StageKey.TRAJECTORY_EVALUATION:
-                return TrajectoryEvaluationRuntimeInput(
-                    run_config=context.run_config,
-                    plan=context.plan,
-                    sequence_manifest=self._result_store.require_sequence_manifest(),
-                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
-                    slam=self._result_store.require_slam_artifacts(),
-                )
-            case StageKey.REFERENCE_RECONSTRUCTION:
-                return ReconstructionRuntimeInput(
-                    run_config=context.run_config,
-                    run_paths=context.run_paths,
-                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
-                )
-            case StageKey.SUMMARY:
-                return SummaryRuntimeInput(
-                    run_config=context.run_config,
-                    plan=context.plan,
-                    run_paths=context.run_paths,
-                    stage_outcomes=self._result_store.ordered_outcomes(),
-                )
-            case _:
-                raise RuntimeError(f"No offline runtime input builder for stage '{stage_key.value}'.")
+        return stage_binding_for(stage_key).build_offline_input(self._stage_input_context(context))
 
     def _failure_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
-        match stage_key:
-            case StageKey.INGEST:
-                config_payload = context.run_config.stages.source.backend
-                input_payload = context.run_config.stages.source.backend
-            case StageKey.SLAM:
-                config_payload = context.run_config.stages.slam
-                input_payload = self._result_store.require_sequence_manifest()
-            case StageKey.GRAVITY_ALIGNMENT:
-                slam = self._result_store.require_slam_artifacts()
-                config_payload = context.run_config.alignment.ground
-                input_payload = {
-                    "trajectory_tum": slam.trajectory_tum,
-                    "dense_points_ply": slam.dense_points_ply,
-                    "sparse_points_ply": slam.sparse_points_ply,
-                }
-            case StageKey.TRAJECTORY_EVALUATION:
-                slam = self._result_store.require_slam_artifacts()
-                config_payload = context.run_config.benchmark.trajectory
-                input_payload = {
-                    "benchmark_inputs": self._result_store.require_benchmark_inputs(),
-                    "slam_trajectory": slam.trajectory_tum,
-                }
-            case StageKey.REFERENCE_RECONSTRUCTION:
-                config_payload = context.run_config.benchmark.reference
-                input_payload = self._result_store.require_benchmark_inputs()
-            case StageKey.SUMMARY:
-                config_payload = {
-                    "experiment_name": context.run_config.experiment_name,
-                    "mode": context.run_config.mode.value,
-                }
-                input_payload = self._result_store.ordered_outcomes()
-            case _:
-                config_payload = {"stage_key": stage_key.value}
-                input_payload = {"run_id": context.plan.run_id, "stage_key": stage_key.value}
+        fingerprint = stage_binding_for(stage_key).failure_fingerprint(self._stage_input_context(context))
+        config_payload = fingerprint.config_payload
+        input_payload = fingerprint.input_payload
         return stable_hash(config_payload), stable_hash(input_payload)
+
+    def _content_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
+        fingerprint = stage_binding_for(stage_key).failure_fingerprint(self._stage_input_context(context))
+        fingerprinter = ContentFingerprinter()
+        return fingerprinter.hash_value(fingerprint.config_payload), fingerprinter.hash_value(fingerprint.input_payload)
+
+    def _stage_cache_context(
+        self,
+        *,
+        stage_key: StageKey,
+        stage_config: StageConfig,
+        context: StageExecutionContext,
+    ) -> _StageCacheRuntimeContext | None:
+        if stage_key is StageKey.SUMMARY or not stage_config.cache.enabled:
+            return None
+        config_hash, input_fingerprint = self._content_hash_inputs(stage_key=stage_key, context=context)
+        cache_root = (
+            stage_config.cache.cache_root
+            if stage_config.cache.cache_root is not None
+            else context.path_config.artifacts_dir / "_stage_cache"
+        )
+        mode = stage_config.cache.mode
+        return _StageCacheRuntimeContext(
+            store=StageCacheStore(cache_root),
+            key=StageCacheKey.build(
+                stage_key=stage_key,
+                config_hash=config_hash,
+                input_fingerprint=input_fingerprint,
+            ),
+            can_read=mode in {StageCacheMode.READ_WRITE, StageCacheMode.READ_ONLY},
+            can_write=mode in {StageCacheMode.READ_WRITE, StageCacheMode.WRITE_ONLY},
+        )
+
+    def _apply_stage_cache_result(
+        self,
+        *,
+        cache: _StageCacheRuntimeContext,
+        result: StageResult,
+        artifact_root: Path,
+    ) -> StageResult:
+        cache_info = StageCacheInfo(cache_key=cache.key.cache_key, cache_root=cache.store.cache_root, hit=False)
+        updated = result.model_copy(
+            update={
+                "outcome": result.outcome.model_copy(
+                    update={
+                        "config_hash": cache.key.config_hash,
+                        "input_fingerprint": cache.key.input_fingerprint,
+                        "cache": cache_info,
+                    }
+                )
+            }
+        )
+        if not cache.can_write:
+            return updated
+        try:
+            entry_path = cache.store.write(cache.key, result=updated, artifact_root=artifact_root)
+        except Exception as exc:
+            self._console.warning(
+                "Failed to write stage cache entry for '%s' in run '%s': %s",
+                cache.key.stage_key.value,
+                self._run_id,
+                exc,
+            )
+            return updated
+        if entry_path is None:
+            return updated
+        return updated.model_copy(
+            update={
+                "outcome": updated.outcome.model_copy(
+                    update={"cache": cache_info.model_copy(update={"entry_path": entry_path})}
+                )
+            }
+        )
 
     def _record_stage_result(self, stage_key: StageKey, result: StageResult) -> None:
         payload = result.payload
@@ -794,7 +765,7 @@ class RunCoordinatorActor:
             if not stage.available:
                 continue
             stage_key = stage.key
-            if stage_key is StageKey.INGEST:
+            if stage_key is StageKey.SOURCE:
                 runtime_proxy = runtime_manager.runtime_for(stage_key)
                 stage_config = runtime_manager.stage_config(stage_key)
                 input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
@@ -832,13 +803,8 @@ class RunCoordinatorActor:
             self._stage_runner.start_streaming_stage(
                 stage_key=stage_key,
                 runtime=runtime_proxy.streaming(),
-                input_payload=SlamStreamingStartInput(
-                    run_config=context.run_config,
-                    plan=context.plan,
-                    path_config=context.path_config,
-                    sequence_manifest=self._result_store.require_sequence_manifest(),
-                    benchmark_inputs=self._result_store.require_benchmark_inputs(),
-                    baseline_source=context.run_config.benchmark.trajectory.baseline_source,
+                input_payload=stage_binding_for(stage_key).build_streaming_start_input(
+                    self._stage_input_context(context)
                 ),
                 on_stage_started=self._emit_stage_started,
             )
@@ -965,7 +931,7 @@ class RunCoordinatorActor:
             if not stage.available:
                 continue
             stage_key = stage.key
-            if stage_key in {StageKey.INGEST, StageKey.SLAM}:
+            if stage_key in {StageKey.SOURCE, StageKey.SLAM}:
                 continue
             if stage_key is StageKey.TRAJECTORY_EVALUATION and (
                 self._streaming_error is not None or self._stop_requested
@@ -1083,7 +1049,7 @@ class RunCoordinatorActor:
         ):
             return
         update = StageRuntimeUpdate(
-            stage_key=StageKey.INGEST,
+            stage_key=StageKey.SOURCE,
             timestamp_ns=ts_ns(),
             visualizations=[
                 VisualizationItem(
@@ -1246,6 +1212,16 @@ class RunCoordinatorActor:
             path_config=self._require_path_config() if path_config is None else path_config,
             run_paths=RunArtifactPaths.build(plan.artifact_root),
             backend_descriptor=self._require_backend_descriptor(),
+        )
+
+    def _stage_input_context(self, context: StageExecutionContext) -> StageInputContext:
+        return StageInputContext(
+            run_config=context.run_config,
+            plan=context.plan,
+            path_config=context.path_config,
+            run_paths=context.run_paths,
+            backend_descriptor=context.backend_descriptor,
+            results=self._result_store,
         )
 
 

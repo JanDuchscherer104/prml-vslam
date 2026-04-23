@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
@@ -10,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, TextIO
+from typing import Annotated, Any, TextIO
 
 import typer
 
@@ -24,7 +25,6 @@ from prml_vslam.datasets.advio import (
     AdvioPoseSource,
 )
 from prml_vslam.io import Record3DStreamConfig
-from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
@@ -35,7 +35,9 @@ from prml_vslam.pipeline.demo import (
     load_run_config_toml,
     persist_advio_demo_run_config,
 )
+from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_bundle, import_run_bundle
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.stages.slam.config import MethodId
 from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import PathConfig, get_path_config
@@ -226,10 +228,6 @@ def plan_run(
             help="Whether the plan reserves a reference reconstruction stage.",
         ),
     ] = False,
-    evaluate_efficiency: Annotated[
-        bool,
-        typer.Option("--efficiency/--no-efficiency", help="Whether the plan reserves efficiency metrics."),
-    ] = False,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
     run_config = build_run_config(
@@ -243,15 +241,15 @@ def plan_run(
         trajectory_eval_enabled=trajectory_evaluation,
         trajectory_baseline=trajectory_baseline,
         evaluate_cloud=emit_dense_points and reference_reconstruction,
-        evaluate_efficiency=evaluate_efficiency,
         connect_live_viewer=True,
     )
     plan = run_config.compile_plan()
     console.plog(plan.model_dump(mode="json"))
 
 
-@app.command("plan-run-config")
+@app.command("plan-run-config", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def plan_run_config(
+    ctx: typer.Context,
     config_path: Annotated[
         Path,
         typer.Argument(
@@ -276,6 +274,7 @@ def plan_run_config(
             dataset_frame_stride=dataset_frame_stride,
             dataset_target_fps=dataset_target_fps,
         )
+        run_cfg = _apply_dotted_overrides_to_run_config(run_cfg, ctx.args)
         plan = run_cfg.compile_plan(path_config)
     except Exception as exc:
         console.error(str(exc))
@@ -283,8 +282,9 @@ def plan_run_config(
     console.plog(plan.model_dump(mode="json"))
 
 
-@app.command("run-config")
+@app.command("run-config", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run_config(
+    ctx: typer.Context,
     config_path: Annotated[
         Path,
         typer.Argument(
@@ -315,6 +315,7 @@ def run_config(
             dataset_frame_stride=dataset_frame_stride,
             dataset_target_fps=dataset_target_fps,
         )
+        run_cfg = _apply_dotted_overrides_to_run_config(run_cfg, ctx.args)
         viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
         runtime_source = build_runtime_source_from_run_config(run_config=run_cfg, path_config=path_config)
         run_service = RunService(path_config=path_config)
@@ -343,6 +344,64 @@ def run_config(
     _shutdown_rerun_viewer(viewer)
     if snapshot.state is RunState.FAILED:
         raise typer.Exit(code=1)
+
+
+@app.command("export-run")
+def export_run(
+    artifact_root: Annotated[
+        Path,
+        typer.Argument(help="Method-level run artifact root to export."),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Output `.prmlrun.tar.gz` bundle path."),
+    ],
+) -> None:
+    """Export a completed run artifact root as a portable single-file bundle."""
+    try:
+        result = export_run_bundle(artifact_root, output)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    console.plog(
+        {
+            "bundle_path": result.bundle_path.as_posix(),
+            "run_id": result.manifest.exported_run_id,
+            "artifact_label": result.manifest.artifact_label,
+            "file_count": len(result.manifest.files),
+        }
+    )
+
+
+@app.command("import-run")
+def import_run(
+    bundle_path: Annotated[
+        Path,
+        typer.Argument(help="Portable `.prmlrun.tar.gz` bundle to import."),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="Artifacts directory that should receive the imported run."),
+    ] = Path(".artifacts"),
+    on_collision: Annotated[
+        RunBundleCollisionPolicy,
+        typer.Option("--on-collision", help="How to handle an existing target run root.", case_sensitive=False),
+    ] = RunBundleCollisionPolicy.FAIL,
+) -> None:
+    """Import a portable run bundle into the local artifacts tree."""
+    try:
+        result = import_run_bundle(bundle_path, output_dir=output_dir, collision_policy=on_collision)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    console.plog(
+        {
+            "artifact_root": result.artifact_root.as_posix(),
+            "run_id": result.manifest.exported_run_id,
+            "artifact_label": result.manifest.artifact_label,
+            "warnings": result.warnings,
+        }
+    )
 
 
 @app.command("write-demo-config")
@@ -629,6 +688,73 @@ def _apply_dataset_sampling_overrides_to_run_config(
             )
         }
     )
+
+
+def _apply_dotted_overrides_to_run_config(run_config: RunConfig, args: list[str]) -> RunConfig:
+    """Apply arbitrary ``--a.b value`` overrides after named CLI flags."""
+    if not args:
+        return run_config
+    overrides = _parse_dotted_overrides(args)
+    if not overrides:
+        return run_config
+    payload = run_config.model_dump(mode="python", round_trip=True)
+    _deep_merge(payload, overrides)
+    return RunConfig.model_validate(payload)
+
+
+def _parse_dotted_overrides(args: list[str]) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if not token.startswith("--"):
+            raise typer.BadParameter(f"Unexpected dotted override token `{token}`.")
+        option = token[2:]
+        if not option or "." not in option:
+            raise typer.BadParameter(f"Unknown option `{token}`. Dotted overrides must look like --section.field.")
+        if "=" in option:
+            path, raw_value = option.split("=", maxsplit=1)
+            index += 1
+        else:
+            if index + 1 >= len(args):
+                raise typer.BadParameter(f"Dotted override `{token}` requires a value.")
+            path = option
+            raw_value = args[index + 1]
+            index += 2
+        _deep_set(overrides, path.split("."), _parse_override_value(raw_value))
+    return overrides
+
+
+def _parse_override_value(raw_value: str) -> Any:
+    try:
+        return json.loads(raw_value)
+    except json.JSONDecodeError:
+        return raw_value
+
+
+def _deep_set(target: dict[str, Any], path: list[str], value: Any) -> None:
+    cursor = target
+    for segment in path[:-1]:
+        existing = cursor.get(segment)
+        if not isinstance(existing, dict):
+            existing = {}
+            cursor[segment] = existing
+        cursor = existing
+    leaf = path[-1]
+    existing_leaf = cursor.get(leaf)
+    if isinstance(existing_leaf, dict) and isinstance(value, dict):
+        _deep_merge(existing_leaf, value)
+    else:
+        cursor[leaf] = value
+
+
+def _deep_merge(target: dict[str, Any], overrides: dict[str, Any]) -> None:
+    for key, value in overrides.items():
+        existing = target.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            _deep_merge(existing, value)
+        else:
+            target[key] = value
 
 
 def _apply_dataset_sampling_overrides(
