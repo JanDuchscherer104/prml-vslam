@@ -9,6 +9,7 @@ observer sinks.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import ConfigDict, Field, field_validator
@@ -24,7 +25,7 @@ JsonScalar = str | int | float | bool | None
 class ResourceSpec(BaseConfig):
     """Describe substrate-neutral resources requested by one stage."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     num_cpus: float | None = Field(default=None, ge=0.0)
     """Requested CPU count, when explicitly constrained."""
@@ -51,7 +52,7 @@ class ResourceSpec(BaseConfig):
 class PlacementConstraint(BaseConfig):
     """Describe optional substrate-neutral placement preferences."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     node_ip_address: str | None = None
     """Preferred node IP address, when a stage needs node locality."""
@@ -66,7 +67,7 @@ class PlacementConstraint(BaseConfig):
 class StageExecutionConfig(BaseConfig):
     """Collect stage execution policy without constructing runtime targets."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     resources: ResourceSpec = Field(default_factory=ResourceSpec)
     """Substrate-neutral resource request for this stage."""
@@ -81,7 +82,7 @@ class StageExecutionConfig(BaseConfig):
 class StageTelemetryConfig(BaseConfig):
     """Configure which live status metrics a stage should emit."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     emit_progress: bool = True
     """Whether the runtime should emit coarse progress status when available."""
@@ -102,7 +103,7 @@ class StageTelemetryConfig(BaseConfig):
 class StageCleanupPolicy(BaseConfig):
     """Describe stage artifact cleanup policy by artifact key."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     artifact_keys: list[str] = Field(default_factory=list)
     """Stage artifact-key selectors to prune after the run epilogue."""
@@ -126,15 +127,38 @@ class StageCleanupPolicy(BaseConfig):
         return value
 
 
+class StageCacheMode(StrEnum):
+    """Read/write policy for one stage's content-addressed cache."""
+
+    READ_WRITE = "read_write"
+    READ_ONLY = "read_only"
+    WRITE_ONLY = "write_only"
+
+
+class StageCacheConfig(BaseConfig):
+    """Opt-in content-addressed cache policy for one stage.
+
+    The cache is disabled by default so existing benchmark runs remain
+    execution-faithful unless a stage section explicitly asks for reuse.
+    """
+
+    enabled: bool = False
+    """Whether this stage may read from or write to the stage-result cache."""
+
+    mode: StageCacheMode = StageCacheMode.READ_WRITE
+    """Whether the stage reads, writes, or does both when caching is enabled."""
+
+    cache_root: Path | None = None
+    """Optional cache root; defaults to `<artifacts_dir>/_stage_cache`."""
+
+
 class StageConfig(BaseConfig):
     """Base declarative policy shared by target stage config sections."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    # TODO(pipeline-refactor/WP-10): Switch this field to the target stage-key
-    # vocabulary after current-key aliases are removed.
     stage_key: StageKey | None = None
-    """Current executable stage key represented by this section during migration."""
+    """Canonical stage key represented by this section."""
 
     enabled: bool = True
     """Whether this stage section is requested by the target config."""
@@ -147,6 +171,9 @@ class StageConfig(BaseConfig):
 
     cleanup: StageCleanupPolicy = Field(default_factory=StageCleanupPolicy)
     """Artifact cleanup policy keyed by stage artifact names."""
+
+    cache: StageCacheConfig = Field(default_factory=StageCacheConfig)
+    """Optional content-addressed cache policy for terminal stage results."""
 
     def declared_outputs(self, output_paths: Sequence[Path] = ()) -> list[Path]:
         """Return the declared output paths for a generic stage section."""
@@ -192,6 +219,8 @@ __all__ = [
     "PlacementConstraint",
     "ResourceSpec",
     "StageCleanupPolicy",
+    "StageCacheConfig",
+    "StageCacheMode",
     "StageConfig",
     "StageExecutionConfig",
     "StageTelemetryConfig",

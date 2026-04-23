@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageCacheInfo, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
 
@@ -21,6 +21,7 @@ class StageOutcome(TransportModel):
     artifacts: dict[str, ArtifactRef] = Field(default_factory=dict)
     metrics: dict[str, float | int | str] = Field(default_factory=dict)
     error_message: str = ""
+    cache: StageCacheInfo | None = None
 
 
 class _RunEventBase(TransportModel):
