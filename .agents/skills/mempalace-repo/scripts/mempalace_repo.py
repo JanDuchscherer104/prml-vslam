@@ -44,6 +44,10 @@ def chats_source_root() -> Path:
     return sources_root() / "chats"
 
 
+def exports_source_root() -> Path:
+    return sources_root() / "exports"
+
+
 def windows_codex_home() -> Path:
     return Path("/mnt/c/Users/jandu/.codex")
 
@@ -187,8 +191,10 @@ def refresh_history_exports() -> None:
         users.extend(home_users)
     combined = _dedupe_records(combined)
     users = _dedupe_records(users)
-    history._write_jsonl(repo_root() / "codex-messages-prml-vslam.jsonl", combined)
-    history._write_jsonl(repo_root() / "codex-user-messages-prml-vslam.jsonl", users)
+    export_root = exports_source_root()
+    export_root.mkdir(parents=True, exist_ok=True)
+    history._write_jsonl(export_root / "codex-messages-prml-vslam.jsonl", combined)
+    history._write_jsonl(export_root / "codex-user-messages-prml-vslam.jsonl", users)
 
 
 def sync_chat_sources() -> list[Path]:

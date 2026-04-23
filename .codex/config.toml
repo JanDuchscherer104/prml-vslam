@@ -35,10 +35,19 @@ project_doc_fallback_filenames = ["AGENTS.md"]
         "graphify-out/graph.json",
     ]
 
+    [mcp_servers.mempalace]
+    type    = "stdio"
+    command = "bash"
+    args    = [
+        "-lc",
+        "cd \"$(git rev-parse --show-toplevel)\" && exec .venv/bin/python -m mempalace.mcp_server --palace .artifacts/mempalace/palace",
+    ]
+
 [features]
 unified_exec = true
 multi_agent  = true
 apps         = true
+codex_hooks  = true
 
 [[skills.config]]
 path    = "../.agents/skills/pydantic"
@@ -50,6 +59,10 @@ enabled = true
 
 [[skills.config]]
 path    = "../.agents/skills/graphify"
+enabled = true
+
+[[skills.config]]
+path    = "../.agents/skills/mempalace-repo"
 enabled = true
 
 [[skills.config]]

@@ -52,3 +52,23 @@ Rules:
 - Use `make graphify-report` when you need the report summary without the full community listing
 - After modifying code files in this session, run `make graphify-rebuild` to keep the graph current
 - Use `make graphify-hook-install` once per clone to enable local post-commit/post-checkout graph refreshes
+
+## MemPalace
+
+This project has a repo-local MemPalace at `.artifacts/mempalace/palace` with
+separate wings for docs and Codex chat histories.
+
+Rules:
+- At Codex session start, the repo-local `SessionStart` hook refreshes
+  MemPalace in the background and emits wake-up context for the agent.
+- Use `.agents/skills/mempalace-repo/scripts/mempalace_repo.py search` before
+  answering questions about prior Codex sessions, user preferences, previous
+  attempts, durable project decisions, or why earlier agents chose an approach.
+- Use `.agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up` when a
+  session needs compact orientation from the repo-local palace.
+- At the end of meaningful tasks, include a concise debrief in the final answer:
+  durable decisions, files changed, validation run, blockers, and follow-up
+  facts. The startup refresh mines those user-visible summaries into
+  MemPalace for later sessions.
+- Treat `.artifacts/mempalace/` as derived state; refresh it instead of editing
+  palace files or staged sources by hand.

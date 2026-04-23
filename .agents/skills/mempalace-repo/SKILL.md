@@ -42,6 +42,14 @@ python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py search "your que
 python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
 ```
 
+5. The repo-local Codex startup hook runs
+   `.agents/scripts/mempalace_startup_context.sh`, which refreshes MemPalace in
+   the background and prints wake-up context at session start.
+
+6. When a task produces durable context, keep the final-answer debrief concise
+   but complete enough for later mining: decisions, files changed, validation,
+   blockers, and follow-up facts.
+
 ## Guardrails
 
 - Treat the repo-local palace as derived state. Refresh it instead of editing
@@ -53,3 +61,5 @@ python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
   needed.
 - Do not assume the global `~/.mempalace` palace is the one this repo uses; the
   wrapper script pins a repo-local palace path.
+- Treat `.artifacts/mempalace/` as derived state. Do not hand-edit staged
+  sources, logs, or palace index files.
