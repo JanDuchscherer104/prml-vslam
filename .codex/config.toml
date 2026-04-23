@@ -1,10 +1,9 @@
-# Shared team defaults for this repository.
-# Keep machine-local trust, auth, and UI preferences in ~/.codex/config.toml.
-
-model                  = "gpt-5.4"
-model_reasoning_effort = "high"
-personality            = "pragmatic"
-web_search             = "cached"
+model                          = "gpt-5.4"
+model_auto_compact_token_limit = 800000
+model_context_window           = 1050000
+model_reasoning_effort         = "xhigh"
+personality                    = 'pragmatic'
+web_search                     = 'cached'
 
 project_doc_fallback_filenames = ["AGENTS.md"]
 
