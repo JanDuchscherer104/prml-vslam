@@ -23,8 +23,6 @@ Owned paths:
 - `src/prml_vslam/pipeline/runtime_manager.py`
 - `src/prml_vslam/pipeline/runner.py`
 - `src/prml_vslam/pipeline/ray_runtime/coordinator.py`
-- `src/prml_vslam/pipeline/ray_runtime/stage_program.py`
-- `src/prml_vslam/pipeline/ray_runtime/stage_execution.py`
 - `src/prml_vslam/pipeline/ray_runtime/stage_actors.py`
 - `src/prml_vslam/pipeline/stages/base/proxy.py`
 - `src/prml_vslam/pipeline/stages/base/ray.py`
@@ -50,6 +48,13 @@ Goal:
   runtime classes the only executable runtime path.
 - Remove the old function-pointer runtime program and completion payload bag.
 
+Current worktree note:
+- `src/prml_vslam/pipeline/ray_runtime/stage_program.py` and
+  `src/prml_vslam/pipeline/ray_runtime/stage_execution.py` are already gone
+  from tracked source in the current worktree. Treat remaining references to
+  those files as historical or migration-only notes, not as current executable
+  ownership.
+
 Out of scope:
 - App/CLI snapshot presentation.
 - Durable telemetry event deletion unless needed to prevent duplicate live
@@ -72,6 +77,9 @@ Implementation notes:
 - Delete `RuntimeStageProgram`, `RuntimeExecutionState`, `StageRuntimeSpec`,
   and `StageCompletionPayload` after coordinator execution no longer imports
   them.
+- In the current worktree, the remaining `WP-09B` closure work is grep/test
+  verification plus cleanup of stale notes and doc references; do not recreate
+  deleted runtime-program wrappers just to satisfy historical package text.
 - Fix the Ray deployment truth boundary. Either implement Ray-hosted
   `StageRuntimeProxy` invocation with actor creation, task refs, counters, and
   status projection, or reject `deployment_kind="ray"` with an explicit
