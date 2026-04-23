@@ -79,7 +79,7 @@ def test_advio_preview_runtime_controller_processes_one_packet() -> None:
 
     _wait_for_snapshot(
         lambda: controller.snapshot().state is PreviewStreamState.STREAMING
-        and controller.snapshot().received_frames == 1
+        and controller.snapshot().preview_frame_count == 1
     )
     snapshot = controller.snapshot()
 
@@ -87,13 +87,13 @@ def test_advio_preview_runtime_controller_processes_one_packet() -> None:
     assert snapshot.sequence_id == 7
     assert snapshot.sequence_label == "ADVIO 07"
     assert snapshot.pose_source is AdvioPoseSource.GROUND_TRUTH
-    assert snapshot.latest_packet is not None
-    assert snapshot.latest_packet.seq == 1
-    assert snapshot.received_frames == 1
-    assert snapshot.accepted_keyframes == 1
-    assert snapshot.trajectory_positions_xyz.shape == (1, 3)
-    assert np.allclose(snapshot.trajectory_positions_xyz[0], np.array([1.0, 2.0, 3.0]))
-    assert np.allclose(snapshot.trajectory_timestamps_s, np.array([0.0]))
+    assert snapshot.preview_packet is not None
+    assert snapshot.preview_packet.seq == 1
+    assert snapshot.preview_frame_count == 1
+    assert snapshot.preview_keyframe_count == 1
+    assert snapshot.preview_trajectory_xyz.shape == (1, 3)
+    assert np.allclose(snapshot.preview_trajectory_xyz[0], np.array([1.0, 2.0, 3.0]))
+    assert np.allclose(snapshot.preview_trajectory_time_s, np.array([0.0]))
 
     controller.stop()
 
@@ -117,18 +117,18 @@ def test_record3d_runtime_controller_formats_usb_source_label() -> None:
 
     _wait_for_snapshot(
         lambda: controller.snapshot().state is PreviewStreamState.STREAMING
-        and controller.snapshot().received_frames == 1
+        and controller.snapshot().preview_frame_count == 1
     )
     snapshot = controller.snapshot()
 
     assert stream.connected is True
     assert snapshot.transport is Record3DTransportId.USB
     assert snapshot.source_label == "device-udid (1234)"
-    assert snapshot.latest_packet is not None
-    assert snapshot.latest_packet.seq == 2
-    assert snapshot.received_frames == 1
-    assert snapshot.accepted_keyframes == 1
-    assert np.allclose(snapshot.trajectory_timestamps_s, np.array([12.5]))
+    assert snapshot.preview_packet is not None
+    assert snapshot.preview_packet.seq == 2
+    assert snapshot.preview_frame_count == 1
+    assert snapshot.preview_keyframe_count == 1
+    assert np.allclose(snapshot.preview_trajectory_time_s, np.array([12.5]))
 
     controller.stop()
 

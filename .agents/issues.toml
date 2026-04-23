@@ -134,61 +134,6 @@ sources = [
 ]
 
 [[issues]]
-id = "ISSUE-0056"
-title = "SLAM live DTOs still sit in shared interfaces while importing pipeline transport handles"
-status = "open"
-priority = "high"
-category = "architecture"
-summary = "`interfaces.slam` still owns `SlamUpdate`, backend notice DTOs, and handle-bearing visualization notices that import pipeline transport contracts, even though the target architecture assigns live SLAM semantics to `methods` and live payload references to pipeline runtime-update contracts."
-files = [
-    "src/prml_vslam/interfaces/slam.py",
-    "src/prml_vslam/interfaces/__init__.py",
-    "src/prml_vslam/methods/events.py",
-    "src/prml_vslam/methods/protocols.py",
-    "src/prml_vslam/pipeline/contracts/events.py",
-    "src/prml_vslam/pipeline/stages/slam/runtime.py",
-    "src/prml_vslam/pipeline/stages/slam/visualization.py",
-]
-notes = [
-    "The DTO migration ledger assigns `SlamUpdate`, `BackendEvent`, and backend notice variants to WP-06/WP-08/WP-10 migration work.",
-    "The current import direction weakens the intended layering where `interfaces` owns stable repo-wide semantic datamodels and `pipeline` owns runtime transport envelopes.",
-    "The immediate docstring requirement is to document the migration status clearly so readers do not treat `interfaces.slam` as the desired final ownership shape.",
-]
-sources = [
-    "docs/architecture/pipeline-dto-migration-ledger.md",
-    "docs/architecture/pipeline-stage-present-state-audit.md",
-    "docs/architecture/pipeline-stage-refactor-target.md",
-    "src/prml_vslam/interfaces/slam.py",
-]
-
-[[issues]]
-id = "ISSUE-0057"
-title = "Run events still mix durable provenance with live telemetry migration events"
-status = "open"
-priority = "high"
-category = "orchestration"
-summary = "The target model makes `RunEvent` durable lifecycle/provenance truth and routes progress, packets, backend notices, visualization items, and live payload refs through `StageRuntimeUpdate`, but current contracts still expose telemetry variants and compatibility projections in the durable event vocabulary."
-files = [
-    "src/prml_vslam/pipeline/contracts/events.py",
-    "src/prml_vslam/pipeline/contracts/runtime.py",
-    "src/prml_vslam/pipeline/snapshot_projector.py",
-    "src/prml_vslam/pipeline/stages/base/contracts.py",
-    "src/prml_vslam/pipeline/stages/base/handles.py",
-    "src/prml_vslam/pipeline/stages/slam/runtime.py",
-]
-notes = [
-    "`StageProgressed`, `PacketObserved`, and `BackendNoticeReceived` are marked as migration contacts in code and docs.",
-    "The target `StageRuntimeUpdate` and `TransientPayloadRef` DTOs exist, but compatibility event consumers still need to be cut over before the durable/live split is clean.",
-    "This debt affects public-interface docstrings because callers need to know which fields are canonical target state and which are compatibility views.",
-]
-sources = [
-    "docs/architecture/pipeline-stage-refactor-target.md",
-    "docs/architecture/pipeline-dto-migration-ledger.md",
-    "docs/architecture/pipeline-refactor-work-packages/WP-08-snapshot-events-payloads.md",
-    "src/prml_vslam/pipeline/contracts/events.py",
-]
-
-[[issues]]
 id = "ISSUE-0058"
 title = "Source construction still has parallel compatibility paths instead of one source backend config seam"
 status = "open"
@@ -321,9 +266,50 @@ sources = [
     "src/prml_vslam/visualization/contracts.py",
 ]
 
+[[issues]]
+id = "ISSUE-0063"
+title = "Pipeline migration cutover is mid-flight and still blocks WP-10"
+status = "in_progress"
+priority = "high"
+category = "orchestration"
+summary = "The current worktree has repaired the immediate WP-09C import breakage after moving `ArtifactRef` to pipeline provenance, moving live SLAM DTOs toward `methods.contracts`, and removing telemetry variants from `RunEvent`, but it remains a mid-flight migration. WP-10 is not resolved until WP-09A, the remaining WP-09C migration-only symbols, WP-09D app preview cleanup, and the final stage-key rename are complete and stale-symbol greps are clean."
+files = [
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/app/pipeline_controls.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/preview_runtime.py",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/interfaces/slam.py",
+    "tests/",
+]
+notes = [
+    "Import smoke for `prml_vslam.app.pipeline_controller`, `prml_vslam.pipeline.ray_runtime.coordinator`, `prml_vslam.pipeline.backend_ray`, `prml_vslam.pipeline.run_service`, and `prml_vslam.main` is green after the WP-09C repair.",
+    "RunRequest launch compatibility remains widespread in app, CLI, backend, coordinator, stage input contracts, source resolver, and tests; `RunConfig` still projects through `to_run_request()` in production.",
+    "Target stage-key vocabulary is not yet canonical: current `StageKey` values such as `ingest`, `trajectory.evaluate`, `reference.reconstruct`, `cloud.evaluate`, and `efficiency.evaluate` still drive production outputs and tests.",
+    "Durable/live split is now lifecycle/provenance-only for `RunEvent`; old handle DTOs, `translate_slam_update()`, and `LegacySlamUpdate` have been removed from production and tests.",
+    "Snapshot contract cleanup is mostly done for `RunSnapshot.stage_status` and `stage_progress`; app preview-only naming has been moved to preview-specific fields, while `RunSummary.stage_status` remains persisted provenance and is not a deletion target.",
+]
+sources = [
+    "docs/architecture/pipeline-refactor-work-packages/WP-09A-target-config-launch-cutover.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-09C-live-events-handles-cutover.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-09D-app-cli-target-snapshot-cutover.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-10-migration-removal.md",
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-22"
-source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, the Pipeline page helper cleanup, the 2026-04-16 streaming execution state review, the 2026-04-16 Rerun integration review, the 2026-04-16 current-worktree Streamlit/Ray test review, the 2026-04-16 validated Streamlit ViSTA request round-trip bug, the 2026-04-17 anti-pattern review covering typed seam erosion, ViSTA integration hygiene, duplicate transform DTOs, and leaf-module ownership drift, the 2026-04-17 repo inspection pass mapping those findings to concrete `prml_vslam` module seams, the 2026-04-17 follow-up pipeline refactor review persisting coordinator restart, stage-failure, terminal-state, placement-policy, and Rerun timeline defects, the 2026-04-18 Rerun point-cloud/world-frame regression audit against the current sink, the persisted session transcript, and the repo-local ViSTA reference, and the 2026-04-22 architecture/docstring pass over the pipeline stage refactor target, work-package docs, DTO migration ledger, graphify report, code-index results, and current code migration contacts."
+updated_on = "2026-04-23"
+source = "Validated review findings plus follow-up repository policy notes, the current-state import of the older PR15 review, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, the Pipeline page helper cleanup, the 2026-04-16 streaming execution state review, the 2026-04-16 Rerun integration review, the 2026-04-16 current-worktree Streamlit/Ray test review, the 2026-04-16 validated Streamlit ViSTA request round-trip bug, the 2026-04-17 anti-pattern review covering typed seam erosion, ViSTA integration hygiene, duplicate transform DTOs, and leaf-module ownership drift, the 2026-04-17 repo inspection pass mapping those findings to concrete `prml_vslam` module seams, the 2026-04-17 follow-up pipeline refactor review persisting coordinator restart, stage-failure, terminal-state, placement-policy, and Rerun timeline defects, the 2026-04-18 Rerun point-cloud/world-frame regression audit against the current sink, the persisted session transcript, the repo-local ViSTA reference, the 2026-04-22 architecture/docstring pass over the pipeline stage refactor target, work-package docs, DTO migration ledger, graphify report, code-index results, current code migration contacts, the 2026-04-23 WP-10 blocker inventory after the partial migration cutover, and the 2026-04-23 stabilization pass confirming import smoke is green while WP-09A/WP-09C/WP-09D blockers remain."
 active_collection = "issues"

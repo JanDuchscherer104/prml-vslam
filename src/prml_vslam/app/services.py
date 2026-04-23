@@ -46,8 +46,8 @@ def _disconnect_snapshot(snapshot: SnapshotT) -> SnapshotT:
             "state": PreviewStreamState.DISCONNECTED
             if snapshot.state is PreviewStreamState.STREAMING
             else snapshot.state,
-            "latest_packet": None,
-            "received_frames": 0,
+            "preview_packet": None,
+            "preview_frame_count": 0,
             "measured_fps": 0.0,
         }
     )
@@ -188,7 +188,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
                     "sequence_id": sequence_id,
                     "sequence_label": sequence_label,
                     "pose_source": pose_source,
-                    "latest_packet": observation.packet,
+                    "preview_packet": observation.packet,
                     "error_message": "",
                     **metrics.snapshot_fields(),
                 }
@@ -335,7 +335,7 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                     "transport": transport,
                     "state": PreviewStreamState.STREAMING,
                     "source_label": snapshot.source_label or source_descriptor,
-                    "latest_packet": observation.packet,
+                    "preview_packet": observation.packet,
                     "error_message": "",
                     **metrics.snapshot_fields(),
                 }

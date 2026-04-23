@@ -10,14 +10,14 @@ from __future__ import annotations
 import time
 import uuid
 from collections import deque
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from prml_vslam.interfaces.ingest import SequenceManifest
-from prml_vslam.interfaces.slam import SlamArtifacts, SlamUpdate
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
+from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.factory import BackendFactory, BackendFactoryProtocol
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
 from prml_vslam.pipeline.contracts.events import StageOutcome
@@ -48,18 +48,6 @@ from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
 
 _FPS_WINDOW = 20
-
-
-@dataclass(frozen=True, slots=True)
-class LegacySlamUpdate:
-    """Compatibility payload for old backend event and handle routing.
-
-    The WP-09C cutover keeps this DTO importable for migration callers, but
-    the streaming hot path no longer populates it.
-    """
-
-    update: SlamUpdate
-    payloads: dict[str, np.ndarray]
 
 
 class _TransientPayloadStore:
@@ -124,13 +112,10 @@ class SlamStageRuntime(
         self._streaming_backend: StreamingSlamBackend | None = None
         self._streaming_input: SlamStreamingStartInput | None = None
         self._pending_updates: list[StageRuntimeUpdate] = []
-        # Migration compatibility only. Streaming execution no longer fills this
-        # list after StageRuntimeUpdate cutover.
-        self._legacy_updates: list[LegacySlamUpdate] = []
         self._last_visualization_artifacts: VisualizationArtifacts | None = None
         self._lifecycle_state = StageStatus.QUEUED
         self._processed_frames = 0
-        self._accepted_keyframes = 0
+        self._accepted_keyframe_count = 0
         self._failed_frames = 0
         self._last_warning: str | None = None
         self._last_error: str | None = None
@@ -239,14 +224,6 @@ class SlamStageRuntime(
         self._pending_updates = self._pending_updates[max_items:]
         return updates
 
-    def drain_legacy_updates(self) -> list[LegacySlamUpdate]:
-        """Return compatibility updates for old backend-notice routing."""
-        # TODO(pipeline-refactor/WP-10): Delete after BackendNoticeReceived and
-        # ArrayHandle/PreviewHandle routing are removed from the streaming path.
-        updates = self._legacy_updates
-        self._legacy_updates = []
-        return updates
-
     def read_payload(self, ref: TransientPayloadRef) -> np.ndarray | None:
         """Resolve one runtime-owned live payload by transient reference."""
         return self._payload_store.read(ref)
@@ -286,7 +263,7 @@ class SlamStageRuntime(
             return
         for update in self._streaming_backend.drain_streaming_updates():
             if update.is_keyframe:
-                self._accepted_keyframes += 1
+                self._accepted_keyframe_count += 1
             if update.backend_warnings:
                 self._last_warning = update.backend_warnings[-1]
             payload_refs = self._payload_refs_for(update)
@@ -354,8 +331,8 @@ class SlamStageRuntime(
         )
 
     def _progress_message(self) -> str:
-        if self._accepted_keyframes:
-            return f"processed {self._processed_frames} frames, accepted {self._accepted_keyframes} keyframes"
+        if self._accepted_keyframe_count:
+            return f"processed {self._processed_frames} frames, accepted {self._accepted_keyframe_count} keyframes"
         if self._processed_frames:
             return f"processed {self._processed_frames} frames"
         return ""
@@ -381,6 +358,5 @@ def _rolling_fps(timestamps: deque[float]) -> float:
 
 
 __all__ = [
-    "LegacySlamUpdate",
     "SlamStageRuntime",
 ]

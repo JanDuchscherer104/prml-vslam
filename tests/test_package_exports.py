@@ -17,10 +17,6 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
     assert interfaces_package.__all__ == [
         "AdvioManifestAssets",
         "AdvioRawPoseRefs",
-        "ArtifactRef",
-        "BackendError",
-        "BackendEvent",
-        "BackendWarning",
         "CameraIntrinsics",
         "CameraIntrinsicsSample",
         "CameraIntrinsicsSeries",
@@ -30,10 +26,6 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "GroundAlignmentMetadata",
         "GroundPlaneModel",
         "GroundPlaneVisualizationHint",
-        "KeyframeAccepted",
-        "KeyframeVisualizationReady",
-        "MapStatsUpdated",
-        "PoseEstimated",
         "PreparedBenchmarkInputs",
         "Record3DTransportId",
         "ReferenceCloudRef",
@@ -46,9 +38,7 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "RgbdObservationSequenceIndex",
         "RgbdObservationSequenceRef",
         "SequenceManifest",
-        "SessionClosed",
         "SlamArtifacts",
-        "SlamUpdate",
         "VisualizationArtifacts",
     ]
     assert not hasattr(interfaces_package, "SE3Pose")

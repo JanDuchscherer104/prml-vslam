@@ -27,11 +27,9 @@ from prml_vslam.app.pipeline_controller import (
     sync_pipeline_page_state_from_template,
 )
 from prml_vslam.datasets.advio import AdvioServingConfig
-from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-from prml_vslam.interfaces.slam import KeyframeVisualizationReady
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunStarted, StageOutcome
+from prml_vslam.pipeline.contracts.events import RunStarted, StageOutcome
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
@@ -442,21 +440,6 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
             )
         },
     )
-    notice_event = BackendNoticeReceived(
-        event_id="2",
-        run_id="streaming-demo",
-        ts_ns=2,
-        stage_key=StageKey.SLAM,
-        notice=KeyframeVisualizationReady(
-            seq=4,
-            timestamp_ns=44,
-            source_seq=4,
-            source_timestamp_ns=44,
-            keyframe_index=1,
-            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
-            camera_intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=2, height_px=2),
-        ),
-    )
 
     class FakeRunService:
         def read_payload(self, ref: TransientPayloadRef | None):
@@ -471,7 +454,6 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
             del limit, after_event_id
             return [
                 RunStarted(event_id="1", run_id="streaming-demo", ts_ns=1),
-                notice_event,
             ]
 
     model = build_pipeline_snapshot_render_model(
@@ -490,10 +472,9 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
         "throughput": 5.0,
         "updated_at_ns": 44,
     }
-    assert model.streaming.backend_notice is not None
-    assert model.streaming.backend_notice.camera_intrinsics is not None
+    assert model.streaming.backend_notice is None
     assert model.stage_outcome_rows[0]["Stage"] == "slam"
-    assert model.recent_events[-1]["kind"] == "backend.notice"
+    assert model.recent_events[-1]["kind"] == "run.started"
 
 
 def test_pipeline_snapshot_render_model_prefers_target_live_refs(tmp_path: Path) -> None:

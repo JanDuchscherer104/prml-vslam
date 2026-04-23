@@ -13,8 +13,6 @@ from collections.abc import Iterable
 
 from prml_vslam.pipeline.contracts.events import (
     ArtifactRegistered,
-    BackendNoticeReceived,
-    PacketObserved,
     RunCompleted,
     RunEvent,
     RunFailed,
@@ -24,7 +22,6 @@ from prml_vslam.pipeline.contracts.events import (
     RunSubmitted,
     StageCompleted,
     StageFailed,
-    StageProgressed,
     StageQueued,
     StageStarted,
     StageStatus,
@@ -87,56 +84,8 @@ class SnapshotProjector:
                 )
                 if updated.state is not RunState.STOPPED:
                     updated.state = RunState.PREPARING if stage_key is StageKey.INGEST else RunState.RUNNING
-            case StageProgressed(stage_key=stage_key, progress=progress):
-                status = updated.stage_runtime_status.get(stage_key)
-                if status is None:
-                    updated.stage_runtime_status[stage_key] = StageRuntimeStatus(
-                        stage_key=stage_key,
-                        lifecycle_state=StageStatus.RUNNING,
-                        progress_message=progress.message,
-                        completed_steps=progress.completed_steps,
-                        total_steps=progress.total_steps,
-                        progress_unit=progress.unit,
-                    )
-                else:
-                    updated.stage_runtime_status[stage_key] = status.model_copy(
-                        update={
-                            "progress_message": progress.message,
-                            "completed_steps": progress.completed_steps,
-                            "total_steps": progress.total_steps,
-                            "progress_unit": progress.unit,
-                        }
-                    )
             case ArtifactRegistered(artifact_key=artifact_key, artifact=artifact):
                 updated.artifacts[artifact_key] = artifact
-            case PacketObserved(packet=packet, frame=frame, received_frames=received_frames, measured_fps=measured_fps):
-                # TODO(pipeline-refactor/WP-10): Delete this compatibility
-                # branch after packet telemetry is projected from live updates.
-                del packet, frame
-                status = updated.stage_runtime_status.get(StageKey.INGEST)
-                updated.stage_runtime_status[StageKey.INGEST] = (
-                    StageRuntimeStatus(
-                        stage_key=StageKey.INGEST,
-                        lifecycle_state=StageStatus.RUNNING,
-                        processed_items=received_frames,
-                        fps=measured_fps,
-                    )
-                    if status is None
-                    else status.model_copy(
-                        update={
-                            "lifecycle_state": StageStatus.RUNNING,
-                            "processed_items": received_frames,
-                            "fps": measured_fps,
-                        }
-                    )
-                )
-                if updated.state is not RunState.STOPPED:
-                    updated.state = RunState.RUNNING
-            case BackendNoticeReceived(notice=notice):
-                # TODO(pipeline-refactor/WP-10): Delete this compatibility
-                # branch after backend telemetry is projected from
-                # StageRuntimeUpdate.semantic_events and live refs.
-                del notice
             case StageCompleted(stage_key=stage_key, outcome=outcome):
                 updated.stage_outcomes[stage_key] = outcome
                 updated.stage_runtime_status.pop(stage_key, None)

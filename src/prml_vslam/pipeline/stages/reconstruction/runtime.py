@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import time
 
-from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import artifact_ref

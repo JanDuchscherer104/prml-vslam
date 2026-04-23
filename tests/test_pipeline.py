@@ -28,6 +28,7 @@ from prml_vslam.benchmark import (
     TrajectoryBenchmarkConfig,
 )
 from prml_vslam.interfaces import (
+    FramePacket,
     FramePacketProvenance,
     FrameTransform,
     RgbdObservationIndexEntry,
@@ -36,33 +37,22 @@ from prml_vslam.interfaces import (
     RgbdObservationSequenceRef,
 )
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
-from prml_vslam.interfaces.slam import (
-    ArtifactRef,
-    BackendWarning,
-    KeyframeVisualizationReady,
-    PoseEstimated,
-    SlamArtifacts,
-    SlamUpdate,
-)
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods import MethodId
+from prml_vslam.methods.contracts import PoseEstimated, SlamUpdate
 from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
-from prml_vslam.methods.events import translate_slam_update
 from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.contracts.events import (
-    BackendNoticeReceived,
-    FramePacketSummary,
-    PacketObserved,
     RunStopped,
     StageCompleted,
     StageFailed,
     StageOutcome,
     StageStatus,
 )
-from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import RunSummary
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
     SlamStageConfig,
@@ -466,23 +456,34 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
 def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
     projector = SnapshotProjector()
     snapshot = RunSnapshot(run_id="run-1", state=RunState.STOPPED)
+    ref = TransientPayloadRef(handle_id="frame", payload_kind="image", shape=(4, 4, 3), dtype="uint8")
 
-    updated = projector.apply(
+    updated = projector.apply_runtime_update(
         snapshot,
-        PacketObserved(
-            event_id="1",
-            run_id="run-1",
-            ts_ns=1,
-            packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
-            frame=ArrayHandle(handle_id="frame", shape=(4, 4, 3), dtype="uint8"),
-            received_frames=1,
-            measured_fps=12.0,
+        StageRuntimeUpdate(
+            stage_key=StageKey.INGEST,
+            timestamp_ns=1,
+            visualizations=[
+                VisualizationItem(
+                    intent=VisualizationIntent.RGB_IMAGE,
+                    role="source_rgb",
+                    payload_refs={"image": ref},
+                    frame_index=1,
+                )
+            ],
+            runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.INGEST,
+                lifecycle_state=StageStatus.RUNNING,
+                processed_items=1,
+                fps=12.0,
+            ),
         ),
     )
 
     assert updated.state is RunState.STOPPED
     assert updated.stage_runtime_status[StageKey.INGEST].processed_items == 1
     assert updated.stage_runtime_status[StageKey.INGEST].fps == 12.0
+    assert updated.live_refs[StageKey.INGEST]["source_rgb:image"] == ref
 
 
 def test_snapshot_projector_preserves_completed_state_on_run_stopped() -> None:
@@ -512,20 +513,20 @@ def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
         artifacts={"before": ArtifactRef(path=Path("/tmp/before"), kind="txt", fingerprint="before")},
     )
 
-    updated = projector.apply(
+    updated = projector.apply_runtime_update(
         snapshot,
-        BackendNoticeReceived(
-            event_id="2a",
-            run_id="run-1",
-            ts_ns=2,
+        StageRuntimeUpdate(
             stage_key=StageKey.SLAM,
-            notice=PoseEstimated(
-                seq=1,
-                source_seq=1,
-                source_timestamp_ns=2,
-                timestamp_ns=2,
-                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
-            ),
+            timestamp_ns=2,
+            semantic_events=[
+                PoseEstimated(
+                    seq=1,
+                    source_seq=1,
+                    source_timestamp_ns=2,
+                    timestamp_ns=2,
+                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                )
+            ],
         ),
     )
 
@@ -564,7 +565,6 @@ def test_snapshot_projector_clears_current_stage_on_stage_failed() -> None:
     )
 
     assert updated.current_stage_key is None
-    assert updated.stage_status[StageKey.SLAM] is StageStatus.FAILED
     assert StageKey.SLAM not in updated.stage_runtime_status
     assert updated.error_message == "boom"
     assert updated.stage_outcomes[StageKey.SLAM].status is StageStatus.FAILED
@@ -586,7 +586,6 @@ def test_snapshot_projector_projects_stage_completed_into_target_keyed_fields() 
     )
 
     assert updated.stage_outcomes[StageKey.SLAM] == outcome
-    assert updated.stage_status[StageKey.SLAM] is StageStatus.COMPLETED
     assert updated.artifacts["trajectory"] == outcome.artifacts["trajectory"]
 
 
@@ -629,8 +628,6 @@ def test_snapshot_projector_applies_runtime_update_to_target_and_compat_fields()
     updated = projector.apply_runtime_update(RunSnapshot(run_id="run-1"), update)
 
     assert updated.stage_runtime_status[StageKey.SLAM] == update.runtime_status
-    assert updated.stage_status[StageKey.SLAM] is StageStatus.RUNNING
-    assert updated.stage_progress[StageKey.SLAM].message == "running"
     assert updated.live_refs[StageKey.SLAM]["model_rgb:image"] == ref
 
 
@@ -651,7 +648,7 @@ def test_snapshot_projector_runtime_update_preserves_terminal_states() -> None:
     assert stopped.state is RunState.STOPPED
 
 
-def test_snapshot_projector_runtime_update_skips_empty_progress_projection() -> None:
+def test_snapshot_projector_runtime_update_replaces_runtime_status() -> None:
     projector = SnapshotProjector()
     snapshot = RunSnapshot(
         run_id="run-1",
@@ -671,44 +668,8 @@ def test_snapshot_projector_runtime_update_skips_empty_progress_projection() -> 
 
     updated = projector.apply_runtime_update(snapshot, update)
 
-    assert StageKey.SLAM not in updated.stage_progress
-    assert snapshot.stage_progress[StageKey.SLAM].message == "old"
-
-
-def test_translate_slam_update_emits_explicit_backend_events() -> None:
-    update = SlamUpdate(
-        seq=4,
-        timestamp_ns=8,
-        source_seq=4,
-        source_timestamp_ns=8,
-        is_keyframe=True,
-        keyframe_index=2,
-        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
-        num_sparse_points=5,
-        num_dense_points=9,
-        pose_updated=True,
-        backend_warnings=["dense pointmap missing for source_seq=4, keyframe_index=2"],
-    )
-    pointmap_handle = ArrayHandle(handle_id="pointmap", shape=(2, 2, 3), dtype="float32")
-
-    events = translate_slam_update(
-        update=update,
-        accepted_keyframes=3,
-        backend_fps=7.5,
-        pointmap_handle=pointmap_handle,
-    )
-    kinds = [event.kind for event in events]
-
-    assert "pose.estimated" in kinds
-    assert "backend.warning" in kinds
-    assert "keyframe.accepted" in kinds
-    assert "keyframe.visualization_ready" in kinds
-    assert "map.stats" in kinds
-    warning_event = next(event for event in events if isinstance(event, BackendWarning))
-    assert "source_seq=4" in warning_event.message
-    visualization_event = next(event for event in events if isinstance(event, KeyframeVisualizationReady))
-    assert visualization_event.pointmap == pointmap_handle
-    assert visualization_event.pose.tx == 1.0
+    assert updated.stage_runtime_status[StageKey.SLAM] == update.runtime_status
+    assert snapshot.stage_runtime_status[StageKey.SLAM].progress_message == "old"
 
 
 def test_actor_options_preserve_defaults_without_placement() -> None:
@@ -800,14 +761,14 @@ def test_run_coordinator_resolves_materialized_handle_payloads_without_ray_get()
     assert np.array_equal(resolved, payload)
 
 
-def test_run_coordinator_read_array_accepts_materialized_handle_payloads() -> None:
+def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
     payload = np.zeros((2, 2, 3), dtype=np.uint8)
 
     coordinator._remember_handle("frame-1", payload)
 
-    resolved = coordinator.read_array("frame-1")
+    resolved = coordinator.read_payload("frame-1")
 
     assert resolved is not None
     assert np.array_equal(resolved, payload)
@@ -836,31 +797,33 @@ def test_run_coordinator_applies_slam_runtime_updates_to_snapshot() -> None:
 
     snapshot = coordinator.snapshot()
     assert snapshot.stage_runtime_status[StageKey.SLAM] == update.runtime_status
-    assert snapshot.stage_status[StageKey.SLAM] is StageStatus.RUNNING
     assert snapshot.live_refs[StageKey.SLAM]["model_rgb:image"] == ref
 
 
-def test_run_coordinator_can_record_backend_notices_without_snapshot_projection() -> None:
+def test_run_coordinator_runtime_updates_do_not_create_durable_backend_events() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="run-1", namespace="pytest-unit")
     coordinator._snapshot = RunSnapshot(run_id="run-1")
 
-    coordinator.on_slam_notices(
-        notices=[
-            PoseEstimated(
-                seq=1,
+    coordinator.on_slam_runtime_updates(
+        updates=[
+            StageRuntimeUpdate(
+                stage_key=StageKey.SLAM,
                 timestamp_ns=10,
-                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                semantic_events=[
+                    PoseEstimated(
+                        seq=1,
+                        timestamp_ns=10,
+                        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                    )
+                ],
             )
-        ],
-        bindings=[],
-        released_credits=0,
-        project_to_snapshot=False,
+        ]
     )
 
     snapshot = coordinator.snapshot()
     assert snapshot.stage_runtime_status == {}
-    assert any(isinstance(event, BackendNoticeReceived) for event in coordinator.events())
+    assert coordinator.events() == []
 
 
 def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_get(
@@ -884,16 +847,22 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
     )
 
     coordinator.on_packet(
-        packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
-        frame_handle=ArrayHandle(handle_id="frame-1", shape=(2, 2, 3), dtype="uint8"),
+        packet=FramePacket(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
         frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
         depth_ref=None,
         confidence_ref=None,
         intrinsics=None,
         pose=None,
         provenance=FramePacketProvenance(),
-        received_frames=1,
+        processed_frame_count=1,
         measured_fps=30.0,
+        frame_payload_ref=TransientPayloadRef(
+            handle_id="frame-1",
+            payload_kind="image",
+            media_type="image/rgb",
+            shape=(2, 2, 3),
+            dtype="uint8",
+        ),
     )
 
     assert len(submitted) == 1
@@ -1041,16 +1010,22 @@ def test_run_coordinator_releases_streaming_credit_before_update_observer_routin
     coordinator.on_slam_runtime_updates = _fail_update_routing
 
     coordinator.on_packet(
-        packet=FramePacketSummary(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
-        frame_handle=ArrayHandle(handle_id="frame-1", shape=(2, 2, 3), dtype="uint8"),
+        packet=FramePacket(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
         frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
         depth_ref=None,
         confidence_ref=None,
         intrinsics=None,
         pose=None,
         provenance=FramePacketProvenance(),
-        received_frames=1,
+        processed_frame_count=1,
         measured_fps=30.0,
+        frame_payload_ref=TransientPayloadRef(
+            handle_id="frame-1",
+            payload_kind="image",
+            media_type="image/rgb",
+            shape=(2, 2, 3),
+            dtype="uint8",
+        ),
     )
 
     assert credits == [1]
@@ -1076,7 +1051,7 @@ def test_run_coordinator_records_stage_failed_events() -> None:
 
     snapshot = coordinator.snapshot()
 
-    assert snapshot.stage_status[StageKey.SLAM] is StageStatus.FAILED
+    assert snapshot.stage_outcomes[StageKey.SLAM].status is StageStatus.FAILED
     assert snapshot.error_message == "backend boom"
     assert any(event.kind == "stage.failed" for event in coordinator.events())
 
@@ -1682,7 +1657,6 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
             "stop": _Remote(lambda: stopped.append("backend-unit")),
             "snapshot": _Remote(lambda: snapshot),
             "events": _Remote(lambda after_event_id, limit: []),
-            "read_array": _Remote(lambda handle_id: np.ones((2, 2, 3), dtype=np.uint8)),
             "read_payload": _Remote(lambda handle_id: np.full((2, 2, 3), 2, dtype=np.uint8)),
             "shutdown": _Remote(lambda: None),
         },
@@ -1699,7 +1673,6 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     assert submitted == [("backend-unit", "runtime")]
     assert backend.get_snapshot(run_id).state is RunState.COMPLETED
     assert backend.get_events(run_id) == []
-    assert backend.read_array(run_id, ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8")) is not None
     assert backend.read_payload(run_id, TransientPayloadRef(handle_id="payload", payload_kind="image")) is not None
     backend.stop_run(run_id)
     assert stopped == ["backend-unit"]
@@ -1814,11 +1787,14 @@ def test_packet_source_actor_logs_start_and_eof(
     actor._stop_event = threading.Event()
     actor._credits = 0
     actor._credits_cv = threading.Condition()
-    actor._received_frames = 0
+    actor._processed_frame_count = 0
     actor._packet_timestamps = deque(maxlen=20)
     monkeypatch.setattr(
-        "prml_vslam.pipeline.ray_runtime.stage_actors.put_array_handle",
-        lambda array: (ArrayHandle(handle_id="frame", shape=(2, 2, 3), dtype="uint8"), np.asarray(array)),
+        "prml_vslam.pipeline.ray_runtime.stage_actors.put_transient_payload",
+        lambda array, **kwargs: (
+            TransientPayloadRef(handle_id="frame", payload_kind=kwargs["payload_kind"], shape=np.asarray(array).shape),
+            np.asarray(array),
+        ),
     )
 
     with _capture_logger(

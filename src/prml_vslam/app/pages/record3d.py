@@ -86,14 +86,14 @@ def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
         metrics=_snapshot_metrics(snapshot),
         caption=None if not snapshot.source_label else f"Source: {snapshot.source_label}",
         body_renderer=lambda: render_live_packet_tabs(
-            packet=snapshot.latest_packet,
+            packet=snapshot.preview_packet,
             preview_renderer=_render_frame_preview,
-            positions_xyz=snapshot.trajectory_positions_xyz,
-            timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
+            positions_xyz=snapshot.preview_trajectory_xyz,
+            timestamps_s=snapshot.preview_trajectory_time_s if len(snapshot.preview_trajectory_time_s) else None,
             trajectory_empty_message="Live ego trajectory is not available for the current transport yet.",
             details_payload={}
-            if snapshot.latest_packet is None
-            else build_record3d_frame_details(snapshot.latest_packet, source_label=snapshot.source_label),
+            if snapshot.preview_packet is None
+            else build_record3d_frame_details(snapshot.preview_packet, source_label=snapshot.source_label),
             intrinsics_missing_message="Camera intrinsics are not available for the current packet.",
         ),
     )
@@ -102,7 +102,7 @@ def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
 def _snapshot_metrics(snapshot: Record3DStreamSnapshot) -> tuple[LiveMetric, ...]:
     return (
         ("Status", snapshot.state.value.upper()),
-        ("Received Frames", str(snapshot.received_frames)),
+        ("Received Frames", str(snapshot.preview_frame_count)),
         ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
         ("Transport", snapshot.transport.label if snapshot.transport is not None else "Idle"),
     )

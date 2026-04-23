@@ -13,10 +13,9 @@ import numpy as np
 from prml_vslam.eval.contracts import TrajectoryEvaluationPreview
 from prml_vslam.eval.services import compute_trajectory_ape_preview
 from prml_vslam.interfaces import CameraIntrinsics
-from prml_vslam.interfaces.slam import KeyframeVisualizationReady
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.contracts.events import BackendNoticeReceived, RunEvent
+from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
@@ -142,18 +141,14 @@ def latest_backend_notice_view(
     *,
     limit: int = 25,
 ) -> PipelineBackendNoticeView | None:
-    """Return the latest typed backend notice for the pipeline UI."""
-    for event in reversed(run_service.tail_events(limit=limit)):
-        if not isinstance(event, BackendNoticeReceived):
-            continue
-        camera_intrinsics = None
-        if isinstance(event.notice, KeyframeVisualizationReady):
-            camera_intrinsics = event.notice.camera_intrinsics
-        return PipelineBackendNoticeView(
-            kind=event.notice.kind,
-            payload=event.notice.model_dump(mode="json"),
-            camera_intrinsics=camera_intrinsics,
-        )
+    """Return the latest typed backend notice for the pipeline UI.
+
+    Durable backend-notice events were retired in WP-09C. Live backend state is
+    now projected through runtime status and live payload refs, so this optional
+    render hook remains empty until semantic update history gets its target
+    app-facing projection.
+    """
+    del run_service, limit
     return None
 
 
@@ -251,22 +246,22 @@ def _compute_evo_preview(
 
 def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[tuple[str, str], ...]:
     slam_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
-    received_frames = 0 if slam_status is None else slam_status.processed_items
+    processed_frame_count = 0 if slam_status is None else slam_status.processed_items
     measured_fps = 0.0 if slam_status is None or slam_status.fps is None else slam_status.fps
     backend_fps = 0.0 if slam_status is None or slam_status.throughput is None else slam_status.throughput
-    accepted_keyframes = 0
+    accepted_keyframe_count = 0
     num_sparse_points = 0
     num_dense_points = 0
     if (outcome := snapshot.stage_outcomes.get(StageKey.SLAM)) is not None:
-        accepted_keyframes = _coerce_int_metric(outcome.metrics.get("accepted_keyframes"))
+        accepted_keyframe_count = _coerce_int_metric(outcome.metrics.get("accepted_keyframe_count"))
         num_sparse_points = _coerce_int_metric(outcome.metrics.get("num_sparse_points"))
         num_dense_points = _coerce_int_metric(outcome.metrics.get("num_dense_points"))
     return (
         ("Status", snapshot.state.value.upper()),
         ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.title()),
-        ("Received Frames", str(received_frames)),
+        ("Received Frames", str(processed_frame_count)),
         ("Packet FPS", f"{measured_fps:.2f} fps"),
-        ("Accepted Keyframes", str(accepted_keyframes)),
+        ("Accepted Keyframes", str(accepted_keyframe_count)),
         ("Keyframe FPS", f"{backend_fps:.2f} fps"),
         ("Sparse Points", str(num_sparse_points)),
         ("Dense Points", str(num_dense_points)),
@@ -323,7 +318,6 @@ def _recent_event_rows(events: list[RunEvent]) -> list[JsonObject]:
         {
             "event_id": event.event_id,
             "kind": event.kind,
-            "tier": event.tier.value,
         }
         for event in events
     ]

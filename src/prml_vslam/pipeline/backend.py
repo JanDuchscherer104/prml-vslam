@@ -2,9 +2,9 @@
 
 This module keeps the app and CLI-facing entrypoints decoupled from the active
 runtime implementation. A backend accepts a typed :class:`RunRequest`, owns run
-lifecycle operations, and exposes only projected metadata and opaque live-array
-handles back to the caller. It is the narrow seam between user-facing launch
-code and the concrete runtime implementation such as the Ray backend.
+lifecycle operations, and exposes only projected metadata and transient payload
+refs back to the caller. It is the narrow seam between user-facing launch code
+and the concrete runtime implementation such as the Ray backend.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from typing import Protocol, TypeAlias
 import numpy as np
 
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
@@ -31,7 +30,7 @@ class PipelineBackend(Protocol):
 
     Implementations own the concrete execution substrate, such as Ray. Callers
     should treat this protocol as the narrow runtime boundary: submit a run,
-    read projected metadata, resolve opaque array handles when needed, and
+    read projected metadata, resolve transient payload refs when needed, and
     request shutdown through the backend rather than reaching into actor or
     process internals directly.
     """
@@ -48,7 +47,7 @@ class PipelineBackend(Protocol):
 
         Returns:
             Filesystem-safe run identifier used for later snapshot, event, and
-            array-handle reads.
+            payload-ref reads.
         """
 
     @abstractmethod
@@ -74,17 +73,6 @@ class PipelineBackend(Protocol):
             after_event_id: Optional cursor for incremental tails.
             limit: Maximum number of trailing events to return.
         """
-
-    @abstractmethod
-    def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
-        """Resolve one opaque live payload handle into a local array.
-
-        The handle identifies transient payloads stored by the execution
-        substrate. Durable stage outputs should still be consumed through
-        artifact paths rather than through this method.
-        """
-        # TODO(pipeline-refactor/WP-10): Delete after all live payload callers
-        # use read_payload(..., TransientPayloadRef).
 
     @abstractmethod
     def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:

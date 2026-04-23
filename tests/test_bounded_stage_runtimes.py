@@ -14,11 +14,11 @@ from prml_vslam.eval.contracts import (
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.rgbd import RgbdObservationSequenceRef
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
 from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent

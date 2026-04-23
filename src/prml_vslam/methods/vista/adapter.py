@@ -10,9 +10,10 @@ import cv2
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import SlamArtifacts, SlamUpdate
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import VistaSlamBackendConfig
+from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.utils import Console, PathConfig
 

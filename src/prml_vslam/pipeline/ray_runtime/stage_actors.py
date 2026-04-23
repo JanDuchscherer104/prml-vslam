@@ -9,14 +9,12 @@ from collections import deque
 import numpy as np
 import ray
 
-from prml_vslam.pipeline.contracts.events import FramePacketSummary
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     FPS_WINDOW,
-    put_array_handle,
+    put_transient_payload,
     rolling_fps,
 )
-from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.utils import Console
 
@@ -33,7 +31,7 @@ class PacketSourceActor:
         self._stop_event = threading.Event()
         self._credits = 0
         self._credits_cv = threading.Condition()
-        self._received_frames = 0
+        self._processed_frame_count = 0
         self._packet_timestamps = deque(maxlen=FPS_WINDOW)
 
     def start_stream(
@@ -84,26 +82,25 @@ class PacketSourceActor:
                         break
                     self._credits -= 1
                 packet = stream.wait_for_packet(timeout_seconds=self._frame_timeout_seconds)
-                self._received_frames += 1
+                self._processed_frame_count += 1
                 self._packet_timestamps.append(time.monotonic())
-                frame_handle, frame_ref = put_array_handle(packet.rgb)
-                frame_payload_ref = self._source_payload_ref(frame_handle)
+                frame_payload_ref, frame_ref = put_transient_payload(
+                    packet.rgb,
+                    payload_kind="image",
+                    media_type="image/rgb",
+                    metadata={"slot": "image"},
+                )
                 depth_ref = None if packet.depth is None else ray.put(np.asarray(packet.depth))
                 confidence_ref = None if packet.confidence is None else ray.put(np.asarray(packet.confidence))
                 self._coordinator.on_packet.remote(
-                    packet=FramePacketSummary(
-                        seq=packet.seq,
-                        timestamp_ns=packet.timestamp_ns,
-                        provenance=packet.provenance.model_copy(deep=True),
-                    ),
-                    frame_handle=frame_handle,
+                    packet=packet,
                     frame_ref=frame_ref,
                     depth_ref=depth_ref,
                     confidence_ref=confidence_ref,
                     intrinsics=packet.intrinsics,
                     pose=packet.pose,
                     provenance=packet.provenance.model_copy(deep=True),
-                    received_frames=self._received_frames,
+                    processed_frame_count=self._processed_frame_count,
                     measured_fps=rolling_fps(self._packet_timestamps),
                     frame_payload_ref=frame_payload_ref,
                 )
@@ -118,19 +115,6 @@ class PacketSourceActor:
                 stream.disconnect()
             except Exception:
                 pass
-
-    @staticmethod
-    def _source_payload_ref(frame_handle) -> TransientPayloadRef | None:
-        if frame_handle is None:
-            return None
-        return TransientPayloadRef(
-            handle_id=frame_handle.handle_id,
-            payload_kind="image",
-            media_type="image/rgb",
-            shape=frame_handle.shape,
-            dtype=frame_handle.dtype,
-            metadata={"slot": "image"},
-        )
 
 
 __all__ = ["PacketSourceActor"]

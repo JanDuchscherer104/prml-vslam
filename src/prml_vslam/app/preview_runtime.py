@@ -22,26 +22,26 @@ _EMPTY_TRAJECTORY_TIMESTAMPS_S = np.empty((0,), dtype=np.float64)
 class PacketSessionSnapshot(BaseData):
     """Generic snapshot fields shared by app-owned packet preview consumers."""
 
-    latest_packet: FramePacket | None = None
+    preview_packet: FramePacket | None = None
     """Most recent frame packet, if any."""
 
-    received_frames: int = 0
+    preview_frame_count: int = 0
     """Number of processed packets since the current session started."""
 
     measured_fps: float = 0.0
     """Rolling measured packet rate."""
 
-    accepted_keyframes: int = 0
+    preview_keyframe_count: int = 0
     """Number of keyframe-like updates accepted during the current session."""
 
     backend_fps: float = 0.0
     """Rolling accepted-keyframe rate for the current session."""
 
-    trajectory_positions_xyz: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_POSITIONS_XYZ.copy)
+    preview_trajectory_xyz: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_POSITIONS_XYZ.copy)
     """Bounded keyframe trajectory history in world coordinates."""
 
-    trajectory_timestamps_s: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_TIMESTAMPS_S.copy)
-    """Timestamps associated with `trajectory_positions_xyz`."""
+    preview_trajectory_time_s: np.ndarray = Field(default_factory=_EMPTY_TRAJECTORY_TIMESTAMPS_S.copy)
+    """Timestamps associated with `preview_trajectory_xyz`."""
 
     error_message: str = ""
     """Last surfaced runtime error."""
@@ -63,12 +63,12 @@ class PacketSessionMetrics:
         self._keyframe_arrival_times: deque[float] = deque(maxlen=fps_window_size)
         self._trajectory_positions: deque[np.ndarray] = deque(maxlen=trajectory_window_size)
         self._trajectory_timestamps: deque[float] = deque(maxlen=trajectory_window_size)
-        self._received_frames = 0
-        self._accepted_keyframes = 0
+        self._preview_frame_count = 0
+        self._preview_keyframe_count = 0
 
     def record_packet(self, *, arrival_time_s: float) -> None:
         """Append one packet arrival to the rolling packet-rate window."""
-        self._received_frames += 1
+        self._preview_frame_count += 1
         self._arrival_times.append(arrival_time_s)
 
     def record_keyframe(
@@ -79,7 +79,7 @@ class PacketSessionMetrics:
         trajectory_time_s: float | None,
     ) -> None:
         """Append one accepted keyframe sample to the rolling backend window."""
-        self._accepted_keyframes += 1
+        self._preview_keyframe_count += 1
         self._keyframe_arrival_times.append(arrival_time_s)
         if position_xyz is not None and trajectory_time_s is not None:
             self._trajectory_positions.append(position_xyz)
@@ -104,17 +104,17 @@ class PacketSessionMetrics:
     def packet_snapshot_fields(self) -> dict[str, int | float]:
         """Return packet-rate snapshot fields."""
         return {
-            "received_frames": self._received_frames,
+            "preview_frame_count": self._preview_frame_count,
             "measured_fps": self._measure_fps(self._arrival_times),
         }
 
     def keyframe_snapshot_fields(self) -> dict[str, int | float | np.ndarray]:
         """Return backend-keyframe snapshot fields."""
         return {
-            "accepted_keyframes": self._accepted_keyframes,
+            "preview_keyframe_count": self._preview_keyframe_count,
             "backend_fps": self._measure_fps(self._keyframe_arrival_times),
-            "trajectory_positions_xyz": self._positions_to_array(self._trajectory_positions),
-            "trajectory_timestamps_s": np.asarray(tuple(self._trajectory_timestamps), dtype=np.float64),
+            "preview_trajectory_xyz": self._positions_to_array(self._trajectory_positions),
+            "preview_trajectory_time_s": np.asarray(tuple(self._trajectory_timestamps), dtype=np.float64),
         }
 
     def snapshot_fields(self) -> dict[str, int | float | np.ndarray]:

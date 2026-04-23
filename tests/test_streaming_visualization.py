@@ -11,7 +11,8 @@ import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.slam import ArtifactRef, SlamUpdate
+from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks import rerun as rerun_sink_module
 from prml_vslam.pipeline.sinks.rerun import RerunEventSink, RerunSinkActor

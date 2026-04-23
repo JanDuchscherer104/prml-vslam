@@ -23,9 +23,9 @@ flowchart TD
     end
 
     subgraph hotpath["Streaming SLAM hot path"]
-        frame["PacketObserved event"]
+        frame["StageRuntimeUpdate source status"]
         step["StreamingSlamStageActor.push_frame()"]
-        update["BackendNoticeReceived event"]
+        update["StageRuntimeUpdate semantic events and visualizations"]
         snapshot["Projected snapshot and runtime metrics"]
     end
 
