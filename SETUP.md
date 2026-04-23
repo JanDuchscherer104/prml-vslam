@@ -74,6 +74,10 @@ python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py search "ViewCoor
 python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
 ```
 
+Codex sessions also run a repo-local startup hook that starts a background
+refresh and prints wake-up context. The hook entry lives in `.codex/hooks.json`;
+the script is `.agents/scripts/mempalace_startup_context.sh`.
+
 ## ViSTA/CUDA Setup
 
 The ViSTA integration uses `environment.yml` for native build dependencies that

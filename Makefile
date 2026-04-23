@@ -13,6 +13,8 @@ PARALLEL_MAKE ?= $(MAKE) -j$(CPU_COUNT)
 AGENTS_DB ?= $(UV_RUN) python .agents/scripts/agents_db.py
 AGENTS_ARGS ?= rank
 LOC_ARGS ?=
+MEMPALACE ?= python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py
+MEMPALACE_QUERY ?=
 GRAPHIFY_DIR ?= graphify-out
 GRAPHIFY_REPORT ?= $(GRAPHIFY_DIR)/GRAPH_REPORT.md
 GRAPHIFY_GRAPH ?= $(GRAPHIFY_DIR)/graph.json
@@ -44,7 +46,7 @@ UPDATE_SLIDES_PDF ?= docs/slides/build/update-meetings.pdf
 FINAL_TYP ?= docs/slides/final/main.typ
 FINAL_PDF ?= docs/slides/build/final.pdf
 
-.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py open3d-stubs graphify graphify-status graphify-report graphify-rebuild graphify-hook-status graphify-hook-install graphify-view
+.PHONY: help fmt lint lint-check ci typst-lint typst-check test bib-check report-pdf slides-pdf final-slides docs-build agents-db loc loc-py open3d-stubs mempalace mempalace-refresh mempalace-status mempalace-search mempalace-wake-up graphify graphify-status graphify-report graphify-rebuild graphify-hook-status graphify-hook-install graphify-view
 
 lint: ## Auto-format Python files and apply Ruff fixes
 	$(RUFF) format .
@@ -69,6 +71,21 @@ test: ## Run the Python test suite (for parallel runs: make test PYTEST_ARGS="-n
 
 agents-db: ## Run the local .agents backlog tool (example: make agents-db AGENTS_ARGS="rank --kind todos")
 	$(AGENTS_DB) $(AGENTS_ARGS)
+
+mempalace: mempalace-status ## Show repo-local MemPalace status
+
+mempalace-refresh: ## Refresh repo-local MemPalace docs and Codex chat histories
+	$(MEMPALACE) refresh
+
+mempalace-status: ## Show repo-local MemPalace status
+	$(MEMPALACE) status
+
+mempalace-search: ## Search repo-local MemPalace (example: make mempalace-search MEMPALACE_QUERY="pipeline DTO")
+	@test -n "$(MEMPALACE_QUERY)" || { echo "Set MEMPALACE_QUERY"; exit 1; }
+	$(MEMPALACE) search "$(MEMPALACE_QUERY)"
+
+mempalace-wake-up: ## Print repo-local MemPalace wake-up context
+	$(MEMPALACE) wake-up
 
 loc-py: ## Print Python LOC for src/ and tests/ (example: make loc LOC_ARGS="--todo --fixme")
 	$(UV_RUN) python scripts/loc_stats.py $(LOC_ARGS)
