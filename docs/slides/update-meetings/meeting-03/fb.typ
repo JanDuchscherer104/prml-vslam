@@ -2,20 +2,20 @@
 
 #let done_table_row = (
   [WP2],
-  [Florian Beck],
+  [FB],
   [Set up local pipeline, downloaded datasets, evaluated Open3D TSDF, and started viz component.],
 )
 
 #let challenges_table_row = (
-  [WP2 / WP4],
-  [Florian Beck],
-  [#lorem(10)],
+  // [WP2 / WP4],
+  // [Florian Beck],
+  // [#lorem(10)],
 )
 
 #let next_steps_table_row = (
-  [WP3 / WP4],
-  [Florian Beck],
-  [#lorem(10)],
+  // [WP3 / WP4],
+  // [Florian Beck],
+  // [#lorem(10)],
 )
 
 #let done_detail_body = items => [

@@ -2,19 +2,19 @@
 
 #let done_table_row = (
   [WP3],
-  [Christopher Kirschner],
+  [CK],
   [MASt3R-SLAM Adapter implementiert; Pipeline-Lauf auf ADVIO funktioniert],
 )
 
 #let challenges_table_row = (
   [WP3],
-  [Christopher Kirschner],
+  [CK],
   [Original-`main.py` zerlegen und als Adapter neu bauen],
 )
 
 #let next_steps_table_row = (
   [WP3 / WP7],
-  [Christopher Kirschner],
+  [CK],
   [Trajektorie gegen ADVIO-Ground-Truth prüfen, dann Vergleich mit ViSTA-SLAM],
 )
 
@@ -38,7 +38,7 @@
       eine eigene Hauptschleife über alle Frames.
     - Für unsere Pipeline musste das Ganze zerlegt und als eigene
       Klasse nachgebaut werden — also Adapter + `SlamSession` mit
-      `step()` / `close()`, damit die Pipeline Frame für Frame reinreichen 
+      `step()` / `close()`, damit die Pipeline Frame für Frame reinreichen
       kann.
   ]
 ]
