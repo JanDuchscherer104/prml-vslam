@@ -15,7 +15,7 @@ from pydantic import ConfigDict, Field, field_validator
 
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
-from prml_vslam.pipeline.contracts.stages import StageAvailability, StageKey
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.utils import BaseConfig
 
 JsonScalar = str | int | float | bool | None
@@ -147,14 +147,6 @@ class StageConfig(BaseConfig):
 
     cleanup: StageCleanupPolicy = Field(default_factory=StageCleanupPolicy)
     """Artifact cleanup policy keyed by stage artifact names."""
-
-    def availability(self, reason: str | None = None) -> StageAvailability:
-        """Return a planning availability view for this stage policy."""
-        if reason is not None:
-            return StageAvailability(available=False, reason=reason)
-        if not self.enabled:
-            return StageAvailability(available=False, reason="Stage is disabled.")
-        return StageAvailability(available=True)
 
     def declared_outputs(self, output_paths: Sequence[Path] = ()) -> list[Path]:
         """Return the declared output paths for a generic stage section."""

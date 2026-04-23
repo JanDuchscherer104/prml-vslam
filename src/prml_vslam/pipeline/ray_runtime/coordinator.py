@@ -21,6 +21,7 @@ from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import (
     ArtifactRegistered,
     RunCompleted,
@@ -37,9 +38,9 @@ from prml_vslam.pipeline.contracts.events import (
     StageStarted,
     StageStatus,
 )
+from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef
-from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.execution_context import StageExecutionContext
@@ -58,7 +59,6 @@ from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
-from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -78,7 +78,7 @@ from prml_vslam.pipeline.stages.reconstruction.visualization import (
 )
 from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
 from prml_vslam.pipeline.stages.slam.visualization import IMAGE_REF, ROLE_SOURCE_RGB
-from prml_vslam.pipeline.stages.source import SourceRuntime, SourceRuntimeInput
+from prml_vslam.pipeline.stages.source import SourceRuntime, SourceRuntimeConfigInput, SourceRuntimeInput
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
 from prml_vslam.pipeline.stages.trajectory_eval import (
     TrajectoryEvaluationRuntime,
@@ -157,7 +157,7 @@ class RunCoordinatorActor:
         self._source_actor: ActorHandle | None = None
         self._streaming_runtime_manager: RuntimeManager | None = None
         self._slam_runtime_proxy: StageRuntimeProxy | None = None
-        self._request: RunRequest | None = None
+        self._run_config: RunConfig | None = None
         self._plan: RunPlan | None = None
         self._backend_descriptor: BackendDescriptor | None = None
         self._result_store = StageResultStore()
@@ -166,7 +166,7 @@ class RunCoordinatorActor:
         self._path_config: PathConfig | None = None
 
     def start(
-        self, *, request: RunRequest, plan: RunPlan, path_config: PathConfig, runtime_source: PipelineRuntimeSource
+        self, *, run_config: RunConfig, plan: RunPlan, path_config: PathConfig, runtime_source: PipelineRuntimeSource
     ) -> None:
         """Initialize run-scoped state and spawn the worker thread."""
         if self._worker is not None and self._worker.is_alive():
@@ -177,7 +177,7 @@ class RunCoordinatorActor:
             plan.mode.value,
             len(plan.stages),
         )
-        self._request = request
+        self._run_config = run_config
         self._plan = plan
         self._path_config = path_config
         self._stop_requested = False
@@ -195,11 +195,11 @@ class RunCoordinatorActor:
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         self._jsonl_sink = JsonlEventSink(run_paths.summary_path.parent / "run-events.jsonl")
         self._console.info("Writing durable run events to '%s'.", self._jsonl_sink.path)
-        self._rerun_sink = self._build_rerun_sink(request=request, run_paths=run_paths)
+        self._rerun_sink = self._build_rerun_sink(run_config=run_config, run_paths=run_paths)
         self._record_event(RunSubmitted(event_id=self._next_event_id(), run_id=plan.run_id, ts_ns=ts_ns()))
         self._worker = threading.Thread(
             target=self._run,
-            args=(request, plan, path_config, runtime_source),
+            args=(run_config, plan, path_config, runtime_source),
             daemon=True,
             name=f"run-coordinator-{plan.run_id}",
         )
@@ -435,7 +435,7 @@ class RunCoordinatorActor:
 
     def _run(
         self,
-        request: RunRequest,
+        run_config: RunConfig,
         plan: RunPlan,
         path_config: PathConfig,
         runtime_source: PipelineRuntimeSource,
@@ -446,17 +446,20 @@ class RunCoordinatorActor:
             if unavailable:
                 reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."
                 raise RuntimeError(reason)
-            self._backend_descriptor = BackendFactory().describe(request.slam.backend)
+            slam_backend = run_config.stages.slam.backend
+            if slam_backend is None:
+                raise RuntimeError("RunConfig execution requires `[stages.slam.backend]`.")
+            self._backend_descriptor = BackendFactory().describe(slam_backend)
             if plan.mode is PipelineMode.OFFLINE:
                 self._run_offline(
-                    request=request,
+                    run_config=run_config,
                     plan=plan,
                     path_config=path_config,
                     runtime_source=runtime_source,
                 )
             else:
                 self._run_streaming(
-                    request=request,
+                    run_config=run_config,
                     plan=plan,
                     path_config=path_config,
                     runtime_source=runtime_source,
@@ -476,19 +479,26 @@ class RunCoordinatorActor:
     def _run_offline(
         self,
         *,
-        request: RunRequest,
+        run_config: RunConfig,
         plan: RunPlan,
         path_config: PathConfig,
         runtime_source: OfflineSequenceSource | None,
     ) -> None:
-        source: OfflineSequenceSource = (
-            OfflineSourceResolver(path_config).resolve(request.source) if runtime_source is None else runtime_source
-        )
+        if runtime_source is None:
+            if run_config.stages.source.backend is None:
+                raise RuntimeError("RunConfig execution requires `[stages.source.backend]`.")
+            source = run_config.stages.source.backend.setup_target(path_config=path_config)
+        else:
+            source = runtime_source
         self._console.info(
             "Offline source prepared via %s path.",
-            "injected runtime source" if runtime_source is not None else "request-resolved source",
+            "injected runtime source" if runtime_source is not None else "run-config source backend",
         )
-        context = self._stage_execution_context(request=request, plan=plan, path_config=path_config)
+        context = self._stage_execution_context(
+            run_config=run_config,
+            plan=plan,
+            path_config=path_config,
+        )
         runtime_manager = self._build_runtime_manager(plan=plan, source=source)
         runtime_manager.preflight(plan).raise_for_errors()
         self._result_store = StageResultStore()
@@ -593,12 +603,26 @@ class RunCoordinatorActor:
         match stage_key:
             case StageKey.INGEST:
                 return SourceRuntimeInput(
-                    request=context.request,
+                    config_input=SourceRuntimeConfigInput(
+                        mode=context.run_config.mode,
+                        frame_stride=(
+                            1
+                            if context.run_config.stages.source.backend is None
+                            else context.run_config.stages.source.backend.frame_stride
+                        ),
+                        streaming_max_frames=(
+                            None
+                            if context.run_config.stages.slam.backend is None
+                            else context.run_config.stages.slam.backend.max_frames
+                        ),
+                        config_hash=stable_hash(context.run_config.stages.source.backend),
+                        input_fingerprint=stable_hash(context.run_config.stages.source.backend),
+                    ),
                     artifact_root=context.plan.artifact_root,
                 )
             case StageKey.SLAM:
                 return SlamOfflineInput(
-                    request=context.request,
+                    run_config=context.run_config,
                     plan=context.plan,
                     path_config=context.path_config,
                     sequence_manifest=self._result_store.require_sequence_manifest(),
@@ -606,13 +630,13 @@ class RunCoordinatorActor:
                 )
             case StageKey.GRAVITY_ALIGNMENT:
                 return GroundAlignmentRuntimeInput(
-                    request=context.request,
+                    run_config=context.run_config,
                     run_paths=context.run_paths,
                     slam=self._result_store.require_slam_artifacts(),
                 )
             case StageKey.TRAJECTORY_EVALUATION:
                 return TrajectoryEvaluationRuntimeInput(
-                    request=context.request,
+                    run_config=context.run_config,
                     plan=context.plan,
                     sequence_manifest=self._result_store.require_sequence_manifest(),
                     benchmark_inputs=self._result_store.require_benchmark_inputs(),
@@ -620,13 +644,13 @@ class RunCoordinatorActor:
                 )
             case StageKey.REFERENCE_RECONSTRUCTION:
                 return ReconstructionRuntimeInput(
-                    request=context.request,
+                    run_config=context.run_config,
                     run_paths=context.run_paths,
                     benchmark_inputs=self._result_store.require_benchmark_inputs(),
                 )
             case StageKey.SUMMARY:
                 return SummaryRuntimeInput(
-                    request=context.request,
+                    run_config=context.run_config,
                     plan=context.plan,
                     run_paths=context.run_paths,
                     stage_outcomes=self._result_store.ordered_outcomes(),
@@ -637,14 +661,14 @@ class RunCoordinatorActor:
     def _failure_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
         match stage_key:
             case StageKey.INGEST:
-                config_payload = context.request.source
-                input_payload = context.request.source
+                config_payload = context.run_config.stages.source.backend
+                input_payload = context.run_config.stages.source.backend
             case StageKey.SLAM:
-                config_payload = context.request.slam
+                config_payload = context.run_config.stages.slam
                 input_payload = self._result_store.require_sequence_manifest()
             case StageKey.GRAVITY_ALIGNMENT:
                 slam = self._result_store.require_slam_artifacts()
-                config_payload = context.request.alignment.ground
+                config_payload = context.run_config.alignment.ground
                 input_payload = {
                     "trajectory_tum": slam.trajectory_tum,
                     "dense_points_ply": slam.dense_points_ply,
@@ -652,18 +676,18 @@ class RunCoordinatorActor:
                 }
             case StageKey.TRAJECTORY_EVALUATION:
                 slam = self._result_store.require_slam_artifacts()
-                config_payload = context.request.benchmark.trajectory
+                config_payload = context.run_config.benchmark.trajectory
                 input_payload = {
                     "benchmark_inputs": self._result_store.require_benchmark_inputs(),
                     "slam_trajectory": slam.trajectory_tum,
                 }
             case StageKey.REFERENCE_RECONSTRUCTION:
-                config_payload = context.request.benchmark.reference
+                config_payload = context.run_config.benchmark.reference
                 input_payload = self._result_store.require_benchmark_inputs()
             case StageKey.SUMMARY:
                 config_payload = {
-                    "experiment_name": context.request.experiment_name,
-                    "mode": context.request.mode.value,
+                    "experiment_name": context.run_config.experiment_name,
+                    "mode": context.run_config.mode.value,
                 }
                 input_payload = self._result_store.ordered_outcomes()
             case _:
@@ -723,14 +747,18 @@ class RunCoordinatorActor:
     def _run_streaming(
         self,
         *,
-        request: RunRequest,
+        run_config: RunConfig,
         plan: RunPlan,
         path_config: PathConfig,
         runtime_source: StreamingSequenceSource | None,
     ) -> None:
         if runtime_source is None:
             raise RuntimeError("Streaming runs require an explicit runtime source.")
-        context = self._stage_execution_context(request=request, plan=plan, path_config=path_config)
+        context = self._stage_execution_context(
+            run_config=run_config,
+            plan=plan,
+            path_config=path_config,
+        )
         runtime_manager = self._build_runtime_manager(plan=plan, source=runtime_source)
         runtime_manager.preflight(plan).raise_for_errors()
         self._streaming_runtime_manager = runtime_manager
@@ -805,12 +833,12 @@ class RunCoordinatorActor:
                 stage_key=stage_key,
                 runtime=runtime_proxy.streaming(),
                 input_payload=SlamStreamingStartInput(
-                    request=context.request,
+                    run_config=context.run_config,
                     plan=context.plan,
                     path_config=context.path_config,
                     sequence_manifest=self._result_store.require_sequence_manifest(),
                     benchmark_inputs=self._result_store.require_benchmark_inputs(),
-                    baseline_source=context.request.benchmark.trajectory.baseline_source,
+                    baseline_source=context.run_config.benchmark.trajectory.baseline_source,
                 ),
                 on_stage_started=self._emit_stage_started,
             )
@@ -839,9 +867,9 @@ class RunCoordinatorActor:
         )
         self._console.debug("Finalizing streaming run '%s' because %s.", self._run_id, finalize_reason)
         try:
-            request = self._require_request()
+            run_config = self._require_run_config()
             plan = self._require_plan()
-            context = self._stage_execution_context(request=request, plan=plan)
+            context = self._stage_execution_context(run_config=run_config, plan=plan)
             self._publish_slam_runtime_updates(self._drain_slam_runtime_updates())
             self._finalize_slam_streaming_stage(context=context)
             self._run_streaming_finalize_stages(context=context)
@@ -962,22 +990,22 @@ class RunCoordinatorActor:
             )
             self._publish_runtime_updates_from_proxy(runtime_proxy)
 
-    def _build_rerun_sink(self, *, request: RunRequest, run_paths: RunArtifactPaths) -> ActorHandle | None:
-        if not (request.visualization.connect_live_viewer or request.visualization.export_viewer_rrd):
+    def _build_rerun_sink(self, *, run_config: RunConfig, run_paths: RunArtifactPaths) -> ActorHandle | None:
+        if not (run_config.visualization.connect_live_viewer or run_config.visualization.export_viewer_rrd):
             self._console.info("Rerun sink disabled for run '%s'.", self._run_id)
             return None
         from prml_vslam.pipeline.sinks.rerun import RerunSinkActor
 
         self._console.info("Rerun sink enabled for run '%s'.", self._run_id)
         return RerunSinkActor.remote(
-            grpc_url=request.visualization.grpc_url if request.visualization.connect_live_viewer else None,
-            target_path=run_paths.viewer_rrd_path if request.visualization.export_viewer_rrd else None,
+            grpc_url=run_config.visualization.grpc_url if run_config.visualization.connect_live_viewer else None,
+            target_path=run_paths.viewer_rrd_path if run_config.visualization.export_viewer_rrd else None,
             recording_id=self._run_id,
-            frusta_history_window_streaming=request.visualization.frusta_history_window_streaming,
-            show_tracking_trajectory=request.visualization.show_tracking_trajectory,
-            log_source_rgb=request.visualization.log_source_rgb,
-            log_diagnostic_preview=request.visualization.log_diagnostic_preview,
-            log_camera_image_rgb=request.visualization.log_camera_image_rgb,
+            frusta_history_window_streaming=run_config.visualization.frusta_history_window_streaming,
+            show_tracking_trajectory=run_config.visualization.show_tracking_trajectory,
+            log_source_rgb=run_config.visualization.log_source_rgb,
+            log_diagnostic_preview=run_config.visualization.log_diagnostic_preview,
+            log_camera_image_rgb=run_config.visualization.log_camera_image_rgb,
         )
 
     def _emit_stage_started(self, stage_key: StageKey) -> None:
@@ -1047,7 +1075,12 @@ class RunCoordinatorActor:
         packet: FramePacket,
         frame_payload_ref: TransientPayloadRef | None,
     ) -> None:
-        if self._request is None or not self._request.visualization.log_source_rgb or frame_payload_ref is None:
+        visualization_owner = self._run_config
+        if (
+            visualization_owner is None
+            or not visualization_owner.visualization.log_source_rgb
+            or frame_payload_ref is None
+        ):
             return
         update = StageRuntimeUpdate(
             stage_key=StageKey.INGEST,
@@ -1175,10 +1208,10 @@ class RunCoordinatorActor:
             payload_resolver=None,
         )
 
-    def _require_request(self) -> RunRequest:
-        if self._request is None:
-            raise RuntimeError("Run request is not initialized.")
-        return self._request
+    def _require_run_config(self) -> RunConfig:
+        if self._run_config is not None:
+            return self._run_config
+        raise RuntimeError("Run config is not initialized.")
 
     def _require_plan(self) -> RunPlan:
         if self._plan is None:
@@ -1203,12 +1236,12 @@ class RunCoordinatorActor:
     def _stage_execution_context(
         self,
         *,
-        request: RunRequest,
+        run_config: RunConfig,
         plan: RunPlan,
         path_config: PathConfig | None = None,
     ) -> StageExecutionContext:
         return StageExecutionContext(
-            request=request,
+            run_config=run_config,
             plan=plan,
             path_config=self._require_path_config() if path_config is None else path_config,
             run_paths=RunArtifactPaths.build(plan.artifact_root),

@@ -59,7 +59,6 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
     assert pipeline_package.__all__ == [
         "PipelineMode",
         "RunPlan",
-        "RunRequest",
         "RunSummary",
     ]
     assert not hasattr(pipeline_package, "PipelineSessionService")
@@ -68,9 +67,8 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
 
 def test_pipeline_contracts_package_is_not_a_compatibility_hub() -> None:
     contracts_package = importlib.import_module("prml_vslam.pipeline.contracts")
-    request_contracts = importlib.import_module("prml_vslam.pipeline.contracts.request")
 
-    assert pipeline_package.RunRequest is request_contracts.RunRequest
+    assert not hasattr(pipeline_package, "RunRequest")
     assert not hasattr(contracts_package, "RunRequest")
 
 

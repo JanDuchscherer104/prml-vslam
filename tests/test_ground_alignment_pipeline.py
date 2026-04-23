@@ -11,13 +11,14 @@ from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.descriptors import BackendCapabilities
 from prml_vslam.methods.factory import BackendFactory
-from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef
-from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.contracts.request import RunRequest, SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stage_registry import StageRegistry
 from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
 from prml_vslam.utils import PathConfig, RunArtifactPaths
+
+from .pipeline_legacy import run_config_from_request
 
 
 def test_run_request_build_rejects_ground_alignment_without_point_cloud_outputs(tmp_path: Path) -> None:
@@ -34,8 +35,8 @@ def test_run_request_build_rejects_ground_alignment_without_point_cloud_outputs(
         alignment={"ground": {"enabled": True}},
     )
 
-    with pytest.raises(ValueError, match="Ground alignment requires at least one point-cloud output"):
-        request.build(path_config)
+    with pytest.raises(ValueError, match="Ground alignment requires sparse or dense point-cloud outputs"):
+        run_config_from_request(request).compile_plan(path_config, fail_on_unavailable=True)
 
 
 def test_stage_registry_places_ground_alignment_between_slam_and_trajectory(tmp_path: Path) -> None:
@@ -50,7 +51,7 @@ def test_stage_registry_places_ground_alignment_between_slam_and_trajectory(tmp_
         alignment={"ground": {"enabled": True}},
     )
 
-    plan = request.build(path_config)
+    plan = run_config_from_request(request).compile_plan(path_config)
 
     assert [stage.key for stage in plan.stages] == [
         StageKey.INGEST,
@@ -88,7 +89,7 @@ def test_stage_registry_marks_ground_alignment_unavailable_without_backend_point
         )
     )
 
-    plan = StageRegistry.default().compile(request=request, backend=backend, path_config=path_config)
+    plan = run_config_from_request(request).compile_plan(path_config=path_config, backend=backend)
     ground_stage = next(stage for stage in plan.stages if stage.key is StageKey.GRAVITY_ALIGNMENT)
 
     assert ground_stage.available is False
@@ -113,7 +114,7 @@ def test_run_ground_alignment_stage_writes_metadata_and_returns_skipped(
         slam=SlamStageConfig(backend={"kind": "mock"}),
         alignment={"ground": {"enabled": True}},
     )
-    plan = request.build(path_config)
+    plan = run_config_from_request(request).compile_plan(path_config)
     run_paths = RunArtifactPaths.build(plan.artifact_root)
     slam = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),
@@ -137,7 +138,7 @@ def test_run_ground_alignment_stage_writes_metadata_and_returns_skipped(
     del monkeypatch, plan
 
     result = GroundAlignmentRuntime(service_type=FakeGroundAlignmentService).run_offline(
-        GroundAlignmentRuntimeInput(request=request, run_paths=run_paths, slam=slam)
+        GroundAlignmentRuntimeInput(run_config=run_config_from_request(request), run_paths=run_paths, slam=slam)
     )
 
     assert result.outcome.stage_key is StageKey.GRAVITY_ALIGNMENT
@@ -161,7 +162,7 @@ def test_run_ground_alignment_stage_writes_applied_metadata_when_export_enabled(
         alignment={"ground": {"enabled": True}},
         visualization={"export_viewer_rrd": True},
     )
-    plan = request.build(path_config)
+    plan = run_config_from_request(request).compile_plan(path_config)
     run_paths = RunArtifactPaths.build(plan.artifact_root)
     slam = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),
@@ -183,7 +184,7 @@ def test_run_ground_alignment_stage_writes_applied_metadata_when_export_enabled(
     del monkeypatch, plan
 
     result = GroundAlignmentRuntime(service_type=FakeGroundAlignmentService).run_offline(
-        GroundAlignmentRuntimeInput(request=request, run_paths=run_paths, slam=slam)
+        GroundAlignmentRuntimeInput(run_config=run_config_from_request(request), run_paths=run_paths, slam=slam)
     )
 
     assert result.outcome.status.value == "completed"

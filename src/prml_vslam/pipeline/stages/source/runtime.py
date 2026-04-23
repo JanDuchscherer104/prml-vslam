@@ -15,8 +15,8 @@ from prml_vslam.datasets.contracts import FrameSelectionConfig
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.interfaces.runtime import FramePacket
 from prml_vslam.pipeline.contracts.events import StageOutcome
+from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, PipelineMode, RunRequest, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
@@ -29,20 +29,25 @@ from prml_vslam.utils.video_frames import extract_video_frames
 _CONSOLE = Console(__name__).child("SourceRuntime")
 
 
+class SourceRuntimeConfigInput(BaseData):
+    """Minimal source-stage launch state required at runtime."""
+
+    mode: PipelineMode
+    frame_stride: int = 1
+    streaming_max_frames: int | None = None
+    config_hash: str = ""
+    input_fingerprint: str = ""
+
+
 class SourceRuntimeInput(BaseData):
     """Run-scoped input required to prepare one normalized source stage.
 
-    This is a migration input while launch still submits
-    :class:`prml_vslam.pipeline.contracts.request.RunRequest`. The target
-    source runtime should eventually receive target source-stage config plus
-    run context instead of reading source policy from the full request.
+    The input carries the target source-stage config plus the small amount of
+    run context needed for artifact ownership and streaming-only frame caps.
     """
 
-    # TODO(pipeline-refactor/WP-09): Replace this RunRequest compatibility
-    # field with target source-stage config/input once RunConfig drives launch
-    # paths directly.
-    request: RunRequest
-    """Current run request whose source policy and mode drive materialization."""
+    config_input: SourceRuntimeConfigInput
+    """Source-stage launch state whose policy drives materialization."""
 
     artifact_root: Path
     """Root directory for run-owned source artifacts."""
@@ -113,7 +118,7 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
             if benchmark_inputs is not None:
                 write_json(run_paths.benchmark_inputs_path, benchmark_inputs)
         sequence_manifest = _materialize_manifest(
-            request=input_payload.request,
+            config_input=input_payload.config_input,
             prepared_manifest=prepared_manifest,
             run_paths=run_paths,
         )
@@ -125,8 +130,8 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
         outcome = StageOutcome(
             stage_key=StageKey.INGEST,
             status=StageStatus.COMPLETED,
-            config_hash=stable_hash(input_payload.request.source),
-            input_fingerprint=stable_hash(input_payload.request.source),
+            config_hash=input_payload.config_input.config_hash,
+            input_fingerprint=input_payload.config_input.input_fingerprint,
             artifacts=_source_artifacts(run_paths=run_paths, output=source_output),
         )
         return StageResult(
@@ -172,7 +177,7 @@ def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
 
 def _materialize_manifest(
     *,
-    request: RunRequest,
+    config_input: SourceRuntimeConfigInput,
     prepared_manifest: SequenceManifest,
     run_paths: RunArtifactPaths,
 ) -> SequenceManifest:
@@ -182,12 +187,12 @@ def _materialize_manifest(
     rgb_dir = prepared_manifest.rgb_dir
     timestamps_path = prepared_manifest.timestamps_path
     intrinsics_path = prepared_manifest.intrinsics_path
-    frame_stride = _frame_stride_for_request(request, prepared_manifest=prepared_manifest)
+    frame_stride = _frame_stride_for_source(config_input, prepared_manifest=prepared_manifest)
     cached_rgb_dir: Path | None = None
     fallback_timestamps_ns: list[int] = []
 
     if prepared_manifest.video_path is not None and rgb_dir is None:
-        max_frames = _max_frames_for_request(request)
+        max_frames = _max_frames_for_config_input(config_input)
         cached_rgb_dir = _check_extraction_cache(
             video_path=prepared_manifest.video_path,
             output_dir=run_paths.input_frames_dir,
@@ -265,22 +270,27 @@ def _materialize_manifest(
     )
 
 
-def _frame_stride_for_request(request: RunRequest, *, prepared_manifest: SequenceManifest) -> int:
+def _frame_stride_for_source(config_input: SourceRuntimeConfigInput, *, prepared_manifest: SequenceManifest) -> int:
     if prepared_manifest.video_path is None:
         return 1
-    match request.source:
-        case VideoSourceSpec(frame_stride=frame_stride):
-            return frame_stride
-        case DatasetSourceSpec(frame_stride=frame_stride):
-            return frame_stride
-        case _:
-            return 1
+    return config_input.frame_stride
 
 
-def _max_frames_for_request(request: RunRequest) -> int | None:
-    if request.mode is not PipelineMode.STREAMING:
+def _max_frames_for_config_input(config_input: SourceRuntimeConfigInput) -> int | None:
+    if config_input.mode is not PipelineMode.STREAMING:
         return None
-    return request.slam.backend.max_frames
+    return config_input.streaming_max_frames
+
+
+def _max_frames_for_request(request) -> int | None:
+    """Compatibility helper kept for tests while runtime launch uses RunConfig."""
+    return _max_frames_for_config_input(
+        SourceRuntimeConfigInput(
+            mode=request.mode,
+            frame_stride=getattr(request.source, "frame_stride", 1),
+            streaming_max_frames=request.slam.backend.max_frames,
+        )
+    )
 
 
 def _check_extraction_cache(

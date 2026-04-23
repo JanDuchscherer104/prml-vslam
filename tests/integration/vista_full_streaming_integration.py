@@ -19,7 +19,8 @@ from pathlib import Path
 import pytest
 
 from prml_vslam.pipeline.contracts.runtime import RunState
-from prml_vslam.pipeline.demo import build_runtime_source_from_request, load_run_request_toml
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.utils import PathConfig
 
@@ -28,23 +29,23 @@ _CONFIG_PATH = Path(".configs/pipelines/vista-full.toml")
 
 def test_vista_full_streaming_pipeline_end_to_end() -> None:
     path_config = PathConfig(root=Path(__file__).resolve().parents[2])
-    request = load_run_request_toml(path_config=path_config, config_path=_CONFIG_PATH)
-    if request.mode.value != "streaming":
+    run_config = load_run_config_toml(path_config=path_config, config_path=_CONFIG_PATH)
+    if run_config.mode.value != "streaming":
         pytest.skip("The configured integration request is not in streaming mode.")
     _require_vista_prerequisites(path_config)
 
-    runtime_source = build_runtime_source_from_request(request=request, path_config=path_config)
+    runtime_source = build_runtime_source_from_run_config(run_config=run_config, path_config=path_config)
     service = RunService(path_config=path_config)
     try:
-        service.start_run(request=request, runtime_source=runtime_source)
+        service.start_run(run_config=run_config, runtime_source=runtime_source)
         snapshot = _wait_for_terminal_snapshot(service, timeout_seconds=420.0)
     finally:
         service.shutdown()
 
     assert snapshot.state is RunState.COMPLETED, snapshot.error_message
-    assert snapshot.sequence_manifest is not None
-    assert snapshot.slam is not None
-    assert snapshot.summary is not None
+    assert snapshot.stage_outcomes[StageKey.INGEST].status.value == "completed"
+    assert snapshot.stage_outcomes[StageKey.SLAM].status.value == "completed"
+    assert snapshot.stage_outcomes[StageKey.SUMMARY].status.value == "completed"
 
 
 def _wait_for_terminal_snapshot(service: RunService, *, timeout_seconds: float):

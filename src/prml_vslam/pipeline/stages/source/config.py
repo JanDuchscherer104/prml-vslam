@@ -13,16 +13,10 @@ from typing import Annotated, Literal, TypeAlias
 from pydantic import ConfigDict, Field
 
 from prml_vslam.datasets.advio import AdvioDatasetService, AdvioServingConfig
-from prml_vslam.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.datasets.contracts import FrameSelectionConfig
 from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.interfaces.runtime import Record3DTransportId
 from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    Record3DLiveSourceSpec,
-    SourceSpec,
-    VideoSourceSpec,
-)
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.source.runtime import SampledStreamingSource, VideoOfflineSequenceSource
@@ -183,52 +177,6 @@ class SourceStageConfig(StageConfig):
     """Concrete source backend config that constructs the source adapter."""
 
 
-def source_backend_config_from_source_spec(source_spec: SourceSpec) -> SourceBackendConfig:
-    """Project one legacy request source spec into the target source backend config."""
-    # TODO(pipeline-refactor/WP-09): Delete this compatibility projection after
-    # launch paths submit SourceStageConfig directly.
-    match source_spec:
-        case VideoSourceSpec(video_path=video_path, frame_stride=frame_stride, target_fps=target_fps):
-            return VideoSourceConfig(video_path=video_path, frame_stride=frame_stride, target_fps=target_fps)
-        case DatasetSourceSpec(
-            dataset_id=DatasetId.ADVIO,
-            sequence_id=sequence_id,
-            frame_stride=frame_stride,
-            target_fps=target_fps,
-            dataset_serving=dataset_serving,
-            respect_video_rotation=respect_video_rotation,
-        ):
-            return AdvioSourceConfig(
-                sequence_id=sequence_id,
-                frame_stride=frame_stride,
-                target_fps=target_fps,
-                dataset_serving=AdvioServingConfig() if dataset_serving is None else dataset_serving,
-                respect_video_rotation=respect_video_rotation,
-            )
-        case DatasetSourceSpec(
-            dataset_id=DatasetId.TUM_RGBD,
-            sequence_id=sequence_id,
-            frame_stride=frame_stride,
-            target_fps=target_fps,
-        ):
-            return TumRgbdSourceConfig(sequence_id=sequence_id, frame_stride=frame_stride, target_fps=target_fps)
-        case Record3DLiveSourceSpec(transport=transport, device_index=device_index, device_address=device_address):
-            return Record3DSourceConfig(
-                transport=transport,
-                device_index=0 if device_index is None else device_index,
-                device_address=device_address,
-            )
-        case _:
-            raise RuntimeError(f"Unsupported legacy source spec: {source_spec!r}")
-
-
-def source_stage_config_from_source_spec(source_spec: SourceSpec) -> SourceStageConfig:
-    """Project one legacy source spec into the target source stage config."""
-    # TODO(pipeline-refactor/WP-09): Delete this compatibility projection after
-    # launch paths submit SourceStageConfig directly.
-    return SourceStageConfig(backend=source_backend_config_from_source_spec(source_spec))
-
-
 __all__ = [
     "AdvioSourceConfig",
     "Record3DSourceConfig",
@@ -236,6 +184,4 @@ __all__ = [
     "SourceStageConfig",
     "TumRgbdSourceConfig",
     "VideoSourceConfig",
-    "source_backend_config_from_source_spec",
-    "source_stage_config_from_source_spec",
 ]

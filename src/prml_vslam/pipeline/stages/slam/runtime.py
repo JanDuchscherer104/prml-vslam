@@ -20,9 +20,9 @@ from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.factory import BackendFactory, BackendFactoryProtocol
 from prml_vslam.methods.protocols import OfflineSlamBackend, StreamingSlamBackend
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import (
@@ -148,23 +148,22 @@ class SlamStageRuntime(
         """Run the selected backend over one bounded normalized sequence."""
         self._lifecycle_state = StageStatus.RUNNING
         try:
-            backend = self._backend_factory.build(
-                input_payload.request.slam.backend, path_config=input_payload.path_config
-            )
+            backend_config = input_payload.run_config.stages.slam.backend
+            if backend_config is None:
+                raise RuntimeError("SLAM runtime requires `[stages.slam.backend]`.")
+            backend = self._backend_factory.build(backend_config, path_config=input_payload.path_config)
             if not isinstance(backend, OfflineSlamBackend):
-                raise RuntimeError(
-                    f"Backend '{input_payload.request.slam.backend.method_id.value}' does not support offline execution."
-                )
+                raise RuntimeError(f"Backend '{backend_config.method_id.value}' does not support offline execution.")
             slam = backend.run_sequence(
                 input_payload.sequence_manifest,
                 input_payload.benchmark_inputs,
-                input_payload.request.benchmark.trajectory.baseline_source,
-                backend_config=input_payload.request.slam.backend,
-                output_policy=input_payload.request.slam.outputs,
+                input_payload.run_config.benchmark.trajectory.baseline_source,
+                backend_config=backend_config,
+                output_policy=input_payload.run_config.stages.slam.outputs,
                 artifact_root=input_payload.plan.artifact_root,
             )
             result = self._stage_result(
-                request=input_payload.request,
+                run_config=input_payload.run_config,
                 artifact_root=input_payload.plan.artifact_root,
                 sequence_manifest=input_payload.sequence_manifest,
                 slam=slam,
@@ -179,17 +178,18 @@ class SlamStageRuntime(
 
     def start_streaming(self, input_payload: SlamStreamingStartInput) -> None:
         """Start one incremental SLAM backend session."""
-        backend = self._backend_factory.build(input_payload.request.slam.backend, path_config=input_payload.path_config)
+        backend_config = input_payload.run_config.stages.slam.backend
+        if backend_config is None:
+            raise RuntimeError("SLAM runtime requires `[stages.slam.backend]`.")
+        backend = self._backend_factory.build(backend_config, path_config=input_payload.path_config)
         if not isinstance(backend, StreamingSlamBackend):
-            raise RuntimeError(
-                f"Backend '{input_payload.request.slam.backend.method_id.value}' does not support streaming execution."
-            )
+            raise RuntimeError(f"Backend '{backend_config.method_id.value}' does not support streaming execution.")
         backend.start_streaming(
             sequence_manifest=input_payload.sequence_manifest,
             benchmark_inputs=input_payload.benchmark_inputs,
             baseline_source=input_payload.baseline_source,
-            backend_config=input_payload.request.slam.backend,
-            output_policy=input_payload.request.slam.outputs,
+            backend_config=backend_config,
+            output_policy=input_payload.run_config.stages.slam.outputs,
             artifact_root=input_payload.plan.artifact_root,
         )
         self._streaming_backend = backend
@@ -245,7 +245,7 @@ class SlamStageRuntime(
         try:
             slam = self._streaming_backend.finish_streaming()
             result = self._stage_result(
-                request=self._streaming_input.request,
+                run_config=self._streaming_input.run_config,
                 artifact_root=self._streaming_input.plan.artifact_root,
                 sequence_manifest=self._streaming_input.sequence_manifest,
                 slam=slam,
@@ -280,7 +280,7 @@ class SlamStageRuntime(
     def _payload_refs_for(self, update: SlamUpdate) -> dict[str, TransientPayloadRef]:
         refs: dict[str, TransientPayloadRef] = {}
         log_diagnostic_preview = (
-            self._streaming_input is not None and self._streaming_input.request.visualization.log_diagnostic_preview
+            self._streaming_input is not None and self._streaming_input.run_config.visualization.log_diagnostic_preview
         )
         for name, payload, payload_kind, media_type in (
             (IMAGE_REF, update.image_rgb, "image", "image/rgb"),
@@ -303,7 +303,7 @@ class SlamStageRuntime(
     def _stage_result(
         self,
         *,
-        request: RunRequest,
+        run_config: RunConfig,
         artifact_root: Path,
         sequence_manifest: SequenceManifest,
         slam: SlamArtifacts,
@@ -312,13 +312,13 @@ class SlamStageRuntime(
         run_paths = RunArtifactPaths.build(artifact_root)
         visualization_artifacts = collect_native_visualization_artifacts(
             native_output_dir=run_paths.native_output_dir,
-            preserve_native_rerun=request.visualization.preserve_native_rerun,
+            preserve_native_rerun=run_config.visualization.preserve_native_rerun,
         )
         self._last_visualization_artifacts = visualization_artifacts
         outcome = StageOutcome(
             stage_key=StageKey.SLAM,
             status=status,
-            config_hash=stable_hash(request.slam),
+            config_hash=stable_hash(run_config.stages.slam),
             input_fingerprint=stable_hash(sequence_manifest),
             artifacts=slam_artifacts_map(slam) | visualization_artifact_map(visualization_artifacts),
             error_message=self._last_error or "",

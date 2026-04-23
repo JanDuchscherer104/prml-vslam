@@ -10,16 +10,16 @@ from __future__ import annotations
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.runtime import FramePacket
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.utils import BaseData, PathConfig
 
 
 class SlamOfflineInput(BaseData):
     """Input needed to run SLAM over one bounded normalized sequence."""
 
-    request: RunRequest
-    """Run request carrying backend, benchmark baseline, output, and visualization policy."""
+    run_config: RunConfig
+    """Run config carrying backend, benchmark baseline, output, and visualization policy."""
 
     plan: RunPlan
     """Compiled run plan with artifact-root ownership."""
@@ -37,8 +37,8 @@ class SlamOfflineInput(BaseData):
 class SlamStreamingStartInput(BaseData):
     """Input needed to start one incremental SLAM runtime."""
 
-    request: RunRequest
-    """Run request carrying backend, output, and visualization policy."""
+    run_config: RunConfig
+    """Run config carrying backend, output, and visualization policy."""
 
     plan: RunPlan
     """Compiled run plan with artifact-root ownership."""

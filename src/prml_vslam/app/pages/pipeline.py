@@ -13,7 +13,7 @@ from ..pipeline_controller import (
     action_from_page_state,
     build_pipeline_snapshot_render_model,
     build_preview_plan,
-    build_request_from_action,
+    build_run_config_from_action,
     discover_pipeline_config_paths,
     handle_pipeline_page_action,
     load_pipeline_request,
@@ -71,7 +71,7 @@ def render(context: AppContext) -> None:
             sync_pipeline_page_state_from_template(
                 context=context,
                 config_path=selected_config_path,
-                request=template_request,
+                run_config=template_request,
                 statuses=statuses,
             )
             page_state = context.state.pipeline
@@ -89,7 +89,7 @@ def render(context: AppContext) -> None:
                 previewable_statuses=previewable_statuses,
             )
 
-        preview_request, preview_error = build_request_from_action(context, action)
+        preview_request, preview_error = build_run_config_from_action(context, action)
         preview_plan, preview_plan_error = (
             (None, None) if preview_request is None else build_preview_plan(preview_request, context.path_config)
         )

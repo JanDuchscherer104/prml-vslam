@@ -7,20 +7,17 @@ from .config import (
     SourceStageConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
-    source_backend_config_from_source_spec,
-    source_stage_config_from_source_spec,
 )
-from .runtime import SourceRuntime, SourceRuntimeInput
+from .runtime import SourceRuntime, SourceRuntimeConfigInput, SourceRuntimeInput
 
 __all__ = [
     "AdvioSourceConfig",
     "Record3DSourceConfig",
     "SourceBackendConfig",
     "SourceRuntime",
+    "SourceRuntimeConfigInput",
     "SourceRuntimeInput",
     "SourceStageConfig",
     "TumRgbdSourceConfig",
     "VideoSourceConfig",
-    "source_backend_config_from_source_spec",
-    "source_stage_config_from_source_spec",
 ]

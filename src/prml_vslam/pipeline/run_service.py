@@ -13,8 +13,8 @@ import numpy as np
 
 from prml_vslam.pipeline.backend import PipelineBackend, PipelineRuntimeSource
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import PathConfig
@@ -38,11 +38,17 @@ class RunService:
         self._backend = backend
         self._run_id: str | None = None
 
-    def start_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> None:
+    def start_run(
+        self,
+        *,
+        run_config: RunConfig,
+        runtime_source: PipelineRuntimeSource = None,
+    ) -> None:
         """Start one run and replace any previously tracked active run."""
         if self._run_id is not None:
             self.stop_run()
-        self._run_id = self._require_backend().submit_run(request=request, runtime_source=runtime_source)
+        backend = self._require_backend()
+        self._run_id = backend.submit_run(run_config=run_config, runtime_source=runtime_source)
 
     def stop_run(self) -> None:
         """Request stop for the currently tracked run, if one exists."""

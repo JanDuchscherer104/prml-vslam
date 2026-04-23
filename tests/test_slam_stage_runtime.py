@@ -12,12 +12,14 @@ from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManife
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
-from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest, SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.contracts.request import PipelineMode
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
+from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
 from prml_vslam.utils import PathConfig
 
 
@@ -100,22 +102,24 @@ class _FakeStreamingRuntime:
         return _slam_artifacts(self.artifact_root)
 
 
-def _request(tmp_path: Path) -> RunRequest:
-    return RunRequest(
+def _run_config(tmp_path: Path, *, mode: PipelineMode = PipelineMode.STREAMING) -> RunConfig:
+    return build_run_config(
         experiment_name="slam-runtime",
-        mode=PipelineMode.STREAMING,
+        mode=mode,
         output_dir=tmp_path / ".artifacts",
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"method_id": "mock"}),
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.MOCK,
     )
 
 
-def _plan(tmp_path: Path, request: RunRequest) -> RunPlan:
+def _plan(tmp_path: Path, run_config: RunConfig) -> RunPlan:
     return RunPlan(
-        run_id=request.experiment_name,
-        mode=request.mode,
-        artifact_root=tmp_path / ".artifacts" / request.experiment_name,
-        source=request.source,
+        run_id=run_config.experiment_name,
+        mode=run_config.mode,
+        artifact_root=tmp_path / ".artifacts" / run_config.experiment_name,
+        source=run_config.compile_plan(
+            path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+        ).source,
         stages=[RunPlanStage(key=StageKey.SLAM)],
     )
 
@@ -127,13 +131,13 @@ def _slam_artifacts(artifact_root: Path) -> SlamArtifacts:
 
 
 def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
-    request = _request(tmp_path).model_copy(update={"mode": PipelineMode.OFFLINE})
-    plan = _plan(tmp_path, request)
+    run_config = _run_config(tmp_path, mode=PipelineMode.OFFLINE)
+    plan = _plan(tmp_path, run_config)
     runtime = SlamStageRuntime(backend_factory=_FakeBackendFactory(_FakeBackend(plan.artifact_root)))
 
     result = runtime.run_offline(
         SlamOfflineInput(
-            request=request,
+            run_config=run_config,
             plan=plan,
             path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
             sequence_manifest=SequenceManifest(sequence_id="seq-1"),
@@ -148,15 +152,15 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
 
 
 def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path) -> None:
-    request = _request(tmp_path)
-    plan = _plan(tmp_path, request)
+    run_config = _run_config(tmp_path)
+    plan = _plan(tmp_path, run_config)
     backend = _FakeBackend(plan.artifact_root)
     runtime = SlamStageRuntime(backend_factory=_FakeBackendFactory(backend))
     sequence_manifest = SequenceManifest(sequence_id="seq-1")
 
     runtime.start_streaming(
         SlamStreamingStartInput(
-            request=request,
+            run_config=run_config,
             plan=plan,
             path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
             sequence_manifest=sequence_manifest,

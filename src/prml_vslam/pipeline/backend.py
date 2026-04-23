@@ -1,7 +1,7 @@
 """Backend boundary between launch surfaces and execution substrates.
 
 This module keeps the app and CLI-facing entrypoints decoupled from the active
-runtime implementation. A backend accepts a typed :class:`RunRequest`, owns run
+runtime implementation. A backend accepts a typed :class:`RunConfig`, owns run
 lifecycle operations, and exposes only projected metadata and transient payload
 refs back to the caller. It is the narrow seam between user-facing launch code
 and the concrete runtime implementation such as the Ray backend.
@@ -14,8 +14,8 @@ from typing import Protocol, TypeAlias
 
 import numpy as np
 
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
@@ -36,11 +36,11 @@ class PipelineBackend(Protocol):
     """
 
     @abstractmethod
-    def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
+    def submit_run(self, *, run_config: RunConfig, runtime_source: PipelineRuntimeSource = None) -> str:
         """Start one run and return the stable run identifier.
 
         Args:
-            request: Typed pipeline request that has not yet been submitted.
+            run_config: Typed pipeline run config that has not yet been submitted.
             runtime_source: Optional already-constructed source object used for
                 runtime execution. Offline runs usually omit it; streaming runs
                 usually supply it explicitly.

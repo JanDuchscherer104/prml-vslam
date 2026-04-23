@@ -90,7 +90,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
         sequence_ref = input_payload.benchmark_inputs.rgbd_observation_sequences[0]
         # TODO(pipeline-refactor/WP-09): Build reconstruction backend config
         # from `[stages.reconstruction]` instead of benchmark reference policy.
-        backend_config = Open3dTsdfBackendConfig(extract_mesh=input_payload.request.benchmark.reference.extract_mesh)
+        backend_config = Open3dTsdfBackendConfig(extract_mesh=input_payload.run_config.benchmark.reference.extract_mesh)
         backend = backend_config.setup_target()
         artifacts = backend.run_sequence(
             FileRgbdObservationSource(sequence_ref).iter_observations(),

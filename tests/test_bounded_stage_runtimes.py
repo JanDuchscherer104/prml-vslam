@@ -15,11 +15,11 @@ from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.rgbd import RgbdObservationSequenceRef
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
-from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.contracts.request import RunRequest, SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
@@ -35,6 +35,8 @@ from prml_vslam.pipeline.stages.trajectory_eval import (
 )
 from prml_vslam.reconstruction import ReconstructionArtifacts
 from prml_vslam.utils import BaseData, RunArtifactPaths
+
+from .pipeline_legacy import run_config_from_request
 
 
 def test_ground_alignment_runtime_returns_stage_result(
@@ -64,7 +66,7 @@ def test_ground_alignment_runtime_returns_stage_result(
     )
 
     result = GroundAlignmentRuntime().run_offline(
-        GroundAlignmentRuntimeInput(request=request, run_paths=run_paths, slam=slam)
+        GroundAlignmentRuntimeInput(run_config=run_config_from_request(request), run_paths=run_paths, slam=slam)
     )
 
     assert result.stage_key is StageKey.GRAVITY_ALIGNMENT
@@ -98,7 +100,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
 
     result = TrajectoryEvaluationRuntime().run_offline(
         TrajectoryEvaluationRuntimeInput(
-            request=request,
+            run_config=run_config_from_request(request),
             plan=plan,
             sequence_manifest=SequenceManifest(sequence_id="seq-1"),
             benchmark_inputs=PreparedBenchmarkInputs(),
@@ -160,7 +162,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     runtime = ReconstructionRuntime()
     result = runtime.run_offline(
         ReconstructionRuntimeInput(
-            request=request,
+            run_config=run_config_from_request(request),
             run_paths=run_paths,
             benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
         )
@@ -232,7 +234,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
     runtime = ReconstructionRuntime()
     result = runtime.run_offline(
         ReconstructionRuntimeInput(
-            request=request,
+            run_config=run_config_from_request(request),
             run_paths=run_paths,
             benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
         )
@@ -259,7 +261,7 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
     runtime = SummaryRuntime()
     result = runtime.run_offline(
         SummaryRuntimeInput(
-            request=request,
+            run_config=run_config_from_request(request),
             plan=plan,
             run_paths=run_paths,
             stage_outcomes=[prior_outcome],
@@ -296,7 +298,7 @@ def _request_plan_paths(
         run_id="bounded-runtime",
         mode=PipelineMode.OFFLINE,
         artifact_root=artifact_root,
-        source=request.source,
+        source=PlannedSource(source_id="video", video_path=Path("captures/demo.mp4")),
         stages=[RunPlanStage(key=StageKey.SLAM), RunPlanStage(key=StageKey.SUMMARY)],
     )
     return request, plan, RunArtifactPaths.build(artifact_root)

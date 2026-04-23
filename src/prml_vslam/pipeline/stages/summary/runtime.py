@@ -55,7 +55,7 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
         )
         try:
             summary, stage_manifests, outcome = _project_summary(
-                request=input_payload.request,
+                run_config=input_payload.run_config,
                 plan=input_payload.plan,
                 run_paths=input_payload.run_paths,
                 stage_outcomes=input_payload.stage_outcomes,
@@ -89,7 +89,7 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
 
 def _project_summary(
     *,
-    request,
+    run_config,
     plan,
     run_paths,
     stage_outcomes: list[StageOutcome],
@@ -115,7 +115,7 @@ def _project_summary(
     summary_outcome = StageOutcome(
         stage_key=StageKey.SUMMARY,
         status=StageStatus.COMPLETED,
-        config_hash=stable_hash({"experiment_name": request.experiment_name, "mode": request.mode.value}),
+        config_hash=stable_hash({"experiment_name": run_config.experiment_name, "mode": run_config.mode.value}),
         input_fingerprint=stable_hash(stage_outcomes),
         artifacts={
             "run_summary": ArtifactRef(

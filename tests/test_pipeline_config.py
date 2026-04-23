@@ -14,20 +14,13 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline.config import (
     RunConfig,
     TargetStageKey,
+    build_run_config,
     current_stage_key_for_section,
     current_stage_key_for_target,
     section_for_current_stage,
     section_for_target_stage,
     target_stage_key_for_current,
     target_stage_key_for_section,
-)
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    PlacementPolicy,
-    RunRequest,
-    StagePlacement,
-    VideoSourceSpec,
-    build_run_request,
 )
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import (
@@ -44,7 +37,6 @@ from prml_vslam.pipeline.stages.source.config import (
     SourceStageConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
-    source_stage_config_from_source_spec,
 )
 from prml_vslam.utils import PathConfig
 
@@ -132,11 +124,11 @@ def test_stage_key_section_alias_mapping_covers_current_and_target_names() -> No
         assert current_stage_key_for_section(section) is current_key
 
 
-def test_run_config_round_trips_current_run_request_semantics(tmp_path: Path) -> None:
-    request = build_run_request(
-        experiment_name="round-trip",
+def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> None:
+    config = build_run_config(
+        experiment_name="target-config",
         output_dir=tmp_path,
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
         method=MethodId.MOCK,
         reference_enabled=True,
         trajectory_eval_enabled=True,
@@ -145,10 +137,8 @@ def test_run_config_round_trips_current_run_request_semantics(tmp_path: Path) ->
         ground_alignment_enabled=True,
     )
 
-    config = RunConfig.from_run_request(request)
-    restored = config.to_run_request()
-
-    assert restored.model_dump(mode="json") == request.model_dump(mode="json")
+    assert isinstance(config.stages.source.backend, VideoSourceConfig)
+    assert config.stages.slam.backend.method_id is MethodId.MOCK
     assert config.stages.align_ground.enabled is True
     assert config.stages.evaluate_trajectory.enabled is True
     assert config.stages.reconstruction.enabled is True
@@ -156,63 +146,54 @@ def test_run_config_round_trips_current_run_request_semantics(tmp_path: Path) ->
     assert config.stages.evaluate_efficiency.enabled is True
 
 
-def test_run_config_projects_placement_policy_through_stage_execution_config(tmp_path: Path) -> None:
-    request = build_run_request(
-        experiment_name="placement-round-trip",
+def test_run_config_uses_stage_execution_config_for_resource_policy(tmp_path: Path) -> None:
+    config = build_run_config(
+        experiment_name="placement-policy",
         output_dir=tmp_path,
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
         method=MethodId.MOCK,
-    ).model_copy(
+    )
+    stages = config.stages.model_copy(
         update={
-            "placement": PlacementPolicy(
-                by_stage={
-                    StageKey.SLAM: StagePlacement(
-                        resources={
-                            "CPU": 2.0,
-                            "GPU": 1.0,
-                            "custom_accelerator": 3.0,
-                        }
+            "slam": config.stages.slam.model_copy(
+                update={
+                    "execution": StageExecutionConfig(
+                        resources=ResourceSpec(
+                            num_cpus=2.0,
+                            num_gpus=1.0,
+                            custom_resources={"custom_accelerator": 3.0},
+                        )
                     )
                 }
             )
         }
     )
-
-    config = RunConfig.from_run_request(request)
-    restored = config.to_run_request()
+    config = config.model_copy(update={"stages": stages})
 
     assert config.stages.slam.execution.resources.num_cpus == 2.0
     assert config.stages.slam.execution.resources.num_gpus == 1.0
     assert config.stages.slam.execution.resources.custom_resources == {"custom_accelerator": 3.0}
-    assert restored.placement.by_stage[StageKey.SLAM].resources == {
-        "CPU": 2.0,
-        "GPU": 1.0,
-        "custom_accelerator": 3.0,
-    }
 
 
-def test_vista_full_target_toml_parses_through_run_config_and_matches_launch_plan(tmp_path: Path) -> None:
+def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> None:
     repo_root = _repo_root()
     config_path = repo_root / ".configs/pipelines/vista-full.toml"
     path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts")
 
     run_config = RunConfig.from_toml(config_path)
-    launch_request = run_config.to_run_request()
 
     run_config_plan = run_config.compile_plan(path_config)
-    launch_plan = launch_request.build(path_config)
 
-    assert run_config.source is None
-    assert run_config.slam is None
-    assert isinstance(launch_request.source, DatasetSourceSpec)
-    assert launch_request.source.dataset_id is DatasetId.ADVIO
-    assert launch_request.source.sequence_id == "advio-20"
-    assert launch_request.source.frame_stride == 5
-    assert launch_request.source.dataset_serving == AdvioServingConfig(
+    assert isinstance(run_config.stages.source.backend, AdvioSourceConfig)
+    assert run_config.stages.source.backend.sequence_id == "advio-20"
+    assert run_config.stages.source.backend.frame_stride == 5
+    assert run_config.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
         pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     )
-    assert [stage.key for stage in run_config_plan.stages] == [stage.key for stage in launch_plan.stages]
+    assert run_config_plan.source.source_id == DatasetId.ADVIO.value
+    assert run_config_plan.source.sequence_id == "advio-20"
+    assert run_config_plan.source.metadata["pose_source"] == "ground_truth"
     assert run_config.stages.align_ground.enabled is True
     assert run_config.stages.reconstruction.enabled is False
     assert run_config.stages.evaluate_trajectory.enabled is False
@@ -285,32 +266,7 @@ def test_source_stage_config_keeps_serving_variant_owned() -> None:
     assert advio.backend.dataset_serving.pose_source.value == "ground_truth"
 
 
-def test_legacy_source_spec_projects_to_target_source_stage_config() -> None:
-    advio_source = DatasetSourceSpec(
-        dataset_id=DatasetId.ADVIO,
-        sequence_id="advio-20",
-        target_fps=10.0,
-        dataset_serving=AdvioServingConfig(pose_frame_mode="reference_world"),
-        respect_video_rotation=True,
-    )
-    tum_source = DatasetSourceSpec(
-        dataset_id=DatasetId.TUM_RGBD,
-        sequence_id="freiburg1_room",
-        frame_stride=5,
-    )
-
-    advio_config = source_stage_config_from_source_spec(advio_source)
-    tum_config = source_stage_config_from_source_spec(tum_source)
-
-    assert isinstance(advio_config.backend, AdvioSourceConfig)
-    assert advio_config.backend.target_fps == 10.0
-    assert advio_config.backend.respect_video_rotation is True
-    assert advio_config.backend.dataset_serving.pose_frame_mode.value == "reference_world"
-    assert isinstance(tum_config.backend, TumRgbdSourceConfig)
-    assert tum_config.backend.frame_stride == 5
-
-
-def test_invalid_advio_source_does_not_parse_as_record3d() -> None:
+def test_run_config_rejects_legacy_request_source_shape() -> None:
     payload = {
         "experiment_name": "invalid-advio",
         "mode": "streaming",
@@ -322,8 +278,8 @@ def test_invalid_advio_source_does_not_parse_as_record3d() -> None:
         "slam": {"backend": {"method_id": "mock"}},
     }
 
-    with pytest.raises(ValidationError, match="ADVIO dataset sources must provide `dataset_serving`"):
-        RunRequest.model_validate(payload)
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        RunConfig.model_validate(payload)
 
 
 def test_target_generic_stages_toml_parses_into_stage_bundle() -> None:
@@ -357,18 +313,15 @@ enabled = true
     assert config.stages.slam.execution.resources.num_cpus == 2.0
     assert config.stages.align_ground.enabled is True
     assert config.stages.reconstruction.cleanup.artifact_keys == ["reference_cloud", "extra:*"]
-    assert config.source is None
-    assert config.slam is None
 
 
 def test_run_config_fail_on_unavailable_stages_happens_during_planning(tmp_path: Path) -> None:
-    request = build_run_request(
+    config = build_run_config(
         experiment_name="unavailable",
         output_dir=tmp_path,
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
         method=MethodId.MAST3R,
     )
-    config = RunConfig.from_run_request(request)
 
     with pytest.raises(ValueError, match="MASt3R-SLAM does not support offline execution"):
         config.compile_plan(
@@ -376,16 +329,12 @@ def test_run_config_fail_on_unavailable_stages_happens_during_planning(tmp_path:
         )
 
 
-def test_run_config_rejects_disabled_required_stage_for_current_request_projection(tmp_path: Path) -> None:
-    request = build_run_request(
-        experiment_name="disabled-source",
+def test_run_config_requires_source_backend_during_planning(tmp_path: Path) -> None:
+    config = RunConfig(
+        experiment_name="missing-source",
         output_dir=tmp_path,
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        stages={"slam": {"backend": {"method_id": "mock"}}},
     )
-    config = RunConfig.from_run_request(request)
-    disabled_stages = config.stages.model_copy(update={"source": StageConfig(stage_key=StageKey.INGEST, enabled=False)})
-    disabled = config.model_copy(update={"stages": disabled_stages})
 
-    with pytest.raises(ValueError, match="source"):
-        disabled.to_run_request()
+    with pytest.raises(ValueError, match=r"RunConfig planning requires `\[stages\.source\.backend\]`"):
+        config.compile_plan(PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"))

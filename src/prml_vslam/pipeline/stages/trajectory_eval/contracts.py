@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.utils import BaseData
 
 
@@ -18,10 +18,8 @@ class TrajectoryEvaluationRuntimeInput(BaseData):
     walking dataset folders independently.
     """
 
-    # TODO(pipeline-refactor/WP-09): Replace RunRequest with target RunConfig
-    # benchmark policy once bounded runtimes are constructed from stage configs.
-    request: RunRequest
-    """Current run request carrying benchmark trajectory policy."""
+    run_config: RunConfig
+    """Current run config carrying benchmark trajectory policy."""
 
     plan: RunPlan
     """Compiled run plan whose artifact root owns evaluation outputs."""

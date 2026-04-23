@@ -42,8 +42,9 @@ from prml_vslam.methods import MethodId
 from prml_vslam.methods.contracts import PoseEstimated, SlamUpdate
 from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
 from prml_vslam.methods.factory import BackendFactory
-from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import (
     RunStopped,
     StageCompleted,
@@ -51,10 +52,11 @@ from prml_vslam.pipeline.contracts.events import (
     StageOutcome,
     StageStatus,
 )
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary
 from prml_vslam.pipeline.contracts.request import (
     DatasetSourceSpec,
+    RunRequest,
     SlamStageConfig,
     VideoSourceSpec,
     build_run_request,
@@ -71,8 +73,6 @@ from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.runner import StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
-from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
-from prml_vslam.pipeline.stage_registry import StageRegistry
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -83,8 +83,10 @@ from prml_vslam.pipeline.stages.base.contracts import (
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
 from prml_vslam.pipeline.stages.source.runtime import _max_frames_for_request
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from tests.pipeline_legacy import run_config_from_request
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
 
@@ -254,7 +256,7 @@ viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
     assert request.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
 
 
-def test_run_request_build_rejects_cloud_eval_without_dense_points(tmp_path: Path) -> None:
+def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     request = RunRequest(
         experiment_name="cloud-validation",
@@ -265,11 +267,14 @@ def test_run_request_build_rejects_cloud_eval_without_dense_points(tmp_path: Pat
         benchmark=BenchmarkConfig(cloud=CloudBenchmarkConfig(enabled=True)),
     )
 
-    with pytest.raises(ValueError, match=r"Cloud evaluation requires `slam\.outputs\.emit_dense_points=True`\."):
-        request.build(path_config)
+    plan = run_config_from_request(request).compile_plan(path_config)
+    cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
+
+    assert cloud_stage.available is False
+    assert cloud_stage.availability_reason == "Dense-cloud evaluation remains a planned placeholder in this refactor."
 
 
-def test_run_request_build_uses_supplied_path_config(tmp_path: Path) -> None:
+def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     request = RunRequest(
         experiment_name="request-build",
@@ -279,7 +284,7 @@ def test_run_request_build_uses_supplied_path_config(tmp_path: Path) -> None:
         slam=SlamStageConfig(backend={"kind": "mock"}),
     )
 
-    plan = request.build(path_config)
+    plan = run_config_from_request(request).compile_plan(path_config)
 
     assert plan.run_id == "request-build"
     assert (
@@ -355,10 +360,9 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
         ),
     )
 
-    plan = StageRegistry.default().compile(
-        request=request,
-        backend=BackendFactory().describe(request.slam.backend),
+    plan = _run_config_from_request(request).compile_plan(
         path_config=path_config,
+        backend=BackendFactory().describe(request.slam.backend),
     )
 
     unavailable = [stage for stage in plan.stages if not stage.available]
@@ -378,10 +382,9 @@ def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path)
         benchmark=BenchmarkConfig(reference={"enabled": True}),
     )
 
-    plan = StageRegistry.default().compile(
-        request=request,
-        backend=BackendFactory().describe(request.slam.backend),
+    plan = _run_config_from_request(request).compile_plan(
         path_config=path_config,
+        backend=BackendFactory().describe(request.slam.backend),
     )
 
     reference_stage = next(stage for stage in plan.stages if stage.key is StageKey.REFERENCE_RECONSTRUCTION)
@@ -400,10 +403,9 @@ def test_stage_registry_rejects_non_rgbd_reference_reconstruction(tmp_path: Path
         benchmark=BenchmarkConfig(reference={"enabled": True}),
     )
 
-    plan = StageRegistry.default().compile(
-        request=request,
-        backend=BackendFactory().describe(request.slam.backend),
+    plan = _run_config_from_request(request).compile_plan(
         path_config=path_config,
+        backend=BackendFactory().describe(request.slam.backend),
     )
 
     reference_stage = next(stage for stage in plan.stages if stage.key is StageKey.REFERENCE_RECONSTRUCTION)
@@ -429,7 +431,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
         stage_keys=[StageKey.REFERENCE_RECONSTRUCTION],
     )
     context = StageExecutionContext(
-        request=request,
+        run_config=_run_config_from_request(request),
         plan=plan,
         path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
         run_paths=RunArtifactPaths.build(plan.artifact_root),
@@ -439,7 +441,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
 
     result = ReconstructionRuntime().run_offline(
         ReconstructionRuntimeInput(
-            request=request,
+            run_config=_run_config_from_request(request),
             run_paths=context.run_paths,
             benchmark_inputs=benchmark_inputs,
         )
@@ -674,11 +676,12 @@ def test_snapshot_projector_runtime_update_replaces_runtime_status() -> None:
 
 def test_actor_options_preserve_defaults_without_placement() -> None:
     request = _placement_request()
+    run_config = _run_config_from_request(request)
     backend = _test_backend_descriptor(default_cpu=4.0, default_gpu=1.0)
 
     ingest_options = actor_options_for_stage(
         stage_key=StageKey.INGEST,
-        request=request,
+        run_config=run_config,
         backend=backend,
         default_num_cpus=1.0,
         default_num_gpus=0.0,
@@ -686,7 +689,7 @@ def test_actor_options_preserve_defaults_without_placement() -> None:
     )
     slam_options = actor_options_for_stage(
         stage_key=StageKey.SLAM,
-        request=request,
+        run_config=run_config,
         backend=backend,
         default_num_cpus=2.0,
         default_num_gpus=0.0,
@@ -702,11 +705,12 @@ def test_actor_options_preserve_defaults_without_placement() -> None:
 
 def test_actor_options_explicit_slam_placement_overrides_resources() -> None:
     request = _placement_request(placement={"slam": {"resources": {"CPU": 4, "GPU": 1}}})
+    run_config = _run_config_from_request(request)
     backend = _test_backend_descriptor(default_cpu=2.0, default_gpu=0.0)
 
     options = actor_options_for_stage(
         stage_key=StageKey.SLAM,
-        request=request,
+        run_config=run_config,
         backend=backend,
         default_num_cpus=2.0,
         default_num_gpus=0.0,
@@ -719,11 +723,12 @@ def test_actor_options_explicit_slam_placement_overrides_resources() -> None:
 
 def test_actor_options_explicit_ingest_placement_overrides_resources() -> None:
     request = _placement_request(placement={"ingest": {"resources": {"CPU": 3}}})
+    run_config = _run_config_from_request(request)
     backend = _test_backend_descriptor(default_cpu=8.0, default_gpu=1.0)
 
     options = actor_options_for_stage(
         stage_key=StageKey.INGEST,
-        request=request,
+        run_config=run_config,
         backend=backend,
         default_num_cpus=1.0,
         default_num_gpus=0.0,
@@ -839,7 +844,7 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
             return "rerun-call-1"
 
     coordinator._rerun_sink = SimpleNamespace(observe_update=FakeObserveUpdateRemote())
-    coordinator._request = SimpleNamespace(visualization=SimpleNamespace(log_source_rgb=True))
+    coordinator._run_config = SimpleNamespace(visualization=SimpleNamespace(log_source_rgb=True))
     monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
     monkeypatch.setattr(
         "prml_vslam.pipeline.ray_runtime.coordinator.ray.get",
@@ -1076,7 +1081,7 @@ def test_run_coordinator_emits_ingest_stage_failure_before_run_failed(
         stage_keys=[StageKey.INGEST, StageKey.SLAM, StageKey.SUMMARY],
     )
 
-    coordinator._request = request
+    coordinator._run_config = run_config_from_request(request)
     coordinator._plan = plan
     coordinator._path_config = path_config
     monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
@@ -1085,7 +1090,12 @@ def test_run_coordinator_emits_ingest_stage_failure_before_run_failed(
         lambda self, input_payload: (_ for _ in ()).throw(RuntimeError("ingest boom")),
     )
 
-    coordinator._run(request=request, plan=plan, path_config=path_config, runtime_source=FakeOfflineSource())
+    coordinator._run(
+        run_config=_run_config_from_request(request),
+        plan=plan,
+        path_config=path_config,
+        runtime_source=FakeOfflineSource(),
+    )
 
     events = coordinator.events()
     assert [event.kind for event in events] == [
@@ -1097,8 +1107,10 @@ def test_run_coordinator_emits_ingest_stage_failure_before_run_failed(
     ]
     failed_event = next(event for event in events if isinstance(event, StageFailed))
     assert failed_event.stage_key is StageKey.INGEST
-    assert failed_event.outcome.config_hash == stable_hash(request.source)
-    assert failed_event.outcome.input_fingerprint == stable_hash(request.source)
+    assert failed_event.outcome.config_hash == stable_hash(_run_config_from_request(request).stages.source.backend)
+    assert failed_event.outcome.input_fingerprint == stable_hash(
+        _run_config_from_request(request).stages.source.backend
+    )
     assert failed_event.outcome.error_message == "ingest boom"
 
 
@@ -1127,7 +1139,12 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
     )
     monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
 
-    coordinator._run(request=request, plan=plan, path_config=path_config, runtime_source=FakeOfflineSource())
+    coordinator._run(
+        run_config=_run_config_from_request(request),
+        plan=plan,
+        path_config=path_config,
+        runtime_source=FakeOfflineSource(),
+    )
 
     failed_event = next(event for event in coordinator.events() if event.kind == "run.failed")
     assert "cloud.evaluate" in failed_event.error_message
@@ -1153,7 +1170,7 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
     coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
 
     coordinator._run_offline(
-        request=request,
+        run_config=_run_config_from_request(request),
         plan=plan,
         path_config=path_config,
         runtime_source=FakeOfflineSource(),
@@ -1312,7 +1329,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
         factory=_FakeSummaryRuntime,
         capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
-    coordinator._request = request
+    coordinator._run_config = run_config_from_request(request)
     coordinator._plan = plan
     coordinator._path_config = path_config
     coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
@@ -1667,7 +1684,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     monkeypatch.setattr(backend, "_create_coordinator", lambda run_id: fake_coordinator)
     monkeypatch.setattr(backend, "_coordinator_for", lambda run_id: fake_coordinator)
 
-    run_id = backend.submit_run(request=request, runtime_source="runtime")
+    run_id = backend.submit_run(run_config=_run_config_from_request(request), runtime_source="runtime")
 
     assert run_id == "backend-unit"
     assert submitted == [("backend-unit", "runtime")]
@@ -1706,18 +1723,17 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
     monkeypatch.setattr(backend, "_create_coordinator", lambda run_id: created_runs.append(run_id))
 
     with pytest.raises(RuntimeError, match="placeholder"):
-        backend.submit_run(request=request)
+        backend.submit_run(run_config=_run_config_from_request(request))
 
     assert created_runs == []
 
 
-def test_source_resolver_delegates_video_resolution(tmp_path: Path) -> None:
+def test_source_backend_config_delegates_video_resolution(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     video_path = tmp_path / "resolver-demo.mp4"
     video_path.write_bytes(b"")
-    resolver = OfflineSourceResolver(path_config)
 
-    resolved = resolver.resolve(VideoSourceSpec(video_path=video_path))
+    resolved = VideoSourceConfig(video_path=video_path).setup_target(path_config=path_config)
 
     assert resolved.label == "Video 'resolver-demo.mp4'"
 
@@ -1825,7 +1841,7 @@ def test_run_service_offline_mock_smoke(tmp_path: Path) -> None:
         slam=SlamStageConfig(backend={"kind": "mock"}),
     )
 
-    service.start_run(request=request, runtime_source=FakeOfflineSource())
+    service.start_run(run_config=_run_config_from_request(request), runtime_source=FakeOfflineSource())
     snapshot = _wait_for_terminal_snapshot(service)
 
     assert snapshot.state is RunState.COMPLETED
@@ -1850,7 +1866,7 @@ def test_run_service_streaming_mock_smoke(tmp_path: Path) -> None:
         slam=SlamStageConfig(backend={"kind": "mock"}),
     )
 
-    service.start_run(request=request, runtime_source=FakeStreamingSource())
+    service.start_run(run_config=_run_config_from_request(request), runtime_source=FakeStreamingSource())
     snapshot = _wait_for_terminal_snapshot(service)
 
     assert snapshot.state is RunState.COMPLETED
@@ -1874,6 +1890,10 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def _run_config_from_request(request: RunRequest) -> RunConfig:
+    return run_config_from_request(request)
+
+
 def _plan_with_stages(
     *,
     tmp_path: Path,
@@ -1884,7 +1904,7 @@ def _plan_with_stages(
         run_id=request.experiment_name,
         mode=request.mode,
         artifact_root=tmp_path / request.experiment_name,
-        source=request.source,
+        source=PlannedSource(source_id="video", video_path=Path("captures/demo.mp4")),
         stages=[
             RunPlanStage(
                 key=stage_key,

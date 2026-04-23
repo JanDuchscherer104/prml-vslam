@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.pipeline.contracts.request import RunRequest
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.utils import BaseData, RunArtifactPaths
 
 
@@ -15,10 +15,8 @@ class GroundAlignmentRuntimeInput(BaseData):
     trajectory or point cloud referenced by :attr:`slam`.
     """
 
-    # TODO(pipeline-refactor/WP-09): Replace RunRequest with target RunConfig
-    # stage policy once bounded runtimes are constructed from stage configs.
-    request: RunRequest
-    """Current run request carrying alignment policy."""
+    run_config: RunConfig
+    """Current run config carrying alignment policy."""
 
     run_paths: RunArtifactPaths
     """Canonical artifact paths for the current run."""

@@ -26,20 +26,22 @@ from prml_vslam.main import (
     run_config,
 )
 from prml_vslam.methods import MethodId, MockSlamBackendConfig
-from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, RunRequest, SlamStageConfig
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.demo import (
     build_advio_demo_request,
-    build_runtime_source_from_request,
+    build_runtime_source_from_run_config,
     load_run_config_toml,
 )
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
+
+from .pipeline_legacy import run_config_from_request
 
 
 @contextmanager
@@ -74,10 +76,10 @@ def _advio_source_payload(sequence_id: str = "advio-01") -> dict[str, object]:
 
 
 def _run_config_from_request(request: RunRequest) -> RunConfig:
-    return RunConfig.from_run_request(request)
+    return run_config_from_request(request)
 
 
-def test_load_run_request_toml_accepts_projectable_run_config(tmp_path: Path) -> None:
+def test_load_run_config_toml_accepts_target_config(tmp_path: Path) -> None:
     path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
     config_path = tmp_path / "target-compatible.toml"
     config_path.write_text(
@@ -104,13 +106,13 @@ enabled = true
 """.strip()
     )
 
-    request = load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
+    run_config = load_run_config_toml(path_config=path_config, config_path=config_path)
 
-    assert request.experiment_name == "target-compatible"
-    assert request.slam.backend.method_id is MethodId.MOCK
+    assert run_config.experiment_name == "target-compatible"
+    assert run_config.stages.slam.backend.method_id is MethodId.MOCK
 
 
-def test_load_run_request_toml_rejects_target_config_without_compatibility_fields(tmp_path: Path) -> None:
+def test_run_config_planning_rejects_missing_target_backends(tmp_path: Path) -> None:
     path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
     config_path = tmp_path / "target-only.toml"
     config_path.write_text(
@@ -130,8 +132,10 @@ enabled = true
 """.strip()
     )
 
-    with pytest.raises(ValueError, match="RunConfig launch requires one source definition"):
-        load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
+    run_config = load_run_config_toml(path_config=path_config, config_path=config_path)
+
+    with pytest.raises(ValueError, match=r"RunConfig planning requires `\[stages\.source\.backend\]`"):
+        run_config.compile_plan(path_config)
 
 
 def test_print_pipeline_demo_snapshot_accepts_projected_snapshot(tmp_path: Path) -> None:
@@ -176,11 +180,11 @@ def test_build_advio_demo_request_enables_live_viewer_by_default(tmp_path: Path)
     )
 
     assert request.visualization.connect_live_viewer is True
-    assert request.source.dataset_serving == AdvioServingConfig(
+    assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
         pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     )
-    assert request.source.respect_video_rotation is False
+    assert request.stages.source.backend.respect_video_rotation is False
 
 
 def test_build_advio_demo_request_keeps_streaming_replay_controls(tmp_path: Path) -> None:
@@ -193,11 +197,11 @@ def test_build_advio_demo_request_keeps_streaming_replay_controls(tmp_path: Path
         respect_video_rotation=True,
     )
 
-    assert request.source.dataset_serving == AdvioServingConfig(
+    assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.ARCORE,
         pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     )
-    assert request.source.respect_video_rotation is True
+    assert request.stages.source.backend.respect_video_rotation is True
 
 
 def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -234,20 +238,21 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
     )
     runtime_source = object()
     captured: dict[str, object] = {}
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             captured["path_config"] = path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            captured["request"] = request
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            captured["run_config"] = run_config
             captured["runtime_source"] = runtime_source
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
             captured["preserve_local_head"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
     monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: runtime_source)
@@ -257,8 +262,8 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
 
     run_config(Path(".configs/pipelines/vista-full.toml"))
 
-    assert isinstance(captured["request"], RunRequest)
-    assert captured["request"].model_dump(mode="json") == request.model_dump(mode="json")
+    assert isinstance(captured["run_config"], RunConfig)
+    assert captured["run_config"].model_dump(mode="json") == run_cfg.model_dump(mode="json")
     assert captured["runtime_source"] is runtime_source
     assert captured["preserve_local_head"] is False
 
@@ -272,10 +277,10 @@ def test_run_config_vista_full_toml_smoke_with_mock_backend(
     captured: dict[str, object] = {}
 
     class FakeBackend:
-        def submit_run(self, *, request: RunRequest, runtime_source: object | None = None) -> str:
-            captured["request"] = request
+        def submit_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> str:
+            captured["run_config"] = run_config
             captured["runtime_source"] = runtime_source
-            return request.experiment_name
+            return run_config.experiment_name
 
         def stop_run(self, run_id: str) -> None:
             captured["stopped_run_id"] = run_id
@@ -336,21 +341,19 @@ enabled = true
     )
 
     def load_and_patch_run_config(*, path_config: PathConfig, config_path: Path) -> RunConfig:
-        request = load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
-        patched_request = request.model_copy(
+        run_config = load_run_config_toml(path_config=path_config, config_path=config_path)
+        patched_stages = run_config.stages.model_copy(
+            update={"slam": run_config.stages.slam.model_copy(update={"backend": MockSlamBackendConfig(max_frames=3)})}
+        )
+        return run_config.model_copy(
             update={
                 "output_dir": path_config.artifacts_dir,
-                "slam": request.slam.model_copy(
-                    update={
-                        "backend": MockSlamBackendConfig(max_frames=3),
-                    }
-                ),
-                "visualization": request.visualization.model_copy(
+                "stages": patched_stages,
+                "visualization": run_config.visualization.model_copy(
                     update={"connect_live_viewer": False, "export_viewer_rrd": False}
                 ),
             }
         )
-        return _run_config_from_request(patched_request)
 
     monkeypatch.setenv("PRML_VSLAM_RAY_NAMESPACE", f"pytest-{uuid.uuid4().hex}")
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
@@ -365,11 +368,12 @@ enabled = true
 
     assert captured["path_config"] == path_config
     assert isinstance(captured["runtime_source"], FakeStreamingSource)
-    request = captured["request"]
-    assert isinstance(request, RunRequest)
-    assert request.slam.backend.method_id is MethodId.MOCK
-    assert request.visualization.connect_live_viewer is False
-    assert request.visualization.export_viewer_rrd is False
+    run_cfg = captured["run_config"]
+    assert isinstance(run_cfg, RunConfig)
+    assert run_cfg.stages.slam.backend is not None
+    assert run_cfg.stages.slam.backend.method_id is MethodId.MOCK
+    assert run_cfg.visualization.connect_live_viewer is False
+    assert run_cfg.visualization.export_viewer_rrd is False
     assert captured["shutdown"] is False
 
 
@@ -389,20 +393,21 @@ def test_run_config_preserves_local_head_for_reusable_completed_run(
         }
     )
     captured: dict[str, object] = {}
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             captured["path_config"] = path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            captured["request"] = request
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            captured["run_config"] = run_config
             captured["runtime_source"] = runtime_source
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
             captured["preserve_local_head"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
     monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
@@ -434,20 +439,21 @@ def test_run_config_does_not_preserve_local_head_for_reusable_failed_run(
         }
     )
     captured: dict[str, object] = {}
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             captured["path_config"] = path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            captured["request"] = request
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            captured["run_config"] = run_config
             captured["runtime_source"] = runtime_source
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
             captured["preserve_local_head"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
     monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
@@ -770,20 +776,21 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
         }
     )
     captured: dict[str, object] = {}
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             captured["path_config"] = path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            captured["request"] = request
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            captured["run_config"] = run_config
             captured["runtime_source"] = runtime_source
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
             captured["shutdown"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
     monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: captured.setdefault("viewer", viewer))
     monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
@@ -793,8 +800,8 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
 
     run_config(Path(".configs/pipelines/vista-full.toml"))
 
-    assert isinstance(captured["request"], RunRequest)
-    assert captured["request"].model_dump(mode="json") == request.model_dump(mode="json")
+    assert isinstance(captured["run_config"], RunConfig)
+    assert captured["run_config"].model_dump(mode="json") == run_cfg.model_dump(mode="json")
     assert captured["viewer"] is None
 
 
@@ -818,19 +825,20 @@ def test_run_config_prints_output_then_waits_for_viewer_after_normal_completion(
         process=object(),  # type: ignore[arg-type]
         forwarder=object(),  # type: ignore[arg-type]
     )
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             del path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            del request, runtime_source
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            del run_config, runtime_source
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
             events.append(f"run-shutdown:{preserve_local_head}")
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer",
@@ -870,19 +878,20 @@ def test_run_config_keeps_failed_run_viewer_open_until_wait_finishes(
         process=object(),  # type: ignore[arg-type]
         forwarder=object(),  # type: ignore[arg-type]
     )
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             del path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            del request, runtime_source
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            del run_config, runtime_source
 
         def shutdown(self, *, preserve_local_head: bool = False) -> None:
             events.append(f"run-shutdown:{preserve_local_head}")
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer",
@@ -937,13 +946,14 @@ def test_run_config_ctrl_c_during_post_run_viewer_wait_does_not_stop_finished_ru
         process=FakeProcess(),  # type: ignore[arg-type]
         forwarder=FakeThread(),  # type: ignore[arg-type]
     )
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             del path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            del request, runtime_source
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            del run_config, runtime_source
 
         def stop_run(self) -> None:
             events.append("stop-run")
@@ -952,7 +962,7 @@ def test_run_config_ctrl_c_during_post_run_viewer_wait_does_not_stop_finished_ru
             events.append(f"run-shutdown:{preserve_local_head}")
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer",
@@ -991,13 +1001,14 @@ def test_run_config_shuts_down_viewer_after_active_pipeline_keyboard_interrupt(
         process=object(),  # type: ignore[arg-type]
         forwarder=object(),  # type: ignore[arg-type]
     )
+    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
             del path_config
 
-        def start_run(self, *, request: RunRequest, runtime_source: object | None = None) -> None:
-            del request, runtime_source
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            del run_config, runtime_source
 
         def stop_run(self) -> None:
             captured["stopped"] = True
@@ -1009,7 +1020,7 @@ def test_run_config_shuts_down_viewer_after_active_pipeline_keyboard_interrupt(
             captured["shutdown"] = preserve_local_head
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
-    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: _run_config_from_request(request))
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
     monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: viewer)
     monkeypatch.setattr(
         "prml_vslam.main._shutdown_rerun_viewer", lambda current: captured.setdefault("viewer", current)
@@ -1030,7 +1041,7 @@ def test_run_config_shuts_down_viewer_after_active_pipeline_keyboard_interrupt(
     assert captured["viewer"] is viewer
 
 
-def test_build_runtime_source_from_request_caps_streaming_replay(
+def test_build_runtime_source_from_run_config_caps_streaming_replay(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1051,6 +1062,7 @@ def test_build_runtime_source_from_request_caps_streaming_replay(
         ),
         slam=SlamStageConfig(backend={"method_id": "mock", "max_frames": 2}),
     )
+    run_config = run_config_from_request(request)
 
     class FakePacketStream:
         def __init__(self) -> None:
@@ -1090,20 +1102,14 @@ def test_build_runtime_source_from_request_caps_streaming_replay(
     fake_source = FakeStreamingSource()
     captured: dict[str, object] = {}
 
-    class FakeAdvioSourceConfig:
-        def __init__(self, path_config: PathConfig) -> None:
-            self.path_config = path_config
+    def fake_setup_target(self, *, path_config: PathConfig) -> FakeStreamingSource:
+        del self
+        captured["path_config"] = path_config
+        return fake_source
 
-        def setup_target(self, *, path_config: PathConfig) -> FakeStreamingSource:
-            captured["path_config"] = path_config
-            return fake_source
+    monkeypatch.setattr("prml_vslam.pipeline.stages.source.config.AdvioSourceConfig.setup_target", fake_setup_target)
 
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.demo.source_backend_config_from_source_spec",
-        lambda source: FakeAdvioSourceConfig(path_config),
-    )
-
-    capped_source = build_runtime_source_from_request(request=request, path_config=path_config)
+    capped_source = build_runtime_source_from_run_config(run_config=run_config, path_config=path_config)
     assert capped_source is not None
     assert captured["path_config"] == path_config
 

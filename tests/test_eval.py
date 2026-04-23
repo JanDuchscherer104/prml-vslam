@@ -19,10 +19,12 @@ from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, ReferenceTrajectoryRef, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.methods.config_contracts import MethodId
+from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.config import build_run_config
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef
-from prml_vslam.pipeline.contracts.request import SlamStageConfig, VideoSourceSpec
+from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 
@@ -92,19 +94,18 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         timestamps=[0.0, 1.0],
     )
     artifact_root = tmp_path / "run"
-    request = RunRequest(
+    run_config = build_run_config(
         experiment_name="trajectory-stage",
-        mode=PipelineMode.OFFLINE,
         output_dir=tmp_path,
-        source=VideoSourceSpec(video_path=tmp_path / "demo.mp4"),
-        slam=SlamStageConfig(backend={"method_id": "mock"}),
-        benchmark={"trajectory": {"enabled": True, "baseline_source": ReferenceSource.GROUND_TRUTH}},
+        source_backend=VideoSourceConfig(video_path=tmp_path / "demo.mp4"),
+        method=MethodId.MOCK,
+        trajectory_eval_enabled=True,
     )
     plan = RunPlan(
         run_id="trajectory-stage",
         mode=PipelineMode.OFFLINE,
         artifact_root=artifact_root,
-        source=request.source,
+        source=PlannedSource(source_id="video", video_path=tmp_path / "demo.mp4"),
     )
     benchmark_inputs = PreparedBenchmarkInputs(
         reference_trajectories=[
@@ -118,7 +119,7 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     artifact = TrajectoryEvaluationService(
         PathConfig(root=tmp_path, artifacts_dir=tmp_path)
     ).compute_pipeline_evaluation(
-        request=request,
+        run_config=run_config,
         plan=plan,
         sequence_manifest=SequenceManifest(sequence_id="demo-sequence"),
         benchmark_inputs=benchmark_inputs,
