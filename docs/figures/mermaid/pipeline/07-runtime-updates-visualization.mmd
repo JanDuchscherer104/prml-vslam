@@ -1,0 +1,58 @@
+classDiagram
+    class StageRuntimeUpdate {
+        +stage_key
+        +timestamp_ns
+        +semantic_events
+        +visualizations
+        +runtime_status
+    }
+
+    class DomainStageEvent {
+        <<conceptual label>>
+        domain_event_dtos
+    }
+
+    class VisualizationItem {
+        +intent
+        +role
+        +payload_refs
+        +pose
+        +intrinsics
+        +frame_index
+        +keyframe_index
+        +space
+        +metadata
+    }
+
+    class VisualizationIntent {
+        <<enum>>
+        rgb_image
+        depth_image
+        point_cloud
+        trajectory
+        pose_transform
+        pinhole_camera
+        ground_plane
+        mesh
+        clear
+    }
+
+    class VisualizationAdapter {
+        <<stage/domain-specific>>
+        +build_items(semantic_event, payload_refs) VisualizationItem[]
+    }
+
+    class StageResult
+    class RunEvent
+    class LiveSnapshotProjection
+    class RerunSink
+
+    StageRuntimeUpdate --> DomainStageEvent
+    StageRuntimeUpdate --> VisualizationItem
+    VisualizationAdapter --> VisualizationItem
+    VisualizationAdapter --> DomainStageEvent
+    VisualizationItem --> VisualizationIntent
+    VisualizationItem --> TransientPayloadRef
+    StageRuntimeUpdate --> LiveSnapshotProjection
+    VisualizationItem --> RerunSink
+    StageResult --> RunEvent

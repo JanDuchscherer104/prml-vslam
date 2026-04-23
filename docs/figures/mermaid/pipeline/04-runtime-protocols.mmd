@@ -1,0 +1,82 @@
+classDiagram
+    class BaseStageRuntime {
+        +status() StageRuntimeStatus
+        +stop()
+    }
+
+    class OfflineStageRuntime {
+        +run_offline(input) StageResult
+    }
+
+    class LiveUpdateStageRuntime {
+        +drain_runtime_updates(max_items) StageRuntimeUpdate[]
+    }
+
+    class StreamingStageRuntime {
+        +start_streaming(input)
+        +submit_stream_item(item)
+        +finish_streaming() StageResult
+    }
+
+    class StageRuntimeStatus {
+        +stage_key
+        +lifecycle_state
+        +progress
+        +queue_depth_optional
+        +in_flight_count
+        +processed_items
+        +fps
+        +throughput
+        +latency_ms
+        +last_warning
+        +last_error
+        +executor_id
+        +resource_assignment
+        +updated_at_ns
+    }
+
+    class SourceRuntime
+    class SlamStageRuntime
+    class GroundAlignmentRuntime
+    class TrajectoryEvaluationRuntime
+    class ReconstructionRuntime
+    class SummaryRuntime
+
+    class RuntimeManager {
+        +preflight(run_plan)
+        +runtime_for(stage_key) StageRuntimeProxy
+    }
+
+    class StageRuntimeProxy {
+        +deployment_kind
+        +supported_capabilities
+        +status()
+        +stop()
+    }
+
+    class InternalPacketSourceActor {
+        <<internal sidecar>>
+        +start_stream(source)
+        +grant_credit(count)
+        +stop()
+    }
+
+    BaseStageRuntime <|.. OfflineStageRuntime
+    BaseStageRuntime <|.. LiveUpdateStageRuntime
+    BaseStageRuntime <|.. StreamingStageRuntime
+    SourceRuntime ..|> OfflineStageRuntime
+    SlamStageRuntime ..|> OfflineStageRuntime
+    SlamStageRuntime ..|> LiveUpdateStageRuntime
+    SlamStageRuntime ..|> StreamingStageRuntime
+    GroundAlignmentRuntime ..|> OfflineStageRuntime
+    TrajectoryEvaluationRuntime ..|> OfflineStageRuntime
+    ReconstructionRuntime ..|> OfflineStageRuntime
+    SummaryRuntime ..|> OfflineStageRuntime
+    StageRuntimeProxy ..|> BaseStageRuntime
+    StageRuntimeProxy ..|> OfflineStageRuntime
+    StageRuntimeProxy ..|> LiveUpdateStageRuntime
+    StageRuntimeProxy ..|> StreamingStageRuntime
+    RuntimeManager --> StageRuntimeProxy
+    StageRuntimeProxy --> BaseStageRuntime
+    RuntimeManager --> InternalPacketSourceActor
+    BaseStageRuntime --> StageRuntimeStatus

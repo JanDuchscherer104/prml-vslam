@@ -1,0 +1,54 @@
+classDiagram
+    class RunConfig {
+        +experiment_name
+        +mode
+        +stages
+        +visualization
+        +runtime
+        +compile_plan(context) RunPlan
+    }
+
+    class StageBundle {
+        +source
+        +slam
+        +align_ground
+        +evaluate_trajectory
+        +reconstruction
+        +evaluate_cloud
+        +evaluate_efficiency
+        +summary
+    }
+
+    class StageConfig {
+        +stage_key
+        +enabled
+        +execution
+        +telemetry
+        +cleanup
+        +availability(context)
+        +declared_outputs(paths)
+        +failure_outcome(error, context)
+    }
+
+    class RunPlan {
+        +stages
+        +diagnostic_rows
+    }
+
+    class RunPlanStage {
+        +stage_key
+        +available
+        +availability_reason
+        +outputs
+    }
+
+    class RuntimeManager {
+        +preflight(run_plan)
+        +runtime_for(stage_key)
+    }
+
+    RunConfig --> StageBundle
+    StageBundle --> StageConfig
+    RunConfig --> RunPlan
+    RunPlan --> RunPlanStage
+    RuntimeManager --> RunPlan
