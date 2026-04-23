@@ -29,7 +29,7 @@
     #grid(
       columns: (1fr, 1fr),
       gutter: 0.6cm,
-      [*Input Surface* \ Raw video + ARCore baseline logs], image("../../../figures/hm-logo.svg"),
+      [*Input Surface* \ Raw video + ARCore baseline logs],
     )
   ]
 ]
