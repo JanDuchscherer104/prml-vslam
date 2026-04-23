@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.datasets.advio import AdvioServingConfig
+from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import Record3DTransportId
 from prml_vslam.methods import MethodId
@@ -205,13 +205,16 @@ def test_vista_full_target_toml_parses_through_run_config_and_matches_launch_pla
     assert run_config.source is None
     assert run_config.slam is None
     assert isinstance(launch_request.source, DatasetSourceSpec)
-    assert launch_request.source.dataset_id is DatasetId.TUM_RGBD
-    assert launch_request.source.sequence_id == "freiburg1_room"
+    assert launch_request.source.dataset_id is DatasetId.ADVIO
+    assert launch_request.source.sequence_id == "advio-20"
     assert launch_request.source.frame_stride == 5
-    assert launch_request.source.dataset_serving is None
+    assert launch_request.source.dataset_serving == AdvioServingConfig(
+        pose_source=AdvioPoseSource.GROUND_TRUTH,
+        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+    )
     assert [stage.key for stage in run_config_plan.stages] == [stage.key for stage in launch_plan.stages]
     assert run_config.stages.align_ground.enabled is True
-    assert run_config.stages.reconstruction.enabled is True
+    assert run_config.stages.reconstruction.enabled is False
     assert run_config.stages.evaluate_trajectory.enabled is False
 
 
