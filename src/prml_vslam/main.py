@@ -30,10 +30,10 @@ from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import (
-    build_advio_demo_request,
+    build_advio_demo_run_config,
     build_runtime_source_from_run_config,
     load_run_config_toml,
-    persist_advio_demo_request,
+    persist_advio_demo_run_config,
 )
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
@@ -318,7 +318,7 @@ def run_config(
         viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
         runtime_source = build_runtime_source_from_run_config(run_config=run_cfg, path_config=path_config)
         run_service = RunService(path_config=path_config)
-        _start_run_service(run_service, run_cfg, runtime_source)
+        run_service.start_run(run_config=run_cfg, runtime_source=runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
         reached_terminal_snapshot = True
         preserve_local_head = (
@@ -358,7 +358,7 @@ def write_demo_config(
         PipelineMode,
         typer.Option(
             "--mode",
-            help="Persist an offline or streaming ADVIO demo request.",
+            help="Persist an offline or streaming ADVIO demo run config.",
             case_sensitive=False,
         ),
     ] = PipelineMode.OFFLINE,
@@ -366,7 +366,7 @@ def write_demo_config(
         MethodId,
         typer.Option(
             "--method",
-            help="Method id stored in the persisted demo request.",
+            help="Method id stored in the persisted demo run config.",
             case_sensitive=False,
         ),
     ] = MethodId.VISTA,
@@ -379,19 +379,19 @@ def write_demo_config(
     ] = None,
     dataset_frame_stride: Annotated[
         int,
-        typer.Option("--dataset-frame-stride", min=1, help="Dataset frame stride stored in the demo request."),
+        typer.Option("--dataset-frame-stride", min=1, help="Dataset frame stride stored in the demo run config."),
     ] = 1,
     dataset_target_fps: Annotated[
         float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Dataset target FPS stored in the demo request."),
+        typer.Option("--dataset-target-fps", min=0.01, help="Dataset target FPS stored in the demo run config."),
     ] = None,
 ) -> None:
-    """Persist the canonical ADVIO demo request as TOML."""
+    """Persist the canonical ADVIO demo run config as TOML."""
     path_config = get_path_config()
     advio_service = AdvioDatasetService(path_config)
     resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
     scene = advio_service.scene(resolved_sequence_id)
-    resolved_config_path = persist_advio_demo_request(
+    resolved_config_path = persist_advio_demo_run_config(
         path_config=path_config,
         sequence_id=scene.sequence_slug,
         mode=mode,
@@ -493,7 +493,7 @@ def pipeline_demo(
     advio_service = AdvioDatasetService(path_config)
     resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
     scene = advio_service.scene(resolved_sequence_id)
-    run_config = build_advio_demo_request(
+    run_config = build_advio_demo_run_config(
         path_config=path_config,
         sequence_id=scene.sequence_slug,
         mode=PipelineMode.STREAMING,
@@ -513,7 +513,7 @@ def pipeline_demo(
         method.value,
     )
     try:
-        _start_run_service(run_service, run_config, source)
+        run_service.start_run(run_config=run_config, runtime_source=source)
         snapshot = _wait_for_pipeline_terminal_snapshot(
             run_service,
             poll_interval_seconds=poll_interval_seconds,
@@ -651,11 +651,6 @@ def _apply_dataset_sampling_overrides(
             "target_fps": dataset_target_fps,
         }
     )
-
-
-def _start_run_service(run_service: RunService, run_config: RunConfig, runtime_source: object | None) -> None:
-    """Start one run through the target RunConfig launch surface."""
-    run_service.start_run(run_config=run_config, runtime_source=runtime_source)
 
 
 def _wait_for_pipeline_terminal_snapshot(

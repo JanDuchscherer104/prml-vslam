@@ -9,14 +9,14 @@ import streamlit as st
 from prml_vslam.pipeline.contracts.runtime import RunState
 
 from ..live_session import live_poll_interval, render_live_action_slot, render_live_fragment, rerun_after_action
-from ..pipeline_controller import (
+from ..pipeline_controller import build_pipeline_snapshot_render_model
+from ..pipeline_controls import (
     action_from_page_state,
-    build_pipeline_snapshot_render_model,
     build_preview_plan,
     build_run_config_from_action,
     discover_pipeline_config_paths,
     handle_pipeline_page_action,
-    load_pipeline_request,
+    load_pipeline_run_config,
     pipeline_config_label,
     request_summary_payload,
     request_support_error,
@@ -66,7 +66,7 @@ def render(context: AppContext) -> None:
             index=config_paths.index(selected_config_path),
             format_func=lambda config_path: pipeline_config_label(context.path_config, config_path),
         )
-        template_request, template_error = load_pipeline_request(context.path_config, selected_config_path)
+        template_request, template_error = load_pipeline_run_config(context.path_config, selected_config_path)
         if template_request is not None:
             sync_pipeline_page_state_from_template(
                 context=context,

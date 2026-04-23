@@ -1,4 +1,4 @@
-"""Snapshot-presentation helpers plus public Pipeline page controller facade."""
+"""Snapshot-presentation helpers for the Pipeline page."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 import numpy as np
 
@@ -20,29 +20,12 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 
-from .pipeline_controls import (
-    JsonObject,
-    PipelinePageAction,
-    action_from_page_state,
-    backend_payload_from_action,
-    build_preview_plan,
-    build_run_config_from_action,
-    discover_pipeline_config_paths,
-    handle_pipeline_page_action,
-    load_pipeline_request,
-    parse_optional_float,
-    parse_optional_int,
-    pipeline_config_label,
-    record3d_source_config_from_action,
-    request_summary_payload,
-    request_support_error,
-    resolve_advio_sequence_id,
-    source_input_error,
-    sync_pipeline_page_state_from_template,
-)
-
 if TYPE_CHECKING:
     from prml_vslam.pipeline.run_service import RunService
+
+JsonScalar: TypeAlias = str | int | float | bool | None
+JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
+JsonObject: TypeAlias = dict[str, JsonValue]
 
 
 @dataclass(frozen=True, slots=True)
@@ -428,26 +411,9 @@ def _stage_outcome_rows(snapshot: RunSnapshot) -> list[dict[str, str]]:
 __all__ = [
     "PipelineBackendNoticeView",
     "PipelineNoticeRenderModel",
-    "PipelinePageAction",
     "PipelineSnapshotRenderModel",
     "PipelineStreamingRenderModel",
-    "action_from_page_state",
-    "backend_payload_from_action",
     "build_pipeline_snapshot_render_model",
-    "build_preview_plan",
-    "build_run_config_from_action",
-    "discover_pipeline_config_paths",
-    "handle_pipeline_page_action",
     "latest_backend_notice_view",
-    "load_pipeline_request",
-    "parse_optional_int",
-    "parse_optional_float",
-    "pipeline_config_label",
-    "record3d_source_config_from_action",
-    "request_summary_payload",
-    "request_support_error",
-    "resolve_advio_sequence_id",
     "resolve_evo_preview",
-    "source_input_error",
-    "sync_pipeline_page_state_from_template",
 ]

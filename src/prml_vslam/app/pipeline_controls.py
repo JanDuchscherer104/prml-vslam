@@ -273,7 +273,7 @@ def pipeline_config_label(path_config: PathConfig, config_path: Path) -> str:
         )
 
 
-def load_pipeline_request(path_config: PathConfig, config_path: Path) -> tuple[RunConfig | None, str | None]:
+def load_pipeline_run_config(path_config: PathConfig, config_path: Path) -> tuple[RunConfig | None, str | None]:
     """Load one persisted pipeline run config while surfacing validation errors as strings."""
     try:
         return load_run_config_toml(path_config=path_config, config_path=config_path), None
@@ -397,7 +397,7 @@ __all__ = [
     "discover_pipeline_config_paths",
     "handle_pipeline_page_action",
     "json_dump",
-    "load_pipeline_request",
+    "load_pipeline_run_config",
     "parse_optional_int",
     "parse_optional_float",
     "pipeline_config_label",

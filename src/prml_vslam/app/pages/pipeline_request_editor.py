@@ -13,7 +13,7 @@ from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 
 from ..models import PipelinePageState, PipelineSourceId
-from ..pipeline_controller import PipelinePageAction, parse_optional_float, parse_optional_int
+from ..pipeline_controls import PipelinePageAction, parse_optional_float, parse_optional_int
 from ..record3d_controls import render_record3d_transport_controls, render_record3d_transport_details
 
 if TYPE_CHECKING:

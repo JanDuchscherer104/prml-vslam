@@ -32,7 +32,7 @@ from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, RunRequest, SlamStageConfig
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.demo import (
-    build_advio_demo_request,
+    build_advio_demo_run_config,
     build_runtime_source_from_run_config,
     load_run_config_toml,
 )
@@ -171,8 +171,8 @@ def test_wait_for_pipeline_terminal_snapshot_uses_pipeline_demo_namespace(
     assert "Pipeline demo state: completed" in caplog.records[0].message
 
 
-def test_build_advio_demo_request_enables_live_viewer_by_default(tmp_path: Path) -> None:
-    request = build_advio_demo_request(
+def test_build_advio_demo_run_config_enables_live_viewer_by_default(tmp_path: Path) -> None:
+    request = build_advio_demo_run_config(
         path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
         sequence_id="advio-01",
         mode=PipelineMode.STREAMING,
@@ -187,8 +187,8 @@ def test_build_advio_demo_request_enables_live_viewer_by_default(tmp_path: Path)
     assert request.stages.source.backend.respect_video_rotation is False
 
 
-def test_build_advio_demo_request_keeps_streaming_replay_controls(tmp_path: Path) -> None:
-    request = build_advio_demo_request(
+def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: Path) -> None:
+    request = build_advio_demo_run_config(
         path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
         sequence_id="advio-01",
         mode=PipelineMode.STREAMING,
