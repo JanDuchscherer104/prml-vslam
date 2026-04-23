@@ -13,6 +13,8 @@ and stage summaries remain the scientific and provenance source of truth.
   artifact contracts.
 - [`rerun.py`](./rerun.py): thin helpers around the pinned
   `rerun-sdk==0.24.1` API plus native visualization-artifact collection.
+- [`rerun_follow.py`](./rerun_follow.py): additive offline post-processor that
+  merges a follow-enabled Rerun 0.27 blueprint into an existing `.rrd`.
 - [`../pipeline/sinks/rerun.py`](../pipeline/sinks/rerun.py): event-driven
   live sink and Ray sidecar that own repo-managed recording streams.
 - [`validation.py`](./validation.py): deterministic `.rrd` validation helpers
@@ -65,6 +67,13 @@ Inspect a persisted repo-owned recording:
 uv run --extra vista rerun \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
   .configs/visualization/vista_blueprint.rbl
+```
+
+Create a follow-enabled offline artifact without changing the source `.rrd`:
+
+```bash
+uv run python -m prml_vslam.visualization.rerun_follow \
+  .artifacts/<run_id>/visualization/viewer_recording.rrd
 ```
 
 Generate a deterministic validation bundle:
