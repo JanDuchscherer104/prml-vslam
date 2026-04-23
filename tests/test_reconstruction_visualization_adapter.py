@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.interfaces.slam import ArtifactRef
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.pipeline.stages.reconstruction.visualization import (
     MESH_ARTIFACT,

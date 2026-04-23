@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from prml_vslam.interfaces.slam import SlamUpdate
+from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent, VisualizationItem
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 

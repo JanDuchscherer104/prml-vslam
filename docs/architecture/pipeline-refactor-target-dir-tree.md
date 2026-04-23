@@ -153,7 +153,6 @@ src/prml_vslam/
 │   ├── config_contracts.py [A]
 │   ├── configs.py [A]
 │   ├── descriptors.py [A]
-│   ├── events.py [A]
 │   ├── factory.py [A]
 │   ├── mast3r.py [C]
 │   ├── mock_vslam.py [A]
@@ -334,12 +333,9 @@ src/prml_vslam/
 │   │   └── Mast3rSlamBackendConfig
 │   ├── contracts.py
 │   │   ├── SlamUpdate
-│   │   ├── BackendEvent
 │   │   └── backend notice/event DTOs
 │   ├── descriptors.py
 │   │   └── BackendDescriptor
-│   ├── events.py
-│   │   └── translate_slam_update migration adapter
 │   ├── factory.py
 │   │   └── BackendFactory
 │   ├── mock_vslam.py

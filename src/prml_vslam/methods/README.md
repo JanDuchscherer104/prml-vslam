@@ -17,9 +17,10 @@ The package is intentionally small. The public center of gravity is
 [`StreamingSlamBackend`](./protocols.py#L49),
 [`BackendDescriptor`](./descriptors.py#L21),
 [`BackendFactory`](./factory.py#L25), and the method-owned
-[`SlamUpdate`](./updates.py#L13) plus explicit backend-event translation in
-[`translate_slam_update()`](./events.py#L102). At the concrete-wrapper level,
-the current executable backends are the repository-local
+[`SlamUpdate`](./contracts.py). The pipeline converts those method-owned live
+updates into `StageRuntimeUpdate` values and neutral `VisualizationItem`
+descriptors at the stage-runtime boundary. At the concrete-wrapper level, the
+current executable backends are the repository-local
 [`MockSlamBackend`](./mock_vslam.py#L44) and the canonical
 [`VistaSlamBackend`](./vista/adapter.py#L22).
 
@@ -41,13 +42,12 @@ benchmark inputs, and a method-owned output policy. Streaming backends implement
 session-init bundle plus the runtime controls before returning a
 [`StreamingSlamBackend`](./protocols.py#L17) that consumes incremental
 [`FramePacket`](../interfaces/runtime.py#L68) values and produces
-[`SlamUpdate`](./updates.py#L13) telemetry before closing into the same
+[`SlamUpdate`](./contracts.py) telemetry before closing into the same
 normalized [`SlamArtifacts`](../pipeline/contracts/artifacts.py#L25) contract.
 
 The current package therefore has three layers. The contract layer lives in
 [`contracts.py`](./contracts.py#L12), [`descriptors.py`](./descriptors.py#L10),
-[`protocols.py`](./protocols.py#L17), [`updates.py`](./updates.py#L13), and
-[`events.py`](./events.py#L15). The construction layer lives in
+and [`protocols.py`](./protocols.py#L17). The construction layer lives in
 [`factory.py`](./factory.py#L25). The wrapper layer lives in
 [`mock_vslam.py`](./mock_vslam.py#L44) and the
 [`vista/`](./vista/README.md) subtree. The package root
@@ -78,15 +78,13 @@ to package-local helpers inside [`vista/config.py`](./vista/config.py#L17),
 [`vista/artifacts.py`](./vista/artifacts.py#L27).
 
 The package also keeps a strict split between method-owned live updates and
-pipeline-owned transport. Backends emit [`SlamUpdate`](./updates.py#L13) because
-that is the method-layer view of incremental SLAM state. The pipeline then
-translates those updates into transport-safe backend notices through
-[`translate_slam_update()`](./events.py#L102), which yields typed
-[`BackendEvent`](./events.py#L90) values such as
-[`PoseEstimated`](./events.py#L15) and
-[`KeyframeVisualizationReady`](./events.py#L38). That split keeps the wrappers
-free to think in backend-native terms while still giving the pipeline one stable
-transport vocabulary.
+pipeline-owned transport. Backends emit [`SlamUpdate`](./contracts.py) because
+that is the method-layer view of incremental SLAM state. The pipeline SLAM
+runtime stores bulk arrays as `TransientPayloadRef` payloads, builds neutral
+visualization descriptors, and routes live observer data through
+`StageRuntimeUpdate` rather than durable backend-notice events. That split keeps
+the wrappers free to think in backend-native terms while the pipeline owns
+transport, live projection, and observer routing.
 
 ## Package Map
 
@@ -109,16 +107,6 @@ src/prml_vslam/methods
 ├── descriptors.py                                 # backend capability and resource descriptors
 │   ├── BackendCapabilities                        # capability surface
 │   └── BackendDescriptor                          # descriptor returned to pipeline
-├── events.py                                      # transport-safe backend notice contracts
-│   ├── PoseEstimated                              # pose telemetry notice
-│   ├── KeyframeAccepted                           # keyframe-acceptance notice
-│   ├── KeyframeVisualizationReady                 # preview/image/depth/pointmap handles
-│   ├── MapStatsUpdated                            # sparse/dense map telemetry
-│   ├── BackendWarning                             # non-fatal backend warning
-│   ├── BackendError                               # fatal or actionable backend error
-│   ├── SessionClosed                              # terminal session notice
-│   ├── BackendEvent                               # backend notice union
-│   └── translate_slam_update                      # update -> event translator
 ├── factory.py                                     # typed backend factory
 │   ├── BackendFactoryProtocol                     # factory seam
 │   └── BackendFactory                             # repo-local factory implementation
@@ -131,8 +119,6 @@ src/prml_vslam/methods
 │   ├── OfflineSlamBackend                         # offline execution protocol
 │   ├── StreamingSlamBackend                       # streaming execution protocol
 │   └── SlamBackend                                # combined offline + streaming protocol
-├── updates.py                                     # method-owned live update DTO
-│   └── SlamUpdate                                 # incremental backend update
 └── vista                                           # canonical ViSTA integration
     ├── README.md                                  # ViSTA-specific wrapper guide
     ├── REQUIREMENTS.md                            # ViSTA wrapper constraints
@@ -182,15 +168,12 @@ repository currently prefers backends that satisfy the combined
 [`SlamBackend`](./protocols.py#L64) protocol, because the pipeline supports both
 offline and streaming runs.
 
-The method-owned live update surface is [`SlamUpdate`](./updates.py#L13). It is
+The method-owned live update surface is [`SlamUpdate`](./contracts.py). It is
 allowed to carry backend-facing notions such as keyframe acceptance,
 camera-local pointmaps, preview images, and backend warnings. The transport-safe
-surface that the pipeline consumes is different. That surface is the explicit
-backend-event vocabulary in [`events.py`](./events.py#L15), especially
-[`BackendEvent`](./events.py#L90) and
-[`translate_slam_update()`](./events.py#L102). The translation step is what
-lets the method package stay backend-aware without forcing the pipeline to
-depend on one backend’s internal update shape.
+surface that the pipeline consumes is different: the SLAM stage runtime drains
+updates, strips bulk arrays from semantic update payloads, and exposes observer
+state through `StageRuntimeUpdate` plus `VisualizationItem` payload refs.
 
 ## Module Responsibilities
 
@@ -198,8 +181,7 @@ The package root [`__init__.py`](./__init__.py#L1) is intentionally small and
 re-exports only the symbols that other packages are expected to import
 regularly. The concrete ids and shared backend controls live in
 [`contracts.py`](./contracts.py#L12), while capability and scheduling metadata
-live in [`descriptors.py`](./descriptors.py#L10). The live transport notice
-layer lives in [`events.py`](./events.py#L15), and the abstract backend and
+live in [`descriptors.py`](./descriptors.py#L10). The abstract backend and
 session seams live in [`protocols.py`](./protocols.py#L17).
 
 [`factory.py`](./factory.py#L25) is the bridge from pipeline request-time
@@ -232,7 +214,7 @@ benchmark inputs, and a method-owned config bundle, then writes normalized
 [`SlamArtifacts`](../pipeline/contracts/artifacts.py#L25). Streaming execution
 means a wrapper constructs a session, accepts incremental
 [`FramePacket`](../interfaces/runtime.py#L68) values, emits method-owned
-[`SlamUpdate`](./updates.py#L13) telemetry, and eventually closes into the same
+[`SlamUpdate`](./contracts.py) telemetry, and eventually closes into the same
 artifact contract.
 
 The important ownership rule is that methods never decide pipeline stage order
@@ -255,11 +237,11 @@ instead of exposing upstream-native outputs as the main API.
 
 Editing an existing backend interface follows the same pattern as in the
 pipeline package, but with a narrower surface. If you widen live telemetry,
-update [`SlamUpdate`](./updates.py#L13) and
-[`translate_slam_update()`](./events.py#L102) together. If you widen final
-artifacts, update the wrapper output normalization logic together with the
-pipeline-side artifact flattening logic that consumes those artifacts. If you
-change capability or resource assumptions, update
+update [`SlamUpdate`](./contracts.py) together with the SLAM stage runtime and
+visualization adapter that turn updates into `StageRuntimeUpdate` values. If you
+widen final artifacts, update the wrapper output normalization logic together
+with the pipeline-side artifact flattening logic that consumes those artifacts.
+If you change capability or resource assumptions, update
 [`BackendDescriptor`](./descriptors.py#L21) through the factory at the same
 time; the planner relies on that descriptor remaining truthful.
 
@@ -271,8 +253,8 @@ semantics inside the methods package, requires explicit upstream prerequisites,
 and converts native exports back into normalized repository artifacts. It is
 also the clearest place to see the split between method-owned live updates and
 pipeline-owned transport. The session emits backend-facing
-[`SlamUpdate`](./updates.py#L13) payloads, the methods package translates them
-into explicit transport notices, and the pipeline handles the rest.
+[`SlamUpdate`](./contracts.py) payloads, and the pipeline SLAM stage runtime
+turns them into live runtime updates and observer descriptors.
 
 The package-specific details for ViSTA are intentionally kept out of this
 top-level README. For preprocessing, live session semantics, export surfaces,
@@ -285,7 +267,7 @@ If you need to orient yourself quickly, start with
 [`SlamBackendConfig`](./contracts.py#L41),
 [`StreamingSlamBackend`](./protocols.py#L17),
 [`BackendFactory`](./factory.py#L25), and
-[`SlamUpdate`](./updates.py#L13). Then read either
+[`SlamUpdate`](./contracts.py). Then read either
 [`mock_vslam.py`](./mock_vslam.py#L32) for the minimum wrapper shape or
 [`vista/adapter.py`](./vista/adapter.py#L22) plus
 [`vista/session.py`](./vista/session.py#L28) for the canonical real wrapper.

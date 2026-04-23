@@ -78,7 +78,7 @@ class RerunLoggingPolicy:
     log_camera_image_rgb: bool = False
     _warned_fallback_intrinsics: bool = field(default=False, init=False, repr=False)
     _visible_keyframe_camera_indices: deque[int] = field(default_factory=deque, init=False, repr=False)
-    _trajectory_positions_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
+    _tracking_trajectory_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
 
     def observe_update(
         self,
@@ -321,11 +321,11 @@ class RerunLoggingPolicy:
         """Log one growing trajectory polyline from all observed pose estimates."""
         if not self.show_tracking_trajectory:
             return
-        self._trajectory_positions_xyz.append((float(pose.tx), float(pose.ty), float(pose.tz)))
+        self._tracking_trajectory_xyz.append((float(pose.tx), float(pose.ty), float(pose.tz)))
         self.log_line_strip3d(
             stream,
             entity_path="world/trajectory/tracking",
-            positions_xyz=np.asarray(self._trajectory_positions_xyz, dtype=np.float32),
+            positions_xyz=np.asarray(self._tracking_trajectory_xyz, dtype=np.float32),
         )
 
     def _evict_stale_keyframe_cameras(self, stream, *, keyframe_index: int) -> None:

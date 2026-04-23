@@ -90,7 +90,7 @@ flowchart TB
 | ingest | [`OfflineSequenceSource.prepare_sequence_manifest()`][offline-sequence-source] + [`BenchmarkInputSource.prepare_benchmark_inputs()`][benchmark-input-source] + [`run_ingest_stage()`][run-ingest-stage] | `protocols` + `pipeline` | [`SourceSpec`][source-spec], stage output directory | [`SequenceManifest`][sequence-manifest], [`PreparedBenchmarkInputs`][prepared-benchmark-inputs], ingest [`StageOutcome`][stage-outcome] |
 | slam (offline) | [`OfflineSlamBackend.run_sequence()`][offline-slam-backend] | `methods` | [`SequenceManifest`][sequence-manifest], [`PreparedBenchmarkInputs`][prepared-benchmark-inputs], [`ReferenceSource`][reference-source], [`SlamBackendConfig`][slam-backend-config], [`SlamOutputPolicy`][slam-output-policy], `artifact_root` | [`SlamArtifacts`][slam-artifacts] |
 | slam (streaming start) | [`StreamingSlamBackend.start_streaming(...)`][streaming-slam-backend] | `methods` | [`SlamStreamingStartInput`][slam-session-init], [`SlamBackendConfig`][slam-backend-config], [`SlamOutputPolicy`][slam-output-policy], `artifact_root` | [`StreamingSlamBackend lifecycle`][slam-session] |
-| slam (streaming hot path) | [`StreamingSlamBackend.step_streaming()`][slam-session] + [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] + [`translate_slam_update()`][translate-slam-update] | `methods` | [`FramePacket`][frame-packet], [`SlamUpdate`][slam-update], transient handles | [`BackendEvent[]`][backend-event] |
+| slam (streaming hot path) | [`StreamingSlamBackend.step_streaming()`][slam-session] + [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] + [`SlamStageRuntime live update projection`][live-update-projection] | `methods` | [`FramePacket`][frame-packet], [`SlamUpdate`][slam-update], transient handles | [`StageRuntimeUpdate.semantic_events`][stage-runtime-update] |
 | ground alignment | [`GroundAlignmentService.estimate_from_slam_artifacts()`][ground-alignment-service] + [`run_ground_alignment_stage()`][run-ground-alignment-stage] | `alignment` + `pipeline` | [`SlamArtifacts`][slam-artifacts] | [`GroundAlignmentMetadata`][ground-alignment-metadata], ground-alignment [`StageOutcome`][stage-outcome] |
 | trajectory evaluation | [`TrajectoryEvaluationService.compute_pipeline_evaluation()`][trajectory-evaluation-service] + [`run_trajectory_evaluation_stage()`][run-trajectory-evaluation-stage] | `eval` + `pipeline` | [`SequenceManifest`][sequence-manifest], [`PreparedBenchmarkInputs`][prepared-benchmark-inputs], [`SlamArtifacts`][slam-artifacts] | trajectory metrics artifact, trajectory [`StageOutcome`][stage-outcome] |
 | summary | [`project_summary()`][project-summary] + [`run_summary_stage()`][run-summary-stage] | `pipeline` | [`StageOutcome[]`][stage-outcome] | [`RunSummary`][run-summary], [`StageManifest[]`][stage-manifest], summary [`StageOutcome`][stage-outcome] |
@@ -285,7 +285,7 @@ The `slam` stage has two execution seams. Offline execution enters through
 [`OfflineSlamBackend`][offline-slam-backend] protocol. Streaming execution
 starts with [`StreamingSlamBackend.start_streaming(...)`][streaming-slam-backend],
 then flows through [`StreamingSlamBackend lifecycle`][slam-session], [`SlamUpdate`][slam-update],
-and [`BackendEvent`][backend-event] before both modes converge on
+and [`method semantic event`][stage-runtime-update] before both modes converge on
 [`SlamArtifacts`][slam-artifacts] and [`StageCompletionPayload`][stage-completion-payload].
 
 ```mermaid
@@ -323,8 +323,8 @@ flowchart TB
         Session["StreamingSlamBackend lifecycle"]
         Packet["FramePacket"]
         Update["SlamUpdate"]
-        Translate["translate_slam_update()"]
-        Event["BackendEvent"]
+        Translate["SlamStageRuntime live update projection"]
+        Event["method semantic event"]
         StreamingArtifacts["SlamArtifacts"]
 
         Init --> StreamingBackend
@@ -366,8 +366,8 @@ flowchart TB
     click Session "../../src/prml_vslam/methods/protocols.py#L18" "StreamingSlamBackend lifecycle"
     click Packet "../../src/prml_vslam/interfaces/runtime.py#L68" "FramePacket"
     click Update "../../src/prml_vslam/interfaces/slam.py#L46" "SlamUpdate"
-    click Translate "../../src/prml_vslam/methods/events.py#L102" "translate_slam_update"
-    click Event "../../src/prml_vslam/interfaces/slam.py#L142" "BackendEvent"
+    click Translate "../../src/prml_vslam/pipeline/stages/slam/runtime.py#L102" "live_update_projection"
+    click Event "../../src/prml_vslam/interfaces/slam.py#L142" "method semantic event"
     click OfflineArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
     click StreamingArtifacts "../../src/prml_vslam/interfaces/slam.py#L30" "SlamArtifacts"
         click Payload "../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L60" "StageCompletionPayload"
@@ -636,28 +636,28 @@ flowchart LR
     Packet["FramePacket<br/>repo-wide runtime DTO"]
     Session["StreamingSlamBackend.step_streaming()<br/>StreamingSlamBackend.drain_streaming_updates()"]
     Update["SlamUpdate<br/>method-owned live DTO"]
-    Array["ArrayHandle<br/>runtime-only image/depth/pointmap handle"]
-    Preview["PreviewHandle<br/>runtime-only preview handle"]
-    Translate["translate_slam_update()<br/>methods/events.py"]
-    Event["BackendEvent<br/>transport-safe notice union"]
-    Notice["BackendNoticeReceived<br/>pipeline runtime event"]
-    Projector["SnapshotProjector.apply()<br/>event projection"]
-    Snapshot["StreamingRunSnapshot<br/>app-facing projected state"]
+    PayloadRefs["TransientPayloadRef<br/>runtime-only image/depth/pointmap refs"]
+    Translate["SlamStageRuntime live update projection<br/>pipeline/stages/slam/runtime.py"]
+    Events["method semantic events<br/>PoseEstimated, KeyframeAccepted, ..."]
+    Visuals["VisualizationItem[]<br/>neutral sink descriptors"]
+    UpdateEnvelope["StageRuntimeUpdate<br/>live observer envelope"]
+    Projector["SnapshotProjector.apply_runtime_update()<br/>live projection"]
+    Snapshot["RunSnapshot<br/>keyed live projection"]
 
     Stream -->|"FramePacket"| Packet
     Packet -->|"step(frame)"| Session
     Session -->|"SlamUpdate[]"| Update
     Update -->|"SlamUpdate"| Translate
 
-    Update -.->|"image_rgb / depth_map / pointmap"| Array
-    Update -.->|"preview_rgb"| Preview
-    Array -.->|"ArrayHandle"| Translate
-    Preview -.->|"PreviewHandle"| Translate
+    Update -.->|"image_rgb / depth_map / pointmap / preview_rgb"| PayloadRefs
+    PayloadRefs -.->|"named payload refs"| Translate
 
-    Translate -->|"BackendEvent[]"| Event
-    Event -->|"notice: BackendEvent"| Notice
-    Notice -.->|"RunEvent telemetry"| Projector
-    Projector -->|"StreamingRunSnapshot"| Snapshot
+    Translate -->|"semantic_events"| Events
+    Translate -->|"visualizations"| Visuals
+    Events --> UpdateEnvelope
+    Visuals --> UpdateEnvelope
+    UpdateEnvelope -->|"live update only"| Projector
+    Projector -->|"RunSnapshot"| Snapshot
 
     classDef compute fill:#F4F4F4,stroke:#666666,stroke-width:2px,color:#222222;
     classDef streamingData fill:#E8F0FF,stroke:#2F6FDB,color:#222222;
@@ -666,21 +666,21 @@ flowchart LR
     classDef transientData fill:#F7F7F7,stroke:#888888,stroke-dasharray: 4 2,color:#222222;
 
     class Stream,Session streamingInterface;
-    class Packet,Update,Event streamingData;
-    class Notice,Snapshot sharedData;
-    class Array,Preview transientData;
+    class Packet,Update,Events,Visuals streamingData;
+    class UpdateEnvelope,Snapshot sharedData;
+    class PayloadRefs transientData;
     class Translate,Projector compute;
 
     click Stream "../../src/prml_vslam/protocols/runtime.py#L10" "FramePacketStream"
     click Packet "../../src/prml_vslam/interfaces/runtime.py#L68" "FramePacket"
     click Session "../../src/prml_vslam/methods/protocols.py#L18" "StreamingSlamBackend lifecycle"
-    click Update "../../src/prml_vslam/interfaces/slam.py#L46" "SlamUpdate"
-    click Array "../../src/prml_vslam/pipeline/contracts/handles.py#L10" "ArrayHandle"
-    click Preview "../../src/prml_vslam/pipeline/contracts/handles.py#L20" "PreviewHandle"
-    click Event "../../src/prml_vslam/interfaces/slam.py#L142" "BackendEvent"
-    click Notice "../../src/prml_vslam/pipeline/contracts/events.py#L112" "BackendNoticeReceived"
+    click Update "../../src/prml_vslam/methods/contracts.py#L13" "SlamUpdate"
+    click PayloadRefs "../../src/prml_vslam/pipeline/stages/base/handles.py#L13" "TransientPayloadRef"
+    click Events "../../src/prml_vslam/methods/contracts.py#L38" "method semantic events"
+    click Visuals "../../src/prml_vslam/pipeline/stages/base/contracts.py#L90" "VisualizationItem"
+    click UpdateEnvelope "../../src/prml_vslam/pipeline/stages/base/contracts.py#L137" "StageRuntimeUpdate"
     click Projector "../../src/prml_vslam/pipeline/snapshot_projector.py#L42" "SnapshotProjector"
-    click Snapshot "../../src/prml_vslam/pipeline/contracts/runtime.py#L59" "StreamingRunSnapshot"
+    click Snapshot "../../src/prml_vslam/pipeline/contracts/runtime.py#L34" "RunSnapshot"
 ```
 
 This is the critical layering seam for streaming implementations:
@@ -689,10 +689,10 @@ This is the critical layering seam for streaming implementations:
   and live ingress.
 - [`SlamUpdate`][slam-update] is the method-owned live DTO emitted by a backend
   session.
-- [`BackendEvent`][backend-event] is the transport-safe notice vocabulary consumed by the
-  pipeline runtime.
-- [`StreamingRunSnapshot`][streaming-run-snapshot] is projected state derived
-  from runtime events rather than a second mutable source of truth.
+- Method semantic events are package-local live DTOs carried inside
+  [`StageRuntimeUpdate`][stage-runtime-update].
+- [`RunSnapshot`][run-snapshot] projects durable events plus live runtime
+  updates; it is not a second mutable source of truth.
 
 ## DTO Tables
 
@@ -745,67 +745,39 @@ This is the critical layering seam for streaming implementations:
 
 | Field | Type | Owner | Appears at | Persistence | Frame semantics / notes |
 | --- | --- | --- | --- | --- | --- |
-| `seq` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Update sequence number in backend view order. |
-| `timestamp_ns` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Update timestamp in nanoseconds. |
-| `source_seq` | `int \| None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Source packet sequence number when explicit. |
-| `source_timestamp_ns` | `int \| None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Source packet timestamp when explicit. |
-| `is_keyframe` | `bool` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Whether the backend accepted this update as a keyframe. |
-| `keyframe_index` | `int \| None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Accepted keyframe index in backend view order. |
-| `pose` | [`FrameTransform`][frame-transform] \| `None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Canonical pose estimate; runtime convention remains `camera -> world`. |
-| `num_sparse_points` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Sparse map size telemetry. |
-| `num_dense_points` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Dense reconstruction size telemetry. |
+| `seq` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Update sequence number in backend view order. |
+| `timestamp_ns` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Update timestamp in nanoseconds. |
+| `source_seq` | `int \| None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Source packet sequence number when explicit. |
+| `source_timestamp_ns` | `int \| None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Source packet timestamp when explicit. |
+| `is_keyframe` | `bool` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Whether the backend accepted this update as a keyframe. |
+| `keyframe_index` | `int \| None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Accepted keyframe index in backend view order. |
+| `pose` | [`FrameTransform`][frame-transform] \| `None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Canonical pose estimate; runtime convention remains `camera -> world`. |
+| `num_sparse_points` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Sparse map size telemetry. |
+| `num_dense_points` | `int` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Dense reconstruction size telemetry. |
 | `pointmap` | `NDArray[np.float32] \| None` | `methods` | `StreamingSlamBackend.drain_streaming_updates()` -> transient handles | runtime payload | Camera-local accepted-keyframe pointmap. For ViSTA this stays in the model raster and ViSTA RDF camera basis, not world space. |
-| `camera_intrinsics` | [`CameraIntrinsics`][camera-intrinsics] \| `None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Intrinsics for the accepted-keyframe raster. For ViSTA this is the preprocessed model raster, not the original source raster. |
+| `camera_intrinsics` | [`CameraIntrinsics`][camera-intrinsics] \| `None` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Intrinsics for the accepted-keyframe raster. For ViSTA this is the preprocessed model raster, not the original source raster. |
 | `image_rgb` | `NDArray[np.uint8] \| None` | `methods` | `StreamingSlamBackend.drain_streaming_updates()` -> transient handles | runtime payload | Accepted-keyframe RGB image on the backend/model raster. |
 | `depth_map` | `NDArray[np.float32] \| None` | `methods` | `StreamingSlamBackend.drain_streaming_updates()` -> transient handles | runtime payload | Accepted-keyframe depth raster on the backend/model raster; not the final fused dense cloud. |
 | `preview_rgb` | `NDArray[np.uint8] \| None` | `methods` | `StreamingSlamBackend.drain_streaming_updates()` -> transient handles | runtime payload | Diagnostic preview image; ViSTA uses a pseudo-colored pointmap preview. |
-| `pose_updated` | `bool` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Whether `pose` is fresh from a new backend step. |
-| `backend_warnings` | `list[str]` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`translate_slam_update()`][translate-slam-update] | runtime payload | Non-fatal warnings attached to the update. |
+| `pose_updated` | `bool` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Whether `pose` is fresh from a new backend step. |
+| `backend_warnings` | `list[str]` | `methods` | [`StreamingSlamBackend.drain_streaming_updates()`][slam-session] -> [`SlamStageRuntime live update projection`][live-update-projection] | runtime payload | Non-fatal warnings attached to the update. |
 
-### [`BackendEvent`][backend-event] Variants
+### [`method semantic event`][stage-runtime-update] Variants
 
 | Variant | Field | Type | Owner | Appears at | Persistence | Frame semantics / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `PoseEstimated` | `kind` | `Literal["pose.estimated"]` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Discriminates the pose-estimate event variant. |
-| `PoseEstimated` | `seq` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update sequence number. |
-| `PoseEstimated` | `timestamp_ns` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update timestamp. |
-| `PoseEstimated` | `source_seq` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional source packet sequence. |
-| `PoseEstimated` | `source_timestamp_ns` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional source packet timestamp. |
-| `PoseEstimated` | `pose` | [`FrameTransform`][frame-transform] | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Canonical pose estimate, default runtime convention `camera -> world`. |
-| `PoseEstimated` | `pose_updated` | `bool` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Whether the pose changed on this step. |
-| `KeyframeAccepted` | `kind` | `Literal["keyframe.accepted"]` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Discriminates the keyframe-acceptance variant. |
-| `KeyframeAccepted` | `seq` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update sequence number. |
-| `KeyframeAccepted` | `timestamp_ns` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update timestamp. |
-| `KeyframeAccepted` | `keyframe_index` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Accepted keyframe index in backend view order. |
-| `KeyframeAccepted` | `accepted_keyframes` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Running accepted-keyframe count from the streaming stage actor. |
-| `KeyframeAccepted` | `backend_fps` | `float \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Rolling backend keyframe rate estimate. |
-| `KeyframeVisualizationReady` | `kind` | `Literal["keyframe.visualization_ready"]` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Discriminates the visualization-ready variant. |
-| `KeyframeVisualizationReady` | `seq` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update sequence number. |
-| `KeyframeVisualizationReady` | `timestamp_ns` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update timestamp. |
-| `KeyframeVisualizationReady` | `source_seq` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional source packet sequence. |
-| `KeyframeVisualizationReady` | `source_timestamp_ns` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional source packet timestamp. |
-| `KeyframeVisualizationReady` | `keyframe_index` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Accepted keyframe index in backend view order. |
-| `KeyframeVisualizationReady` | `pose` | [`FrameTransform`][frame-transform] | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Pose of the keyed camera entity that owns the preview/image/depth/pointmap handles. |
-| `KeyframeVisualizationReady` | `preview` | [`PreviewHandle`][preview-handle] \| `None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Handle for the preview image payload. |
-| `KeyframeVisualizationReady` | `image` | [`ArrayHandle`][array-handle] \| `None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Handle for the backend/model RGB raster. |
-| `KeyframeVisualizationReady` | `depth` | [`ArrayHandle`][array-handle] \| `None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Handle for the backend/model depth raster. |
-| `KeyframeVisualizationReady` | `pointmap` | [`ArrayHandle`][array-handle] \| `None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Handle for the camera-local pointmap payload. |
-| `KeyframeVisualizationReady` | `camera_intrinsics` | [`CameraIntrinsics`][camera-intrinsics] \| `None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Intrinsics for the keyed raster carried by the associated handles. |
-| `MapStatsUpdated` | `kind` | `Literal["map.stats"]` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Discriminates the map-stats variant. |
-| `MapStatsUpdated` | `seq` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update sequence number. |
-| `MapStatsUpdated` | `timestamp_ns` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Update timestamp. |
-| `MapStatsUpdated` | `num_sparse_points` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Sparse map size. |
-| `MapStatsUpdated` | `num_dense_points` | `int` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Dense map size. |
-| `BackendWarning` | `kind` | `Literal["backend.warning"]` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Discriminates the warning variant. |
-| `BackendWarning` | `message` | `str` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Non-fatal backend warning message. |
-| `BackendWarning` | `seq` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional update sequence number. |
-| `BackendWarning` | `timestamp_ns` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional update timestamp. |
-| `BackendError` | `kind` | `Literal["backend.error"]` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Discriminates the error variant. |
-| `BackendError` | `message` | `str` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Fatal or actionable backend error message. |
-| `BackendError` | `seq` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional update sequence number. |
-| `BackendError` | `timestamp_ns` | `int \| None` | `methods` | [`translate_slam_update()`][translate-slam-update] -> [`BackendNoticeReceived`][backend-notice-received] | transport-safe event | Optional update timestamp. |
-| `SessionClosed` | `kind` | `Literal["session.closed"]` | `methods` | `translate_slam_update()` or session teardown -> `BackendNoticeReceived` | transport-safe event | Discriminates the session-closed variant. |
-| `SessionClosed` | `artifact_keys` | `list[str]` | `methods` | `translate_slam_update()` or session teardown -> `BackendNoticeReceived` | transport-safe event | Named artifact keys that became available when the session closed. |
+| `PoseEstimated` | `kind` | `Literal["pose.estimated"]` | `methods` | [`SlamStageRuntime live update projection`][live-update-projection] -> [`StageRuntimeUpdate.semantic_events`][stage-runtime-update] | live observer update | Discriminates the pose-estimate event variant. |
+| `PoseEstimated` | `seq`, `timestamp_ns`, `source_seq`, `source_timestamp_ns` | scalar fields | `methods` | same as above | live observer update | Update and optional source-packet identity. |
+| `PoseEstimated` | `pose` | [`FrameTransform`][frame-transform] | `methods` | same as above | live observer update | Canonical pose estimate, default runtime convention `camera -> world`. |
+| `PoseEstimated` | `pose_updated` | `bool` | `methods` | same as above | live observer update | Whether the pose changed on this step. |
+| `KeyframeAccepted` | `kind` | `Literal["keyframe.accepted"]` | `methods` | [`SlamStageRuntime live update projection`][live-update-projection] -> [`StageRuntimeUpdate.semantic_events`][stage-runtime-update] | live observer update | Discriminates the keyframe-acceptance event variant. |
+| `KeyframeAccepted` | `seq`, `timestamp_ns`, `keyframe_index`, `accepted_keyframe_count`, `backend_fps` | scalar fields | `methods` | same as above | live observer update | Keyframe identity and rolling backend telemetry. |
+| `MapStatsUpdated` | `kind` | `Literal["map.stats"]` | `methods` | [`SlamStageRuntime live update projection`][live-update-projection] -> [`StageRuntimeUpdate.semantic_events`][stage-runtime-update] | live observer update | Discriminates the map-stats variant. |
+| `MapStatsUpdated` | `seq`, `timestamp_ns`, `num_sparse_points`, `num_dense_points` | scalar fields | `methods` | same as above | live observer update | Sparse and dense map-size telemetry. |
+| `BackendWarning` | `kind`, `message`, `seq`, `timestamp_ns` | scalar fields | `methods` | [`SlamStageRuntime live update projection`][live-update-projection] -> [`StageRuntimeUpdate.semantic_events`][stage-runtime-update] | live observer update | Non-fatal backend warning. |
+| `BackendError` | `kind`, `message`, `seq`, `timestamp_ns` | scalar fields | `methods` | [`SlamStageRuntime live update projection`][live-update-projection] -> [`StageRuntimeUpdate.semantic_events`][stage-runtime-update] | live observer update | Fatal or actionable backend error. |
+| `SessionClosed` | `kind`, `artifact_keys` | scalar fields | `methods` | session teardown -> [`StageRuntimeUpdate.semantic_events`][stage-runtime-update] | live observer update | Terminal session notice listing artifact keys. |
+| `VisualizationItem` | `intent`, `role`, `payload_refs`, `pose`, `intrinsics`, `frame_index`, `keyframe_index`, `space`, `metadata` | generic visualization descriptor | `pipeline` | [`SlamVisualizationAdapter`][slam-visualization-adapter] -> [`StageRuntimeUpdate.visualizations`][stage-runtime-update] | live observer update | Neutral sink-facing descriptor. It carries `TransientPayloadRef`s, not arrays or Rerun SDK fields. |
 
 ### [`SlamArtifacts`][slam-artifacts]
 
@@ -836,36 +808,14 @@ This is the critical layering seam for streaming implementations:
 | `state` | [`RunState`][run-state] | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Lifecycle state (`idle`, `preparing`, `running`, `completed`, `stopped`, `failed`). |
 | `plan` | [`RunPlan`][run-plan] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Compiled ordered stage plan. |
 | `current_stage_key` | [`StageKey`][stage-key] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Currently active stage when one is running. |
-| `stage_status` | dict[[`StageKey`][stage-key], [`StageStatus`][stage-status]] | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Status per stage. |
-| `stage_progress` | dict[[`StageKey`][stage-key], [`StageProgress`][stage-progress]] | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Human-readable stage progress. |
+| `stage_outcomes` | dict[[`StageKey`][stage-key], [`StageOutcome`][stage-outcome]] | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Terminal outcomes keyed by stage. |
+| `stage_runtime_status` | dict[[`StageKey`][stage-key], [`StageRuntimeStatus`][stage-runtime-status]] | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Live status keyed by stage. |
+| `live_refs` | dict[[`StageKey`][stage-key], dict[`str`, [`TransientPayloadRef`][transient-payload-ref]]] | `pipeline` | [`SnapshotProjector.apply_runtime_update()`][snapshot-projector] output, app/CLI reads | transport-safe projection | Live-only payload refs keyed by stage and semantic slot. |
 | `artifacts` | dict[`str`, [`ArtifactRef`][artifact-ref]] | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Registered artifacts seen so far. |
 | `last_event_id` | `str \| None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Most recent applied event id. |
 | `error_message` | `str` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected error message for failed runs or stages. |
 | `active_executor` | `str \| None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Active runtime executor, currently `ray`. |
 | `last_event_kind` | `str \| None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Most recent applied event kind. |
-| `sequence_manifest` | [`SequenceManifest`][sequence-manifest] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected normalized ingest boundary. |
-| `benchmark_inputs` | [`PreparedBenchmarkInputs`][prepared-benchmark-inputs] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected prepared benchmark-side references. |
-| `slam` | [`SlamArtifacts`][slam-artifacts] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected normalized SLAM outputs. |
-| `ground_alignment` | [`GroundAlignmentMetadata`][ground-alignment-metadata] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected derived ground-alignment metadata. |
-| `visualization` | [`VisualizationArtifacts`][visualization-artifacts] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected viewer-owned artifacts. |
-| `summary` | [`RunSummary`][run-summary] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected final persisted run summary. |
-| `stage_manifests` | list of [`StageManifest`][stage-manifest] | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, app/CLI reads | transport-safe projection | Projected persisted stage manifests. |
-| `latest_packet` | [`FramePacketSummary`][frame-packet-summary] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Latest transport-safe packet summary. |
-| `latest_frame` | [`ArrayHandle`][array-handle] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Handle for the latest RGB frame payload. |
-| `latest_preview` | [`PreviewHandle`][preview-handle] \| `None` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Handle for the latest backend preview payload. |
-
-### [`StreamingRunSnapshot`][streaming-run-snapshot]
-
-| Field | Type | Owner | Appears at | Persistence | Frame semantics / notes |
-| --- | --- | --- | --- | --- | --- |
-| `received_frames` | `int` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Number of observed packets received so far. |
-| `measured_fps` | `float` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Rolling source-side receive rate. |
-| `accepted_keyframes` | `int` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Running accepted-keyframe count. |
-| `backend_fps` | `float` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Rolling backend keyframe rate estimate. |
-| `num_sparse_points` | `int` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Latest sparse map size from `MapStatsUpdated`. |
-| `num_dense_points` | `int` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Latest dense map size from `MapStatsUpdated`. |
-| `trajectory_positions_xyz` | `list[tuple[float, float, float]]` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Bounded trajectory polyline built from `PoseEstimated.pose` translations in repo world coordinates. |
-| `trajectory_timestamps_s` | `list[float]` | `pipeline` | [`SnapshotProjector`][snapshot-projector] output, streaming reads | transport-safe projection | Timestamps associated with the bounded trajectory polyline. |
 
 [stage-registry-default]: ../../src/prml_vslam/pipeline/stage_registry.py#L125
 [runtime-stage-program-default]: ../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L132
@@ -895,9 +845,11 @@ This is the critical layering seam for streaming implementations:
 [slam-stage-result]: ../../src/prml_vslam/pipeline/ray_runtime/common.py#L41
 [frame-packet]: ../../src/prml_vslam/interfaces/runtime.py#L68
 [frame-packet-provenance]: ../../src/prml_vslam/interfaces/runtime.py#L45
-[slam-update]: ../../src/prml_vslam/interfaces/slam.py#L46
-[translate-slam-update]: ../../src/prml_vslam/methods/events.py#L17
-[backend-event]: ../../src/prml_vslam/interfaces/slam.py#L142
+[slam-update]: ../../src/prml_vslam/methods/contracts.py#L13
+[live-update-projection]: ../../src/prml_vslam/pipeline/stages/slam/runtime.py#L17
+[stage-runtime-update]: ../../src/prml_vslam/pipeline/stages/base/contracts.py#L137
+[stage-runtime-status]: ../../src/prml_vslam/pipeline/stages/base/contracts.py#L37
+[slam-visualization-adapter]: ../../src/prml_vslam/pipeline/stages/slam/visualization.py#L19
 [ground-alignment-service]: ../../src/prml_vslam/alignment/services.py#L65
 [ground-alignment-metadata]: ../../src/prml_vslam/interfaces/alignment.py#L29
 [run-ground-alignment-stage]: ../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179
@@ -912,12 +864,10 @@ This is the critical layering seam for streaming implementations:
 [run-summary]: ../../src/prml_vslam/pipeline/contracts/provenance.py#L59
 [stage-manifest]: ../../src/prml_vslam/pipeline/contracts/provenance.py#L27
 [frame-packet-stream]: ../../src/prml_vslam/protocols/runtime.py#L10
-[array-handle]: ../../src/prml_vslam/pipeline/contracts/handles.py#L10
-[preview-handle]: ../../src/prml_vslam/pipeline/contracts/handles.py#L20
-[backend-notice-received]: ../../src/prml_vslam/pipeline/contracts/events.py#L112
+[transient-payload-ref]: ../../src/prml_vslam/pipeline/stages/base/handles.py#L10
+[transient-payload-ref-preview]: ../../src/prml_vslam/pipeline/stages/base/handles.py#L20
 [snapshot-projector]: ../../src/prml_vslam/pipeline/snapshot_projector.py#L42
 [run-snapshot]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L32
-[streaming-run-snapshot]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L58
 [camera-intrinsics]: ../../src/prml_vslam/interfaces/camera.py#L15
 [frame-transform]: ../../src/prml_vslam/interfaces/transforms.py#L21
 [dataset-id]: ../../src/prml_vslam/datasets/contracts.py#L20
@@ -926,10 +876,8 @@ This is the critical layering seam for streaming implementations:
 [reference-trajectory-ref]: ../../src/prml_vslam/interfaces/ingest.py#L57
 [reference-cloud-ref]: ../../src/prml_vslam/interfaces/ingest.py#L64
 [reference-point-cloud-sequence-ref]: ../../src/prml_vslam/interfaces/ingest.py#L74
-[artifact-ref]: ../../src/prml_vslam/interfaces/slam.py#L21
+[artifact-ref]: ../../src/prml_vslam/pipeline/contracts/provenance.py#L21
 [stage-key]: ../../src/prml_vslam/pipeline/contracts/stages.py#L10
 [stage-status]: ../../src/prml_vslam/pipeline/contracts/provenance.py#L15
 [run-state]: ../../src/prml_vslam/pipeline/contracts/runtime.py#L22
-[stage-progress]: ../../src/prml_vslam/pipeline/contracts/events.py#L28
 [visualization-artifacts]: ../../src/prml_vslam/interfaces/visualization.py#L11
-[frame-packet-summary]: ../../src/prml_vslam/pipeline/contracts/events.py#L37

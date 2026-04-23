@@ -10,7 +10,7 @@ import pytest
 
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.slam import SlamUpdate
+from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate

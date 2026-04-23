@@ -11,9 +11,9 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from prml_vslam.interfaces.slam import ArtifactRef
-from prml_vslam.pipeline.contracts.events import StageOutcome, StageProgress, StageStatus
+from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
@@ -59,47 +59,6 @@ class RunSnapshot(TransportModel):
     error_message: str = ""
     active_executor: str | None = None
     last_event_kind: str | None = None
-
-    @property
-    def stage_status(self) -> dict[StageKey, StageStatus]:
-        """Compatibility projection of per-stage lifecycle status.
-
-        This derived map is intentionally non-canonical. App and CLI consumers
-        should read ``stage_outcomes`` and ``stage_runtime_status`` directly.
-        """
-        status_by_stage = {stage_key: status.lifecycle_state for stage_key, status in self.stage_runtime_status.items()}
-        for stage_key, outcome in self.stage_outcomes.items():
-            status_by_stage[stage_key] = outcome.status
-        if (
-            self.current_stage_key is not None
-            and self.current_stage_key not in status_by_stage
-            and self.state in {RunState.PREPARING, RunState.RUNNING}
-        ):
-            status_by_stage[self.current_stage_key] = StageStatus.RUNNING
-        return status_by_stage
-
-    @property
-    def stage_progress(self) -> dict[StageKey, StageProgress]:
-        """Compatibility projection of lightweight stage progress details."""
-        return {
-            stage_key: StageProgress(
-                message=status.progress_message,
-                completed_steps=status.completed_steps,
-                total_steps=status.total_steps,
-                unit=status.progress_unit,
-            )
-            for stage_key, status in self.stage_runtime_status.items()
-            if _has_progress_content(status)
-        }
-
-
-def _has_progress_content(status: StageRuntimeStatus) -> bool:
-    return (
-        bool(status.progress_message)
-        or status.completed_steps is not None
-        or status.total_steps is not None
-        or status.progress_unit is not None
-    )
 
 
 __all__ = ["RunSnapshot", "RunState"]

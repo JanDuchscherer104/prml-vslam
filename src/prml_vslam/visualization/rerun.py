@@ -15,9 +15,9 @@ import rerun.blueprint as rrb  # type: ignore[import-not-found]
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.camera import CameraIntrinsics
-from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
 
 ROOT_WORLD_ENTITY_PATH = "world"

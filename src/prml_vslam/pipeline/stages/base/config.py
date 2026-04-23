@@ -13,9 +13,8 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field, field_validator
 
-from prml_vslam.interfaces.slam import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageAvailability, StageKey
 from prml_vslam.utils import BaseConfig
 

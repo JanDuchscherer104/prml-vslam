@@ -9,10 +9,11 @@ import numpy as np
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket, FrameTransform
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts, SlamUpdate
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import MethodId
+from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest, SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
@@ -181,7 +182,6 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
     refs = [ref for item in update.visualizations for ref in item.payload_refs.values()]
     assert refs
     assert all(runtime.read_payload(ref) is not None for ref in refs)
-    assert runtime.drain_legacy_updates() == []
     assert not any("TransientPayloadRef" in repr(field.annotation) for field in SlamUpdate.model_fields.values())
 
     result = runtime.finish_streaming()

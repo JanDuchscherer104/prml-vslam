@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
 from prml_vslam.pipeline.contracts.request import PipelineMode, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner

@@ -11,11 +11,12 @@ from typing import TypeAlias
 import numpy as np
 import ray
 
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 
 EVENT_RING_LIMIT = 400
 HANDLE_LIMIT = 256
@@ -29,34 +30,27 @@ def coordinator_actor_name(run_id: str) -> str:
     return f"prml-vslam-run-{run_id}"
 
 
-def put_array_handle(array: np.ndarray | None) -> tuple[ArrayHandle | None, ray.ObjectRef[np.ndarray] | None]:
-    """Store one array payload in Ray and return the public handle."""
+def put_transient_payload(
+    array: np.ndarray | None,
+    *,
+    payload_kind: str,
+    media_type: str,
+    metadata: dict[str, str | int | float | bool | None] | None = None,
+) -> tuple[TransientPayloadRef | None, ray.ObjectRef[np.ndarray] | None]:
+    """Store one transient array payload in Ray and return backend-neutral metadata."""
     if array is None:
         return None, None
     payload = np.asarray(array)
-    handle = ArrayHandle(
+    ref = TransientPayloadRef(
         handle_id=uuid.uuid4().hex,
+        payload_kind=payload_kind,
+        media_type=media_type,
         shape=tuple(int(dim) for dim in payload.shape),
         dtype=str(payload.dtype),
+        size_bytes=int(payload.nbytes),
+        metadata={} if metadata is None else metadata,
     )
-    return handle, ray.put(payload)
-
-
-def put_preview_handle(array: np.ndarray | None) -> tuple[PreviewHandle | None, ray.ObjectRef[np.ndarray] | None]:
-    """Store one preview image payload in Ray and return the public handle."""
-    if array is None:
-        return None, None
-    payload = np.asarray(array)
-    height, width = int(payload.shape[0]), int(payload.shape[1])
-    channels = 1 if payload.ndim == 2 else int(payload.shape[2])
-    handle = PreviewHandle(
-        handle_id=uuid.uuid4().hex,
-        width=width,
-        height=height,
-        channels=channels,
-        dtype=str(payload.dtype),
-    )
-    return handle, ray.put(payload)
+    return ref, ray.put(payload)
 
 
 def rolling_fps(timestamps: deque[float]) -> float:
@@ -122,8 +116,7 @@ __all__ = [
     "artifact_ref",
     "clean_actor_options",
     "coordinator_actor_name",
-    "put_array_handle",
-    "put_preview_handle",
+    "put_transient_payload",
     "rolling_fps",
     "slam_artifacts_map",
     "ts_ns",

@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.artifact_inspection import discover_run_artifact_roots, inspect_run_artifacts
 from prml_vslam.pipeline.contracts.events import (
     RunCompleted,
@@ -19,7 +19,7 @@ from prml_vslam.pipeline.contracts.events import (
     StageFailed,
     StageOutcome,
 )
-from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.sinks.jsonl import JsonlEventSink
@@ -104,9 +104,6 @@ def test_inspect_run_artifacts_projects_events_and_typed_metadata(tmp_path: Path
                 input_fingerprint="input",
                 artifacts={"trajectory_tum": slam.trajectory_tum},
             ),
-            sequence_manifest=sequence_manifest,
-            benchmark_inputs=benchmark_inputs,
-            slam=slam,
         )
     )
     sink.observe(RunCompleted(event_id="4", run_id="demo-run", ts_ns=4))

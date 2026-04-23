@@ -1,7 +1,7 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-18"
+updated_on = "2026-04-23"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
 
 [[resolved_issues]]
@@ -30,37 +30,6 @@ previous_status = "open"
 resolved_on = "2026-04-18"
 resolution_note = "Closed after backlog re-triage removed stale supervisor-era wording from the active records and aligned the active backlog with the current code."
 source_collection = "issues"
-
-[[resolved_todos]]
-id = "TODO-0035"
-title = "Re-triage partially addressed resolved records against the current code"
-status = "resolved"
-priority = "low"
-issue_ids = [
-    "ISSUE-0033",
-]
-loc_min = 10
-loc_expected = 25
-loc_max = 60
-files = [
-    ".agents/issues.toml",
-    ".agents/todos.toml",
-    ".agents/resolved.toml",
-]
-acceptance = [
-    "Resolved archive entries that are only partially addressed are either amended with narrower resolution notes or reopened as active issues.",
-    "The active backlog and resolved archive no longer imply that today’s still-open findings are fully closed.",
-    "`make agents-db` reflects the intended active work after the re-triage pass.",
-]
-sources = [
-    ".agents/issues.toml",
-    ".agents/todos.toml",
-    ".agents/resolved.toml",
-]
-previous_status = "pending"
-resolved_on = "2026-04-18"
-resolution_note = "Closed after the active backlog was re-triaged against the current tree and stale supervisor-era wording was removed from the remaining active Ray smoke records."
-source_collection = "todos"
 
 [[resolved_issues]]
 id = "ISSUE-0049"
@@ -113,68 +82,6 @@ previous_status = "in_progress"
 resolved_on = "2026-04-18"
 resolution_note = "Closed after moving trajectory evaluation ownership fully behind the eval package seam and leaving the pipeline with orchestration only."
 source_collection = "issues"
-
-[[resolved_todos]]
-id = "TODO-0051"
-title = "Inline `stage_manifest_from_outcome()` into `project_summary()`"
-status = "resolved"
-priority = "low"
-issue_ids = [
-    "ISSUE-0049",
-]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 3
-loc_expected = 8
-loc_max = 18
-files = [
-    "src/prml_vslam/pipeline/finalization.py",
-]
-acceptance = [
-    "`project_summary()` constructs `StageManifest` entries directly or otherwise removes the single-use wrapper.",
-    "`stage_manifest_from_outcome()` is deleted unless a second real caller or stronger abstraction need exists.",
-    "The persisted stage-manifest payload remains unchanged after the simplification.",
-]
-sources = [
-    "src/prml_vslam/pipeline/finalization.py",
-]
-previous_status = "in_progress"
-resolved_on = "2026-04-18"
-resolution_note = "Closed after collapsing summary projection to the direct manifest-construction path."
-source_collection = "todos"
-
-[[resolved_todos]]
-id = "TODO-0052"
-title = "Move `compute_trajectory_evaluation()` behind the eval package seam"
-status = "resolved"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0050",
-]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 30
-loc_expected = 70
-loc_max = 140
-files = [
-    "src/prml_vslam/pipeline/finalization.py",
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-]
-acceptance = [
-    "The evo-specific trajectory evaluation implementation lives under `prml_vslam.eval` rather than `prml_vslam.pipeline.finalization`.",
-    "The pipeline stage keeps only the orchestration needed to call the evaluation seam and attach resulting artifacts.",
-    "The persisted trajectory metrics payload and stage outputs remain behaviorally unchanged after the ownership move.",
-]
-sources = [
-    "src/prml_vslam/pipeline/finalization.py",
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-]
-previous_status = "in_progress"
-resolved_on = "2026-04-18"
-resolution_note = "Closed after routing the pipeline trajectory-evaluation stage through the eval-owned implementation seam."
-source_collection = "todos"
 
 [[resolved_issues]]
 id = "ISSUE-PR15-0001"
@@ -1852,6 +1759,162 @@ previous_status = "in_progress"
 resolved_on = "2026-04-18"
 resolution_note = "Resolved the remaining main-orchestration typed-seam debt: the Pipeline page now preserves a typed BackendSpec instead of a raw payload bag, backend-spec overrides stay typed through request and factory helpers, the Ray backend/coordinator/sink handles use concrete types, and the ADVIO pipeline-demo CLI now executes from the same request-to-runtime-source path as run-config and Streamlit."
 source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0056"
+title = "SLAM live DTOs still sit in shared interfaces while importing pipeline transport handles"
+status = "resolved"
+priority = "high"
+category = "architecture"
+summary = "`interfaces.slam` still owns `SlamUpdate`, backend notice DTOs, and handle-bearing visualization notices that import pipeline transport contracts, even though the target architecture assigns live SLAM semantics to `methods` and live payload references to pipeline runtime-update contracts."
+files = [
+    "src/prml_vslam/interfaces/slam.py",
+    "src/prml_vslam/interfaces/__init__.py",
+    "src/prml_vslam/methods/events.py",
+    "src/prml_vslam/methods/protocols.py",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/stages/slam/runtime.py",
+    "src/prml_vslam/pipeline/stages/slam/visualization.py",
+]
+notes = [
+    "The DTO migration ledger assigns `SlamUpdate`, `BackendEvent`, and backend notice variants to WP-06/WP-08/WP-10 migration work.",
+    "The current import direction weakens the intended layering where `interfaces` owns stable repo-wide semantic datamodels and `pipeline` owns runtime transport envelopes.",
+    "The immediate docstring requirement is to document the migration status clearly so readers do not treat `interfaces.slam` as the desired final ownership shape.",
+]
+sources = [
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+    "docs/architecture/pipeline-stage-present-state-audit.md",
+    "docs/architecture/pipeline-stage-refactor-target.md",
+    "src/prml_vslam/interfaces/slam.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-23"
+resolution_note = "Resolved by the current WP-09C migration slice: live SLAM DTOs now live in methods.contracts, interfaces.slam exports only SlamArtifacts, and interfaces no longer imports pipeline handle contracts. Remaining live-handle cleanup is tracked under ISSUE-0063/TODO-0063."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0057"
+title = "Run events still mix durable provenance with live telemetry migration events"
+status = "resolved"
+priority = "high"
+category = "orchestration"
+summary = "The target model makes `RunEvent` durable lifecycle/provenance truth and routes progress, packets, backend notices, visualization items, and live payload refs through `StageRuntimeUpdate`, but current contracts still expose telemetry variants and compatibility projections in the durable event vocabulary."
+files = [
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/snapshot_projector.py",
+    "src/prml_vslam/pipeline/stages/base/contracts.py",
+    "src/prml_vslam/pipeline/stages/base/handles.py",
+    "src/prml_vslam/pipeline/stages/slam/runtime.py",
+]
+notes = [
+    "`StageProgressed`, `PacketObserved`, and `BackendNoticeReceived` are marked as migration contacts in code and docs.",
+    "The target `StageRuntimeUpdate` and `TransientPayloadRef` DTOs exist, but compatibility event consumers still need to be cut over before the durable/live split is clean.",
+    "This debt affects public-interface docstrings because callers need to know which fields are canonical target state and which are compatibility views.",
+]
+sources = [
+    "docs/architecture/pipeline-stage-refactor-target.md",
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-08-snapshot-events-payloads.md",
+    "src/prml_vslam/pipeline/contracts/events.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-23"
+resolution_note = "Resolved by the current WP-09C migration slice: durable RunEvent now contains lifecycle/provenance events only, packet/backend telemetry routes through StageRuntimeUpdate, and RunSnapshot stage_status/stage_progress compatibility properties are gone. Remaining migration-only symbols are tracked under ISSUE-0063/TODO-0063 and app preview cleanup under TODO-0065."
+source_collection = "issues"
+
+[[resolved_todos]]
+id = "TODO-0035"
+title = "Re-triage partially addressed resolved records against the current code"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0033",
+]
+loc_min = 10
+loc_expected = 25
+loc_max = 60
+files = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+acceptance = [
+    "Resolved archive entries that are only partially addressed are either amended with narrower resolution notes or reopened as active issues.",
+    "The active backlog and resolved archive no longer imply that today’s still-open findings are fully closed.",
+    "`make agents-db` reflects the intended active work after the re-triage pass.",
+]
+sources = [
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/resolved.toml",
+]
+previous_status = "pending"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after the active backlog was re-triaged against the current tree and stale supervisor-era wording was removed from the remaining active Ray smoke records."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0051"
+title = "Inline `stage_manifest_from_outcome()` into `project_summary()`"
+status = "resolved"
+priority = "low"
+issue_ids = [
+    "ISSUE-0049",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 3
+loc_expected = 8
+loc_max = 18
+files = [
+    "src/prml_vslam/pipeline/finalization.py",
+]
+acceptance = [
+    "`project_summary()` constructs `StageManifest` entries directly or otherwise removes the single-use wrapper.",
+    "`stage_manifest_from_outcome()` is deleted unless a second real caller or stronger abstraction need exists.",
+    "The persisted stage-manifest payload remains unchanged after the simplification.",
+]
+sources = [
+    "src/prml_vslam/pipeline/finalization.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after collapsing summary projection to the direct manifest-construction path."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0052"
+title = "Move `compute_trajectory_evaluation()` behind the eval package seam"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0050",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 30
+loc_expected = 70
+loc_max = 140
+files = [
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+acceptance = [
+    "The evo-specific trajectory evaluation implementation lives under `prml_vslam.eval` rather than `prml_vslam.pipeline.finalization`.",
+    "The pipeline stage keeps only the orchestration needed to call the evaluation seam and attach resulting artifacts.",
+    "The persisted trajectory metrics payload and stage outputs remain behaviorally unchanged after the ownership move.",
+]
+sources = [
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-18"
+resolution_note = "Closed after routing the pipeline trajectory-evaluation stage through the eval-owned implementation seam."
+source_collection = "todos"
 
 [[resolved_todos]]
 id = "TODO-0002"

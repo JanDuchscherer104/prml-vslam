@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from prml_vslam.interfaces.slam import ArtifactRef
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent, VisualizationItem
 from prml_vslam.reconstruction import ReconstructionArtifacts
 

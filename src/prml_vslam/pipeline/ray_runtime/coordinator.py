@@ -16,19 +16,13 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacketProvenance, FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.ingest import SequenceManifest, SourceStageOutput
-from prml_vslam.interfaces.slam import ArtifactRef, BackendError, BackendEvent, SlamArtifacts
-from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.methods.factory import BackendFactory
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.contracts.events import (
     ArtifactRegistered,
-    BackendNoticeReceived,
-    FramePacketSummary,
-    PacketObserved,
     RunCompleted,
     RunEvent,
     RunFailed,
@@ -43,9 +37,8 @@ from prml_vslam.pipeline.contracts.events import (
     StageStarted,
     StageStatus,
 )
-from prml_vslam.pipeline.contracts.handles import ArrayHandle
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import RunSummary
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.contracts.request import PipelineMode, RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -68,6 +61,7 @@ from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.source_resolver import OfflineSourceResolver
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
+    StageRuntimeStatus,
     StageRuntimeUpdate,
     VisualizationIntent,
     VisualizationItem,
@@ -245,10 +239,6 @@ class RunCoordinatorActor:
                 events = events[ids.index(after_event_id) + 1 :]
         return events[-limit:]
 
-    def read_array(self, handle_id: str) -> np.ndarray | None:
-        """Resolve one coordinator-owned transient payload handle locally."""
-        return self._resolve_handle_payload(self._handle_refs.get(handle_id))
-
     def read_payload(self, handle_id: str) -> np.ndarray | None:
         """Resolve one coordinator-owned target transient payload ref locally."""
         return self._resolve_handle_payload(self._handle_refs.get(handle_id))
@@ -272,44 +262,43 @@ class RunCoordinatorActor:
     def on_packet(
         self,
         *,
-        packet: FramePacketSummary,
-        frame_handle: ArrayHandle | None,
+        packet: FramePacket,
         frame_ref: HandlePayload | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
         intrinsics: CameraIntrinsics | None,
         pose: FrameTransform | None,
         provenance: FramePacketProvenance,
-        received_frames: int,
+        processed_frame_count: int,
         measured_fps: float,
         frame_payload_ref: TransientPayloadRef | None = None,
     ) -> None:
         """Record one observed packet and forward it to streaming SLAM.
 
-        The packet metadata becomes telemetry immediately, while the payload
-        itself remains behind coordinator-owned handles or Ray object refs.
+        Packet observation is live state only. Durable packet telemetry was
+        retired with the WP-09C event cutover, while payloads remain behind
+        coordinator-owned transient refs.
         """
-        if frame_handle is not None and frame_ref is not None:
-            self._remember_handle(frame_handle.handle_id, frame_ref)
-        self._record_event(
-            PacketObserved(
-                event_id=self._next_event_id(),
-                run_id=self._run_id,
-                ts_ns=ts_ns(),
-                packet=packet,
-                frame=frame_handle,
-                received_frames=received_frames,
-                measured_fps=measured_fps,
-            ),
+        if frame_payload_ref is not None and frame_ref is not None:
+            self._remember_handle(frame_payload_ref.handle_id, frame_ref)
+        source_status = StageRuntimeStatus(
+            stage_key=StageKey.INGEST,
+            lifecycle_state=StageStatus.RUNNING,
+            progress_message=f"received {processed_frame_count} frames",
+            completed_steps=processed_frame_count,
+            progress_unit="frames",
+            processed_items=processed_frame_count,
+            fps=measured_fps,
+            updated_at_ns=ts_ns(),
         )
-        if frame_payload_ref is None and frame_handle is not None:
-            frame_payload_ref = TransientPayloadRef(
-                handle_id=frame_handle.handle_id,
-                payload_kind="image",
-                media_type="image/rgb",
-                shape=frame_handle.shape,
-                dtype=frame_handle.dtype,
-                metadata={"slot": IMAGE_REF},
+        with self._lock:
+            self._snapshot = self._projector.apply_runtime_update(
+                self._snapshot,
+                StageRuntimeUpdate(
+                    stage_key=StageKey.INGEST,
+                    timestamp_ns=ts_ns(),
+                    runtime_status=source_status,
+                ),
             )
         self._emit_source_visualization_update(packet=packet, frame_payload_ref=frame_payload_ref)
         if self._stop_requested or self._slam_runtime_proxy is None:
@@ -342,43 +331,12 @@ class RunCoordinatorActor:
         if self._source_finished and self._in_flight_frames == 0:
             self._finalize_streaming()
 
-    def on_slam_notices(
-        self,
-        *,
-        notices: list[BackendEvent],
-        bindings: list[tuple[str, HandlePayload]],
-        released_credits: int,
-        grant_source_credit: bool = True,
-        project_to_snapshot: bool = True,
-    ) -> None:
-        """Record translated backend notices and release packet credits."""
-        for handle_id, ref in bindings:
-            self._remember_handle(handle_id, ref)
-        for notice in notices:
-            self._record_event(
-                BackendNoticeReceived(
-                    event_id=self._next_event_id(),
-                    run_id=self._run_id,
-                    ts_ns=ts_ns(),
-                    stage_key=StageKey.SLAM,
-                    notice=notice,
-                ),
-                project_to_snapshot=project_to_snapshot,
-            )
-            if isinstance(notice, BackendError):
-                self._streaming_error = notice.message
-        self._in_flight_frames = max(0, self._in_flight_frames - released_credits)
-        if grant_source_credit and self._source_actor is not None and not self._stop_requested:
-            self._source_actor.grant_credit.remote(released_credits)
-        if self._source_finished and self._in_flight_frames == 0:
-            self._finalize_streaming()
-
     def grant_slam_source_credit(self, *, credit_count: int = 1) -> None:
         """Release source credits after SLAM accepts a frame without finalizing.
 
-        Streaming finalization remains gated by `on_slam_notices(...)`, so EOF
-        cannot race ahead of legacy notice/update routing for the processed
-        frame.
+        Streaming finalization is now gated by live runtime-update draining and
+        the coordinator's in-flight frame count rather than legacy durable
+        backend-notice events.
         """
         if self._source_actor is not None and not self._stop_requested:
             self._source_actor.grant_credit.remote(credit_count)
@@ -402,7 +360,7 @@ class RunCoordinatorActor:
     def _submit_frame_to_slam_runtime(
         self,
         *,
-        packet: FramePacketSummary,
+        packet: FramePacket,
         frame_ref: HandlePayload | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
@@ -412,8 +370,6 @@ class RunCoordinatorActor:
     ) -> None:
         if self._slam_runtime_proxy is None:
             raise RuntimeError("Streaming SLAM runtime has not been started.")
-        from prml_vslam.interfaces import FramePacket
-
         self._stage_runner.submit_stream_item(
             runtime=self._slam_runtime_proxy.streaming(),
             item=SlamFrameInput(
@@ -716,28 +672,7 @@ class RunCoordinatorActor:
         return stable_hash(config_payload), stable_hash(input_payload)
 
     def _record_stage_result(self, stage_key: StageKey, result: StageResult) -> None:
-        sequence_manifest = None
-        benchmark_inputs = None
-        slam = None
-        ground_alignment = None
-        visualization = None
-        summary = None
-        stage_manifests = []
         payload = result.payload
-        if isinstance(payload, SourceStageOutput):
-            sequence_manifest = payload.sequence_manifest
-            benchmark_inputs = payload.benchmark_inputs
-        elif isinstance(payload, SequenceManifest):
-            sequence_manifest = payload
-        if isinstance(payload, SlamArtifacts):
-            slam = payload
-        if isinstance(payload, GroundAlignmentMetadata):
-            ground_alignment = payload
-        if isinstance(payload, VisualizationArtifacts):
-            visualization = payload
-        if isinstance(payload, RunSummary):
-            summary = payload
-
         for artifact_key, artifact in result.outcome.artifacts.items():
             self._record_event(
                 ArtifactRegistered(
@@ -763,13 +698,6 @@ class RunCoordinatorActor:
                 ts_ns=ts_ns(),
                 stage_key=stage_key,
                 outcome=result.outcome,
-                sequence_manifest=sequence_manifest,
-                benchmark_inputs=benchmark_inputs,
-                slam=slam,
-                ground_alignment=ground_alignment,
-                visualization=visualization,
-                summary=summary,
-                stage_manifests=stage_manifests,
             )
         )
         if stage_key is StageKey.GRAVITY_ALIGNMENT and isinstance(payload, GroundAlignmentMetadata):
@@ -1062,7 +990,9 @@ class RunCoordinatorActor:
         )
 
     def _record_stage_failure(self, stage_key: StageKey, outcome: StageOutcome) -> None:
-        if self._snapshot.stage_status.get(stage_key) in {
+        if self._snapshot.stage_outcomes.get(stage_key, None) is not None and self._snapshot.stage_outcomes[
+            stage_key
+        ].status in {
             StageStatus.COMPLETED,
             StageStatus.FAILED,
             StageStatus.STOPPED,
@@ -1114,7 +1044,7 @@ class RunCoordinatorActor:
     def _emit_source_visualization_update(
         self,
         *,
-        packet: FramePacketSummary,
+        packet: FramePacket,
         frame_payload_ref: TransientPayloadRef | None,
     ) -> None:
         if self._request is None or not self._request.visualization.log_source_rgb or frame_payload_ref is None:

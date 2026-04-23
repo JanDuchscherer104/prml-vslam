@@ -26,7 +26,6 @@ from ray.actor import ActorHandle
 
 from prml_vslam.pipeline.backend import PipelineBackend, PipelineRuntimeSource
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.handles import ArrayHandle, PreviewHandle
 from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -137,14 +136,6 @@ class RayPipelineBackend(PipelineBackend):
     ) -> list[RunEvent]:
         """Fetch trailing events from the coordinator actor."""
         return ray.get(self._coordinator_for(run_id).events.remote(after_event_id, limit))
-
-    def read_array(self, run_id: str, handle: ArrayHandle | PreviewHandle | None) -> np.ndarray | None:
-        """Resolve one coordinator-owned live payload handle."""
-        # TODO(pipeline-refactor/WP-10): Delete after all live payload callers
-        # use read_payload(..., TransientPayloadRef).
-        if handle is None:
-            return None
-        return ray.get(self._coordinator_for(run_id).read_array.remote(handle.handle_id))
 
     def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:
         """Resolve one coordinator-owned target transient payload ref."""

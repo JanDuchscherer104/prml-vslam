@@ -3,10 +3,7 @@
 The ``interfaces`` package should expose only datamodels whose semantics are
 identical across multiple top-level packages, such as camera intrinsics,
 runtime frame packets, frame-labelled transforms, ingest manifests, and
-normalized artifact bundles. Live SLAM notices are still re-exported here as
-migration contacts; target ownership moves method-live semantics toward
-``prml_vslam.methods`` and pipeline-live transport toward stage runtime
-contracts.
+normalized artifact bundles.
 """
 
 from .alignment import GroundAlignmentMetadata, GroundPlaneModel, GroundPlaneVisualizationHint
@@ -29,29 +26,13 @@ from .rgbd import (
     RgbdObservationSequenceRef,
 )
 from .runtime import FramePacket, FramePacketProvenance, Record3DTransportId
-from .slam import (
-    ArtifactRef,
-    BackendError,
-    BackendEvent,
-    BackendWarning,
-    KeyframeAccepted,
-    KeyframeVisualizationReady,
-    MapStatsUpdated,
-    PoseEstimated,
-    SessionClosed,
-    SlamArtifacts,
-    SlamUpdate,
-)
+from .slam import SlamArtifacts
 from .transforms import FrameTransform
 from .visualization import VisualizationArtifacts
 
 __all__ = [
     "AdvioManifestAssets",
     "AdvioRawPoseRefs",
-    "ArtifactRef",
-    "BackendError",
-    "BackendEvent",
-    "BackendWarning",
     "CameraIntrinsics",
     "CameraIntrinsicsSample",
     "CameraIntrinsicsSeries",
@@ -61,10 +42,6 @@ __all__ = [
     "GroundAlignmentMetadata",
     "GroundPlaneModel",
     "GroundPlaneVisualizationHint",
-    "KeyframeAccepted",
-    "KeyframeVisualizationReady",
-    "MapStatsUpdated",
-    "PoseEstimated",
     "PreparedBenchmarkInputs",
     "Record3DTransportId",
     "ReferenceCloudRef",
@@ -77,8 +54,6 @@ __all__ = [
     "RgbdObservationSequenceIndex",
     "RgbdObservationSequenceRef",
     "SequenceManifest",
-    "SessionClosed",
     "SlamArtifacts",
-    "SlamUpdate",
     "VisualizationArtifacts",
 ]

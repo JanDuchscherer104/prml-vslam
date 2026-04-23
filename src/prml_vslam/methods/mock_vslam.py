@@ -28,10 +28,12 @@ from prml_vslam.interfaces.ingest import (
     ReferencePointCloudSequenceRef,
     SequenceManifest,
 )
-from prml_vslam.interfaces.slam import ArtifactRef, SlamArtifacts, SlamUpdate
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.configs import MockSlamBackendConfig
+from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import SlamBackend
+from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply,
     load_tum_trajectory,
