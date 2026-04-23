@@ -6,16 +6,11 @@ import tomllib
 from pathlib import Path
 
 from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
-from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
-from prml_vslam.pipeline.config import RunConfig
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    build_run_request,
-)
-from prml_vslam.pipeline.stages.source.config import source_backend_config_from_source_spec
+from prml_vslam.pipeline.config import RunConfig, build_run_config
+from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig
 from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.utils import PathConfig
@@ -70,14 +65,13 @@ def build_advio_demo_request(
     respect_video_rotation: bool = False,
     dataset_frame_stride: int = 1,
     dataset_target_fps: float | None = None,
-) -> RunRequest:
-    """Build the canonical bounded ADVIO demo request shared by app and CLI."""
-    return build_run_request(
+) -> RunConfig:
+    """Build the canonical bounded ADVIO demo run config shared by app and CLI."""
+    return build_run_config(
         experiment_name=f"{sequence_id}-{mode.value}-{method.value}",
         mode=mode,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(
-            dataset_id=DatasetId.ADVIO,
+        source_backend=AdvioSourceConfig(
             sequence_id=sequence_id,
             frame_stride=dataset_frame_stride,
             target_fps=dataset_target_fps,
@@ -90,11 +84,6 @@ def build_advio_demo_request(
         method=method,
         connect_live_viewer=True,
     )
-
-
-def load_run_request_toml(*, path_config: PathConfig, config_path: str | Path) -> RunRequest:
-    """Load one launchable pipeline config as a compatibility run request."""
-    return load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request()
 
 
 def load_run_config_toml(*, path_config: PathConfig, config_path: str | Path) -> RunConfig:
@@ -113,48 +102,35 @@ def load_run_config_toml(*, path_config: PathConfig, config_path: str | Path) ->
     return RunConfig.from_toml(resolved_config_path)
 
 
-def build_runtime_source_from_request(
-    *,
-    request: RunRequest,
-    path_config: PathConfig,
-) -> PipelineRuntimeSource:
-    """Build the runtime source required by one persisted run request.
-
-    Offline requests return `None`. Streaming requests are executed from the
-    persisted request contract directly, so CLI and Streamlit share the same
-    replay controls, capture settings, and backend frame cap.
-    """
-    if request.mode is PipelineMode.OFFLINE:
-        return None
-    source = source_backend_config_from_source_spec(request.source).setup_target(path_config=path_config)
-    return (
-        source
-        if request.slam.backend.max_frames is None
-        else _CappedStreamingSource(source, max_frames=request.slam.backend.max_frames)
-    )
-
-
 def build_runtime_source_from_run_config(
     *,
     run_config: RunConfig,
     path_config: PathConfig,
 ) -> PipelineRuntimeSource:
     """Build the runtime source required by one target run config."""
-    return build_runtime_source_from_request(
-        request=run_config.to_run_request(),
-        path_config=path_config,
+    if run_config.mode is PipelineMode.OFFLINE:
+        return None
+    if run_config.stages.source.backend is None:
+        raise ValueError("RunConfig launch requires `[stages.source.backend]` for runtime source construction.")
+    if run_config.stages.slam.backend is None:
+        raise ValueError("RunConfig launch requires `[stages.slam.backend]` for runtime source construction.")
+    source = run_config.stages.source.backend.setup_target(path_config=path_config)
+    return (
+        source
+        if run_config.stages.slam.backend.max_frames is None
+        else _CappedStreamingSource(source, max_frames=run_config.stages.slam.backend.max_frames)
     )
 
 
-def save_run_request_toml(
+def save_run_config_toml(
     *,
     path_config: PathConfig,
-    request: RunRequest,
+    run_config: RunConfig,
     config_path: str | Path,
 ) -> Path:
-    """Persist a pipeline request TOML through the repo-owned config path helper."""
+    """Persist a pipeline run config TOML through the repo-owned config path helper."""
     resolved_config_path = path_config.resolve_pipeline_config_path(config_path, create_parent=True)
-    request.save_toml(resolved_config_path)
+    run_config.save_toml(resolved_config_path)
     return resolved_config_path
 
 
@@ -168,8 +144,8 @@ def persist_advio_demo_request(
     dataset_target_fps: float | None = None,
     config_path: str | Path | None = None,
 ) -> Path:
-    """Persist the canonical ADVIO demo request under `.configs/pipelines/` by default."""
-    request = build_advio_demo_request(
+    """Persist the canonical ADVIO demo run config under `.configs/pipelines/` by default."""
+    run_config = build_advio_demo_request(
         path_config=path_config,
         sequence_id=sequence_id,
         mode=mode,
@@ -177,19 +153,17 @@ def persist_advio_demo_request(
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
-    return save_run_request_toml(
+    return save_run_config_toml(
         path_config=path_config,
-        request=request,
-        config_path=(config_path or f"{request.experiment_name}.toml"),
+        run_config=run_config,
+        config_path=(config_path or f"{run_config.experiment_name}.toml"),
     )
 
 
 __all__ = [
     "build_advio_demo_request",
     "build_runtime_source_from_run_config",
-    "build_runtime_source_from_request",
     "load_run_config_toml",
-    "load_run_request_toml",
     "persist_advio_demo_request",
-    "save_run_request_toml",
+    "save_run_config_toml",
 ]

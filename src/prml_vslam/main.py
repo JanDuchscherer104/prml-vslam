@@ -25,19 +25,18 @@ from prml_vslam.datasets.advio import (
 )
 from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.config import RunConfig
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, VideoSourceSpec, build_run_request
+from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import (
     build_advio_demo_request,
-    build_runtime_source_from_request,
     build_runtime_source_from_run_config,
     load_run_config_toml,
     persist_advio_demo_request,
 )
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
@@ -233,10 +232,10 @@ def plan_run(
     ] = False,
 ) -> None:
     """Build a typed benchmark run plan from the CLI."""
-    request = build_run_request(
+    run_config = build_run_config(
         experiment_name=experiment_name,
         output_dir=output_dir,
-        source=VideoSourceSpec(video_path=video_path, frame_stride=frame_stride),
+        source_backend=VideoSourceConfig(video_path=video_path, frame_stride=frame_stride),
         method=method,
         emit_dense_points=emit_dense_points,
         emit_sparse_points=emit_sparse_points,
@@ -247,7 +246,7 @@ def plan_run(
         evaluate_efficiency=evaluate_efficiency,
         connect_live_viewer=True,
     )
-    plan = RunConfig.from_run_request(request).compile_plan()
+    plan = run_config.compile_plan()
     console.plog(plan.model_dump(mode="json"))
 
 
@@ -319,7 +318,7 @@ def run_config(
         viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
         runtime_source = build_runtime_source_from_run_config(run_config=run_cfg, path_config=path_config)
         run_service = RunService(path_config=path_config)
-        run_service.start_run(request=run_cfg.to_run_request(), runtime_source=runtime_source)
+        _start_run_service(run_service, run_cfg, runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
         reached_terminal_snapshot = True
         preserve_local_head = (
@@ -494,7 +493,7 @@ def pipeline_demo(
     advio_service = AdvioDatasetService(path_config)
     resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
     scene = advio_service.scene(resolved_sequence_id)
-    request = build_advio_demo_request(
+    run_config = build_advio_demo_request(
         path_config=path_config,
         sequence_id=scene.sequence_slug,
         mode=PipelineMode.STREAMING,
@@ -505,7 +504,7 @@ def pipeline_demo(
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
-    source = build_runtime_source_from_request(request=request, path_config=path_config)
+    source = build_runtime_source_from_run_config(run_config=run_config, path_config=path_config)
     run_service = RunService(path_config=path_config)
     pipeline_demo_console.info(
         "Starting pipeline demo for %s (%s, %s).",
@@ -514,7 +513,7 @@ def pipeline_demo(
         method.value,
     )
     try:
-        run_service.start_run(request=request, runtime_source=source)
+        _start_run_service(run_service, run_config, source)
         snapshot = _wait_for_pipeline_terminal_snapshot(
             run_service,
             poll_interval_seconds=poll_interval_seconds,
@@ -618,33 +617,45 @@ def _apply_dataset_sampling_overrides_to_run_config(
 ) -> RunConfig:
     if dataset_frame_stride is None and dataset_target_fps is None:
         return run_config
-    request = _apply_dataset_sampling_overrides(
-        run_config.to_run_request(),
+    source_backend = _apply_dataset_sampling_overrides(
+        run_config.stages.source.backend,
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
-    return run_config.model_copy(update={"source": request.source})
+    return run_config.model_copy(
+        update={
+            "stages": run_config.stages.model_copy(
+                update={"source": run_config.stages.source.model_copy(update={"backend": source_backend})}
+            )
+        }
+    )
 
 
 def _apply_dataset_sampling_overrides(
-    request: RunRequest,
+    source_backend: SourceBackendConfig | None,
     *,
     dataset_frame_stride: int | None,
     dataset_target_fps: float | None,
-) -> RunRequest:
+) -> SourceBackendConfig:
     if dataset_frame_stride is None and dataset_target_fps is None:
-        return request
+        if source_backend is None:
+            raise typer.BadParameter("Dataset sampling overrides require a dataset-backed source.")
+        return source_backend
     if dataset_frame_stride is not None and dataset_target_fps is not None:
         raise typer.BadParameter("Configure either --dataset-frame-stride or --dataset-target-fps, not both.")
-    if not isinstance(request.source, DatasetSourceSpec):
+    if not isinstance(source_backend, AdvioSourceConfig):
         raise typer.BadParameter("Dataset sampling overrides require a dataset-backed source.")
-    source = request.source.model_copy(
+    return source_backend.model_copy(
         update={
             "frame_stride": 1 if dataset_target_fps is not None else dataset_frame_stride,
             "target_fps": dataset_target_fps,
         }
     )
-    return request.model_copy(update={"source": DatasetSourceSpec.model_validate(source.model_dump(mode="python"))})
+
+
+def _start_run_service(run_service: RunService, run_config: RunConfig, runtime_source: object | None) -> None:
+    """Start one run through the target RunConfig launch surface."""
+    run_service.start_run(run_config=run_config, runtime_source=runtime_source)
 
 
 def _wait_for_pipeline_terminal_snapshot(

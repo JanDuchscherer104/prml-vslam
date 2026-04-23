@@ -1,48 +1,39 @@
 """Target pipeline run configuration and stage-section mapping.
 
-This module introduces the target-facing ``RunConfig`` root while preserving a
-compatibility bridge to the current ``RunRequest`` planner. The config objects
-here validate and describe planning policy only; runtime construction remains
-owned by later runtime-manager work packages.
+The config objects here validate and describe planning policy only; runtime
+construction remains owned by runtime-manager and backend packages.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, TypeAlias
 
 from pydantic import ConfigDict, Field, model_validator
 
 from prml_vslam.alignment.contracts import AlignmentConfig
-from prml_vslam.benchmark import BenchmarkConfig
+from prml_vslam.benchmark import BenchmarkConfig, ReferenceSource
 from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.interfaces import Record3DTransportId
 from prml_vslam.methods.config_contracts import MethodId, SlamOutputPolicy
-from prml_vslam.methods.configs import BackendConfig
-from prml_vslam.methods.descriptors import BackendDescriptor
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    PipelineMode,
-    PlacementPolicy,
-    Record3DLiveSourceSpec,
-    RunRequest,
-    RunRuntimeConfig,
-    SlamStageConfig,
-    SourceSpec,
-    StagePlacement,
-    VideoSourceSpec,
+from prml_vslam.methods.configs import (
+    BackendConfig,
+    Mast3rSlamBackendConfig,
+    MockSlamBackendConfig,
+    VistaSlamBackendConfig,
 )
+from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.pipeline.contracts.execution import RunRuntimeConfig
+from prml_vslam.pipeline.contracts.mode import PipelineMode
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import ResourceSpec, StageConfig
+from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.source.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
-    source_backend_config_from_source_spec,
 )
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -90,9 +81,8 @@ TARGET_STAGE_SECTIONS: dict[TargetStageKey, str] = {
 SECTION_TO_TARGET_STAGE_KEYS: dict[str, TargetStageKey] = {
     section: target_key for target_key, section in TARGET_STAGE_SECTIONS.items()
 }
-# TODO(pipeline-refactor/WP-10): Remove this placement-projection helper payload
-# type after `StageExecutionConfig` fully replaces `PlacementPolicy`.
-ExecutionPayload = dict[str, dict[str, float | dict[str, float]]]
+BackendConfigValue: TypeAlias = Path | str | int | float | bool | None
+BackendSpec: TypeAlias = BackendConfig
 
 
 class SourceStageSectionConfig(StageConfig):
@@ -195,59 +185,20 @@ class StageBundle(BaseConfig):
         object.__setattr__(self, "summary", _section_config(self.summary, StageKey.SUMMARY))
         return self
 
-    # TODO(pipeline-refactor/WP-09): Remove RunRequest-to-RunConfig projection
-    # after app/CLI launch paths submit RunConfig directly.
-    @classmethod
-    def from_run_request(cls, request: RunRequest) -> StageBundle:
-        """Project current request gates into the target section bundle."""
-        return cls(
-            source={
-                "execution": _execution_payload_from_placement(request.placement, StageKey.INGEST),
-                "backend": source_backend_config_from_source_spec(request.source),
-            },
-            slam={
-                "execution": _execution_payload_from_placement(request.placement, StageKey.SLAM),
-                "backend": request.slam.backend,
-                "outputs": request.slam.outputs,
-            },
-            align_ground={
-                "enabled": request.alignment.ground.enabled,
-                "execution": _execution_payload_from_placement(request.placement, StageKey.GRAVITY_ALIGNMENT),
-            },
-            evaluate_trajectory={
-                "enabled": request.benchmark.trajectory.enabled,
-                "execution": _execution_payload_from_placement(request.placement, StageKey.TRAJECTORY_EVALUATION),
-            },
-            reconstruction={
-                "enabled": request.benchmark.reference.enabled,
-                "execution": _execution_payload_from_placement(request.placement, StageKey.REFERENCE_RECONSTRUCTION),
-            },
-            evaluate_cloud={
-                "enabled": request.benchmark.cloud.enabled,
-                "execution": _execution_payload_from_placement(request.placement, StageKey.CLOUD_EVALUATION),
-            },
-            evaluate_efficiency={
-                "enabled": request.benchmark.efficiency.enabled,
-                "execution": _execution_payload_from_placement(request.placement, StageKey.EFFICIENCY_EVALUATION),
-            },
-            summary={"execution": _execution_payload_from_placement(request.placement, StageKey.SUMMARY)},
-        )
-
     def section(self, section: TargetStageKey | str) -> StageConfig:
         """Return a section config by target stage key or TOML section name."""
         return getattr(self, section_for_target_stage(_target_stage_key_from_section_or_key(section)))
 
 
 class RunConfig(BaseConfig):
-    """Target persisted root config with a current-planner compatibility bridge.
+    """Target persisted root config with explicit stage sections.
 
     ``RunConfig`` is the declarative, TOML-friendly root described by the
     pipeline refactor target. It owns stage policy, visualization policy, and
     run runtime policy, then compiles to a deterministic
     :class:`prml_vslam.pipeline.contracts.plan.RunPlan`. It does not construct
-    runtime objects; launch code should hand the compiled plan to
-    :class:`prml_vslam.pipeline.runtime_manager.RuntimeManager` or the current
-    backend compatibility path.
+    runtime objects; launch code hands the compiled plan to runtime-manager and
+    backend services.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -270,94 +221,11 @@ class RunConfig(BaseConfig):
     runtime: RunRuntimeConfig = Field(default_factory=RunRuntimeConfig)
     """Run execution lifecycle policy translated by runtime packages."""
 
-    # TODO(pipeline-refactor/WP-09): Remove compatibility source/slam request
-    # fields after stage-specific config sections drive app and CLI launch.
-    source: SourceSpec | None = None
-    """Compatibility source spec used until source stage configs are implemented."""
-
-    slam: SlamStageConfig | None = None
-    """Compatibility SLAM stage config used until stage-local config lands."""
-
-    # TODO(pipeline-refactor/WP-09): Remove benchmark/alignment/placement
-    # compatibility fields after target stage sections and app/CLI adapters
-    # preserve current config behavior without RunRequest projection.
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
-    """Benchmark policy bundle preserved for current request compatibility."""
+    """Benchmark policy bundle used by evaluation and reconstruction services."""
 
     alignment: AlignmentConfig = Field(default_factory=AlignmentConfig)
-    """Alignment policy bundle preserved for current request compatibility."""
-
-    placement: PlacementPolicy = Field(default_factory=PlacementPolicy)
-    """Compatibility placement policy preserved until stage execution config drives placement."""
-
-    # TODO(pipeline-refactor/WP-09): Remove legacy RunRequest shape parsing after
-    # current TOML files migrate to `[stages.*]` or app/CLI compatibility ends.
-    @model_validator(mode="before")
-    @classmethod
-    def add_legacy_stage_bundle(cls, data: Any) -> Any:
-        """Populate target stage sections when parsing the legacy request shape."""
-        if not isinstance(data, dict) or "stages" in data:
-            return data
-        normalized = dict(data)
-        normalized["stages"] = _legacy_stage_bundle_payload(normalized)
-        return normalized
-
-    # TODO(pipeline-refactor/WP-09): Remove RunRequest-to-RunConfig projection
-    # after app/CLI launch paths submit RunConfig directly.
-    @classmethod
-    def from_run_request(cls, request: RunRequest) -> RunConfig:
-        """Build the target root config from the current request contract."""
-        return cls(
-            experiment_name=request.experiment_name,
-            mode=request.mode,
-            output_dir=request.output_dir,
-            stages=StageBundle.from_run_request(request),
-            visualization=request.visualization,
-            runtime=request.runtime,
-            source=request.source,
-            slam=request.slam,
-            benchmark=request.benchmark,
-            alignment=request.alignment,
-            placement=request.placement,
-        )
-
-    # TODO(pipeline-refactor/WP-09): Remove RunRequest compatibility projection
-    # after RunConfig is the direct app/CLI launch contract.
-    def to_run_request(self) -> RunRequest:
-        """Project this config into the current request contract."""
-        self._validate_required_compatibility_sections()
-        source = self._resolve_runtime_source_spec()
-        slam = self._resolve_runtime_slam_stage_config()
-        benchmark = self.benchmark.model_copy(
-            update={
-                "reference": self.benchmark.reference.model_copy(
-                    update={"enabled": self.stages.reconstruction.enabled}
-                ),
-                "trajectory": self.benchmark.trajectory.model_copy(
-                    update={"enabled": self.stages.evaluate_trajectory.enabled}
-                ),
-                "cloud": self.benchmark.cloud.model_copy(update={"enabled": self.stages.evaluate_cloud.enabled}),
-                "efficiency": self.benchmark.efficiency.model_copy(
-                    update={"enabled": self.stages.evaluate_efficiency.enabled}
-                ),
-            }
-        )
-        alignment = self.alignment.model_copy(
-            update={"ground": self.alignment.ground.model_copy(update={"enabled": self.stages.align_ground.enabled})}
-        )
-        placement = self._project_placement_policy()
-        return RunRequest(
-            experiment_name=self.experiment_name,
-            mode=self.mode,
-            output_dir=self.output_dir,
-            source=source,
-            slam=slam,
-            benchmark=benchmark,
-            alignment=alignment,
-            visualization=self.visualization,
-            placement=placement,
-            runtime=self.runtime,
-        )
+    """Alignment policy bundle used by the ground-alignment service."""
 
     def compile_plan(
         self,
@@ -378,54 +246,6 @@ class RunConfig(BaseConfig):
                 raise ValueError(f"Enabled stage(s) are unavailable: {details}")
         return plan
 
-    # TODO(pipeline-refactor/WP-09): Remove RunRequest projection helpers after
-    # RunConfig is the direct app/CLI launch contract.
-    def _validate_required_compatibility_sections(self) -> None:
-        disabled_required = [
-            section
-            for section, config in {
-                TargetStageKey.SOURCE: self.stages.source,
-                TargetStageKey.SLAM: self.stages.slam,
-                TargetStageKey.SUMMARY: self.stages.summary,
-            }.items()
-            if not config.enabled
-        ]
-        if disabled_required:
-            names = ", ".join(section_for_target_stage(section) for section in disabled_required)
-            raise ValueError(f"RunConfig launch requires enabled stage section(s): {names}.")
-
-    def _project_placement_policy(self) -> PlacementPolicy:
-        by_stage = dict(self.placement.by_stage)
-        for target_key in TargetStageKey:
-            stage_config = self.stages.section(target_key)
-            if stage_config.stage_key is None:
-                continue
-            resources = _placement_resources_from_resource_spec(stage_config.execution.resources)
-            if resources:
-                by_stage[stage_config.stage_key] = StagePlacement(resources=resources)
-        return self.placement.model_copy(update={"by_stage": by_stage})
-
-    def _resolve_runtime_source_spec(self) -> SourceSpec:
-        if self.source is not None:
-            return self.source
-        backend = self.stages.source.backend
-        if backend is None:
-            raise ValueError(
-                "RunConfig launch requires one source definition via compatibility `source` "
-                "or `[stages.source.backend]`."
-            )
-        return _source_spec_from_backend_config(backend)
-
-    def _resolve_runtime_slam_stage_config(self) -> SlamStageConfig:
-        if self.slam is not None:
-            return self.slam
-        backend = self.stages.slam.backend
-        if backend is None:
-            raise ValueError(
-                "RunConfig launch requires one SLAM backend via compatibility `slam` or `[stages.slam.backend]`."
-            )
-        return SlamStageConfig(backend=backend, outputs=self.stages.slam.outputs)
-
 
 def _compile_run_plan(
     *,
@@ -433,28 +253,39 @@ def _compile_run_plan(
     path_config: PathConfig,
     backend: BackendDescriptor | None = None,
 ) -> RunPlan:
-    run_config._validate_required_compatibility_sections()
-    source = run_config._resolve_runtime_source_spec()
-    slam = run_config._resolve_runtime_slam_stage_config()
+    source_backend = run_config.stages.source.backend
+    if source_backend is None:
+        raise ValueError("RunConfig planning requires `[stages.source.backend]`.")
+    slam_backend = run_config.stages.slam.backend
+    if slam_backend is None:
+        raise ValueError("RunConfig planning requires `[stages.slam.backend]`.")
     run_paths = path_config.plan_run_paths(
         experiment_name=run_config.experiment_name,
-        method_slug=slam.backend.method_id.value,
+        method_slug=slam_backend.method_id.value,
         output_dir=run_config.output_dir,
     )
     resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
-    slam_available, slam_reason = _slam_stage_availability(run_config=run_config, slam=slam, backend=backend)
+    slam_available, slam_reason = _slam_stage_availability(
+        run_config=run_config, slam_backend=slam_backend, backend=backend
+    )
     plan_stages: list[RunPlanStage] = [
         _plan_stage(key=StageKey.INGEST, outputs=_source_outputs(resolved_run_paths)),
         _plan_stage(
             key=StageKey.SLAM,
-            outputs=_slam_outputs(slam=slam, run_paths=resolved_run_paths),
+            outputs=_slam_outputs(
+                slam_backend=slam_backend, outputs=run_config.stages.slam.outputs, run_paths=resolved_run_paths
+            ),
             available=slam_available,
             availability_reason=slam_reason,
         ),
     ]
 
     if run_config.stages.align_ground.enabled:
-        alignment_available, alignment_reason = _ground_alignment_stage_availability(slam=slam, backend=backend)
+        alignment_available, alignment_reason = _ground_alignment_stage_availability(
+            slam_backend=slam_backend,
+            outputs=run_config.stages.slam.outputs,
+            backend=backend,
+        )
         plan_stages.append(
             _plan_stage(
                 key=StageKey.GRAVITY_ALIGNMENT,
@@ -464,7 +295,10 @@ def _compile_run_plan(
             )
         )
     if run_config.stages.evaluate_trajectory.enabled:
-        trajectory_available, trajectory_reason = _trajectory_stage_availability(slam=slam, backend=backend)
+        trajectory_available, trajectory_reason = _trajectory_stage_availability(
+            slam_backend=slam_backend,
+            backend=backend,
+        )
         plan_stages.append(
             _plan_stage(
                 key=StageKey.TRAJECTORY_EVALUATION,
@@ -474,7 +308,9 @@ def _compile_run_plan(
             )
         )
     if run_config.stages.reconstruction.enabled:
-        reconstruction_available, reconstruction_reason = _reference_reconstruction_stage_availability(source=source)
+        reconstruction_available, reconstruction_reason = _reference_reconstruction_stage_availability(
+            source_backend=source_backend
+        )
         plan_stages.append(
             _plan_stage(
                 key=StageKey.REFERENCE_RECONSTRUCTION,
@@ -512,7 +348,7 @@ def _compile_run_plan(
         run_id=path_config.slugify_experiment_name(run_config.experiment_name),
         mode=run_config.mode,
         artifact_root=run_paths.artifact_root,
-        source=source,
+        source=_planned_source(source_backend),
         stages=plan_stages,
     )
 
@@ -535,12 +371,12 @@ def _plan_stage(
 def _slam_stage_availability(
     *,
     run_config: RunConfig,
-    slam: SlamStageConfig,
+    slam_backend: BackendConfig,
     backend: BackendDescriptor | None,
 ) -> tuple[bool, str | None]:
-    display_name = slam.backend.display_name if backend is None else backend.display_name
-    supports_offline = slam.backend.supports_offline if backend is None else backend.capabilities.offline
-    supports_streaming = slam.backend.supports_streaming if backend is None else backend.capabilities.streaming
+    display_name = slam_backend.display_name if backend is None else backend.display_name
+    supports_offline = slam_backend.supports_offline if backend is None else backend.capabilities.offline
+    supports_streaming = slam_backend.supports_streaming if backend is None else backend.capabilities.streaming
     if run_config.mode is PipelineMode.OFFLINE and not supports_offline:
         return False, f"{display_name} does not support offline execution."
     if run_config.mode is PipelineMode.STREAMING and not supports_streaming:
@@ -550,12 +386,12 @@ def _slam_stage_availability(
 
 def _trajectory_stage_availability(
     *,
-    slam: SlamStageConfig,
+    slam_backend: BackendConfig,
     backend: BackendDescriptor | None,
 ) -> tuple[bool, str | None]:
-    display_name = slam.backend.display_name if backend is None else backend.display_name
+    display_name = slam_backend.display_name if backend is None else backend.display_name
     supports_trajectory = (
-        slam.backend.supports_trajectory_benchmark
+        slam_backend.supports_trajectory_benchmark
         if backend is None
         else backend.capabilities.trajectory_benchmark_support
     )
@@ -566,20 +402,21 @@ def _trajectory_stage_availability(
 
 def _ground_alignment_stage_availability(
     *,
-    slam: SlamStageConfig,
+    slam_backend: BackendConfig,
+    outputs: SlamOutputPolicy,
     backend: BackendDescriptor | None,
 ) -> tuple[bool, str | None]:
-    display_name = slam.backend.display_name if backend is None else backend.display_name
-    supports_dense_points = slam.backend.supports_dense_points if backend is None else backend.capabilities.dense_points
+    display_name = slam_backend.display_name if backend is None else backend.display_name
+    supports_dense_points = slam_backend.supports_dense_points if backend is None else backend.capabilities.dense_points
     if not supports_dense_points:
         return False, f"{display_name} does not expose point-cloud outputs for ground alignment."
-    if not (slam.outputs.emit_dense_points or slam.outputs.emit_sparse_points):
+    if not (outputs.emit_dense_points or outputs.emit_sparse_points):
         return False, "Ground alignment requires sparse or dense point-cloud outputs from the SLAM stage."
     return True, None
 
 
-def _reference_reconstruction_stage_availability(*, source: SourceSpec) -> tuple[bool, str | None]:
-    if not isinstance(source, DatasetSourceSpec) or source.dataset_id is not DatasetId.TUM_RGBD:
+def _reference_reconstruction_stage_availability(*, source_backend: SourceBackendConfig) -> tuple[bool, str | None]:
+    if not isinstance(source_backend, TumRgbdSourceConfig):
         return False, "Reference reconstruction currently requires a TUM RGB-D dataset source."
     return True, None
 
@@ -588,17 +425,53 @@ def _source_outputs(run_paths: RunArtifactPaths) -> list[Path]:
     return [run_paths.sequence_manifest_path, run_paths.benchmark_inputs_path]
 
 
-def _slam_outputs(*, slam: SlamStageConfig, run_paths: RunArtifactPaths) -> list[Path]:
-    outputs = [run_paths.trajectory_path]
-    if slam.backend.method_id is MethodId.VISTA:
-        if slam.outputs.emit_sparse_points or slam.outputs.emit_dense_points:
-            outputs.append(run_paths.point_cloud_path)
-        return outputs
-    if slam.outputs.emit_sparse_points:
-        outputs.append(run_paths.sparse_points_path)
-    if slam.outputs.emit_dense_points:
-        outputs.append(run_paths.dense_points_path)
-    return outputs
+def _planned_source(source_backend: SourceBackendConfig) -> PlannedSource:
+    payload = {
+        "source_id": source_backend.source_id,
+        "frame_stride": source_backend.frame_stride,
+        "target_fps": source_backend.target_fps,
+    }
+    match source_backend:
+        case VideoSourceConfig(video_path=video_path):
+            payload["video_path"] = video_path
+        case AdvioSourceConfig(
+            sequence_id=sequence_id,
+            dataset_serving=dataset_serving,
+            respect_video_rotation=respect_video_rotation,
+        ):
+            payload["sequence_id"] = sequence_id
+            payload["respect_video_rotation"] = respect_video_rotation
+            payload["metadata"] = {
+                "dataset_id": DatasetId.ADVIO.value,
+                "pose_source": dataset_serving.pose_source.value,
+                "pose_frame_mode": dataset_serving.pose_frame_mode.value,
+            }
+        case TumRgbdSourceConfig(sequence_id=sequence_id):
+            payload["sequence_id"] = sequence_id
+            payload["metadata"] = {"dataset_id": DatasetId.TUM_RGBD.value}
+        case Record3DSourceConfig(transport=transport, device_index=device_index, device_address=device_address):
+            payload["transport"] = transport.value
+            payload["device_index"] = device_index
+            payload["device_address"] = device_address
+    return PlannedSource.model_validate(payload)
+
+
+def _slam_outputs(
+    *,
+    slam_backend: BackendConfig,
+    outputs: SlamOutputPolicy,
+    run_paths: RunArtifactPaths,
+) -> list[Path]:
+    artifact_paths = [run_paths.trajectory_path]
+    if slam_backend.method_id is MethodId.VISTA:
+        if outputs.emit_sparse_points or outputs.emit_dense_points:
+            artifact_paths.append(run_paths.point_cloud_path)
+        return artifact_paths
+    if outputs.emit_sparse_points:
+        artifact_paths.append(run_paths.sparse_points_path)
+    if outputs.emit_dense_points:
+        artifact_paths.append(run_paths.dense_points_path)
+    return artifact_paths
 
 
 # TODO(pipeline-refactor/WP-10): Remove current-key alias helper functions after
@@ -648,107 +521,102 @@ def _section_config(config: StageConfig, expected_key: StageKey) -> StageConfig:
     return config.model_copy(update={"stage_key": expected_key})
 
 
-# TODO(pipeline-refactor/WP-10): Remove PlacementPolicy projection helpers after
-# stage execution configs are the only placement config surface.
-def _execution_payload_from_placement(placement: PlacementPolicy, stage_key: StageKey) -> ExecutionPayload:
-    stage_placement = placement.by_stage.get(stage_key)
-    if stage_placement is None:
-        return {}
-    resources = dict(stage_placement.resources)
-    resource_payload: dict[str, float] = {}
-    custom_resources = dict(resources)
-    num_cpus = custom_resources.pop("CPU", None)
-    if num_cpus is not None:
-        resource_payload["num_cpus"] = num_cpus
-    num_gpus = custom_resources.pop("GPU", None)
-    if num_gpus is not None:
-        resource_payload["num_gpus"] = num_gpus
-    return {
-        "resources": {
-            **resource_payload,
-            "custom_resources": custom_resources,
-        }
-    }
+def build_run_config(
+    *,
+    experiment_name: str,
+    mode: PipelineMode = PipelineMode.OFFLINE,
+    output_dir: Path,
+    source_backend: SourceBackendConfig,
+    method: MethodId,
+    max_frames: int | None = None,
+    backend_overrides: dict[str, Any] | None = None,
+    emit_dense_points: bool = True,
+    emit_sparse_points: bool = True,
+    reference_enabled: bool = False,
+    trajectory_eval_enabled: bool = False,
+    trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    evaluate_cloud: bool = False,
+    evaluate_efficiency: bool = False,
+    ground_alignment_enabled: bool = False,
+    connect_live_viewer: bool = False,
+    export_viewer_rrd: bool = False,
+) -> RunConfig:
+    """Build one canonical target RunConfig from source, backend, and policy selections."""
+    slam_backend = build_backend_spec(method=method, max_frames=max_frames, overrides=backend_overrides)
+    return RunConfig(
+        experiment_name=experiment_name,
+        mode=mode,
+        output_dir=output_dir,
+        stages=StageBundle(
+            source=SourceStageSectionConfig(backend=source_backend),
+            slam=SlamStageSectionConfig(
+                backend=slam_backend,
+                outputs=SlamOutputPolicy(
+                    emit_dense_points=emit_dense_points,
+                    emit_sparse_points=emit_sparse_points,
+                ),
+            ),
+            align_ground=StageConfig(stage_key=StageKey.GRAVITY_ALIGNMENT, enabled=ground_alignment_enabled),
+            evaluate_trajectory=StageConfig(
+                stage_key=StageKey.TRAJECTORY_EVALUATION,
+                enabled=trajectory_eval_enabled,
+            ),
+            reconstruction=StageConfig(
+                stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+                enabled=reference_enabled,
+            ),
+            evaluate_cloud=StageConfig(
+                stage_key=StageKey.CLOUD_EVALUATION,
+                enabled=evaluate_cloud,
+            ),
+            evaluate_efficiency=StageConfig(
+                stage_key=StageKey.EFFICIENCY_EVALUATION,
+                enabled=evaluate_efficiency,
+            ),
+            summary=StageConfig(stage_key=StageKey.SUMMARY, enabled=True),
+        ),
+        benchmark=BenchmarkConfig(
+            reference={"enabled": reference_enabled},
+            trajectory={
+                "enabled": trajectory_eval_enabled,
+                "baseline_source": trajectory_baseline,
+            },
+            cloud={"enabled": evaluate_cloud},
+            efficiency={"enabled": evaluate_efficiency},
+        ),
+        alignment=AlignmentConfig(
+            ground={"enabled": ground_alignment_enabled},
+        ),
+        visualization=VisualizationConfig(
+            connect_live_viewer=connect_live_viewer,
+            export_viewer_rrd=export_viewer_rrd,
+        ),
+    )
 
 
-def _placement_resources_from_resource_spec(resource_spec: ResourceSpec) -> dict[str, float]:
-    resources = dict(resource_spec.custom_resources)
-    if resource_spec.num_cpus is not None:
-        resources["CPU"] = resource_spec.num_cpus
-    if resource_spec.num_gpus is not None:
-        resources["GPU"] = resource_spec.num_gpus
-    return resources
-
-
-def _source_spec_from_backend_config(backend: SourceBackendConfig) -> SourceSpec:
-    match backend:
-        case VideoSourceConfig(video_path=video_path, frame_stride=frame_stride, target_fps=target_fps):
-            return VideoSourceSpec(video_path=video_path, frame_stride=frame_stride, target_fps=target_fps)
-        case AdvioSourceConfig(
-            sequence_id=sequence_id,
-            frame_stride=frame_stride,
-            target_fps=target_fps,
-            dataset_serving=dataset_serving,
-            respect_video_rotation=respect_video_rotation,
-        ):
-            return DatasetSourceSpec(
-                dataset_id=DatasetId.ADVIO,
-                sequence_id=sequence_id,
-                frame_stride=frame_stride,
-                target_fps=target_fps,
-                dataset_serving=dataset_serving,
-                respect_video_rotation=respect_video_rotation,
-            )
-        case TumRgbdSourceConfig(sequence_id=sequence_id, frame_stride=frame_stride, target_fps=target_fps):
-            return DatasetSourceSpec(
-                dataset_id=DatasetId.TUM_RGBD,
-                sequence_id=sequence_id,
-                frame_stride=frame_stride,
-                target_fps=target_fps,
-            )
-        case Record3DSourceConfig(
-            frame_stride=frame_stride,
-            target_fps=target_fps,
-            transport=transport,
-            device_index=device_index,
-            device_address=device_address,
-        ):
-            if frame_stride != 1 or target_fps is not None:
-                raise ValueError(
-                    "RunRequest compatibility launch does not support non-default Record3D source sampling policy."
-                )
-            return Record3DLiveSourceSpec(
-                transport=transport,
-                device_index=device_index if transport is Record3DTransportId.USB else None,
-                device_address=device_address if transport is Record3DTransportId.WIFI else "",
-            )
-
-
-# TODO(pipeline-refactor/WP-09): Remove legacy RunRequest shape parsing after
-# current TOML files migrate to `[stages.*]` or app/CLI compatibility ends.
-def _legacy_stage_bundle_payload(data: dict[str, Any]) -> dict[str, dict[str, bool]]:
-    benchmark = data.get("benchmark")
-    benchmark_payload = benchmark if isinstance(benchmark, dict) else {}
-    alignment = data.get("alignment")
-    alignment_payload = alignment if isinstance(alignment, dict) else {}
-    return {
-        "source": {"enabled": True},
-        "slam": {"enabled": True},
-        "align_ground": {"enabled": _nested_enabled(alignment_payload, "ground")},
-        "evaluate_trajectory": {"enabled": _nested_enabled(benchmark_payload, "trajectory")},
-        "reconstruction": {"enabled": _nested_enabled(benchmark_payload, "reference")},
-        "evaluate_cloud": {"enabled": _nested_enabled(benchmark_payload, "cloud")},
-        "evaluate_efficiency": {"enabled": _nested_enabled(benchmark_payload, "efficiency")},
-        "summary": {"enabled": True},
-    }
-
-
-def _nested_enabled(payload: dict[str, Any], key: str) -> bool:
-    value = payload.get(key)
-    return bool(value.get("enabled", False)) if isinstance(value, dict) else False
+def build_backend_spec(
+    *,
+    method: MethodId,
+    max_frames: int | None = None,
+    overrides: dict[str, BackendConfigValue] | None = None,
+) -> BackendSpec:
+    """Build a typed backend config from a selected method and optional overrides."""
+    backend_payload: dict[str, BackendConfigValue] = {"max_frames": max_frames}
+    if overrides is not None:
+        backend_payload.update(overrides)
+    match method:
+        case MethodId.MOCK:
+            return MockSlamBackendConfig.model_validate({"method_id": MethodId.MOCK, **backend_payload})
+        case MethodId.VISTA:
+            return VistaSlamBackendConfig.model_validate({"method_id": MethodId.VISTA, **backend_payload})
+        case MethodId.MAST3R:
+            return Mast3rSlamBackendConfig.model_validate({"method_id": MethodId.MAST3R, **backend_payload})
 
 
 __all__ = [
+    "BackendSpec",
+    "build_backend_spec",
+    "build_run_config",
     "CURRENT_TO_TARGET_STAGE_KEYS",
     "RunConfig",
     "StageBundle",

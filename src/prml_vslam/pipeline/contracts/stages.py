@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from .transport import TransportModel
-
 
 class StageKey(StrEnum):
     """Name the current executable linear stage vocabulary.
@@ -45,16 +43,6 @@ class StageKey(StrEnum):
         }[self]
 
 
-# TODO(pipeline-refactor/WP-10): Remove after stage config helpers stop using
-# this transitional availability DTO.
-class StageAvailability(TransportModel):
-    """Record whether one stage is executable for one request/backend pairing."""
-
-    available: bool = True
-    reason: str | None = None
-
-
 __all__ = [
-    "StageAvailability",
     "StageKey",
 ]

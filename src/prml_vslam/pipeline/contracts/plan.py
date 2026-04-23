@@ -14,8 +14,25 @@ from pydantic import Field
 
 from prml_vslam.utils import BaseData
 
-from .request import PipelineMode, SourceSpec
+from .mode import PipelineMode
 from .stages import StageKey
+
+SourceMetadataValue = str | int | float | bool | None
+
+
+class PlannedSource(BaseData):
+    """Compact source selection snapshot captured in the deterministic plan."""
+
+    source_id: str
+    frame_stride: int = 1
+    target_fps: float | None = None
+    sequence_id: str | None = None
+    video_path: Path | None = None
+    transport: str | None = None
+    device_index: int | None = None
+    device_address: str = ""
+    respect_video_rotation: bool = False
+    metadata: dict[str, SourceMetadataValue] = Field(default_factory=dict)
 
 
 class RunPlanStage(BaseData):
@@ -51,8 +68,8 @@ class RunPlan(BaseData):
     artifact_root: Path
     """Root directory for all run artifacts."""
 
-    source: SourceSpec
-    """Source definition that the run plan was built from."""
+    source: PlannedSource
+    """Target source selection snapshot that the run plan was built from."""
 
     stages: list[RunPlanStage] = Field(default_factory=list)
     """Ordered execution stages for the benchmark run."""
@@ -70,4 +87,4 @@ class RunPlan(BaseData):
         ]
 
 
-__all__ = ["RunPlan", "RunPlanStage"]
+__all__ = ["PlannedSource", "RunPlan", "RunPlanStage"]

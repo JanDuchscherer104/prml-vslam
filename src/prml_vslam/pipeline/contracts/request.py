@@ -9,9 +9,8 @@ alignment policy, visualization policy, and runtime placement into one
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -36,19 +35,12 @@ from prml_vslam.methods.configs import (
     MockSlamBackendConfig,
     VistaSlamBackendConfig,
 )
-from prml_vslam.utils import BaseConfig, PathConfig
+from prml_vslam.utils import BaseConfig
 from prml_vslam.visualization.contracts import VisualizationConfig
 
-if TYPE_CHECKING:
-    from .plan import RunPlan
+from .execution import RayRuntimeConfig, RunRuntimeConfig
+from .mode import PipelineMode
 from .stages import StageKey
-
-
-class PipelineMode(StrEnum):
-    """Select whether the run is batch/offline or live/incremental."""
-
-    OFFLINE = "offline"
-    STREAMING = "streaming"
 
 
 # TODO(pipeline-refactor/WP-02): Replace SourceSpec request variants with
@@ -133,7 +125,6 @@ class Record3DLiveSourceSpec(BaseConfig):
 SourceSpec = VideoSourceSpec | DatasetSourceSpec | Record3DLiveSourceSpec
 BackendConfigValue: TypeAlias = Path | str | int | float | bool | None
 BackendSpec: TypeAlias = BackendConfig
-RayLocalHeadLifecycle: TypeAlias = Literal["ephemeral", "reusable"]
 
 
 # TODO(pipeline-refactor/WP-02): Replace per-stage placement request fragments
@@ -156,24 +147,6 @@ class PlacementPolicy(BaseConfig):
     """Collect per-stage placement hints translated only by the backend layer."""
 
     by_stage: dict[StageKey, StagePlacement] = Field(default_factory=dict)
-
-
-# TODO(pipeline-refactor/WP-02): Move runtime lifecycle policy into RunConfig
-# runtime settings without stage construction semantics.
-class RayRuntimeConfig(BaseConfig):
-    """Configure repository-owned local Ray lifecycle behavior."""
-
-    local_head_lifecycle: RayLocalHeadLifecycle = "ephemeral"
-    """Whether the auto-started local Ray head is torn down or preserved after a run."""
-
-
-# TODO(pipeline-refactor/WP-02): Move run lifecycle policy into target
-# RunConfig.runtime and retire RunRequest compatibility.
-class RunRuntimeConfig(BaseConfig):
-    """Collect repository-owned execution-lifecycle policy for one run."""
-
-    ray: RayRuntimeConfig = Field(default_factory=RayRuntimeConfig)
-    """Local Ray runtime policy translated by the backend layer."""
 
 
 # TODO(pipeline-refactor/WP-02): Rehome as stage-local declarative
@@ -253,25 +226,6 @@ class RunRequest(BaseConfig):
 
     runtime: RunRuntimeConfig = Field(default_factory=RunRuntimeConfig)
     """Repo-owned execution-lifecycle policy for the selected run."""
-
-    def build(self, path_config: PathConfig | None = None) -> RunPlan:
-        """Compile the canonical :class:`RunPlan` for this request.
-
-        Planning is deterministic and side-effect free. It validates
-        request-level invariants and then projects into
-        :class:`prml_vslam.pipeline.config.RunConfig` for direct stage-section
-        plan compilation.
-        """
-        from prml_vslam.pipeline.config import RunConfig
-
-        if self.benchmark.cloud.enabled and not self.slam.outputs.emit_dense_points:
-            raise ValueError("Cloud evaluation requires `slam.outputs.emit_dense_points=True`.")
-        if self.alignment.ground.enabled and not (
-            self.slam.outputs.emit_dense_points or self.slam.outputs.emit_sparse_points
-        ):
-            raise ValueError("Ground alignment requires at least one point-cloud output from the SLAM stage.")
-        config = PathConfig() if path_config is None else path_config
-        return RunConfig.from_run_request(self).compile_plan(path_config=config)
 
 
 def build_run_request(
@@ -367,8 +321,10 @@ __all__ = [
     "DatasetSourceSpec",
     "PipelineMode",
     "PlacementPolicy",
+    "RayRuntimeConfig",
     "Record3DLiveSourceSpec",
     "RunRequest",
+    "RunRuntimeConfig",
     "SlamStageConfig",
     "SourceSpec",
     "StagePlacement",

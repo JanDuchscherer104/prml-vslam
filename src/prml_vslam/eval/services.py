@@ -34,8 +34,8 @@ from prml_vslam.eval.protocols import TrajectoryEvaluator
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import MethodId
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.path_config import PathConfig
 
@@ -218,7 +218,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
     def compute_pipeline_evaluation(
         self,
         *,
-        request: RunRequest,
+        run_config: RunConfig,
         plan: RunPlan,
         sequence_manifest: SequenceManifest | None,
         benchmark_inputs: PreparedBenchmarkInputs | None,
@@ -230,17 +230,17 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         references from dataset folders. Missing requested baselines are runtime
         errors because the request explicitly enabled trajectory evaluation.
         """
-        if not request.benchmark.trajectory.enabled:
+        if not run_config.benchmark.trajectory.enabled:
             return None
         if sequence_manifest is None or benchmark_inputs is None or slam is None:
             raise RuntimeError(
                 "Trajectory evaluation requires a sequence manifest, benchmark inputs, and SLAM artifacts."
             )
-        reference = benchmark_inputs.trajectory_for_source(request.benchmark.trajectory.baseline_source)
+        reference = benchmark_inputs.trajectory_for_source(run_config.benchmark.trajectory.baseline_source)
         if reference is None:
             raise RuntimeError(
                 "Prepared benchmark inputs do not include the requested trajectory baseline "
-                f"'{request.benchmark.trajectory.baseline_source.value}'."
+                f"'{run_config.benchmark.trajectory.baseline_source.value}'."
             )
         return self.compute_evaluation(
             selection=SelectionSnapshot(
@@ -249,8 +249,14 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 run=DiscoveredRun(
                     artifact_root=plan.artifact_root,
                     estimate_path=slam.trajectory_tum.path,
-                    method=request.slam.backend.method_id,
-                    label=request.slam.backend.display_name,
+                    method=run_config.stages.slam.backend.method_id
+                    if run_config.stages.slam.backend is not None
+                    else None,
+                    label=(
+                        run_config.stages.slam.backend.display_name
+                        if run_config.stages.slam.backend is not None
+                        else "unknown"
+                    ),
                 ),
             )
         )

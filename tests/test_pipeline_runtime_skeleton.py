@@ -8,10 +8,10 @@ import pytest
 
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
-from prml_vslam.pipeline.contracts.request import PipelineMode, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
@@ -100,7 +100,7 @@ def _plan(mode: PipelineMode = PipelineMode.OFFLINE) -> RunPlan:
         run_id="runtime-skeleton",
         mode=mode,
         artifact_root=Path(".artifacts/runtime-skeleton"),
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
+        source=PlannedSource(source_id="video", video_path=Path("captures/demo.mp4")),
         stages=[
             RunPlanStage(key=StageKey.INGEST),
             RunPlanStage(key=StageKey.SLAM),

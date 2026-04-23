@@ -22,22 +22,25 @@ from prml_vslam.app.pipeline_controller import (
     PipelinePageAction,
     action_from_page_state,
     build_pipeline_snapshot_render_model,
-    build_request_from_action,
+    build_run_config_from_action,
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
 from prml_vslam.datasets.advio import AdvioServingConfig
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunRequest
+from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.config import RunConfig, build_backend_spec
 from prml_vslam.pipeline.contracts.events import RunStarted, StageOutcome
-from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan
 from prml_vslam.pipeline.contracts.provenance import StageStatus
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, SlamStageConfig, build_backend_spec
+from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, RunRequest, SlamStageConfig
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import PathConfig
+
+from .pipeline_legacy import run_config_from_request
 
 
 def test_artifact_page_is_registered_and_state_round_trips() -> None:
@@ -216,7 +219,7 @@ def test_graphify_artifacts_report_missing_standard_files(tmp_path: Path) -> Non
     assert artifacts.report == tmp_path / "graphify-out" / "GRAPH_REPORT.md"
 
 
-def test_build_request_from_action_derives_backend_kind(tmp_path: Path) -> None:
+def test_build_run_config_from_action_derives_backend_kind(tmp_path: Path) -> None:
     context = type(
         "Context",
         (),
@@ -248,15 +251,15 @@ def test_build_request_from_action_derives_backend_kind(tmp_path: Path) -> None:
         export_viewer_rrd=False,
     )
 
-    request, error = build_request_from_action(context, action)
+    run_config, error = build_run_config_from_action(context, action)
 
     assert error is None
-    assert isinstance(request, RunRequest)
-    assert request.slam.backend.kind == "vista"
-    assert request.slam.backend.kind == MethodId.VISTA.value
+    assert isinstance(run_config, RunConfig)
+    assert run_config.stages.slam.backend.kind == "vista"
+    assert run_config.stages.slam.backend.kind == MethodId.VISTA.value
 
 
-def test_build_request_from_action_accepts_stringified_vista_paths(tmp_path: Path) -> None:
+def test_build_run_config_from_action_accepts_stringified_vista_paths(tmp_path: Path) -> None:
     context = type(
         "Context",
         (),
@@ -291,16 +294,16 @@ def test_build_request_from_action_accepts_stringified_vista_paths(tmp_path: Pat
         export_viewer_rrd=False,
     )
 
-    request, error = build_request_from_action(context, action)
+    run_config, error = build_run_config_from_action(context, action)
 
     assert error is None
-    assert isinstance(request, RunRequest)
-    assert request.source.dataset_serving == AdvioServingConfig(
+    assert isinstance(run_config, RunConfig)
+    assert run_config.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source="ground_truth",
         pose_frame_mode="provider_world",
     )
-    assert request.source.respect_video_rotation is True
-    assert request.slam.backend.vista_slam_dir == Path("external/vista-slam")
+    assert run_config.stages.source.backend.respect_video_rotation is True
+    assert run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
 
 
 def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path) -> None:
@@ -349,7 +352,7 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     sync_pipeline_page_state_from_template(
         context=context,
         config_path=Path(".configs/pipelines/vista-full.toml"),
-        request=request,
+        run_config=run_config_from_request(request),
         statuses=[],
     )
 
@@ -361,12 +364,12 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     assert context.state.pipeline.pose_frame_mode.value == "provider_world"
     assert context.state.pipeline.respect_video_rotation is True
     action = action_from_page_state(context.state.pipeline, Path(".configs/pipelines/vista-full.toml"))
-    rebuilt_request, error = build_request_from_action(context, action)
+    rebuilt_run_config, error = build_run_config_from_action(context, action)
 
     assert error is None
-    assert isinstance(rebuilt_request, RunRequest)
-    assert rebuilt_request.slam.backend.vista_slam_dir == Path("external/vista-slam")
-    assert rebuilt_request.source.respect_video_rotation is True
+    assert isinstance(rebuilt_run_config, RunConfig)
+    assert rebuilt_run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
+    assert rebuilt_run_config.stages.source.backend.respect_video_rotation is True
 
 
 def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) -> None:
@@ -383,31 +386,21 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
         slam={"backend": {"kind": "mock"}},
         benchmark={"cloud": {"enabled": True}},
     )
-    plan = request.build(path_config)
+    run_config = run_config_from_request(request)
+    plan = run_config.compile_plan(path_config)
 
-    error = request_support_error(request=request, plan=plan, previewable_statuses=[])
+    error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
 
     assert error is not None
     assert "placeholder" in error
 
 
 def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path) -> None:
-    request = RunRequest(
-        experiment_name="streaming-demo",
-        mode=PipelineMode.STREAMING,
-        output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(
-            dataset_id="advio",
-            sequence_id="advio-01",
-            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
-        ),
-        slam=SlamStageConfig(backend={"kind": "vista"}),
-    )
     plan = RunPlan(
         run_id="streaming-demo",
         mode=PipelineMode.STREAMING,
         artifact_root=tmp_path / "streaming-demo",
-        source=request.source,
+        source=PlannedSource(source_id="advio", sequence_id="advio-01"),
     )
     frame_ref = TransientPayloadRef(handle_id="frame-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
     preview_ref = TransientPayloadRef(handle_id="preview-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
@@ -478,22 +471,11 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
 
 
 def test_pipeline_snapshot_render_model_prefers_target_live_refs(tmp_path: Path) -> None:
-    request = RunRequest(
-        experiment_name="streaming-demo",
-        mode=PipelineMode.STREAMING,
-        output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(
-            dataset_id="advio",
-            sequence_id="advio-01",
-            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
-        ),
-        slam=SlamStageConfig(backend={"kind": "vista"}),
-    )
     plan = RunPlan(
         run_id="streaming-demo",
         mode=PipelineMode.STREAMING,
         artifact_root=tmp_path / "streaming-demo",
-        source=request.source,
+        source=PlannedSource(source_id="advio", sequence_id="advio-01"),
     )
     frame_ref = TransientPayloadRef(handle_id="frame-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
     preview_ref = TransientPayloadRef(handle_id="preview-ref", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
@@ -545,22 +527,11 @@ def test_pipeline_snapshot_render_model_prefers_target_live_refs(tmp_path: Path)
 
 
 def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path) -> None:
-    request = RunRequest(
-        experiment_name="streaming-demo",
-        mode=PipelineMode.STREAMING,
-        output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(
-            dataset_id="advio",
-            sequence_id="advio-01",
-            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
-        ),
-        slam=SlamStageConfig(backend={"kind": "vista"}),
-    )
     plan = RunPlan(
         run_id="streaming-demo",
         mode=PipelineMode.STREAMING,
         artifact_root=tmp_path / "streaming-demo",
-        source=request.source,
+        source=PlannedSource(source_id="advio", sequence_id="advio-01"),
     )
     snapshot = RunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
 
@@ -586,22 +557,11 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    request = RunRequest(
-        experiment_name="streaming-demo",
-        mode=PipelineMode.STREAMING,
-        output_dir=tmp_path / ".artifacts",
-        source=DatasetSourceSpec(
-            dataset_id="advio",
-            sequence_id="advio-01",
-            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
-        ),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-    )
     plan = RunPlan(
         run_id="streaming-demo",
         mode=PipelineMode.STREAMING,
         artifact_root=tmp_path / "streaming-demo",
-        source=request.source,
+        source=PlannedSource(source_id="advio", sequence_id="advio-01"),
     )
     snapshot = RunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
     calls = {"count": 0}

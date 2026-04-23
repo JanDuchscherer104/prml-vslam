@@ -7,19 +7,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 
 from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
-from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods import MethodId
-from prml_vslam.pipeline import PipelineMode, RunRequest
-from prml_vslam.pipeline.config import RunConfig, target_stage_key_for_current
+from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.config import RunConfig, build_run_config, target_stage_key_for_current
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    Record3DLiveSourceSpec,
-    build_run_request,
-)
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
+from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.utils import BaseData, PathConfig
 
 from .models import PipelinePageState, PipelineSourceId
@@ -68,7 +63,7 @@ def sync_pipeline_page_state_from_template(
     *,
     context: AppContext,
     config_path: Path,
-    request: RunRequest,
+    run_config: RunConfig,
     statuses: list[AdvioLocalSceneStatus],
 ) -> None:
     """Hydrate Pipeline page state from a newly selected request template."""
@@ -79,27 +74,26 @@ def sync_pipeline_page_state_from_template(
         "source_kind": page_state.source_kind,
         "advio_sequence_id": page_state.advio_sequence_id,
     }
-    match request.source:
-        case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
+    source_backend = run_config.stages.source.backend
+    match source_backend:
+        case AdvioSourceConfig(sequence_id=sequence_slug):
             advio_sequence_id, _ = resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=statuses)
             source_updates = {
                 "source_kind": PipelineSourceId.ADVIO,
                 "advio_sequence_id": advio_sequence_id,
-                "dataset_frame_stride": request.source.frame_stride,
-                "dataset_target_fps": request.source.target_fps,
-                "pose_source": request.source.dataset_serving.pose_source,
-                "pose_frame_mode": request.source.dataset_serving.pose_frame_mode,
-                "respect_video_rotation": request.source.respect_video_rotation,
+                "dataset_frame_stride": source_backend.frame_stride,
+                "dataset_target_fps": source_backend.target_fps,
+                "pose_source": source_backend.dataset_serving.pose_source,
+                "pose_frame_mode": source_backend.dataset_serving.pose_frame_mode,
+                "respect_video_rotation": source_backend.respect_video_rotation,
             }
-        case Record3DLiveSourceSpec() as record3d_source:
+        case Record3DSourceConfig() as record3d_source:
             source_updates = {
                 "source_kind": PipelineSourceId.RECORD3D,
                 "record3d_transport": Record3DTransportId(record3d_source.transport.value),
-                "record3d_usb_device_index": 0
-                if record3d_source.device_index is None
-                else record3d_source.device_index,
+                "record3d_usb_device_index": record3d_source.device_index,
                 "record3d_wifi_device_address": record3d_source.device_address,
-                "record3d_persist_capture": record3d_source.persist_capture,
+                "record3d_persist_capture": True,
             }
         case _:
             source_updates = {"source_kind": page_state.source_kind, "advio_sequence_id": page_state.advio_sequence_id}
@@ -108,31 +102,32 @@ def sync_pipeline_page_state_from_template(
         context.state,
         page_state,
         config_path=config_path,
-        experiment_name=request.experiment_name,
-        mode=request.mode,
-        method=request.slam.backend.method_id,
-        slam_max_frames=request.slam.backend.max_frames,
-        slam_backend_spec=request.slam.backend.model_copy(deep=True),
-        emit_dense_points=request.slam.outputs.emit_dense_points,
-        emit_sparse_points=request.slam.outputs.emit_sparse_points,
-        reference_enabled=request.benchmark.reference.enabled,
-        trajectory_eval_enabled=request.benchmark.trajectory.enabled,
-        evaluate_cloud=request.benchmark.cloud.enabled,
-        evaluate_efficiency=request.benchmark.efficiency.enabled,
-        connect_live_viewer=request.visualization.connect_live_viewer,
-        export_viewer_rrd=request.visualization.export_viewer_rrd,
+        experiment_name=run_config.experiment_name,
+        mode=run_config.mode,
+        method=run_config.stages.slam.backend.method_id,
+        slam_max_frames=run_config.stages.slam.backend.max_frames,
+        slam_backend_spec=run_config.stages.slam.backend.model_copy(deep=True),
+        emit_dense_points=run_config.stages.slam.outputs.emit_dense_points,
+        emit_sparse_points=run_config.stages.slam.outputs.emit_sparse_points,
+        reference_enabled=run_config.stages.reconstruction.enabled,
+        trajectory_eval_enabled=run_config.stages.evaluate_trajectory.enabled,
+        evaluate_cloud=run_config.stages.evaluate_cloud.enabled,
+        evaluate_efficiency=run_config.stages.evaluate_efficiency.enabled,
+        connect_live_viewer=run_config.visualization.connect_live_viewer,
+        export_viewer_rrd=run_config.visualization.export_viewer_rrd,
         **source_updates,
     )
 
 
-def build_request_from_action(context: AppContext, action: PipelinePageAction) -> tuple[RunRequest | None, str | None]:
-    """Build a typed pipeline request from one rendered Pipeline page action."""
+def build_run_config_from_action(
+    context: AppContext, action: PipelinePageAction
+) -> tuple[RunConfig | None, str | None]:
+    """Build a typed pipeline run config from one rendered Pipeline page action."""
     try:
         if action.source_kind is PipelineSourceId.ADVIO:
             if action.advio_sequence_id is None:
                 raise ValueError("Select a replay-ready ADVIO scene.")
-            source = DatasetSourceSpec(
-                dataset_id=DatasetId.ADVIO,
+            source_backend = AdvioSourceConfig(
                 sequence_id=context.advio_service.scene(action.advio_sequence_id).sequence_slug,
                 frame_stride=action.dataset_frame_stride,
                 target_fps=action.dataset_target_fps,
@@ -143,12 +138,12 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
                 respect_video_rotation=action.respect_video_rotation,
             )
         else:
-            source = record3d_source_spec_from_action(action)
-        request = build_run_request(
+            source_backend = record3d_source_config_from_action(action)
+        run_config = build_run_config(
             experiment_name=action.experiment_name.strip() or "pipeline-demo",
             mode=action.mode,
             output_dir=context.path_config.artifacts_dir,
-            source=source,
+            source_backend=source_backend,
             method=action.method,
             max_frames=action.slam_max_frames,
             backend_overrides=backend_payload_from_action(action),
@@ -161,22 +156,22 @@ def build_request_from_action(context: AppContext, action: PipelinePageAction) -
             connect_live_viewer=action.connect_live_viewer,
             export_viewer_rrd=action.export_viewer_rrd,
         )
-        return request, None
+        return run_config, None
     except Exception as exc:
         return None, str(exc)
 
 
-def build_preview_plan(request: RunRequest, path_config: PathConfig) -> tuple[RunPlan | None, str | None]:
+def build_preview_plan(run_config: RunConfig, path_config: PathConfig) -> tuple[RunPlan | None, str | None]:
     """Build the preview run plan while surfacing validation errors as strings."""
     try:
-        return RunConfig.from_run_request(request).compile_plan(path_config), None
+        return run_config.compile_plan(path_config), None
     except Exception as exc:
         return None, str(exc)
 
 
 def request_support_error(
     *,
-    request: RunRequest | None,
+    request: RunConfig | None,
     plan: RunPlan | None,
     previewable_statuses: list[AdvioLocalSceneStatus],
 ) -> str | None:
@@ -185,7 +180,7 @@ def request_support_error(
         return None
     if plan is None:
         return "The current request failed validation and could not be planned."
-    if request.slam.backend.method_id is MethodId.MAST3R:
+    if request.stages.slam.backend.method_id is MethodId.MAST3R:
         return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
     unavailable_stages = [stage for stage in plan.stages if not stage.available]
     if unavailable_stages:
@@ -202,19 +197,21 @@ def request_support_error(
                 if stage.key not in _SUPPORTED_APP_STAGE_IDS
             )
         )
-    match request.source:
-        case DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id=sequence_slug):
+    match request.stages.source.backend:
+        case AdvioSourceConfig(sequence_id=sequence_slug):
             if resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=previewable_statuses)[0] is None:
                 return f"ADVIO sequence '{sequence_slug}' is not replay-ready in the local dataset."
             return None
-        case Record3DLiveSourceSpec():
+        case Record3DSourceConfig():
             if request.mode is not PipelineMode.STREAMING:
                 return "Record3D live sources currently require `streaming` mode."
             return None
-        case DatasetSourceSpec(dataset_id=dataset_id):
-            return f"Dataset '{dataset_id.value}' is not supported by this demo page."
         case _:
-            return "This demo page only supports ADVIO dataset replay and Record3D live capture."
+            return (
+                f"Source '{request.stages.source.backend.source_id}' is not supported by this demo page."
+                if request.stages.source.backend is not None
+                else "This demo page only supports ADVIO dataset replay and Record3D live capture."
+            )
 
 
 def source_input_error(action: PipelinePageAction) -> str | None:
@@ -241,16 +238,15 @@ def handle_pipeline_page_action(context: AppContext, action: PipelinePageAction)
             return None
         if not action.start_requested:
             return None
-        request, request_error = build_request_from_action(context, action)
-        if request is None:
-            raise ValueError(request_error or "Failed to build the current request.")
-        run_config = RunConfig.from_run_request(request)
+        run_config, request_error = build_run_config_from_action(context, action)
+        if run_config is None:
+            raise ValueError(request_error or "Failed to build the current run config.")
         runtime_source = (
             None
             if run_config.mode is PipelineMode.OFFLINE
             else build_runtime_source_from_run_config(run_config=run_config, path_config=context.path_config)
         )
-        context.run_service.start_run(request=run_config.to_run_request(), runtime_source=runtime_source)
+        context.run_service.start_run(run_config=run_config, runtime_source=runtime_source)
         return None
     except Exception as exc:
         return str(exc)
@@ -277,10 +273,10 @@ def pipeline_config_label(path_config: PathConfig, config_path: Path) -> str:
         )
 
 
-def load_pipeline_request(path_config: PathConfig, config_path: Path) -> tuple[RunRequest | None, str | None]:
-    """Load one persisted pipeline request while surfacing validation errors as strings."""
+def load_pipeline_request(path_config: PathConfig, config_path: Path) -> tuple[RunConfig | None, str | None]:
+    """Load one persisted pipeline run config while surfacing validation errors as strings."""
     try:
-        return load_run_config_toml(path_config=path_config, config_path=config_path).to_run_request(), None
+        return load_run_config_toml(path_config=path_config, config_path=config_path), None
     except Exception as exc:
         return None, str(exc)
 
@@ -325,23 +321,22 @@ def parse_optional_float(*, raw_value: str, field_label: str) -> tuple[float | N
     return (value, None) if value > 0.0 else (None, f"Enter a positive number for `{field_label}`.")
 
 
-def request_summary_payload(request: RunRequest) -> JsonObject:
+def request_summary_payload(request: RunConfig) -> JsonObject:
     """Return the compact JSON payload rendered by the Pipeline request preview."""
     payload: JsonObject = {
         "experiment_name": request.experiment_name,
         "mode": request.mode.value,
         "output_dir": request.output_dir.as_posix(),
         "slam": {
-            "backend": request.slam.backend.model_dump(mode="json", exclude_none=True),
-            "emit_dense_points": request.slam.outputs.emit_dense_points,
-            "emit_sparse_points": request.slam.outputs.emit_sparse_points,
+            "backend": request.stages.slam.backend.model_dump(mode="json", exclude_none=True),
+            "emit_dense_points": request.stages.slam.outputs.emit_dense_points,
+            "emit_sparse_points": request.stages.slam.outputs.emit_sparse_points,
         },
         "benchmark": request.benchmark.model_dump(mode="json"),
         "visualization": request.visualization.model_dump(mode="json"),
     }
-    match request.source:
-        case DatasetSourceSpec(
-            dataset_id=dataset_id,
+    match request.stages.source.backend:
+        case AdvioSourceConfig(
             sequence_id=sequence_id,
             frame_stride=frame_stride,
             target_fps=target_fps,
@@ -349,8 +344,7 @@ def request_summary_payload(request: RunRequest) -> JsonObject:
             respect_video_rotation=respect_video_rotation,
         ):
             payload["source"] = {
-                "kind": "dataset",
-                "dataset_id": dataset_id.value,
+                "kind": "advio",
                 "sequence_id": sequence_id,
                 "frame_stride": frame_stride,
                 "target_fps": target_fps,
@@ -358,16 +352,15 @@ def request_summary_payload(request: RunRequest) -> JsonObject:
                 "respect_video_rotation": respect_video_rotation,
             }
         case _:
-            payload["source"] = request.source.model_dump(mode="json")
+            payload["source"] = request.stages.source.backend.model_dump(mode="json")
     return payload
 
 
-def record3d_source_spec_from_action(action: PipelinePageAction) -> Record3DLiveSourceSpec:
-    """Build the typed Record3D live source contract from one pipeline action."""
-    return Record3DLiveSourceSpec(
-        persist_capture=action.record3d_persist_capture,
+def record3d_source_config_from_action(action: PipelinePageAction) -> Record3DSourceConfig:
+    """Build the typed Record3D live source backend config from one pipeline action."""
+    return Record3DSourceConfig(
         transport=Record3DTransportId(action.record3d_transport.value),
-        device_index=action.record3d_usb_device_index if action.record3d_transport is Record3DTransportId.USB else None,
+        device_index=action.record3d_usb_device_index if action.record3d_transport is Record3DTransportId.USB else 0,
         device_address=action.record3d_wifi_device_address
         if action.record3d_transport is Record3DTransportId.WIFI
         else "",
@@ -400,7 +393,7 @@ __all__ = [
     "action_from_page_state",
     "backend_payload_from_action",
     "build_preview_plan",
-    "build_request_from_action",
+    "build_run_config_from_action",
     "discover_pipeline_config_paths",
     "handle_pipeline_page_action",
     "json_dump",
@@ -408,7 +401,7 @@ __all__ = [
     "parse_optional_int",
     "parse_optional_float",
     "pipeline_config_label",
-    "record3d_source_spec_from_action",
+    "record3d_source_config_from_action",
     "request_summary_payload",
     "request_support_error",
     "resolve_advio_sequence_id",

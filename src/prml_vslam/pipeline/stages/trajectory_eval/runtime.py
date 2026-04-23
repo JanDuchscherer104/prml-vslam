@@ -62,9 +62,9 @@ class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationRuntim
 
     def _run(self, input_payload: TrajectoryEvaluationRuntimeInput) -> StageResult:
         artifact = TrajectoryEvaluationService(
-            PathConfig(artifacts_dir=input_payload.request.output_dir)
+            PathConfig(artifacts_dir=input_payload.run_config.output_dir)
         ).compute_pipeline_evaluation(
-            request=input_payload.request,
+            run_config=input_payload.run_config,
             plan=input_payload.plan,
             sequence_manifest=input_payload.sequence_manifest,
             benchmark_inputs=input_payload.benchmark_inputs,
@@ -74,7 +74,7 @@ class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationRuntim
         outcome = StageOutcome(
             stage_key=StageKey.TRAJECTORY_EVALUATION,
             status=StageStatus.COMPLETED,
-            config_hash=stable_hash(input_payload.request.benchmark.trajectory),
+            config_hash=stable_hash(input_payload.run_config.benchmark.trajectory),
             input_fingerprint=stable_hash(
                 {
                     "benchmark_inputs": input_payload.benchmark_inputs,

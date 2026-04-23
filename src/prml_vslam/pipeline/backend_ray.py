@@ -25,8 +25,8 @@ import ray
 from ray.actor import ActorHandle
 
 from prml_vslam.pipeline.backend import PipelineBackend, PipelineRuntimeSource
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.request import RunRequest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.placement import actor_options_for_stage
@@ -61,10 +61,10 @@ RayRuntimeEnvValue = list[str] | dict[str, str] | str
 RayActorOption = str | float | int | dict[str, float] | None
 
 
-def _coordinator_actor_options(request: RunRequest) -> dict[str, RayActorOption]:
+def _coordinator_actor_options(run_config: RunConfig) -> dict[str, RayActorOption]:
     options = actor_options_for_stage(
         stage_key=StageKey.SLAM,
-        request=request,
+        run_config=run_config,
         default_num_cpus=1.0,
         default_num_gpus=0.0,
         restartable=False,
@@ -76,7 +76,7 @@ def _coordinator_actor_options(request: RunRequest) -> dict[str, RayActorOption]
 class RayPipelineBackend(PipelineBackend):
     """Execute pipeline runs through detached per-run coordinator actors.
 
-    The backend is responsible for turning a validated :class:`RunRequest` into
+    The backend is responsible for turning a validated :class:`RunConfig` into
     a running Ray topology. The :class:`RunCoordinatorActor` remains the
     authoritative owner of one run's state; this backend only manages how the
     caller reaches that coordinator.
@@ -93,11 +93,16 @@ class RayPipelineBackend(PipelineBackend):
         self._reuse_local_head = False
         self._next_coordinator_options: dict[str, object] = {}
 
-    def submit_run(self, *, request: RunRequest, runtime_source: PipelineRuntimeSource = None) -> str:
+    def submit_run(
+        self,
+        *,
+        run_config: RunConfig,
+        runtime_source: PipelineRuntimeSource = None,
+    ) -> str:
         """Build the plan, ensure Ray is available, and boot one coordinator."""
-        self._reuse_local_head = request.runtime.ray.local_head_lifecycle == "reusable"
+        self._reuse_local_head = run_config.runtime.ray.local_head_lifecycle == "reusable"
         self._ensure_ray()
-        plan = request.build(self._path_config)
+        plan = run_config.compile_plan(self._path_config)
         unavailable = [stage for stage in plan.stages if not stage.available]
         if unavailable:
             reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."
@@ -108,10 +113,10 @@ class RayPipelineBackend(PipelineBackend):
             plan.mode.value,
             len(plan.stages),
         )
-        self._next_coordinator_options = _coordinator_actor_options(request)
+        self._next_coordinator_options = _coordinator_actor_options(run_config)
         coordinator = self._create_coordinator(plan.run_id)
         coordinator.start.remote(
-            request=request,
+            run_config=run_config,
             plan=plan,
             path_config=self._path_config,
             runtime_source=runtime_source,

@@ -22,7 +22,7 @@ from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality,
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.contracts.request import BackendSpec
+from prml_vslam.pipeline.config import BackendSpec
 from prml_vslam.utils import BaseData
 
 from .preview_runtime import PacketSessionSnapshot
