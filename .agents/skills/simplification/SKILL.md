@@ -14,7 +14,12 @@ Use this skill when the task is about:
 - lowering Python LOC without widening the public surface
 - deleting obsolete compatibility layers, dead branches, or duplicate helpers
 
+This skill supports two modes:
 
+- default simplification: reduce redundancy and stale surface while preserving the current intended behavior
+- ruthless simplification: an explicit opt-in mode for drastic LOC, type-count, public-surface, and indirection reduction while preserving the currently intended behavior
+
+Use ruthless simplification only when the user explicitly asks for a ruthless, aggressive, or drastic reduction rather than a conservative cleanup.
 
 If the task also requires `.agents/` backlog reads or DB updates, use `agents-db` alongside this skill.
 
@@ -50,6 +55,115 @@ Before simplification work:
 4. Validate the result.
    - Run focused tests, `make lint`, `ruff format`, and a final `make loc` when LOC is part of the decision.
    - Run `make ci` before creating a commit.
+
+## Ruthless Simplification
+
+Use ruthless simplification when the goal is to drastically reduce LOC, type count, public surface, and indirection while preserving the currently intended behavior.
+
+### Preserve Functionality
+
+Preserve:
+
+- behavior exercised by tests
+- explicit external or public contracts listed in `AGENTS.md`
+- domain invariants
+- intentionally retained CLI, API, or config behavior named in the task
+
+Do not preserve unless explicitly requested:
+
+- backward compatibility shims
+- deprecated wrappers and aliases
+- internal symbol names
+- transitional overloads
+- dead feature flags
+- duplicate DTO hierarchies
+- duplicate enums for the same semantic axis
+- legacy extension points with no active consumers
+
+### Hard Bias
+
+- Prefer deletion over abstraction.
+- Prefer inlining over helper extraction.
+- Prefer one canonical type per concept.
+- Prefer one canonical enum per semantic axis.
+- Prefer one behavior-bearing base class over multiple protocol-only internal interfaces.
+- If a new abstraction is introduced, it must justify its existence.
+
+### Abstraction Tax
+
+A new helper, function, class, or base type is allowed only if at least one is true:
+
+- it protects a real invariant
+- it serves 3 or more meaningful call sites
+- it becomes the canonical home of shared behavior
+- it removes more code than it adds within the same patch
+
+Otherwise inline, merge, or delete.
+
+### Inline By Default When
+
+- the function has one meaningful call site
+- it only forwards or reorders arguments
+- it only renames another operation
+- its name adds no important domain vocabulary
+- it is short and not independently tested
+- it exists only to preserve an older call shape
+
+### Convert Free Function To Method When
+
+- it primarily reads or writes one object's state
+- it uses multiple fields from the same object
+- it encodes validation, normalization, or lifecycle transitions
+- it is only used by that owning type
+- it belongs to the object's domain language
+
+### Convert Sibling Leaf Behavior To Base Class When
+
+- multiple implementations are internal to this repo
+- they repeat orchestration, validation, caching, or lifecycle logic
+- the shared behavior reflects a real common invariant
+- the current protocol carries no meaningful implementation
+
+Use `Protocol` only for structural typing across unrelated or external implementations. If behavior is shared, move it into an ABC or base class and keep only the true variation points abstract.
+
+### DTO And Config Rules
+
+- Merge models with heavy overlap unless validation semantics truly differ.
+- Create, update, and response splits require distinct constraints, not just tradition.
+- Boundary adapters may exist only at ingress or egress.
+- Delete compatibility serializers or parsers once the canonical form is chosen.
+- Delete dead flags and partially consumed config.
+- Prefer nested canonical configs over parallel flattened variants.
+- Pipeline should compose stage configs, not own stage-internal config logic by default.
+
+### Enum Rules
+
+- One semantic axis means one enum.
+- Collapse sibling enums that differ only by naming or package location.
+- Keep conversion logic at boundaries, not as parallel enums in the core.
+- Delete redundant aliases unless they are part of an explicit public contract.
+
+### Required Work Report
+
+When operating in ruthless simplification mode, before editing state:
+
+- what will be deleted
+- what will be merged
+- what will be inlined
+- what compatibility paths will be removed
+- what behavior-bearing base classes will be introduced
+
+After editing, report:
+
+- files removed
+- symbols removed
+- DTOs merged
+- enums collapsed
+- wrappers inlined or deleted
+- behavior pulled into base classes
+- LOC delta
+- tests or checks run
+- remaining risks
 
 ## Tool Decision Tree
 
