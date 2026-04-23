@@ -18,10 +18,10 @@ from prml_vslam.app.pages.graphify import (
     render_filtered_graph_html,
     resolve_graphify_artifacts,
 )
-from prml_vslam.app.pipeline_controller import (
+from prml_vslam.app.pipeline_controller import build_pipeline_snapshot_render_model
+from prml_vslam.app.pipeline_controls import (
     PipelinePageAction,
     action_from_page_state,
-    build_pipeline_snapshot_render_model,
     build_run_config_from_action,
     request_support_error,
     sync_pipeline_page_state_from_template,

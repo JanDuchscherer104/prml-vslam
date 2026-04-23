@@ -54,7 +54,7 @@ class _CappedStreamingSource(StreamingSequenceSource):
         return _CappedPacketStream(self._source.open_stream(loop=loop), max_frames=self._max_frames)
 
 
-def build_advio_demo_request(
+def build_advio_demo_run_config(
     *,
     path_config: PathConfig,
     sequence_id: str,
@@ -134,7 +134,7 @@ def save_run_config_toml(
     return resolved_config_path
 
 
-def persist_advio_demo_request(
+def persist_advio_demo_run_config(
     *,
     path_config: PathConfig,
     sequence_id: str,
@@ -145,7 +145,7 @@ def persist_advio_demo_request(
     config_path: str | Path | None = None,
 ) -> Path:
     """Persist the canonical ADVIO demo run config under `.configs/pipelines/` by default."""
-    run_config = build_advio_demo_request(
+    run_config = build_advio_demo_run_config(
         path_config=path_config,
         sequence_id=sequence_id,
         mode=mode,
@@ -161,9 +161,9 @@ def persist_advio_demo_request(
 
 
 __all__ = [
-    "build_advio_demo_request",
+    "build_advio_demo_run_config",
     "build_runtime_source_from_run_config",
     "load_run_config_toml",
-    "persist_advio_demo_request",
+    "persist_advio_demo_run_config",
     "save_run_config_toml",
 ]
