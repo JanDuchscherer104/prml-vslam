@@ -101,6 +101,7 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     assert sample.associations[0].depth_path == sequence_dir / "depth" / "0.000000.png"
     assert sample.duration_s == 0.2
     assert manifest.sequence_id == "freiburg1_desk"
+    assert manifest.dataset_id is DatasetId.TUM_RGBD
     assert manifest.rgb_dir == sequence_dir / "rgb"
     assert manifest.timestamps_path == sequence_dir / "rgb.txt"
     assert manifest.intrinsics_path == sequence_dir / "intrinsics.yaml"
@@ -156,6 +157,9 @@ def test_tum_rgbd_stream_loops_rgbd_frames_with_pose_metadata(tmp_path: Path) ->
     assert packet_0.intrinsics.width_px == 640
     assert packet_2.pose is not None
     assert packet_2.pose.tx == 2.0
+    assert packet_2.pose.target_frame == "tum_rgbd_mocap_world"
+    assert packet_2.pose.source_frame == "tum_rgbd_rgb_camera"
+    assert packet_0.provenance.source_id == "tum_rgbd"
     assert packet_0.provenance.dataset_id == "tum_rgbd"
 
 
@@ -203,4 +207,7 @@ def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None
     assert observations[0].camera_intrinsics.width_px == 640
     assert observations[0].camera_intrinsics.height_px == 480
     assert observations[2].T_world_camera.tx == 2.0
+    assert observations[2].T_world_camera.target_frame == "tum_rgbd_mocap_world"
+    assert observations[2].T_world_camera.source_frame == "tum_rgbd_rgb_camera"
     assert observations[0].provenance.dataset_id == "tum_rgbd"
+    assert observations[0].provenance.world_frame == "tum_rgbd_mocap_world"

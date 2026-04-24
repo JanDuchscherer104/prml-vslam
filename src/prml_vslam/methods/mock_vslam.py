@@ -16,7 +16,7 @@ from prml_vslam.datasets.advio import load_advio_calibration
 from prml_vslam.datasets.advio.advio_geometry import (
     Sim3Alignment,
     apply_sim3,
-    fit_sim3_alignment,
+    fit_planar_rigid_alignment,
     interpolate_trajectory_poses,
     load_tango_point_cloud_index,
     load_tango_point_cloud_payload,
@@ -451,7 +451,7 @@ class MockSlamRuntime:
             self._reference_point_cloud_sequence.trajectory,
             np.asarray([payload_timestamp_s], dtype=np.float64),
             target_frame=self._reference_point_cloud_sequence.reference.native_frame,
-            source_frame="tango_depth_sensor",
+            source_frame=f"advio_{self._reference_point_cloud_sequence.reference.source.value}_depth_sensor",
         )[0]
         points_xyz_source_world = transform_points_world_camera(payload_points_xyz, pose_world_payload)
         points_xyz_target_world = apply_sim3(points_xyz_source_world, self._reference_point_cloud_sequence.alignment)
@@ -531,7 +531,7 @@ def _load_reference_point_cloud_sequence(
         if reference.coordinate_status is not ReferenceCloudCoordinateStatus.SOURCE_NATIVE:
             continue
         source_trajectory = load_tum_trajectory(reference.trajectory_path)
-        alignment = fit_sim3_alignment(
+        alignment = fit_planar_rigid_alignment(
             source_trajectory=source_trajectory,
             target_trajectory=reference_trajectory,
             source_frame=reference.native_frame,
