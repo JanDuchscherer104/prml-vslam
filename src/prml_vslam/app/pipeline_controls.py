@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, TypeAlias
 
 from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, Record3DSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.utils import BaseData, PathConfig
 
 from .models import PipelinePageState, PipelineSourceId
@@ -213,7 +213,7 @@ def request_support_error(
     if plan is None:
         return "The current request failed validation and could not be planned."
     if request.stages.slam.backend.method_id is MethodId.MAST3R:
-        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM or Mock Preview for this pipeline page."
+        return "MASt3R-SLAM is not executable yet. Select ViSTA-SLAM for this pipeline page."
     unavailable_stages = [stage for stage in plan.stages if not stage.available]
     if unavailable_stages:
         return unavailable_stages[0].availability_reason or (

@@ -20,10 +20,11 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.slam.config import MethodId
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.utils import BaseData
 
 from .preview_runtime import PacketSessionSnapshot
@@ -349,55 +350,6 @@ class PipelineTelemetryMetricId(StrEnum):
         }[self]
 
 
-class PipelineTelemetrySample(BaseData):
-    """One bounded in-memory telemetry sample for the Pipeline page."""
-
-    run_id: str
-    """Run id that produced the sample."""
-
-    stage_key: StageKey
-    """Stage whose status was sampled."""
-
-    updated_at_ns: int = 0
-    """Runtime status timestamp used for per-stage deduplication."""
-
-    lifecycle_state: str = ""
-    """Stage lifecycle value when sampled."""
-
-    progress_message: str = ""
-    """Human-readable progress message when emitted."""
-
-    processed_items: int = 0
-    """Domain-neutral processed item count."""
-
-    fps: float | None = None
-    """Frame rate for frame-like stages."""
-
-    throughput: float | None = None
-    """Generic throughput for non-frame streams."""
-
-    latency_ms: float | None = None
-    """Runtime-measured latency in milliseconds."""
-
-    queue_depth: int | None = None
-    """Queue depth when emitted by the runtime."""
-
-    backlog_count: int | None = None
-    """Backlog count when emitted by the runtime."""
-
-    submitted_count: int = 0
-    """Number of work items submitted to the runtime or proxy."""
-
-    completed_count: int = 0
-    """Number of work items completed by the runtime or proxy."""
-
-    failed_count: int = 0
-    """Number of work items failed by the runtime or proxy."""
-
-    in_flight_count: int = 0
-    """Number of work items still in flight."""
-
-
 class PipelinePageState(BaseData):
     """Persisted selector state for the Pipeline run console."""
 
@@ -521,8 +473,8 @@ class PipelinePageState(BaseData):
     telemetry_history_run_id: str | None = None
     """Run id that owns the current bounded telemetry history."""
 
-    telemetry_history: list[PipelineTelemetrySample] = Field(default_factory=list)
-    """Bounded per-session live telemetry sample history."""
+    telemetry_history: list[StageRuntimeStatus] = Field(default_factory=list)
+    """Bounded per-session live stage status history."""
 
     telemetry_max_samples: int = 240
     """Maximum number of live telemetry samples kept in session state."""
@@ -560,7 +512,6 @@ __all__ = [
     "PipelinePageState",
     "PipelineSourceId",
     "PipelineTelemetryMetricId",
-    "PipelineTelemetrySample",
     "PipelineTelemetryViewMode",
     "PreviewStreamState",
     "Record3DPageState",
