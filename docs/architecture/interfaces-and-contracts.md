@@ -20,9 +20,9 @@ contract split after the offline/streaming refactor.
 - `prml_vslam.alignment`
   - derived alignment contracts and services such as dominant-ground detection
     and viewer-scoped world alignment metadata
-- `prml_vslam.benchmark`
-  - benchmark-policy composition such as reference reconstruction and
-    evaluation-stage enablement/baseline selection
+- `prml_vslam.sources`
+  - source-stage config, runtime preparation, source-stage outputs, and
+    prepared reference identifiers
   - prepared reference trajectories, prepared static reference clouds, and
     step-wise reference point-cloud sequence refs used by replay-style adapters
 - `prml_vslam.visualization`
@@ -97,9 +97,9 @@ policy.
 Streaming method startup is intentionally symmetric with offline execution: a
 backend session can receive the normalized `SequenceManifest`, optional
 prepared benchmark inputs, and the selected reference baseline before the first
-`FramePacket` arrives. That keeps dataset-backed replay logic, such as mock
-reference-trajectory and Tango point-cloud forwarding, inside the method layer
-instead of leaking dataset-specific hooks into the transport path.
+`FramePacket` arrives. That keeps dataset-backed replay logic, such as
+reference-trajectory selection and Tango point-cloud forwarding, inside the
+method layer instead of leaking dataset-specific hooks into the transport path.
 
 Derived viewer/world-up alignment remains a separate repo-owned boundary. It
 must produce explicit metadata and derived artifacts without mutating the native

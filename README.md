@@ -27,7 +27,7 @@ Implemented or functional:
 - ADVIO local dataset readiness checks, selective downloads, and replay tooling
 - TOML-backed run planning and persisted pipeline request loading
 - Separate offline and streaming runner paths
-- ViSTA-SLAM wrapper and mock backend
+- ViSTA-SLAM wrapper
 - Rerun live streaming and `.rrd` file export
 - Explicit trajectory evaluation when benchmark inputs are available
 

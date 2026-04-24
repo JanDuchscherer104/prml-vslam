@@ -6,7 +6,7 @@ flowchart TD
     subgraph planning["Planning phase"]
         toml[["Persisted pipeline TOML"]]
         load["load_run_request_toml()"]
-        request["RunRequest"]
+        request["RunConfig"]
         paths["resolve_pipeline_config_path()"]
         planner["build_run_plan()"]
         plan["RunPlan"]

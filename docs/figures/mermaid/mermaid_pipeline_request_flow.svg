@@ -129,9 +129,9 @@
   <rect x="213.35375" y="702.8" width="185.70399999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
   <text x="306.20574999999997" y="721.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">load_run_request_toml()</text>
 </g>
-<g class="node" data-id="request" data-label="RunRequest" data-shape="rectangle">
+<g class="node" data-id="request" data-label="RunConfig" data-shape="rectangle">
   <rect x="248.92174999999997" y="787.7" width="114.568" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="306.20574999999997" y="806.1500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunRequest</text>
+  <text x="306.20574999999997" y="806.1500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunConfig</text>
 </g>
 <g class="node" data-id="paths" data-label="resolve_pipeline_config_path()" data-shape="rectangle">
   <rect x="194.08775" y="549.6" width="224.23599999999993" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />

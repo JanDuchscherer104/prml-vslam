@@ -67,7 +67,7 @@ flowchart TB
     PipelineContracts["prml_vslam.pipeline.contracts<br/>plans, events, snapshots, provenance"]
     PipelineStages["prml_vslam.pipeline.stages<br/>stage configs, inputs, runtimes, visualization adapters"]
     PipelineRuntime["prml_vslam.pipeline runtime<br/>backend, coordinator, runner, runtime manager, sinks"]
-    Benchmark["prml_vslam.benchmark / eval / alignment<br/>stage-owned policy and derived metadata"]
+    Benchmark["prml_vslam.sources / eval / alignment<br/>source-prepared refs, stage policy, derived metadata"]
     Visualization["prml_vslam.visualization<br/>repo-owned viewer helpers"]
 
     Interfaces --> Methods
@@ -97,15 +97,15 @@ flowchart TB
 
 | Stage / boundary | Interface or seam | Owner | Consumes | Produces / emits |
 | --- | --- | --- | --- | --- |
-| planning | [`RunConfig.compile_plan()`](../../src/prml_vslam/pipeline/config.py) | `pipeline` | `RunConfig`, optional `BackendDescriptor`, `PathConfig` | [`RunPlan`](../../src/prml_vslam/pipeline/contracts/plan.py) |
+| planning | [`RunConfig.compile_plan()`](../../src/prml_vslam/pipeline/config.py) | `pipeline` | `RunConfig`, optional canonical SLAM backend config, `PathConfig` | [`RunPlan`](../../src/prml_vslam/pipeline/contracts/plan.py) |
 | launch/runtime boundary | [`PipelineBackend.submit_run()`](../../src/prml_vslam/pipeline/backend.py) + [`RunService.start_run()`](../../src/prml_vslam/pipeline/run_service.py) | `pipeline` | `RunConfig`, optional runtime source injection | run id, snapshot/event/payload access |
-| runtime construction | [`RuntimeManager`](../../src/prml_vslam/pipeline/runtime_manager.py) | `pipeline` | `RunPlan`, stage key, runtime factory registrations | [`StageRuntimeProxy`](../../src/prml_vslam/pipeline/stages/base/proxy.py), preflight diagnostics |
-| source | [`SourceRuntime.run_offline()`](../../src/prml_vslam/pipeline/stages/source/runtime.py) | `pipeline.stages.source` | `SourceRuntimeInput`, injected `OfflineSequenceSource` or `StreamingSequenceSource` | [`SourceStageOutput`](../../src/prml_vslam/interfaces/ingest.py), source [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
-| slam (offline) | [`SlamStageRuntime.run_offline()`](../../src/prml_vslam/pipeline/stages/slam/runtime.py) | `pipeline.stages.slam` + `methods` | [`SlamOfflineInput`](../../src/prml_vslam/pipeline/stages/slam/contracts.py), method backend config, output policy | [`SlamArtifacts`](../../src/prml_vslam/interfaces/slam.py), slam [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
-| slam (streaming) | [`SlamStageRuntime.start_streaming()`](../../src/prml_vslam/pipeline/stages/slam/runtime.py) + `submit_stream_item()` + `finish_streaming()` | `pipeline.stages.slam` + `methods` | [`SlamStreamingStartInput`](../../src/prml_vslam/pipeline/stages/slam/contracts.py), [`SlamFrameInput`](../../src/prml_vslam/pipeline/stages/slam/contracts.py), backend streaming session | [`StageRuntimeUpdate`](../../src/prml_vslam/pipeline/stages/base/contracts.py), final slam [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
-| ground alignment | [`GroundAlignmentRuntime.run_offline()`](../../src/prml_vslam/pipeline/stages/ground_alignment/runtime.py) | `pipeline.stages.ground_alignment` + `alignment` | [`GroundAlignmentRuntimeInput`](../../src/prml_vslam/pipeline/stages/ground_alignment/contracts.py), [`SlamArtifacts`](../../src/prml_vslam/interfaces/slam.py) | [`GroundAlignmentMetadata`](../../src/prml_vslam/interfaces/alignment.py), alignment [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
-| trajectory evaluation | [`TrajectoryEvaluationRuntime.run_offline()`](../../src/prml_vslam/pipeline/stages/trajectory_eval/runtime.py) | `pipeline.stages.trajectory_eval` + `eval` | [`TrajectoryEvaluationRuntimeInput`](../../src/prml_vslam/pipeline/stages/trajectory_eval/contracts.py), [`SlamArtifacts`](../../src/prml_vslam/interfaces/slam.py), prepared references | trajectory metrics artifact, evaluation [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
-| reconstruction | [`ReconstructionRuntime.run_offline()`](../../src/prml_vslam/pipeline/stages/reconstruction/runtime.py) | `pipeline.stages.reconstruction` + `reconstruction` | [`ReconstructionRuntimeInput`](../../src/prml_vslam/pipeline/stages/reconstruction/contracts.py), prepared RGB-D inputs | reconstruction metadata, reconstruction [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py), reconstruction live updates |
+| runtime construction | [`RuntimeManager`](../../src/prml_vslam/pipeline/runtime_manager.py) | `pipeline` | `RunPlan`, stage key, runtime factory registrations | [`StageRuntimeHandle`](../../src/prml_vslam/pipeline/stages/base/proxy.py), preflight diagnostics |
+| source | [`SourceRuntime.run_offline()`](../../src/prml_vslam/sources/runtime.py) | `sources` | `SourceRuntimeInput`, injected `OfflineSequenceSource` or `StreamingSequenceSource` | [`SourceStageOutput`](../../src/prml_vslam/sources/contracts.py), source [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
+| slam (offline) | [`SlamStageRuntime.run_offline()`](../../src/prml_vslam/methods/stage/runtime.py) | `methods.stage` + `methods` | [`SlamOfflineInput`](../../src/prml_vslam/methods/stage/contracts.py), method backend config, output policy | [`SlamArtifacts`](../../src/prml_vslam/interfaces/slam.py), slam [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
+| slam (streaming) | [`SlamStageRuntime.start_streaming()`](../../src/prml_vslam/methods/stage/runtime.py) + `submit_stream_item()` + `finish_streaming()` | `methods.stage` + `methods` | [`SlamStreamingStartInput`](../../src/prml_vslam/methods/stage/contracts.py), [`FramePacket`](../../src/prml_vslam/interfaces/runtime.py), backend streaming session | [`StageRuntimeUpdate`](../../src/prml_vslam/pipeline/stages/base/contracts.py), final slam [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
+| ground alignment | [`GroundAlignmentRuntime.run_offline()`](../../src/prml_vslam/alignment/stage/runtime.py) | `alignment.stage` + `alignment` | [`GroundAlignmentRuntimeInput`](../../src/prml_vslam/alignment/stage/contracts.py), [`SlamArtifacts`](../../src/prml_vslam/interfaces/slam.py) | [`GroundAlignmentMetadata`](../../src/prml_vslam/interfaces/alignment.py), alignment [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
+| trajectory evaluation | [`TrajectoryEvaluationRuntime.run_offline()`](../../src/prml_vslam/eval/stage_trajectory/runtime.py) | `eval.stage_trajectory` + `eval` | [`TrajectoryEvaluationRuntimeInput`](../../src/prml_vslam/eval/stage_trajectory/contracts.py), [`SlamArtifacts`](../../src/prml_vslam/interfaces/slam.py), prepared references | trajectory metrics artifact, evaluation [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
+| reconstruction | [`ReconstructionRuntime.run_offline()`](../../src/prml_vslam/reconstruction/stage/runtime.py) | `reconstruction.stage` + `reconstruction` | [`ReconstructionRuntimeInput`](../../src/prml_vslam/reconstruction/stage/contracts.py), prepared RGB-D inputs | reconstruction metadata, reconstruction [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py), reconstruction live updates |
 | summary | [`SummaryRuntime.run_offline()`](../../src/prml_vslam/pipeline/stages/summary/runtime.py) | `pipeline.stages.summary` | [`SummaryRuntimeInput`](../../src/prml_vslam/pipeline/stages/summary/contracts.py), ordered [`StageOutcome`](../../src/prml_vslam/pipeline/contracts/events.py) list | [`RunSummary`](../../src/prml_vslam/pipeline/contracts/provenance.py), [`StageManifest`](../../src/prml_vslam/pipeline/contracts/provenance.py) list, summary [`StageResult`](../../src/prml_vslam/pipeline/stages/base/contracts.py) |
 | snapshot projection | [`SnapshotProjector.apply()`](../../src/prml_vslam/pipeline/snapshot_projector.py) + `apply_runtime_update()` | `pipeline` | durable [`RunEvent`](../../src/prml_vslam/pipeline/contracts/events.py), live [`StageRuntimeUpdate`](../../src/prml_vslam/pipeline/stages/base/contracts.py) | keyed [`RunSnapshot`](../../src/prml_vslam/pipeline/contracts/runtime.py) |
 | observer payload resolution | [`RerunEventSink.observe_update()`](../../src/prml_vslam/pipeline/sinks/rerun.py) + [`PipelineBackend.read_payload()`](../../src/prml_vslam/pipeline/backend.py) | `pipeline` | [`StageRuntimeUpdate`](../../src/prml_vslam/pipeline/stages/base/contracts.py), [`TransientPayloadRef`](../../src/prml_vslam/pipeline/stages/base/handles.py) | repo-owned viewer side effects only |
@@ -201,11 +201,11 @@ The bounded stage path is now stage-local and `StageResult`-based:
 
 The main bounded inputs are:
 
-- [`SourceRuntimeInput`](../../src/prml_vslam/pipeline/stages/source/runtime.py)
-- [`SlamOfflineInput`](../../src/prml_vslam/pipeline/stages/slam/contracts.py)
-- [`GroundAlignmentRuntimeInput`](../../src/prml_vslam/pipeline/stages/ground_alignment/contracts.py)
-- [`TrajectoryEvaluationRuntimeInput`](../../src/prml_vslam/pipeline/stages/trajectory_eval/contracts.py)
-- [`ReconstructionRuntimeInput`](../../src/prml_vslam/pipeline/stages/reconstruction/contracts.py)
+- [`SourceRuntimeInput`](../../src/prml_vslam/sources/runtime.py)
+- [`SlamOfflineInput`](../../src/prml_vslam/methods/stage/contracts.py)
+- [`GroundAlignmentRuntimeInput`](../../src/prml_vslam/alignment/stage/contracts.py)
+- [`TrajectoryEvaluationRuntimeInput`](../../src/prml_vslam/eval/stage_trajectory/contracts.py)
+- [`ReconstructionRuntimeInput`](../../src/prml_vslam/reconstruction/stage/contracts.py)
 - [`SummaryRuntimeInput`](../../src/prml_vslam/pipeline/stages/summary/contracts.py)
 
 ### Streaming SLAM Hot Path
@@ -214,7 +214,7 @@ The current streaming path is split between:
 
 - [`PacketSourceActor`](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py)
   for source read-loop and credit accounting
-- [`SlamStageRuntime`](../../src/prml_vslam/pipeline/stages/slam/runtime.py)
+- [`SlamStageRuntime`](../../src/prml_vslam/methods/stage/runtime.py)
   for backend session lifecycle and final SLAM result
 - [`StageRuntimeUpdate`](../../src/prml_vslam/pipeline/stages/base/contracts.py)
   for live semantic events, live status, and neutral visualization items
@@ -247,7 +247,7 @@ The current durable event model is lifecycle/provenance only:
 The current executable code is closer to the target than the old runtime
 program path, but it is still mid-cutover in a few places:
 
-- `RunRequest` compatibility still exists in launch and execution-context code
+- `RunConfig` compatibility still exists in launch and execution-context code
 - `StageAvailability` is still present as a transitional planning DTO
 - stage-key alias helpers and target/current key projection still live in
   [`pipeline/config.py`](../../src/prml_vslam/pipeline/config.py)
