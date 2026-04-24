@@ -15,11 +15,11 @@ import numpy as np
 import open3d as o3d
 
 from prml_vslam.interfaces import CameraIntrinsicsSeries, FrameTransform
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
-from prml_vslam.methods.config_contracts import SlamOutputPolicy
+from prml_vslam.methods.stage.config import SlamOutputPolicy
 from prml_vslam.methods.vista.artifact_io import load_vista_intrinsics_matrices, load_vista_view_names
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory

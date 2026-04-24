@@ -12,12 +12,12 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.stage.config import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
 
 
 @runtime_checkable
@@ -50,7 +50,7 @@ class OfflineSlamBackend(Protocol):
 class StreamingSlamBackend(Protocol):
     """Expose streaming SLAM lifecycle directly on the backend.
 
-    :class:`prml_vslam.pipeline.stages.slam.runtime.SlamStageRuntime` owns the
+    :class:`prml_vslam.methods.stage.runtime.SlamStageRuntime` owns the
     pipeline lifecycle. Backend implementations own method-private mutable
     state behind this protocol and do not expose a separate public session
     object.

@@ -1,9 +1,9 @@
 # Methods Guide
 
-This package owns concrete SLAM wrapper execution: mock replay, ViSTA adapter
-bootstrap, backend-native live updates, and normalized `SlamArtifacts`
-production. Persisted backend selection and backend config muxing belong to
-`prml_vslam.pipeline.stages.slam.config`.
+This package owns concrete SLAM wrapper execution: ViSTA adapter bootstrap,
+backend-native live updates, and normalized `SlamArtifacts` production.
+Persisted backend selection and backend config muxing belong to
+`prml_vslam.methods.stage.config`.
 
 ## Current Implementation
 
@@ -14,11 +14,10 @@ normalized artifacts. There is no central method factory in this package.
 
 The method package keeps these concerns local:
 
-- `contracts.py`: backend-native `SlamUpdate` telemetry.
-- `descriptors.py`: backend capability/resource DTOs consumed by stage configs.
+- `contracts.py`: normalized `SlamArtifacts` outputs and backend-native
+  `SlamUpdate` telemetry.
 - `protocols.py`: offline and streaming backend/session behavior seams.
-- `options.py`: structural option protocols for wrapper implementations only.
-- `mock_vslam.py`: repository-local mock backend.
+- `mast3r.py`: placeholder MASt3R backend.
 - `vista/`: canonical ViSTA-SLAM wrapper, runtime bootstrap, preprocessing,
   session stepping, and native artifact import.
 
@@ -31,6 +30,6 @@ native outputs, emit backend-native live updates, and normalize outputs into the
 shared artifact contracts consumed by the pipeline.
 
 When adding a backend, add the persisted config variant and planning metadata in
-`prml_vslam.pipeline.stages.slam.config`, then implement the wrapper here
+`prml_vslam.methods.stage.config`, then implement the wrapper here
 against `protocols.py`. Keep heavy upstream imports and allocations in wrapper
 construction or runtime startup, not in import-time package code.

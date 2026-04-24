@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.options import Mast3rSlamBackendOptions
 from prml_vslam.methods.protocols import SlamBackend
+from prml_vslam.methods.stage.config import (
+    Mast3rSlamBackendConfig,
+    MethodId,
+    SlamBackendConfig,
+    SlamOutputPolicy,
+)
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
 
 
 class Mast3rSlamBackend(SlamBackend):
@@ -19,7 +23,7 @@ class Mast3rSlamBackend(SlamBackend):
 
     method_id: MethodId = MethodId.MAST3R
 
-    def __init__(self, config: Mast3rSlamBackendOptions) -> None:
+    def __init__(self, config: Mast3rSlamBackendConfig) -> None:
         self._config = config
 
     def start_streaming(

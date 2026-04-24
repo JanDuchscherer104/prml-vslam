@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import torch
 
 
-# TODO: Can't we simply define "/typings" for Vista??
+# TODO: Can't we simply define "/typings" for Vista in the repo root typings dir??
 class _VistaImageDataset(Protocol):
     """Subset of the upstream image dataset API used by the wrapper."""
 
