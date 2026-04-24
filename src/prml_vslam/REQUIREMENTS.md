@@ -63,6 +63,8 @@ Use this file for package-root ownership rules and cross-package contract constr
     coordination, and repo-local execution-lifecycle policy
   - keeps current `RunRequest` compatibility while the target `RunConfig`,
     declarative stage configs, and `RuntimeManager` construction model land
+  - `RunPlan` source snapshots include configured source sampling policy and
+    nullable expected source cadence, not measured runtime throughput
   - does not own transport decoding, app rendering, or benchmark metrics logic
 - `plotting`
   - owns reusable figure construction helpers

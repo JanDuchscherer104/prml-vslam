@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
 from types import UnionType
 from typing import Annotated, Any, Literal, Self, TypeAlias, Union, get_args, get_origin
@@ -11,7 +12,13 @@ from typing import Annotated, Any, Literal, Self, TypeAlias, Union, get_args, ge
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from prml_vslam.benchmark import ReferenceSource
+from prml_vslam.datasets.advio.advio_layout import resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir
+from prml_vslam.datasets.advio.advio_loading import load_advio_frame_timestamps_ns
 from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.datasets.tum_rgbd.tum_rgbd_layout import (
+    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
+)
+from prml_vslam.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_list
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -201,17 +208,18 @@ def _compile_run_plan(
         run_id=path_config.slugify_experiment_name(run_config.experiment_name),
         mode=run_config.mode,
         artifact_root=run_paths.artifact_root,
-        source=_planned_source(source_backend),
+        source=_planned_source(source_backend, path_config=path_config),
         stages=plan_stages,
         config_warnings=run_config.config_warnings,
     )
 
 
-def _planned_source(source_backend: SourceBackendConfig) -> PlannedSource:
+def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> PlannedSource:
     payload: dict[str, Any] = {
         "source_id": source_backend.source_id,
         "frame_stride": source_backend.frame_stride,
         "target_fps": source_backend.target_fps,
+        "expected_fps": _expected_source_fps(source_backend, path_config=path_config),
     }
     match source_backend:
         case VideoSourceConfig(video_path=video_path):
@@ -236,6 +244,86 @@ def _planned_source(source_backend: SourceBackendConfig) -> PlannedSource:
             payload["device_index"] = device_index
             payload["device_address"] = device_address
     return PlannedSource.model_validate(payload)
+
+
+def _expected_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+    if source_backend.target_fps is not None:
+        return float(source_backend.target_fps)
+    native_fps = _native_source_fps(source_backend, path_config=path_config)
+    if native_fps is None:
+        return None
+    return native_fps / source_backend.frame_stride
+
+
+def _native_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+    try:
+        match source_backend:
+            case VideoSourceConfig(video_path=video_path):
+                return _video_native_fps(video_path=video_path, path_config=path_config)
+            case AdvioSourceConfig(sequence_id=sequence_id):
+                return _advio_native_fps(sequence_id=sequence_id, path_config=path_config)
+            case TumRgbdSourceConfig(sequence_id=sequence_id):
+                return _tum_rgbd_native_fps(sequence_id=sequence_id, path_config=path_config)
+            case Record3DSourceConfig():
+                return None
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        return None
+
+
+def _video_native_fps(*, video_path: Path, path_config: PathConfig) -> float | None:
+    import cv2
+
+    resolved_video_path = path_config.resolve_video_path(video_path)
+    if not resolved_video_path.exists():
+        return None
+    capture = cv2.VideoCapture(str(resolved_video_path))
+    try:
+        if not capture.isOpened():
+            return None
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+        return fps if fps > 0.0 else None
+    finally:
+        capture.release()
+
+
+def _advio_native_fps(*, sequence_id: str, path_config: PathConfig) -> float | None:
+    dataset_dir = path_config.resolve_dataset_dir(DatasetId.ADVIO.value)
+    sequence_dir = resolve_existing_advio_sequence_dir(dataset_dir, sequence_id)
+    if sequence_dir is None:
+        return None
+    timestamps_ns = load_advio_frame_timestamps_ns(sequence_dir / "iphone" / "frames.csv")
+    return _fps_for_timestamps_ns(timestamps_ns)
+
+
+def _tum_rgbd_native_fps(*, sequence_id: str, path_config: PathConfig) -> float | None:
+    dataset_dir = path_config.resolve_dataset_dir(DatasetId.TUM_RGBD.value)
+    sequence_dir = resolve_existing_tum_rgbd_sequence_dir(dataset_dir, sequence_id)
+    if sequence_dir is None:
+        return None
+    timestamps_s = [timestamp_s for timestamp_s, _path in load_tum_rgbd_list(sequence_dir / "rgb.txt")]
+    return _fps_for_timestamps_s(timestamps_s)
+
+
+def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
+    if len(timestamps_ns) < 2:
+        return None
+    return _fps_for_duration(
+        sample_count=len(timestamps_ns),
+        duration_s=(int(timestamps_ns[-1]) - int(timestamps_ns[0])) / 1e9,
+    )
+
+
+def _fps_for_timestamps_s(timestamps_s: Sequence[float]) -> float | None:
+    if len(timestamps_s) < 2:
+        return None
+    return _fps_for_duration(
+        sample_count=len(timestamps_s),
+        duration_s=float(timestamps_s[-1]) - float(timestamps_s[0]),
+    )
+
+
+def _fps_for_duration(*, sample_count: int, duration_s: float) -> float | None:
+    return None if duration_s <= 0.0 else (sample_count - 1) / duration_s
 
 
 def build_run_config(
