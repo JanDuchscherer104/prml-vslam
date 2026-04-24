@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary, StageManifest, StageStatus
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus

@@ -9,19 +9,74 @@ observer sinks.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict, Field, field_validator
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
+from prml_vslam.pipeline.contracts.mode import PipelineMode
+from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.utils import BaseConfig
+from prml_vslam.protocols.source import OfflineSequenceSource
+from prml_vslam.utils import BaseConfig, BaseData, PathConfig, RunArtifactPaths
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from prml_vslam.methods.stage.config import SlamBackendConfig
+    from prml_vslam.pipeline.config import RunConfig
+    from prml_vslam.pipeline.runner import StageResultStore
+    from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
+    from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 
 JsonScalar = str | int | float | bool | None
 
 
+@dataclass(frozen=True, slots=True)
+class StagePlanContext:
+    """Inputs available while compiling a deterministic run plan."""
+
+    run_config: RunConfig
+    path_config: PathConfig
+    run_paths: RunArtifactPaths
+    backend: SlamBackendConfig | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StageRuntimeBuildContext:
+    """Inputs available while lazily constructing one stage runtime."""
+
+    run_config: RunConfig
+    plan: RunPlan
+    path_config: PathConfig
+    source: OfflineSequenceSource | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StageInputContext:
+    """Inputs available while constructing one runtime-boundary DTO."""
+
+    run_config: RunConfig
+    plan: RunPlan
+    path_config: PathConfig
+    run_paths: RunArtifactPaths
+    results: StageResultStore
+
+
+@dataclass(frozen=True, slots=True)
+class FailureFingerprint:
+    """Stable hash inputs for generic stage failure provenance."""
+
+    config_payload: BaseConfig | BaseData | dict[str, JsonScalar] | list[BaseData] | None
+    input_payload: BaseConfig | BaseData | dict[str, JsonScalar] | list[BaseData] | None
+
+
+# TODO: remove and inline into StageConfig. Only expose num_cpus, num_gpus!
 class ResourceSpec(BaseConfig):
     """Describe substrate-neutral resources requested by one stage."""
 
@@ -49,6 +104,7 @@ class ResourceSpec(BaseConfig):
         return value
 
 
+# TODO: remove PlacementConstraint and donwstream usage!
 class PlacementConstraint(BaseConfig):
     """Describe optional substrate-neutral placement preferences."""
 
@@ -64,6 +120,7 @@ class PlacementConstraint(BaseConfig):
     """Optional affinity label interpreted only by runtime placement adapters."""
 
 
+# TODO: remove StageExecutionConfig and inline into StageConfig!
 class StageExecutionConfig(BaseConfig):
     """Collect stage execution policy without constructing runtime targets."""
 
@@ -179,6 +236,45 @@ class StageConfig(BaseConfig):
         """Return the declared output paths for a generic stage section."""
         return list(output_paths)
 
+    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+        """Return deterministic output paths declared by this stage."""
+        del context
+        return []
+
+    def availability(self, context: StagePlanContext) -> tuple[bool, str | None]:
+        """Return whether the configured stage can run."""
+        del context
+        return True, None
+
+    def runtime_factory(self, context: StageRuntimeBuildContext) -> Callable[[], BaseStageRuntime] | None:
+        """Return a lazy runtime factory for this stage, or ``None`` for diagnostics."""
+        del context
+        return None
+
+    def runtime_capabilities(self, mode: PipelineMode) -> frozenset[RuntimeCapability]:
+        """Return runtime capabilities advertised by this stage runtime."""
+        from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
+
+        del mode
+        return frozenset({RuntimeCapability.OFFLINE})
+
+    def build_offline_input(self, context: StageInputContext) -> BaseData:
+        """Build the narrow DTO consumed by this stage runtime."""
+        raise RuntimeError(f"No offline input builder for stage '{self.stage_key}'.")
+
+    def build_streaming_start_input(self, context: StageInputContext) -> BaseData:
+        """Build the narrow DTO used to start a streaming runtime."""
+        del context
+        raise RuntimeError(f"No streaming input builder for stage '{self.stage_key}'.")
+
+    def failure_fingerprint(self, context: StageInputContext) -> FailureFingerprint:
+        """Return stable config and input payloads for failure provenance."""
+        stage_key = self.stage_key.value if self.stage_key is not None else "unknown"
+        return FailureFingerprint(
+            config_payload={"stage_key": stage_key},
+            input_payload={"run_id": context.plan.run_id, "stage_key": stage_key},
+        )
+
     def failure_outcome(
         self,
         *,
@@ -218,10 +314,14 @@ def _valid_artifact_selector(selector: str) -> bool:
 __all__ = [
     "PlacementConstraint",
     "ResourceSpec",
+    "FailureFingerprint",
     "StageCleanupPolicy",
     "StageCacheConfig",
     "StageCacheMode",
     "StageConfig",
     "StageExecutionConfig",
+    "StageInputContext",
+    "StagePlanContext",
+    "StageRuntimeBuildContext",
     "StageTelemetryConfig",
 ]

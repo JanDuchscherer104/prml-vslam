@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.methods.stage.config import SlamStageConfig, VistaSlamBackendConfig
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.stage_cache import ContentFingerprinter, StageCacheKey, StageCacheStore
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
-from prml_vslam.pipeline.stages.slam.config import MockSlamBackendConfig, SlamStageConfig
 
 
 def test_content_fingerprint_uses_file_bytes_not_run_root_for_paths_and_artifacts(tmp_path: Path) -> None:
@@ -35,8 +36,8 @@ def test_content_fingerprint_uses_file_bytes_not_run_root_for_paths_and_artifact
 
 
 def test_stage_cache_key_ignores_cache_policy_for_same_stage_config() -> None:
-    first_config = SlamStageConfig(backend=MockSlamBackendConfig())
-    second_config = SlamStageConfig(backend=MockSlamBackendConfig())
+    first_config = SlamStageConfig(backend=VistaSlamBackendConfig())
+    second_config = SlamStageConfig(backend=VistaSlamBackendConfig())
     second_config.cache.enabled = True
     second_config.cache.cache_root = Path("/tmp/other-cache-root")
     fingerprinter = ContentFingerprinter()
@@ -48,8 +49,8 @@ def test_stage_cache_key_ignores_cache_policy_for_same_stage_config() -> None:
 
 
 def test_stage_cache_round_trips_source_result_into_new_run_root(tmp_path: Path) -> None:
-    source_root = tmp_path / "source-run" / "mock"
-    target_root = tmp_path / "target-run" / "mock"
+    source_root = tmp_path / "source-run" / "vista"
+    target_root = tmp_path / "target-run" / "vista"
     cache_store = StageCacheStore(tmp_path / "_stage_cache")
     run_paths = source_root / "input"
     run_paths.mkdir(parents=True)
@@ -91,7 +92,7 @@ def test_stage_cache_round_trips_source_result_into_new_run_root(tmp_path: Path)
 
 
 def test_stage_cache_rejects_stale_cached_artifact(tmp_path: Path) -> None:
-    source_root = tmp_path / "source-run" / "mock"
+    source_root = tmp_path / "source-run" / "vista"
     cache_store = StageCacheStore(tmp_path / "_stage_cache")
     manifest_path = source_root / "input" / "sequence_manifest.json"
     manifest_path.parent.mkdir(parents=True)
@@ -117,4 +118,4 @@ def test_stage_cache_rejects_stale_cached_artifact(tmp_path: Path) -> None:
     cached_manifest = entry_path / "artifacts" / "input" / "sequence_manifest.json"
     cached_manifest.write_text('{"sequence_id": "tampered"}', encoding="utf-8")
 
-    assert cache_store.read(key, artifact_root=tmp_path / "target-run" / "mock") is None
+    assert cache_store.read(key, artifact_root=tmp_path / "target-run" / "vista") is None

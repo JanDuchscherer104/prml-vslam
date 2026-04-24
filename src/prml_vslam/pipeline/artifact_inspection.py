@@ -10,7 +10,8 @@ import cv2
 from pydantic import Field, TypeAdapter
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import (
     RunCompleted,
@@ -20,10 +21,11 @@ from prml_vslam.pipeline.contracts.events import (
     RunSubmitted,
     StageFailed,
 )
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary, StageManifest
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.reconstruction.contracts import ReconstructionMetadata
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.utils import BaseData, PathConfig, RunArtifactPaths
 
 JsonPrimitive: TypeAlias = str | int | float | bool | None

@@ -9,12 +9,12 @@ import typer
 from typer.testing import CliRunner
 
 from prml_vslam.main import Record3DStreamConfig, _apply_dotted_overrides_to_run_config, app
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
+from prml_vslam.sources.config import VideoSourceConfig
 
 runner = CliRunner()
 
@@ -45,7 +45,7 @@ def test_dotted_run_config_overrides_parse_json_and_deep_merge(tmp_path: Path) -
         experiment_name="cli-overrides",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         connect_live_viewer=True,
     )
 
@@ -105,7 +105,7 @@ def test_run_config_overrides_reject_non_schema_paths(tmp_path: Path, args: list
         experiment_name="cli-overrides",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     with pytest.raises(typer.BadParameter, match="Invalid RunConfig override"):
@@ -117,7 +117,7 @@ def test_run_config_overrides_require_values(tmp_path: Path) -> None:
         experiment_name="cli-overrides",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     with pytest.raises(typer.BadParameter, match="requires a value"):
@@ -125,7 +125,7 @@ def test_run_config_overrides_require_values(tmp_path: Path) -> None:
 
 
 def test_export_import_run_commands_round_trip_bundle(tmp_path: Path) -> None:
-    artifact_root = _write_cli_run(tmp_path / "source-artifacts" / "demo-run" / "mock")
+    artifact_root = _write_cli_run(tmp_path / "source-artifacts" / "demo-run" / "vista")
     bundle_path = tmp_path / "demo-run.prmlrun.tar.gz"
     output_dir = tmp_path / "imported-artifacts"
 
@@ -136,11 +136,11 @@ def test_export_import_run_commands_round_trip_bundle(tmp_path: Path) -> None:
     assert bundle_path.is_file()
     assert "demo-run" in export_result.stdout
     assert import_result.exit_code == 0
-    assert (output_dir / "demo-run" / "mock" / "summary" / "run_summary.json").is_file()
+    assert (output_dir / "demo-run" / "vista" / "summary" / "run_summary.json").is_file()
 
 
 def test_import_run_command_collision_policies(tmp_path: Path) -> None:
-    artifact_root = _write_cli_run(tmp_path / "source-artifacts" / "demo-run" / "mock")
+    artifact_root = _write_cli_run(tmp_path / "source-artifacts" / "demo-run" / "vista")
     bundle_path = tmp_path / "demo-run.prmlrun.tar.gz"
     output_dir = tmp_path / "imported-artifacts"
     runner.invoke(app, ["export-run", str(artifact_root), "--output", str(bundle_path)])
@@ -159,9 +159,9 @@ def test_import_run_command_collision_policies(tmp_path: Path) -> None:
     assert fail_result.exit_code == 1
     assert "already exists" in fail_result.stdout
     assert rename_result.exit_code == 0
-    assert (output_dir / "demo-run" / "mock-imported-1").is_dir()
+    assert (output_dir / "demo-run" / "vista-imported-1").is_dir()
     assert overwrite_result.exit_code == 0
-    assert (output_dir / "demo-run" / "mock").is_dir()
+    assert (output_dir / "demo-run" / "vista").is_dir()
 
 
 def _write_cli_run(artifact_root: Path) -> Path:

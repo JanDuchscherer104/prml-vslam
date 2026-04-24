@@ -32,6 +32,7 @@ from prml_vslam.main import (
     plan_run,
     run_config,
 )
+from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import RunEvent
@@ -43,8 +44,7 @@ from prml_vslam.pipeline.demo import (
 )
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.slam.config import MethodId, MockSlamBackendConfig
-from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
 
@@ -96,7 +96,7 @@ def _advio_run_config(
             "ray_local_head_lifecycle": local_head_lifecycle,
             "stages": {
                 "source": {"backend": _advio_source_payload()},
-                "slam": {"backend": {"method_id": "mock", "max_frames": max_frames}},
+                "slam": {"backend": {"method_id": "vista", "max_frames": max_frames}},
                 "summary": {"enabled": True},
             },
             "visualization": {
@@ -136,7 +136,7 @@ video_path = "captures/demo.mp4"
 enabled = true
 
 [stages.slam.backend]
-method_id = "mock"
+method_id = "vista"
 
 [stages.summary]
 enabled = true
@@ -146,7 +146,7 @@ enabled = true
     run_config = load_run_config_toml(path_config=path_config, config_path=config_path)
 
     assert run_config.experiment_name == "target-compatible"
-    assert run_config.stages.slam.backend.method_id is MethodId.MOCK
+    assert run_config.stages.slam.backend.method_id is MethodId.VISTA
 
 
 def test_run_config_planning_rejects_missing_target_backends(tmp_path: Path) -> None:
@@ -373,7 +373,7 @@ def test_run_config_persists_log_after_loaded_config_exception(
     assert "runtime source boom" in content
 
 
-def test_run_config_vista_full_toml_smoke_with_mock_backend(
+def test_run_config_vista_full_toml_smoke_with_capped_vista_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -437,7 +437,7 @@ pose_frame_mode = "provider_world"
 enabled = true
 
 [stages.slam.backend]
-method_id = "mock"
+method_id = "vista"
 
 [stages.summary]
 enabled = true
@@ -448,7 +448,7 @@ enabled = true
     def load_and_patch_run_config(*, path_config: PathConfig, config_path: Path) -> RunConfig:
         run_config = load_run_config_toml(path_config=path_config, config_path=config_path)
         patched_stages = run_config.stages.model_copy(
-            update={"slam": run_config.stages.slam.model_copy(update={"backend": MockSlamBackendConfig(max_frames=3)})}
+            update={"slam": run_config.stages.slam.model_copy(update={"backend": VistaSlamBackendConfig(max_frames=3)})}
         )
         return run_config.model_copy(
             update={
@@ -476,7 +476,7 @@ enabled = true
     run_cfg = captured["run_config"]
     assert isinstance(run_cfg, RunConfig)
     assert run_cfg.stages.slam.backend is not None
-    assert run_cfg.stages.slam.backend.method_id is MethodId.MOCK
+    assert run_cfg.stages.slam.backend.method_id is MethodId.VISTA
     assert run_cfg.visualization.connect_live_viewer is False
     assert run_cfg.visualization.export_viewer_rrd is False
     assert captured["shutdown"] is False
@@ -614,7 +614,7 @@ video_path = "captures/demo.mp4"
 enabled = true
 
 [stages.slam.backend]
-method_id = "mock"
+method_id = "vista"
 
 [stages.summary]
 enabled = true
@@ -1181,7 +1181,7 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
             },
             respect_video_rotation=True,
         ),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         max_frames=2,
     )
 
@@ -1228,7 +1228,7 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
         captured["path_config"] = path_config
         return fake_source
 
-    monkeypatch.setattr("prml_vslam.pipeline.stages.source.config.AdvioSourceConfig.setup_target", fake_setup_target)
+    monkeypatch.setattr("prml_vslam.sources.config.AdvioSourceConfig.setup_target", fake_setup_target)
 
     capped_source = build_runtime_source_from_run_config(run_config=run_config, path_config=path_config)
     assert capped_source is not None

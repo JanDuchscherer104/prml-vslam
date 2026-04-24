@@ -6,18 +6,20 @@ from pathlib import Path
 
 import pytest
 
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SourceStageOutput
 from prml_vslam.utils import BaseData
 
 
@@ -275,7 +277,7 @@ def test_runtime_manager_constructs_proxy_lazily() -> None:
 
     assert proxy is same_proxy
     assert allocations == [StageKey.SOURCE]
-    assert proxy.offline().run_offline(_RuntimeInput(label="seq-1")).stage_key is StageKey.SOURCE
+    assert proxy.run_offline(_RuntimeInput(label="seq-1")).stage_key is StageKey.SOURCE
     status = proxy.status()
     assert status.executor_id == "local-ingest"
     assert status.submitted_count == 1
@@ -311,12 +313,11 @@ def test_stage_runtime_proxy_exposes_only_supported_views() -> None:
     proxy = manager.runtime_for(StageKey.SLAM)
 
     with pytest.raises(RuntimeError, match="does not support 'offline'"):
-        proxy.offline()
+        proxy.run_offline(_RuntimeInput(label="run"))
 
-    streaming = proxy.streaming()
-    streaming.start_streaming(_RuntimeInput(label="run"))
-    streaming.submit_stream_item(_StreamItem(seq=7))
-    result = streaming.finish_streaming()
+    proxy.start_streaming(_RuntimeInput(label="run"))
+    proxy.submit_stream_item(_StreamItem(seq=7))
+    result = proxy.finish_streaming()
 
     assert result.stage_key is StageKey.SLAM
     assert proxy.status().submitted_count == 3

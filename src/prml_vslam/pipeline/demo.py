@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig, build_run_config
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig
 from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
+from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.utils import PathConfig
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.methods.stage.config import SlamBackendConfig
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.utils import PathConfig, RunArtifactPaths
@@ -17,7 +17,7 @@ class StageExecutionContext:
     plan: RunPlan
     path_config: PathConfig
     run_paths: RunArtifactPaths
-    backend_descriptor: BackendDescriptor
+    slam_backend: SlamBackendConfig
     run_config: RunConfig
 
 

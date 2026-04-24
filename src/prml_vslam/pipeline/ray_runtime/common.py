@@ -11,9 +11,9 @@ from typing import TypeAlias
 import numpy as np
 import ray
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef

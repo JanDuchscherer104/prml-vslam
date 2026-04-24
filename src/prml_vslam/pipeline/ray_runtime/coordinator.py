@@ -20,8 +20,9 @@ from ray.actor import ActorHandle
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.ingest import SourceStageOutput
-from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.methods.stage import SlamStageRuntime
+from prml_vslam.methods.stage.config import SlamBackendConfig
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import (
@@ -42,7 +43,7 @@ from prml_vslam.pipeline.contracts.events import (
 )
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageCacheInfo
+from prml_vslam.pipeline.contracts.provenance import StageCacheInfo
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.execution_context import StageExecutionContext
@@ -62,8 +63,12 @@ from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.stage_cache import ContentFingerprinter, StageCacheKey, StageCacheStore
-from prml_vslam.pipeline.stages.base.binding import RuntimeBuildContext, StageInputContext
-from prml_vslam.pipeline.stages.base.config import StageCacheMode, StageConfig
+from prml_vslam.pipeline.stages.base.config import (
+    StageCacheMode,
+    StageConfig,
+    StageInputContext,
+    StageRuntimeBuildContext,
+)
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -72,18 +77,22 @@ from prml_vslam.pipeline.stages.base.contracts import (
     VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability, StageRuntimeProxy
-from prml_vslam.pipeline.stages.bindings import stage_binding_for
-from prml_vslam.pipeline.stages.reconstruction.visualization import (
+from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability, StageRuntimeHandle
+from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.reconstruction.stage.visualization import (
     MESH_ARTIFACT,
     POINT_CLOUD_ARTIFACT,
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamStageRuntime
-from prml_vslam.pipeline.stages.source.visualization import SourceVisualizationAdapter
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.contracts import SourceStageOutput
+from prml_vslam.sources.visualization import SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from prml_vslam.visualization.rerun_policy import (
+    ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT,
+    ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
+    ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
+)
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 
@@ -100,6 +109,17 @@ class _StageCacheRuntimeContext:
 
 def _artifact_visualizations(artifacts: dict[str, ArtifactRef]) -> list[VisualizationItem]:
     visualizations: list[VisualizationItem] = []
+    trajectory = artifacts.get("trajectory_tum")
+    if trajectory is not None:
+        visualizations.append(
+            VisualizationItem(
+                intent=VisualizationIntent.TRAJECTORY,
+                role=ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT,
+                artifact_refs={"trajectory": trajectory},
+                space="vista_slam_world",
+                metadata={"target_frame": "vista_slam_world", "coordinate_status": "raw"},
+            )
+        )
     dense_points = artifacts.get("dense_points_ply")
     if dense_points is not None:
         visualizations.append(
@@ -133,6 +153,28 @@ def _artifact_visualizations(artifacts: dict[str, ArtifactRef]) -> list[Visualiz
                 metadata={"reconstruction_id": "reference"},
             )
         )
+    aligned_trajectory = artifacts.get("aligned_estimate_tum")
+    if aligned_trajectory is not None:
+        visualizations.append(
+            VisualizationItem(
+                intent=VisualizationIntent.TRAJECTORY,
+                role=ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
+                artifact_refs={"trajectory": aligned_trajectory},
+                space="advio_gt_world",
+                metadata={"target_frame": "advio_gt_world", "coordinate_status": "sim3_aligned"},
+            )
+        )
+    aligned_point_cloud = artifacts.get("aligned_point_cloud_ply")
+    if aligned_point_cloud is not None:
+        visualizations.append(
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
+                artifact_refs={POINT_CLOUD_ARTIFACT: aligned_point_cloud},
+                space="advio_gt_world",
+                metadata={"target_frame": "advio_gt_world", "coordinate_status": "sim3_aligned"},
+            )
+        )
     return visualizations
 
 
@@ -164,10 +206,10 @@ class RunCoordinatorActor:
         self._worker: threading.Thread | None = None
         self._source_actor: ActorHandle | None = None
         self._streaming_runtime_manager: RuntimeManager | None = None
-        self._slam_runtime_proxy: StageRuntimeProxy | None = None
+        self._slam_runtime_proxy: StageRuntimeHandle | None = None
         self._run_config: RunConfig | None = None
         self._plan: RunPlan | None = None
-        self._backend_descriptor: BackendDescriptor | None = None
+        self._slam_backend: SlamBackendConfig | None = None
         self._result_store = StageResultStore()
         self._stage_runner = StageRunner(self._result_store)
         self._source_visualization_adapter = SourceVisualizationAdapter()
@@ -396,27 +438,25 @@ class RunCoordinatorActor:
         if self._slam_runtime_proxy is None:
             raise RuntimeError("Streaming SLAM runtime has not been started.")
         self._stage_runner.submit_stream_item(
-            runtime=self._slam_runtime_proxy.streaming(),
-            item=SlamFrameInput(
-                frame=FramePacket(
-                    seq=packet.seq,
-                    timestamp_ns=packet.timestamp_ns,
-                    rgb=self._resolve_handle_payload(frame_ref),
-                    depth=self._resolve_handle_payload(depth_ref),
-                    confidence=self._resolve_handle_payload(confidence_ref),
-                    pointmap=self._resolve_handle_payload(pointmap_ref),
-                    point_cloud=packet.point_cloud,
-                    intrinsics=intrinsics,
-                    pose=pose,
-                    provenance=provenance,
-                )
+            runtime=self._slam_runtime_proxy,
+            item=FramePacket(
+                seq=packet.seq,
+                timestamp_ns=packet.timestamp_ns,
+                rgb=self._resolve_handle_payload(frame_ref),
+                depth=self._resolve_handle_payload(depth_ref),
+                confidence=self._resolve_handle_payload(confidence_ref),
+                pointmap=self._resolve_handle_payload(pointmap_ref),
+                point_cloud=packet.point_cloud,
+                intrinsics=intrinsics,
+                pose=pose,
+                provenance=provenance,
             ),
         )
 
     def _drain_slam_runtime_updates(self) -> list[StageRuntimeUpdate]:
         if self._slam_runtime_proxy is None:
             return []
-        return self._slam_runtime_proxy.live_updates().drain_runtime_updates(max_items=None)
+        return self._slam_runtime_proxy.drain_runtime_updates(max_items=None)
 
     def _publish_slam_runtime_updates(self, updates: list[StageRuntimeUpdate]) -> None:
         if not updates:
@@ -476,7 +516,7 @@ class RunCoordinatorActor:
             slam_backend = run_config.stages.slam.backend
             if slam_backend is None:
                 raise RuntimeError("RunConfig execution requires `[stages.slam.backend]`.")
-            self._backend_descriptor = slam_backend.describe()
+            self._slam_backend = slam_backend
             if plan.mode is PipelineMode.OFFLINE:
                 self._run_offline(
                     run_config=run_config,
@@ -550,7 +590,7 @@ class RunCoordinatorActor:
                     continue
             self._stage_runner.run_offline_stage(
                 stage_key=stage_key,
-                runtime=runtime_proxy.offline(),
+                runtime=runtime_proxy,
                 input_payload=input_payload,
                 stage_config=stage_config,
                 config_hash=config_hash,
@@ -581,13 +621,14 @@ class RunCoordinatorActor:
 
     def _build_runtime_manager(self, *, plan: RunPlan, source: OfflineSequenceSource) -> RuntimeManager:
         manager = RuntimeManager()
+        run_config = self._require_run_config()
         for stage in plan.stages:
             if not stage.available:
                 continue
-            binding = stage_binding_for(stage.key)
-            factory = binding.runtime_factory(
-                RuntimeBuildContext(
-                    run_config=self._require_run_config(),
+            stage_config = run_config.stages.section(stage.key)
+            factory = stage_config.runtime_factory(
+                StageRuntimeBuildContext(
+                    run_config=run_config,
                     plan=plan,
                     path_config=self._require_path_config(),
                     source=source,
@@ -598,23 +639,26 @@ class RunCoordinatorActor:
             manager.register(
                 stage.key,
                 factory=factory,
-                capabilities=binding.runtime_capabilities(plan.mode),
-                deployment_kind=binding.deployment_default,
-                stage_config=binding.stage_config(self._require_run_config()),
+                capabilities=stage_config.runtime_capabilities(plan.mode),
+                stage_config=stage_config,
             )
         return manager
 
     def _build_offline_stage_input(self, *, stage_key: StageKey, context: StageExecutionContext):
-        return stage_binding_for(stage_key).build_offline_input(self._stage_input_context(context))
+        return context.run_config.stages.section(stage_key).build_offline_input(self._stage_input_context(context))
 
     def _failure_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
-        fingerprint = stage_binding_for(stage_key).failure_fingerprint(self._stage_input_context(context))
+        fingerprint = context.run_config.stages.section(stage_key).failure_fingerprint(
+            self._stage_input_context(context)
+        )
         config_payload = fingerprint.config_payload
         input_payload = fingerprint.input_payload
         return stable_hash(config_payload), stable_hash(input_payload)
 
     def _content_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
-        fingerprint = stage_binding_for(stage_key).failure_fingerprint(self._stage_input_context(context))
+        fingerprint = context.run_config.stages.section(stage_key).failure_fingerprint(
+            self._stage_input_context(context)
+        )
         fingerprinter = ContentFingerprinter()
         return fingerprinter.hash_value(fingerprint.config_payload), fingerprinter.hash_value(fingerprint.input_payload)
 
@@ -794,7 +838,7 @@ class RunCoordinatorActor:
                 config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
                 self._stage_runner.run_offline_stage(
                     stage_key=stage_key,
-                    runtime=runtime_proxy.offline(),
+                    runtime=runtime_proxy,
                     input_payload=input_payload,
                     stage_config=stage_config,
                     config_hash=config_hash,
@@ -824,8 +868,8 @@ class RunCoordinatorActor:
         try:
             self._stage_runner.start_streaming_stage(
                 stage_key=stage_key,
-                runtime=runtime_proxy.streaming(),
-                input_payload=stage_binding_for(stage_key).build_streaming_start_input(
+                runtime=runtime_proxy,
+                input_payload=context.run_config.stages.section(stage_key).build_streaming_start_input(
                     self._stage_input_context(context)
                 ),
                 on_stage_started=self._emit_stage_started,
@@ -890,7 +934,7 @@ class RunCoordinatorActor:
         try:
             slam_result = self._stage_runner.finish_streaming_stage(
                 stage_key=stage_key,
-                runtime=self._slam_runtime_proxy.streaming(),
+                runtime=self._slam_runtime_proxy,
             )
         except Exception as exc:
             error_message = str(exc)
@@ -965,7 +1009,7 @@ class RunCoordinatorActor:
             config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
             self._stage_runner.run_offline_stage(
                 stage_key=stage_key,
-                runtime=runtime_proxy.offline(),
+                runtime=runtime_proxy,
                 input_payload=input_payload,
                 stage_config=stage_config,
                 config_hash=config_hash,
@@ -982,7 +1026,7 @@ class RunCoordinatorActor:
         if not (run_config.visualization.connect_live_viewer or run_config.visualization.export_viewer_rrd):
             self._console.info("Rerun sink disabled for run '%s'.", self._run_id)
             return None
-        from prml_vslam.pipeline.sinks.rerun import RerunSinkActor
+        from prml_vslam.visualization.rerun_sink import RerunSinkActor
 
         self._console.info("Rerun sink enabled for run '%s'.", self._run_id)
         return RerunSinkActor.remote(
@@ -1125,10 +1169,10 @@ class RunCoordinatorActor:
                 "Failed to submit Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc
             )
 
-    def _publish_runtime_updates_from_proxy(self, runtime_proxy: StageRuntimeProxy) -> None:
+    def _publish_runtime_updates_from_proxy(self, runtime_proxy: StageRuntimeHandle) -> None:
         if RuntimeCapability.LIVE_UPDATES not in runtime_proxy.supported_capabilities:
             return
-        updates = runtime_proxy.live_updates().drain_runtime_updates(max_items=None)
+        updates = runtime_proxy.drain_runtime_updates(max_items=None)
         if not updates:
             return
         with self._lock:
@@ -1225,10 +1269,10 @@ class RunCoordinatorActor:
             raise RuntimeError("Run plan is not initialized.")
         return self._plan
 
-    def _require_backend_descriptor(self) -> BackendDescriptor:
-        if self._backend_descriptor is None:
-            raise RuntimeError("Backend descriptor is not initialized.")
-        return self._backend_descriptor
+    def _require_slam_backend(self) -> SlamBackendConfig:
+        if self._slam_backend is None:
+            raise RuntimeError("SLAM backend is not initialized.")
+        return self._slam_backend
 
     def _require_path_config(self) -> PathConfig:
         if self._path_config is None:
@@ -1252,7 +1296,7 @@ class RunCoordinatorActor:
             plan=plan,
             path_config=self._require_path_config() if path_config is None else path_config,
             run_paths=RunArtifactPaths.build(plan.artifact_root),
-            backend_descriptor=self._require_backend_descriptor(),
+            slam_backend=self._require_slam_backend(),
         )
 
     def _stage_input_context(self, context: StageExecutionContext) -> StageInputContext:
@@ -1261,7 +1305,6 @@ class RunCoordinatorActor:
             plan=context.plan,
             path_config=context.path_config,
             run_paths=context.run_paths,
-            backend_descriptor=context.backend_descriptor,
             results=self._result_store,
         )
 

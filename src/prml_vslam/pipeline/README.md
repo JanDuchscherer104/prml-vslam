@@ -37,7 +37,7 @@ Runtime execution is driven by target runtime objects, not by a separate
 function-pointer stage program:
 
 - [`RuntimeManager`](./runtime_manager.py) preflights available stage runtimes
-  and constructs [`StageRuntimeProxy`](./stages/base/proxy.py) instances lazily.
+  and constructs [`StageRuntimeHandle`](./stages/base/proxy.py) instances lazily.
 - [`StageRunner`](./runner.py) invokes bounded and streaming runtime protocol
   methods and stores [`StageResult`](./stages/base/contracts.py) values in
   `StageResultStore`.
