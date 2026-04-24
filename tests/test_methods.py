@@ -259,6 +259,207 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
     assert update.num_dense_points == 3
 
 
+def test_mast3r_session_starts_backend_after_intrinsics_are_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.mast3r.adapter import Mast3rSlamSession
+
+    class FakeTensor:
+        def __init__(self, value: np.ndarray) -> None:
+            self._value = np.asarray(value)
+
+        def to(self, *_args, **_kwargs) -> FakeTensor:
+            return self
+
+        def detach(self) -> FakeTensor:
+            return self
+
+        def cpu(self) -> FakeTensor:
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return self._value
+
+    class FakeSharedKeyframes:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.frames = []
+            self.intrinsics: FakeTensor | None = None
+
+        def append(self, frame) -> None:
+            self.frames.append(frame)
+
+        def set_intrinsics(self, intrinsics: FakeTensor) -> None:
+            self.intrinsics = intrinsics
+
+        def __len__(self) -> int:
+            return len(self.frames)
+
+    class FakeSharedStates:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.mode = FakeMode.INIT
+            self.frame = None
+
+        def get_mode(self) -> str:
+            return self.mode
+
+        def queue_global_optimization(self, _index: int) -> None:
+            return
+
+        def set_mode(self, mode: str) -> None:
+            self.mode = mode
+
+        def set_frame(self, frame) -> None:
+            self.frame = frame
+
+    class FakeFrameTracker:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return
+
+    class FakeFrame:
+        def __init__(self, T_WC: str) -> None:
+            self.T_WC = T_WC
+
+        def update_pointmap(self, _X: FakeTensor, _C: FakeTensor) -> None:
+            return
+
+    class FakeMode:
+        INIT = "init"
+        TRACKING = "tracking"
+        RELOC = "reloc"
+
+    class FakeIntrinsics:
+        @staticmethod
+        def from_calib(*_args, **_kwargs) -> SimpleNamespace:
+            return SimpleNamespace(K_frame=np.eye(3, dtype=np.float32))
+
+    monkeypatch.setitem(sys.modules, "mast3r_slam.config", SimpleNamespace(config={"use_calib": True}))
+    monkeypatch.setitem(sys.modules, "mast3r_slam.dataloader", SimpleNamespace(Intrinsics=FakeIntrinsics))
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(float32="float32", from_numpy=lambda value: FakeTensor(np.asarray(value))),
+    )
+
+    session = Mast3rSlamSession.__new__(Mast3rSlamSession)
+    session._cfg = SimpleNamespace(c_conf_threshold=1.5)
+    session._output_policy = SlamOutputPolicy()
+    session._artifact_root = Path("/tmp/mast3r-test")
+    session._console = SimpleNamespace(info=lambda *_args, **_kwargs: None)
+    session._device = "cpu"
+    session._img_size = 512
+    session._model = object()
+    session._keyframes = None
+    session._states = None
+    session._tracker = None
+    session._manager = None
+    session._K = None
+    session._h = 0
+    session._w = 0
+    session._source_frame_count = 0
+    session._accepted_keyframe_count = 0
+    session._num_dense_points = 0
+    session._timestamps_s = []
+    session._pending_updates = []
+    session._backend_error = None
+    session._backend_thread = None
+    session._backend_stop = SimpleNamespace(clear=lambda: None)
+    session._resize_img = lambda _img, _size: {"img": np.zeros((1, 3, 2, 2), dtype=np.float32)}
+    session._SharedKeyframes = FakeSharedKeyframes
+    session._SharedStates = FakeSharedStates
+    session._FrameTracker = FakeFrameTracker
+    session._Mode = FakeMode
+    session._create_frame = lambda _idx, _img, T_WC, **_kwargs: FakeFrame(T_WC)
+    session._mast3r_inference_mono = lambda _model, _frame: (
+        FakeTensor(np.zeros((4, 3), dtype=np.float32)),
+        FakeTensor(np.ones((4,), dtype=np.float32)),
+    )
+    session._lietorch = SimpleNamespace(Sim3=SimpleNamespace(Identity=lambda *_args, **_kwargs: "identity"))
+    session._emit_update = lambda **_kwargs: None
+    session._raise_if_backend_failed = lambda: None
+
+    observed_k_ready: list[bool] = []
+
+    def _start_backend_thread() -> None:
+        observed_k_ready.append(session._K is not None)
+        session._backend_thread = SimpleNamespace(is_alive=lambda: False)
+
+    session._start_backend_thread = _start_backend_thread
+
+    session.step(
+        FramePacket(
+            seq=0,
+            timestamp_ns=123,
+            rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(
+                fx=100.0,
+                fy=100.0,
+                cx=2.0,
+                cy=2.0,
+                width_px=4,
+                height_px=4,
+            ),
+        )
+    )
+
+    assert observed_k_ready == [True]
+    assert session._keyframes is not None
+    assert session._keyframes.intrinsics is not None
+
+
+def test_mast3r_session_extracts_camera_local_pointmap() -> None:
+    from prml_vslam.methods.mast3r.adapter import Mast3rSlamSession
+
+    class FakeTensor:
+        def __init__(self, value: np.ndarray) -> None:
+            self._value = np.asarray(value)
+
+        def detach(self) -> FakeTensor:
+            return self
+
+        def cpu(self) -> FakeTensor:
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return self._value
+
+        def flatten(self) -> FakeTensor:
+            return FakeTensor(self._value.flatten())
+
+        def tolist(self) -> list[int]:
+            return self._value.tolist()
+
+    class FakeTransform:
+        def act(self, value: FakeTensor) -> FakeTensor:
+            return FakeTensor(value.numpy() + np.array([10.0, 20.0, 30.0], dtype=np.float32))
+
+    session = Mast3rSlamSession.__new__(Mast3rSlamSession)
+    session._cfg = SimpleNamespace(c_conf_threshold=0.5)
+
+    x_canon = np.array(
+        [
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 2.0],
+            [0.0, 1.0, 3.0],
+            [1.0, 1.0, 4.0],
+        ],
+        dtype=np.float32,
+    )
+    fake_frame = SimpleNamespace(
+        X_canon=FakeTensor(x_canon),
+        get_average_conf=lambda: FakeTensor(np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)),
+        img_shape=FakeTensor(np.array([2, 2], dtype=np.int64)),
+        uimg=FakeTensor(np.zeros((2, 2, 3), dtype=np.float32)),
+        T_WC=FakeTransform(),
+    )
+
+    pointmap, _preview_rgb, valid = session._extract_keyframe_visuals(fake_frame)
+
+    assert valid == 4
+    assert pointmap is not None
+    assert pointmap.shape == (2, 2, 3)
+    np.testing.assert_allclose(pointmap.reshape(-1, 3), x_canon)
+
+
 def test_vista_session_uses_injected_frame_preprocessor_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
