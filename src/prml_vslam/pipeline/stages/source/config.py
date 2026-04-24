@@ -99,6 +99,9 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     respect_video_rotation: bool = False
     """Whether replay should honor ADVIO video rotation metadata."""
 
+    tango_reference_point_stride: int = Field(default=1, ge=1)
+    """Stride for prepared static ADVIO Tango reference clouds; ``1`` keeps every payload point."""
+
     def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized ADVIO source adapter."""
         service = AdvioDatasetService(path_config)
@@ -107,6 +110,7 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             dataset_serving=self.dataset_serving,
             respect_video_rotation=self.respect_video_rotation,
+            tango_reference_point_stride=self.tango_reference_point_stride,
         )
 
 

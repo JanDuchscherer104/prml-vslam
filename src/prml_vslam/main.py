@@ -190,6 +190,17 @@ class _RerunViewerProcess:
     forwarder: threading.Thread
 
 
+@dataclass(frozen=True, slots=True)
+class _ProcessInfo:
+    """Process-table row used by the Rerun viewer cleanup command."""
+
+    pid: int
+    ppid: int
+    pgid: int
+    stat: str
+    command: str
+
+
 _ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
@@ -348,6 +359,91 @@ def _wait_for_rerun_viewer_close(viewer: _RerunViewerProcess | None) -> None:
         return
 
 
+def _list_processes() -> list[_ProcessInfo]:
+    """Read the host process table in the same shape the cleanup command needs."""
+    result = subprocess.run(
+        ["ps", "-eo", "pid=,ppid=,pgid=,stat=,command="],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    processes: list[_ProcessInfo] = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(maxsplit=4)
+        if len(parts) != 5:
+            continue
+        pid, ppid, pgid, stat, command = parts
+        processes.append(
+            _ProcessInfo(
+                pid=int(pid),
+                ppid=int(ppid),
+                pgid=int(pgid),
+                stat=stat,
+                command=command,
+            )
+        )
+    return processes
+
+
+def _is_rerun_viewer_process(process: _ProcessInfo) -> bool:
+    """Return true for auto-launched Rerun web viewer processes."""
+    command = process.command
+    if "--serve-web" not in command:
+        return False
+    if "kill-rerun" in command:
+        return False
+    rerun_invoked = re.search(r"(^|\s)rerun(\s|$)", command) is not None
+    rerun_script = "/bin/rerun" in command
+    rerun_cli_binary = "/rerun_sdk/rerun_cli/rerun" in command
+    return rerun_invoked or rerun_script or rerun_cli_binary
+
+
+def _find_rerun_viewer_processes(processes: list[_ProcessInfo] | None = None) -> list[_ProcessInfo]:
+    """Find candidate Rerun web viewer processes in stable pid order."""
+    process_table = _list_processes() if processes is None else processes
+    return sorted(
+        (process for process in process_table if _is_rerun_viewer_process(process)), key=lambda item: item.pid
+    )
+
+
+def _rerun_viewer_process_group_ids(processes: list[_ProcessInfo]) -> list[int]:
+    """Return unique process-group ids for matched viewer processes."""
+    return sorted({process.pgid for process in processes})
+
+
+def _signal_process_group(pgid: int, sig: signal.Signals) -> bool:
+    """Signal one process group if it still exists."""
+    try:
+        os.killpg(pgid, sig)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _wait_for_rerun_process_groups_to_exit(*, pgids: list[int], timeout_seconds: float) -> list[int]:
+    """Wait until no matched Rerun viewer processes remain in the target groups."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        remaining = sorted({process.pgid for process in _find_rerun_viewer_processes() if process.pgid in pgids})
+        if not remaining or time.monotonic() >= deadline:
+            return remaining
+        time.sleep(0.1)
+
+
+def _format_rerun_processes(processes: list[_ProcessInfo]) -> list[dict[str, int | str]]:
+    """Render matched processes as stable JSON-like records for CLI output."""
+    return [
+        {
+            "pid": process.pid,
+            "ppid": process.ppid,
+            "pgid": process.pgid,
+            "stat": process.stat,
+            "command": process.command,
+        }
+        for process in processes
+    ]
+
+
 def _terminate_process_group(process: subprocess.Popen[str], sig: signal.Signals) -> None:
     """Signal a viewer process group, falling back to the direct child."""
     pid = getattr(process, "pid", None)
@@ -375,6 +471,43 @@ def info() -> None:
         "[bold]prml-vslam[/bold]: editable Python package, typed pipeline planner, "
         "Streamlit workbench, and report/slides scaffold."
     )
+
+
+@app.command("kill-rerun")
+def kill_rerun(
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Only list matched Rerun viewer processes without terminating them."),
+    ] = False,
+    timeout_seconds: Annotated[
+        float,
+        typer.Option("--timeout", min=0.1, help="Seconds to wait after SIGTERM before sending SIGKILL."),
+    ] = 5.0,
+) -> None:
+    """Inspect and terminate orphaned Rerun web viewer processes."""
+    processes = _find_rerun_viewer_processes()
+    if not processes:
+        console.print("No Rerun web viewer processes found.")
+        return
+
+    console.print("Matched Rerun web viewer processes:")
+    console.plog(_format_rerun_processes(processes))
+    if dry_run:
+        return
+
+    pgids = _rerun_viewer_process_group_ids(processes)
+    for pgid in pgids:
+        _signal_process_group(pgid, signal.SIGTERM)
+    remaining = _wait_for_rerun_process_groups_to_exit(pgids=pgids, timeout_seconds=timeout_seconds)
+    if remaining:
+        for pgid in remaining:
+            _signal_process_group(pgid, signal.SIGKILL)
+        remaining = _wait_for_rerun_process_groups_to_exit(pgids=remaining, timeout_seconds=1.0)
+
+    if remaining:
+        console.error("Rerun viewer process groups still running after SIGKILL: %s", remaining)
+        raise typer.Exit(code=1)
+    console.print(f"Terminated {len(pgids)} Rerun viewer process group(s).")
 
 
 @app.command("plan-run")

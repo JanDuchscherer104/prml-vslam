@@ -8,16 +8,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from prml_vslam.benchmark.contracts import ReferenceSource
+from prml_vslam.benchmark.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource, ReferenceSource
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.interfaces.ingest import (
     PreparedBenchmarkInputs,
+    ReferenceCloudRef,
+    ReferencePointCloudSequenceRef,
     ReferenceTrajectoryRef,
     SequenceManifest,
     SourceStageOutput,
 )
+from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageStatus
-from prml_vslam.pipeline.contracts.request import PipelineMode
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.source.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
@@ -29,6 +33,17 @@ from prml_vslam.pipeline.stages.source.runtime import (
     SourceRuntimeConfigInput,
     SourceRuntimeInput,
     _materialize_manifest,
+)
+from prml_vslam.pipeline.stages.source.visualization import (
+    ROLE_SOURCE_CAMERA_POSE,
+    ROLE_SOURCE_CAMERA_RGB,
+    ROLE_SOURCE_DEPTH,
+    ROLE_SOURCE_PINHOLE,
+    ROLE_SOURCE_POINTMAP,
+    ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    ROLE_SOURCE_REFERENCE_TRAJECTORY,
+    ROLE_SOURCE_RGB,
+    SourceVisualizationAdapter,
 )
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
@@ -61,6 +76,42 @@ class _BenchmarkSource(_ManifestOnlySource):
         )
 
 
+class _ReferenceGeometrySource(_ManifestOnlySource):
+    def __init__(self, *, rgb_dir: Path, reference_path: Path, cloud_path: Path, metadata_path: Path) -> None:
+        super().__init__(rgb_dir=rgb_dir)
+        self._reference_path = reference_path
+        self._cloud_path = cloud_path
+        self._metadata_path = metadata_path
+
+    def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return PreparedBenchmarkInputs(
+            reference_trajectories=[
+                ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=self._reference_path)
+            ],
+            reference_clouds=[
+                ReferenceCloudRef(
+                    source=ReferenceCloudSource.TANGO_RAW,
+                    path=self._cloud_path,
+                    metadata_path=self._metadata_path,
+                    target_frame="advio_gt_world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                )
+            ],
+            reference_point_cloud_sequences=[
+                ReferencePointCloudSequenceRef(
+                    source=ReferenceCloudSource.TANGO_RAW,
+                    index_path=output_dir / "point-cloud.csv",
+                    payload_root=output_dir,
+                    trajectory_path=output_dir / "tango_raw.tum",
+                    target_frame="advio_tango_raw_world",
+                    native_frame="advio_tango_raw_world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+                )
+            ],
+        )
+
+
 def _config_input(
     *,
     mode: PipelineMode = PipelineMode.OFFLINE,
@@ -84,7 +135,7 @@ def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path
 
     result = runtime.run_offline(SourceRuntimeInput(config_input=_config_input(), artifact_root=artifact_root))
 
-    assert result.stage_key is StageKey.INGEST
+    assert result.stage_key is StageKey.SOURCE
     assert result.outcome.status is StageStatus.COMPLETED
     assert isinstance(result.payload, SourceStageOutput)
     assert result.payload.sequence_manifest.sequence_id == "video-seq"
@@ -115,6 +166,85 @@ def test_source_runtime_preserves_benchmark_inputs_and_artifacts(tmp_path: Path)
     assert run_paths.benchmark_inputs_path.exists()
     assert "benchmark_inputs" in result.outcome.artifacts
     assert "reference_tum:ground_truth" in result.outcome.artifacts
+
+
+def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path: Path) -> None:
+    rgb_dir = tmp_path / "prepared-rgb"
+    rgb_dir.mkdir()
+    reference_path = tmp_path / "reference.tum"
+    reference_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    cloud_path = tmp_path / "cloud.ply"
+    cloud_path.write_text("ply\n", encoding="utf-8")
+    metadata_path = tmp_path / "cloud.metadata.json"
+    metadata_path.write_text("{}", encoding="utf-8")
+    runtime = SourceRuntime(
+        source=_ReferenceGeometrySource(
+            rgb_dir=rgb_dir,
+            reference_path=reference_path,
+            cloud_path=cloud_path,
+            metadata_path=metadata_path,
+        )
+    )
+
+    result = runtime.run_offline(SourceRuntimeInput(config_input=_config_input(), artifact_root=tmp_path / "run"))
+
+    assert isinstance(result.payload, SourceStageOutput)
+    assert "reference_cloud:tango_raw:aligned" in result.outcome.artifacts
+    assert "reference_cloud_metadata:tango_raw:aligned" in result.outcome.artifacts
+    items = SourceVisualizationAdapter().build_reference_items(
+        output=result.payload,
+        artifact_refs=result.outcome.artifacts,
+    )
+    assert [item.role for item in items] == [
+        ROLE_SOURCE_REFERENCE_TRAJECTORY,
+        ROLE_SOURCE_REFERENCE_TRAJECTORY,
+        ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    ]
+    assert items[0].space == "world"
+    assert items[1].space == "advio_tango_raw_world"
+    assert items[1].metadata["reference_source"] == "tango_raw"
+    assert items[2].space == "advio_gt_world"
+
+
+def test_source_visualization_adapter_emits_posed_packet_geometry_items() -> None:
+    packet = FramePacket(
+        seq=7,
+        timestamp_ns=1,
+        pose=FrameTransform(
+            target_frame="tum_rgbd_mocap_world",
+            source_frame="tum_rgbd_rgb_camera",
+            qx=0.0,
+            qy=0.0,
+            qz=0.0,
+            qw=1.0,
+            tx=1.0,
+            ty=2.0,
+            tz=3.0,
+        ),
+        intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3),
+    )
+    image_ref = TransientPayloadRef(handle_id="rgb", payload_kind="image")
+    depth_ref = TransientPayloadRef(handle_id="depth", payload_kind="depth")
+    pointmap_ref = TransientPayloadRef(handle_id="pointmap", payload_kind="point_cloud")
+
+    items = SourceVisualizationAdapter().build_packet_items(
+        packet=packet,
+        frame_payload_ref=image_ref,
+        depth_payload_ref=depth_ref,
+        pointmap_payload_ref=pointmap_ref,
+    )
+
+    assert [item.role for item in items] == [
+        ROLE_SOURCE_RGB,
+        ROLE_SOURCE_CAMERA_POSE,
+        ROLE_SOURCE_PINHOLE,
+        ROLE_SOURCE_CAMERA_RGB,
+        ROLE_SOURCE_DEPTH,
+        ROLE_SOURCE_POINTMAP,
+    ]
+    assert items[1].pose == packet.pose
+    assert items[2].intrinsics == packet.intrinsics
+    assert items[-1].space == "camera_local"
 
 
 def test_source_runtime_materialization_reuses_extraction_cache(tmp_path: Path) -> None:

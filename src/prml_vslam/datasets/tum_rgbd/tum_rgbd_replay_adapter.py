@@ -22,6 +22,9 @@ from .tum_rgbd_loading import (
 )
 from .tum_rgbd_models import TumRgbdPoseSource
 
+TUM_RGBD_WORLD_FRAME = "tum_rgbd_mocap_world"
+TUM_RGBD_CAMERA_FRAME = "tum_rgbd_rgb_camera"
+
 
 class TumRgbdImageSequenceStream:
     def __init__(
@@ -146,6 +149,7 @@ def open_tum_rgbd_stream(
         replay_mode=replay_mode,
         include_depth=include_depth,
         provenance=FramePacketProvenance(
+            source_id="tum_rgbd",
             dataset_id="tum_rgbd",
             sequence_id=sequence_id,
             sequence_name=sequence_id,
@@ -163,7 +167,11 @@ def _poses_for_associations(
     return [
         None
         if association.pose_index is None
-        else FrameTransform.from_matrix(np.asarray(trajectory.poses_se3[association.pose_index], dtype=np.float64))
+        else FrameTransform.from_matrix(
+            np.asarray(trajectory.poses_se3[association.pose_index], dtype=np.float64),
+            target_frame=TUM_RGBD_WORLD_FRAME,
+            source_frame=TUM_RGBD_CAMERA_FRAME,
+        )
         for association in associations
     ]
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from prml_vslam.benchmark.contracts import ReferenceSource
+from prml_vslam.benchmark.contracts import ReferenceCloudCoordinateStatus, ReferenceSource
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces.ingest import (
     ReferenceCloudRef,
@@ -29,6 +29,7 @@ POINTMAP_REF = "pointmap"
 COLORS_REF = "colors"
 TRAJECTORY_ARTIFACT = "trajectory"
 POINT_CLOUD_ARTIFACT = "point_cloud"
+METADATA_ARTIFACT = "metadata"
 
 ROLE_SOURCE_RGB = "source_rgb"
 ROLE_SOURCE_CAMERA_POSE = "source_camera_pose"
@@ -153,15 +154,38 @@ class SourceVisualizationAdapter:
             artifact = artifact_refs.get(reference_trajectory_artifact_key(reference.source))
             if artifact is None:
                 continue
+            target_frame = _trajectory_world_frame(sequence_manifest.dataset_id, reference.source)
             items.append(
                 VisualizationItem(
                     intent=VisualizationIntent.TRAJECTORY,
                     role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
                     artifact_refs={TRAJECTORY_ARTIFACT: artifact},
-                    space=_trajectory_world_frame(sequence_manifest.dataset_id, reference.source),
+                    space=target_frame,
                     metadata={
                         "reference_source": reference.source.value,
                         "sequence_id": sequence_manifest.sequence_id,
+                        "target_frame": target_frame,
+                        "coordinate_status": _trajectory_coordinate_status(sequence_manifest.dataset_id, target_frame),
+                    },
+                )
+            )
+
+        for reference in benchmark_inputs.reference_point_cloud_sequences:
+            artifact = artifact_refs.get(reference_point_cloud_sequence_trajectory_artifact_key(reference))
+            if artifact is None:
+                continue
+            items.append(
+                VisualizationItem(
+                    intent=VisualizationIntent.TRAJECTORY,
+                    role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
+                    artifact_refs={TRAJECTORY_ARTIFACT: artifact},
+                    space=reference.target_frame,
+                    metadata={
+                        "reference_source": reference.source.value,
+                        "sequence_id": sequence_manifest.sequence_id,
+                        "target_frame": reference.target_frame,
+                        "native_frame": reference.native_frame,
+                        "coordinate_status": reference.coordinate_status.value,
                     },
                 )
             )
@@ -170,11 +194,15 @@ class SourceVisualizationAdapter:
             artifact = artifact_refs.get(reference_cloud_artifact_key(reference))
             if artifact is None:
                 continue
+            metadata_artifact = artifact_refs.get(reference_cloud_metadata_artifact_key(reference))
+            item_artifacts = {POINT_CLOUD_ARTIFACT: artifact}
+            if metadata_artifact is not None:
+                item_artifacts[METADATA_ARTIFACT] = metadata_artifact
             items.append(
                 VisualizationItem(
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
-                    artifact_refs={POINT_CLOUD_ARTIFACT: artifact},
+                    artifact_refs=item_artifacts,
                     space=reference.target_frame,
                     metadata={
                         "reference_source": reference.source.value,
@@ -234,10 +262,17 @@ def _trajectory_world_frame(dataset_id: DatasetId | None, source: ReferenceSourc
     return "world"
 
 
+def _trajectory_coordinate_status(dataset_id: DatasetId | None, target_frame: str) -> str:
+    if dataset_id is DatasetId.ADVIO and target_frame == "advio_gt_world":
+        return ReferenceCloudCoordinateStatus.ALIGNED.value
+    return ReferenceCloudCoordinateStatus.SOURCE_NATIVE.value
+
+
 __all__ = [
     "IMAGE_REF",
     "COLORS_REF",
     "DEPTH_REF",
+    "METADATA_ARTIFACT",
     "POINT_CLOUD_ARTIFACT",
     "POINTMAP_REF",
     "ROLE_SOURCE_CAMERA_POSE",

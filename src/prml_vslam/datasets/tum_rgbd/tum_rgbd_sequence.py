@@ -8,7 +8,7 @@ import numpy as np
 from pydantic import ConfigDict
 
 from prml_vslam.benchmark import ReferenceSource
-from prml_vslam.datasets.contracts import FrameSelectionConfig
+from prml_vslam.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.interfaces import (
     FrameTransform,
     RgbdObservationIndexEntry,
@@ -24,6 +24,9 @@ from prml_vslam.utils import BaseData
 from . import tum_rgbd_layout, tum_rgbd_loading
 from .tum_rgbd_models import TumRgbdCatalog, TumRgbdPoseSource, TumRgbdSequenceConfig
 from .tum_rgbd_replay_adapter import open_tum_rgbd_stream
+
+TUM_RGBD_WORLD_FRAME = "tum_rgbd_mocap_world"
+TUM_RGBD_CAMERA_FRAME = "tum_rgbd_rgb_camera"
 
 if TYPE_CHECKING:
     from prml_vslam.interfaces.ingest import SequenceManifest
@@ -103,6 +106,7 @@ class TumRgbdSequence(BaseData):
         )
         return SequenceManifest(
             sequence_id=self.scene.sequence_id,
+            dataset_id=DatasetId.TUM_RGBD,
             rgb_dir=paths.sequence_dir / "rgb",
             timestamps_path=paths.rgb_list_path,
             intrinsics_path=intrinsics_path,
@@ -162,7 +166,9 @@ class TumRgbdSequence(BaseData):
                     depth_path=_relative_to_sequence_root(association.depth_path, paths.sequence_dir),
                     depth_scale_to_m=1.0 / 5000.0,
                     T_world_camera=FrameTransform.from_matrix(
-                        np.asarray(trajectory.poses_se3[association.pose_index], dtype=np.float64)
+                        np.asarray(trajectory.poses_se3[association.pose_index], dtype=np.float64),
+                        target_frame=TUM_RGBD_WORLD_FRAME,
+                        source_frame=TUM_RGBD_CAMERA_FRAME,
                     ),
                     camera_intrinsics=intrinsics,
                     provenance=RgbdObservationProvenance(
@@ -171,7 +177,7 @@ class TumRgbdSequence(BaseData):
                         sequence_id=self.scene.sequence_id,
                         sequence_name=self.scene.display_name,
                         pose_source=ReferenceSource.GROUND_TRUTH.value,
-                        world_frame="world",
+                        world_frame=TUM_RGBD_WORLD_FRAME,
                         raster_space="source",
                         source_frame_index=source_index,
                     ),
@@ -182,7 +188,7 @@ class TumRgbdSequence(BaseData):
         index = RgbdObservationSequenceIndex(
             source_id="tum_rgbd",
             sequence_id=self.scene.sequence_id,
-            world_frame="world",
+            world_frame=TUM_RGBD_WORLD_FRAME,
             raster_space="source",
             observation_count=len(rows),
             rows=rows,
@@ -196,7 +202,7 @@ class TumRgbdSequence(BaseData):
             index_path=index_path,
             payload_root=paths.sequence_dir.resolve(),
             observation_count=len(rows),
-            world_frame="world",
+            world_frame=TUM_RGBD_WORLD_FRAME,
             raster_space="source",
         )
 

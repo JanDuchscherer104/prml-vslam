@@ -211,7 +211,7 @@ sequenceDiagram
   - The Streamlit app may expose pipeline-facing controls, but it should not define pipeline semantics itself.
 
 - `prml_vslam.benchmark`
-  - Owns benchmark-policy contracts plus prepared benchmark-side inputs such as available reference trajectories.
+  - Owns benchmark reference identifiers consumed by prepared benchmark-side inputs.
 
 - `prml_vslam.visualization`
   - Owns viewer policy and preserved native Rerun artifacts.
@@ -299,7 +299,8 @@ When adding features, prefer extending the existing pattern rather than adding n
 - new chart -> `plotting/<name>.py`
 - new app session-state model -> `models.py`
 - new evaluation/discovery contract -> `prml_vslam.eval`
-- new benchmark-policy or prepared benchmark-input contract -> `prml_vslam.benchmark`
+- new benchmark reference identifier -> `prml_vslam.benchmark`
+- new prepared benchmark-input contract -> `prml_vslam.interfaces`
 - new viewer/export artifact contract -> `prml_vslam.visualization`
 - new app-facing orchestration or runtime behavior -> `services.py`
 - new persisted state slot -> `state.py`

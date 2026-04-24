@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, TypeAlias
 
 from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.config import RunConfig, build_run_config, target_stage_key_for_current
+from prml_vslam.pipeline.config import BackendSpec, RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
+from prml_vslam.pipeline.stages.slam.config import MethodId
 from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.utils import BaseData, PathConfig
 
@@ -27,9 +27,11 @@ if TYPE_CHECKING:
 
 _SUPPORTED_APP_STAGE_IDS = frozenset(
     {
-        StageKey.INGEST,
+        StageKey.SOURCE,
         StageKey.SLAM,
+        StageKey.GRAVITY_ALIGNMENT,
         StageKey.TRAJECTORY_EVALUATION,
+        StageKey.RECONSTRUCTION,
         StageKey.SUMMARY,
     }
 )
@@ -39,7 +41,19 @@ JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 JsonObject: TypeAlias = dict[str, JsonValue]
 
 PipelinePageStateUpdateValue: TypeAlias = (
-    PipelineSourceId | AdvioPoseSource | AdvioPoseFrameMode | Record3DTransportId | int | str | bool | None
+    PipelineSourceId
+    | AdvioPoseSource
+    | AdvioPoseFrameMode
+    | Record3DTransportId
+    | PipelineMode
+    | MethodId
+    | BackendSpec
+    | Path
+    | int
+    | float
+    | str
+    | bool
+    | None
 )
 PipelinePageStateUpdates: TypeAlias = dict[str, PipelinePageStateUpdateValue]
 
@@ -93,7 +107,7 @@ def sync_pipeline_page_state_from_template(
                 "record3d_transport": Record3DTransportId(record3d_source.transport.value),
                 "record3d_usb_device_index": record3d_source.device_index,
                 "record3d_wifi_device_address": record3d_source.device_address,
-                "record3d_persist_capture": True,
+                "record3d_frame_timeout_seconds": record3d_source.frame_timeout_seconds,
             }
         case _:
             source_updates = {"source_kind": page_state.source_kind, "advio_sequence_id": page_state.advio_sequence_id}
@@ -109,12 +123,21 @@ def sync_pipeline_page_state_from_template(
         slam_backend_spec=run_config.stages.slam.backend.model_copy(deep=True),
         emit_dense_points=run_config.stages.slam.outputs.emit_dense_points,
         emit_sparse_points=run_config.stages.slam.outputs.emit_sparse_points,
-        reference_enabled=run_config.stages.reconstruction.enabled,
+        ground_alignment_enabled=run_config.stages.align_ground.enabled,
+        reconstruction_enabled=run_config.stages.reconstruction.enabled,
         trajectory_eval_enabled=run_config.stages.evaluate_trajectory.enabled,
         evaluate_cloud=run_config.stages.evaluate_cloud.enabled,
-        evaluate_efficiency=run_config.stages.evaluate_efficiency.enabled,
         connect_live_viewer=run_config.visualization.connect_live_viewer,
         export_viewer_rrd=run_config.visualization.export_viewer_rrd,
+        grpc_url=run_config.visualization.grpc_url,
+        viewer_blueprint_path=run_config.visualization.viewer_blueprint_path,
+        preserve_native_rerun=run_config.visualization.preserve_native_rerun,
+        frusta_history_window_streaming=run_config.visualization.frusta_history_window_streaming,
+        frusta_history_window_offline=run_config.visualization.frusta_history_window_offline,
+        show_tracking_trajectory=run_config.visualization.show_tracking_trajectory,
+        log_source_rgb=run_config.visualization.log_source_rgb,
+        log_diagnostic_preview=run_config.visualization.log_diagnostic_preview,
+        log_camera_image_rgb=run_config.visualization.log_camera_image_rgb,
         **source_updates,
     )
 
@@ -149,12 +172,21 @@ def build_run_config_from_action(
             backend_overrides=backend_payload_from_action(action),
             emit_dense_points=action.emit_dense_points,
             emit_sparse_points=action.emit_sparse_points,
-            reference_enabled=action.reference_enabled,
+            reference_enabled=action.reconstruction_enabled,
             trajectory_eval_enabled=action.trajectory_eval_enabled,
             evaluate_cloud=action.evaluate_cloud,
-            evaluate_efficiency=action.evaluate_efficiency,
+            ground_alignment_enabled=action.ground_alignment_enabled,
             connect_live_viewer=action.connect_live_viewer,
             export_viewer_rrd=action.export_viewer_rrd,
+            grpc_url=action.grpc_url,
+            viewer_blueprint_path=action.viewer_blueprint_path,
+            preserve_native_rerun=action.preserve_native_rerun,
+            frusta_history_window_streaming=action.frusta_history_window_streaming,
+            frusta_history_window_offline=action.frusta_history_window_offline,
+            show_tracking_trajectory=action.show_tracking_trajectory,
+            log_source_rgb=action.log_source_rgb,
+            log_diagnostic_preview=action.log_diagnostic_preview,
+            log_camera_image_rgb=action.log_camera_image_rgb,
         )
         return run_config, None
     except Exception as exc:
@@ -190,12 +222,9 @@ def request_support_error(
     unsupported_stage_ids = [stage.key.value for stage in plan.stages if stage.key not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
         return (
-            "The current app demo can execute only source, slam, evaluate.trajectory, and summary stages. Disable: "
-            + ", ".join(
-                target_stage_key_for_current(stage.key).value
-                for stage in plan.stages
-                if stage.key not in _SUPPORTED_APP_STAGE_IDS
-            )
+            "The current run console can execute only source, slam, gravity.align, evaluate.trajectory, "
+            "reconstruction, and summary stages. Disable: "
+            + ", ".join(stage.key.value for stage in plan.stages if stage.key not in _SUPPORTED_APP_STAGE_IDS)
         )
     match request.stages.source.backend:
         case AdvioSourceConfig(sequence_id=sequence_slug):
@@ -208,9 +237,9 @@ def request_support_error(
             return None
         case _:
             return (
-                f"Source '{request.stages.source.backend.source_id}' is not supported by this demo page."
+                f"Source '{request.stages.source.backend.source_id}' is not supported by this run console."
                 if request.stages.source.backend is not None
-                else "This demo page only supports ADVIO dataset replay and Record3D live capture."
+                else "This run console only supports ADVIO dataset replay and Record3D live capture."
             )
 
 
@@ -332,7 +361,13 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
             "emit_dense_points": request.stages.slam.outputs.emit_dense_points,
             "emit_sparse_points": request.stages.slam.outputs.emit_sparse_points,
         },
-        "benchmark": request.benchmark.model_dump(mode="json"),
+        "stages": {
+            "align_ground": request.stages.align_ground.model_dump(mode="json"),
+            "evaluate_trajectory": request.stages.evaluate_trajectory.model_dump(mode="json"),
+            "reconstruction": request.stages.reconstruction.model_dump(mode="json"),
+            "evaluate_cloud": request.stages.evaluate_cloud.model_dump(mode="json"),
+            "summary": request.stages.summary.model_dump(mode="json"),
+        },
         "visualization": request.visualization.model_dump(mode="json"),
     }
     match request.stages.source.backend:
@@ -364,6 +399,7 @@ def record3d_source_config_from_action(action: PipelinePageAction) -> Record3DSo
         device_address=action.record3d_wifi_device_address
         if action.record3d_transport is Record3DTransportId.WIFI
         else "",
+        frame_timeout_seconds=action.record3d_frame_timeout_seconds,
     )
 
 

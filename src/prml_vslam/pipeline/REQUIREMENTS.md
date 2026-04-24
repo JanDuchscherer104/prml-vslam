@@ -10,27 +10,28 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   internal `contracts/` package rather than one monolithic `contracts.py`.
 - The package exposes one authoritative runtime path through
   `PipelineBackend`, `RayPipelineBackend`, and `RunService`.
-- The current executable slice still uses the existing persisted key spellings:
-  `ingest`, `slam`, optional `gravity.align`, optional
-  `trajectory.evaluate`, and `summary`.
-- Current runtime execution still flows through the Ray coordinator and
-  remaining stateful execution actors; these are migration contacts for the
-  target runtime/proxy model, not the target ownership shape.
+- The current executable slice uses target persisted stage keys: `source`,
+  `slam`, optional `gravity.align`, optional `evaluate.trajectory`, optional
+  `reconstruction`, diagnostic `evaluate.cloud`, and `summary`.
+- Runtime execution flows through stage-owned bindings plus lazy runtime
+  construction. Ray is a backend/deployment option, not the semantic owner of
+  stage behavior.
 
 ## Responsibilities
 
-- own run requests, plans, events, projected snapshots, manifests, artifacts,
+- own run configs, plans, events, projected snapshots, manifests, artifacts,
   and summary persistence
 - own pipeline lifecycle, generic stage planning, runtime envelopes, status,
   artifact references, transient payload references, and source-normalization
   boundaries
-- remain separate from benchmark policy, app state, and method-wrapper internals
+- remain separate from benchmark reference identifiers, app state, and
+  method-wrapper internals
 
 ## Non-Negotiable Requirements
 
 - `SequenceManifest` remains the normalized offline boundary.
 - Large outputs stay materialized as durable artifacts.
-- Offline ingest must stay source-faithful and method-agnostic.
+- Offline source preparation must stay source-faithful and method-agnostic.
 - `prml_vslam.pipeline` is the curated public API; `pipeline/contracts/` is not
   a compatibility import hub.
 - The package must not re-export method protocols through the pipeline root.
@@ -44,20 +45,20 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   `StageOutcome` values. Live and display status must come from
   `StageRuntimeStatus`; do not introduce or preserve a second status enum as
   canonical truth.
-- The current `gravity.align` executable key is a migration alias for the target
-  `gravity.align` stage. Ground alignment may run only after `slam`, in offline
-  execution and streaming finalize; it must never widen the streaming hot path.
+- Ground alignment may run only after `slam`, in offline execution and
+  streaming finalize; it must never widen the streaming hot path.
 - `summary` must be projection-only; it must not compute trajectory or cloud
   metrics.
 - Trajectory evaluation may run only from prepared benchmark inputs and
-  normalized SLAM artifacts; reference reconstruction, cloud evaluation, and
-  efficiency stages remain typed placeholders until explicitly implemented.
+  normalized SLAM artifacts. `evaluate.cloud` is a diagnostic binding with no
+  runtime yet; performance telemetry metrics are not part of the current public
+  surface.
 
 ## Pipeline Stage Refactor Requirements
 
 - `RunConfig` is the target persisted declarative root. It owns the fixed stage
-  bundle and compiles to `RunPlan`; launch compatibility may keep `RunRequest`
-  as a migration contact until the compatibility work package removes it.
+  bundle and compiles to `RunPlan`; production launch code must not depend on
+  legacy request DTOs or stage-key alias maps.
 - Stage configs are declarative policy contracts. They validate enablement,
   planning metadata, execution resources, telemetry, cleanup, and
   failure-provenance policy; they do not construct runtimes, proxies, Ray
@@ -73,10 +74,9 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   transient payload refs. Semantic payload DTOs remain with their domain owner.
 - `RunSnapshot` remains a transport-safe projection derived from durable events
   plus live runtime updates/status; it must not become mutable runtime truth.
-- Target public stage vocabulary is `source`, `slam`, optional `gravity.align`,
-  optional `evaluate.trajectory`, optional `reconstruction`, and `summary`.
-  Preserve `ingest` and `reference.reconstruct` as migration
-  aliases until the migration-removal package owns their deletion.
+- Target public stage vocabulary is exactly `source`, `slam`,
+  `gravity.align`, `evaluate.trajectory`, `reconstruction`, `evaluate.cloud`,
+  and `summary`.
 - Rerun SDK calls belong only in sinks/policy/helper modules. Stage runtimes,
   DTOs, proxies, and visualization adapters may expose neutral visualization
   items but must not call the Rerun SDK.
@@ -91,5 +91,4 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - streaming runs still surface truthful packet/session telemetry without
   persisting raw arrays in public contracts
 - stage manifests and run summaries remain explicit and durable
-- stage-key aliases preserve old run inspection until the migration-removal
-  package explicitly deletes them
+- target stage keys are used without alias maps

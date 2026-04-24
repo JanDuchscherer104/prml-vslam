@@ -23,6 +23,7 @@ _TRACKING_CAMERA_ENTITY = "/world/live/tracking/camera"
 _KEYED_POINTS_PREFIX = "/world/keyframes/points/"
 _KEYED_CAMERAS_PREFIX = "/world/keyframes/cameras/"
 _RECONSTRUCTION_PREFIX = "/world/reconstruction/"
+_REFERENCE_PREFIX = "/world/reference/"
 
 
 class RerunPointCloudSnapshot(BaseData):
@@ -44,6 +45,8 @@ class RerunValidationSummary(BaseData):
     live_model_points: RerunPointCloudSnapshot | None = None
     keyed_point_clouds: list[RerunPointCloudSnapshot] = Field(default_factory=list)
     reconstruction_point_clouds: list[RerunPointCloudSnapshot] = Field(default_factory=list)
+    reference_point_clouds: list[RerunPointCloudSnapshot] = Field(default_factory=list)
+    reference_trajectory_entities: list[str] = Field(default_factory=list)
     keyed_camera_entities: list[str] = Field(default_factory=list)
     tracking_positions_xyz: list[tuple[float, float, float]] = Field(default_factory=list)
 
@@ -65,12 +68,15 @@ def load_recording_summary(recording_path: Path) -> RerunValidationSummary:
     live_model_snapshot, _ = _latest_live_model_snapshot(recording)
     keyed_snapshots, _ = _keyed_point_cloud_snapshots(recording)
     reconstruction_snapshots, _ = _reconstruction_point_cloud_snapshots(recording)
+    reference_snapshots = _reference_point_cloud_snapshots(recording)
     return RerunValidationSummary(
         recording_path=recording_path.resolve(),
         entity_paths=entity_paths,
         live_model_points=live_model_snapshot,
         keyed_point_clouds=keyed_snapshots,
         reconstruction_point_clouds=reconstruction_snapshots,
+        reference_point_clouds=reference_snapshots,
+        reference_trajectory_entities=_reference_trajectory_entities(recording),
         keyed_camera_entities=sorted(
             path
             for path in entity_paths
@@ -102,6 +108,8 @@ def write_validation_bundle(
             "live_model_points": live_snapshot,
             "keyed_point_clouds": keyed_snapshots,
             "reconstruction_point_clouds": reconstruction_snapshots,
+            "reference_point_clouds": _reference_point_cloud_snapshots(recording),
+            "reference_trajectory_entities": _reference_trajectory_entities(recording),
         }
     )
 
@@ -444,6 +452,40 @@ def _reconstruction_point_cloud_snapshots(
     return snapshots, world_points_payloads
 
 
+def _reference_point_cloud_snapshots(recording: rdf.Recording) -> list[RerunPointCloudSnapshot]:
+    point_entities = sorted(
+        column.entity_path
+        for column in _component_columns(recording)
+        if column.component == "Points3D:positions" and column.entity_path.startswith(_REFERENCE_PREFIX)
+    )
+    snapshots: list[RerunPointCloudSnapshot] = []
+    for points_entity in point_entities:
+        latest_points: np.ndarray | None = None
+        for row in _static_rows(recording, contents=points_entity):
+            points = _points_array(row.get(f"{points_entity}:Points3D:positions"))
+            if len(points):
+                latest_points = points
+        if latest_points is None:
+            continue
+        snapshots.append(
+            _point_cloud_snapshot(
+                entity_path=points_entity,
+                index_name="reference",
+                index_value=0,
+                world_points=latest_points,
+            )
+        )
+    return snapshots
+
+
+def _reference_trajectory_entities(recording: rdf.Recording) -> list[str]:
+    return sorted(
+        column.entity_path
+        for column in _component_columns(recording)
+        if column.component == "LineStrips3D:strips" and column.entity_path.startswith(_REFERENCE_PREFIX)
+    )
+
+
 def _tracking_positions(recording: rdf.Recording) -> list[tuple[float, float, float]]:
     rows = _rows_for_index(recording, index_name="frame", contents=_TRACKING_CAMERA_ENTITY)
     positions: list[tuple[float, float, float]] = []
@@ -481,6 +523,8 @@ def _summary_markdown(summary: RerunValidationSummary) -> str:
         f"- live model points: `{summary.live_model_points.point_count if summary.live_model_points else 0}`",
         f"- keyed point clouds with populated rows: `{len(summary.keyed_point_clouds)}`",
         f"- reconstruction point clouds with populated rows: `{len(summary.reconstruction_point_clouds)}`",
+        f"- reference point clouds with populated rows: `{len(summary.reference_point_clouds)}`",
+        f"- reference trajectories present: `{len(summary.reference_trajectory_entities)}`",
         f"- keyed camera entities present: `{len(summary.keyed_camera_entities)}`",
         f"- tracking positions: `{len(summary.tracking_positions_xyz)}`",
         "",
@@ -495,6 +539,18 @@ def _summary_markdown(summary: RerunValidationSummary) -> str:
                 f"`{snapshot.entity_path}` @ {snapshot.index_name}={snapshot.index_value} "
                 f"points={snapshot.point_count}"
             )
+    lines.extend(["", "## Reference Point Clouds"])
+    if not summary.reference_point_clouds:
+        lines.append("- none")
+    else:
+        for snapshot in summary.reference_point_clouds[:20]:
+            lines.append(f"- `{snapshot.entity_path}` points={snapshot.point_count}")
+    lines.extend(["", "## Reference Trajectories"])
+    if not summary.reference_trajectory_entities:
+        lines.append("- none")
+    else:
+        for entity_path in summary.reference_trajectory_entities[:20]:
+            lines.append(f"- `{entity_path}`")
     lines.extend(["", "## Reconstruction Point Clouds"])
     if not summary.reconstruction_point_clouds:
         lines.append("- none")

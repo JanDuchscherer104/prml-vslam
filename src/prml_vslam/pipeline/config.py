@@ -344,6 +344,15 @@ def build_run_config(
     ground_alignment_enabled: bool = False,
     connect_live_viewer: bool = False,
     export_viewer_rrd: bool = False,
+    grpc_url: str = "rerun+http://127.0.0.1:9876/proxy",
+    viewer_blueprint_path: Path | None = None,
+    preserve_native_rerun: bool = True,
+    frusta_history_window_streaming: int = 20,
+    frusta_history_window_offline: int | None = None,
+    show_tracking_trajectory: bool = True,
+    log_source_rgb: bool = False,
+    log_diagnostic_preview: bool = False,
+    log_camera_image_rgb: bool = False,
 ) -> RunConfig:
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
@@ -376,6 +385,15 @@ def build_run_config(
         visualization=VisualizationConfig(
             connect_live_viewer=connect_live_viewer,
             export_viewer_rrd=export_viewer_rrd,
+            grpc_url=grpc_url,
+            viewer_blueprint_path=viewer_blueprint_path,
+            preserve_native_rerun=preserve_native_rerun,
+            frusta_history_window_streaming=frusta_history_window_streaming,
+            frusta_history_window_offline=frusta_history_window_offline,
+            show_tracking_trajectory=show_tracking_trajectory,
+            log_source_rgb=log_source_rgb,
+            log_diagnostic_preview=log_diagnostic_preview,
+            log_camera_image_rgb=log_camera_image_rgb,
         ),
     )
 

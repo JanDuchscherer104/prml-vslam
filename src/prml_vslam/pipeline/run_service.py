@@ -78,8 +78,8 @@ class RunService:
 
     def read_payload(self, ref: TransientPayloadRef | None) -> np.ndarray | None:
         """Resolve one active-run transient payload ref into a local NumPy array."""
-        # TODO(pipeline-refactor/WP-08): Return a typed not-found result
-        # instead of None once payload resolver contracts land.
+        # TODO(pipeline-refactor/post-target-alignment): Return a typed
+        # not-found result instead of None.
         if self._run_id is None:
             return None
         return self._require_backend().read_payload(self._run_id, ref)

@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from prml_vslam.datasets.advio import (
     AdvioDatasetSummary,
@@ -20,9 +20,10 @@ from prml_vslam.datasets.advio import (
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
 from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
-from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.slam.config import MethodId
 from prml_vslam.utils import BaseData
 
 from .preview_runtime import PacketSessionSnapshot
@@ -298,8 +299,107 @@ class PipelineSourceId(StrEnum):
         return "Record3D" if self is PipelineSourceId.RECORD3D else "ADVIO"
 
 
+class PipelineTelemetryViewMode(StrEnum):
+    """Telemetry presentation modes for the Pipeline run console."""
+
+    LATEST = "latest"
+    ROLLING = "rolling"
+
+    @property
+    def label(self) -> str:
+        """Return the user-facing mode label."""
+        return "Rolling Live" if self is PipelineTelemetryViewMode.ROLLING else "Latest"
+
+
+class PipelineTelemetryMetricId(StrEnum):
+    """Stage runtime metrics that can be plotted from live telemetry samples."""
+
+    FPS = "fps"
+    THROUGHPUT = "throughput"
+    LATENCY_MS = "latency_ms"
+    QUEUE_DEPTH = "queue_depth"
+    BACKLOG_COUNT = "backlog_count"
+    PROCESSED_ITEMS = "processed_items"
+    IN_FLIGHT_COUNT = "in_flight_count"
+
+    @property
+    def label(self) -> str:
+        """Return the user-facing metric label."""
+        return {
+            PipelineTelemetryMetricId.FPS: "FPS",
+            PipelineTelemetryMetricId.THROUGHPUT: "Throughput",
+            PipelineTelemetryMetricId.LATENCY_MS: "Latency",
+            PipelineTelemetryMetricId.QUEUE_DEPTH: "Queue Depth",
+            PipelineTelemetryMetricId.BACKLOG_COUNT: "Backlog",
+            PipelineTelemetryMetricId.PROCESSED_ITEMS: "Processed Items",
+            PipelineTelemetryMetricId.IN_FLIGHT_COUNT: "In Flight",
+        }[self]
+
+    @property
+    def unit_label(self) -> str:
+        """Return the default y-axis unit label."""
+        return {
+            PipelineTelemetryMetricId.FPS: "fps",
+            PipelineTelemetryMetricId.THROUGHPUT: "items/s",
+            PipelineTelemetryMetricId.LATENCY_MS: "ms",
+            PipelineTelemetryMetricId.QUEUE_DEPTH: "items",
+            PipelineTelemetryMetricId.BACKLOG_COUNT: "items",
+            PipelineTelemetryMetricId.PROCESSED_ITEMS: "items",
+            PipelineTelemetryMetricId.IN_FLIGHT_COUNT: "items",
+        }[self]
+
+
+class PipelineTelemetrySample(BaseData):
+    """One bounded in-memory telemetry sample for the Pipeline page."""
+
+    run_id: str
+    """Run id that produced the sample."""
+
+    stage_key: StageKey
+    """Stage whose status was sampled."""
+
+    updated_at_ns: int = 0
+    """Runtime status timestamp used for per-stage deduplication."""
+
+    lifecycle_state: str = ""
+    """Stage lifecycle value when sampled."""
+
+    progress_message: str = ""
+    """Human-readable progress message when emitted."""
+
+    processed_items: int = 0
+    """Domain-neutral processed item count."""
+
+    fps: float | None = None
+    """Frame rate for frame-like stages."""
+
+    throughput: float | None = None
+    """Generic throughput for non-frame streams."""
+
+    latency_ms: float | None = None
+    """Runtime-measured latency in milliseconds."""
+
+    queue_depth: int | None = None
+    """Queue depth when emitted by the runtime."""
+
+    backlog_count: int | None = None
+    """Backlog count when emitted by the runtime."""
+
+    submitted_count: int = 0
+    """Number of work items submitted to the runtime or proxy."""
+
+    completed_count: int = 0
+    """Number of work items completed by the runtime or proxy."""
+
+    failed_count: int = 0
+    """Number of work items failed by the runtime or proxy."""
+
+    in_flight_count: int = 0
+    """Number of work items still in flight."""
+
+
 class PipelinePageState(BaseData):
-    """Persisted selector state for the interactive Pipeline demo."""
+    """Persisted selector state for the Pipeline run console."""
 
     config_path: Path | None = None
     """Selected pipeline request TOML used to instantiate the demo run."""
@@ -337,23 +437,53 @@ class PipelinePageState(BaseData):
     emit_sparse_points: bool = True
     """Whether sparse geometry artifacts should be emitted."""
 
-    reference_enabled: bool = False
-    """Whether the reference-reconstruction stage should be planned."""
-
     trajectory_eval_enabled: bool = False
     """Whether trajectory evaluation should be planned."""
 
     evaluate_cloud: bool = False
     """Whether dense-cloud evaluation should be planned."""
 
-    evaluate_efficiency: bool = False
-    """Whether efficiency evaluation should be planned."""
+    ground_alignment_enabled: bool = False
+    """Whether ground-plane alignment should be planned."""
+
+    reconstruction_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("reconstruction_enabled", "reference_enabled"),
+    )
+    """Whether reference reconstruction should be planned."""
 
     connect_live_viewer: bool = False
     """Whether to connect the Rerun live viewer via gRPC."""
 
     export_viewer_rrd: bool = False
     """Whether to export the Rerun `.rrd` viewer artifact."""
+
+    grpc_url: str = "rerun+http://127.0.0.1:9876/proxy"
+    """Rerun gRPC endpoint used when the live viewer is enabled."""
+
+    viewer_blueprint_path: Path | None = None
+    """Optional Rerun blueprint path."""
+
+    preserve_native_rerun: bool = True
+    """Whether native upstream `.rrd` files should be preserved."""
+
+    frusta_history_window_streaming: int = 20
+    """Bounded frusta history window for streaming viewer output."""
+
+    frusta_history_window_offline: int | None = None
+    """Optional frusta history window for offline viewer output."""
+
+    show_tracking_trajectory: bool = True
+    """Whether the viewer should show the tracking trajectory."""
+
+    log_source_rgb: bool = False
+    """Whether source RGB frames should be logged to the repo-owned viewer sink."""
+
+    log_diagnostic_preview: bool = False
+    """Whether method diagnostic previews should be logged to the viewer sink."""
+
+    log_camera_image_rgb: bool = False
+    """Whether camera RGB image planes should be logged in the 3D viewer branch."""
 
     record3d_usb_device_index: int = 0
     """Zero-based USB device index used by the bounded pipeline page."""
@@ -364,8 +494,8 @@ class PipelinePageState(BaseData):
     record3d_wifi_device_address: str = "192.168.159.24"
     """User-supplied Record3D Wi-Fi preview device address for the pipeline page."""
 
-    record3d_persist_capture: bool = True
-    """Whether live Record3D capture should be marked for persistence."""
+    record3d_frame_timeout_seconds: float = 5.0
+    """Maximum Record3D frame wait time used by the pipeline source."""
 
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected pose source injected into the ADVIO replay packets."""
@@ -375,6 +505,27 @@ class PipelinePageState(BaseData):
 
     respect_video_rotation: bool = False
     """Whether the replay should honor video rotation metadata when available."""
+
+    telemetry_visible: bool = True
+    """Whether stage telemetry should be rendered in the run console."""
+
+    telemetry_view_mode: PipelineTelemetryViewMode = PipelineTelemetryViewMode.LATEST
+    """Current stage telemetry presentation mode."""
+
+    telemetry_selected_stage_key: StageKey | None = None
+    """Selected stage for rolling telemetry charts."""
+
+    telemetry_selected_metric: PipelineTelemetryMetricId = PipelineTelemetryMetricId.FPS
+    """Selected rolling telemetry metric."""
+
+    telemetry_history_run_id: str | None = None
+    """Run id that owns the current bounded telemetry history."""
+
+    telemetry_history: list[PipelineTelemetrySample] = Field(default_factory=list)
+    """Bounded per-session live telemetry sample history."""
+
+    telemetry_max_samples: int = 240
+    """Maximum number of live telemetry samples kept in session state."""
 
 
 class AppState(BaseData):
@@ -408,6 +559,9 @@ __all__ = [
     "MetricsPageState",
     "PipelinePageState",
     "PipelineSourceId",
+    "PipelineTelemetryMetricId",
+    "PipelineTelemetrySample",
+    "PipelineTelemetryViewMode",
     "PreviewStreamState",
     "Record3DPageState",
     "Record3DStreamSnapshot",

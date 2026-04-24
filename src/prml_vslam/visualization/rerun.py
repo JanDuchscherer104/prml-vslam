@@ -67,6 +67,14 @@ def build_default_blueprint(
                 name="Source RGB",
             ),
         )
+        views.insert(
+            1,
+            rrb.Spatial2DView(
+                origin="world/live/source/camera/image",
+                contents="world/live/source/camera/image",
+                name="Source Camera",
+            ),
+        )
     if show_diagnostic_preview:
         views.append(
             rrb.Spatial2DView(
@@ -82,8 +90,13 @@ def build_default_blueprint(
                 name="3D Scene",
                 contents=[
                     "+ world/alignment/**",
+                    "+ world/reference/**",
                     "+ world/reconstruction/**",
                     "+ world/live/tracking/**",
+                    "+ world/live/source/camera",
+                    "+ world/live/source/camera/points",
+                    "- world/live/source/camera/image",
+                    "- world/live/source/camera/image/**",
                     "+ world/live/model",
                     "- world/live/model/camera/image",
                     "- world/live/model/camera/image/**",
@@ -258,12 +271,13 @@ def log_line_strip3d(
     entity_path: str,
     positions_xyz: np.ndarray,
     radii: float = TRAJECTORY_LINE_RADII,
+    static: bool = False,
 ) -> None:
     """Log one 3D line strip to the viewer."""
     positions = np.asarray(positions_xyz, dtype=np.float32).reshape(-1, 3)
     if len(positions) == 0:
         return
-    recording_stream.log(entity_path, rr.LineStrips3D([positions], radii=[radii]))
+    recording_stream.log(entity_path, rr.LineStrips3D([positions], radii=[radii]), static=static)
 
 
 def log_mesh3d(

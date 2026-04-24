@@ -16,7 +16,7 @@ from .artifact_diagnostics import (
     build_view_graph_figure,
 )
 from .metrics import build_error_figure, build_trajectory_figure
-from .pipeline import build_evo_ape_colormap_figure
+from .pipeline import build_evo_ape_colormap_figure, build_stage_telemetry_figure
 from .reconstruction import (
     DEFAULT_MAX_POINTS,
     DEFAULT_MESH_COLOR,
@@ -44,6 +44,7 @@ __all__ = [
     "build_crowd_density_figure",
     "build_error_figure",
     "build_evo_ape_colormap_figure",
+    "build_stage_telemetry_figure",
     "build_height_profile_figure",
     "build_intrinsics_residual_figure",
     "build_live_trajectory_figure",

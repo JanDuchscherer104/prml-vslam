@@ -9,7 +9,15 @@ import numpy as np
 import pytest
 from pytransform3d.rotations import check_matrix
 
-from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSample, CameraIntrinsicsSeries, FrameTransform
+from prml_vslam.interfaces import (
+    CameraIntrinsics,
+    CameraIntrinsicsSample,
+    CameraIntrinsicsSeries,
+    DepthMap,
+    FrameTransform,
+    PointCloud,
+    PointMap,
+)
 from prml_vslam.interfaces.camera import (
     center_crop_resize_intrinsics,
     crop_camera_intrinsics,
@@ -262,6 +270,18 @@ def test_pointmap_from_depth_uses_intrinsics_and_stride() -> None:
     assert np.allclose(pointmap[1, 1], np.array([1.0, 0.0, 2.0], dtype=np.float32))
 
 
+def test_pointmap_from_depth_rejects_sampled_nonfinite_depth() -> None:
+    depth = np.ones((4, 4), dtype=np.float32)
+    depth[2, 2] = np.nan
+
+    with pytest.raises(ValueError, match="finite"):
+        pointmap_from_depth(
+            depth,
+            CameraIntrinsics(fx=2.0, fy=4.0, cx=1.0, cy=2.0, width_px=4, height_px=4),
+            stride_px=2,
+        )
+
+
 def test_transform_points_world_camera_applies_pose_translation() -> None:
     points_world = transform_points_world_camera(
         np.array([[0.0, 0.0, 1.0], [1.0, 2.0, 3.0]], dtype=np.float32),
@@ -292,6 +312,43 @@ def test_point_cloud_ply_roundtrips_optional_colors(tmp_path: Path) -> None:
     np.testing.assert_allclose(restored_points, points_xyz)
     assert restored_colors is not None
     np.testing.assert_allclose(restored_colors, colors_rgb.astype(np.float64) / 255.0, atol=1 / 255.0)
+
+
+def test_point_cloud_contract_rejects_raster_pointmap_shape() -> None:
+    with pytest.raises(ValueError, match="point cloud shape"):
+        PointCloud(points_xyz=np.zeros((2, 2, 3), dtype=np.float32), frame="camera")
+
+
+def test_pointmap_contract_rejects_sparse_point_cloud_shape() -> None:
+    with pytest.raises(ValueError, match="pointmap shape"):
+        PointMap(points_xyz_camera=np.zeros((5, 3), dtype=np.float32), camera_frame="camera")
+
+
+def test_depth_map_contract_requires_matching_intrinsics_shape() -> None:
+    with pytest.raises(ValueError, match="does not match depth width"):
+        DepthMap(
+            depth_m=np.ones((2, 3), dtype=np.float32),
+            intrinsics=CameraIntrinsics(fx=1.0, fy=1.0, cx=1.0, cy=1.0, width_px=4, height_px=2),
+        )
+
+
+def test_world_placeable_geometry_transform_source_frame_must_match() -> None:
+    with pytest.raises(ValueError, match="source_frame must match"):
+        PointCloud(
+            points_xyz=np.zeros((2, 3), dtype=np.float32),
+            frame="advio_tango_raw_depth_sensor",
+            T_world_frame=FrameTransform(
+                target_frame="advio_tango_raw_world",
+                source_frame="camera",
+                qx=0.0,
+                qy=0.0,
+                qz=0.0,
+                qw=1.0,
+                tx=0.0,
+                ty=0.0,
+                tz=0.0,
+            ),
+        )
 
 
 def _write_intrinsics_yaml(path: Path) -> None:

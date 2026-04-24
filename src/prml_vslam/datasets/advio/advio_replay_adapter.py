@@ -17,7 +17,7 @@ from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.protocols import FramePacketStream
 
-from .advio_geometry import fit_sim3_alignment, interpolate_trajectory_poses
+from .advio_geometry import Sim3Alignment, fit_planar_rigid_alignment, interpolate_trajectory_poses
 from .advio_loading import load_advio_trajectory
 
 if TYPE_CHECKING:
@@ -91,25 +91,62 @@ def serve_loaded_advio_trajectory(
         case AdvioPoseFrameMode.REFERENCE_WORLD:
             if pose_source is AdvioPoseSource.GROUND_TRUTH:
                 return trajectory
-            alignment = fit_sim3_alignment(
+            alignment = fit_planar_rigid_alignment(
                 source_trajectory=trajectory,
                 target_trajectory=ground_truth_trajectory,
-                source_frame=f"advio_{pose_source.value}_world",
+                source_frame=_advio_provider_world_frame(pose_source),
                 target_frame="advio_gt_world",
             )
-            return _transform_trajectory_with_sim3(trajectory, alignment)
+            return _transform_trajectory_with_alignment(trajectory, alignment)
 
 
 def _poses_for_frame_timestamps(
     frame_timestamps_ns: NDArray[np.int64],
     trajectory: PoseTrajectory3D | None,
+    *,
+    target_frame: str = "world",
+    source_frame: str = "camera",
 ) -> list[FrameTransform | None]:
     if trajectory is None or frame_timestamps_ns.size == 0:
         return [None] * int(frame_timestamps_ns.size)
     return interpolate_trajectory_poses(
         trajectory,
         frame_timestamps_ns.astype(np.float64) / 1e9,
+        target_frame=target_frame,
+        source_frame=source_frame,
     )
+
+
+def advio_pose_frames(*, pose_source: AdvioPoseSource, pose_frame_mode: AdvioPoseFrameMode) -> tuple[str, str]:
+    """Return explicit target/source frame labels for served ADVIO camera poses."""
+    match pose_frame_mode:
+        case AdvioPoseFrameMode.PROVIDER_WORLD:
+            target_frame = _advio_provider_world_frame(pose_source)
+        case AdvioPoseFrameMode.LOCAL_FIRST_POSE:
+            target_frame = f"{_advio_provider_world_frame(pose_source)}_local_first_pose"
+        case AdvioPoseFrameMode.REFERENCE_WORLD:
+            target_frame = "advio_gt_world"
+    return target_frame, _advio_camera_frame(pose_source)
+
+
+def _advio_provider_world_frame(pose_source: AdvioPoseSource) -> str:
+    return {
+        AdvioPoseSource.GROUND_TRUTH: "advio_gt_world",
+        AdvioPoseSource.ARCORE: "advio_arcore_world",
+        AdvioPoseSource.ARKIT: "advio_arkit_world",
+        AdvioPoseSource.TANGO_RAW: "advio_tango_raw_world",
+        AdvioPoseSource.TANGO_AREA_LEARNING: "advio_tango_area_learning_world",
+    }.get(pose_source, f"advio_{pose_source.value}_world")
+
+
+def _advio_camera_frame(pose_source: AdvioPoseSource) -> str:
+    return {
+        AdvioPoseSource.GROUND_TRUTH: "advio_iphone_camera",
+        AdvioPoseSource.ARCORE: "advio_pixel_camera",
+        AdvioPoseSource.ARKIT: "advio_iphone_camera",
+        AdvioPoseSource.TANGO_RAW: "advio_tango_raw_device",
+        AdvioPoseSource.TANGO_AREA_LEARNING: "advio_tango_area_learning_device",
+    }.get(pose_source, f"advio_{pose_source.value}_camera")
 
 
 def _rebase_trajectory_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
@@ -120,7 +157,7 @@ def _rebase_trajectory_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajec
     return _trajectory_from_pose_matrices(rebased_poses, trajectory.timestamps)
 
 
-def _transform_trajectory_with_sim3(trajectory: PoseTrajectory3D, alignment: object) -> PoseTrajectory3D:
+def _transform_trajectory_with_alignment(trajectory: PoseTrajectory3D, alignment: Sim3Alignment) -> PoseTrajectory3D:
     rotation = np.asarray(alignment.rotation, dtype=np.float64)
     translation = np.asarray(alignment.translation, dtype=np.float64)
     scale = float(alignment.scale)

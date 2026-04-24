@@ -213,8 +213,13 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     layout = sent_blueprints[0].layout
     assert layout.views[0].contents == [
         "+ world/alignment/**",
+        "+ world/reference/**",
         "+ world/reconstruction/**",
         "+ world/live/tracking/**",
+        "+ world/live/source/camera",
+        "+ world/live/source/camera/points",
+        "- world/live/source/camera/image",
+        "- world/live/source/camera/image/**",
         "+ world/live/model",
         "- world/live/model/camera/image",
         "- world/live/model/camera/image/**",

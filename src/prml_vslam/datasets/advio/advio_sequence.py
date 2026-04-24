@@ -20,7 +20,7 @@ from prml_vslam.datasets.contracts import (
     FrameSelectionConfig,
     selected_advio_pose_source,
 )
-from prml_vslam.interfaces import FramePacketProvenance
+from prml_vslam.interfaces import FramePacketProvenance, PointCloud
 from prml_vslam.interfaces.ingest import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
@@ -48,6 +48,7 @@ from .advio_models import (
 from .advio_replay_adapter import (
     _poses_for_frame_timestamps,
     _RotatedVideoStream,
+    advio_pose_frames,
     load_advio_served_trajectory,
     read_advio_video_rotation_degrees,
     resolve_advio_pose_csv_path,
@@ -216,7 +217,12 @@ class AdvioSequence(BaseData):
             ),
         )
 
-    def to_benchmark_inputs(self, *, output_dir: Path | None = None) -> PreparedBenchmarkInputs:
+    def to_benchmark_inputs(
+        self,
+        *,
+        output_dir: Path | None = None,
+        tango_reference_point_stride: int = 1,
+    ) -> PreparedBenchmarkInputs:
         """Materialize benchmark-owned reference trajectories for one sequence."""
         paths = self._resolve_paths(require_arcore=False)
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
@@ -250,6 +256,7 @@ class AdvioSequence(BaseData):
                 tango_area_learning_csv_path=paths.tango_area_learning_csv_path,
                 tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
                 output_dir=evaluation_dir,
+                point_stride=tango_reference_point_stride,
             ),
             reference_point_cloud_sequences=_build_reference_point_cloud_sequences(
                 paths=paths,
@@ -277,6 +284,10 @@ class AdvioSequence(BaseData):
             if dataset_serving is not None
             else DatasetServingConfig(dataset_id="advio", pose_source=pose_source)
         )
+        pose_target_frame, pose_source_frame = advio_pose_frames(
+            pose_source=effective_serving.pose_source,
+            pose_frame_mode=effective_serving.pose_frame_mode,
+        )
         stream: FramePacketStream = Cv2FrameProducer(
             Cv2ProducerConfig(
                 video_path=paths.video_path,
@@ -296,6 +307,8 @@ class AdvioSequence(BaseData):
                         scene=scene,
                         dataset_serving=effective_serving,
                     ),
+                    target_frame=pose_target_frame,
+                    source_frame=pose_source_frame,
                 ),
                 base_provenance=FramePacketProvenance(
                     source_id="advio",
@@ -363,7 +376,19 @@ def _build_advio_payload_provider(
         if payload_path is None:
             return None
         payload = load_tango_point_cloud_payload(payload_path).astype(np.float32, copy=False)
-        return Cv2FramePayload(pointmap=payload.reshape(-1, 1, 3))
+        return Cv2FramePayload(
+            point_cloud=PointCloud(
+                points_xyz=payload,
+                frame=f"advio_{pose_source.value}_depth_sensor",
+                timestamp_ns=timestamp_ns,
+                provenance={
+                    "source_id": "advio",
+                    "pose_source": pose_source.value,
+                    "payload_index": int(index_rows[nearest_index, 1]),
+                    "payload_path": payload_path.name,
+                },
+            )
+        )
 
     return provider
 

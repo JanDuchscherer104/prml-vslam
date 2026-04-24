@@ -150,11 +150,10 @@ src/prml_vslam/
 │   ├── REQUIREMENTS.md [A]
 │   ├── __init__.py [C]
 │   ├── config_contracts.py [A]
-│   ├── configs.py [A]
 │   ├── descriptors.py [A]
-│   ├── factory.py [A]
 │   ├── mast3r.py [C]
 │   ├── mock_vslam.py [A]
+│   ├── options.py [A]
 │   ├── protocols.py [A]
 │   └── vista [A]
 │       ├── README.md [C]
@@ -325,18 +324,13 @@ src/prml_vslam/
 │   ├── REQUIREMENTS.md
 │   ├── config_contracts.py
 │   │   └── SlamOutputPolicy
-│   ├── configs.py
-│   │   ├── BackendConfig
-│   │   ├── MockSlamBackendConfig
-│   │   ├── VistaSlamBackendConfig
-│   │   └── Mast3rSlamBackendConfig
 │   ├── contracts.py
 │   │   ├── SlamUpdate
+│   ├── options.py
+│   │   └── structural backend option protocols
 │   │   └── backend notice/event DTOs
 │   ├── descriptors.py
 │   │   └── BackendDescriptor
-│   ├── factory.py
-│   │   └── BackendFactory
 │   ├── mock_vslam.py
 │   │   └── MockSlamBackend
 │   └── vista

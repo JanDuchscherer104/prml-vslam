@@ -7,7 +7,7 @@ contract split after the offline/streaming refactor.
 
 - `prml_vslam.interfaces`
   - repo-wide shared semantic DTOs such as `CameraIntrinsics`,
-    `FramePacket`, and `FrameTransform`
+    `FramePacket`, `FrameTransform`, `PointCloud`, `PointMap`, and `DepthMap`
 - `prml_vslam.protocols`
   - repo-wide behavior seams such as `OfflineSequenceSource`,
     `StreamingSequenceSource`, and `FramePacketStream`
@@ -89,6 +89,11 @@ summaries. Normalized `.rrd` recordings are viewer/export artifacts, not the
 scientific source of truth. Bulk arrays stay out of persisted/public contracts
 and move through repo-owned opaque handles instead.
 
+Source-stage visualization is represented by neutral `VisualizationItem`
+values. The source stage may request logging of prepared reference trajectories
+and reference clouds, but Rerun entity paths and SDK calls stay in the sink
+policy.
+
 Streaming method startup is intentionally symmetric with offline execution: a
 backend session can receive the normalized `SequenceManifest`, optional
 prepared benchmark inputs, and the selected reference baseline before the first
@@ -105,7 +110,14 @@ SLAM artifact bundle in place.
 - `FrameTransform`
   - is the canonical rigid-transform DTO for runtime poses, dataset
     calibration, frame-graph edges, and visualization/export logic
-  - defaults to the repo pose convention `camera -> world` for runtime pose use
+  - defaults to the repo pose convention `world <- camera`
+    (`T_world_camera`) for runtime pose use
+
+- `PointCloud`, `PointMap`, and `DepthMap`
+  - keep unstructured XYZ clouds, raster-aligned camera-local XYZ pointmaps,
+    and metric depth rasters separate
+  - carry explicit frame names, and carry `T_world_camera` or
+    `T_world_frame` when the payload is world-placeable
 
 This keeps rigid-transform math in one place while preserving explicit frame
 labels at package boundaries.

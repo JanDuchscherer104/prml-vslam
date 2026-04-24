@@ -28,7 +28,7 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own backend execution, benchmark metric computation, or Rerun logging
 - `app`
   - owns Streamlit pages, typed page state (`prml_vslam.app.models`), UI composition, and launch surfaces
-  - does not own pipeline semantics, transport decoding, dataset normalization, or benchmark-policy logic
+  - does not own pipeline semantics, transport decoding, dataset normalization, or stage-policy logic
 - `datasets`
   - owns dataset catalogs, dataset-facing contracts, fetch/extract flows, and normalization into repository contracts
   - preserves the currently supported dataset modalities and dataset-specific auxiliary/reference assets, including ADVIO Tango data and reference-cloud preparation
@@ -40,17 +40,18 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own method execution, source normalization, or app state
 - `interfaces`
   - owns repo-wide shared datamodels only
-  - examples include `CameraIntrinsics`, `FrameTransform`, and `FramePacket`
+  - examples include `CameraIntrinsics`, `FrameTransform`, `FramePacket`,
+    `PointCloud`, `PointMap`, and `DepthMap`
   - owns reusable camera artifact datamodels and pure camera-model transforms
     when the same intrinsics semantics cross method, evaluation, plotting, and
     app boundaries
 - `benchmark`
-  - owns thin benchmark-policy composition such as evaluation enablement and baseline selection
+  - owns reusable benchmark reference identifiers such as trajectory and cloud source ids
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
 - `io`
   - owns transport adapters, packet ingestion, replay mechanics, and transport-level normalization
-  - does not own app session state or benchmark policy
+  - does not own app session state or stage policy
 - `methods`
   - owns backend-specific execution seams and thin method-wrapper integration
   - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend`
@@ -61,8 +62,8 @@ Use this file for package-root ownership rules and cross-package contract constr
   - owns orchestration, run contracts, artifact layout, stage planning, events,
     projected snapshots, manifests, summaries, pipeline-owned runtime
     coordination, and repo-local execution-lifecycle policy
-  - keeps current `RunRequest` compatibility while the target `RunConfig`,
-    declarative stage configs, and `RuntimeManager` construction model land
+  - uses `RunConfig` as the canonical launch/planning contract; stage-facing
+    config belongs to `pipeline.stages.<stage>` modules
   - `RunPlan` source snapshots include configured source sampling policy and
     nullable expected source cadence, not measured runtime throughput
   - does not own transport decoding, app rendering, or benchmark metrics logic
@@ -75,13 +76,20 @@ Use this file for package-root ownership rules and cross-package contract constr
 - `utils`
   - owns shared low-level infrastructure such as config helpers, path handling, logging, and generic geometry/runtime helpers
   - may own generic reusable IO/math helpers, such as color-preserving PLY IO,
-    but not method-native artifact semantics or benchmark comparison policy
+    but not method-native artifact semantics or stage-specific comparison policy
   - does not own package-specific workflow policy
 
 ## Non-Negotiable Requirements
 
 - One semantic concept must have one owning module.
 - Derived alignment transforms remain explicit repo-owned artifacts; they must not silently replace native SLAM trajectories or point clouds.
+- Runtime camera poses use explicit `T_world_camera` semantics at repo-owned
+  boundaries. Inverse transforms belong only at call sites whose external APIs
+  require world-to-camera matrices.
+- Unstructured point clouds, raster-aligned pointmaps, and metric depth maps
+  are distinct shared geometry contracts. Sparse source clouds such as ADVIO
+  Tango payloads must not be represented as pointmaps without an explicit
+  projection step.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - Shared repo-wide behavior seams belong in `prml_vslam.protocols.*`.
