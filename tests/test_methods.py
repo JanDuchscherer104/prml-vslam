@@ -363,7 +363,7 @@ def test_mast3r_session_starts_backend_after_intrinsics_are_available(
     session._backend_error = None
     session._backend_thread = None
     session._backend_stop = SimpleNamespace(clear=lambda: None)
-    session._resize_img = lambda _img, _size: {"img": np.zeros((1, 3, 2, 2), dtype=np.float32)}
+    session._resize_img = lambda _img, _size: {"img": np.zeros((1, 3, 4, 4), dtype=np.float32)}
     session._SharedKeyframes = FakeSharedKeyframes
     session._SharedStates = FakeSharedStates
     session._FrameTracker = FakeFrameTracker
@@ -402,6 +402,7 @@ def test_mast3r_session_starts_backend_after_intrinsics_are_available(
     )
 
     assert observed_k_ready == [True]
+    assert session._K is not None
     assert session._keyframes is not None
     assert session._keyframes.intrinsics is not None
 
