@@ -447,7 +447,7 @@ def test_mast3r_session_extracts_camera_local_pointmap() -> None:
     )
     fake_frame = SimpleNamespace(
         X_canon=FakeTensor(x_canon),
-        get_average_conf=lambda: FakeTensor(np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)),
+        get_average_conf=lambda: FakeTensor(np.array([1.0, 0.25, 0.75, 1.0], dtype=np.float32)),
         img_shape=FakeTensor(np.array([2, 2], dtype=np.int64)),
         uimg=FakeTensor(np.zeros((2, 2, 3), dtype=np.float32)),
         T_WC=FakeTransform(),
@@ -455,7 +455,7 @@ def test_mast3r_session_extracts_camera_local_pointmap() -> None:
 
     pointmap, _preview_rgb, valid = session._extract_keyframe_visuals(fake_frame)
 
-    assert valid == 4
+    assert valid == 3
     assert pointmap is not None
     assert pointmap.shape == (2, 2, 3)
     np.testing.assert_allclose(pointmap.reshape(-1, 3), x_canon)

@@ -287,7 +287,7 @@ class Mast3rSlamSession:
         from mast3r_slam.frame import Mode  # noqa: PLC0415
 
         if self._states is None or self._keyframes is None:
-            raise RuntimeError("MASt3R-SLAM cannot close before any RGB frame has been processed.")
+            raise RuntimeError("MASt3R-SLAM close() called before processing any RGB frames.")
         self._raise_if_backend_failed()
 
         # Signal backend to stop and drain any in-flight optimisation.
@@ -840,7 +840,12 @@ class Mast3rSlamBackend(SlamBackend):
         if source_path.suffix.lower() == ".json":
             payload = json.loads(source_path.read_text(encoding="utf-8"))
             if isinstance(payload, dict) and isinstance(payload.get("timestamps_ns"), list):
-                values = [int(value) for value in payload["timestamps_ns"][:num_frames]]
+                try:
+                    values = [int(value) for value in payload["timestamps_ns"][:num_frames]]
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        f"Invalid timestamps_ns payload in '{source_path}'; expected numeric values."
+                    ) from exc
                 if len(values) < num_frames:
                     values.extend(fallback[len(values) :])
                 return values
@@ -851,7 +856,12 @@ class Mast3rSlamBackend(SlamBackend):
                 continue
             rows.append(line.split(",", maxsplit=1)[0].strip())
         if rows:
-            values = [int(round(float(value) * 1e9)) for value in rows[:num_frames]]
+            try:
+                values = [int(round(float(value) * 1e9)) for value in rows[:num_frames]]
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"Invalid timestamp row in '{source_path}'; expected numeric first-column values."
+                ) from exc
             if len(values) < num_frames:
                 values.extend(fallback[len(values) :])
             return values
