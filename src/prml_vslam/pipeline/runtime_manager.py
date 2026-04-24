@@ -1,10 +1,4 @@
-"""Runtime construction and preflight scaffolding for pipeline stages.
-
-The manager validates runtime availability and constructs proxies lazily from
-stage bindings. The current coordinator uses it for local runtime execution;
-Ray-hosted ``StageRuntimeProxy`` invocation remains an explicit unsupported
-deployment path until actor/task-ref handling moves behind the proxy.
-"""
+"""Runtime construction and preflight scaffolding for pipeline stages."""
 
 from __future__ import annotations
 
@@ -17,7 +11,7 @@ from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
-from prml_vslam.pipeline.stages.base.proxy import DeploymentKind, RuntimeCapability, StageRuntimeProxy
+from prml_vslam.pipeline.stages.base.proxy import DeploymentKind, RuntimeCapability, StageRuntimeHandle
 from prml_vslam.utils import BaseData
 
 RuntimeFactory = Callable[[], BaseStageRuntime]
@@ -68,20 +62,13 @@ class RuntimePreflightResult(BaseData):
             )
             messages.append(
                 "unsupported deployment kinds: "
-                f"{unsupported_deployments}; Ray-hosted StageRuntimeProxy invocation is not implemented"
+                f"{unsupported_deployments}; Ray-hosted stage runtime handles are not implemented"
             )
         raise RuntimeError("; ".join(messages))
 
 
 class RuntimeManager:
-    """Preflight and lazily construct capability-typed stage runtime proxies.
-
-    The manager is the target construction authority for stage runtimes and
-    proxy metadata. Stage configs validate policy, but this object decides
-    which runtime factory, capability set, deployment kind, executor id, and
-    resource assignment are used for a planned stage. The remaining deployment
-    gap is Ray-hosted proxy invocation, not coordinator bypass.
-    """
+    """Preflight and lazily construct local stage runtime handles."""
 
     def __init__(
         self,
@@ -99,7 +86,7 @@ class RuntimeManager:
         self._executor_ids = {} if executor_ids is None else dict(executor_ids)
         self._resource_assignments = {} if resource_assignments is None else dict(resource_assignments)
         self._stage_configs = {} if stage_configs is None else dict(stage_configs)
-        self._runtime_cache: dict[StageKey, StageRuntimeProxy] = {}
+        self._runtime_cache: dict[StageKey, StageRuntimeHandle] = {}
 
     def register(
         self,
@@ -150,8 +137,8 @@ class RuntimeManager:
             unsupported_deployments=unsupported_deployments,
         )
 
-    def runtime_for(self, stage_key: StageKey) -> StageRuntimeProxy:
-        """Return a lazily constructed proxy for ``stage_key``."""
+    def runtime_for(self, stage_key: StageKey) -> StageRuntimeHandle:
+        """Return a lazily constructed runtime handle for ``stage_key``."""
         cached = self._runtime_cache.get(stage_key)
         if cached is not None:
             return cached
@@ -161,15 +148,14 @@ class RuntimeManager:
         deployment_kind = self._deployment_kinds.get(stage_key, "in_process")
         if deployment_kind == "ray":
             raise NotImplementedError(
-                f"Stage '{stage_key.value}' requested deployment_kind='ray', but Ray-hosted StageRuntimeProxy "
-                "invocation is not implemented yet."
+                f"Stage '{stage_key.value}' requested deployment_kind='ray', but Ray-hosted stage runtime handles "
+                "are not implemented yet."
             )
         runtime = factory()
-        proxy = StageRuntimeProxy(
+        proxy = StageRuntimeHandle(
             stage_key=stage_key,
             runtime=runtime,
             supported_capabilities=self._runtime_capabilities.get(stage_key, frozenset()),
-            deployment_kind=deployment_kind,
             executor_id=self._executor_ids.get(stage_key),
             resource_assignment=self._resource_assignments.get(stage_key, {}),
         )

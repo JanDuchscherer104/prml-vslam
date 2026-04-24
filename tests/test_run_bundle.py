@@ -8,10 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.pipeline.artifact_inspection import inspect_run_artifacts
 from prml_vslam.pipeline.contracts.events import RunCompleted, RunStarted, RunSubmitted, StageCompleted, StageOutcome
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary, StageManifest, StageStatus
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_bundle, import_run_bundle
@@ -19,14 +20,14 @@ from prml_vslam.pipeline.sinks.jsonl import JsonlEventSink
 
 
 def test_run_bundle_export_import_relocates_run_metadata(tmp_path: Path) -> None:
-    artifact_root = _write_fake_run(tmp_path / "source-artifacts" / "demo-run" / "mock")
+    artifact_root = _write_fake_run(tmp_path / "source-artifacts" / "demo-run" / "vista")
     bundle_path = tmp_path / "demo-run.prmlrun.tar.gz"
     output_dir = tmp_path / "imported-artifacts"
 
     export_result = export_run_bundle(artifact_root, bundle_path)
     import_result = import_run_bundle(bundle_path, output_dir=output_dir)
 
-    imported_root = output_dir / "demo-run" / "mock"
+    imported_root = output_dir / "demo-run" / "vista"
     inspection = inspect_run_artifacts(import_result.artifact_root)
 
     assert export_result.bundle_path == bundle_path
@@ -45,10 +46,10 @@ def test_run_bundle_export_import_relocates_run_metadata(tmp_path: Path) -> None
 
 
 def test_run_bundle_import_rename_collision_policy(tmp_path: Path) -> None:
-    artifact_root = _write_fake_run(tmp_path / "source-artifacts" / "demo-run" / "mock")
+    artifact_root = _write_fake_run(tmp_path / "source-artifacts" / "demo-run" / "vista")
     bundle_path = tmp_path / "demo-run.prmlrun.tar.gz"
     output_dir = tmp_path / "imported-artifacts"
-    (output_dir / "demo-run" / "mock").mkdir(parents=True)
+    (output_dir / "demo-run" / "vista").mkdir(parents=True)
     export_run_bundle(artifact_root, bundle_path)
 
     result = import_run_bundle(
@@ -57,11 +58,11 @@ def test_run_bundle_import_rename_collision_policy(tmp_path: Path) -> None:
         collision_policy=RunBundleCollisionPolicy.RENAME,
     )
 
-    assert result.artifact_root == (output_dir / "demo-run" / "mock-imported-1").resolve()
+    assert result.artifact_root == (output_dir / "demo-run" / "vista-imported-1").resolve()
 
 
 def test_run_bundle_import_warns_about_external_metadata_path(tmp_path: Path) -> None:
-    artifact_root = _write_fake_run(tmp_path / "source-artifacts" / "demo-run" / "mock")
+    artifact_root = _write_fake_run(tmp_path / "source-artifacts" / "demo-run" / "vista")
     external_path = tmp_path / "outside-artifacts" / "source.mov"
     external_path.parent.mkdir()
     external_path.write_text("outside", encoding="utf-8")
@@ -87,7 +88,7 @@ def test_run_bundle_import_warns_about_external_metadata_path(tmp_path: Path) ->
 
 def test_run_bundle_import_rejects_unsafe_member_path(tmp_path: Path) -> None:
     bundle_path = tmp_path / "unsafe.prmlrun.tar.gz"
-    manifest = b'{"schema_version": 1, "package_version": "test", "exported_run_id": "run", "artifact_label": "run/mock", "original_artifact_root": "/tmp/run/mock", "exported_at_ns": 1, "files": []}'
+    manifest = b'{"schema_version": 1, "package_version": "test", "exported_run_id": "run", "artifact_label": "run/vista", "original_artifact_root": "/tmp/run/vista", "exported_at_ns": 1, "files": []}'
     with tarfile.open(bundle_path, "w:gz") as archive:
         info = tarfile.TarInfo("manifest.json")
         info.size = len(manifest)

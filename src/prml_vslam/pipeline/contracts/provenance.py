@@ -13,23 +13,10 @@ from pathlib import Path
 
 from pydantic import Field
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.utils import BaseData
 
 from .stages import StageKey
-
-
-class ArtifactRef(BaseData):
-    """Reference one materialized repository artifact by path and fingerprint.
-
-    The reference is generic durable provenance, not SLAM-specific. It is used
-    by stage outcomes, manifests, summaries, visualization artifacts, and
-    artifact inspection to name files or directories that survived beyond live
-    runtime execution.
-    """
-
-    path: Path
-    kind: str
-    fingerprint: str
 
 
 class StageCacheInfo(BaseData):

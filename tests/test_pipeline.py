@@ -20,9 +20,6 @@ import pytest
 import ray
 from pydantic import ValidationError
 
-from prml_vslam.benchmark import (
-    ReferenceSource,
-)
 from prml_vslam.interfaces import (
     FramePacket,
     FramePacketProvenance,
@@ -32,10 +29,11 @@ from prml_vslam.interfaces import (
     RgbdObservationSequenceIndex,
     RgbdObservationSequenceRef,
 )
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.contracts import PoseEstimated, SlamUpdate
-from prml_vslam.methods.descriptors import BackendCapabilities, BackendDescriptor
+from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
@@ -47,7 +45,7 @@ from prml_vslam.pipeline.contracts.events import (
     StageStatus,
 )
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary
+from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.execution_context import StageExecutionContext
@@ -56,11 +54,15 @@ from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
+from prml_vslam.pipeline.ray_runtime.substrate import build_runtime_env, prepare_ray_environment
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.runner import StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
-from prml_vslam.pipeline.stages.base.config import ResourceSpec, StageExecutionConfig
+from prml_vslam.pipeline.stages.base.config import (
+    ResourceSpec,
+    StageExecutionConfig,
+)
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -70,10 +72,10 @@ from prml_vslam.pipeline.stages.base.contracts import (
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
-from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
-from prml_vslam.pipeline.stages.source.runtime import SourceRuntimeConfigInput, _max_frames_for_config_input
+from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SourceStageOutput
+from prml_vslam.sources.runtime import SourceRuntimeInput, _max_frames_for_input
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
@@ -84,6 +86,102 @@ def _isolated_ray_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
     yield
     if ray.is_initialized():
         ray.shutdown()
+
+
+def _fake_slam_artifacts(artifact_root: Path, *, emit_sparse_points: bool, emit_dense_points: bool) -> SlamArtifacts:
+    run_paths = RunArtifactPaths.build(artifact_root)
+    run_paths.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    run_paths.trajectory_path.write_text("0.0 0.0 0.0 0.0 0.0 0.0 0.0 1.0\n", encoding="utf-8")
+    point_cloud_ref: ArtifactRef | None = None
+    if emit_sparse_points or emit_dense_points:
+        run_paths.point_cloud_path.parent.mkdir(parents=True, exist_ok=True)
+        run_paths.point_cloud_path.write_text("ply\n", encoding="utf-8")
+        point_cloud_ref = ArtifactRef(path=run_paths.point_cloud_path, kind="ply", fingerprint="cloud")
+    return SlamArtifacts(
+        trajectory_tum=ArtifactRef(path=run_paths.trajectory_path, kind="tum", fingerprint="traj"),
+        sparse_points_ply=point_cloud_ref if emit_sparse_points else None,
+        dense_points_ply=point_cloud_ref if emit_dense_points else None,
+    )
+
+
+class _FakeVistaBackend:
+    method_id = MethodId.VISTA
+
+    def __init__(self) -> None:
+        self._output_policy = None
+        self._artifact_root: Path | None = None
+        self._pending_updates: list[SlamUpdate] = []
+
+    def run_sequence(
+        self,
+        sequence: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
+        backend_config,
+        output_policy,
+        artifact_root: Path,
+    ) -> SlamArtifacts:
+        del sequence, benchmark_inputs, baseline_source, backend_config
+        return _fake_slam_artifacts(
+            artifact_root,
+            emit_sparse_points=output_policy.emit_sparse_points,
+            emit_dense_points=output_policy.emit_dense_points,
+        )
+
+    def start_streaming(
+        self,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
+        backend_config,
+        output_policy,
+        artifact_root: Path,
+    ) -> None:
+        del sequence_manifest, benchmark_inputs, baseline_source, backend_config
+        self._output_policy = output_policy
+        self._artifact_root = artifact_root
+
+    def step_streaming(self, frame: FramePacket) -> None:
+        pose = frame.pose or FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(frame.seq), ty=0.0, tz=0.0)
+        self._pending_updates.append(
+            SlamUpdate(
+                seq=frame.seq,
+                source_seq=frame.seq,
+                timestamp_ns=frame.timestamp_ns,
+                source_timestamp_ns=frame.timestamp_ns,
+                is_keyframe=True,
+                keyframe_index=frame.seq,
+                pose=pose,
+                pose_updated=True,
+                num_sparse_points=1,
+                num_dense_points=1,
+                pointmap=np.ones((2, 2, 3), dtype=np.float32),
+                image_rgb=frame.rgb,
+                preview_rgb=frame.rgb,
+            )
+        )
+
+    def drain_streaming_updates(self) -> list[SlamUpdate]:
+        updates = self._pending_updates
+        self._pending_updates = []
+        return updates
+
+    def finish_streaming(self) -> SlamArtifacts:
+        assert self._artifact_root is not None
+        assert self._output_policy is not None
+        return _fake_slam_artifacts(
+            self._artifact_root,
+            emit_sparse_points=self._output_policy.emit_sparse_points,
+            emit_dense_points=self._output_policy.emit_dense_points,
+        )
+
+
+@pytest.fixture(autouse=True)
+def _fake_vista_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "prml_vslam.methods.stage.config.VistaSlamBackendConfig.setup_target",
+        lambda self, *, path_config=None, **_kwargs: _FakeVistaBackend(),
+    )
 
 
 @contextmanager
@@ -141,37 +239,6 @@ def test_run_config_accepts_explicit_stage_backend_spec() -> None:
     assert run_config.stages.slam.backend.max_frames == 9
 
 
-def test_run_config_accepts_mock_backend_noise_fields() -> None:
-    run_config = RunConfig.model_validate(
-        {
-            "experiment_name": "mock-noise",
-            "mode": "offline",
-            "output_dir": ".artifacts",
-            "stages": {
-                "source": {"backend": {"source_id": "video", "video_path": "captures/demo.mp4"}},
-                "slam": {
-                    "backend": {
-                        "method_id": "mock",
-                        "max_frames": 9,
-                        "trajectory_position_noise_mean_m": 0.1,
-                        "trajectory_position_noise_variance_m2": 0.2,
-                        "point_noise_mean_m": 0.3,
-                        "point_noise_variance_m2": 0.4,
-                        "random_seed": 17,
-                    }
-                },
-            },
-        }
-    )
-
-    assert run_config.stages.slam.backend.method_id is MethodId.MOCK
-    assert run_config.stages.slam.backend.trajectory_position_noise_mean_m == 0.1
-    assert run_config.stages.slam.backend.trajectory_position_noise_variance_m2 == 0.2
-    assert run_config.stages.slam.backend.point_noise_mean_m == 0.3
-    assert run_config.stages.slam.backend.point_noise_variance_m2 == 0.4
-    assert run_config.stages.slam.backend.random_seed == 17
-
-
 def test_run_config_defaults_to_ephemeral_local_head_lifecycle() -> None:
     run_config = RunConfig.model_validate(
         {
@@ -206,7 +273,7 @@ pose_source = "ground_truth"
 pose_frame_mode = "provider_world"
 
 [stages.slam.backend]
-method_id = "mock"
+method_id = "vista"
 
 """.strip(),
         encoding="utf-8",
@@ -234,7 +301,7 @@ pose_source = "ground_truth"
 pose_frame_mode = "provider_world"
 
 [stages.slam.backend]
-method_id = "mock"
+method_id = "vista"
 
 [visualization]
 connect_live_viewer = true
@@ -256,7 +323,7 @@ def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> 
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         emit_dense_points=False,
         evaluate_cloud=True,
     )
@@ -275,7 +342,7 @@ def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> No
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     plan = run_config.compile_plan(path_config)
@@ -341,7 +408,7 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
                 "pose_frame_mode": "provider_world",
             },
         ),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         reference_enabled=False,
         trajectory_eval_enabled=False,
         evaluate_cloud=True,
@@ -362,7 +429,7 @@ def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path)
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         reference_enabled=True,
     )
 
@@ -380,7 +447,7 @@ def test_stage_registry_rejects_non_rgbd_reference_reconstruction(tmp_path: Path
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         reference_enabled=True,
     )
 
@@ -398,7 +465,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path / ".artifacts",
         source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         reference_enabled=True,
     )
     run_config.stages.reconstruction.backend.extract_mesh = True
@@ -412,7 +479,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
         plan=plan,
         path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
         run_paths=RunArtifactPaths.build(plan.artifact_root),
-        backend_descriptor=run_config.stages.slam.backend.describe(),
+        slam_backend=run_config.stages.slam.backend,
     )
     benchmark_inputs = _rgbd_benchmark_inputs(tmp_path)
 
@@ -498,12 +565,13 @@ def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
             stage_key=StageKey.SLAM,
             timestamp_ns=2,
             semantic_events=[
-                PoseEstimated(
+                SlamUpdate(
                     seq=1,
                     source_seq=1,
                     source_timestamp_ns=2,
                     timestamp_ns=2,
                     pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                    pose_updated=True,
                 )
             ],
         ),
@@ -653,7 +721,7 @@ def test_snapshot_projector_runtime_update_replaces_runtime_status() -> None:
 
 def test_actor_options_preserve_defaults_without_placement() -> None:
     run_config = _placement_run_config()
-    backend = _test_backend_descriptor(default_cpu=4.0, default_gpu=1.0)
+    backend = _test_backend_config(default_cpu=4.0, default_gpu=1.0)
 
     source_options = actor_options_for_stage(
         stage_key=StageKey.SOURCE,
@@ -681,7 +749,7 @@ def test_actor_options_preserve_defaults_without_placement() -> None:
 
 def test_actor_options_explicit_slam_placement_overrides_resources() -> None:
     run_config = _placement_run_config(placement={"slam": {"resources": {"CPU": 4, "GPU": 1}}})
-    backend = _test_backend_descriptor(default_cpu=2.0, default_gpu=0.0)
+    backend = _test_backend_config(default_cpu=2.0, default_gpu=0.0)
 
     options = actor_options_for_stage(
         stage_key=StageKey.SLAM,
@@ -698,7 +766,7 @@ def test_actor_options_explicit_slam_placement_overrides_resources() -> None:
 
 def test_actor_options_explicit_source_placement_overrides_resources() -> None:
     run_config = _placement_run_config(placement={"source": {"resources": {"CPU": 3}}})
-    backend = _test_backend_descriptor(default_cpu=8.0, default_gpu=1.0)
+    backend = _test_backend_config(default_cpu=8.0, default_gpu=1.0)
 
     options = actor_options_for_stage(
         stage_key=StageKey.SOURCE,
@@ -790,10 +858,11 @@ def test_run_coordinator_runtime_updates_do_not_create_durable_backend_events() 
                 stage_key=StageKey.SLAM,
                 timestamp_ns=10,
                 semantic_events=[
-                    PoseEstimated(
+                    SlamUpdate(
                         seq=1,
                         timestamp_ns=10,
                         pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                        pose_updated=True,
                     )
                 ],
             )
@@ -910,7 +979,7 @@ def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_r
     assert submitted == [(update, None)]
     assert coordinator._rerun_sink_last_call == "rerun-call-1"
     assert coordinator.snapshot().stage_runtime_status[StageKey.RECONSTRUCTION].lifecycle_state is StageStatus.COMPLETED
-    assert runtime_proxy.live_updates().drain_runtime_updates() == []
+    assert runtime_proxy.drain_runtime_updates() == []
 
 
 def test_run_coordinator_runtime_manager_registers_reconstruction_live_updates(tmp_path: Path) -> None:
@@ -921,7 +990,7 @@ def test_run_coordinator_runtime_manager_registers_reconstruction_live_updates(t
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path / ".artifacts",
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
     plan = _plan_with_stages(
         tmp_path=tmp_path,
@@ -1045,7 +1114,7 @@ def test_run_coordinator_emits_source_stage_failure_before_run_failed(
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         trajectory_eval_enabled=False,
     )
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
@@ -1059,10 +1128,10 @@ def test_run_coordinator_emits_source_stage_failure_before_run_failed(
     coordinator._run_config = run_config
     coordinator._plan = plan
     coordinator._path_config = path_config
-    coordinator._backend_descriptor = run_config.stages.slam.backend.describe()
+    coordinator._slam_backend = run_config.stages.slam.backend
     monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.source.runtime.SourceRuntime.run_offline",
+        "prml_vslam.sources.runtime.SourceRuntime.run_offline",
         lambda self, input_payload: (_ for _ in ()).throw(RuntimeError("source boom")),
     )
 
@@ -1096,7 +1165,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path / ".artifacts",
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id=run_config.experiment_name, namespace="pytest-unit")
@@ -1108,7 +1177,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
     )
     coordinator._run_config = run_config
     coordinator._path_config = path_config
-    coordinator._backend_descriptor = run_config.stages.slam.backend.describe()
+    coordinator._slam_backend = run_config.stages.slam.backend
     monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
 
     coordinator._run(
@@ -1131,7 +1200,7 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         trajectory_eval_enabled=False,
     )
     plan = _plan_with_stages(
@@ -1141,7 +1210,7 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
     )
     coordinator._run_config = run_config
     coordinator._path_config = path_config
-    coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
+    coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
 
     coordinator._run_offline(
         run_config=run_config,
@@ -1168,7 +1237,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
         mode=PipelineMode.STREAMING,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         trajectory_eval_enabled=True,
     )
     plan = _plan_with_stages(
@@ -1306,7 +1375,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     coordinator._run_config = run_config
     coordinator._plan = plan
     coordinator._path_config = path_config
-    coordinator._backend_descriptor = _test_backend_descriptor(default_cpu=1.0, default_gpu=0.0)
+    coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
     coordinator._snapshot = RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
     coordinator._streaming_runtime_manager = runtime_manager
     coordinator._slam_runtime_proxy = runtime_manager.runtime_for(StageKey.SLAM)
@@ -1356,8 +1425,9 @@ def test_slam_backend_config_uses_stage_owned_method_id_for_vista() -> None:
 
 def test_streaming_source_config_input_caps_video_extraction_by_backend_max_frames() -> None:
     assert (
-        _max_frames_for_config_input(
-            SourceRuntimeConfigInput(
+        _max_frames_for_input(
+            SourceRuntimeInput(
+                artifact_root=Path("/tmp/source"),
                 mode=PipelineMode.STREAMING,
                 frame_stride=1,
                 streaming_max_frames=42,
@@ -1368,7 +1438,7 @@ def test_streaming_source_config_input_caps_video_extraction_by_backend_max_fram
 
 
 def test_ray_backend_uses_current_python_for_local_runtime_env() -> None:
-    runtime_env = RayPipelineBackend._build_runtime_env(address=None)
+    runtime_env = build_runtime_env(address=None)
 
     assert runtime_env["py_executable"] == sys.executable
     assert "excludes" in runtime_env
@@ -1379,7 +1449,7 @@ def test_ray_backend_uses_current_python_for_local_runtime_env() -> None:
 
 
 def test_ray_backend_does_not_force_local_python_for_remote_address() -> None:
-    runtime_env = RayPipelineBackend._build_runtime_env(address="ray://10.0.0.5:10001")
+    runtime_env = build_runtime_env(address="ray://10.0.0.5:10001")
 
     assert "py_executable" not in runtime_env
     assert "excludes" in runtime_env
@@ -1391,7 +1461,7 @@ def test_ray_backend_disables_uv_runtime_env_replication_by_default(
 ) -> None:
     monkeypatch.delenv("RAY_ENABLE_UV_RUN_RUNTIME_ENV", raising=False)
 
-    RayPipelineBackend._prepare_ray_environment()
+    prepare_ray_environment()
 
     assert os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] == "0"
 
@@ -1403,11 +1473,7 @@ def test_ray_backend_prefers_persistent_local_head_outside_pytest(
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: False)
-    monkeypatch.setattr(
-        backend,
-        "_ensure_local_head_address",
-        lambda: "127.0.0.1:25001",
-    )
+    monkeypatch.setattr(backend._local_head, "ensure_address", lambda *, reuse: "127.0.0.1:25001")
 
     def fake_init(**kwargs: Any) -> None:
         captured.update(kwargs)
@@ -1428,9 +1494,9 @@ def test_ray_backend_keeps_inprocess_init_for_pytest_namespaces(
 
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: False)
     monkeypatch.setattr(
-        backend,
-        "_ensure_local_head_address",
-        lambda: (_ for _ in ()).throw(AssertionError("should not be called")),
+        backend._local_head,
+        "ensure_address",
+        lambda *, reuse: (_ for _ in ()).throw(AssertionError("should not be called")),
     )
 
     def fake_init(**kwargs: Any) -> None:
@@ -1453,9 +1519,9 @@ def test_ray_backend_logs_pytest_init_path(
 
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: False)
     monkeypatch.setattr(
-        backend,
-        "_ensure_local_head_address",
-        lambda: (_ for _ in ()).throw(AssertionError("should not be called")),
+        backend._local_head,
+        "ensure_address",
+        lambda *, reuse: (_ for _ in ()).throw(AssertionError("should not be called")),
     )
 
     def fake_init(**kwargs: Any) -> None:
@@ -1482,12 +1548,12 @@ def test_ray_backend_reuses_healthy_local_head_metadata(tmp_path: Path) -> None:
         namespace="prml_vslam.local",
     )
     backend._reuse_local_head = True
-    metadata_path = backend._local_head_metadata_path()
+    metadata_path = backend._local_head._metadata_path()
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
-    backend._can_connect = lambda address: address == "127.0.0.1:25001"  # type: ignore[method-assign]
+    backend._local_head._can_connect = lambda address: address == "127.0.0.1:25001"  # type: ignore[method-assign]
 
-    assert backend._ensure_local_head_address() == "127.0.0.1:25001"
+    assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25001"
 
 
 def test_ray_backend_replaces_stale_local_head_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1496,12 +1562,16 @@ def test_ray_backend_replaces_stale_local_head_metadata(tmp_path: Path, monkeypa
         namespace="prml_vslam.local",
     )
     backend._reuse_local_head = True
-    metadata_path = backend._local_head_metadata_path()
+    metadata_path = backend._local_head._metadata_path()
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
-    backend._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
-    monkeypatch.setattr(backend, "_pick_local_head_address", lambda: "127.0.0.1:25002")
-    monkeypatch.setattr(backend, "_wait_until_connectable", lambda address: address == "127.0.0.1:25002")
+    backend._local_head._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
+    monkeypatch.setattr(backend._local_head, "_pick_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(
+        backend._local_head,
+        "_wait_until_connectable",
+        lambda address: address == "127.0.0.1:25002",
+    )
 
     class FakePopen:
         pid = 456
@@ -1509,10 +1579,12 @@ def test_ray_backend_replaces_stale_local_head_metadata(tmp_path: Path, monkeypa
         def poll(self) -> None:
             return None
 
-    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.subprocess.Popen", lambda *args, **kwargs: FakePopen())
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.substrate.subprocess.Popen", lambda *args, **kwargs: FakePopen()
+    )
 
-    assert backend._ensure_local_head_address() == "127.0.0.1:25002"
-    assert backend._read_local_head_metadata() == {"address": "127.0.0.1:25002", "pid": 456}
+    assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25002"
+    assert backend._local_head._read_metadata() == {"address": "127.0.0.1:25002", "pid": 456}
 
 
 def test_ray_backend_logs_stale_local_head_metadata_replacement(
@@ -1525,12 +1597,16 @@ def test_ray_backend_logs_stale_local_head_metadata_replacement(
         namespace="prml_vslam.local",
     )
     backend._reuse_local_head = True
-    metadata_path = backend._local_head_metadata_path()
+    metadata_path = backend._local_head._metadata_path()
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
-    backend._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
-    monkeypatch.setattr(backend, "_pick_local_head_address", lambda: "127.0.0.1:25002")
-    monkeypatch.setattr(backend, "_wait_until_connectable", lambda address: address == "127.0.0.1:25002")
+    backend._local_head._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
+    monkeypatch.setattr(backend._local_head, "_pick_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(
+        backend._local_head,
+        "_wait_until_connectable",
+        lambda address: address == "127.0.0.1:25002",
+    )
 
     class FakePopen:
         pid = 456
@@ -1538,14 +1614,16 @@ def test_ray_backend_logs_stale_local_head_metadata_replacement(
         def poll(self) -> None:
             return None
 
-    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.subprocess.Popen", lambda *args, **kwargs: FakePopen())
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.substrate.subprocess.Popen", lambda *args, **kwargs: FakePopen()
+    )
 
     with _capture_logger(
         caplog,
         monkeypatch,
         "prml_vslam.pipeline.backend_ray.RayPipelineBackend.prml_vslam.local",
     ):
-        assert backend._ensure_local_head_address() == "127.0.0.1:25002"
+        assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25002"
 
     assert any("Discarding stale local Ray head metadata." in r.message for r in caplog.records)
     assert any("Starting local Ray head on '127.0.0.1:25002'." in r.message for r in caplog.records)
@@ -1557,8 +1635,12 @@ def test_ray_backend_closes_parent_log_handle_after_spawn(tmp_path: Path, monkey
         namespace="prml_vslam.local",
     )
     backend._reuse_local_head = True
-    monkeypatch.setattr(backend, "_pick_local_head_address", lambda: "127.0.0.1:25002")
-    monkeypatch.setattr(backend, "_wait_until_connectable", lambda address: address == "127.0.0.1:25002")
+    monkeypatch.setattr(backend._local_head, "_pick_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(
+        backend._local_head,
+        "_wait_until_connectable",
+        lambda address: address == "127.0.0.1:25002",
+    )
 
     captured: dict[str, Any] = {}
 
@@ -1588,12 +1670,12 @@ def test_ray_backend_closes_parent_log_handle_after_spawn(tmp_path: Path, monkey
         return FakePopen()
 
     monkeypatch.setattr(Path, "open", fake_open)
-    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.substrate.subprocess.Popen", fake_popen)
 
-    assert backend._ensure_local_head_address() == "127.0.0.1:25002"
+    assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25002"
     assert captured["stdout"] is fake_log_handle
     assert fake_log_handle.closed
-    assert backend._read_local_head_metadata() == {"address": "127.0.0.1:25002", "pid": 789}
+    assert backend._local_head._read_metadata() == {"address": "127.0.0.1:25002", "pid": 789}
 
 
 def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1604,7 +1686,7 @@ def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch:
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: True)
     monkeypatch.setattr(backend, "_shutdown_run", lambda run_id: shutdowns.append(run_id))
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.shutdown", lambda: shutdowns.append("ray"))
-    monkeypatch.setattr(backend, "_shutdown_local_head", lambda: shutdowns.append("head"))
+    monkeypatch.setattr(backend._local_head, "shutdown", lambda: shutdowns.append("head"))
 
     backend.shutdown(preserve_local_head=True)
 
@@ -1622,7 +1704,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
     snapshot = RunSnapshot(run_id="backend-unit", state=RunState.COMPLETED)
     submitted: list[tuple[str, str | None]] = []
@@ -1680,7 +1762,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
                 "pose_frame_mode": "provider_world",
             },
         ),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         emit_dense_points=True,
         evaluate_cloud=True,
     )
@@ -1797,7 +1879,7 @@ def test_packet_source_actor_logs_start_and_eof(
     os.getenv("PRML_VSLAM_RUN_RAY_SMOKE") != "1",
     reason="Ray end-to-end smoke tests remain opt-in while the real cluster startup path is environment-sensitive.",
 )
-def test_run_service_offline_mock_smoke(tmp_path: Path) -> None:
+def test_run_service_offline_vista_smoke(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     service = RunService(path_config=path_config)
     run_config = _run_config(
@@ -1805,7 +1887,7 @@ def test_run_service_offline_mock_smoke(tmp_path: Path) -> None:
         mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     service.start_run(run_config=run_config, runtime_source=FakeOfflineSource())
@@ -1822,7 +1904,7 @@ def test_run_service_offline_mock_smoke(tmp_path: Path) -> None:
     os.getenv("PRML_VSLAM_RUN_RAY_SMOKE") != "1",
     reason="Ray end-to-end smoke tests remain opt-in while the real cluster startup path is environment-sensitive.",
 )
-def test_run_service_streaming_mock_smoke(tmp_path: Path) -> None:
+def test_run_service_streaming_vista_smoke(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     service = RunService(path_config=path_config)
     run_config = _run_config(
@@ -1830,7 +1912,7 @@ def test_run_service_streaming_mock_smoke(tmp_path: Path) -> None:
         mode=PipelineMode.STREAMING,
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     service.start_run(run_config=run_config, runtime_source=FakeStreamingSource())
@@ -1863,7 +1945,7 @@ def _run_config(
     mode: PipelineMode = PipelineMode.OFFLINE,
     output_dir: Path,
     source_backend,
-    method: MethodId = MethodId.MOCK,
+    method: MethodId = MethodId.VISTA,
     max_frames: int | None = None,
     emit_dense_points: bool = True,
     emit_sparse_points: bool = True,
@@ -1957,7 +2039,7 @@ def _placement_run_config(*, placement: dict[str, dict[str, dict[str, float]]] |
         mode=PipelineMode.OFFLINE,
         output_dir=Path(".artifacts"),
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
     if placement is None:
         return run_config
@@ -1978,17 +2060,10 @@ def _placement_run_config(*, placement: dict[str, dict[str, dict[str, float]]] |
     return run_config.model_copy(update={"stages": stages.model_copy(update=updates)})
 
 
-def _test_backend_descriptor(*, default_cpu: float, default_gpu: float) -> BackendDescriptor:
-    return BackendDescriptor(
-        key="test",
-        display_name="Test Backend",
-        capabilities=BackendCapabilities(
-            offline=True,
-            streaming=True,
-            dense_points=True,
-            live_preview=True,
-            native_visualization=False,
-            trajectory_benchmark_support=True,
-        ),
-        default_resources={"CPU": default_cpu, "GPU": default_gpu},
-    )
+def _test_backend_config(*, default_cpu: float, default_gpu: float) -> VistaSlamBackendConfig:
+    class TestVistaBackendConfig(VistaSlamBackendConfig):
+        @property
+        def default_resources(self) -> dict[str, float]:
+            return {"CPU": default_cpu, "GPU": default_gpu}
+
+    return TestVistaBackendConfig()

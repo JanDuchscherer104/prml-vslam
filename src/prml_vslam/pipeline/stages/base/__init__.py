@@ -1,34 +1,21 @@
 """Generic stage runtime contract package."""
 
-from __future__ import annotations
-
-from typing import Any
+from prml_vslam.pipeline.stages.base.config import (
+    FailureFingerprint,
+    StageInputContext,
+    StagePlanContext,
+    StageRuntimeBuildContext,
+)
+from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.runtime import LifecycleStageRuntimeMixin
 
 __all__ = [
     "FailureFingerprint",
     "LifecycleStageRuntimeMixin",
-    "PlanContext",
-    "RuntimeBuildContext",
-    "StageBinding",
     "StageInputContext",
+    "StagePlanContext",
     "StageResult",
+    "StageRuntimeBuildContext",
     "StageRuntimeStatus",
     "StageRuntimeUpdate",
-    "VisualizationItem",
 ]
-
-
-def __getattr__(name: str) -> Any:
-    if name in {"FailureFingerprint", "PlanContext", "RuntimeBuildContext", "StageBinding", "StageInputContext"}:
-        from . import binding
-
-        return getattr(binding, name)
-    if name in {"StageResult", "StageRuntimeStatus", "StageRuntimeUpdate", "VisualizationItem"}:
-        from . import contracts
-
-        return getattr(contracts, name)
-    if name == "LifecycleStageRuntimeMixin":
-        from .runtime import LifecycleStageRuntimeMixin
-
-        return LifecycleStageRuntimeMixin
-    raise AttributeError(name)

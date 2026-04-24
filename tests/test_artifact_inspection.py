@@ -7,7 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.artifact_inspection import discover_run_artifact_roots, inspect_run_artifacts
 from prml_vslam.pipeline.contracts.events import (
@@ -19,11 +20,12 @@ from prml_vslam.pipeline.contracts.events import (
     StageFailed,
     StageOutcome,
 )
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, RunSummary, StageManifest, StageStatus
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.sinks.jsonl import JsonlEventSink
 from prml_vslam.reconstruction.contracts import ReconstructionMetadata, ReconstructionMethodId
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.utils import PathConfig
 
 

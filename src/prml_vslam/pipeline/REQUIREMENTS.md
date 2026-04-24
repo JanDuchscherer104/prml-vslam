@@ -64,7 +64,7 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   failure-provenance policy; they do not construct runtimes, proxies, Ray
   actors, sink sidecars, or payload stores.
 - `RuntimeManager` is the only construction authority for stage runtimes,
-  capability-typed `StageRuntimeProxy` instances, payload stores, sink sidecars,
+  capability-typed `StageRuntimeHandle` instances, payload stores, sink sidecars,
   and placement-specific runtime wrappers.
 - Runtime capability and deployment stay separate. Stage runners and the
   coordinator consume protocol-capable proxies, while Ray refs, task refs,

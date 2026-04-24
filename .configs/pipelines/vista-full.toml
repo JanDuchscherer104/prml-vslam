@@ -79,7 +79,7 @@ enabled = false
 enabled = true
 
     [stages.reconstruction.backend]
-    reconstruction_id = "open3d_tsdf"
+    method_id = "open3d_tsdf"
     extract_mesh      = true
 
 [stages.evaluate_cloud]

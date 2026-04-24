@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from typing import TypeAlias
 
-from prml_vslam.methods.descriptors import BackendDescriptor
+from prml_vslam.methods.stage.config import BackendConfigValue
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.bindings import STAGE_BINDINGS
 
 RayActorResources: TypeAlias = dict[str, float]
 RayActorOptionsValue: TypeAlias = float | int | RayActorResources | None
@@ -22,19 +21,14 @@ def actor_options_for_stage(
     *,
     stage_key: StageKey,
     run_config: RunConfig,
-    backend: BackendDescriptor | None = None,
+    backend: BackendConfigValue | None = None,
     default_num_cpus: float = 1.0,
     default_num_gpus: float = 0.0,
     restartable: bool = False,
     inherit_backend_defaults: bool = False,
 ) -> RayActorOptions:
     """Translate one repo-owned stage execution policy into Ray actor options."""
-    stage_config = next(
-        (binding.stage_config(run_config) for binding in STAGE_BINDINGS if binding.key is stage_key),
-        None,
-    )
-    if stage_config is None:
-        raise RuntimeError(f"Missing stage config for '{stage_key.value}'.")
+    stage_config = run_config.stages.section(stage_key)
     backend_resources = (
         backend.default_resources
         if backend is not None

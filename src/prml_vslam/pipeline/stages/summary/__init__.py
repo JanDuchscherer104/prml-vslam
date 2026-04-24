@@ -1,27 +1,7 @@
 """Summary stage runtime package."""
 
-from __future__ import annotations
+from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
+from prml_vslam.pipeline.stages.summary.contracts import SummaryRuntimeInput
+from prml_vslam.pipeline.stages.summary.runtime import SummaryRuntime
 
-from typing import Any
-
-__all__ = ["SummaryRuntime", "SummaryRuntimeInput", "SummaryStageBinding", "SummaryStageConfig"]
-
-
-def __getattr__(name: str) -> Any:
-    if name == "SummaryStageBinding":
-        from .binding import SummaryStageBinding
-
-        return SummaryStageBinding
-    if name == "SummaryStageConfig":
-        from .config import SummaryStageConfig
-
-        return SummaryStageConfig
-    if name == "SummaryRuntimeInput":
-        from .contracts import SummaryRuntimeInput
-
-        return SummaryRuntimeInput
-    if name == "SummaryRuntime":
-        from .runtime import SummaryRuntime
-
-        return SummaryRuntime
-    raise AttributeError(name)
+__all__ = ["SummaryRuntime", "SummaryRuntimeInput", "SummaryStageConfig"]

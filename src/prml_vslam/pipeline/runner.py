@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.runtime import FramePacket
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
@@ -12,6 +12,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime, StreamingStageRuntime
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SourceStageOutput
 from prml_vslam.utils import BaseData
 
 RuntimeInput = BaseData

@@ -10,7 +10,9 @@ from pydantic import ValidationError
 from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import Record3DTransportId
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline.config import (
+    STAGE_SECTION_ORDER,
     RunConfig,
     build_run_config,
 )
@@ -23,9 +25,7 @@ from prml_vslam.pipeline.stages.base.config import (
     StageExecutionConfig,
     StageTelemetryConfig,
 )
-from prml_vslam.pipeline.stages.bindings import STAGE_BINDINGS
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import (
+from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
     SourceStageConfig,
@@ -39,7 +39,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def test_stage_config_contracts_round_trip_without_runtime_factory() -> None:
+def test_stage_config_sections_round_trip_without_runtime_factory() -> None:
     config = StageConfig(
         stage_key=StageKey.SLAM,
         execution=StageExecutionConfig(
@@ -104,7 +104,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         "evaluate.cloud",
         "summary",
     ]
-    assert [(binding.key, binding.section_name) for binding in STAGE_BINDINGS] == [
+    assert list(STAGE_SECTION_ORDER) == [
         (StageKey.SOURCE, "source"),
         (StageKey.SLAM, "slam"),
         (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
@@ -120,7 +120,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
         experiment_name="target-config",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         reference_enabled=True,
         trajectory_eval_enabled=True,
         evaluate_cloud=True,
@@ -128,7 +128,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
     )
 
     assert isinstance(config.stages.source.backend, VideoSourceConfig)
-    assert config.stages.slam.backend.method_id is MethodId.MOCK
+    assert config.stages.slam.backend.method_id is MethodId.VISTA
     assert config.stages.align_ground.enabled is True
     assert config.stages.evaluate_trajectory.enabled is True
     assert config.stages.reconstruction.enabled is True
@@ -140,7 +140,7 @@ def test_run_config_uses_stage_execution_config_for_resource_policy(tmp_path: Pa
         experiment_name="placement-policy",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
     stages = config.stages.model_copy(
         update={
@@ -206,7 +206,7 @@ def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) 
         experiment_name="advio-fps",
         output_dir=path_config.artifacts_dir,
         source_backend=AdvioSourceConfig(sequence_id="advio-20", frame_stride=5),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     plan = run_config.compile_plan(path_config)
@@ -221,7 +221,7 @@ def test_run_plan_expected_fps_uses_target_fps_without_native_metadata(tmp_path:
         experiment_name="target-fps",
         output_dir=path_config.artifacts_dir,
         source_backend=Record3DSourceConfig(target_fps=15.0),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     plan = run_config.compile_plan(path_config)
@@ -235,7 +235,7 @@ def test_run_plan_expected_fps_is_none_when_native_cadence_unknown(tmp_path: Pat
         experiment_name="unknown-fps",
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("missing.mp4"), frame_stride=2),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
     plan = run_config.compile_plan(path_config)
@@ -328,7 +328,7 @@ video_path = "captures/demo.mp4"
 legacy = true
 
 [stages.slam.backend]
-method_id = "mock"
+method_id = "vista"
 """
         )
     assert "Ignoring unknown config field `stages.source.backend.legacy`." in config.config_warnings
@@ -385,7 +385,7 @@ def test_run_config_requires_source_backend_during_planning(tmp_path: Path) -> N
     config = RunConfig(
         experiment_name="missing-source",
         output_dir=tmp_path,
-        stages={"slam": {"backend": {"method_id": "mock"}}},
+        stages={"slam": {"backend": {"method_id": "vista"}}},
     )
 
     with pytest.raises(ValueError, match=r"RunConfig planning requires `\[stages\.source\.backend\]`"):

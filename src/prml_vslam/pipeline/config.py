@@ -11,7 +11,7 @@ from typing import Annotated, Any, Literal, Self, TypeAlias, Union, get_args, ge
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
-from prml_vslam.benchmark import ReferenceSource
+from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
 from prml_vslam.datasets.advio.advio_layout import resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir
 from prml_vslam.datasets.advio.advio_loading import load_advio_frame_timestamps_ns
 from prml_vslam.datasets.contracts import DatasetId
@@ -19,18 +19,12 @@ from prml_vslam.datasets.tum_rgbd.tum_rgbd_layout import (
     resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
 )
 from prml_vslam.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_list
-from prml_vslam.pipeline.contracts.mode import PipelineMode
-from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.binding import PlanContext
-from prml_vslam.pipeline.stages.bindings import STAGE_BINDINGS
-from prml_vslam.pipeline.stages.cloud_eval.config import CloudEvaluationStageConfig
-from prml_vslam.pipeline.stages.ground_alignment.config import GroundAlignmentStageConfig
-from prml_vslam.pipeline.stages.reconstruction.config import (
-    Open3dTsdfReconstructionConfig,
-    ReconstructionStageConfig,
+from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
+from prml_vslam.eval.stage_trajectory.config import (
+    TrajectoryEvaluationPolicy,
+    TrajectoryEvaluationStageConfig,
 )
-from prml_vslam.pipeline.stages.slam.config import (
+from prml_vslam.methods.stage.config import (
     BackendConfig,
     BackendConfigValue,
     MethodId,
@@ -38,7 +32,14 @@ from prml_vslam.pipeline.stages.slam.config import (
     SlamStageConfig,
     build_slam_backend_config,
 )
-from prml_vslam.pipeline.stages.source.config import (
+from prml_vslam.pipeline.contracts.mode import PipelineMode
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.config import StageConfig, StagePlanContext
+from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
+from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
+from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
+from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
     SourceBackendConfig,
@@ -46,15 +47,21 @@ from prml_vslam.pipeline.stages.source.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
-from prml_vslam.pipeline.stages.trajectory_eval.config import (
-    TrajectoryEvaluationPolicy,
-    TrajectoryEvaluationStageConfig,
-)
+from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
 
 BackendSpec: TypeAlias = BackendConfig
+
+STAGE_SECTION_ORDER: tuple[tuple[StageKey, str], ...] = (
+    (StageKey.SOURCE, "source"),
+    (StageKey.SLAM, "slam"),
+    (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
+    (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
+    (StageKey.RECONSTRUCTION, "reconstruction"),
+    (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+    (StageKey.SUMMARY, "summary"),
+)
 
 
 class StageBundle(BaseConfig):
@@ -90,21 +97,25 @@ class StageBundle(BaseConfig):
     @model_validator(mode="after")
     def validate_stage_keys(self) -> Self:
         """Ensure every section carries its canonical target stage key."""
-        for binding in STAGE_BINDINGS:
-            section = getattr(self, binding.section_name)
-            if section.stage_key is not None and section.stage_key != binding.key:
-                raise ValueError(f"Expected `{binding.section_name}` to use stage key `{binding.key.value}`.")
-            object.__setattr__(self, binding.section_name, section.model_copy(update={"stage_key": binding.key}))
+        for stage_key, section_name in STAGE_SECTION_ORDER:
+            section = getattr(self, section_name)
+            if section.stage_key is not None and section.stage_key != stage_key:
+                raise ValueError(f"Expected `{section_name}` to use stage key `{stage_key.value}`.")
+            object.__setattr__(self, section_name, section.model_copy(update={"stage_key": stage_key}))
         return self
 
-    def section(self, section: StageKey | str):
+    def section(self, section: StageKey | str) -> StageConfig:
         """Return a section config by canonical stage key or TOML section name."""
         if isinstance(section, StageKey):
-            for binding in STAGE_BINDINGS:
-                if binding.key is section:
-                    return getattr(self, binding.section_name)
+            for stage_key, section_name in STAGE_SECTION_ORDER:
+                if stage_key is section:
+                    return getattr(self, section_name)
             raise KeyError(section.value)
         return getattr(self, section)
+
+    def ordered_sections(self) -> list[StageConfig]:
+        """Return stage sections in canonical execution order."""
+        return [getattr(self, section_name) for _, section_name in STAGE_SECTION_ORDER]
 
 
 class RunConfig(BaseConfig):
@@ -153,7 +164,7 @@ class RunConfig(BaseConfig):
         path_config: PathConfig | None = None,
         *,
         fail_on_unavailable: bool = False,
-        backend: Any | None = None,
+        backend: BackendConfigValue | None = None,
     ) -> RunPlan:
         """Compile a deterministic plan directly from target stage sections."""
         config = PathConfig() if path_config is None else path_config
@@ -172,7 +183,7 @@ def _compile_run_plan(
     *,
     run_config: RunConfig,
     path_config: PathConfig,
-    backend: Any | None = None,
+    backend: BackendConfigValue | None = None,
 ) -> RunPlan:
     source_backend = run_config.stages.source.backend
     if source_backend is None:
@@ -186,23 +197,27 @@ def _compile_run_plan(
         output_dir=run_config.output_dir,
     )
     resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
-    descriptor = backend if backend is not None else slam_backend.describe()
-    plan_context = PlanContext(
+    plan_context = StagePlanContext(
         run_config=run_config,
         path_config=path_config,
         run_paths=resolved_run_paths,
-        backend=descriptor,
+        backend=backend if backend is not None else slam_backend,
     )
-    plan_stages = [
-        RunPlanStage(
-            key=binding.key,
-            outputs=binding.planned_outputs(plan_context),
-            available=(availability := binding.availability(plan_context))[0],
-            availability_reason=availability[1],
+    plan_stages: list[RunPlanStage] = []
+    for stage_config in run_config.stages.ordered_sections():
+        if not stage_config.enabled:
+            continue
+        if stage_config.stage_key is None:
+            raise ValueError("Stage section is missing its canonical stage key.")
+        availability = stage_config.availability(plan_context)
+        plan_stages.append(
+            RunPlanStage(
+                key=stage_config.stage_key,
+                outputs=stage_config.planned_outputs(plan_context),
+                available=availability[0],
+                availability_reason=availability[1],
+            )
         )
-        for binding in STAGE_BINDINGS
-        if binding.enabled(run_config)
-    ]
 
     return RunPlan(
         run_id=path_config.slugify_experiment_name(run_config.experiment_name),
@@ -377,7 +392,7 @@ def build_run_config(
             ),
             reconstruction=ReconstructionStageConfig(
                 enabled=reference_enabled,
-                backend=Open3dTsdfReconstructionConfig(),
+                backend=Open3dTsdfBackendConfig(),
             ),
             evaluate_cloud=CloudEvaluationStageConfig(enabled=evaluate_cloud),
             summary=SummaryStageConfig(enabled=True),
@@ -461,7 +476,7 @@ def _model_type_for_value(annotation: Any, value: Any) -> type[BaseModel] | None
 def _discriminator_matches(model_type: type[BaseModel], value: Any) -> bool:
     if not isinstance(value, dict):
         return True
-    for discriminator in ("source_id", "method_id", "reconstruction_id"):
+    for discriminator in ("source_id", "method_id"):
         if discriminator not in value or discriminator not in model_type.model_fields:
             continue
         default = model_type.model_fields[discriminator].default

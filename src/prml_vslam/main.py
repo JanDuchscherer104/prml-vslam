@@ -25,7 +25,6 @@ from rich.panel import Panel
 from rich.table import Table
 from typer.core import TyperCommand
 
-from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadPreset,
@@ -35,6 +34,7 @@ from prml_vslam.datasets.advio import (
     AdvioPoseSource,
 )
 from prml_vslam.io import Record3DStreamConfig
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
@@ -47,8 +47,8 @@ from prml_vslam.pipeline.demo import (
 )
 from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_bundle, import_run_bundle
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
+from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
@@ -99,7 +99,7 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.slam.enabled", "Enable or disable SLAM."),
             ("--stages.slam.outputs.emit_dense_points", "Materialize dense point outputs."),
             ("--stages.slam.outputs.emit_sparse_points", "Materialize sparse point outputs."),
-            ("--stages.slam.backend.method_id", "SLAM backend: vista, mast3r, mock."),
+            ("--stages.slam.backend.method_id", "SLAM backend: vista or mast3r."),
             ("--stages.slam.backend.max_frames", "Frame cap for smoke runs."),
             ("--stages.slam.backend.max_view_num", "ViSTA maximum pose-graph keyframes."),
             ("--stages.slam.backend.flow_thres", "ViSTA keyframe optical-flow threshold."),
@@ -123,7 +123,7 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.evaluate_trajectory.enabled", "Enable trajectory evaluation."),
             ("--stages.evaluate_trajectory.evaluation.baseline_source", "Reference trajectory source."),
             ("--stages.reconstruction.enabled", "Enable reconstruction."),
-            ("--stages.reconstruction.backend.reconstruction_id", "Reconstruction backend id."),
+            ("--stages.reconstruction.backend.method_id", "Reconstruction backend id."),
             ("--stages.reconstruction.backend.voxel_length_m", "TSDF voxel length in meters."),
             ("--stages.reconstruction.backend.sdf_trunc_m", "TSDF truncation distance in meters."),
             ("--stages.reconstruction.backend.depth_sampling_stride", "RGB-D reconstruction sampling stride."),

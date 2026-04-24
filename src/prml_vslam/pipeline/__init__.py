@@ -38,7 +38,11 @@ def __getattr__(name: str) -> Any:
         from .contracts.plan import RunPlan
 
         return RunPlan
-    if name in {"ArtifactRef", "RunSummary"}:
+    if name == "ArtifactRef":
+        from prml_vslam.interfaces.artifacts import ArtifactRef
+
+        return ArtifactRef
+    if name == "RunSummary":
         from .contracts import provenance
 
         return getattr(provenance, name)

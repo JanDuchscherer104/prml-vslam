@@ -12,10 +12,11 @@ from enum import StrEnum
 
 from pydantic import ConfigDict, Field, SerializeAsAny
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef

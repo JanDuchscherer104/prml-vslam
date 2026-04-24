@@ -11,9 +11,9 @@ from enum import StrEnum
 
 from pydantic import Field
 
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus

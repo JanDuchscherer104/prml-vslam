@@ -8,14 +8,9 @@ and conversion from opaque runtime handles back into local NumPy arrays.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
-import socket
-import subprocess
-import sys
 import time
-from pathlib import Path
 from typing import Any
 
 # Ray snapshots this flag at import time. Set it before importing `ray` so the
@@ -34,35 +29,16 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import coordinator_actor_name
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
+from prml_vslam.pipeline.ray_runtime.substrate import LocalRayHead, build_runtime_env, prepare_ray_environment
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import Console, PathConfig
 
 _DEFAULT_NAMESPACE = "prml_vslam.local"
-_DEFAULT_LOCAL_HEAD_PORT = 25001
 _MAX_LOCAL_HEAD_INIT_ATTEMPTS = 5
-_LOCAL_HEAD_METADATA_FILE = "ray-local-head.json"
-_RAY_RUNTIME_EXCLUDES = [
-    ".git",
-    ".venv",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".artifacts",
-    ".artifacts-test",
-    "external/vista-slam/media",
-    "external/vista-slam/media/**",
-    "external/vista-slam/DBoW3Py/DBoW3/orbvoc.dbow3",
-]
-_RAY_NATIVE_THREAD_ENV = {
-    "OMP_NUM_THREADS": "1",
-    "MKL_NUM_THREADS": "1",
-    "OPENBLAS_NUM_THREADS": "1",
-    "UV_NUM_THREADS": "1",
-}
-RayRuntimeEnvValue = list[str] | dict[str, str] | str
 RayActorOption = str | float | int | dict[str, float] | None
 
 
+# TODO: What is this? Must respect the respective StageConfig's ressource settings!.
 def _coordinator_actor_options(run_config: RunConfig) -> dict[str, RayActorOption]:
     options = actor_options_for_stage(
         stage_key=StageKey.SLAM,
@@ -89,9 +65,7 @@ class RayPipelineBackend(PipelineBackend):
         self._namespace = namespace or os.getenv("PRML_VSLAM_RAY_NAMESPACE", _DEFAULT_NAMESPACE)
         self._console = Console(__name__).child(self.__class__.__name__).child(self._namespace)
         self._coordinators: dict[str, ActorHandle] = {}
-        self._local_head_process: subprocess.Popen[str] | None = None
-        self._local_head_address: str | None = None
-        self._local_head_log_path: Path | None = None
+        self._local_head = LocalRayHead(path_config=self._path_config, console=self._console)
         self._reuse_local_head = False
         self._next_coordinator_options: dict[str, Any] = {}
 
@@ -161,13 +135,13 @@ class RayPipelineBackend(PipelineBackend):
         self._console.info("Shutting down Ray backend for namespace '%s'.", self._namespace)
         if not ray.is_initialized():
             if not preserve_local_head:
-                self._shutdown_local_head()
+                self._local_head.shutdown()
             return
         for run_id in list(self._coordinators):
             self._shutdown_run(run_id)
         ray.shutdown()
         if not preserve_local_head:
-            self._shutdown_local_head()
+            self._local_head.shutdown()
 
     def _create_coordinator(self, run_id: str):
         self._shutdown_run(run_id)
@@ -223,16 +197,16 @@ class RayPipelineBackend(PipelineBackend):
         if ray.is_initialized():
             return
         address = os.getenv("PRML_VSLAM_RAY_ADDRESS")
-        self._prepare_ray_environment()
+        prepare_ray_environment()
         init_kwargs = {
             "namespace": self._namespace,
             "ignore_reinit_error": True,
-            "log_to_driver": True,
+            "log_to_driver": True,  # TODO: must be exposed via RunConfig!
             "include_dashboard": False,
             "_skip_env_hook": True,
         }
         if not self._namespace.startswith("pytest-"):
-            init_kwargs["runtime_env"] = self._build_runtime_env(address=address)
+            init_kwargs["runtime_env"] = build_runtime_env(address=address)
             self._console.debug("Prepared Ray runtime environment for namespace '%s'.", self._namespace)
         if address:
             self._console.info("Connecting Ray backend to configured address '%s'.", address)
@@ -243,201 +217,16 @@ class RayPipelineBackend(PipelineBackend):
             self._console.debug("Initializing in-process Ray runtime for pytest namespace '%s'.", self._namespace)
             ray.init(**init_kwargs)
             return
-        local_address = self._ensure_local_head_address()
+        local_address = self._local_head.ensure_address(reuse=self._reuse_local_head)
         init_kwargs["address"] = local_address
         for attempt in range(_MAX_LOCAL_HEAD_INIT_ATTEMPTS):
             try:
                 ray.init(**init_kwargs)
                 return
             except Exception as exc:
-                if not self._is_local_ray_connectivity_error(exc) or attempt == _MAX_LOCAL_HEAD_INIT_ATTEMPTS - 1:
+                if not LocalRayHead.is_connectivity_error(exc) or attempt == _MAX_LOCAL_HEAD_INIT_ATTEMPTS - 1:
                     raise
                 time.sleep(2.0)
-
-    @staticmethod
-    def _build_runtime_env(*, address: str | None) -> dict[str, RayRuntimeEnvValue]:
-        """Build the process-wide Ray runtime environment for this backend."""
-        runtime_env: dict[str, RayRuntimeEnvValue] = {
-            "excludes": _RAY_RUNTIME_EXCLUDES,
-            "env_vars": dict(_RAY_NATIVE_THREAD_ENV),
-        }
-        if not address:
-            runtime_env["py_executable"] = sys.executable
-        return runtime_env
-
-    @staticmethod
-    def _prepare_ray_environment() -> None:
-        """Set environment flags that Ray snapshots at import and init time."""
-        os.environ.setdefault("RAY_ENABLE_UV_RUN_RUNTIME_ENV", "0")
-
-    def _ensure_local_head_address(self) -> str:
-        if (
-            self._local_head_process is not None
-            and self._local_head_process.poll() is None
-            and self._local_head_address is not None
-        ):
-            return self._local_head_address
-        if self._reuse_local_head:
-            reused_address = self._reuse_local_head_address_if_available()
-            if reused_address is not None:
-                self._local_head_address = reused_address
-                self._console.debug("Reusing healthy local Ray head at '%s'.", reused_address)
-                return reused_address
-        ray_bin = str(Path(sys.executable).with_name("ray"))
-        if not self._reuse_local_head:
-            subprocess.run(
-                [ray_bin, "stop", "--force"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            time.sleep(1.0)
-        address = self._pick_local_head_address()
-        self._console.info("Starting local Ray head on '%s'.", address)
-        logs_dir = self._path_config.resolve_logs_dir(create=True)
-        self._local_head_log_path = logs_dir / "ray-local-head.log"
-        log_handle = self._local_head_log_path.open("a", encoding="utf-8")
-        try:
-            self._local_head_process = subprocess.Popen(
-                [
-                    ray_bin,
-                    "start",
-                    "--head",
-                    f"--node-ip-address={address.rsplit(':', maxsplit=1)[0]}",
-                    f"--port={address.rsplit(':', maxsplit=1)[1]}",
-                    "--include-dashboard=false",
-                    "--disable-usage-stats",
-                    "--block",
-                ],
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-        finally:
-            log_handle.close()
-        if self._wait_until_connectable(address):
-            self._local_head_address = address
-            self._write_local_head_metadata(address=address, pid=self._local_head_process.pid)
-            return address
-        if self._local_head_process.poll() is not None:
-            raise RuntimeError(self._read_local_head_log())
-        raise RuntimeError(f"Timed out waiting for local Ray head at {address}.\n{self._read_local_head_log()}")
-
-    @staticmethod
-    def _can_connect(address: str) -> bool:
-        host, port = address.rsplit(":", maxsplit=1)
-        try:
-            with socket.create_connection((host, int(port)), timeout=1.0):
-                return True
-        except OSError:
-            return False
-
-    def _wait_until_connectable(self, address: str, *, timeout_seconds: float = 60.0) -> bool:
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
-            if self._can_connect(address):
-                return True
-            if self._local_head_process is not None and self._local_head_process.poll() is not None:
-                return False
-            time.sleep(0.25)
-        return self._can_connect(address)
-
-    def _shutdown_local_head(self) -> None:
-        metadata = self._read_local_head_metadata()
-        self._clear_local_head_metadata()
-        if self._local_head_process is not None and self._local_head_process.poll() is None:
-            self._local_head_process.terminate()
-            try:
-                self._local_head_process.wait(timeout=5.0)
-            except subprocess.TimeoutExpired:
-                self._local_head_process.kill()
-                self._local_head_process.wait(timeout=5.0)
-        elif self._local_head_address is not None or metadata is not None:
-            ray_bin = str(Path(sys.executable).with_name("ray"))
-            subprocess.run(
-                [ray_bin, "stop", "--force"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-        self._local_head_process = None
-        self._local_head_address = None
-
-    def _local_head_metadata_path(self) -> Path:
-        return self._path_config.resolve_logs_dir(create=True) / _LOCAL_HEAD_METADATA_FILE
-
-    def _read_local_head_metadata(self) -> dict[str, str | int] | None:
-        path = self._local_head_metadata_path()
-        if not path.exists():
-            return None
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        address = payload.get("address")
-        pid = payload.get("pid")
-        if not isinstance(address, str) or not isinstance(pid, int):
-            return None
-        return {"address": address, "pid": pid}
-
-    def _write_local_head_metadata(self, *, address: str, pid: int) -> None:
-        self._local_head_metadata_path().write_text(
-            json.dumps({"address": address, "pid": pid}, indent=2),
-            encoding="utf-8",
-        )
-
-    def _clear_local_head_metadata(self) -> None:
-        try:
-            self._local_head_metadata_path().unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    def _reuse_local_head_address_if_available(self) -> str | None:
-        metadata = self._read_local_head_metadata()
-        if metadata is None:
-            return None
-        address = metadata["address"]
-        if isinstance(address, str) and self._can_connect(address):
-            self._console.debug("Found reusable local Ray head metadata for '%s'.", address)
-            return address
-        self._console.debug("Discarding stale local Ray head metadata.")
-        self._clear_local_head_metadata()
-        return None
-
-    def _read_local_head_log(self) -> str:
-        if self._local_head_log_path is None or not self._local_head_log_path.exists():
-            return ""
-        try:
-            lines = self._local_head_log_path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return ""
-        return "\n".join(lines[-80:])
-
-    @staticmethod
-    def _local_node_ip_address() -> str:
-        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            probe.connect(("8.8.8.8", 80))
-            return str(probe.getsockname()[0])
-        except OSError:
-            return "127.0.0.1"
-        finally:
-            probe.close()
-
-    def _pick_local_head_address(self) -> str:
-        host = self._local_node_ip_address()
-        for _ in range(32):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as candidate:
-                candidate.bind((host, 0))
-                port = int(candidate.getsockname()[1])
-            if port >= _DEFAULT_LOCAL_HEAD_PORT:
-                return f"{host}:{port}"
-        return f"{host}:{_DEFAULT_LOCAL_HEAD_PORT}"
-
-    @staticmethod
-    def _is_local_ray_connectivity_error(exc: Exception) -> bool:
-        message = str(exc)
-        return "Failed to connect to Ray cluster" in message or "GCS" in message
 
 
 __all__ = ["RayPipelineBackend"]
