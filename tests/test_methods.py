@@ -312,8 +312,7 @@ def test_mast3r_session_starts_backend_after_intrinsics_are_available(
             self.frame = frame
 
     class FakeFrameTracker:
-        def __init__(self, *_args, **_kwargs) -> None:
-            return
+        pass
 
     class FakeFrame:
         def __init__(self, T_WC: str) -> None:
