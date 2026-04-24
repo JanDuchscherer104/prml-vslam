@@ -11,7 +11,6 @@ import pytest
 
 import prml_vslam.datasets.advio.advio_replay_adapter as advio_replay_module
 import prml_vslam.datasets.advio.advio_sequence as advio_sequence_module
-from prml_vslam.benchmark.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
@@ -29,10 +28,17 @@ from prml_vslam.datasets.advio import (
     AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
 )
+from prml_vslam.datasets.advio.advio_frames import (
+    APPLE_Y_UP_TO_RDF,
+    TANGO_Z_UP_TO_RDF,
+    transform_advio_points_to_rdf,
+    transform_advio_trajectory_to_rdf,
+)
 from prml_vslam.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
-from prml_vslam.datasets.advio.advio_loading import _read_numeric_csv, load_advio_calibration
+from prml_vslam.datasets.advio.advio_loading import _read_numeric_csv, load_advio_calibration, load_advio_trajectory
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.io.cv2_producer import Cv2FramePayload, Cv2ProducerConfig
+from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.utils import PathConfig
 
 
@@ -76,6 +82,30 @@ def _write_pose_csv(path: Path) -> None:
         path,
         rows=((0.0, 1.0, 2.0, 3.0), (0.1, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)),
     )
+
+
+def test_advio_basis_helpers_convert_provider_positions_to_rdf(tmp_path: Path) -> None:
+    apple_points = transform_advio_points_to_rdf(
+        np.array([[1.0, 2.0, 3.0]], dtype=np.float64),
+        AdvioPoseSource.ARKIT,
+    )
+    tango_points = transform_advio_points_to_rdf(
+        np.array([[1.0, 2.0, 3.0]], dtype=np.float64),
+        ReferenceCloudSource.TANGO_AREA_LEARNING,
+    )
+
+    assert np.array_equal(APPLE_Y_UP_TO_RDF, np.diag([1.0, -1.0, 1.0]))
+    assert np.array_equal(TANGO_Z_UP_TO_RDF @ np.array([1.0, 2.0, 3.0]), np.array([1.0, -3.0, 2.0]))
+    assert np.array_equal(apple_points, np.array([[1.0, -2.0, 3.0]]))
+    assert np.array_equal(tango_points, np.array([[1.0, -3.0, 2.0]]))
+
+    pose_csv = tmp_path / "arkit.csv"
+    _write_pose_csv_rows(pose_csv, rows=((0.0, 1.0, 2.0, 3.0), (0.1, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)))
+    trajectory = transform_advio_trajectory_to_rdf(
+        load_advio_trajectory(pose_csv),
+        AdvioPoseSource.ARKIT,
+    )
+    assert np.allclose(trajectory.positions_xyz[0], np.array([1.0, -2.0, 3.0]))
 
 
 def _write_pose_csv_rows(path: Path, *, rows: tuple[tuple[float, float, float, float], ...]) -> None:
@@ -472,23 +502,26 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
         "arcore",
+        "arcore",
+        "arkit",
         "arkit",
     ]
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
     assert benchmark_inputs.reference_trajectories[1].path == sequence_dir / "evaluation" / "arcore.tum"
-    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arkit.tum"
+    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum"
+    assert benchmark_inputs.reference_trajectories[3].path == sequence_dir / "evaluation" / "arkit.tum"
+    assert benchmark_inputs.reference_trajectories[4].path == sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum"
     assert benchmark_inputs.reference_trajectories[0].path.exists()
     assert benchmark_inputs.reference_trajectories[1].path.exists()
     assert benchmark_inputs.reference_trajectories[2].path.exists()
+    assert benchmark_inputs.reference_trajectories[2].coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
     assert [reference.source.value for reference in benchmark_inputs.reference_point_cloud_sequences] == [
         "tango_area_learning",
-        "tango_raw",
+        "tango_area_learning",
     ]
     assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == [
         "tango_area_learning",
         "tango_area_learning",
-        "tango_raw",
-        "tango_raw",
     ]
     assert benchmark_inputs.reference_point_cloud_sequences[0].trajectory_path.exists()
     assert benchmark_inputs.reference_clouds[0].path.exists()
@@ -533,6 +566,7 @@ def test_advio_benchmark_inputs_skip_invalid_optional_provider_trajectory(tmp_pa
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
         "arkit",
+        "arkit",
     ]
     assert not (sequence_dir / "evaluation" / "arcore.tum").exists()
 
@@ -547,8 +581,8 @@ def test_advio_benchmark_inputs_skip_invalid_optional_tango_cloud_trajectory(tmp
 
     benchmark_inputs = sequence.to_benchmark_inputs()
 
-    assert {reference.source.value for reference in benchmark_inputs.reference_clouds} == {"tango_raw"}
-    assert [reference.source.value for reference in benchmark_inputs.reference_point_cloud_sequences] == ["tango_raw"]
+    assert not benchmark_inputs.reference_clouds
+    assert not benchmark_inputs.reference_point_cloud_sequences
     assert not (sequence_dir / "evaluation" / "tango_area_learning.tum").exists()
 
 

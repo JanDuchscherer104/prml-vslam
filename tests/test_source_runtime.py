@@ -8,33 +8,34 @@ from types import SimpleNamespace
 
 import pytest
 
-from prml_vslam.benchmark.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource, ReferenceSource
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.interfaces.ingest import (
-    PreparedBenchmarkInputs,
-    ReferenceCloudRef,
-    ReferencePointCloudSequenceRef,
-    ReferenceTrajectoryRef,
-    SequenceManifest,
-    SourceStageOutput,
-)
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.source.config import (
+from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.pipeline.stages.source.runtime import (
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
+    ReferenceCloudSource,
+    ReferencePointCloudSequenceRef,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+    SourceStageOutput,
+)
+from prml_vslam.sources.runtime import (
     SourceRuntime,
-    SourceRuntimeConfigInput,
     SourceRuntimeInput,
     _materialize_manifest,
 )
-from prml_vslam.pipeline.stages.source.visualization import (
+from prml_vslam.sources.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
     ROLE_SOURCE_CAMERA_RGB,
     ROLE_SOURCE_DEPTH,
@@ -44,6 +45,7 @@ from prml_vslam.pipeline.stages.source.visualization import (
     ROLE_SOURCE_REFERENCE_TRAJECTORY,
     ROLE_SOURCE_RGB,
     SourceVisualizationAdapter,
+    reference_trajectory_artifact_key,
 )
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
@@ -91,7 +93,7 @@ class _ReferenceGeometrySource(_ManifestOnlySource):
             ],
             reference_clouds=[
                 ReferenceCloudRef(
-                    source=ReferenceCloudSource.TANGO_RAW,
+                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
                     path=self._cloud_path,
                     metadata_path=self._metadata_path,
                     target_frame="advio_gt_world",
@@ -100,12 +102,12 @@ class _ReferenceGeometrySource(_ManifestOnlySource):
             ],
             reference_point_cloud_sequences=[
                 ReferencePointCloudSequenceRef(
-                    source=ReferenceCloudSource.TANGO_RAW,
+                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
                     index_path=output_dir / "point-cloud.csv",
                     payload_root=output_dir,
-                    trajectory_path=output_dir / "tango_raw.tum",
-                    target_frame="advio_tango_raw_world",
-                    native_frame="advio_tango_raw_world",
+                    trajectory_path=output_dir / "tango_area_learning.tum",
+                    target_frame="advio_tango_area_learning_world",
+                    native_frame="advio_tango_area_learning_world",
                     coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
                 )
             ],
@@ -117,14 +119,14 @@ def _config_input(
     mode: PipelineMode = PipelineMode.OFFLINE,
     frame_stride: int = 1,
     streaming_max_frames: int | None = None,
-) -> SourceRuntimeConfigInput:
-    return SourceRuntimeConfigInput(
-        mode=mode,
-        frame_stride=frame_stride,
-        streaming_max_frames=streaming_max_frames,
-        config_hash="source-config",
-        input_fingerprint="source-input",
-    )
+) -> dict[str, object]:
+    return {
+        "mode": mode,
+        "frame_stride": frame_stride,
+        "streaming_max_frames": streaming_max_frames,
+        "config_hash": "source-config",
+        "input_fingerprint": "source-input",
+    }
 
 
 def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path) -> None:
@@ -133,7 +135,7 @@ def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path
     runtime = SourceRuntime(source=_ManifestOnlySource(rgb_dir=rgb_dir))
     artifact_root = tmp_path / "run"
 
-    result = runtime.run_offline(SourceRuntimeInput(config_input=_config_input(), artifact_root=artifact_root))
+    result = runtime.run_offline(SourceRuntimeInput(**_config_input(), artifact_root=artifact_root))
 
     assert result.stage_key is StageKey.SOURCE
     assert result.outcome.status is StageStatus.COMPLETED
@@ -156,7 +158,7 @@ def test_source_runtime_preserves_benchmark_inputs_and_artifacts(tmp_path: Path)
     runtime = SourceRuntime(source=_BenchmarkSource(rgb_dir=rgb_dir, reference_path=reference_path))
     artifact_root = tmp_path / "run"
 
-    result = runtime.run_offline(SourceRuntimeInput(config_input=_config_input(), artifact_root=artifact_root))
+    result = runtime.run_offline(SourceRuntimeInput(**_config_input(), artifact_root=artifact_root))
 
     assert isinstance(result.payload, SourceStageOutput)
     assert result.payload.benchmark_inputs is not None
@@ -165,7 +167,9 @@ def test_source_runtime_preserves_benchmark_inputs_and_artifacts(tmp_path: Path)
     assert run_paths.sequence_manifest_path.exists()
     assert run_paths.benchmark_inputs_path.exists()
     assert "benchmark_inputs" in result.outcome.artifacts
-    assert "reference_tum:ground_truth" in result.outcome.artifacts
+    reference = result.payload.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
+    assert reference is not None
+    assert reference_trajectory_artifact_key(reference) in result.outcome.artifacts
 
 
 def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path: Path) -> None:
@@ -186,11 +190,11 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
         )
     )
 
-    result = runtime.run_offline(SourceRuntimeInput(config_input=_config_input(), artifact_root=tmp_path / "run"))
+    result = runtime.run_offline(SourceRuntimeInput(**_config_input(), artifact_root=tmp_path / "run"))
 
     assert isinstance(result.payload, SourceStageOutput)
-    assert "reference_cloud:tango_raw:aligned" in result.outcome.artifacts
-    assert "reference_cloud_metadata:tango_raw:aligned" in result.outcome.artifacts
+    assert "reference_cloud:tango_area_learning:aligned" in result.outcome.artifacts
+    assert "reference_cloud_metadata:tango_area_learning:aligned" in result.outcome.artifacts
     items = SourceVisualizationAdapter().build_reference_items(
         output=result.payload,
         artifact_refs=result.outcome.artifacts,
@@ -201,8 +205,8 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
         ROLE_SOURCE_REFERENCE_POINT_CLOUD,
     ]
     assert items[0].space == "world"
-    assert items[1].space == "advio_tango_raw_world"
-    assert items[1].metadata["reference_source"] == "tango_raw"
+    assert items[1].space == "advio_tango_area_learning_world"
+    assert items[1].metadata["reference_source"] == "tango_area_learning"
     assert items[2].space == "advio_gt_world"
 
 
@@ -259,7 +263,7 @@ def test_source_runtime_materialization_reuses_extraction_cache(tmp_path: Path) 
         encoding="utf-8",
     )
     manifest = _materialize_manifest(
-        config_input=_config_input(frame_stride=1),
+        input_payload=SourceRuntimeInput(**_config_input(frame_stride=1), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(sequence_id="ingest-cache", video_path=video_path),
         run_paths=run_paths,
     )
@@ -285,7 +289,7 @@ def test_source_runtime_materialization_normalizes_tum_rgbd_timestamps(tmp_path:
         encoding="utf-8",
     )
     manifest = _materialize_manifest(
-        config_input=_config_input(),
+        input_payload=SourceRuntimeInput(**_config_input(), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",
             rgb_dir=rgb_dir,
@@ -306,7 +310,7 @@ def test_source_runtime_materialization_normalizes_advio_csv_timestamps(tmp_path
     timestamps_path = tmp_path / "frames.csv"
     timestamps_path.write_text("0.000000000,1\n0.100000000,2\n", encoding="utf-8")
     manifest = _materialize_manifest(
-        config_input=_config_input(),
+        input_payload=SourceRuntimeInput(**_config_input(), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
             rgb_dir=rgb_dir,
@@ -343,10 +347,10 @@ def test_source_runtime_materialization_applies_advio_video_frame_stride(
         (output_dir / "000001.png").write_bytes(b"png")
         return SimpleNamespace(rgb_dir=output_dir.resolve(), timestamps_ns=[0, 300_000_000])
 
-    monkeypatch.setattr("prml_vslam.pipeline.stages.source.runtime.extract_video_frames", fake_extract_video_frames)
+    monkeypatch.setattr("prml_vslam.sources.runtime.extract_video_frames", fake_extract_video_frames)
 
     manifest = _materialize_manifest(
-        config_input=_config_input(frame_stride=3),
+        input_payload=SourceRuntimeInput(**_config_input(frame_stride=3), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
             video_path=video_path,
@@ -368,7 +372,7 @@ def test_source_runtime_materialization_does_not_double_sample_dataset_timestamp
     timestamps_path = tmp_path / "sampled-rgb.txt"
     timestamps_path.write_text("0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n", encoding="utf-8")
     manifest = _materialize_manifest(
-        config_input=_config_input(frame_stride=2),
+        input_payload=SourceRuntimeInput(**_config_input(frame_stride=2), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",
             rgb_dir=rgb_dir,
@@ -406,8 +410,8 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
             calls.append(("streaming", kwargs))
             return _ManifestOnlySource(rgb_dir=tmp_path)
 
-    monkeypatch.setattr("prml_vslam.pipeline.stages.source.config.AdvioDatasetService", FakeDatasetService)
-    monkeypatch.setattr("prml_vslam.pipeline.stages.source.config.TumRgbdDatasetService", FakeDatasetService)
+    monkeypatch.setattr("prml_vslam.sources.config.AdvioDatasetService", FakeDatasetService)
+    monkeypatch.setattr("prml_vslam.sources.config.TumRgbdDatasetService", FakeDatasetService)
 
     path_config = PathConfig(root=tmp_path)
     tum_source = TumRgbdSourceConfig(sequence_id="freiburg1_room", target_fps=15.0).setup_target(
@@ -434,9 +438,7 @@ def test_record3d_source_config_constructs_sampled_live_adapter(tmp_path: Path, 
             calls.append(("record3d", self.kwargs))
             return _StreamingManifestSource(rgb_dir=tmp_path)
 
-    monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.source.config.Record3DStreamingSourceConfig", FakeRecord3DSourceConfig
-    )
+    monkeypatch.setattr("prml_vslam.sources.config.Record3DStreamingSourceConfig", FakeRecord3DSourceConfig)
 
     record3d_source = Record3DSourceConfig(frame_stride=2).setup_target(path_config=PathConfig(root=tmp_path))
 

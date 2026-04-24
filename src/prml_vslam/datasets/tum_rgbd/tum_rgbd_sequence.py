@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from pydantic import ConfigDict
 
-from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.interfaces import (
     FrameTransform,
@@ -16,9 +15,9 @@ from prml_vslam.interfaces import (
     RgbdObservationSequenceIndex,
     RgbdObservationSequenceRef,
 )
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, ReferenceTrajectoryRef
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
 from prml_vslam.utils import BaseData
 
 from . import tum_rgbd_layout, tum_rgbd_loading

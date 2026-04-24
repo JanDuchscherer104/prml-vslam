@@ -85,7 +85,7 @@ Datasets normalize local source data into two pipeline-facing outputs:
   - may carry `dataset_id`, `dataset_serving`, `video_path` or `rgb_dir`,
     `timestamps_path`, `intrinsics_path`, `rotation_metadata_path`
   - for ADVIO, may also carry `advio: AdvioManifestAssets`
-- [PreparedBenchmarkInputs](../benchmark/contracts.py:98)
+- [PreparedBenchmarkInputs](../sources/contracts.py)
   - canonical benchmark-side auxiliary inputs
   - may carry normalized `reference_trajectories`
   - for ADVIO, may also carry `reference_clouds` and

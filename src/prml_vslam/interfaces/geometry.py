@@ -27,6 +27,8 @@ from .transforms import FrameTransform
 
 JsonScalar = str | int | float | bool | None
 
+# TODO: Do we really need these geometry DTOs?
+
 
 class PointCloud(BaseData):
     """Represent unstructured XYZ samples in one named coordinate frame.

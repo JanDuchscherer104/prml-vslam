@@ -143,9 +143,9 @@ cross-system alignment into the iPhone or GT world has been performed.
 
 For repository-owned benchmark prep, `AdvioSequence.to_benchmark_inputs()`
 materializes both bounded static reference clouds and source-native step-wise
-point-cloud sequence references so downstream replay-style consumers, such as
-the mock SLAM backend, can associate the nearest Tango payload to an iPhone
-frame timestamp and project that geometry back into a camera-local pointmap.
+point-cloud sequence references so downstream replay-style consumers can
+associate the nearest Tango payload to an iPhone frame timestamp and project
+that geometry back into a camera-local pointmap.
 
 ## Frame And Transform Tree
 

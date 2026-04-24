@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.utils import BaseData
 
 
