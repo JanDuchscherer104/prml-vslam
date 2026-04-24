@@ -8,7 +8,7 @@ and provides thin adapters around external or library-backed reconstruction
 implementations. The shared posed RGB-D observation boundary lives in
 [`prml_vslam.interfaces.rgbd`](../interfaces/rgbd.py) so datasets and SLAM
 methods can normalize into the same reconstruction input. Benchmark policy stays in
-[`prml_vslam.benchmark`](../benchmark/README.md), pipeline orchestration stays
+[`prml_vslam.sources.contracts`](../sources/contracts.py), pipeline orchestration stays
 in [`prml_vslam.pipeline`](../pipeline/README.md), and Rerun logging stays in
 [`prml_vslam.visualization`](../visualization/README.md) plus the pipeline sink.
 
@@ -69,7 +69,6 @@ src/prml_vslam/reconstruction
 ├── config.py                        # discriminated backend config union
 │   ├── ReconstructionBackendConfig  # shared reconstruction config base
 │   └── Open3dTsdfBackendConfig      # concrete Open3D TSDF config
-├── configs.py                       # temporary compatibility re-export shim
 └── open3d_tsdf.py                   # thin Open3D-backed implementation
     └── Open3dTsdfBackend            # concrete TSDF reconstructor
 ```
@@ -99,21 +98,21 @@ session/update seam only when there is a real second use case for it. Until
 then, one offline protocol is the more elegant interface because it keeps the
 surface honest.
 
-Persisted method selection is stage-owned. The reconstruction package can keep
-runtime-facing backend protocols, while public run config uses
-`prml_vslam.pipeline.stages.reconstruction.config`:
+Persisted method selection uses the package-owned backend configs directly.
+The pipeline reconstruction stage references the same discriminated config
+surface instead of duplicating Open3D fields under a stage-local id:
 
 ```python
-class ReconstructionId(StrEnum):
+class ReconstructionMethodId(StrEnum):
     OPEN3D_TSDF = "open3d_tsdf"
 
 
 class ReconstructionBackendConfig(BaseConfig):
-    reconstruction_id: ReconstructionId
+    method_id: ReconstructionMethodId
 
 
 class Open3dTsdfBackendConfig(ReconstructionBackendConfig, FactoryConfig[Open3dTsdfBackend]):
-    reconstruction_id: Literal[ReconstructionId.OPEN3D_TSDF] = ReconstructionId.OPEN3D_TSDF
+    method_id: Literal[ReconstructionMethodId.OPEN3D_TSDF] = ReconstructionMethodId.OPEN3D_TSDF
 ```
 
 This gives the stage one discriminated config union and one obvious extension

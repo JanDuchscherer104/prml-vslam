@@ -20,6 +20,6 @@ again.
 ## Boundary
 
 `prml_vslam.eval` does not own persisted stage policy. Trajectory-evaluation
-selection lives in `prml_vslam.pipeline.stages.trajectory_eval`, reusable
-reference identifiers live in `prml_vslam.benchmark`, and evaluation execution
+selection lives in `prml_vslam.eval.stage_trajectory`, reusable
+reference identifiers live in `prml_vslam.sources.contracts`, and evaluation execution
 remains here.

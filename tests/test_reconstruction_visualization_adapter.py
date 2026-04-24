@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
-from prml_vslam.pipeline.stages.reconstruction.visualization import (
+from prml_vslam.reconstruction import ReconstructionArtifacts
+from prml_vslam.reconstruction.stage.visualization import (
     MESH_ARTIFACT,
     POINT_CLOUD_ARTIFACT,
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
     ReconstructionVisualizationAdapter,
 )
-from prml_vslam.reconstruction import ReconstructionArtifacts
 
 
 def _artifact(path: Path, *, kind: str = "ply") -> ArtifactRef:

@@ -11,20 +11,9 @@ import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.sinks import rerun as rerun_sink_module
-from prml_vslam.pipeline.sinks.rerun import RerunEventSink, RerunSinkActor
-from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
-from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.reconstruction.visualization import (
-    MESH_ARTIFACT,
-    POINT_CLOUD_ARTIFACT,
-    ROLE_RECONSTRUCTION_MESH,
-    ROLE_RECONSTRUCTION_POINT_CLOUD,
-)
-from prml_vslam.pipeline.stages.slam.visualization import (
+from prml_vslam.methods.stage.visualization import (
     COLORS_REF,
     DEPTH_REF,
     IMAGE_REF,
@@ -33,13 +22,22 @@ from prml_vslam.pipeline.stages.slam.visualization import (
     ROLE_SOURCE_RGB,
     SlamVisualizationAdapter,
 )
-from prml_vslam.pipeline.stages.source.visualization import (
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.reconstruction.stage.visualization import (
+    MESH_ARTIFACT,
+    POINT_CLOUD_ARTIFACT,
+    ROLE_RECONSTRUCTION_MESH,
+    ROLE_RECONSTRUCTION_POINT_CLOUD,
+)
+from prml_vslam.sources.visualization import (
     METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT,
 )
-from prml_vslam.pipeline.stages.source.visualization import (
+from prml_vslam.sources.visualization import (
     POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT,
 )
-from prml_vslam.pipeline.stages.source.visualization import (
+from prml_vslam.sources.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
     ROLE_SOURCE_CAMERA_RGB,
     ROLE_SOURCE_DEPTH,
@@ -50,6 +48,8 @@ from prml_vslam.pipeline.stages.source.visualization import (
     TRAJECTORY_ARTIFACT,
 )
 from prml_vslam.utils.geometry import transform_points_world_camera, write_point_cloud_ply
+from prml_vslam.visualization import rerun_sink as rerun_sink_module
+from prml_vslam.visualization.rerun_sink import RerunEventSink, RerunSinkActor
 from prml_vslam.visualization.validation import load_recording_summary
 
 
@@ -381,7 +381,7 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
 
     assert calls == [
         ("pose", "world/live/tracking/camera", 8, None),
-        ("trajectory", "world/trajectory/tracking", 8, None),
+        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 8, None),
         ("pose", "world/live/model", 8, None),
         ("pose", "world/keyframes/cameras/000003", 8, None),
         ("pose", "world/keyframes/points/000003", 8, None),
@@ -493,7 +493,7 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
 
     assert calls == [
         ("pose", "world/live/tracking/camera", 8, None),
-        ("trajectory", "world/trajectory/tracking", 8, None),
+        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 8, None),
         ("pose", "world/live/model", 8, None),
         ("pose", "world/keyframes/cameras/000003", 8, None),
         ("pose", "world/keyframes/points/000003", 8, None),
@@ -990,7 +990,7 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     assert calls == [
         ("rgb", "world/live/source/rgb", 1, None),
         ("pose", "world/live/tracking/camera", 7, None),
-        ("trajectory", "world/trajectory/tracking", 7, None),
+        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
     ]
     assert tracking_axis_lengths["world/live/tracking/camera"] == 0.0
 

@@ -6,37 +6,39 @@ from pathlib import Path
 
 import pytest
 
+from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
 from prml_vslam.eval.contracts import (
     EvaluationArtifact,
     MetricStats,
     TrajectoryEvaluationSemantics,
 )
+from prml_vslam.eval.stage_trajectory import (
+    TrajectoryEvaluationRuntime,
+    TrajectoryEvaluationRuntimeInput,
+)
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.rgbd import RgbdObservationSequenceRef
 from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
-from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
-from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
-from prml_vslam.pipeline.stages.reconstruction.config import Open3dTsdfReconstructionConfig
-from prml_vslam.pipeline.stages.reconstruction.visualization import (
+from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
+from prml_vslam.reconstruction import ReconstructionArtifacts
+from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
+from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
-from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
-from prml_vslam.pipeline.stages.trajectory_eval import (
-    TrajectoryEvaluationRuntime,
-    TrajectoryEvaluationRuntimeInput,
-)
-from prml_vslam.reconstruction import ReconstructionArtifacts
+from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.utils import RunArtifactPaths
 
 
@@ -62,7 +64,7 @@ def test_ground_alignment_runtime_returns_stage_result(
             )
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.ground_alignment.runtime.GroundAlignmentService",
+        "prml_vslam.alignment.stage.runtime.GroundAlignmentService",
         FakeGroundAlignmentService,
     )
 
@@ -95,7 +97,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
             return artifact
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.trajectory_eval.runtime._compute_pipeline_evaluation",
+        "prml_vslam.eval.stage_trajectory.runtime._compute_pipeline_evaluation",
         lambda input_payload: calls.append({"input_payload": input_payload}) or artifact,
     )
 
@@ -128,7 +130,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
         reference_enabled=True,
     )
 
-    class FakeBackendConfig(Open3dTsdfReconstructionConfig):
+    class FakeBackendConfig(Open3dTsdfBackendConfig):
         extract_mesh: bool = True
 
         def setup_target(self):
@@ -154,7 +156,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
             return iter(())
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.reconstruction.runtime.FileRgbdObservationSource",
+        "prml_vslam.reconstruction.stage.runtime.FileRgbdObservationSource",
         FakeRgbdObservationSource,
     )
 
@@ -198,7 +200,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
         reference_enabled=True,
     )
 
-    class FakeBackendConfig(Open3dTsdfReconstructionConfig):
+    class FakeBackendConfig(Open3dTsdfBackendConfig):
         extract_mesh: bool = False
 
         def setup_target(self):
@@ -222,7 +224,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
             return iter(())
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.reconstruction.runtime.FileRgbdObservationSource",
+        "prml_vslam.reconstruction.stage.runtime.FileRgbdObservationSource",
         FakeRgbdObservationSource,
     )
 
@@ -286,7 +288,7 @@ def _request_plan_paths(
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path / ".artifacts",
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         reference_enabled=reference_enabled,
         trajectory_eval_enabled=trajectory_eval_enabled,
         ground_alignment_enabled=ground_alignment_enabled,

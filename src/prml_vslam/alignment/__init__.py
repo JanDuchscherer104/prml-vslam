@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from .contracts import AlignmentConfig, GroundAlignmentConfig
+from .contracts import GroundAlignmentConfig
 
 
 def __getattr__(name: str) -> Any:
@@ -14,7 +14,6 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
-    "AlignmentConfig",
     "GroundAlignmentConfig",
     "GroundAlignmentService",
 ]
