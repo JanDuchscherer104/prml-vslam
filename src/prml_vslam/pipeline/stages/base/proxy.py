@@ -63,7 +63,7 @@ class StageRuntimeProxy(BaseStageRuntime):
         if self.deployment_kind == "ray":
             raise NotImplementedError(
                 "Ray-hosted StageRuntimeProxy invocation is not implemented yet; keep current Ray actors behind "
-                "the legacy coordinator path until the runtime proxy owns actor/task-ref handling."
+                "the coordinator actor path until the runtime proxy owns actor/task-ref handling."
             )
         if RuntimeCapability.OFFLINE in self.supported_capabilities and not isinstance(
             self.runtime, OfflineStageRuntime

@@ -13,7 +13,7 @@ from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeS
 from prml_vslam.pipeline.stages.base.protocols import LiveUpdateStageRuntime, OfflineStageRuntime
 from prml_vslam.pipeline.stages.reconstruction.contracts import ReconstructionRuntimeInput
 from prml_vslam.pipeline.stages.reconstruction.visualization import ReconstructionVisualizationAdapter
-from prml_vslam.reconstruction import FileRgbdObservationSource, Open3dTsdfBackendConfig, ReconstructionArtifacts
+from prml_vslam.reconstruction import FileRgbdObservationSource, ReconstructionArtifacts
 
 
 class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], LiveUpdateStageRuntime):
@@ -26,9 +26,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
     """
 
     def __init__(self, *, visualization_adapter: ReconstructionVisualizationAdapter | None = None) -> None:
-        # TODO(pipeline-refactor/WP-10): Switch to the target `reconstruction`
-        # stage key after persisted stage-key aliases are removed.
-        self._status = StageRuntimeStatus(stage_key=StageKey.REFERENCE_RECONSTRUCTION)
+        self._status = StageRuntimeStatus(stage_key=StageKey.RECONSTRUCTION)
         self._visualization_adapter = (
             ReconstructionVisualizationAdapter() if visualization_adapter is None else visualization_adapter
         )
@@ -88,9 +86,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
             )
 
         sequence_ref = input_payload.benchmark_inputs.rgbd_observation_sequences[0]
-        # TODO(pipeline-refactor/WP-09): Build reconstruction backend config
-        # from `[stages.reconstruction]` instead of benchmark reference policy.
-        backend_config = Open3dTsdfBackendConfig(extract_mesh=input_payload.run_config.benchmark.reference.extract_mesh)
+        backend_config = input_payload.backend
         backend = backend_config.setup_target()
         artifacts = backend.run_sequence(
             FileRgbdObservationSource(sequence_ref).iter_observations(),
@@ -99,7 +95,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
         )
         artifact_map = _artifact_map(artifacts)
         outcome = StageOutcome(
-            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+            stage_key=StageKey.RECONSTRUCTION,
             status=StageStatus.COMPLETED,
             config_hash=stable_hash(backend_config),
             input_fingerprint=stable_hash(sequence_ref),
@@ -107,7 +103,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
             metrics={"observation_count": sequence_ref.observation_count},
         )
         final_status = StageRuntimeStatus(
-            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+            stage_key=StageKey.RECONSTRUCTION,
             lifecycle_state=StageStatus.COMPLETED,
             progress_message="Reference reconstruction complete.",
             completed_steps=sequence_ref.observation_count,
@@ -123,14 +119,14 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
         if visualizations:
             self._pending_updates.append(
                 StageRuntimeUpdate(
-                    stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+                    stage_key=StageKey.RECONSTRUCTION,
                     timestamp_ns=time.time_ns(),
                     visualizations=visualizations,
                     runtime_status=final_status,
                 )
             )
         return StageResult(
-            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+            stage_key=StageKey.RECONSTRUCTION,
             payload=artifacts,
             outcome=outcome,
             final_runtime_status=final_status,

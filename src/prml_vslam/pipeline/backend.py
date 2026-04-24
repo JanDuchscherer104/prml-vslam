@@ -77,8 +77,8 @@ class PipelineBackend(Protocol):
     @abstractmethod
     def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:
         """Resolve one target transient payload ref into a local array."""
-        # TODO(pipeline-refactor/WP-08): Replace the nullable return with a
-        # typed payload-resolution result before old handle APIs are removed.
+        # TODO(pipeline-refactor/post-target-alignment): Replace the nullable
+        # return with a typed payload-resolution result.
 
     @abstractmethod
     def shutdown(self, *, preserve_local_head: bool = False) -> None:

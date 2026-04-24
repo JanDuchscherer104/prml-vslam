@@ -16,34 +16,35 @@ from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManife
 from prml_vslam.interfaces.rgbd import RgbdObservationSequenceRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
-from prml_vslam.pipeline.contracts.request import RunRequest, SlamStageConfig, VideoSourceSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.pipeline.stages.ground_alignment import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
 from prml_vslam.pipeline.stages.reconstruction import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.pipeline.stages.reconstruction.config import Open3dTsdfReconstructionConfig
 from prml_vslam.pipeline.stages.reconstruction.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
+from prml_vslam.pipeline.stages.slam.config import MethodId
+from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
 from prml_vslam.pipeline.stages.trajectory_eval import (
     TrajectoryEvaluationRuntime,
     TrajectoryEvaluationRuntimeInput,
 )
 from prml_vslam.reconstruction import ReconstructionArtifacts
-from prml_vslam.utils import BaseData, RunArtifactPaths
-
-from .pipeline_legacy import run_config_from_request
+from prml_vslam.utils import RunArtifactPaths
 
 
 def test_ground_alignment_runtime_returns_stage_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request, plan, run_paths = _request_plan_paths(tmp_path, alignment={"ground": {"enabled": True}})
+    run_config, plan, run_paths = _request_plan_paths(tmp_path, ground_alignment_enabled=True)
     slam = _slam_artifacts(tmp_path)
 
     class FakeGroundAlignmentService:
@@ -66,7 +67,7 @@ def test_ground_alignment_runtime_returns_stage_result(
     )
 
     result = GroundAlignmentRuntime().run_offline(
-        GroundAlignmentRuntimeInput(run_config=run_config_from_request(request), run_paths=run_paths, slam=slam)
+        GroundAlignmentRuntimeInput(config=run_config.stages.align_ground.ground, run_paths=run_paths, slam=slam)
     )
 
     assert result.stage_key is StageKey.GRAVITY_ALIGNMENT
@@ -81,7 +82,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request, plan, _run_paths = _request_plan_paths(tmp_path, benchmark={"trajectory": {"enabled": True}})
+    run_config, plan, _run_paths = _request_plan_paths(tmp_path, trajectory_eval_enabled=True)
     artifact = _evaluation_artifact(tmp_path)
     calls: list[dict[str, object]] = []
 
@@ -94,14 +95,16 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
             return artifact
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.trajectory_eval.runtime.TrajectoryEvaluationService",
-        FakeTrajectoryEvaluationService,
+        "prml_vslam.pipeline.stages.trajectory_eval.runtime._compute_pipeline_evaluation",
+        lambda input_payload: calls.append({"input_payload": input_payload}) or artifact,
     )
 
     result = TrajectoryEvaluationRuntime().run_offline(
         TrajectoryEvaluationRuntimeInput(
-            run_config=run_config_from_request(request),
-            plan=plan,
+            artifact_root=plan.artifact_root,
+            baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
+            method_id=run_config.stages.slam.backend.method_id,
+            method_label=run_config.stages.slam.backend.display_name,
             sequence_manifest=SequenceManifest(sequence_id="seq-1"),
             benchmark_inputs=PreparedBenchmarkInputs(),
             slam=_slam_artifacts(tmp_path),
@@ -120,13 +123,13 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request, _plan, run_paths = _request_plan_paths(
+    run_config, _plan, run_paths = _request_plan_paths(
         tmp_path,
-        benchmark={"reference": {"enabled": True, "extract_mesh": True}},
+        reference_enabled=True,
     )
 
-    class FakeBackendConfig(BaseData):
-        extract_mesh: bool = False
+    class FakeBackendConfig(Open3dTsdfReconstructionConfig):
+        extract_mesh: bool = True
 
         def setup_target(self):
             return FakeBackend()
@@ -151,10 +154,6 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
             return iter(())
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.reconstruction.runtime.Open3dTsdfBackendConfig",
-        FakeBackendConfig,
-    )
-    monkeypatch.setattr(
         "prml_vslam.pipeline.stages.reconstruction.runtime.FileRgbdObservationSource",
         FakeRgbdObservationSource,
     )
@@ -162,13 +161,13 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     runtime = ReconstructionRuntime()
     result = runtime.run_offline(
         ReconstructionRuntimeInput(
-            run_config=run_config_from_request(request),
+            backend=FakeBackendConfig(),
             run_paths=run_paths,
             benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
         )
     )
 
-    assert result.stage_key is StageKey.REFERENCE_RECONSTRUCTION
+    assert result.stage_key is StageKey.RECONSTRUCTION
     assert result.outcome.status is StageStatus.COMPLETED
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert isinstance(result.payload, ReconstructionArtifacts)
@@ -179,7 +178,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     }
     updates = runtime.drain_runtime_updates()
     assert len(updates) == 1
-    assert updates[0].stage_key is StageKey.REFERENCE_RECONSTRUCTION
+    assert updates[0].stage_key is StageKey.RECONSTRUCTION
     assert [(item.intent, item.role) for item in updates[0].visualizations] == [
         (VisualizationIntent.POINT_CLOUD, ROLE_RECONSTRUCTION_POINT_CLOUD),
         (VisualizationIntent.MESH, ROLE_RECONSTRUCTION_MESH),
@@ -194,12 +193,12 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request, _plan, run_paths = _request_plan_paths(
+    _run_config, _plan, run_paths = _request_plan_paths(
         tmp_path,
-        benchmark={"reference": {"enabled": True, "extract_mesh": False}},
+        reference_enabled=True,
     )
 
-    class FakeBackendConfig(BaseData):
+    class FakeBackendConfig(Open3dTsdfReconstructionConfig):
         extract_mesh: bool = False
 
         def setup_target(self):
@@ -223,10 +222,6 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
             return iter(())
 
     monkeypatch.setattr(
-        "prml_vslam.pipeline.stages.reconstruction.runtime.Open3dTsdfBackendConfig",
-        FakeBackendConfig,
-    )
-    monkeypatch.setattr(
         "prml_vslam.pipeline.stages.reconstruction.runtime.FileRgbdObservationSource",
         FakeRgbdObservationSource,
     )
@@ -234,7 +229,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
     runtime = ReconstructionRuntime()
     result = runtime.run_offline(
         ReconstructionRuntimeInput(
-            run_config=run_config_from_request(request),
+            backend=FakeBackendConfig(),
             run_paths=run_paths,
             benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
         )
@@ -249,7 +244,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
 
 
 def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Path) -> None:
-    request, plan, run_paths = _request_plan_paths(tmp_path)
+    run_config, plan, run_paths = _request_plan_paths(tmp_path)
     prior_outcome = StageOutcome(
         stage_key=StageKey.SLAM,
         status=StageStatus.COMPLETED,
@@ -261,7 +256,8 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
     runtime = SummaryRuntime()
     result = runtime.run_offline(
         SummaryRuntimeInput(
-            run_config=run_config_from_request(request),
+            experiment_name=run_config.experiment_name,
+            mode=run_config.mode,
             plan=plan,
             run_paths=run_paths,
             stage_outcomes=[prior_outcome],
@@ -281,17 +277,19 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
 def _request_plan_paths(
     tmp_path: Path,
     *,
-    benchmark: dict[str, object] | None = None,
-    alignment: dict[str, object] | None = None,
-) -> tuple[RunRequest, RunPlan, RunArtifactPaths]:
-    request = RunRequest(
+    reference_enabled: bool = False,
+    trajectory_eval_enabled: bool = False,
+    ground_alignment_enabled: bool = False,
+) -> tuple[RunConfig, RunPlan, RunArtifactPaths]:
+    run_config = build_run_config(
         experiment_name="bounded-runtime",
         mode=PipelineMode.OFFLINE,
         output_dir=tmp_path / ".artifacts",
-        source=VideoSourceSpec(video_path=Path("captures/demo.mp4")),
-        slam=SlamStageConfig(backend={"kind": "mock"}),
-        benchmark={} if benchmark is None else benchmark,
-        alignment={} if alignment is None else alignment,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.MOCK,
+        reference_enabled=reference_enabled,
+        trajectory_eval_enabled=trajectory_eval_enabled,
+        ground_alignment_enabled=ground_alignment_enabled,
     )
     artifact_root = tmp_path / ".artifacts" / "bounded-runtime"
     plan = RunPlan(
@@ -301,7 +299,7 @@ def _request_plan_paths(
         source=PlannedSource(source_id="video", video_path=Path("captures/demo.mp4")),
         stages=[RunPlanStage(key=StageKey.SLAM), RunPlanStage(key=StageKey.SUMMARY)],
     )
-    return request, plan, RunArtifactPaths.build(artifact_root)
+    return run_config, plan, RunArtifactPaths.build(artifact_root)
 
 
 def _slam_artifacts(tmp_path: Path) -> SlamArtifacts:

@@ -60,15 +60,13 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
         return result
 
     def _run(self, input_payload: GroundAlignmentRuntimeInput) -> StageResult:
-        metadata = self._service_type(config=input_payload.run_config.alignment.ground).estimate_from_slam_artifacts(
-            slam=input_payload.slam
-        )
+        metadata = self._service_type(config=input_payload.config).estimate_from_slam_artifacts(slam=input_payload.slam)
         write_json(input_payload.run_paths.ground_alignment_path, metadata)
         outcome_status = StageStatus.COMPLETED if metadata.applied else StageStatus.SKIPPED
         outcome = StageOutcome(
             stage_key=StageKey.GRAVITY_ALIGNMENT,
             status=outcome_status,
-            config_hash=stable_hash(input_payload.run_config.alignment.ground),
+            config_hash=stable_hash(input_payload.config),
             input_fingerprint=stable_hash(
                 {
                     "trajectory_tum": input_payload.slam.trajectory_tum,
