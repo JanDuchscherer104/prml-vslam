@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import subprocess
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
+import click
 import pytest
 import typer
 
@@ -25,11 +27,9 @@ from prml_vslam.main import (
     plan_run,
     run_config,
 )
-from prml_vslam.methods import MethodId, MockSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.config import RunConfig
+from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import RunEvent
-from prml_vslam.pipeline.contracts.request import DatasetSourceSpec, RunRequest, SlamStageConfig
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.demo import (
     build_advio_demo_run_config,
@@ -38,10 +38,10 @@ from prml_vslam.pipeline.demo import (
 )
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.slam.config import MethodId, MockSlamBackendConfig
+from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
-
-from .pipeline_legacy import run_config_from_request
 
 
 @contextmanager
@@ -65,18 +65,50 @@ def _capture_logger(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.Monkey
 
 def _advio_source_payload(sequence_id: str = "advio-01") -> dict[str, object]:
     return {
-        "dataset_id": "advio",
+        "source_id": "advio",
         "sequence_id": sequence_id,
         "dataset_serving": {
-            "dataset_id": "advio",
             "pose_source": "ground_truth",
             "pose_frame_mode": "provider_world",
         },
     }
 
 
-def _run_config_from_request(request: RunRequest) -> RunConfig:
-    return run_config_from_request(request)
+def _advio_run_config(
+    *,
+    output_dir: Path,
+    mode: PipelineMode = PipelineMode.STREAMING,
+    connect_live_viewer: bool = False,
+    local_head_lifecycle: str = "ephemeral",
+    viewer_blueprint_path: str | None = None,
+    max_frames: int | None = None,
+) -> RunConfig:
+    return RunConfig.model_validate(
+        {
+            "experiment_name": "demo-streaming",
+            "mode": mode.value,
+            "output_dir": str(output_dir),
+            "ray_local_head_lifecycle": local_head_lifecycle,
+            "stages": {
+                "source": {"backend": _advio_source_payload()},
+                "slam": {"backend": {"method_id": "mock", "max_frames": max_frames}},
+                "summary": {"enabled": True},
+            },
+            "visualization": {
+                "connect_live_viewer": connect_live_viewer,
+                **({} if viewer_blueprint_path is None else {"viewer_blueprint_path": viewer_blueprint_path}),
+            },
+        }
+    )
+
+
+def _run_config_command(config_path: Path) -> None:
+    ctx = typer.Context(
+        click.Command("run-config"),
+        allow_extra_args=True,
+        ignore_unknown_options=True,
+    )
+    run_config(ctx, config_path)
 
 
 def test_load_run_config_toml_accepts_target_config(tmp_path: Path) -> None:
@@ -224,21 +256,14 @@ def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 
 def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest(
-        experiment_name="demo-streaming",
-        mode=PipelineMode.STREAMING,
-        output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(
-            dataset_id="advio",
-            sequence_id="advio-01",
-            dataset_serving={"dataset_id": "advio", "pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
-        ),
-        slam=SlamStageConfig(backend={"method_id": "mock"}),
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir)
     runtime_source = object()
     captured: dict[str, object] = {}
-    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -260,7 +285,7 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setattr("prml_vslam.main._wait_for_pipeline_terminal_snapshot", lambda *args, **kwargs: RunSnapshot())
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
-    run_config(Path(".configs/pipelines/vista-full.toml"))
+    _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert isinstance(captured["run_config"], RunConfig)
     assert captured["run_config"].model_dump(mode="json") == run_cfg.model_dump(mode="json")
@@ -268,12 +293,87 @@ def test_run_config_supports_streaming_requests(monkeypatch: pytest.MonkeyPatch,
     assert captured["preserve_local_head"] is False
 
 
+def test_run_config_persists_timestamped_command_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
+    )
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir)
+
+    class FakeRunService:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            del path_config
+
+        def start_run(self, *, run_config: RunConfig, runtime_source: object | None = None) -> None:
+            del run_config, runtime_source
+            print("start payload processed=73 fps=13.29")
+
+        def shutdown(self, *, preserve_local_head: bool = False) -> None:
+            print(f"shutdown preserve={preserve_local_head}")
+
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
+    monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
+    monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
+    monkeypatch.setattr("prml_vslam.main.build_runtime_source_from_run_config", lambda **kwargs: object())
+    monkeypatch.setattr("prml_vslam.main.RunService", FakeRunService)
+    monkeypatch.setattr(
+        "prml_vslam.main._wait_for_pipeline_terminal_snapshot",
+        lambda *args, **kwargs: RunSnapshot(state=RunState.COMPLETED),
+    )
+    monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: print("snapshot payload"))
+
+    _run_config_command(Path(".configs/pipelines/vista-full.toml"))
+
+    log_files = list(path_config.resolve_run_logs_dir("demo-streaming").glob("*.log"))
+    assert len(log_files) == 1
+    assert re.fullmatch(r"\d{8}T\d{6}\.\d{6}Z-pid\d+\.log", log_files[0].name)
+    lines = log_files[0].read_text(encoding="utf-8").splitlines()
+    assert lines
+    assert all(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z ", line) for line in lines)
+    assert any("Persisting run-config log" in line for line in lines)
+    assert any("start payload processed=73 fps=13.29" in line for line in lines)
+    assert any("snapshot payload" in line for line in lines)
+
+
+def test_run_config_persists_log_after_loaded_config_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
+    )
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir)
+
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: path_config)
+    monkeypatch.setattr("prml_vslam.main.load_run_config_toml", lambda **kwargs: run_cfg)
+    monkeypatch.setattr("prml_vslam.main._launch_rerun_viewer", lambda **kwargs: None)
+    monkeypatch.setattr("prml_vslam.main._shutdown_rerun_viewer", lambda viewer: None)
+    monkeypatch.setattr(
+        "prml_vslam.main.build_runtime_source_from_run_config",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("runtime source boom")),
+    )
+
+    with pytest.raises(typer.Exit) as exc_info:
+        _run_config_command(Path(".configs/pipelines/vista-full.toml"))
+
+    assert exc_info.value.exit_code == 1
+    log_files = list(path_config.resolve_run_logs_dir("demo-streaming").glob("*.log"))
+    assert len(log_files) == 1
+    content = log_files[0].read_text(encoding="utf-8")
+    assert "Persisting run-config log" in content
+    assert "runtime source boom" in content
+
+
 def test_run_config_vista_full_toml_smoke_with_mock_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts")
+    path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs")
     captured: dict[str, object] = {}
 
     class FakeBackend:
@@ -364,7 +464,7 @@ enabled = true
     monkeypatch.setattr("prml_vslam.main.RunService", CapturingRunService)
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
-    run_config(config_path)
+    _run_config_command(config_path)
 
     assert captured["path_config"] == path_config
     assert isinstance(captured["runtime_source"], FakeStreamingSource)
@@ -381,19 +481,13 @@ def test_run_config_preserves_local_head_for_reusable_completed_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(path_config.artifacts_dir),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
-        }
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir, local_head_lifecycle="reusable")
     captured: dict[str, object] = {}
-    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -418,7 +512,7 @@ def test_run_config_preserves_local_head_for_reusable_completed_run(
     )
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
-    run_config(Path(".configs/pipelines/vista-full.toml"))
+    _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert captured["preserve_local_head"] is True
 
@@ -427,19 +521,13 @@ def test_run_config_does_not_preserve_local_head_for_reusable_failed_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(path_config.artifacts_dir),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "runtime": {"ray": {"local_head_lifecycle": "reusable"}},
-        }
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir, local_head_lifecycle="reusable")
     captured: dict[str, object] = {}
-    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -465,28 +553,20 @@ def test_run_config_does_not_preserve_local_head_for_reusable_failed_run(
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
     with pytest.raises(typer.Exit):
-        run_config(Path(".configs/pipelines/vista-full.toml"))
+        _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert captured["preserve_local_head"] is False
 
 
 def test_build_rerun_viewer_command_uses_blueprint_when_configured(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(tmp_path / ".artifacts"),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {
-                "connect_live_viewer": True,
-                "viewer_blueprint_path": ".configs/visualization/demo_blueprint.rbl",
-            },
-        }
+    run_cfg = _advio_run_config(
+        output_dir=tmp_path / ".artifacts",
+        connect_live_viewer=True,
+        viewer_blueprint_path=".configs/visualization/demo_blueprint.rbl",
     )
 
-    command = _build_rerun_viewer_command(run_config=_run_config_from_request(request), path_config=path_config)
+    command = _build_rerun_viewer_command(run_config=run_cfg, path_config=path_config)
 
     assert command == [
         "uv",
@@ -501,18 +581,9 @@ def test_build_rerun_viewer_command_uses_blueprint_when_configured(tmp_path: Pat
 
 def test_build_rerun_viewer_command_omits_blueprint_when_unset(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(tmp_path / ".artifacts"),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
-    )
+    run_cfg = _advio_run_config(output_dir=tmp_path / ".artifacts", connect_live_viewer=True)
 
-    command = _build_rerun_viewer_command(run_config=_run_config_from_request(request), path_config=path_config)
+    command = _build_rerun_viewer_command(run_config=run_cfg, path_config=path_config)
 
     assert command == ["uv", "run", "--extra", "vista", "rerun", "--serve-web"]
 
@@ -564,42 +635,34 @@ def test_forward_rerun_viewer_stdout_prefixes_child_output() -> None:
     assert target.getvalue() == "[rerun] viewer ready\n[rerun] second line\n"
 
 
+def test_forward_rerun_viewer_stdout_uses_current_stdout_by_default() -> None:
+    source = io.StringIO("viewer ready\n")
+    target = io.StringIO()
+
+    with redirect_stdout(target):
+        _forward_rerun_viewer_stdout(stream=source)
+
+    assert target.getvalue() == "[rerun] viewer ready\n"
+
+
 def test_launch_rerun_viewer_is_noop_when_live_viewer_disabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     path_config = PathConfig(root=tmp_path)
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(tmp_path / ".artifacts"),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": False},
-        }
-    )
+    run_cfg = _advio_run_config(output_dir=tmp_path / ".artifacts", connect_live_viewer=False)
 
     monkeypatch.setattr(
         "prml_vslam.main.subprocess.Popen",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("viewer subprocess must not be launched")),
     )
 
-    assert _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config) is None
+    assert _launch_rerun_viewer(run_config=run_cfg, path_config=path_config) is None
 
 
 def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(tmp_path / ".artifacts"),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
-    )
+    run_cfg = _advio_run_config(output_dir=tmp_path / ".artifacts", connect_live_viewer=True)
     captured: dict[str, object] = {}
 
     class FakeProcess:
@@ -618,7 +681,7 @@ def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.Mon
     monkeypatch.setattr("prml_vslam.main.subprocess.Popen", fake_popen)
     monkeypatch.setattr("prml_vslam.main.time.sleep", lambda _: None)
 
-    viewer = _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config)
+    viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
 
     assert viewer is not None
     assert captured["command"] == ["uv", "run", "--extra", "vista", "rerun", "--serve-web"]
@@ -634,16 +697,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_startup_failure(
     tmp_path: Path,
 ) -> None:
     path_config = PathConfig(root=tmp_path)
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(tmp_path / ".artifacts"),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
-    )
+    run_cfg = _advio_run_config(output_dir=tmp_path / ".artifacts", connect_live_viewer=True)
     warnings: list[str] = []
 
     monkeypatch.setattr(
@@ -651,7 +705,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_startup_failure(
     )
     monkeypatch.setattr("prml_vslam.main.console.warning", lambda message, *args: warnings.append(message % args))
 
-    viewer = _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config)
+    viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
 
     assert viewer is None
     assert warnings == ["Failed to launch the Rerun viewer subprocess: boom"]
@@ -662,16 +716,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_early_exit(
     tmp_path: Path,
 ) -> None:
     path_config = PathConfig(root=tmp_path)
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(tmp_path / ".artifacts"),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
-    )
+    run_cfg = _advio_run_config(output_dir=tmp_path / ".artifacts", connect_live_viewer=True)
     warnings: list[str] = []
 
     class FakeProcess:
@@ -686,7 +731,7 @@ def test_launch_rerun_viewer_warns_and_returns_none_on_early_exit(
     monkeypatch.setattr("prml_vslam.main.time.sleep", lambda _: None)
     monkeypatch.setattr("prml_vslam.main.console.warning", lambda message, *args: warnings.append(message % args))
 
-    viewer = _launch_rerun_viewer(run_config=_run_config_from_request(request), path_config=path_config)
+    viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
 
     assert viewer is None
     assert warnings == ["Rerun viewer exited early with code 2; continuing without auto-launched live viewer."]
@@ -764,19 +809,13 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(path_config.artifacts_dir),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir, connect_live_viewer=True)
     captured: dict[str, object] = {}
-    run_cfg = _run_config_from_request(request)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -798,7 +837,7 @@ def test_run_config_continues_when_viewer_launcher_returns_none(
     monkeypatch.setattr("prml_vslam.main._wait_for_pipeline_terminal_snapshot", lambda *args, **kwargs: RunSnapshot())
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
-    run_config(Path(".configs/pipelines/vista-full.toml"))
+    _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert isinstance(captured["run_config"], RunConfig)
     assert captured["run_config"].model_dump(mode="json") == run_cfg.model_dump(mode="json")
@@ -809,23 +848,17 @@ def test_run_config_prints_output_then_waits_for_viewer_after_normal_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(path_config.artifacts_dir),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
     events: list[str] = []
     viewer = _RerunViewerProcess(
         process=object(),  # type: ignore[arg-type]
         forwarder=object(),  # type: ignore[arg-type]
     )
-    run_cfg = _run_config_from_request(request)
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir, connect_live_viewer=True)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -853,7 +886,7 @@ def test_run_config_prints_output_then_waits_for_viewer_after_normal_completion(
     )
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: events.append("print"))
 
-    run_config(Path(".configs/pipelines/vista-full.toml"))
+    _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert events == ["run-shutdown:False", "print", "viewer-wait", "viewer-shutdown:True"]
 
@@ -862,23 +895,17 @@ def test_run_config_keeps_failed_run_viewer_open_until_wait_finishes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(path_config.artifacts_dir),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
     events: list[str] = []
     viewer = _RerunViewerProcess(
         process=object(),  # type: ignore[arg-type]
         forwarder=object(),  # type: ignore[arg-type]
     )
-    run_cfg = _run_config_from_request(request)
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir, connect_live_viewer=True)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -907,7 +934,7 @@ def test_run_config_keeps_failed_run_viewer_open_until_wait_finishes(
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: events.append("print"))
 
     with pytest.raises(typer.Exit) as exc_info:
-        run_config(Path(".configs/pipelines/vista-full.toml"))
+        _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert exc_info.value.exit_code == 1
     assert events == ["run-shutdown:False", "print", "viewer-wait", "viewer-shutdown:True"]
@@ -917,16 +944,10 @@ def test_run_config_ctrl_c_during_post_run_viewer_wait_does_not_stop_finished_ru
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(path_config.artifacts_dir),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
     events: list[str] = []
 
@@ -946,7 +967,7 @@ def test_run_config_ctrl_c_during_post_run_viewer_wait_does_not_stop_finished_ru
         process=FakeProcess(),  # type: ignore[arg-type]
         forwarder=FakeThread(),  # type: ignore[arg-type]
     )
-    run_cfg = _run_config_from_request(request)
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir, connect_live_viewer=True)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -976,7 +997,7 @@ def test_run_config_ctrl_c_during_post_run_viewer_wait_does_not_stop_finished_ru
     )
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: events.append("print"))
 
-    run_config(Path(".configs/pipelines/vista-full.toml"))
+    _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert events == ["run-shutdown:False", "print", "viewer-wait", "viewer-shutdown:True"]
 
@@ -985,23 +1006,17 @@ def test_run_config_shuts_down_viewer_after_active_pipeline_keyboard_interrupt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest.model_validate(
-        {
-            "experiment_name": "demo-streaming",
-            "mode": "streaming",
-            "output_dir": str(path_config.artifacts_dir),
-            "source": _advio_source_payload(),
-            "slam": {"backend": {"method_id": "mock"}},
-            "visualization": {"connect_live_viewer": True},
-        }
+    path_config = PathConfig(
+        root=Path(__file__).resolve().parents[1],
+        artifacts_dir=tmp_path / ".artifacts",
+        logs_dir=tmp_path / ".logs",
     )
     captured: dict[str, object] = {}
     viewer = _RerunViewerProcess(
         process=object(),  # type: ignore[arg-type]
         forwarder=object(),  # type: ignore[arg-type]
     )
-    run_cfg = _run_config_from_request(request)
+    run_cfg = _advio_run_config(output_dir=path_config.artifacts_dir, connect_live_viewer=True)
 
     class FakeRunService:
         def __init__(self, *, path_config: PathConfig) -> None:
@@ -1034,7 +1049,7 @@ def test_run_config_shuts_down_viewer_after_active_pipeline_keyboard_interrupt(
     monkeypatch.setattr("prml_vslam.main._print_pipeline_demo_snapshot", lambda snapshot: None)
 
     with pytest.raises(typer.Exit) as exc_info:
-        run_config(Path(".configs/pipelines/vista-full.toml"))
+        _run_config_command(Path(".configs/pipelines/vista-full.toml"))
 
     assert exc_info.value.exit_code == 130
     assert captured["stopped"] is True
@@ -1046,23 +1061,21 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
     tmp_path: Path,
 ) -> None:
     path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
-    request = RunRequest(
+    run_config = build_run_config(
         experiment_name="demo-streaming",
         mode=PipelineMode.STREAMING,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(
-            dataset_id="advio",
+        source_backend=AdvioSourceConfig(
             sequence_id="advio-01",
             dataset_serving={
-                "dataset_id": "advio",
                 "pose_source": "ground_truth",
                 "pose_frame_mode": "provider_world",
             },
             respect_video_rotation=True,
         ),
-        slam=SlamStageConfig(backend={"method_id": "mock", "max_frames": 2}),
+        method=MethodId.MOCK,
+        max_frames=2,
     )
-    run_config = run_config_from_request(request)
 
     class FakePacketStream:
         def __init__(self) -> None:

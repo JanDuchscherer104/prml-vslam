@@ -60,6 +60,10 @@ uv run prml-vslam plan-run-config .configs/pipelines/advio-15-offline-vista.toml
 uv run prml-vslam run-config .configs/pipelines/advio-15-offline-vista.toml
 ```
 
+Each `run-config` invocation writes a timestamped command log under
+`.logs/runs/<run-id>/`, where `<run-id>` is the filesystem-safe run identifier
+derived from the config's `experiment_name`.
+
 See [SETUP.md](SETUP.md) for environment setup and
 [src/prml_vslam/pipeline/README.md](src/prml_vslam/pipeline/README.md) for
 pipeline TOML details.

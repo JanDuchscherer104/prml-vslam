@@ -4,16 +4,26 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, TextIO
 
+import click
 import typer
+from pydantic import ValidationError
+from rich.console import Console as RichConsole
+from rich.panel import Panel
+from rich.table import Table
+from typer.core import TyperCommand
 
 from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.datasets.advio import (
@@ -57,6 +67,120 @@ pipeline_demo_console = Console("pipeline.demo")
 
 app.add_typer(advio_app, name="advio")
 
+RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "Run",
+        (
+            ("--experiment_name", "Run name stored in artifacts and summaries."),
+            ("--mode", "Pipeline mode: offline or streaming."),
+            ("--output_dir", "Artifact output directory."),
+        ),
+    ),
+    (
+        "Source Stage",
+        (
+            ("--stages.source.enabled", "Enable or disable source normalization."),
+            ("--stages.source.backend.source_id", "Source kind: video, advio, tum_rgbd, record3d."),
+            ("--stages.source.backend.video_path", "Video source path when source_id=video."),
+            ("--stages.source.backend.sequence_id", "Dataset sequence id for ADVIO or TUM RGB-D."),
+            ("--stages.source.backend.frame_stride", "Frame sampling stride."),
+            ("--stages.source.backend.target_fps", "Frame sampling target FPS."),
+            ("--stages.source.backend.dataset_serving.pose_source", "ADVIO pose provider."),
+            ("--stages.source.backend.dataset_serving.pose_frame_mode", "ADVIO replay pose frame mode."),
+            ("--stages.source.backend.respect_video_rotation", "Honor ADVIO rotation metadata."),
+            ("--stages.source.backend.transport", "Record3D transport: usb or wifi."),
+            ("--stages.source.backend.device_index", "Record3D USB device index."),
+            ("--stages.source.backend.device_address", "Record3D Wi-Fi device address."),
+        ),
+    ),
+    (
+        "SLAM Stage",
+        (
+            ("--stages.slam.enabled", "Enable or disable SLAM."),
+            ("--stages.slam.outputs.emit_dense_points", "Materialize dense point outputs."),
+            ("--stages.slam.outputs.emit_sparse_points", "Materialize sparse point outputs."),
+            ("--stages.slam.backend.method_id", "SLAM backend: vista, mast3r, mock."),
+            ("--stages.slam.backend.max_frames", "Frame cap for smoke runs."),
+            ("--stages.slam.backend.max_view_num", "ViSTA maximum pose-graph keyframes."),
+            ("--stages.slam.backend.flow_thres", "ViSTA keyframe optical-flow threshold."),
+            ("--stages.slam.backend.neighbor_edge_num", "ViSTA temporal-neighbor edges."),
+            ("--stages.slam.backend.loop_edge_num", "ViSTA loop-closure edges."),
+            ("--stages.slam.backend.loop_dist_min", "ViSTA loop candidate minimum frame distance."),
+            ("--stages.slam.backend.loop_nms", "ViSTA loop non-maximum suppression window."),
+            ("--stages.slam.backend.point_conf_thres", "ViSTA retained point-confidence threshold."),
+            ("--stages.slam.backend.rel_pose_thres", "ViSTA relative-pose uncertainty threshold."),
+            ("--stages.slam.backend.pgo_every", "ViSTA pose-graph optimization interval."),
+            ("--stages.slam.backend.random_seed", "Backend random seed."),
+            ("--stages.slam.backend.device", "ViSTA device: auto, cuda, cpu."),
+        ),
+    ),
+    (
+        "Downstream Stages",
+        (
+            ("--stages.align_ground.enabled", "Enable or disable gravity alignment."),
+            ("--stages.align_ground.ground.strategy", "Ground-alignment strategy."),
+            ("--stages.align_ground.ground.min_confidence", "Minimum ground-plane confidence."),
+            ("--stages.evaluate_trajectory.enabled", "Enable trajectory evaluation."),
+            ("--stages.evaluate_trajectory.evaluation.baseline_source", "Reference trajectory source."),
+            ("--stages.reconstruction.enabled", "Enable reconstruction."),
+            ("--stages.reconstruction.backend.reconstruction_id", "Reconstruction backend id."),
+            ("--stages.reconstruction.backend.voxel_length_m", "TSDF voxel length in meters."),
+            ("--stages.reconstruction.backend.sdf_trunc_m", "TSDF truncation distance in meters."),
+            ("--stages.reconstruction.backend.depth_sampling_stride", "RGB-D reconstruction sampling stride."),
+            ("--stages.reconstruction.backend.extract_mesh", "Extract a mesh after integration."),
+            ("--stages.evaluate_cloud.enabled", "Enable dense-cloud diagnostic planning."),
+            ("--stages.evaluate_cloud.selection.reference_artifact_key", "Reference cloud artifact key."),
+            ("--stages.evaluate_cloud.selection.estimate_artifact_key", "Estimated cloud artifact key."),
+            ("--stages.summary.enabled", "Enable summary projection."),
+        ),
+    ),
+    (
+        "Visualization",
+        (
+            ("--visualization.connect_live_viewer", "Attach a live Rerun viewer sink."),
+            ("--visualization.export_viewer_rrd", "Export a repo-owned Rerun recording."),
+            ("--visualization.grpc_url", "Rerun gRPC endpoint."),
+            ("--visualization.viewer_blueprint_path", "Rerun viewer blueprint path."),
+            ("--visualization.frusta_history_window_streaming", "Streaming frusta history window."),
+            ("--visualization.show_tracking_trajectory", "Show the tracking trajectory."),
+            ("--visualization.log_source_rgb", "Log source RGB frames."),
+            ("--visualization.log_diagnostic_preview", "Log backend diagnostic previews."),
+        ),
+    ),
+    (
+        "Runtime",
+        (("--ray_local_head_lifecycle", "Ray local-head lifecycle: ephemeral or reusable."),),
+    ),
+)
+
+
+class RunConfigOverrideCommand(TyperCommand):
+    """Typer command that appends discoverable RunConfig dotted overrides."""
+
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        """Render normal Typer help followed by RunConfig override paths."""
+        super().format_help(ctx, formatter)
+        _print_run_config_override_options()
+
+
+def _print_run_config_override_options() -> None:
+    console = RichConsole(file=click.get_text_stream("stdout"))
+    for title, options in RUN_CONFIG_OVERRIDE_GROUPS:
+        table = Table.grid(padding=(0, 2))
+        table.add_column("Option", no_wrap=True)
+        table.add_column("Meaning")
+        for option, help_text in options:
+            table.add_row(option, help_text)
+        console.print(Panel(table, title=f"RunConfig Overrides - {title}", expand=False))
+
+    notes = Table.grid(padding=(0, 2))
+    notes.add_column("Topic", no_wrap=True)
+    notes.add_column("Detail")
+    notes.add_row("Value parsing", "JSON first, then string fallback. CLI overrides win over TOML.")
+    notes.add_row("Object merge", "--stages.slam.outputs '{\"emit_dense_points\": false}'")
+    notes.add_row("String value", "--mode '\"offline\"' or --mode offline")
+    console.print(Panel(notes, title="RunConfig Override Syntax", expand=False))
+
 
 @dataclass(slots=True)
 class _RerunViewerProcess:
@@ -64,6 +188,73 @@ class _RerunViewerProcess:
 
     process: subprocess.Popen[str]
     forwarder: threading.Thread
+
+
+_ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+class _TimestampedRunLogTee:
+    """Mirror terminal output to one timestamped plain-text run log."""
+
+    def __init__(self, *, target: TextIO, log_handle: TextIO, lock: threading.Lock) -> None:
+        self._target = target
+        self._log_handle = log_handle
+        self._lock = lock
+        self._pending = ""
+
+    @property
+    def encoding(self) -> str:
+        return getattr(self._target, "encoding", None) or "utf-8"
+
+    def write(self, text: str) -> int:
+        self._target.write(text)
+        with self._lock:
+            self._pending += text
+            while "\n" in self._pending:
+                line, self._pending = self._pending.split("\n", maxsplit=1)
+                self._write_log_line(line)
+        return len(text)
+
+    def flush(self) -> None:
+        self._target.flush()
+        self._log_handle.flush()
+
+    def isatty(self) -> bool:
+        return bool(getattr(self._target, "isatty", lambda: False)())
+
+    def close_log_line(self) -> None:
+        with self._lock:
+            if self._pending:
+                self._write_log_line(self._pending)
+                self._pending = ""
+
+    def _write_log_line(self, line: str) -> None:
+        timestamp = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        self._log_handle.write(f"{timestamp} {_ANSI_ESCAPE_PATTERN.sub('', line)}\n")
+        self._log_handle.flush()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._target, name)
+
+
+@contextmanager
+def _capture_run_config_logs(*, path_config: PathConfig, run_id: str) -> Iterator[Path]:
+    """Capture one `run-config` command invocation to a timestamped run log."""
+    log_dir = path_config.resolve_run_logs_dir(run_id, create=True)
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    log_path = log_dir / f"{timestamp}-pid{os.getpid()}.log"
+    lock = threading.Lock()
+    with log_path.open("w", encoding="utf-8") as log_handle:
+        stdout_tee = _TimestampedRunLogTee(target=sys.stdout, log_handle=log_handle, lock=lock)
+        stderr_tee = _TimestampedRunLogTee(target=sys.stderr, log_handle=log_handle, lock=lock)
+        try:
+            with redirect_stdout(stdout_tee), redirect_stderr(stderr_tee):
+                yield log_path
+        finally:
+            stdout_tee.close_log_line()
+            stderr_tee.close_log_line()
+            stdout_tee.flush()
+            stderr_tee.flush()
 
 
 def _build_rerun_viewer_command(*, run_config: RunConfig, path_config: PathConfig) -> list[str]:
@@ -76,14 +267,15 @@ def _build_rerun_viewer_command(*, run_config: RunConfig, path_config: PathConfi
     return command
 
 
-def _forward_rerun_viewer_stdout(*, stream: TextIO, target: TextIO = sys.stdout) -> None:
+def _forward_rerun_viewer_stdout(*, stream: TextIO, target: TextIO | None = None) -> None:
     """Forward merged child output into the main process stdout."""
+    output = sys.stdout if target is None else target
     try:
         for line in stream:
-            target.write(f"[rerun] {line}")
+            output.write(f"[rerun] {line}")
             if not line.endswith("\n"):
-                target.write("\n")
-            target.flush()
+                output.write("\n")
+            output.flush()
     finally:
         stream.close()
 
@@ -221,11 +413,11 @@ def plan_run(
             case_sensitive=False,
         ),
     ] = ReferenceSource.GROUND_TRUTH,
-    reference_reconstruction: Annotated[
+    reconstruction: Annotated[
         bool,
         typer.Option(
-            "--reference/--no-reference",
-            help="Whether the plan reserves a reference reconstruction stage.",
+            "--reconstruction/--no-reconstruction",
+            help="Whether the plan reserves a reconstruction stage.",
         ),
     ] = False,
 ) -> None:
@@ -237,17 +429,21 @@ def plan_run(
         method=method,
         emit_dense_points=emit_dense_points,
         emit_sparse_points=emit_sparse_points,
-        reference_enabled=reference_reconstruction,
+        reference_enabled=reconstruction,
         trajectory_eval_enabled=trajectory_evaluation,
         trajectory_baseline=trajectory_baseline,
-        evaluate_cloud=emit_dense_points and reference_reconstruction,
+        evaluate_cloud=emit_dense_points and reconstruction,
         connect_live_viewer=True,
     )
     plan = run_config.compile_plan()
     console.plog(plan.model_dump(mode="json"))
 
 
-@app.command("plan-run-config", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+@app.command(
+    "plan-run-config",
+    cls=RunConfigOverrideCommand,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def plan_run_config(
     ctx: typer.Context,
     config_path: Annotated[
@@ -256,24 +452,11 @@ def plan_run_config(
             help="Path to a pipeline config TOML file (repo-relative paths are resolved via PathConfig).",
         ),
     ],
-    dataset_frame_stride: Annotated[
-        int | None,
-        typer.Option("--dataset-frame-stride", min=1, help="Override dataset frame stride from the TOML source."),
-    ] = None,
-    dataset_target_fps: Annotated[
-        float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Override dataset target FPS from the TOML source."),
-    ] = None,
 ) -> None:
     """Build a typed benchmark run plan from a TOML config file."""
     path_config = get_path_config()
     try:
         run_cfg = load_run_config_toml(path_config=path_config, config_path=config_path)
-        run_cfg = _apply_dataset_sampling_overrides_to_run_config(
-            run_cfg,
-            dataset_frame_stride=dataset_frame_stride,
-            dataset_target_fps=dataset_target_fps,
-        )
         run_cfg = _apply_dotted_overrides_to_run_config(run_cfg, ctx.args)
         plan = run_cfg.compile_plan(path_config)
     except Exception as exc:
@@ -282,7 +465,11 @@ def plan_run_config(
     console.plog(plan.model_dump(mode="json"))
 
 
-@app.command("run-config", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+@app.command(
+    "run-config",
+    cls=RunConfigOverrideCommand,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def run_config(
     ctx: typer.Context,
     config_path: Annotated[
@@ -291,40 +478,36 @@ def run_config(
             help="Path to a pipeline config TOML file (repo-relative paths are resolved via PathConfig).",
         ),
     ],
-    dataset_frame_stride: Annotated[
-        int | None,
-        typer.Option("--dataset-frame-stride", min=1, help="Override dataset frame stride from the TOML source."),
-    ] = None,
-    dataset_target_fps: Annotated[
-        float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Override dataset target FPS from the TOML source."),
-    ] = None,
 ) -> None:
     """Run one offline or streaming pipeline config from a TOML file."""
     path_config = get_path_config()
+    try:
+        run_cfg = load_run_config_toml(path_config=path_config, config_path=config_path)
+        run_cfg = _apply_dotted_overrides_to_run_config(run_cfg, ctx.args)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    run_id = path_config.slugify_experiment_name(run_cfg.experiment_name)
+    with _capture_run_config_logs(path_config=path_config, run_id=run_id) as log_path:
+        console.info("Persisting run-config log to '%s'.", log_path)
+        _run_config_loaded(run_cfg=run_cfg, path_config=path_config)
+
+
+def _run_config_loaded(*, run_cfg: RunConfig, path_config: PathConfig) -> None:
+    """Execute an already loaded run config with durable command-log capture active."""
     run_service: RunService | None = None
     viewer: _RerunViewerProcess | None = None
-    run_cfg: RunConfig | None = None
     snapshot = RunSnapshot()
     preserve_local_head = False
     reached_terminal_snapshot = False
     try:
-        run_cfg = load_run_config_toml(path_config=path_config, config_path=config_path)
-        run_cfg = _apply_dataset_sampling_overrides_to_run_config(
-            run_cfg,
-            dataset_frame_stride=dataset_frame_stride,
-            dataset_target_fps=dataset_target_fps,
-        )
-        run_cfg = _apply_dotted_overrides_to_run_config(run_cfg, ctx.args)
         viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
         runtime_source = build_runtime_source_from_run_config(run_config=run_cfg, path_config=path_config)
         run_service = RunService(path_config=path_config)
         run_service.start_run(run_config=run_cfg, runtime_source=runtime_source)
         snapshot = _wait_for_pipeline_terminal_snapshot(run_service, poll_interval_seconds=0.2)
         reached_terminal_snapshot = True
-        preserve_local_head = (
-            snapshot.state is RunState.COMPLETED and run_cfg.runtime.ray.local_head_lifecycle == "reusable"
-        )
+        preserve_local_head = snapshot.state is RunState.COMPLETED and run_cfg.ray_local_head_lifecycle == "reusable"
     except KeyboardInterrupt as exc:
         if run_service is not None:
             run_service.stop_run()
@@ -668,30 +851,8 @@ def _resolve_demo_sequence_id(service: AdvioDatasetService, *, explicit_sequence
     return previewable_ids[0]
 
 
-def _apply_dataset_sampling_overrides_to_run_config(
-    run_config: RunConfig,
-    *,
-    dataset_frame_stride: int | None,
-    dataset_target_fps: float | None,
-) -> RunConfig:
-    if dataset_frame_stride is None and dataset_target_fps is None:
-        return run_config
-    source_backend = _apply_dataset_sampling_overrides(
-        run_config.stages.source.backend,
-        dataset_frame_stride=dataset_frame_stride,
-        dataset_target_fps=dataset_target_fps,
-    )
-    return run_config.model_copy(
-        update={
-            "stages": run_config.stages.model_copy(
-                update={"source": run_config.stages.source.model_copy(update={"backend": source_backend})}
-            )
-        }
-    )
-
-
 def _apply_dotted_overrides_to_run_config(run_config: RunConfig, args: list[str]) -> RunConfig:
-    """Apply arbitrary ``--a.b value`` overrides after named CLI flags."""
+    """Apply canonical ``RunConfig`` field-path overrides after TOML load."""
     if not args:
         return run_config
     overrides = _parse_dotted_overrides(args)
@@ -699,7 +860,12 @@ def _apply_dotted_overrides_to_run_config(run_config: RunConfig, args: list[str]
         return run_config
     payload = run_config.model_dump(mode="python", round_trip=True)
     _deep_merge(payload, overrides)
-    return RunConfig.model_validate(payload)
+    try:
+        return RunConfig.model_validate(payload, extra="forbid")
+    except ValidationError as exc:
+        first_error = exc.errors()[0]
+        location = ".".join(str(part) for part in first_error["loc"])
+        raise typer.BadParameter(f"Invalid RunConfig override at `{location}`: {first_error['msg']}") from exc
 
 
 def _parse_dotted_overrides(args: list[str]) -> dict[str, Any]:
@@ -710,8 +876,8 @@ def _parse_dotted_overrides(args: list[str]) -> dict[str, Any]:
         if not token.startswith("--"):
             raise typer.BadParameter(f"Unexpected dotted override token `{token}`.")
         option = token[2:]
-        if not option or "." not in option:
-            raise typer.BadParameter(f"Unknown option `{token}`. Dotted overrides must look like --section.field.")
+        if not option:
+            raise typer.BadParameter("RunConfig override options must include a field path.")
         if "=" in option:
             path, raw_value = option.split("=", maxsplit=1)
             index += 1
