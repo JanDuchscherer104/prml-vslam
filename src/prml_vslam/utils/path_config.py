@@ -227,6 +227,10 @@ class PathConfig(BaseConfig):
         """Resolve the shared runtime logs directory."""
         return self._resolve_dir(self.logs_dir, create=create)
 
+    def resolve_run_logs_dir(self, run_id: str, *, create: bool = False) -> Path:
+        """Resolve the durable command-log directory for one pipeline run."""
+        return self._resolve_dir(self.logs_dir, "runs", run_id, create=create)
+
     def resolve_configs_dir(self, *, create: bool = False) -> Path:
         """Resolve the shared repo-owned config directory."""
         return self._resolve_dir(self.configs_dir, create=create)

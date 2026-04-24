@@ -7,9 +7,10 @@ import logging
 from typing import Any, ClassVar
 
 from rich.console import Console as RichConsole
-from rich.highlighter import RegexHighlighter
+from rich.highlighter import ReprHighlighter
 from rich.logging import RichHandler
 from rich.pretty import Pretty
+from rich.text import Text
 from rich.theme import Theme
 
 DEFAULT_THEME = Theme(
@@ -192,8 +193,9 @@ class _ConsoleLogFormatter(logging.Formatter):
         return name[len(prefix) :] if name.startswith(prefix) else name
 
 
-class _ConsoleLogHighlighter(RegexHighlighter):
-    """Apply a subtle style to the rendered namespace prefix."""
+class _ConsoleLogHighlighter(ReprHighlighter):
+    """Highlight log payload reprs while preserving the namespace prefix style."""
 
-    base_style = "log."
-    highlights = [r"^(?P<namespace_prefix>\[[^\]]+\])"]
+    def highlight(self, text: Text) -> None:
+        super().highlight(text)
+        text.highlight_regex(r"^(?P<namespace_prefix>\[[^\]]+\])", style_prefix="log.")
