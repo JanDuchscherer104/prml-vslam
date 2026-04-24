@@ -14,10 +14,10 @@ import rerun as rr  # type: ignore[import-not-found]
 import rerun.blueprint as rrb  # type: ignore[import-not-found]
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
 
 ROOT_WORLD_ENTITY_PATH = "world"
@@ -91,7 +91,10 @@ def build_default_blueprint(
                 contents=[
                     "+ world/alignment/**",
                     "+ world/reference/**",
+                    "- world/reference/**/source_native/**",
                     "+ world/reconstruction/**",
+                    "+ world/slam/vista_slam_world/**",
+                    "+ world/overlays/**",
                     "+ world/live/tracking/**",
                     "+ world/live/source/camera",
                     "+ world/live/source/camera/points",
@@ -106,7 +109,7 @@ def build_default_blueprint(
                     "- world/live/model/points/**",
                     "- world/keyframes/cameras/**",
                     "+ world/keyframes/points/**",
-                    "+ world/trajectory/tracking",
+                    "+ world/slam/vista_slam_world/trajectory/raw",
                 ],
             ),
             rrb.Tabs(*views, name="2D Views"),

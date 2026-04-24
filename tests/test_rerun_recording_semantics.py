@@ -12,18 +12,18 @@ import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
-from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
-from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.slam.visualization import (
+from prml_vslam.methods.stage.visualization import (
     DEPTH_REF,
     IMAGE_REF,
     POINTMAP_REF,
     PREVIEW_REF,
     SlamVisualizationAdapter,
 )
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.visualization import rerun as rerun_helpers
+from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
 
 
 @dataclass(frozen=True, slots=True)

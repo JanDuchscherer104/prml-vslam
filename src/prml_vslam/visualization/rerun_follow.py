@@ -33,7 +33,7 @@ SCENE_CONTENTS: tuple[str, ...] = (
     "- world/live/model/points/**",
     "- world/keyframes/cameras/**",
     "+ world/keyframes/points/**",
-    "+ world/trajectory/tracking",
+    "+ world/slam/vista_slam_world/trajectory/raw",
 )
 
 CommandRunner = Callable[[Sequence[str], Path | None], subprocess.CompletedProcess[str]]

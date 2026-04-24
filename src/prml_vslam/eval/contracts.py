@@ -2,9 +2,9 @@
 
 This module owns the normalized result payloads produced by
 :mod:`prml_vslam.eval.services` and consumed by app or plotting code. It sits
-downstream of :mod:`prml_vslam.pipeline` and :mod:`prml_vslam.benchmark`: runs
-provide artifact roots and prepared references, while this package provides the
-typed metric outputs and selection models used to inspect them.
+downstream of :mod:`prml_vslam.pipeline` and :mod:`prml_vslam.sources`: runs
+provide artifact roots and source-prepared references, while this package
+provides the typed metric outputs and selection models used to inspect them.
 """
 
 from __future__ import annotations
@@ -33,6 +33,22 @@ class TrajectoryAlignmentMode(StrEnum):
 
     TIMESTAMP_ASSOCIATED_ONLY = "timestamp_associated_only"
     SE3_UMeyama = "se3_umeyama"
+    SIM3_UMEYAMA = "sim3_umeyama"
+
+
+class TrajectoryAlignmentArtifact(BaseData):
+    """Persist an explicit trajectory alignment used for diagnostics or metrics."""
+
+    source_frame: str
+    target_frame: str
+    alignment_type: TrajectoryAlignmentMode = TrajectoryAlignmentMode.SIM3_UMEYAMA
+    scale: float
+    rotation: list[list[float]]
+    translation: list[float]
+    matched_pairs: int
+    rms_error_m: float
+    reference_source: str
+    sync_max_diff_s: float
 
 
 class MetricStats(BaseData):
@@ -83,6 +99,7 @@ class TrajectoryEvaluationPreview(BaseData):
     estimate: TrajectorySeries
     error_series: ErrorSeries
     stats: MetricStats
+    alignment: TrajectoryAlignmentArtifact | None = None
 
 
 class IntrinsicsComparisonDiagnostics(BaseData):
@@ -145,6 +162,9 @@ class EvaluationArtifact(BaseData):
     stats: MetricStats
     reference_path: Path
     estimate_path: Path
+    alignment_path: Path | None = None
+    aligned_estimate_path: Path | None = None
+    aligned_point_cloud_path: Path | None = None
     semantics: TrajectoryEvaluationSemantics
     trajectories: list[TrajectorySeries] = Field(default_factory=list)
     error_series: ErrorSeries | None = None
@@ -169,6 +189,17 @@ class EvaluationArtifact(BaseData):
             semantics=TrajectoryEvaluationSemantics.model_validate(payload["semantics"]),
             reference_path=reference_path,
             estimate_path=estimate_path,
+            alignment_path=Path(str(payload["alignment_path"])) if payload.get("alignment_path") is not None else None,
+            aligned_estimate_path=(
+                Path(str(payload["aligned_estimate_path"]))
+                if payload.get("aligned_estimate_path") is not None
+                else None
+            ),
+            aligned_point_cloud_path=(
+                Path(str(payload["aligned_point_cloud_path"]))
+                if payload.get("aligned_point_cloud_path") is not None
+                else None
+            ),
             trajectories=[reference_trajectory, estimate_trajectory],
             error_series=ErrorSeries(
                 timestamps_s=np.asarray(payload["error_timestamps_s"], dtype=np.float64),
@@ -217,6 +248,9 @@ class DiscoveredRun(BaseData):
 
     estimate_path: Path
     """Estimated trajectory path for the run."""
+
+    point_cloud_path: Path | None = None
+    """Estimated point-cloud path for optional aligned overlay materialization."""
 
     method: str | None = None
     """Known benchmark method id, when it can be inferred from the path."""
@@ -274,6 +308,7 @@ __all__ = [
     "MetricStats",
     "SelectionSnapshot",
     "TrajectoryAlignmentMode",
+    "TrajectoryAlignmentArtifact",
     "TrajectoryEvaluationPreview",
     "TrajectoryEvaluationSemantics",
     "TrajectoryMetricId",

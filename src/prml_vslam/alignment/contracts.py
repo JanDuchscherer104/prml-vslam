@@ -35,20 +35,4 @@ class GroundAlignmentConfig(BaseConfig):
     """Minimum confidence required before the alignment is applied."""
 
 
-class AlignmentConfig(BaseConfig):
-    """Top-level alignment policy bundle attached to one run request.
-
-    This remains alignment-owned because the semantics belong to derived
-    alignment, not to pipeline orchestration. The target pipeline stage config
-    should reference or wrap this policy without duplicating ground-plane
-    thresholds or frame semantics.
-    """
-
-    ground: GroundAlignmentConfig = Field(default_factory=GroundAlignmentConfig)
-    """Ground-plane detection and viewer-alignment policy."""
-
-
-__all__ = [
-    "AlignmentConfig",
-    "GroundAlignmentConfig",
-]
+__all__ = ["GroundAlignmentConfig"]

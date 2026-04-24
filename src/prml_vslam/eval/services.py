@@ -8,6 +8,7 @@ computes or reloads persisted `evo`-based trajectory metrics.
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
+from evo.tools import file_interface
 
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.datasets.registry import list_sequence_slugs, resolve_reference_path
@@ -25,6 +27,7 @@ from prml_vslam.eval.contracts import (
     EvaluationSelection,
     MetricStats,
     SelectionSnapshot,
+    TrajectoryAlignmentArtifact,
     TrajectoryAlignmentMode,
     TrajectoryEvaluationPreview,
     TrajectoryEvaluationSemantics,
@@ -32,10 +35,11 @@ from prml_vslam.eval.contracts import (
     TrajectorySeries,
 )
 from prml_vslam.eval.protocols import TrajectoryEvaluator
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.config_contracts import MethodId
-from prml_vslam.utils.geometry import load_tum_trajectory
+from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs
+from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors, load_tum_trajectory, write_point_cloud_ply
 from prml_vslam.utils.path_config import PathConfig
 
 __all__ = ["TrajectoryEvaluationService", "compute_trajectory_ape_preview"]
@@ -193,19 +197,54 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         preview = compute_trajectory_ape_preview(
             reference_path=reference_path,
             estimate_path=selection.run.estimate_path,
+            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
         )
         result_path = self.result_path(selection.run.artifact_root)
         result_path.parent.mkdir(parents=True, exist_ok=True)
+        alignment_path = None
+        aligned_estimate_path = None
+        aligned_point_cloud_path = None
+        if preview.alignment is not None:
+            alignment_path = self.alignment_path(selection.run.artifact_root)
+            alignment_path.write_text(
+                json.dumps(preview.alignment.model_dump(mode="json"), indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            aligned_estimate_path = self.aligned_estimate_path(selection.run.artifact_root)
+            _write_aligned_estimate_trajectory(
+                reference_path=reference_path,
+                estimate_path=selection.run.estimate_path,
+                alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+                max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+                output_path=aligned_estimate_path,
+            )
+            if selection.run.point_cloud_path is not None:
+                aligned_point_cloud_path = self.aligned_point_cloud_path(selection.run.artifact_root)
+                _write_aligned_point_cloud(
+                    source_path=selection.run.point_cloud_path,
+                    output_path=aligned_point_cloud_path,
+                    alignment=preview.alignment,
+                )
+        alignment_mode = (
+            TrajectoryAlignmentMode.SIM3_UMEYAMA
+            if preview.alignment is not None
+            else TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
+        )
         payload = {
             "title": "Trajectory APE (evo)",
             "matched_pairs": len(preview.error_series.values),
             "stats": preview.stats.model_dump(mode="python"),
             "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
             "error_values": preview.error_series.values.tolist(),
+            "alignment_path": None if alignment_path is None else alignment_path.to_posix(),
+            "aligned_estimate_path": None if aligned_estimate_path is None else aligned_estimate_path.to_posix(),
+            "aligned_point_cloud_path": None
+            if aligned_point_cloud_path is None
+            else aligned_point_cloud_path.to_posix(),
             "semantics": TrajectoryEvaluationSemantics(
                 metric_id=TrajectoryMetricId.APE_TRANSLATION,
                 pose_relation="translation_part",
-                alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
+                alignment_mode=alignment_mode,
                 sync_max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
             ).model_dump(mode="python"),
         }
@@ -253,6 +292,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 run=DiscoveredRun(
                     artifact_root=plan.artifact_root,
                     estimate_path=slam.trajectory_tum.path,
+                    point_cloud_path=slam.dense_points_ply.path if slam.dense_points_ply is not None else None,
                     method=run_config.stages.slam.backend.method_id
                     if run_config.stages.slam.backend is not None
                     else None,
@@ -270,12 +310,28 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         """Return the deterministic persisted trajectory-metrics path for the controls."""
         return run_root / "evaluation" / "trajectory_metrics.json"
 
+    @staticmethod
+    def alignment_path(run_root: Path) -> Path:
+        """Return the deterministic persisted trajectory-alignment path."""
+        return run_root / "evaluation" / "trajectory_alignment.json"
+
+    @staticmethod
+    def aligned_estimate_path(run_root: Path) -> Path:
+        """Return the deterministic Sim(3)-aligned trajectory path."""
+        return run_root / "evaluation" / "trajectory_sim3_aligned.tum"
+
+    @staticmethod
+    def aligned_point_cloud_path(run_root: Path) -> Path:
+        """Return the deterministic Sim(3)-aligned point-cloud path."""
+        return run_root / "evaluation" / "point_cloud_sim3_aligned.ply"
+
 
 def compute_trajectory_ape_preview(
     *,
     reference_path: Path,
     estimate_path: Path,
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
+    alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
 ) -> TrajectoryEvaluationPreview:
     """Compute in-memory translation APE for two normalized TUM trajectory artifacts.
 
@@ -296,19 +352,32 @@ def compute_trajectory_ape_preview(
             f"No matching trajectory timestamps were found for evo APE (max_diff={max_diff_s:.3f}s)."
         ) from exc
 
+    evaluation_estimate = associated_estimate
+    alignment = None
+    if alignment_mode is TrajectoryAlignmentMode.SIM3_UMEYAMA:
+        if _trajectory_supports_sim3(associated_reference, associated_estimate):
+            evaluation_estimate, alignment = _align_estimate_sim3(
+                reference=associated_reference,
+                estimate=associated_estimate,
+                max_diff_s=max_diff_s,
+            )
+    elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
+        raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
+
     metric = metrics.APE(metrics.PoseRelation.translation_part)
-    metric.process_data((associated_reference, associated_estimate))
+    metric.process_data((associated_reference, evaluation_estimate))
     error_values = np.asarray(metric.error, dtype=np.float64)
     if error_values.size == 0:
         raise ValueError("evo APE produced zero matched trajectory pairs.")
     return TrajectoryEvaluationPreview(
         reference=_series_from_trajectory("Reference", associated_reference),
-        estimate=_series_from_trajectory("Estimate", associated_estimate),
+        estimate=_series_from_trajectory("Estimate", evaluation_estimate),
         error_series=ErrorSeries(
             timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
             values=error_values,
         ),
         stats=MetricStats.from_error_values(error_values),
+        alignment=alignment,
     )
 
 
@@ -318,3 +387,79 @@ def _series_from_trajectory(name: str, trajectory: PoseTrajectory3D) -> Trajecto
         timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
         positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
     )
+
+
+def _align_estimate_sim3(
+    *,
+    reference: PoseTrajectory3D,
+    estimate: PoseTrajectory3D,
+    max_diff_s: float,
+) -> tuple[PoseTrajectory3D, TrajectoryAlignmentArtifact]:
+    aligned_estimate = copy.deepcopy(estimate)
+    rotation, translation, scale = aligned_estimate.align(reference, correct_scale=True)
+    residual = np.asarray(reference.positions_xyz, dtype=np.float64) - np.asarray(
+        aligned_estimate.positions_xyz,
+        dtype=np.float64,
+    )
+    rms_error_m = float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
+    return aligned_estimate, TrajectoryAlignmentArtifact(
+        source_frame="vista_slam_world",
+        target_frame="advio_gt_world",
+        scale=float(scale),
+        rotation=np.asarray(rotation, dtype=np.float64).tolist(),
+        translation=np.asarray(translation, dtype=np.float64).reshape(3).tolist(),
+        matched_pairs=int(len(reference.positions_xyz)),
+        rms_error_m=rms_error_m,
+        reference_source="ground_truth",
+        sync_max_diff_s=max_diff_s,
+    )
+
+
+def _trajectory_supports_sim3(reference: PoseTrajectory3D, estimate: PoseTrajectory3D) -> bool:
+    if len(reference.positions_xyz) < 3 or len(estimate.positions_xyz) < 3:
+        return False
+    reference_centered = np.asarray(reference.positions_xyz, dtype=np.float64) - np.mean(
+        reference.positions_xyz,
+        axis=0,
+    )
+    estimate_centered = np.asarray(estimate.positions_xyz, dtype=np.float64) - np.mean(estimate.positions_xyz, axis=0)
+    return np.linalg.matrix_rank(reference_centered) >= 2 and np.linalg.matrix_rank(estimate_centered) >= 2
+
+
+def _write_aligned_estimate_trajectory(
+    *,
+    reference_path: Path,
+    estimate_path: Path,
+    alignment_mode: TrajectoryAlignmentMode,
+    max_diff_s: float,
+    output_path: Path,
+) -> None:
+    if alignment_mode is not TrajectoryAlignmentMode.SIM3_UMEYAMA:
+        raise ValueError(f"Unsupported aligned trajectory materialization mode: {alignment_mode.value}.")
+    reference_trajectory = load_tum_trajectory(reference_path)
+    estimate_trajectory = load_tum_trajectory(estimate_path)
+    associated_reference, associated_estimate = sync.associate_trajectories(
+        reference_trajectory,
+        estimate_trajectory,
+        max_diff=max_diff_s,
+    )
+    aligned_estimate, _alignment = _align_estimate_sim3(
+        reference=associated_reference,
+        estimate=associated_estimate,
+        max_diff_s=max_diff_s,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    file_interface.write_tum_trajectory_file(output_path, aligned_estimate)
+
+
+def _write_aligned_point_cloud(
+    *,
+    source_path: Path,
+    output_path: Path,
+    alignment: TrajectoryAlignmentArtifact,
+) -> None:
+    points_xyz, colors_rgb = load_point_cloud_ply_with_colors(source_path)
+    rotation = np.asarray(alignment.rotation, dtype=np.float64)
+    translation = np.asarray(alignment.translation, dtype=np.float64)
+    aligned_points = alignment.scale * (points_xyz @ rotation.T) + translation
+    write_point_cloud_ply(output_path, aligned_points, colors_rgb=colors_rgb)

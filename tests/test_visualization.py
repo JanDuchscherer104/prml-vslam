@@ -163,7 +163,10 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].contents == [
         "+ world/alignment/**",
         "+ world/reference/**",
+        "- world/reference/**/source_native/**",
         "+ world/reconstruction/**",
+        "+ world/slam/vista_slam_world/**",
+        "+ world/overlays/**",
         "+ world/live/tracking/**",
         "+ world/live/source/camera",
         "+ world/live/source/camera/points",
@@ -178,7 +181,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
         "- world/live/model/points/**",
         "- world/keyframes/cameras/**",
         "+ world/keyframes/points/**",
-        "+ world/trajectory/tracking",
+        "+ world/slam/vista_slam_world/trajectory/raw",
     ]
     assert layout.views[1].name == "2D Views"
     assert [view.origin for view in layout.views[1].views] == [
@@ -257,13 +260,13 @@ def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
 
     rerun_helpers.log_line_strip3d(
         FakeRecordingStream(),
-        entity_path="world/trajectory/tracking",
+        entity_path="world/slam/vista_slam_world/trajectory/raw",
         positions_xyz=np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]], dtype=np.float32),
     )
 
     assert len(logged) == 1
     entity_path, payload = logged[0]
-    assert entity_path == "world/trajectory/tracking"
+    assert entity_path == "world/slam/vista_slam_world/trajectory/raw"
     assert len(payload.strips) == 1
     assert np.array_equal(payload.strips[0], np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]], dtype=np.float32))
 

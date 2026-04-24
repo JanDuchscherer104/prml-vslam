@@ -6,17 +6,17 @@ import numpy as np
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
-from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
-from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.slam.visualization import (
+from prml_vslam.methods.stage.visualization import (
     DEPTH_REF,
     IMAGE_REF,
     POINTMAP_REF,
     ROLE_SOURCE_RGB,
     SlamVisualizationAdapter,
 )
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
 
 
 class _StrictFakeRecordingStream:
@@ -129,7 +129,7 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -
     assert calls == [
         ("rgb", "world/live/source/rgb", 5, None),
         ("pose", "world/live/tracking/camera", 7, None),
-        ("trajectory", "world/trajectory/tracking", 7, None),
+        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
     ]
 
 

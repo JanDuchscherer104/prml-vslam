@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from prml_vslam.benchmark import ReferenceSource
 from prml_vslam.eval.contracts import (
     EvaluationArtifact,
     MetricStats,
@@ -15,16 +15,17 @@ from prml_vslam.eval.contracts import (
     TrajectoryMetricId,
     TrajectorySeries,
 )
-from prml_vslam.eval.services import TrajectoryEvaluationService
+from prml_vslam.eval.services import TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.interfaces import FrameTransform
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, ReferenceTrajectoryRef, SequenceManifest
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.config_contracts import MethodId
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef
-from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
+from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 
@@ -76,6 +77,51 @@ def test_evaluation_artifact_round_trips_explicit_semantics(tmp_path: Path) -> N
     assert artifact.semantics.candidate_next_metrics == [TrajectoryMetricId.RPE_TRANSLATION]
 
 
+def test_sim3_umeyama_preview_recovers_metric_scale(tmp_path: Path) -> None:
+    translation = np.array([3.0, -1.0, 0.5], dtype=np.float64)
+    scale = 2.0
+    reference_positions = [
+        np.array([0.0, 0.0, 0.0], dtype=np.float64),
+        np.array([1.0, 0.0, 0.0], dtype=np.float64),
+        np.array([0.0, 1.0, 0.0], dtype=np.float64),
+        np.array([1.0, 1.0, 0.0], dtype=np.float64),
+    ]
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(point[0]), ty=float(point[1]), tz=float(point[2]))
+            for point in reference_positions
+        ],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+    estimate_path = write_tum_trajectory(
+        tmp_path / "estimate.tum",
+        poses=[
+            FrameTransform(
+                qx=0.0,
+                qy=0.0,
+                qz=0.0,
+                qw=1.0,
+                tx=float(((point - translation) / scale)[0]),
+                ty=float(((point - translation) / scale)[1]),
+                tz=float(((point - translation) / scale)[2]),
+            )
+            for point in reference_positions
+        ],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+
+    preview = compute_trajectory_ape_preview(
+        reference_path=reference_path,
+        estimate_path=estimate_path,
+        alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+    )
+
+    assert preview.alignment is not None
+    assert preview.alignment.scale == pytest.approx(scale)
+    assert preview.stats.rmse < 1e-12
+
+
 def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path: Path) -> None:
     reference_path = write_tum_trajectory(
         tmp_path / "reference.tum",
@@ -98,7 +144,7 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         experiment_name="trajectory-stage",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=tmp_path / "demo.mp4"),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         trajectory_eval_enabled=True,
     )
     plan = RunPlan(

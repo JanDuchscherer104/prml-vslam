@@ -11,12 +11,12 @@ import pytest
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.stage.visualization import DEPTH_REF, IMAGE_REF, PREVIEW_REF, SlamVisualizationAdapter
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.sinks.rerun_policy import RerunLoggingPolicy
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.slam.visualization import DEPTH_REF, IMAGE_REF, PREVIEW_REF, SlamVisualizationAdapter
 from prml_vslam.visualization import rerun as rerun_helpers
+from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
 
 
 class _FakeRecordingStream:
@@ -214,7 +214,10 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert layout.views[0].contents == [
         "+ world/alignment/**",
         "+ world/reference/**",
+        "- world/reference/**/source_native/**",
         "+ world/reconstruction/**",
+        "+ world/slam/vista_slam_world/**",
+        "+ world/overlays/**",
         "+ world/live/tracking/**",
         "+ world/live/source/camera",
         "+ world/live/source/camera/points",
@@ -229,7 +232,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
         "- world/live/model/points/**",
         "- world/keyframes/cameras/**",
         "+ world/keyframes/points/**",
-        "+ world/trajectory/tracking",
+        "+ world/slam/vista_slam_world/trajectory/raw",
     ]
     assert [view.origin for view in layout.views[1].views] == [
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
