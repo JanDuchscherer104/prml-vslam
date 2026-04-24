@@ -26,6 +26,7 @@ class PlannedSource(BaseData):
     source_id: str
     frame_stride: int = 1
     target_fps: float | None = None
+    expected_fps: float | None = None
     sequence_id: str | None = None
     video_path: Path | None = None
     transport: str | None = None

@@ -189,6 +189,60 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     assert run_config.stages.evaluate_trajectory.enabled is False
 
 
+def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) -> None:
+    native_fps = 60.04133960359873
+    frames_path = tmp_path / ".data" / "advio" / "advio-20" / "iphone" / "frames.csv"
+    frames_path.parent.mkdir(parents=True)
+    frames_path.write_text(
+        "\n".join(f"{frame_index / native_fps:.9f},{frame_index}" for frame_index in range(10)) + "\n",
+        encoding="utf-8",
+    )
+    path_config = PathConfig(
+        root=_repo_root(),
+        artifacts_dir=tmp_path / ".artifacts",
+        data_dir=tmp_path / ".data",
+    )
+    run_config = build_run_config(
+        experiment_name="advio-fps",
+        output_dir=path_config.artifacts_dir,
+        source_backend=AdvioSourceConfig(sequence_id="advio-20", frame_stride=5),
+        method=MethodId.MOCK,
+    )
+
+    plan = run_config.compile_plan(path_config)
+
+    assert plan.source.expected_fps == pytest.approx(native_fps / 5)
+    assert plan.model_dump(mode="json")["source"]["expected_fps"] == pytest.approx(native_fps / 5)
+
+
+def test_run_plan_expected_fps_uses_target_fps_without_native_metadata(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = build_run_config(
+        experiment_name="target-fps",
+        output_dir=path_config.artifacts_dir,
+        source_backend=Record3DSourceConfig(target_fps=15.0),
+        method=MethodId.MOCK,
+    )
+
+    plan = run_config.compile_plan(path_config)
+
+    assert plan.source.expected_fps == 15.0
+
+
+def test_run_plan_expected_fps_is_none_when_native_cadence_unknown(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = build_run_config(
+        experiment_name="unknown-fps",
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("missing.mp4"), frame_stride=2),
+        method=MethodId.MOCK,
+    )
+
+    plan = run_config.compile_plan(path_config)
+
+    assert plan.source.expected_fps is None
+
+
 def test_source_stage_config_parses_discriminated_backend_variants() -> None:
     video = SourceStageConfig.model_validate(
         {"backend": {"source_id": "video", "video_path": "captures/demo.mp4", "frame_stride": 2}}
