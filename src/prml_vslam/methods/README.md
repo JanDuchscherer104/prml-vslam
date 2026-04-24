@@ -1,273 +1,36 @@
 # Methods Guide
 
-This package owns backend ids, backend-private config, runtime session and
-update seams, backend descriptors, and the thin wrappers that adapt external
-SLAM systems to the repository’s normalized pipeline contracts. Shared pipeline
-planning and provenance logic does not live here; this package exists to answer
-two narrower questions: which backends the repository knows about, and how a
-concrete backend consumes normalized repo-owned inputs and returns normalized
-[`SlamArtifacts`](../pipeline/contracts/artifacts.py#L25).
-
-The package is intentionally small. The public center of gravity is
-[`MethodId`](./contracts.py#L12),
-[`SlamBackendConfig`](./contracts.py#L41),
-[`SlamOutputPolicy`](./contracts.py#L31),
-[`StreamingSlamBackend`](./protocols.py#L17),
-[`OfflineSlamBackend`](./protocols.py#L31),
-[`StreamingSlamBackend`](./protocols.py#L49),
-[`BackendDescriptor`](./descriptors.py#L21),
-[`BackendFactory`](./factory.py#L25), and the method-owned
-[`SlamUpdate`](./contracts.py). The pipeline converts those method-owned live
-updates into `StageRuntimeUpdate` values and neutral `VisualizationItem`
-descriptors at the stage-runtime boundary. At the concrete-wrapper level, the
-current executable backends are the repository-local
-[`MockSlamBackend`](./mock_vslam.py#L44) and the canonical
-[`VistaSlamBackend`](./vista/adapter.py#L22).
+This package owns concrete SLAM wrapper execution: mock replay, ViSTA adapter
+bootstrap, backend-native live updates, and normalized `SlamArtifacts`
+production. Persisted backend selection and backend config muxing belong to
+`prml_vslam.pipeline.stages.slam.config`.
 
 ## Current Implementation
 
-The pipeline never instantiates backends directly. It goes through
-[`BackendFactory.describe()`](./factory.py#L28) to discover capabilities and
-resource defaults, and through [`BackendFactory.build()`](./factory.py#L78) to
-construct one executable backend from the typed backend spec embedded in the
-pipeline request. That factory is intentionally thin: it maps request-time
-backend specs to repo-local wrapper configs and then lets those configs build
-their concrete targets.
+The pipeline constructs stage-owned backend configs, then the SLAM stage runtime
+calls the selected config's `setup_target(...)` inside the execution process.
+The resulting method wrapper consumes normalized repository inputs and returns
+normalized artifacts. There is no central method factory in this package.
 
-The actual execution seams live in [`protocols.py`](./protocols.py#L16). Offline
-backends implement [`run_sequence()`](./protocols.py#L36) over a normalized
-[`SequenceManifest`](../pipeline/contracts/sequence.py#L10), optional prepared
-benchmark inputs, and a method-owned output policy. Streaming backends implement
-[`start_streaming(...)`](./protocols.py#L54), which receives one method-owned
-session-init bundle plus the runtime controls before returning a
-[`StreamingSlamBackend`](./protocols.py#L17) that consumes incremental
-[`FramePacket`](../interfaces/runtime.py#L68) values and produces
-[`SlamUpdate`](./contracts.py) telemetry before closing into the same
-normalized [`SlamArtifacts`](../pipeline/contracts/artifacts.py#L25) contract.
+The method package keeps these concerns local:
 
-The current package therefore has three layers. The contract layer lives in
-[`contracts.py`](./contracts.py#L12), [`descriptors.py`](./descriptors.py#L10),
-and [`protocols.py`](./protocols.py#L17). The construction layer lives in
-[`factory.py`](./factory.py#L25). The wrapper layer lives in
-[`mock_vslam.py`](./mock_vslam.py#L44) and the
-[`vista/`](./vista/README.md) subtree. The package root
-[`__init__.py`](./__init__.py#L1) re-exports only the small surface that other
-packages are expected to import directly.
+- `contracts.py`: backend-native `SlamUpdate` telemetry.
+- `descriptors.py`: backend capability/resource DTOs consumed by stage configs.
+- `protocols.py`: offline and streaming backend/session behavior seams.
+- `options.py`: structural option protocols for wrapper implementations only.
+- `mock_vslam.py`: repository-local mock backend.
+- `vista/`: canonical ViSTA-SLAM wrapper, runtime bootstrap, preprocessing,
+  session stepping, and native artifact import.
 
-## Design Rationale
+## Boundaries
 
-This package is not supposed to own benchmark policy, app orchestration, or
-viewer orchestration. It exists to keep backend-specific concerns local. That is
-why method selection is encoded as the small enum
-[`MethodId`](./contracts.py#L12), backend runtime controls stay in the
-method-owned [`SlamBackendConfig`](./contracts.py#L41), and output materialization
-preferences stay in [`SlamOutputPolicy`](./contracts.py#L31) rather than being
-smuggled through app-layer settings or benchmark configs.
+Methods must not own stage order, persisted run config, resource placement,
+pipeline events, app state, viewer orchestration, or evaluation policy. They may
+resolve backend prerequisites, instantiate upstream runtimes, preserve selected
+native outputs, emit backend-native live updates, and normalize outputs into the
+shared artifact contracts consumed by the pipeline.
 
-The wrappers also stay deliberately importer-oriented. A wrapper is allowed to
-resolve upstream repo paths, check for required checkpoints, instantiate
-upstream runtime objects, preserve selected upstream-native outputs, and
-normalize those outputs back into repository contracts. It is not supposed to
-re-implement upstream algorithms or own pipeline semantics. That design is
-clearest in the ViSTA wrapper, where the main adapter stays thin and delegates
-upstream bootstrap, preprocessing, live session stepping, and artifact import
-to package-local helpers inside [`vista/config.py`](./vista/config.py#L17),
-[`vista/runtime.py`](./vista/runtime.py#L75),
-[`vista/preprocess.py`](./vista/preprocess.py#L39),
-[`vista/session.py`](./vista/session.py#L28), and
-[`vista/artifacts.py`](./vista/artifacts.py#L27).
-
-The package also keeps a strict split between method-owned live updates and
-pipeline-owned transport. Backends emit [`SlamUpdate`](./contracts.py) because
-that is the method-layer view of incremental SLAM state. The pipeline SLAM
-runtime stores bulk arrays as `TransientPayloadRef` payloads, builds neutral
-visualization descriptors, and routes live observer data through
-`StageRuntimeUpdate` rather than durable backend-notice events. That split keeps
-the wrappers free to think in backend-native terms while the pipeline owns
-transport, live projection, and observer routing.
-
-## Package Map
-
-The methods package is smaller than `pipeline`, but the same symbol-first map is
-still useful.
-
-```text
-src/prml_vslam/methods
-├── README.md                                      # package guide
-├── REQUIREMENTS.md                                # package constraints
-├── __init__.py                                    # curated public methods surface
-│   ├── MethodId                                   # public backend id enum
-│   ├── MockSlamBackendConfig                      # mock wrapper config export
-│   ├── VistaSlamBackend                           # ViSTA backend export
-│   └── VistaSlamBackendConfig                     # ViSTA config export
-├── contracts.py                                   # method ids and backend-owned config
-│   ├── MethodId                                   # supported backend ids
-│   ├── SlamOutputPolicy                           # output materialization policy
-│   └── SlamBackendConfig                          # shared backend runtime controls
-├── descriptors.py                                 # backend capability and resource descriptors
-│   ├── BackendCapabilities                        # capability surface
-│   └── BackendDescriptor                          # descriptor returned to pipeline
-├── factory.py                                     # typed backend factory
-│   ├── BackendFactoryProtocol                     # factory seam
-│   └── BackendFactory                             # repo-local factory implementation
-├── mock_vslam.py                                  # repository-local mock backend
-│   ├── MockSlamBackendConfig                      # mock backend config
-│   ├── MockSlamBackend                            # mock offline/streaming backend
-│   └── MockStreamingSlamBackend                            # mock streaming runtime
-├── protocols.py                                   # backend and session seams
-│   ├── StreamingSlamBackend                                # streaming backend protocol
-│   ├── OfflineSlamBackend                         # offline execution protocol
-│   ├── StreamingSlamBackend                       # streaming execution protocol
-│   └── SlamBackend                                # combined offline + streaming protocol
-└── vista                                           # canonical ViSTA integration
-    ├── README.md                                  # ViSTA-specific wrapper guide
-    ├── REQUIREMENTS.md                            # ViSTA wrapper constraints
-    ├── __init__.py                                # ViSTA export surface
-    │   ├── VistaSlamBackend                       # ViSTA backend export
-    │   ├── VistaSlamBackendConfig                 # ViSTA config export
-    │   └── VistaSlamRuntime                       # ViSTA session export
-    ├── adapter.py                                 # thin backend adapter
-    │   └── VistaSlamBackend                       # offline + streaming ViSTA wrapper
-    ├── artifacts.py                               # native-export normalization
-    │   └── build_vista_artifacts                  # native output -> SlamArtifacts
-    ├── config.py                                  # ViSTA-specific backend config
-    │   └── VistaSlamBackendConfig                 # concrete ViSTA config
-    ├── preprocess.py                              # upstream-faithful image preprocessing
-    │   ├── PreparedVistaFrame                     # prepared frame bundle
-    │   ├── VistaFramePreprocessor                 # preprocessing protocol
-    │   ├── UpstreamVistaFramePreprocessor         # upstream crop/resize implementation
-    │   └── vista_numpy_array                      # array normalization helper
-    ├── runtime.py                                 # upstream runtime bootstrap helpers
-    │   ├── VistaRuntimeComponents                 # concrete runtime bundle
-    │   ├── build_vista_runtime_components         # upstream runtime builder
-    │   └── resolve_vocab_path                     # vocabulary cache resolver
-    └── session.py                                 # streaming session wrapper
-        ├── VistaSlamRuntime                       # live session adapter
-        └── create_vista_runtime                   # session construction helper
-```
-
-## Core Contracts
-
-The smallest stable public contract here is [`MethodId`](./contracts.py#L12),
-which names the backends that the repository understands. That enum is paired
-with [`SlamBackendConfig`](./contracts.py#L41), which holds shared backend
-runtime knobs such as `max_frames`, and with
-[`SlamOutputPolicy`](./contracts.py#L31), which lets the pipeline tell a method
-whether dense or sparse geometry should actually be materialized.
-
-Capability discovery is deliberately separate from runtime execution. The
-pipeline sees backend capability and resource metadata only through
-[`BackendDescriptor`](./descriptors.py#L21) and
-[`BackendCapabilities`](./descriptors.py#L10), both returned by
-[`BackendFactory.describe()`](./factory.py#L28). Actual execution is then
-governed by the protocol layer in [`protocols.py`](./protocols.py#L17). A method
-that only supports batch processing can implement
-[`OfflineSlamBackend`](./protocols.py#L31). A method that supports incremental
-execution can implement [`StreamingSlamBackend`](./protocols.py#L49). The
-repository currently prefers backends that satisfy the combined
-[`SlamBackend`](./protocols.py#L64) protocol, because the pipeline supports both
-offline and streaming runs.
-
-The method-owned live update surface is [`SlamUpdate`](./contracts.py). It is
-allowed to carry backend-facing notions such as keyframe acceptance,
-camera-local pointmaps, preview images, and backend warnings. The transport-safe
-surface that the pipeline consumes is different: the SLAM stage runtime drains
-updates, strips bulk arrays from semantic update payloads, and exposes observer
-state through `StageRuntimeUpdate` plus `VisualizationItem` payload refs.
-
-## Module Responsibilities
-
-The package root [`__init__.py`](./__init__.py#L1) is intentionally small and
-re-exports only the symbols that other packages are expected to import
-regularly. The concrete ids and shared backend controls live in
-[`contracts.py`](./contracts.py#L12), while capability and scheduling metadata
-live in [`descriptors.py`](./descriptors.py#L10). The abstract backend and
-session seams live in [`protocols.py`](./protocols.py#L17).
-
-[`factory.py`](./factory.py#L25) is the bridge from pipeline request-time
-backend specs into real wrapper instances. It is the only place in this package
-that should know how to describe all backends centrally. Wrapper-local bootstrap
-logic belongs in the wrapper itself. The repository-local
-[`mock_vslam.py`](./mock_vslam.py#L32) backend exists for smoke runs and live
-preview development; it is not trying to be a faithful research baseline. It
-implements the same repository protocols as the real wrappers, which makes it a
-useful reference for the minimum offline and streaming backend surface.
-
-The canonical real integration is the [`vista/`](./vista/README.md) subtree.
-[`adapter.py`](./vista/adapter.py#L22) is the thin backend wrapper that the
-factory instantiates. [`config.py`](./vista/config.py#L17) owns ViSTA-specific
-configuration. [`runtime.py`](./vista/runtime.py#L75) owns upstream runtime
-bootstrap, vocabulary resolution, and namespace-package setup. [`preprocess.py`](./vista/preprocess.py#L39)
-preserves the upstream image preprocessing path instead of duplicating it ad
-hoc. [`session.py`](./vista/session.py#L28) exposes the upstream live path
-through repo-owned streaming contracts, and [`artifacts.py`](./vista/artifacts.py#L27)
-normalizes native end-of-run outputs back into the shared pipeline-owned
-artifact contract.
-
-## Execution Shape
-
-From the methods package’s point of view, offline and streaming execution are
-much simpler than they are in the pipeline package. Offline execution means a
-wrapper consumes a normalized
-[`SequenceManifest`](../pipeline/contracts/sequence.py#L10), optional prepared
-benchmark inputs, and a method-owned config bundle, then writes normalized
-[`SlamArtifacts`](../pipeline/contracts/artifacts.py#L25). Streaming execution
-means a wrapper constructs a session, accepts incremental
-[`FramePacket`](../interfaces/runtime.py#L68) values, emits method-owned
-[`SlamUpdate`](./contracts.py) telemetry, and eventually closes into the same
-artifact contract.
-
-The important ownership rule is that methods never decide pipeline stage order
-or run summary semantics. They only implement the backend-specific execution
-body. If a backend has native output directories or native visualization files,
-those may be preserved as extras, but the canonical repository contract remains
-the normalized artifact bundle that the pipeline knows how to consume.
-
-## Adding Or Editing A Backend
-
-Adding a new backend usually starts in [`contracts.py`](./contracts.py#L12) and
-[`factory.py`](./factory.py#L25). Add a new `MethodId`, define a concrete config
-if the backend needs wrapper-specific controls, extend
-[`BackendFactory.describe()`](./factory.py#L28) with truthful capabilities, and
-extend [`BackendFactory.build()`](./factory.py#L78) so the typed pipeline spec
-can actually produce the wrapper instance. The wrapper itself should then
-implement the relevant protocol in [`protocols.py`](./protocols.py#L17) and
-return normalized [`SlamArtifacts`](../pipeline/contracts/artifacts.py#L25)
-instead of exposing upstream-native outputs as the main API.
-
-Editing an existing backend interface follows the same pattern as in the
-pipeline package, but with a narrower surface. If you widen live telemetry,
-update [`SlamUpdate`](./contracts.py) together with the SLAM stage runtime and
-visualization adapter that turn updates into `StageRuntimeUpdate` values. If you
-widen final artifacts, update the wrapper output normalization logic together
-with the pipeline-side artifact flattening logic that consumes those artifacts.
-If you change capability or resource assumptions, update
-[`BackendDescriptor`](./descriptors.py#L21) through the factory at the same
-time; the planner relies on that descriptor remaining truthful.
-
-## ViSTA Notes
-
-The ViSTA wrapper is the main example of the intended shape for a real backend
-integration. It keeps the adapter thin, preserves upstream crop-and-resize
-semantics inside the methods package, requires explicit upstream prerequisites,
-and converts native exports back into normalized repository artifacts. It is
-also the clearest place to see the split between method-owned live updates and
-pipeline-owned transport. The session emits backend-facing
-[`SlamUpdate`](./contracts.py) payloads, and the pipeline SLAM stage runtime
-turns them into live runtime updates and observer descriptors.
-
-The package-specific details for ViSTA are intentionally kept out of this
-top-level README. For preprocessing, live session semantics, export surfaces,
-and Rerun layout notes, read [`methods/vista/README.md`](./vista/README.md).
-
-## Contributor Starting Point
-
-If you need to orient yourself quickly, start with
-[`MethodId`](./contracts.py#L12),
-[`SlamBackendConfig`](./contracts.py#L41),
-[`StreamingSlamBackend`](./protocols.py#L17),
-[`BackendFactory`](./factory.py#L25), and
-[`SlamUpdate`](./contracts.py). Then read either
-[`mock_vslam.py`](./mock_vslam.py#L32) for the minimum wrapper shape or
-[`vista/adapter.py`](./vista/adapter.py#L22) plus
-[`vista/session.py`](./vista/session.py#L28) for the canonical real wrapper.
+When adding a backend, add the persisted config variant and planning metadata in
+`prml_vslam.pipeline.stages.slam.config`, then implement the wrapper here
+against `protocols.py`. Keep heavy upstream imports and allocations in wrapper
+construction or runtime startup, not in import-time package code.

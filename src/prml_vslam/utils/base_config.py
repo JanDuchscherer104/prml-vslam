@@ -60,8 +60,8 @@ class BaseConfig(BaseData):
     """Augment :class:`BaseData` with deterministic TOML IO and config inspection.
 
     Use this base for durable repo-owned configuration surfaces such as
-    :class:`prml_vslam.pipeline.contracts.request.RunRequest`,
-    :class:`prml_vslam.methods.config_contracts.SlamBackendConfig`, and
+    :class:`prml_vslam.pipeline.config.RunConfig`,
+    :class:`prml_vslam.pipeline.stages.slam.config.SlamBackendConfig`, and
     :class:`prml_vslam.visualization.contracts.VisualizationConfig`.
     """
 

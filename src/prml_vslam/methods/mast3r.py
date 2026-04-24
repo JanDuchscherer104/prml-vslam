@@ -9,8 +9,8 @@ from prml_vslam.interfaces import FramePacket
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.configs import Mast3rSlamBackendConfig
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.options import Mast3rSlamBackendOptions
 from prml_vslam.methods.protocols import SlamBackend
 
 
@@ -19,7 +19,7 @@ class Mast3rSlamBackend(SlamBackend):
 
     method_id: MethodId = MethodId.MAST3R
 
-    def __init__(self, config: Mast3rSlamBackendConfig) -> None:
+    def __init__(self, config: Mast3rSlamBackendOptions) -> None:
         self._config = config
 
     def start_streaming(
@@ -62,4 +62,4 @@ class Mast3rSlamBackend(SlamBackend):
         raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
 
 
-__all__ = ["Mast3rSlamBackend", "Mast3rSlamBackendConfig"]
+__all__ = ["Mast3rSlamBackend"]

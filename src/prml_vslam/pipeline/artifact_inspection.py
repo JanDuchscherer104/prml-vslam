@@ -55,7 +55,6 @@ _CANONICAL_PATH_FIELDS = (
     "ground_alignment_path",
     "trajectory_metrics_path",
     "cloud_metrics_path",
-    "efficiency_metrics_path",
     "reference_cloud_path",
     "summary_path",
     "stage_manifests_path",

@@ -16,9 +16,8 @@ The current target is intentionally narrow: one minimal Open3D TSDF
 implementation backed by the repo pin `open3d>=0.19.0,<0.20` from
 [`../../../pyproject.toml`](../../../pyproject.toml). The package should not
 start with a general-purpose reconstruction framework, a zoo of backends, or a
-repo-local TSDF implementation. It should first make the future
-`reference.reconstruct` stage executable with one well-typed, easy-to-extend
-method boundary.
+repo-local TSDF implementation. It first makes the pipeline `reconstruction`
+stage executable with one well-typed, easy-to-extend method boundary.
 
 ## Current Target State
 
@@ -37,9 +36,9 @@ method boundary.
 
 ## Why This Package Exists
 
-`prml_vslam.benchmark` already owns the policy toggle for
-`reference.reconstruct`, but it should remain policy-only. The actual
-reconstruction implementation needs its own local home for three reasons:
+Pipeline stage modules own persisted reconstruction-stage configuration and
+enablement policy. This package owns the reusable reconstruction implementation
+and artifact DTOs for three reasons:
 
 1. reconstruction methods have method-private config just like SLAM backends do
 2. reconstruction execution should be swappable through typed backend configs
@@ -100,23 +99,25 @@ session/update seam only when there is a real second use case for it. Until
 then, one offline protocol is the more elegant interface because it keeps the
 surface honest.
 
-The method selection surface should mirror `prml_vslam.methods.configs`:
+Persisted method selection is stage-owned. The reconstruction package can keep
+runtime-facing backend protocols, while public run config uses
+`prml_vslam.pipeline.stages.reconstruction.config`:
 
 ```python
-class ReconstructionMethodId(StrEnum):
+class ReconstructionId(StrEnum):
     OPEN3D_TSDF = "open3d_tsdf"
 
 
 class ReconstructionBackendConfig(BaseConfig):
-    method_id: ReconstructionMethodId
+    reconstruction_id: ReconstructionId
 
 
 class Open3dTsdfBackendConfig(ReconstructionBackendConfig, FactoryConfig[Open3dTsdfBackend]):
-    method_id: Literal[ReconstructionMethodId.OPEN3D_TSDF] = ReconstructionMethodId.OPEN3D_TSDF
+    reconstruction_id: Literal[ReconstructionId.OPEN3D_TSDF] = ReconstructionId.OPEN3D_TSDF
 ```
 
-This gives the repo one discriminated config union and one obvious extension
-path when a second reconstruction method appears later.
+This gives the stage one discriminated config union and one obvious extension
+path when a second reconstruction backend appears later.
 
 ## DTO Design For Easy Rerun Integration
 
@@ -208,7 +209,7 @@ This package should own:
 
 This package should not own:
 
-- benchmark stage enablement
+- reconstruction stage enablement
 - pipeline stage planning or stage execution orchestration
 - dense-cloud metric computation
 - Streamlit state or widgets

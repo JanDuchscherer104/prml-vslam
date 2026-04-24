@@ -16,8 +16,8 @@ import numpy as np
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import SlamOutputPolicy
-from prml_vslam.methods.configs import VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.options import VistaSlamBackendOptions
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 from .artifacts import _frame_transform_from_vista_pose, build_vista_artifacts
@@ -283,7 +283,7 @@ def _build_pointmap_warning(
 
 def create_vista_runtime(
     *,
-    config: VistaSlamBackendConfig,
+    config: VistaSlamBackendOptions,
     path_config: PathConfig,
     console: Console,
     artifact_root: Path,

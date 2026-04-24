@@ -19,5 +19,7 @@ again.
 
 ## Boundary
 
-`prml_vslam.eval` does not own benchmark-policy composition. Policy now lives in
-`prml_vslam.benchmark`, while evaluation execution remains here.
+`prml_vslam.eval` does not own persisted stage policy. Trajectory-evaluation
+selection lives in `prml_vslam.pipeline.stages.trajectory_eval`, reusable
+reference identifiers live in `prml_vslam.benchmark`, and evaluation execution
+remains here.

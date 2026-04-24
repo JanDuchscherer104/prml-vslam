@@ -6,7 +6,7 @@ the upstream ViSTA checkout to the repository's method contract.
 
 from typing import Any
 
-__all__ = ["VistaSlamBackend", "VistaSlamBackendConfig", "VistaSlamRuntime"]
+__all__ = ["VistaSlamBackend", "VistaSlamRuntime"]
 
 
 def __getattr__(name: str) -> Any:
@@ -14,10 +14,6 @@ def __getattr__(name: str) -> Any:
         from .adapter import VistaSlamBackend
 
         return VistaSlamBackend
-    if name == "VistaSlamBackendConfig":
-        from ..configs import VistaSlamBackendConfig
-
-        return VistaSlamBackendConfig
     if name == "VistaSlamRuntime":
         from .session import VistaSlamRuntime
 

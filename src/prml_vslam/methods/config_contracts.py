@@ -1,9 +1,8 @@
-"""Typed contracts for external VSLAM method adapters.
+"""Runtime option contracts shared by external VSLAM method adapters.
 
-This module owns the backend identifiers and method-owned runtime/output policy
-that wrapper implementations share. It does not define pipeline planning or
-artifact layout; instead it describes the knobs and capabilities that
-:mod:`prml_vslam.pipeline` can rely on when selecting and executing a method.
+Persisted backend variants and muxing live in the SLAM stage config. This
+module keeps method-local identifiers and generic runtime options used by
+wrapper protocols and tests without constructing pipeline runtimes.
 """
 
 from __future__ import annotations
@@ -49,25 +48,12 @@ class SlamOutputPolicy(BaseConfig):
 
 
 class SlamBackendConfig(BaseConfig):
-    """Provide the method-owned runtime contract shared by backend configs.
-
-    Concrete configs implement the capabilities and factory behavior that the
-    rest of the package queries before runtime execution begins. This is a
-    method/backend config, so :meth:`prml_vslam.utils.FactoryConfig.setup_target`
-    is appropriate here. Pipeline stage configs deliberately do not use this
-    construction pattern; they describe execution policy and leave runtime
-    construction to :class:`prml_vslam.pipeline.runtime_manager.RuntimeManager`.
-    """
+    """Provide generic backend runtime options shared by method protocols."""
 
     model_config = ConfigDict(extra="forbid")
 
     method_id: MethodId | None = None
-    """Stable backend identifier used for discriminated config unions.
-
-    The generic base config may leave this unset when it is used only as a
-    shared runtime-policy object. Concrete backend configs must set a
-    backend-specific literal value.
-    """
+    """Optional method-local identifier for direct wrapper use."""
 
     max_frames: int | None = None
     """Optional frame cap used for debugging or short smoke runs."""
@@ -85,46 +71,6 @@ class SlamBackendConfig(BaseConfig):
         if self.method_id is None:
             raise NotImplementedError("Concrete backend configs must define method_id.")
         return self.method_id.value
-
-    @property
-    def supports_offline(self) -> bool:
-        """Whether the backend supports offline execution."""
-        raise NotImplementedError
-
-    @property
-    def supports_streaming(self) -> bool:
-        """Whether the backend supports streaming execution."""
-        raise NotImplementedError
-
-    @property
-    def supports_dense_points(self) -> bool:
-        """Whether the backend can expose point-cloud outputs."""
-        raise NotImplementedError
-
-    @property
-    def supports_live_preview(self) -> bool:
-        """Whether the backend can emit live preview payloads."""
-        raise NotImplementedError
-
-    @property
-    def supports_native_visualization(self) -> bool:
-        """Whether the backend may emit native visualization artifacts."""
-        raise NotImplementedError
-
-    @property
-    def supports_trajectory_benchmark(self) -> bool:
-        """Whether the backend supports repository trajectory evaluation."""
-        raise NotImplementedError
-
-    @property
-    def default_resources(self) -> dict[str, float]:
-        """Return backend-owned default Ray resource hints."""
-        return {}
-
-    @property
-    def notes(self) -> list[str]:
-        """Return backend-specific planning notes surfaced to callers when relevant."""
-        return []
 
 
 __all__ = ["MethodId", "SlamBackendConfig", "SlamOutputPolicy"]

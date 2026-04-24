@@ -1,13 +1,13 @@
 # Benchmark
 
-This package owns thin benchmark-policy composition separate from pipeline
-execution and evaluation implementation.
+This package owns reusable benchmark reference identifiers used by datasets,
+methods, source preparation, and evaluation.
 
 ## Current Scope
 
-- reference-reconstruction enablement
-- trajectory-evaluation enablement and baseline selection
-- dense-cloud evaluation enablement
-- efficiency-evaluation enablement
+- reference trajectory source identifiers
+- reference cloud source identifiers
+- reference cloud coordinate-status identifiers
 
-Metric execution itself remains in `prml_vslam.eval`.
+Persisted stage enablement and baseline selection live in
+`prml_vslam.pipeline.stages.*`. Metric execution remains in `prml_vslam.eval`.

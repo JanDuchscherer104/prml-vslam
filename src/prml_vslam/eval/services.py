@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from evo.core import metrics, sync
@@ -34,14 +35,16 @@ from prml_vslam.eval.protocols import TrajectoryEvaluator
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import MethodId
-from prml_vslam.pipeline.config import RunConfig
-from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.path_config import PathConfig
 
 __all__ = ["TrajectoryEvaluationService", "compute_trajectory_ape_preview"]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
+
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.config import RunConfig
+    from prml_vslam.pipeline.contracts.plan import RunPlan
 
 
 class TrajectoryEvaluationService(TrajectoryEvaluator):
@@ -230,17 +233,18 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         references from dataset folders. Missing requested baselines are runtime
         errors because the request explicitly enabled trajectory evaluation.
         """
-        if not run_config.benchmark.trajectory.enabled:
+        trajectory_config = run_config.stages.evaluate_trajectory
+        if not trajectory_config.enabled:
             return None
         if sequence_manifest is None or benchmark_inputs is None or slam is None:
             raise RuntimeError(
                 "Trajectory evaluation requires a sequence manifest, benchmark inputs, and SLAM artifacts."
             )
-        reference = benchmark_inputs.trajectory_for_source(run_config.benchmark.trajectory.baseline_source)
+        reference = benchmark_inputs.trajectory_for_source(trajectory_config.baseline_source)
         if reference is None:
             raise RuntimeError(
                 "Prepared benchmark inputs do not include the requested trajectory baseline "
-                f"'{run_config.benchmark.trajectory.baseline_source.value}'."
+                f"'{trajectory_config.baseline_source.value}'."
             )
         return self.compute_evaluation(
             selection=SelectionSnapshot(

@@ -16,8 +16,6 @@ from prml_vslam.eval.contracts import (
     DenseCloudEvaluationArtifact,
     DenseCloudEvaluationSelection,
     DiscoveredRun,
-    EfficiencyEvaluationArtifact,
-    EfficiencyEvaluationSelection,
     EvaluationArtifact,
     EvaluationSelection,
     SelectionSnapshot,
@@ -89,36 +87,7 @@ class DenseCloudEvaluator(Protocol):
         ...
 
 
-@runtime_checkable
-class EfficiencyEvaluator(Protocol):
-    """Load or compute runtime-efficiency evaluation over normalized run artifacts.
-
-    Future implementations should derive metrics from durable events and live
-    runtime status summaries instead of adding ad hoc timers to unrelated
-    pipeline stages.
-    """
-
-    @abstractmethod
-    def load_efficiency_evaluation(
-        self,
-        *,
-        selection: EfficiencyEvaluationSelection,
-    ) -> EfficiencyEvaluationArtifact | None:
-        """Load a persisted runtime-efficiency evaluation when it exists."""
-        ...
-
-    @abstractmethod
-    def compute_efficiency_evaluation(
-        self,
-        *,
-        selection: EfficiencyEvaluationSelection,
-    ) -> EfficiencyEvaluationArtifact:
-        """Compute and persist one runtime-efficiency evaluation result."""
-        ...
-
-
 __all__ = [
     "DenseCloudEvaluator",
-    "EfficiencyEvaluator",
     "TrajectoryEvaluator",
 ]
