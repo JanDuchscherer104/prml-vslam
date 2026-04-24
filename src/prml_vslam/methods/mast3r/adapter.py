@@ -293,10 +293,7 @@ class Mast3rSlamSession:
         # Signal backend to stop and drain any in-flight optimisation.
         self._states.set_mode(Mode.TERMINATED)
         self._backend_stop.set()
-        if self._backend_thread is not None:
-            self._backend_thread.join(timeout=self._cfg.backend_join_timeout_s)
-            if self._backend_thread.is_alive():
-                self._console.error("MASt3R backend thread did not stop within timeout.")
+        self._join_backend_thread()
 
         # Write native artifacts + return canonical SlamArtifacts.
         run_paths = RunArtifactPaths.build(self._artifact_root)
@@ -650,6 +647,14 @@ class Mast3rSlamSession:
         if self._backend_error is not None:
             raise self._backend_error
 
+    def _join_backend_thread(self) -> None:
+        """Join the backend thread and log if it fails to exit promptly."""
+        if self._backend_thread is None:
+            return
+        self._backend_thread.join(timeout=self._cfg.backend_join_timeout_s)
+        if self._backend_thread.is_alive():
+            self._console.error("MASt3R backend thread did not stop within timeout.")
+
     def _inject_sys_path(self) -> None:
         """Make ``mast3r_slam`` importable from this process."""
         mast3r_root = str(self._resolve_path(self._cfg.mast3r_slam_dir))
@@ -774,9 +779,9 @@ class Mast3rSlamBackend(SlamBackend):
                 session.step(FramePacket(seq=seq, timestamp_ns=timestamps_ns[seq], rgb=rgb))
             return session.close()
         finally:
-            if session._states is not None and session._backend_thread is not None and session._backend_thread.is_alive():
+            if session._states is not None:
                 session._backend_stop.set()
-                session._backend_thread.join(timeout=self._cfg.backend_join_timeout_s)
+                session._join_backend_thread()
 
     def _resolve_frames(
         self,
