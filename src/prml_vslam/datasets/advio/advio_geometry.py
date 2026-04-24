@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
@@ -17,10 +18,11 @@ from prml_vslam.utils.geometry import write_point_cloud_ply
 from .advio_loading import load_advio_trajectory
 
 _DEFAULT_MAX_REFERENCE_POINTS = 200_000
-_DEFAULT_POINT_STRIDE = 8
+_DEFAULT_POINT_STRIDE = 1
 _ALIGNMENT_MAX_DIFF_S = 0.02
 _MIN_ALIGNMENT_PAIRS = 3
 _GT_WORLD_FRAME = "advio_gt_world"
+_RDF_HORIZONTAL_AXES = (0, 2)
 _CONSOLE = Console(__name__).child("tango_reference_clouds")
 
 
@@ -42,16 +44,18 @@ class TangoCloudMetadata(BaseData):
     timestamp_max_s: float | None
     point_cloud_count: int
     payloads_used: int
+    skipped_out_of_range_payloads: int = 0
     point_stride: int
     max_reference_points: int
     alignment: dict[str, object] | None = None
 
 
 class Sim3Alignment(BaseData):
-    """Similarity transform mapping source-frame positions into target-frame positions."""
+    """Stored trajectory alignment mapping source-frame positions into target-frame positions."""
 
     source_frame: str
     target_frame: str
+    alignment_type: Literal["sim3", "planar_rigid"] = "sim3"
     scale: float
     rotation: list[list[float]]
     translation: list[float]
@@ -87,13 +91,16 @@ def build_advio_tango_reference_clouds(
         if trajectory_path is None or not trajectory_path.exists():
             continue
         native_frame = f"advio_{source.value}_world"
+        payload_frame = f"advio_{source.value}_depth_sensor"
         try:
             source_trajectory = load_advio_trajectory(trajectory_path)
-            points_xyz_source, payloads_used = load_bounded_tango_point_clouds(
+            points_xyz_source, payloads_used, skipped_out_of_range_payloads = load_bounded_tango_point_clouds(
                 index_path=tango_point_cloud_index_path,
                 trajectory=source_trajectory,
                 max_reference_points=max_reference_points,
                 point_stride=point_stride,
+                target_frame=native_frame,
+                source_frame=payload_frame,
             )
         except ValueError as exc:
             _CONSOLE.warning(
@@ -114,8 +121,10 @@ def build_advio_tango_reference_clouds(
                 coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
                 target_frame=native_frame,
                 native_frame=native_frame,
+                payload_frame=payload_frame,
                 index_rows=index_rows,
                 payloads_used=payloads_used,
+                skipped_out_of_range_payloads=skipped_out_of_range_payloads,
                 point_stride=point_stride,
                 max_reference_points=max_reference_points,
                 alignment=None,
@@ -123,7 +132,7 @@ def build_advio_tango_reference_clouds(
         )
 
         try:
-            alignment = fit_sim3_alignment(
+            alignment = fit_planar_rigid_alignment(
                 source_trajectory=source_trajectory,
                 target_trajectory=ground_truth,
                 source_frame=native_frame,
@@ -141,8 +150,10 @@ def build_advio_tango_reference_clouds(
                 coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
                 target_frame=_GT_WORLD_FRAME,
                 native_frame=native_frame,
+                payload_frame=payload_frame,
                 index_rows=index_rows,
                 payloads_used=payloads_used,
+                skipped_out_of_range_payloads=skipped_out_of_range_payloads,
                 point_stride=point_stride,
                 max_reference_points=max_reference_points,
                 alignment=alignment,
@@ -166,23 +177,37 @@ def load_bounded_tango_point_clouds(
     trajectory: PoseTrajectory3D,
     max_reference_points: int,
     point_stride: int,
-) -> tuple[NDArray[np.float64], int]:
+    target_frame: str = "world",
+    source_frame: str = "tango_depth_sensor",
+) -> tuple[NDArray[np.float64], int, int]:
     """Load a deterministic bounded subset of Tango payloads transformed into pose-stream world."""
     if max_reference_points < 1:
         raise ValueError(f"Expected max_reference_points >= 1, got {max_reference_points}.")
     if point_stride < 1:
         raise ValueError(f"Expected point_stride >= 1, got {point_stride}.")
     index_rows = load_tango_point_cloud_index(index_path)
+    if index_rows.size == 0:
+        return np.empty((0, 3), dtype=np.float64), 0, 0
+    source_timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
+    if source_timestamps_s.size == 0:
+        return np.empty((0, 3), dtype=np.float64), 0, int(len(index_rows))
+    first_timestamp_s = float(source_timestamps_s.min())
+    last_timestamp_s = float(source_timestamps_s.max())
+    in_range = (index_rows[:, 0] >= first_timestamp_s) & (index_rows[:, 0] <= last_timestamp_s)
+    filtered_index_rows = index_rows[in_range]
+    skipped_out_of_range_payloads = int(len(index_rows) - len(filtered_index_rows))
+    if filtered_index_rows.size == 0:
+        return np.empty((0, 3), dtype=np.float64), 0, skipped_out_of_range_payloads
+    poses_world_payload = interpolate_trajectory_poses(
+        trajectory,
+        filtered_index_rows[:, 0],
+        target_frame=target_frame,
+        source_frame=source_frame,
+    )
     chunks: list[NDArray[np.float64]] = []
     payloads_used = 0
     point_count = 0
-    poses_world_payload = interpolate_trajectory_poses(
-        trajectory,
-        index_rows[:, 0],
-        target_frame="world",
-        source_frame="tango_depth_sensor",
-    )
-    for (_, cloud_index_float), pose_world_payload in zip(index_rows, poses_world_payload, strict=True):
+    for (_, cloud_index_float), pose_world_payload in zip(filtered_index_rows, poses_world_payload, strict=True):
         payload = load_tango_point_cloud_payload(
             resolve_tango_point_cloud_payload(index_path.parent, cloud_index_float)
         )
@@ -199,8 +224,8 @@ def load_bounded_tango_point_clouds(
         if point_count >= max_reference_points:
             break
     if not chunks:
-        return np.empty((0, 3), dtype=np.float64), payloads_used
-    return np.vstack(chunks).astype(np.float64, copy=False), payloads_used
+        return np.empty((0, 3), dtype=np.float64), payloads_used, skipped_out_of_range_payloads
+    return np.vstack(chunks).astype(np.float64, copy=False), payloads_used, skipped_out_of_range_payloads
 
 
 def load_tango_point_cloud_payload(path: Path) -> NDArray[np.float64]:
@@ -220,7 +245,7 @@ def transform_tango_payloads_to_pose_world(
     point_stride: int = 1,
 ) -> NDArray[np.float64]:
     """Transform all Tango point-cloud payloads into the selected Tango pose-stream world."""
-    points, _ = load_bounded_tango_point_clouds(
+    points, _payloads_used, _skipped_out_of_range_payloads = load_bounded_tango_point_clouds(
         index_path=index_path,
         trajectory=trajectory,
         max_reference_points=np.iinfo(np.int64).max,
@@ -266,6 +291,7 @@ def fit_sim3_alignment(
     return Sim3Alignment(
         source_frame=source_frame,
         target_frame=target_frame,
+        alignment_type="sim3",
         scale=scale,
         rotation=rotation.tolist(),
         translation=translation.tolist(),
@@ -274,8 +300,62 @@ def fit_sim3_alignment(
     )
 
 
+def fit_planar_rigid_alignment(
+    *,
+    source_trajectory: PoseTrajectory3D,
+    target_trajectory: PoseTrajectory3D,
+    source_frame: str,
+    target_frame: str,
+    max_diff_s: float = _ALIGNMENT_MAX_DIFF_S,
+) -> Sim3Alignment:
+    """Fit ADVIO-style metric planar rigid alignment from source to target.
+
+    The ADVIO paper aligns device tracks with a horizontal-plane rigid
+    transform because all devices are already gravity-aligned and metric. In
+    the repo viewer convention that plane is X/Z and the vertical axis is Y.
+    This preserves scale and avoids introducing pitch/roll corrections into
+    native Tango/AR provider worlds.
+    """
+    source_xyz, target_xyz = _associate_trajectory_positions(
+        source_trajectory=source_trajectory,
+        target_trajectory=target_trajectory,
+        max_diff_s=max_diff_s,
+    )
+    if len(source_xyz) < _MIN_ALIGNMENT_PAIRS:
+        raise ValueError(
+            f"Expected at least {_MIN_ALIGNMENT_PAIRS} matched pairs for planar rigid alignment, got {len(source_xyz)}."
+        )
+
+    source_mean = source_xyz.mean(axis=0)
+    target_mean = target_xyz.mean(axis=0)
+    horizontal_axes = np.asarray(_RDF_HORIZONTAL_AXES, dtype=np.int64)
+    source_horizontal_centered = source_xyz[:, horizontal_axes] - source_mean[horizontal_axes]
+    target_horizontal_centered = target_xyz[:, horizontal_axes] - target_mean[horizontal_axes]
+    covariance = (source_horizontal_centered.T @ target_horizontal_centered) / len(source_xyz)
+    u, _singular_values, vh = np.linalg.svd(covariance)
+    correction = np.eye(2, dtype=np.float64)
+    if np.linalg.det(vh.T @ u.T) < 0.0:
+        correction[-1, -1] = -1.0
+    rotation_xy = vh.T @ correction @ u.T
+    rotation = np.eye(3, dtype=np.float64)
+    rotation[np.ix_(horizontal_axes, horizontal_axes)] = rotation_xy
+    translation = target_mean - rotation @ source_mean
+    residual = target_xyz - (source_xyz @ rotation.T + translation)
+    rms_error_m = float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
+    return Sim3Alignment(
+        source_frame=source_frame,
+        target_frame=target_frame,
+        alignment_type="planar_rigid",
+        scale=1.0,
+        rotation=rotation.tolist(),
+        translation=translation.tolist(),
+        matched_pairs=int(len(source_xyz)),
+        rms_error_m=rms_error_m,
+    )
+
+
 def apply_sim3(points_xyz_source: NDArray[np.float64], alignment: Sim3Alignment) -> NDArray[np.float64]:
-    """Apply one stored Sim(3) alignment to XYZ points."""
+    """Apply one stored trajectory alignment to XYZ points."""
     points = np.asarray(points_xyz_source, dtype=np.float64)
     rotation = np.asarray(alignment.rotation, dtype=np.float64)
     translation = np.asarray(alignment.translation, dtype=np.float64)
@@ -359,8 +439,10 @@ def _write_cloud_ref(
     coordinate_status: ReferenceCloudCoordinateStatus,
     target_frame: str,
     native_frame: str,
+    payload_frame: str,
     index_rows: NDArray[np.float64],
     payloads_used: int,
+    skipped_out_of_range_payloads: int,
     point_stride: int,
     max_reference_points: int,
     alignment: Sim3Alignment | None,
@@ -374,12 +456,14 @@ def _write_cloud_ref(
         coordinate_status=coordinate_status,
         target_frame=target_frame,
         native_frame=native_frame,
+        payload_frame=payload_frame,
         source_world_frame=native_frame,
         point_count=int(len(points_xyz)),
         timestamp_min_s=float(index_rows[:, 0].min()) if index_rows.size else None,
         timestamp_max_s=float(index_rows[:, 0].max()) if index_rows.size else None,
         point_cloud_count=int(len(index_rows)),
         payloads_used=payloads_used,
+        skipped_out_of_range_payloads=skipped_out_of_range_payloads,
         point_stride=point_stride,
         max_reference_points=max_reference_points,
         alignment=None if alignment is None else alignment.model_dump(mode="json"),
@@ -411,6 +495,7 @@ __all__ = [
     "apply_sim3",
     "build_advio_tango_reference_clouds",
     "fit_sim3_alignment",
+    "fit_planar_rigid_alignment",
     "interpolate_trajectory_poses",
     "load_bounded_tango_point_clouds",
     "load_tango_point_cloud_index",

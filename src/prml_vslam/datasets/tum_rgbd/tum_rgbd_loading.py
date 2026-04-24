@@ -64,7 +64,7 @@ def load_tum_rgbd_ground_truth(path: Path) -> PoseTrajectory3D:
 def load_tum_rgbd_associations(
     sequence_dir: Path,
     *,
-    max_delta_s: float = 0.08,
+    max_delta_s: float = 0.02,
 ) -> list[TumRgbdFrameAssociation]:
     rgb_rows = load_tum_rgbd_list(sequence_dir / "rgb.txt")
     depth_rows = load_tum_rgbd_list(sequence_dir / "depth.txt") if (sequence_dir / "depth.txt").exists() else []
