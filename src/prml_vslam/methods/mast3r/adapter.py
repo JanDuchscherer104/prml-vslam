@@ -434,7 +434,9 @@ class Mast3rSlamSession:
                         self._states.global_optimizer_tasks.pop(0)
 
             except Exception as exc:  # pragma: no cover - defensive
-                self._backend_error = RuntimeError(f"MASt3R backend loop failed: {exc}")
+                backend_error = RuntimeError(f"MASt3R backend loop failed: {exc}")
+                backend_error.__cause__ = exc
+                self._backend_error = backend_error
                 self._console.error("MASt3R backend loop error: %s", exc)
                 self._backend_stop.set()
                 break
@@ -838,6 +840,7 @@ class Mast3rSlamBackend(SlamBackend):
 
         source_path = sequence.timestamps_path
         if source_path.suffix.lower() == ".json":
+            # Normalized repo-owned JSON timestamps are already stored in nanoseconds.
             payload = json.loads(source_path.read_text(encoding="utf-8"))
             if isinstance(payload, dict) and isinstance(payload.get("timestamps_ns"), list):
                 try:
@@ -856,6 +859,7 @@ class Mast3rSlamBackend(SlamBackend):
                 continue
             rows.append(line.split(",", maxsplit=1)[0].strip())
         if rows:
+            # CSV/plain-text timestamp sources store seconds in the first column.
             try:
                 values = [int(round(float(value) * 1e9)) for value in rows[:num_frames]]
             except ValueError as exc:
