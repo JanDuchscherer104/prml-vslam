@@ -88,13 +88,13 @@
   <rect x="382.30799999999994" y="953.9000000000001" width="49.726000000000006" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
   <text x="407.17099999999994" y="969.0500000000001" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">close()</text>
 </g>
-<g class="node" data-id="Request" data-label="RunRequest" data-shape="rectangle">
+<g class="node" data-id="Request" data-label="RunConfig" data-shape="rectangle">
   <rect x="344.9552083333333" y="84" width="114.568" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="402.2392083333333" y="102.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunRequest</text>
+  <text x="402.2392083333333" y="102.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunConfig</text>
 </g>
-<g class="node" data-id="SourceCfg" data-label="SourceSpec" data-shape="rectangle">
+<g class="node" data-id="SourceCfg" data-label="SourceBackendConfig" data-shape="rectangle">
   <rect x="203.12820833333333" y="168.9" width="117.532" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="261.8942083333333" y="187.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SourceSpec</text>
+  <text x="261.8942083333333" y="187.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SourceBackendConfig</text>
 </g>
 <g class="node" data-id="SlamCfg" data-label="SlamConfig" data-shape="rectangle">
   <rect x="348.66020833333334" y="168.9" width="107.158" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />

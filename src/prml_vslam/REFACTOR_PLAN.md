@@ -9,7 +9,7 @@ Current resolved direction:
 - Stage configs are declarative policy contracts, not factories for stage
   runtimes or Ray actors.
 - `RuntimeManager` constructs stage runtimes, capability-typed
-  `StageRuntimeProxy` instances, sidecars, and payload stores.
+  `StageRuntimeHandle` instances, sidecars, and payload stores.
 - Backend/source/reconstruction variant configs may use `FactoryConfig` when
   they construct concrete domain or source implementations.
 - `LiveUpdateStageRuntime` is the optional live-update drain capability,

@@ -49,9 +49,9 @@
   <rect x="265.049" y="680.9999999999999" width="122.78800000000004" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
   <text x="326.443" y="696.1499999999999" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">hand off to RunService</text>
 </g>
-<g class="node" data-id="request" data-label="RunRequest" data-shape="rectangle">
+<g class="node" data-id="request" data-label="RunConfig" data-shape="rectangle">
   <rect x="167.60000000000002" y="40" width="114.568" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="224.88400000000001" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunRequest</text>
+  <text x="224.88400000000001" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">RunConfig</text>
 </g>
 <g class="node" data-id="validate" data-label="RunPlannerService.validate_request()" data-shape="rectangle">
   <rect x="89.79500000000006" y="193.2" width="270.1779999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />

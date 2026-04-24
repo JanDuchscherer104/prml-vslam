@@ -45,8 +45,9 @@ Use this file for package-root ownership rules and cross-package contract constr
   - owns reusable camera artifact datamodels and pure camera-model transforms
     when the same intrinsics semantics cross method, evaluation, plotting, and
     app boundaries
-- `benchmark`
-  - owns reusable benchmark reference identifiers such as trajectory and cloud source ids
+- `sources`
+  - owns source-stage config, runtime preparation, source-stage outputs, and
+    prepared reference identifiers and DTOs such as `PreparedBenchmarkInputs`
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
 - `io`
@@ -137,7 +138,7 @@ Use this file for package-root ownership rules and cross-package contract constr
   resource hints, telemetry, cleanup, and failure-provenance settings; they do
   not construct runtime objects or Ray actors.
 - `RuntimeManager` is the construction authority for stage runtimes,
-  capability-typed `StageRuntimeProxy` instances, sink sidecars, payload
+  capability-typed `StageRuntimeHandle` instances, sink sidecars, payload
   stores, and placement-specific runtime wrappers.
 - Backend, source, and reconstruction variant configs may use
   `FactoryConfig.setup_target()` when they construct concrete domain or source

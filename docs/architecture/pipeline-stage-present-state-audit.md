@@ -51,7 +51,7 @@ runtime scaffolding, with a few request-era compatibility seams still present.
 ```text
 src/prml_vslam/pipeline/
 ├── contracts/
-│   ├── request.py       # migration contacts: RunRequest, SourceSpec, placement/runtime compatibility
+│   ├── request.py       # migration contacts: RunConfig, SourceBackendConfig, placement/runtime compatibility
 │   ├── stages.py        # StageKey and transitional StageAvailability
 │   ├── plan.py          # RunPlan, RunPlanStage, PlannedSource
 │   ├── events.py        # durable RunEvent union and StageOutcome
@@ -157,7 +157,7 @@ Cross-stage handoff is keyed and stage-local now:
   mutable state bag
 
 The remaining rough edge is that some helper methods still branch on
-compatibility `RunRequest` state while `WP-09A` is in flight.
+compatibility `RunConfig` state while `WP-09A` is in flight.
 
 ### Durable versus live state
 
@@ -210,7 +210,7 @@ The current executable vocabulary is now the canonical target `StageKey` set:
 - `summary`
 
 `evaluate.cloud` remains a diagnostic binding without a runtime. The old
-stage-key aliases and the deleted `evaluate.efficiency` placeholder are no
+stage-key aliases and the deleted `evaluate.cloud` placeholder are no
 longer current executable or persisted config vocabulary.
 
 ### 3. Migration DTOs are removed from the active launch path
@@ -224,7 +224,7 @@ ledger rows.
 
 [`RuntimeManager`](../../src/prml_vslam/pipeline/runtime_manager.py) is used by
 the coordinator for executable runtime registration and preflight. The
-remaining runtime-manager gap is Ray-hosted `StageRuntimeProxy` invocation, not
+remaining runtime-manager gap is Ray-hosted `StageRuntimeHandle` invocation, not
 coordinator bypass.
 
 ### 5. Planned stage coverage is intentionally uneven
@@ -270,8 +270,8 @@ That means the `WP-09B` blocker has shifted from runtime-code deletion to:
 The largest present-state simplification opportunities are now concentrated in
 compatibility surfaces rather than the stage runtime core:
 
-- delete `RunRequest` launch compatibility
-- collapse `SourceSpec` into stage-local source config ownership
+- delete `RunConfig` launch compatibility
+- collapse `SourceBackendConfig` into stage-local source config ownership
 - delete `StageAvailability` in favor of `RunPlanStage.available`
 - remove stage-key alias/projection helpers once target keys are canonical
 - remove request-compat branches from coordinator hashing and stage-input

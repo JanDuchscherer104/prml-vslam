@@ -8,7 +8,7 @@ summary = "Persisted trajectory evaluation now records explicit metric semantics
 wip_branch = "codex/streaming-execution-architecture"
 wip_worktree = "/home/jandu/repos/prml-vslam"
 files = [
-    "src/prml_vslam/benchmark/contracts.py",
+    "src/prml_vslam/sources/contracts.py",
     "src/prml_vslam/eval/services.py",
     "src/prml_vslam/eval/contracts.py",
     "src/prml_vslam/pipeline/finalization.py",
@@ -16,12 +16,12 @@ files = [
     "docs/Questions.md",
 ]
 notes = [
-    "The public config already separates `benchmark.trajectory.enabled` from `baseline_source`, so the old enablement-vs-baseline conflation is resolved.",
+    "The public config already separates trajectory evaluation enablement from `baseline_source`, so the old enablement-vs-baseline conflation is resolved.",
     "The evaluator now persists explicit semantics such as metric id, pose relation, alignment mode, and sync tolerance, which closes the earlier ambiguity in the stored payload.",
     "The remaining gap is executable drift-oriented RPE and richer alignment choices through the same thin evo seam, which still matters because trajectory quality is the top evaluation priority.",
 ]
 sources = [
-    "src/prml_vslam/benchmark/contracts.py",
+    "src/prml_vslam/sources/contracts.py",
     "src/prml_vslam/eval/services.py",
     "src/prml_vslam/eval/contracts.py",
     "src/prml_vslam/pipeline/finalization.py",

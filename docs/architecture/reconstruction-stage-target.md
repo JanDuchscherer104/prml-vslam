@@ -68,7 +68,7 @@ flowchart TB
     Protocols["protocols<br/>RgbdObservationSource"]
     Datasets["datasets.tum_rgbd<br/>TUM RGB-D normalizer"]
     Methods["methods.vista / slam stage<br/>ViSTA keyframe normalizer"]
-    Pipeline["pipeline.stages.reconstruction<br/>stage config/runtime/result"]
+    Pipeline["reconstruction.stage<br/>stage config/runtime/result"]
     Reconstruction["reconstruction<br/>Open3D TSDF backend<br/>ReconstructionArtifacts"]
     Benchmark["benchmark<br/>enablement policy only"]
     Rerun["pipeline sinks<br/>Rerun SDK boundary"]
@@ -95,7 +95,7 @@ Ownership rules:
   normalizes into `RgbdObservation`.
 - `methods.vista` and the future SLAM stage runtime own ViSTA keyframe
   normalization, then normalize into `RgbdObservation`.
-- `pipeline.stages.reconstruction` owns stage config, stage input/output DTOs,
+- `reconstruction.stage` owns stage config, stage input/output DTOs,
   runtime status, and `StageResult` integration.
 - `reconstruction` owns backend ids, backend configs, method harnesses, Open3D
   TSDF execution, and `ReconstructionArtifacts`.
@@ -115,7 +115,7 @@ The stage should be implemented as the reconstruction stage package in the
 target pipeline layout:
 
 ```text
-src/prml_vslam/pipeline/stages/reconstruction/
+src/prml_vslam/reconstruction/stage/
 ├── config.py      # ReconstructionStageConfig and source/backend selection
 ├── contracts.py   # ReconstructionStageInput, ReconstructionStageOutput
 └── runtime.py     # ReconstructionStageRuntime
@@ -129,7 +129,7 @@ Runtime classification:
 | ViSTA-derived reconstruction | unavailable target-compatible source path | persisted or live ViSTA keyframes | Open3D TSDF after RGB-D normalization | SLAM-local reconstructed scene |
 | pointmap fusion | future separate backend/source path | ViSTA pointmaps or other pointmaps | not Open3D RGB-D TSDF v1 | point-cloud or mesh artifact |
 
-The runtime may later become Ray-hosted behind `StageRuntimeProxy` when input
+The runtime may later become Ray-hosted behind `StageRuntimeHandle` when input
 size, GPU needs, remote placement, or cancellation/status requirements justify
 that. The stage interface should not require Ray semantics in v1.
 
@@ -452,7 +452,7 @@ Method / SLAM changes:
 
 Pipeline changes:
 
-- Add `pipeline.stages.reconstruction`.
+- Add `reconstruction.stage`.
 - Add planning availability based on `RgbdObservationSequenceRef`.
 - Add stage runtime integration with `StageResult`, `StageOutcome`, artifact
   registration, and status reporting.

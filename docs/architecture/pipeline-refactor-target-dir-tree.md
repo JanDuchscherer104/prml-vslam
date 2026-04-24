@@ -149,11 +149,8 @@ src/prml_vslam/
 │   ├── README.md [C]
 │   ├── REQUIREMENTS.md [A]
 │   ├── __init__.py [C]
-│   ├── config_contracts.py [A]
-│   ├── descriptors.py [A]
+│   ├── stage/config.py [A]
 │   ├── mast3r.py [C]
-│   ├── mock_vslam.py [A]
-│   ├── options.py [A]
 │   ├── protocols.py [A]
 │   └── vista [A]
 │       ├── README.md [C]
@@ -322,17 +319,10 @@ src/prml_vslam/
 │       └── Record3D source config compatibility
 ├── methods
 │   ├── REQUIREMENTS.md
-│   ├── config_contracts.py
+│   ├── stage/config.py
 │   │   └── SlamOutputPolicy
 │   ├── contracts.py
 │   │   ├── SlamUpdate
-│   ├── options.py
-│   │   └── structural backend option protocols
-│   │   └── backend notice/event DTOs
-│   ├── descriptors.py
-│   │   └── BackendDescriptor
-│   ├── mock_vslam.py
-│   │   └── MockSlamBackend
 │   └── vista
 │       ├── REQUIREMENTS.md
 │       ├── artifact_io.py
@@ -379,8 +369,8 @@ src/prml_vslam/
 │   │   │   ├── StageManifest
 │   │   │   └── RunSummary
 │   │   ├── request.py
-│   │   │   ├── RunRequest migration contact
-│   │   │   ├── SourceSpec migration contact
+│   │   │   ├── RunConfig migration contact
+│   │   │   ├── SourceBackendConfig migration contact
 │   │   │   └── PlacementPolicy migration contact
 │   │   ├── runtime.py
 │   │   │   ├── RunState
@@ -461,7 +451,7 @@ src/prml_vslam/
 │   │   │   │   ├── StreamingStageRuntime
 │   │   │   │   └── VisualizationAdapter
 │   │   │   ├── proxy.py
-│   │   │   │   ├── StageRuntimeProxy
+│   │   │   │   ├── StageRuntimeHandle
 │   │   │   │   └── private local/Ray invocation helpers
 │   │   │   └── ray.py
 │   │   │       └── Ray placement/invocation helpers

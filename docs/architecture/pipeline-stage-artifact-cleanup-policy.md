@@ -5,7 +5,7 @@ pipeline run. It is a companion to
 [pipeline-stage-refactor-target.md](./pipeline-stage-refactor-target.md) and
 [pipeline-stage-refactor-pruning.md](./pipeline-stage-refactor-pruning.md).
 
-The policy is target architecture only. Current legacy `RunRequest` TOML files
+The policy is target architecture only. Current legacy `RunConfig` TOML files
 must not add executable cleanup tables until `StageConfig.cleanup` exists in
 the active config models.
 
@@ -126,7 +126,7 @@ recorded as cleanup metadata and surfaced as a warning/status detail.
 ## Migration Note For `vista-full.toml`
 
 [vista-full.toml](../../.configs/pipelines/vista-full.toml) currently uses the
-legacy `RunRequest` shape. Until `StageConfig.cleanup` exists, do not add a
+legacy `RunConfig` shape. Until `StageConfig.cleanup` exists, do not add a
 real `[slam.cleanup]` table or `[stages.slam.cleanup]` table to that file.
 
 When the config migration is active, replace the inline TODO with a commented
