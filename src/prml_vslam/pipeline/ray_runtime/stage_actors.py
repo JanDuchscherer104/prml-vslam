@@ -90,19 +90,33 @@ class PacketSourceActor:
                     media_type="image/rgb",
                     metadata={"slot": "image"},
                 )
-                depth_ref = None if packet.depth is None else ray.put(np.asarray(packet.depth))
+                depth_payload_ref, depth_ref = put_transient_payload(
+                    packet.depth,
+                    payload_kind="depth",
+                    media_type="image/depth",
+                    metadata={"slot": "depth"},
+                )
                 confidence_ref = None if packet.confidence is None else ray.put(np.asarray(packet.confidence))
+                pointmap_payload_ref, pointmap_ref = put_transient_payload(
+                    packet.pointmap,
+                    payload_kind="point_cloud",
+                    media_type="application/x.pointmap",
+                    metadata={"slot": "pointmap"},
+                )
                 self._coordinator.on_packet.remote(
                     packet=packet,
                     frame_ref=frame_ref,
                     depth_ref=depth_ref,
                     confidence_ref=confidence_ref,
+                    pointmap_ref=pointmap_ref,
                     intrinsics=packet.intrinsics,
                     pose=packet.pose,
                     provenance=packet.provenance.model_copy(deep=True),
                     processed_frame_count=self._processed_frame_count,
                     measured_fps=rolling_fps(self._packet_timestamps),
                     frame_payload_ref=frame_payload_ref,
+                    depth_payload_ref=depth_payload_ref,
+                    pointmap_payload_ref=pointmap_payload_ref,
                 )
         except EOFError:
             self._console.debug("Streaming source reached EOF.")

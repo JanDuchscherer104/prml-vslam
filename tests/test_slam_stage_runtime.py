@@ -5,31 +5,35 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from pydantic import PrivateAttr
 
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket, FrameTransform
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.pipeline.config import RunConfig, build_run_config
+from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
-from prml_vslam.pipeline.contracts.request import PipelineMode
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
+from prml_vslam.pipeline.stages.slam.config import MethodId, MockSlamBackendConfig
 from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
 from prml_vslam.utils import PathConfig
 
 
-class _FakeBackendFactory:
-    def __init__(self, backend: _FakeBackend) -> None:
-        self.backend = backend
+class _FakeBackendConfig(MockSlamBackendConfig):
+    _backend: _FakeBackend = PrivateAttr()
 
-    def build(self, backend_config, *, path_config: PathConfig | None = None) -> _FakeBackend:
-        del backend_config, path_config
-        return self.backend
+    def __init__(self, backend: _FakeBackend) -> None:
+        super().__init__()
+        self._backend = backend
+
+    def setup_target(self, **kwargs) -> _FakeBackend:
+        del kwargs
+        return self._backend
 
 
 class _FakeBackend:
@@ -133,13 +137,16 @@ def _slam_artifacts(artifact_root: Path) -> SlamArtifacts:
 def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     run_config = _run_config(tmp_path, mode=PipelineMode.OFFLINE)
     plan = _plan(tmp_path, run_config)
-    runtime = SlamStageRuntime(backend_factory=_FakeBackendFactory(_FakeBackend(plan.artifact_root)))
+    backend_config = _FakeBackendConfig(_FakeBackend(plan.artifact_root))
+    runtime = SlamStageRuntime()
 
     result = runtime.run_offline(
         SlamOfflineInput(
-            run_config=run_config,
-            plan=plan,
+            backend=backend_config,
+            outputs=run_config.stages.slam.outputs,
+            artifact_root=plan.artifact_root,
             path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
+            baseline_source=ReferenceSource.GROUND_TRUTH,
             sequence_manifest=SequenceManifest(sequence_id="seq-1"),
             benchmark_inputs=None,
         )
@@ -155,16 +162,20 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
     run_config = _run_config(tmp_path)
     plan = _plan(tmp_path, run_config)
     backend = _FakeBackend(plan.artifact_root)
-    runtime = SlamStageRuntime(backend_factory=_FakeBackendFactory(backend))
+    backend_config = _FakeBackendConfig(backend)
+    runtime = SlamStageRuntime()
     sequence_manifest = SequenceManifest(sequence_id="seq-1")
 
     runtime.start_streaming(
         SlamStreamingStartInput(
-            run_config=run_config,
-            plan=plan,
+            backend=backend_config,
+            outputs=run_config.stages.slam.outputs,
+            artifact_root=plan.artifact_root,
             path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
             sequence_manifest=sequence_manifest,
             benchmark_inputs=None,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            log_diagnostic_preview=True,
         )
     )
     runtime.submit_stream_item(SlamFrameInput(frame=FramePacket(seq=1, timestamp_ns=10, rgb=np.zeros((2, 3, 3)))))

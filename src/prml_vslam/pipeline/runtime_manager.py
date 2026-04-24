@@ -1,8 +1,9 @@
 """Runtime construction and preflight scaffolding for pipeline stages.
 
-The manager introduced here is intentionally additive: it validates runtime
-availability and constructs proxies lazily, while the current coordinator still
-uses the existing runtime program during the migration.
+The manager validates runtime availability and constructs proxies lazily from
+stage bindings. The current coordinator uses it for local runtime execution;
+Ray-hosted ``StageRuntimeProxy`` invocation remains an explicit unsupported
+deployment path until actor/task-ref handling moves behind the proxy.
 """
 
 from __future__ import annotations
@@ -72,16 +73,14 @@ class RuntimePreflightResult(BaseData):
         raise RuntimeError("; ".join(messages))
 
 
-# TODO(pipeline-refactor/WP-03/WP-10): Wire this manager into
-# RunCoordinatorActor before treating it as the production construction path.
 class RuntimeManager:
     """Preflight and lazily construct capability-typed stage runtime proxies.
 
     The manager is the target construction authority for stage runtimes and
     proxy metadata. Stage configs validate policy, but this object decides
     which runtime factory, capability set, deployment kind, executor id, and
-    resource assignment are used for a planned stage. During migration the
-    legacy coordinator may still bypass it for production execution.
+    resource assignment are used for a planned stage. The remaining deployment
+    gap is Ray-hosted proxy invocation, not coordinator bypass.
     """
 
     def __init__(
@@ -108,6 +107,7 @@ class RuntimeManager:
         *,
         factory: RuntimeFactory,
         capabilities: frozenset[RuntimeCapability],
+        stage_config: StageConfig | None = None,
         deployment_kind: DeploymentKind = "in_process",
         executor_id: str | None = None,
         resource_assignment: dict[str, JsonScalar] | None = None,
@@ -119,6 +119,8 @@ class RuntimeManager:
         if executor_id is not None:
             self._executor_ids[stage_key] = executor_id
         self._resource_assignments[stage_key] = {} if resource_assignment is None else dict(resource_assignment)
+        if stage_config is not None:
+            self._stage_configs[stage_key] = stage_config
 
     def preflight(self, plan: RunPlan) -> RuntimePreflightResult:
         """Validate runtime availability without constructing runtimes."""

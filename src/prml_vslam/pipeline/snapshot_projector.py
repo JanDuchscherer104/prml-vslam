@@ -83,7 +83,7 @@ class SnapshotProjector:
                     else status.model_copy(update={"lifecycle_state": StageStatus.RUNNING})
                 )
                 if updated.state is not RunState.STOPPED:
-                    updated.state = RunState.PREPARING if stage_key is StageKey.INGEST else RunState.RUNNING
+                    updated.state = RunState.PREPARING if stage_key is StageKey.SOURCE else RunState.RUNNING
             case ArtifactRegistered(artifact_key=artifact_key, artifact=artifact):
                 updated.artifacts[artifact_key] = artifact
             case StageCompleted(stage_key=stage_key, outcome=outcome):

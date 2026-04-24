@@ -20,6 +20,7 @@ from ray.actor import ActorHandle
 
 from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
+from prml_vslam.interfaces.ingest import SourceStageOutput
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
@@ -80,7 +81,7 @@ from prml_vslam.pipeline.stages.reconstruction.visualization import (
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
 from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamStageRuntime
-from prml_vslam.pipeline.stages.slam.visualization import IMAGE_REF, ROLE_SOURCE_RGB
+from prml_vslam.pipeline.stages.source.visualization import SourceVisualizationAdapter
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
@@ -169,6 +170,7 @@ class RunCoordinatorActor:
         self._backend_descriptor: BackendDescriptor | None = None
         self._result_store = StageResultStore()
         self._stage_runner = StageRunner(self._result_store)
+        self._source_visualization_adapter = SourceVisualizationAdapter()
         self._streaming_error: str | None = None
         self._path_config: PathConfig | None = None
 
@@ -198,6 +200,7 @@ class RunCoordinatorActor:
         self._streaming_error = None
         self._result_store = StageResultStore()
         self._stage_runner = StageRunner(self._result_store)
+        self._source_visualization_adapter = SourceVisualizationAdapter()
         self._snapshot = RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         self._jsonl_sink = JsonlEventSink(run_paths.summary_path.parent / "run-events.jsonl")
@@ -273,12 +276,15 @@ class RunCoordinatorActor:
         frame_ref: HandlePayload | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
+        pointmap_ref: HandlePayload | None,
         intrinsics: CameraIntrinsics | None,
         pose: FrameTransform | None,
         provenance: FramePacketProvenance,
         processed_frame_count: int,
         measured_fps: float,
         frame_payload_ref: TransientPayloadRef | None = None,
+        depth_payload_ref: TransientPayloadRef | None = None,
+        pointmap_payload_ref: TransientPayloadRef | None = None,
     ) -> None:
         """Record one observed packet and forward it to streaming SLAM.
 
@@ -286,8 +292,13 @@ class RunCoordinatorActor:
         retired with the WP-09C event cutover, while payloads remain behind
         coordinator-owned transient refs.
         """
-        if frame_payload_ref is not None and frame_ref is not None:
-            self._remember_handle(frame_payload_ref.handle_id, frame_ref)
+        for payload_ref, handle in (
+            (frame_payload_ref, frame_ref),
+            (depth_payload_ref, depth_ref),
+            (pointmap_payload_ref, pointmap_ref),
+        ):
+            if payload_ref is not None and handle is not None:
+                self._remember_handle(payload_ref.handle_id, handle)
         source_status = StageRuntimeStatus(
             stage_key=StageKey.SOURCE,
             lifecycle_state=StageStatus.RUNNING,
@@ -307,7 +318,12 @@ class RunCoordinatorActor:
                     runtime_status=source_status,
                 ),
             )
-        self._emit_source_visualization_update(packet=packet, frame_payload_ref=frame_payload_ref)
+        self._emit_source_visualization_update(
+            packet=packet,
+            frame_payload_ref=frame_payload_ref,
+            depth_payload_ref=depth_payload_ref,
+            pointmap_payload_ref=pointmap_payload_ref,
+        )
         if self._stop_requested or self._slam_runtime_proxy is None:
             return
         self._in_flight_frames += 1
@@ -318,6 +334,7 @@ class RunCoordinatorActor:
                 frame_ref=frame_ref,
                 depth_ref=depth_ref,
                 confidence_ref=confidence_ref,
+                pointmap_ref=pointmap_ref,
                 intrinsics=intrinsics,
                 pose=pose,
                 provenance=provenance,
@@ -371,6 +388,7 @@ class RunCoordinatorActor:
         frame_ref: HandlePayload | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
+        pointmap_ref: HandlePayload | None,
         intrinsics: CameraIntrinsics | None,
         pose: FrameTransform | None,
         provenance: FramePacketProvenance,
@@ -386,6 +404,8 @@ class RunCoordinatorActor:
                     rgb=self._resolve_handle_payload(frame_ref),
                     depth=self._resolve_handle_payload(depth_ref),
                     confidence=self._resolve_handle_payload(confidence_ref),
+                    pointmap=self._resolve_handle_payload(pointmap_ref),
+                    point_cloud=packet.point_cloud,
                     intrinsics=intrinsics,
                     pose=pose,
                     provenance=provenance,
@@ -704,6 +724,8 @@ class RunCoordinatorActor:
                 ),
                 payload_resolver=None,
             )
+        if stage_key is StageKey.SOURCE and isinstance(payload, SourceStageOutput):
+            self._submit_source_reference_visualization_update(output=payload, artifacts=result.outcome.artifacts)
         self._submit_artifact_visualization_update(stage_key=stage_key, outcome=result.outcome)
 
     def _submit_artifact_visualization_update(self, *, stage_key: StageKey, outcome: StageOutcome) -> None:
@@ -1040,30 +1062,49 @@ class RunCoordinatorActor:
         *,
         packet: FramePacket,
         frame_payload_ref: TransientPayloadRef | None,
+        depth_payload_ref: TransientPayloadRef | None,
+        pointmap_payload_ref: TransientPayloadRef | None,
     ) -> None:
         visualization_owner = self._run_config
-        if (
-            visualization_owner is None
-            or not visualization_owner.visualization.log_source_rgb
-            or frame_payload_ref is None
-        ):
+        if visualization_owner is None or not visualization_owner.visualization.log_source_rgb:
+            return
+        visualizations = self._source_visualization_adapter.build_packet_items(
+            packet=packet,
+            frame_payload_ref=frame_payload_ref,
+            depth_payload_ref=depth_payload_ref,
+            pointmap_payload_ref=pointmap_payload_ref,
+        )
+        if not visualizations:
             return
         update = StageRuntimeUpdate(
             stage_key=StageKey.SOURCE,
             timestamp_ns=ts_ns(),
-            visualizations=[
-                VisualizationItem(
-                    intent=VisualizationIntent.RGB_IMAGE,
-                    role=ROLE_SOURCE_RGB,
-                    payload_refs={IMAGE_REF: frame_payload_ref},
-                    frame_index=packet.seq,
-                    space="source_raster",
-                )
-            ],
+            visualizations=visualizations,
         )
         with self._lock:
             self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
         self._submit_rerun_update(update=update, payload_resolver=self._self_actor_handle())
+
+    def _submit_source_reference_visualization_update(
+        self,
+        *,
+        output: SourceStageOutput,
+        artifacts: dict[str, ArtifactRef],
+    ) -> None:
+        visualizations = self._source_visualization_adapter.build_reference_items(
+            output=output,
+            artifact_refs=artifacts,
+        )
+        if not visualizations:
+            return
+        update = StageRuntimeUpdate(
+            stage_key=StageKey.SOURCE,
+            timestamp_ns=ts_ns(),
+            visualizations=visualizations,
+        )
+        with self._lock:
+            self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
+        self._submit_rerun_update(update=update, payload_resolver=None)
 
     def _submit_rerun_update(
         self,

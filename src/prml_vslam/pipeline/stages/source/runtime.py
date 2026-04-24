@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 from prml_vslam.datasets.contracts import FrameSelectionConfig
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
@@ -21,6 +22,15 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
+from prml_vslam.pipeline.stages.source.visualization import (
+    reference_cloud_artifact_key,
+    reference_cloud_metadata_artifact_key,
+    reference_point_cloud_sequence_index_artifact_key,
+    reference_point_cloud_sequence_payload_artifact_key,
+    reference_point_cloud_sequence_trajectory_artifact_key,
+    reference_trajectory_artifact_key,
+    rgbd_observation_sequence_artifact_key,
+)
 from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.utils import BaseData, Console, PathConfig, RunArtifactPaths
@@ -65,10 +75,7 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
 
     def __init__(self, *, source: OfflineSequenceSource) -> None:
         self._source = source
-        # TODO(pipeline-refactor/WP-10): Switch to the target source stage key
-        # after persisted events, manifests, and old-run inspection no longer
-        # require the current `ingest` executable key.
-        self._status = StageRuntimeStatus(stage_key=StageKey.INGEST)
+        self._status = StageRuntimeStatus(stage_key=StageKey.SOURCE)
 
     def status(self) -> StageRuntimeStatus:
         """Return the latest source-runtime status."""
@@ -128,18 +135,18 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
             benchmark_inputs=benchmark_inputs,
         )
         outcome = StageOutcome(
-            stage_key=StageKey.INGEST,
+            stage_key=StageKey.SOURCE,
             status=StageStatus.COMPLETED,
             config_hash=input_payload.config_input.config_hash,
             input_fingerprint=input_payload.config_input.input_fingerprint,
             artifacts=_source_artifacts(run_paths=run_paths, output=source_output),
         )
         return StageResult(
-            stage_key=StageKey.INGEST,
+            stage_key=StageKey.SOURCE,
             payload=source_output,
             outcome=outcome,
             final_runtime_status=StageRuntimeStatus(
-                stage_key=StageKey.INGEST,
+                stage_key=StageKey.SOURCE,
                 lifecycle_state=StageStatus.COMPLETED,
                 progress_message="Source preparation complete.",
             ),
@@ -162,7 +169,31 @@ def _source_artifacts(*, run_paths: RunArtifactPaths, output: SourceStageOutput)
     if output.benchmark_inputs is not None:
         artifacts["benchmark_inputs"] = _artifact_ref(run_paths.benchmark_inputs_path, kind="json")
         for reference in output.benchmark_inputs.reference_trajectories:
-            artifacts[f"reference_tum:{reference.source.value}"] = _artifact_ref(reference.path, kind="tum")
+            artifacts[reference_trajectory_artifact_key(reference.source)] = _artifact_ref(reference.path, kind="tum")
+        for reference in output.benchmark_inputs.reference_clouds:
+            artifacts[reference_cloud_artifact_key(reference)] = _artifact_ref(reference.path, kind="ply")
+            artifacts[reference_cloud_metadata_artifact_key(reference)] = _artifact_ref(
+                reference.metadata_path,
+                kind="json",
+            )
+        for reference in output.benchmark_inputs.reference_point_cloud_sequences:
+            artifacts[reference_point_cloud_sequence_index_artifact_key(reference)] = _artifact_ref(
+                reference.index_path,
+                kind="csv",
+            )
+            artifacts[reference_point_cloud_sequence_trajectory_artifact_key(reference)] = _artifact_ref(
+                reference.trajectory_path,
+                kind="tum",
+            )
+            artifacts[reference_point_cloud_sequence_payload_artifact_key(reference)] = _artifact_ref(
+                reference.payload_root,
+                kind="dir",
+            )
+        for reference in output.benchmark_inputs.rgbd_observation_sequences:
+            artifacts[rgbd_observation_sequence_artifact_key(reference)] = _artifact_ref(
+                reference.index_path,
+                kind="rgbd_observation_sequence",
+            )
     return artifacts
 
 
@@ -282,17 +313,6 @@ def _max_frames_for_config_input(config_input: SourceRuntimeConfigInput) -> int 
     return config_input.streaming_max_frames
 
 
-def _max_frames_for_request(request) -> int | None:
-    """Compatibility helper kept for tests while runtime launch uses RunConfig."""
-    return _max_frames_for_config_input(
-        SourceRuntimeConfigInput(
-            mode=request.mode,
-            frame_stride=getattr(request.source, "frame_stride", 1),
-            streaming_max_frames=request.slam.backend.max_frames,
-        )
-    )
-
-
 def _check_extraction_cache(
     *,
     video_path: Path,
@@ -358,7 +378,7 @@ def _preferred_timestamps_source(
     return prepared_manifest.timestamps_path
 
 
-def _write_json_payload(path: Path, payload: object) -> Path:
+def _write_json_payload(path: Path, payload: Any) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return path.resolve()
@@ -396,7 +416,7 @@ class SampledFramePacketStream:
         self._seen_packets = 0
         self._last_emitted_timestamp_ns: int | None = None
 
-    def connect(self) -> object:
+    def connect(self) -> Any:
         """Connect the wrapped stream."""
         return self._stream.connect()
 

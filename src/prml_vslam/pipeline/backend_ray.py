@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Ray snapshots this flag at import time. Set it before importing `ray` so the
 # local Streamlit/CLI path does not get rewritten back to `uv run ...`.
@@ -91,7 +93,7 @@ class RayPipelineBackend(PipelineBackend):
         self._local_head_address: str | None = None
         self._local_head_log_path: Path | None = None
         self._reuse_local_head = False
-        self._next_coordinator_options: dict[str, object] = {}
+        self._next_coordinator_options: dict[str, Any] = {}
 
     def submit_run(
         self,
@@ -100,13 +102,17 @@ class RayPipelineBackend(PipelineBackend):
         runtime_source: PipelineRuntimeSource = None,
     ) -> str:
         """Build the plan, ensure Ray is available, and boot one coordinator."""
-        self._reuse_local_head = run_config.runtime.ray.local_head_lifecycle == "reusable"
+        self._reuse_local_head = run_config.ray_local_head_lifecycle == "reusable"
         self._ensure_ray()
         plan = run_config.compile_plan(self._path_config)
         unavailable = [stage for stage in plan.stages if not stage.available]
         if unavailable:
             reason = unavailable[0].availability_reason or f"Stage '{unavailable[0].key.value}' is unavailable."
             raise RuntimeError(reason)
+        if plan.artifact_root.exists():
+            self._console.warning("Overwriting existing run artifact root '%s'.", plan.artifact_root)
+            shutil.rmtree(plan.artifact_root)
+        plan.artifact_root.mkdir(parents=True, exist_ok=True)
         self._console.info(
             "Submitting run '%s' in %s mode with %d planned stages.",
             plan.run_id,
@@ -144,8 +150,8 @@ class RayPipelineBackend(PipelineBackend):
 
     def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:
         """Resolve one coordinator-owned target transient payload ref."""
-        # TODO(pipeline-refactor/WP-08): Return a typed not-found result
-        # instead of None once payload resolver contracts land.
+        # TODO(pipeline-refactor/post-target-alignment): Return a typed
+        # not-found result instead of None.
         if ref is None:
             return None
         return ray.get(self._coordinator_for(run_id).read_payload.remote(ref.handle_id))

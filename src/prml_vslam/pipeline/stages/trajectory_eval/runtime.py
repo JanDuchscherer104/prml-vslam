@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.contracts import EvaluationArtifact
+from prml_vslam.eval.contracts import DiscoveredRun, EvaluationArtifact, SelectionSnapshot
 from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
@@ -61,20 +61,12 @@ class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationRuntim
         return result
 
     def _run(self, input_payload: TrajectoryEvaluationRuntimeInput) -> StageResult:
-        artifact = TrajectoryEvaluationService(
-            PathConfig(artifacts_dir=input_payload.run_config.output_dir)
-        ).compute_pipeline_evaluation(
-            run_config=input_payload.run_config,
-            plan=input_payload.plan,
-            sequence_manifest=input_payload.sequence_manifest,
-            benchmark_inputs=input_payload.benchmark_inputs,
-            slam=input_payload.slam,
-        )
+        artifact = _compute_pipeline_evaluation(input_payload)
         artifacts = _artifact_map(artifact)
         outcome = StageOutcome(
             stage_key=StageKey.TRAJECTORY_EVALUATION,
             status=StageStatus.COMPLETED,
-            config_hash=stable_hash(input_payload.run_config.benchmark.trajectory),
+            config_hash=stable_hash({"baseline_source": input_payload.baseline_source.value}),
             input_fingerprint=stable_hash(
                 {
                     "benchmark_inputs": input_payload.benchmark_inputs,
@@ -107,6 +99,34 @@ def _artifact_map(artifact: EvaluationArtifact | None) -> dict[str, ArtifactRef]
         "reference_tum": artifact_ref(artifact.reference_path, kind="tum"),
         "estimate_tum": artifact_ref(artifact.estimate_path, kind="tum"),
     }
+
+
+def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationRuntimeInput) -> EvaluationArtifact | None:
+    """Compute trajectory evaluation from the narrow runtime input."""
+    if input_payload.sequence_manifest is None or input_payload.benchmark_inputs is None or input_payload.slam is None:
+        raise RuntimeError("Trajectory evaluation requires a sequence manifest, benchmark inputs, and SLAM artifacts.")
+    reference = input_payload.benchmark_inputs.trajectory_for_source(input_payload.baseline_source)
+    if reference is None:
+        raise RuntimeError(
+            "Prepared benchmark inputs do not include the requested trajectory baseline "
+            f"'{input_payload.baseline_source.value}'."
+        )
+    return TrajectoryEvaluationService(path_config=_path_config_for(input_payload)).compute_evaluation(
+        selection=SelectionSnapshot(
+            sequence_slug=input_payload.sequence_manifest.sequence_id,
+            reference_path=reference.path,
+            run=DiscoveredRun(
+                artifact_root=input_payload.artifact_root,
+                estimate_path=input_payload.slam.trajectory_tum.path,
+                method=input_payload.method_id,
+                label=input_payload.method_label,
+            ),
+        )
+    )
+
+
+def _path_config_for(input_payload: TrajectoryEvaluationRuntimeInput) -> PathConfig:
+    return PathConfig(artifacts_dir=input_payload.artifact_root.parent)
 
 
 __all__ = ["TrajectoryEvaluationRuntime", "TrajectoryEvaluationRuntimeInput"]
