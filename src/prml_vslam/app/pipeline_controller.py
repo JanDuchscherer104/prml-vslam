@@ -3,22 +3,27 @@
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
+from urllib.parse import quote
 
 import numpy as np
 
 from prml_vslam.eval.contracts import TrajectoryEvaluationPreview
 from prml_vslam.eval.services import compute_trajectory_ape_preview
 from prml_vslam.interfaces import CameraIntrinsics
-from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.slam.config import MethodId
+
+from .models import PipelinePageState, PipelineTelemetryMetricId, PipelineTelemetrySample, PipelineTelemetryViewMode
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.run_service import RunService
@@ -26,6 +31,10 @@ if TYPE_CHECKING:
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 JsonObject: TypeAlias = dict[str, JsonValue]
+TelemetryChartValue: TypeAlias = str | int | float
+TelemetryChartRow: TypeAlias = dict[str, TelemetryChartValue]
+DEFAULT_RERUN_WEB_VIEWER_URL = "http://127.0.0.1:9090/"
+"""Default local Rerun web viewer base URL."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +52,69 @@ class PipelineNoticeRenderModel:
 
     level: str
     message: str
+
+
+@dataclass(frozen=True, slots=True)
+class PipelineViewerLinkModel:
+    """Clickable Rerun viewer link state for the Pipeline page."""
+
+    enabled: bool
+    grpc_url: str
+    web_url: str | None
+    status_message: str
+
+
+@dataclass(frozen=True, slots=True)
+class PipelineStageStatusRow:
+    """One app-facing stage status row."""
+
+    stage: str
+    stage_id: str
+    lifecycle: str
+    available: str
+    progress: str
+    fps: str
+    throughput: str
+    latency: str
+    queue: str
+    tasks: str
+    artifacts: str
+    updated: str
+    message: str
+    executor: str
+    resources: str
+
+    def table_row(self) -> dict[str, str]:
+        """Return the Streamlit table row payload."""
+        return {
+            "Stage": self.stage,
+            "Id": self.stage_id,
+            "State": self.lifecycle,
+            "Available": self.available,
+            "Progress": self.progress,
+            "FPS": self.fps,
+            "Throughput": self.throughput,
+            "Latency": self.latency,
+            "Queue": self.queue,
+            "Tasks": self.tasks,
+            "Artifacts": self.artifacts,
+            "Updated": self.updated,
+            "Message": self.message,
+            "Executor": self.executor,
+            "Resources": self.resources,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PipelineTelemetryChartModel:
+    """Rolling telemetry chart payload."""
+
+    rows: list[TelemetryChartRow]
+    metric: PipelineTelemetryMetricId
+    metric_label: str
+    unit_label: str
+    selected_stage_key: StageKey | None
+    empty_message: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,12 +151,106 @@ class PipelineSnapshotRenderModel:
     notice: PipelineNoticeRenderModel
     is_offline: bool
     plan_rows: list[dict[str, str]]
+    stage_status_rows: list[PipelineStageStatusRow]
+    telemetry_visible: bool
+    telemetry_view_mode: PipelineTelemetryViewMode
+    telemetry_chart: PipelineTelemetryChartModel | None
     stage_outcome_rows: list[dict[str, str]]
     recent_events: list[JsonObject]
     stage_outcomes_json: str | None
     artifacts_json: str | None
     stage_runtime_status_json: str | None
     streaming: PipelineStreamingRenderModel | None
+
+
+def refreshed_pipeline_telemetry_history(
+    page_state: PipelinePageState,
+    snapshot: RunSnapshot,
+) -> tuple[str | None, list[PipelineTelemetrySample], bool]:
+    """Return the bounded telemetry history after incorporating one snapshot."""
+    run_id = snapshot.run_id or None
+    if run_id is None:
+        changed = page_state.telemetry_history_run_id is not None or bool(page_state.telemetry_history)
+        return None, [], changed
+
+    history = [] if page_state.telemetry_history_run_id != run_id else list(page_state.telemetry_history)
+    seen = {(sample.stage_key, sample.updated_at_ns) for sample in history}
+    for status in snapshot.stage_runtime_status.values():
+        key = (status.stage_key, status.updated_at_ns)
+        if key in seen:
+            continue
+        history.append(
+            PipelineTelemetrySample(
+                run_id=run_id,
+                stage_key=status.stage_key,
+                updated_at_ns=status.updated_at_ns,
+                lifecycle_state=status.lifecycle_state.value,
+                progress_message=status.progress_message,
+                processed_items=status.processed_items,
+                fps=status.fps,
+                throughput=status.throughput,
+                latency_ms=status.latency_ms,
+                queue_depth=status.queue_depth,
+                backlog_count=status.backlog_count,
+                submitted_count=status.submitted_count,
+                completed_count=status.completed_count,
+                failed_count=status.failed_count,
+                in_flight_count=status.in_flight_count,
+            )
+        )
+        seen.add(key)
+
+    max_samples = max(1, page_state.telemetry_max_samples)
+    if len(history) > max_samples:
+        history = history[-max_samples:]
+    changed = page_state.telemetry_history_run_id != run_id or history != page_state.telemetry_history
+    return run_id, history, changed
+
+
+def telemetry_stage_options(
+    snapshot: RunSnapshot,
+    history: Sequence[PipelineTelemetrySample],
+) -> list[StageKey]:
+    """Return stage keys with planned, live, terminal, or historical telemetry context."""
+    ordered: list[StageKey] = []
+    if snapshot.plan is not None:
+        ordered.extend(stage.key for stage in snapshot.plan.stages)
+    ordered.extend(snapshot.stage_runtime_status)
+    ordered.extend(snapshot.stage_outcomes)
+    ordered.extend(sample.stage_key for sample in history)
+    return _unique_stage_keys(ordered)
+
+
+def build_pipeline_viewer_link_model(
+    *,
+    connect_live_viewer: bool,
+    grpc_url: str,
+    viewer_base_url: str = DEFAULT_RERUN_WEB_VIEWER_URL,
+) -> PipelineViewerLinkModel:
+    """Return the Streamlit-facing Rerun viewer link for one run configuration."""
+    resolved_grpc_url = grpc_url.strip()
+    if not connect_live_viewer:
+        return PipelineViewerLinkModel(
+            enabled=False,
+            grpc_url=resolved_grpc_url,
+            web_url=None,
+            status_message="Live Rerun viewer is disabled for this run.",
+        )
+    if not resolved_grpc_url:
+        return PipelineViewerLinkModel(
+            enabled=False,
+            grpc_url=resolved_grpc_url,
+            web_url=None,
+            status_message="Live Rerun viewer is enabled, but no gRPC URL is configured.",
+        )
+    resolved_base_url = viewer_base_url.strip() or DEFAULT_RERUN_WEB_VIEWER_URL
+    separator = "&" if "?" in resolved_base_url else "?"
+    return PipelineViewerLinkModel(
+        enabled=True,
+        grpc_url=resolved_grpc_url,
+        web_url=f"{resolved_base_url}{separator}url={quote(resolved_grpc_url, safe='')}",
+        status_message="Open the local Rerun web viewer for this live endpoint.",
+    )
 
 
 def resolve_evo_preview(snapshot: RunSnapshot) -> tuple[TrajectoryEvaluationPreview | None, str | None]:
@@ -141,8 +307,15 @@ def build_pipeline_snapshot_render_model(
     *,
     method: MethodId | None,
     show_evo_preview: bool,
+    telemetry_history: Sequence[PipelineTelemetrySample] = (),
+    telemetry_visible: bool = True,
+    telemetry_view_mode: PipelineTelemetryViewMode = PipelineTelemetryViewMode.LATEST,
+    telemetry_selected_stage_key: StageKey | None = None,
+    telemetry_selected_metric: PipelineTelemetryMetricId = PipelineTelemetryMetricId.FPS,
+    now_ns: int | None = None,
 ) -> PipelineSnapshotRenderModel:
     """Resolve controller-owned render data for the Pipeline snapshot surface."""
+    resolved_now_ns = time.time_ns() if now_ns is None else now_ns
     is_offline = snapshot.plan is not None and snapshot.plan.mode is PipelineMode.OFFLINE
     streaming = None
     if not is_offline and _has_streaming_projection(snapshot):
@@ -182,7 +355,7 @@ def build_pipeline_snapshot_render_model(
             evo_preview=evo_preview,
             evo_error=evo_error,
             evo_empty_message=(
-                "Complete one demo run with a reference trajectory to render the evo APE colormap for this slice."
+                "Complete one run with a reference trajectory to render the evo APE colormap for this slice."
             ),
         )
     caption = None
@@ -197,6 +370,16 @@ def build_pipeline_snapshot_render_model(
         notice=_pipeline_notice(snapshot, is_offline=is_offline),
         is_offline=is_offline,
         plan_rows=[] if snapshot.plan is None else snapshot.plan.stage_rows(),
+        stage_status_rows=_stage_status_rows(snapshot, now_ns=resolved_now_ns),
+        telemetry_visible=telemetry_visible,
+        telemetry_view_mode=telemetry_view_mode,
+        telemetry_chart=_telemetry_chart_model(
+            telemetry_history,
+            selected_stage_key=telemetry_selected_stage_key,
+            metric=telemetry_selected_metric,
+        )
+        if telemetry_visible and telemetry_view_mode is PipelineTelemetryViewMode.ROLLING
+        else None,
         stage_outcome_rows=_stage_outcome_rows(snapshot),
         recent_events=_recent_event_rows(run_service.tail_events(limit=10)),
         stage_outcomes_json=_json_dump_mapping(
@@ -256,7 +439,9 @@ def _pipeline_notice(snapshot: RunSnapshot, *, is_offline: bool) -> PipelineNoti
         case RunState.IDLE:
             return PipelineNoticeRenderModel(
                 level="info",
-                message="Select a request template, configure the supported source and stages, then start the pipeline demo.",
+                message=(
+                    "Select a request template, configure the supported source and stages, then start the pipeline."
+                ),
             )
         case RunState.PREPARING:
             return PipelineNoticeRenderModel(
@@ -276,24 +461,228 @@ def _pipeline_notice(snapshot: RunSnapshot, *, is_offline: bool) -> PipelineNoti
             return PipelineNoticeRenderModel(
                 level="success",
                 message=(
-                    "The bounded offline demo finished and wrote artifacts."
+                    "The bounded offline run finished and wrote artifacts."
                     if is_offline
-                    else "The bounded demo finished and wrote SLAM artifacts."
+                    else "The bounded run finished and wrote SLAM artifacts."
                 ),
             )
         case RunState.STOPPED:
             return PipelineNoticeRenderModel(
                 level="warning",
                 message=(
-                    "The offline demo stopped. The written artifacts remain visible below."
+                    "The offline run stopped. The written artifacts remain visible below."
                     if is_offline
-                    else "The demo stopped. The last frame, trajectory, and written artifacts remain visible below."
+                    else "The run stopped. The last frame, trajectory, and written artifacts remain visible below."
                 ),
             )
         case RunState.FAILED:
             return PipelineNoticeRenderModel(
-                level="error", message=snapshot.error_message or "The pipeline demo failed."
+                level="error", message=snapshot.error_message or "The pipeline run failed."
             )
+
+
+def _stage_status_rows(snapshot: RunSnapshot, *, now_ns: int) -> list[PipelineStageStatusRow]:
+    if snapshot.plan is None and not snapshot.stage_runtime_status and not snapshot.stage_outcomes:
+        return []
+    planned = {stage.key: stage for stage in snapshot.plan.stages} if snapshot.plan is not None else {}
+    stage_key_candidates: list[StageKey] = []
+    if snapshot.plan is not None:
+        stage_key_candidates.extend(stage.key for stage in snapshot.plan.stages)
+    stage_key_candidates.extend(snapshot.stage_runtime_status)
+    stage_key_candidates.extend(snapshot.stage_outcomes)
+    stage_keys = _unique_stage_keys(stage_key_candidates)
+    rows: list[PipelineStageStatusRow] = []
+    for stage_key in stage_keys:
+        plan_stage = planned.get(stage_key)
+        status = snapshot.stage_runtime_status.get(stage_key)
+        outcome = snapshot.stage_outcomes.get(stage_key)
+        rows.append(
+            PipelineStageStatusRow(
+                stage=stage_key.label,
+                stage_id=stage_key.value,
+                lifecycle=_stage_lifecycle(
+                    plan_available=None if plan_stage is None else plan_stage.available,
+                    status=status,
+                    outcome=outcome,
+                ),
+                available=_stage_available_label(plan_stage),
+                progress=_stage_progress_label(status),
+                fps=_format_optional_rate(None if status is None else status.fps),
+                throughput=_format_throughput(status),
+                latency=_format_latency(status),
+                queue=_format_queue(status),
+                tasks=_format_tasks(status),
+                artifacts="0" if outcome is None else str(len(outcome.artifacts)),
+                updated=_format_updated_age(status, now_ns=now_ns),
+                message=_stage_message(plan_stage, status, outcome),
+                executor="" if status is None or status.executor_id is None else status.executor_id,
+                resources=_format_resources(status),
+            )
+        )
+    return rows
+
+
+def _telemetry_chart_model(
+    history: Sequence[PipelineTelemetrySample],
+    *,
+    selected_stage_key: StageKey | None,
+    metric: PipelineTelemetryMetricId,
+) -> PipelineTelemetryChartModel:
+    stage_options = _unique_stage_keys(sample.stage_key for sample in history)
+    resolved_stage_key = (
+        selected_stage_key if selected_stage_key in stage_options else (stage_options[0] if stage_options else None)
+    )
+    rows: list[TelemetryChartRow] = []
+    if resolved_stage_key is not None:
+        sample_index = 0
+        for sample in history:
+            if sample.stage_key is not resolved_stage_key:
+                continue
+            value = _telemetry_metric_value(sample, metric)
+            if value is None:
+                continue
+            rows.append(
+                {
+                    "sample": sample_index,
+                    "stage": sample.stage_key.value,
+                    "value": float(value),
+                    "updated_at_ns": sample.updated_at_ns,
+                }
+            )
+            sample_index += 1
+    return PipelineTelemetryChartModel(
+        rows=rows,
+        metric=metric,
+        metric_label=metric.label,
+        unit_label=metric.unit_label,
+        selected_stage_key=resolved_stage_key,
+        empty_message="No rolling telemetry samples are available for the selected stage and metric.",
+    )
+
+
+def _unique_stage_keys(stage_keys: Iterable[StageKey]) -> list[StageKey]:
+    unique: list[StageKey] = []
+    for stage_key in stage_keys:
+        if stage_key not in unique:
+            unique.append(stage_key)
+    return unique
+
+
+def _stage_lifecycle(
+    *,
+    plan_available: bool | None,
+    status: object,
+    outcome: object,
+) -> str:
+    if status is not None:
+        return status.lifecycle_state.value
+    if outcome is not None:
+        return outcome.status.value
+    if plan_available is False:
+        return "unavailable"
+    if plan_available is True:
+        return "planned"
+    return "observed"
+
+
+def _stage_available_label(plan_stage: object) -> str:
+    if plan_stage is None:
+        return "n/a"
+    return "yes" if plan_stage.available else "no"
+
+
+def _stage_progress_label(status: object) -> str:
+    if status is None:
+        return "n/a"
+    if status.completed_steps is not None and status.total_steps is not None:
+        unit = f" {status.progress_unit}" if status.progress_unit else ""
+        return f"{status.completed_steps}/{status.total_steps}{unit}"
+    if status.completed_steps is not None:
+        unit = f" {status.progress_unit}" if status.progress_unit else ""
+        return f"{status.completed_steps}{unit}"
+    return status.progress_message or "n/a"
+
+
+def _stage_message(plan_stage: object, status: object, outcome: object) -> str:
+    if status is not None:
+        return status.last_error or status.last_warning or status.progress_message
+    if outcome is not None:
+        return outcome.error_message
+    if plan_stage is not None:
+        return plan_stage.availability_reason or ""
+    return ""
+
+
+def _format_optional_rate(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2f}"
+
+
+def _format_throughput(status: object) -> str:
+    if status is None or status.throughput is None:
+        return "n/a"
+    unit = status.throughput_unit or "items/s"
+    return f"{status.throughput:.2f} {unit}"
+
+
+def _format_latency(status: object) -> str:
+    if status is None or status.latency_ms is None:
+        return "n/a"
+    return f"{status.latency_ms:.1f} ms"
+
+
+def _format_queue(status: object) -> str:
+    if status is None or (status.queue_depth is None and status.backlog_count is None):
+        return "n/a"
+    queue = "n/a" if status.queue_depth is None else str(status.queue_depth)
+    backlog = "n/a" if status.backlog_count is None else str(status.backlog_count)
+    return f"q {queue} / back {backlog}"
+
+
+def _format_tasks(status: object) -> str:
+    if status is None:
+        return "n/a"
+    return (
+        f"{status.submitted_count} submitted / {status.completed_count} done / "
+        f"{status.failed_count} failed / {status.in_flight_count} in flight"
+    )
+
+
+def _format_resources(status: object) -> str:
+    if status is None or not status.resource_assignment:
+        return ""
+    return ", ".join(f"{key}={value}" for key, value in sorted(status.resource_assignment.items()))
+
+
+def _format_updated_age(status: object, *, now_ns: int) -> str:
+    if status is None or status.updated_at_ns <= 0:
+        return "n/a"
+    age_ns = now_ns - status.updated_at_ns
+    if age_ns < 0:
+        return "updated"
+    age_s = age_ns / 1_000_000_000
+    if age_s < 1.0:
+        return "<1 s"
+    if age_s < 60.0:
+        return f"{age_s:.0f} s"
+    return f"{age_s / 60.0:.1f} min"
+
+
+def _telemetry_metric_value(sample: PipelineTelemetrySample, metric: PipelineTelemetryMetricId) -> float | int | None:
+    match metric:
+        case PipelineTelemetryMetricId.FPS:
+            return sample.fps
+        case PipelineTelemetryMetricId.THROUGHPUT:
+            return sample.throughput
+        case PipelineTelemetryMetricId.LATENCY_MS:
+            return sample.latency_ms
+        case PipelineTelemetryMetricId.QUEUE_DEPTH:
+            return sample.queue_depth
+        case PipelineTelemetryMetricId.BACKLOG_COUNT:
+            return sample.backlog_count
+        case PipelineTelemetryMetricId.PROCESSED_ITEMS:
+            return sample.processed_items
+        case PipelineTelemetryMetricId.IN_FLIGHT_COUNT:
+            return sample.in_flight_count
 
 
 def _recent_event_rows(events: list[RunEvent]) -> list[JsonObject]:
@@ -326,7 +715,7 @@ def _resolve_frame_image(run_service: RunService, snapshot: RunSnapshot) -> np.n
             (StageKey.SLAM, "model_rgb:image"),
             (StageKey.SLAM, "model_camera_rgb:image"),
             (StageKey.SLAM, "keyframe_rgb:image"),
-            (StageKey.INGEST, "source_rgb:image"),
+            (StageKey.SOURCE, "source_rgb:image"),
         ),
     )
 
@@ -409,11 +798,18 @@ def _stage_outcome_rows(snapshot: RunSnapshot) -> list[dict[str, str]]:
 
 
 __all__ = [
+    "DEFAULT_RERUN_WEB_VIEWER_URL",
     "PipelineBackendNoticeView",
     "PipelineNoticeRenderModel",
     "PipelineSnapshotRenderModel",
+    "PipelineStageStatusRow",
     "PipelineStreamingRenderModel",
+    "PipelineViewerLinkModel",
+    "build_pipeline_viewer_link_model",
+    "PipelineTelemetryChartModel",
     "build_pipeline_snapshot_render_model",
     "latest_backend_notice_view",
+    "refreshed_pipeline_telemetry_history",
     "resolve_evo_preview",
+    "telemetry_stage_options",
 ]

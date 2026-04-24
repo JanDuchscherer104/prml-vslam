@@ -29,6 +29,7 @@ from .contracts import GroundAlignmentConfig
 if TYPE_CHECKING:
     from prml_vslam.interfaces.slam import SlamArtifacts
 
+# TODO: all of these options should be handeled via StageConfig.backend_config!
 _RANSAC_DISTANCE_THRESHOLD_M = 0.03
 _RANSAC_NUM_POINTS = 3
 _RANSAC_ITERATIONS = 500

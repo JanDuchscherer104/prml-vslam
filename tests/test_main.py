@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import signal
 import subprocess
 import uuid
 from contextlib import contextmanager, redirect_stdout
@@ -17,12 +18,16 @@ import typer
 from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.main import (
     _build_rerun_viewer_command,
+    _find_rerun_viewer_processes,
     _forward_rerun_viewer_stdout,
     _launch_rerun_viewer,
     _print_pipeline_demo_snapshot,
+    _ProcessInfo,
+    _rerun_viewer_process_group_ids,
     _RerunViewerProcess,
     _shutdown_rerun_viewer,
     _wait_for_rerun_viewer_close,
+    kill_rerun,
     pipeline_demo_console,
     plan_run,
     run_config,
@@ -803,6 +808,109 @@ def test_wait_for_rerun_viewer_close_handles_keyboard_interrupt() -> None:
     _wait_for_rerun_viewer_close(viewer)
 
     assert observed["waited"] is True
+
+
+def test_find_rerun_viewer_processes_matches_current_viewer_tree() -> None:
+    processes = [
+        _ProcessInfo(
+            pid=77384,
+            ppid=74705,
+            pgid=77384,
+            stat="Ssl",
+            command=(
+                "uv run --extra vista rerun "
+                "/home/jandu/repos/prml-vslam/.configs/visualization/vista_blueprint.rbl --serve-web"
+            ),
+        ),
+        _ProcessInfo(
+            pid=77389,
+            ppid=77384,
+            pgid=77384,
+            stat="S",
+            command=(
+                "/home/jandu/repos/prml-vslam/.venv/bin/python3 "
+                "/home/jandu/repos/prml-vslam/.venv/bin/rerun "
+                "/home/jandu/repos/prml-vslam/.configs/visualization/vista_blueprint.rbl --serve-web"
+            ),
+        ),
+        _ProcessInfo(
+            pid=77390,
+            ppid=77389,
+            pgid=77384,
+            stat="Sl",
+            command=(
+                "/home/jandu/repos/prml-vslam/.venv/lib/python3.11/site-packages/rerun_sdk/rerun_cli/rerun "
+                "/home/jandu/repos/prml-vslam/.configs/visualization/vista_blueprint.rbl --serve-web"
+            ),
+        ),
+        _ProcessInfo(
+            pid=77400,
+            ppid=1,
+            pgid=77400,
+            stat="S",
+            command="uv run prml-vslam kill-rerun",
+        ),
+        _ProcessInfo(pid=77401, ppid=1, pgid=77401, stat="S", command="rerun rrd print recording.rrd"),
+    ]
+
+    matches = _find_rerun_viewer_processes(processes)
+
+    assert [process.pid for process in matches] == [77384, 77389, 77390]
+    assert _rerun_viewer_process_group_ids(matches) == [77384]
+
+
+def test_kill_rerun_dry_run_lists_processes_without_signaling(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    processes = [
+        _ProcessInfo(
+            pid=11,
+            ppid=1,
+            pgid=10,
+            stat="Sl",
+            command="uv run --extra vista rerun .configs/visualization/vista_blueprint.rbl --serve-web",
+        )
+    ]
+    monkeypatch.setattr("prml_vslam.main._find_rerun_viewer_processes", lambda: processes)
+    monkeypatch.setattr(
+        "prml_vslam.main._signal_process_group",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("dry run must not signal")),
+    )
+
+    kill_rerun(dry_run=True)
+
+    output = capsys.readouterr().out
+    assert "Matched Rerun web viewer processes" in output
+    assert "vista_blueprint.rbl" in output
+
+
+def test_kill_rerun_terminates_matched_process_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    processes = [
+        _ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run --extra vista rerun --serve-web"),
+        _ProcessInfo(pid=12, ppid=11, pgid=10, stat="Sl", command="/tmp/.venv/bin/rerun --serve-web"),
+    ]
+    signals: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr("prml_vslam.main._find_rerun_viewer_processes", lambda: processes)
+    monkeypatch.setattr("prml_vslam.main._signal_process_group", lambda pgid, sig: signals.append((pgid, sig)) or True)
+    monkeypatch.setattr("prml_vslam.main._wait_for_rerun_process_groups_to_exit", lambda **kwargs: [])
+
+    kill_rerun()
+
+    assert signals == [(10, signal.SIGTERM)]
+
+
+def test_kill_rerun_escalates_when_process_group_remains(monkeypatch: pytest.MonkeyPatch) -> None:
+    processes = [_ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run --extra vista rerun --serve-web")]
+    signals: list[tuple[int, signal.Signals]] = []
+    wait_results = [[10], []]
+    monkeypatch.setattr("prml_vslam.main._find_rerun_viewer_processes", lambda: processes)
+    monkeypatch.setattr("prml_vslam.main._signal_process_group", lambda pgid, sig: signals.append((pgid, sig)) or True)
+    monkeypatch.setattr("prml_vslam.main._wait_for_rerun_process_groups_to_exit", lambda **kwargs: wait_results.pop(0))
+
+    kill_rerun(timeout_seconds=0.1)
+
+    assert signals == [(10, signal.SIGTERM), (10, signal.SIGKILL)]
 
 
 def test_run_config_continues_when_viewer_launcher_returns_none(

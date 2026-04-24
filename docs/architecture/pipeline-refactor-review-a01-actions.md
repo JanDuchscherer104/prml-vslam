@@ -227,8 +227,8 @@ Initial map:
 | `gravity.align` | `gravity.align` | Canonical gravity-alignment key. |
 | `trajectory.evaluate` | `evaluate.trajectory` | Target docs use compact verb namespace. |
 | `reference.reconstruct` | `reconstruction` | Target umbrella stage with reference/3DGS/future variants. |
-| `cloud.evaluate` | `evaluate.cloud` | Future metric stage. |
-| `efficiency.evaluate` | `evaluate.efficiency` | Future metric stage. |
+| `cloud.evaluate` | `evaluate.cloud` | Diagnostic metric placeholder. |
+| `efficiency.evaluate` | removed | Deleted from the target vocabulary during WP-10. |
 | `summary` | `summary` | Projection-only stage. |
 
 ## Work Package Representation Options

@@ -209,6 +209,8 @@ class Record3DUSBPacketStream:
     @staticmethod
     def _camera_pose_from_binding(camera_pose: Any) -> FrameTransform:
         return FrameTransform(
+            target_frame="record3d_world",
+            source_frame="record3d_camera",
             qx=float(camera_pose.qx),
             qy=float(camera_pose.qy),
             qz=float(camera_pose.qz),

@@ -28,6 +28,7 @@ _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
 _VISTA_MODEL_RASTER_SIZE_PX = 224
 
 
+# TODO:
 def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
     """Build one stable artifact reference for a normalized ViSTA output."""
     resolved_path = path.resolve()

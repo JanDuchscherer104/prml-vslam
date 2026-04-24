@@ -67,7 +67,7 @@ flowchart TB
 
     subgraph Domain["Domain owners"]
         Methods["methods<br/>BackendConfig variants,<br/>SlamUpdate,<br/>backend notice/event enums"]
-        Benchmark["benchmark<br/>policy only"]
+        Benchmark["benchmark<br/>reference identifiers"]
         Eval["eval<br/>metric computation/results"]
         Alignment["alignment<br/>derived alignment config/service"]
         Reconstruction["reconstruction<br/>future 3DGS / dense recon"]
@@ -174,7 +174,8 @@ src/prml_vslam/pipeline/
 │   ├── source/
 │   │   ├── __init__.py
 │   │   ├── config.py          # SourceStageConfig + SourceBackendConfig union
-│   │   └── runtime.py         # source normalization around legacy ingest logic
+│   │   ├── binding.py         # planning/runtime/input/fingerprint bridge
+│   │   └── runtime.py         # source normalization runtime
 │   ├── slam/
 │   │   ├── __init__.py
 │   │   ├── config.py          # SlamStageConfig, resource policy, backend config field
@@ -187,22 +188,23 @@ src/prml_vslam/pipeline/
 │   │   ├── config.py          # TrajectoryEvaluationStageConfig; stage policy only
 │   │   └── runtime.py         # adapter around TrajectoryEvaluationService
 │   ├── reconstruction/
-│   │   ├── config.py          # ReconstructionStageConfig references reconstruction-owned backend variants
+│   │   ├── binding.py         # planning/runtime/input/fingerprint bridge
+│   │   ├── config.py          # ReconstructionStageConfig and persisted backend variants
 │   │   ├── visualization.py   # optional future reconstruction VisualizationItem adapter
 │   │   └── runtime.py         # adapter around reconstruction backends
 │   └── summary/
+│       ├── binding.py         # planning/runtime/input/fingerprint bridge
 │       ├── config.py          # SummaryStageConfig; projection policy only
 │       └── runtime.py         # projection-only runtime around project_summary()
 ```
 
 This tree must not move method wrappers, alignment logic, metric computation,
 dataset normalization, or visualization policy into pipeline stage modules. For
-example, ViSTA- and MASt3R-specific backend configs remain method-owned in
-[methods/configs.py](../../src/prml_vslam/methods/configs.py), and backend
-construction remains method-owned in
-[methods/factory.py](../../src/prml_vslam/methods/factory.py). The pipeline
-`slam` stage owns stage lifecycle, status, resource policy, and the runtime
-boundary around the method backend.
+example, stage-facing ViSTA, MASt3R, and mock SLAM backend configs live in
+`pipeline.stages.slam.config`, while concrete method implementations remain in
+`prml_vslam.methods`. The pipeline `slam` stage owns persisted backend muxing,
+stage lifecycle, status, resource policy, and the runtime boundary around the
+method backend.
 
 ```mermaid
 flowchart TB
@@ -300,7 +302,6 @@ classDiagram
         +evaluate_trajectory
         +reconstruction
         +evaluate_cloud
-        +evaluate_efficiency
         +summary
     }
 
@@ -343,11 +344,11 @@ Rules:
 
 - The public linear order is
   `source -> slam -> [gravity.align] -> [evaluate.trajectory] ->
-  [reconstruction] -> summary`.
-- Future metric stages use the same compact verb namespace:
-  `evaluate.cloud` and `evaluate.efficiency`. Reconstruction variants are
-  backend/mode variants under the umbrella `reconstruction` stage, not separate
-  public stage keys.
+  [reconstruction] -> [evaluate.cloud] -> summary`.
+- `evaluate.cloud` is a diagnostic binding with planned Chamfer and F-score
+  metric ids and no runtime yet. Efficiency evaluation is out of the current
+  target surface. Reconstruction variants are backend/mode variants under the
+  umbrella `reconstruction` stage, not separate public stage keys.
 - `RunPlan` may contain unavailable diagnostic rows for requested or previewed
   stages. Launch preflight must fail before work starts when an enabled
   requested stage is unavailable.
@@ -640,12 +641,12 @@ classDiagram
     ReconstructionStageConfig --> ReconstructionBackendConfig
 ```
 
-Immediate contact points:
+Implemented contact points:
 
-- [RunRequest and stage-section migration contacts](../../src/prml_vslam/pipeline/contracts/request.py#L118)
-- [StagePlacement and PlacementPolicy](../../src/prml_vslam/pipeline/contracts/request.py#L124)
-- [Ray placement translation](../../src/prml_vslam/pipeline/placement.py#L16)
-- [SLAM backend configs as factory precedent](../../src/prml_vslam/methods/configs.py#L26)
+- [RunConfig and StageBundle](../../src/prml_vslam/pipeline/config.py)
+- [generic stage config](../../src/prml_vslam/pipeline/stages/base/config.py)
+- [static stage bindings](../../src/prml_vslam/pipeline/stages/bindings.py)
+- [Ray placement translation](../../src/prml_vslam/pipeline/placement.py)
 
 Config/factory boundary:
 
@@ -910,7 +911,7 @@ collapses those responsibilities into explicit owners:
 | --- | --- | --- |
 | Phase-specific stage function routing | `RuntimeStageProgram` / `StageRuntimeSpec` | `StageRunner` invokes `OfflineStageRuntime` and `StreamingStageRuntime` surfaces under coordinator sequencing. |
 | Cross-stage mutable handoff | `RuntimeExecutionState` plus `StageCompletionPayload` | `StageResultStore` over run-scoped keyed `dict[StageKey, StageResult]`. |
-| Bounded stage bodies | free `run_*` functions in `stage_execution.py` | Stage-local runtime classes under `pipeline/stages/*/runtime.py`. |
+| Bounded stage bodies | central phase routing | Stage-local runtime classes under `pipeline/stages/*/runtime.py`. |
 | Stage-specific input pulls | `_require_sequence_manifest()`, `_require_slam_artifacts()`, and ad hoc state reads | shared `StageResultStore` accessors plus stage-local `build_input(...)` functions. |
 | Completion application | `_apply_completion()` | `StageResultStore.put(result)`. |
 | Failure outcome hooks | `build_failure_outcome` callbacks and `_failure_builder(...)` | `StageConfig.failure_outcome(...)` plus shared `StageOutcome` helpers. |
@@ -921,11 +922,9 @@ collapses those responsibilities into explicit owners:
 | Live payload resolution and eviction | coordinator handle cache | runtime-managed payload store behind `TransientPayloadRef`. |
 | Rerun/event observer policy | coordinator forwarding `RunEvent`s to sink | direct live update routing plus sink-owned Rerun translation. |
 
-`stage_execution.py` is transitional. The final target eliminates its free
-`run_*` functions: bounded stages become `run_offline()` methods on
-stage-local runtimes, and `run_offline_slam_stage()` disappears into
-`RuntimeManager`, `StageRuntimeProxy`, and the unified SLAM runtime surface.
-Compatibility wrappers may exist during migration, but they are not target APIs.
+Bounded stages are target runtime classes with `run_offline()` methods.
+Coordinator sequencing is generic and delegates stage-specific input,
+runtime-factory, and fingerprint logic to `StageBinding`s.
 
 `RuntimeManager` uses hybrid-lazy construction. It preflights configs,
 availability, resource policy, stage mapping, and actor options before work
@@ -1082,8 +1081,8 @@ The public stage vocabulary should contain durable benchmark steps only:
 - `gravity.align`
 - `evaluate.trajectory`
 - `reconstruction`
+- `evaluate.cloud`
 - `summary`
-- future metric placeholders: `evaluate.cloud`, `evaluate.efficiency`
 
 Internal runtime collaborators are not public stages by default:
 
@@ -1240,20 +1239,20 @@ conceptual layer:
 | `RunSnapshot.sequence_manifest`, `slam`, `ground_alignment`, `summary`, `stage_status`, and future top-level stage fields | keyed maps of `StageOutcome`, artifact refs, `StageRuntimeStatus`, and transient live refs; derive display status at read time instead of storing a third status map. |
 | `StageManifest`, `RunSummary.stage_status`, and `StageOutcome` | keep `StageOutcome` canonical and derive manifests/summaries from terminal outcomes. |
 | `BackendEvent` plus future domain event envelopes | domain-owned semantic event payloads carried by `StageRuntimeUpdate`; do not wrap them in durable pipeline telemetry events by default. |
-| `SourceSpec`, `OfflineSourceResolver`, and streaming source construction helpers | `SourceStageConfig` plus `SourceBackendConfig` variants and `SourceRuntime`. |
-| `ReferenceReconstructionConfig` and reconstruction backend config | `[stages.reconstruction]` with stage policy in pipeline and backend/mode variants owned by `reconstruction`. |
+| legacy source request DTOs, central source resolver, and streaming source construction helpers | `SourceStageConfig` plus `SourceBackendConfig` variants and `SourceRuntime`. |
+| legacy benchmark reference policy and reconstruction backend config | `[stages.reconstruction]` with stage policy and persisted backend variants owned by the reconstruction stage module; reusable execution and artifacts remain in `prml_vslam.reconstruction`. |
 
 ### Rename Or Move
 
 | Current DTO | Target |
 | --- | --- |
-| `RunRequest` | `RunConfig`, the persisted declarative root. |
-| `SourceSpec` | `SourceBackendConfig` under `SourceStageConfig`; legacy request variants are migration input. |
+| legacy request root | removed; `RunConfig` is the persisted declarative root. |
+| legacy source request DTOs | `SourceBackendConfig` under `SourceStageConfig`. |
 | `StagePlacement` / `PlacementPolicy` | `StageExecutionConfig`, `ResourceSpec`, and `PlacementConstraint`; current Ray retry knobs stay backend/runtime implementation details. |
-| `ingest` stage key | `source` stage key, with an alias/projection mapping during migration so current runs remain inspectable. |
+| `ingest` stage key | `source` stage key. |
 | `gravity.align` stage key | keep as target public stage key. |
-| `reference.reconstruct` stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants, with an alias/projection mapping during migration. |
-| `EvaluationArtifact` | `TrajectoryEvaluationArtifact` when dense-cloud and efficiency artifacts become first-class. |
+| legacy reference-reconstruction stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants. |
+| `EvaluationArtifact` | trajectory-evaluation artifact; dense-cloud metrics should use cloud-specific DTOs when implemented. |
 | `ArtifactRef` | move out of `interfaces.slam` to a generic artifact contract owner. |
 | current SLAM streaming init DTO | private `SlamStreamingStartInput` at the pipeline stage boundary or method-owned streaming init, not a public shared DTO. |
 | `SlamUpdate` and `BackendEvent` | move out of `interfaces.slam` into `methods.contracts`. |
@@ -1267,7 +1266,7 @@ adjustments where noted:
   `CameraIntrinsics`, `FrameTransform`, `SequenceManifest`,
   `PreparedBenchmarkInputs`, and `SlamArtifacts`
 - domain payloads: `GroundAlignmentMetadata`, `VisualizationArtifacts`,
-  trajectory metric DTOs, dense-cloud and efficiency evaluation artifacts,
+  trajectory metric DTOs, future dense-cloud metric artifacts,
   `ReconstructionArtifacts`, and `ReconstructionMetadata`
 - pipeline planning/provenance DTOs: `RunPlan`, `RunPlanStage`, `StageOutcome`,
   durable lifecycle `RunEvent` variants, `StageManifest`, and `RunSummary`
@@ -1668,15 +1667,13 @@ surface needed by `SlamStageRuntime`; current helper names such as
 `push_frame(...)` and existing method-visible streaming sessions stop being
 part of the target pipeline-facing architecture.
 
-SLAM migration contact points:
+Implemented SLAM contact points:
 
-- [SlamStageConfig](../../src/prml_vslam/pipeline/contracts/request.py#L150)
-- [BackendConfig discriminated union](../../src/prml_vslam/methods/configs.py#L251)
-- [BackendFactory](../../src/prml_vslam/methods/factory.py#L24)
+- [SlamStageConfig](../../src/prml_vslam/pipeline/stages/slam/config.py)
+- [BackendConfig discriminated union](../../src/prml_vslam/pipeline/stages/slam/config.py)
+- [SlamStageBinding](../../src/prml_vslam/pipeline/stages/slam/binding.py)
 - [existing backend/session protocol migration contacts](../../src/prml_vslam/methods/protocols.py#L22)
 - [translate_slam_update](../../src/prml_vslam/methods/events.py)
-- [OfflineSlamStageActor.run](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L46)
-- [StreamingSlamStageActor.start_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L215)
 - [StreamingSlamStageActor.push_frame](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L240)
 - [StreamingSlamStageActor.close_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L329)
 
@@ -1762,29 +1759,10 @@ Rules:
 | `source` | `[stages.source]` | in-process `SourceRuntime`; streaming source backend may own an internal packet sidecar | shared `SequenceManifest` and `PreparedBenchmarkInputs` | durable `StageCompleted`; optional live source `StageRuntimeUpdate` | Replace public `ingest` vocabulary; add `SourceBackendConfig` union with `source_id`; preserve normalized boundary and keep packet reading internal. |
 | `slam` | `[stages.slam]` | `SlamStageRuntime` implements `OfflineStageRuntime`, `StreamingStageRuntime`, and `LiveUpdateStageRuntime`; may be Ray-hosted behind `StageRuntimeProxy` | shared `SlamArtifacts`, visualization-owned artifacts, methods-owned live DTOs | semantic updates -> `StageRuntimeUpdate.semantic_events` -> live observers/status; runtime-created refs + `SlamVisualizationAdapter` -> `StageRuntimeUpdate.visualizations` / `VisualizationItem`s -> Rerun sink; completion -> durable `StageCompleted` | Merge offline/streaming runtime surfaces; hide current actor/session helpers behind migration adapters; keep backend discriminated union. |
 | `gravity.align` | `[stages.align_ground]` | in-process runtime first | alignment-owned `GroundAlignmentMetadata` | durable `StageCompleted`; Rerun sink may augment export on close | Keep derived artifact semantics; do not mutate native SLAM outputs. |
-| `evaluate.trajectory` | `[stages.evaluate_trajectory]` | in-process runtime first | eval-owned trajectory evaluation artifact | durable `StageCompleted` | Keep `benchmark` as policy and `eval` as metric implementation/result owner. |
-| `reconstruction` | `[stages.reconstruction]` | selected by reconstruction backend/mode: in-process for reference, Ray-hosted for GPU-heavy variants | reconstruction-owned artifact bundle | durable `StageCompleted`; optional `StageRuntimeUpdate` visualization items for long-running variants | Replace `reference.reconstruct` target vocabulary with one umbrella reconstruction stage and model reference/3DGS/future methods as variants. |
+| `evaluate.trajectory` | `[stages.evaluate_trajectory]` | in-process runtime first | eval-owned trajectory evaluation artifact | durable `StageCompleted` | Keep selected baseline policy stage-local; `benchmark` only names prepared reference sources and `eval` owns metric implementation/result DTOs. |
+| `reconstruction` | `[stages.reconstruction]` | selected by reconstruction backend/mode: in-process for reference, Ray-hosted for GPU-heavy variants | reconstruction-owned artifact bundle | durable `StageCompleted`; optional `StageRuntimeUpdate` visualization items for long-running variants | Use one umbrella reconstruction stage and model reference/3DGS/future methods as variants. |
+| `evaluate.cloud` | `[stages.evaluate_cloud]` | diagnostic binding; no runtime yet | future eval-owned dense-cloud metric artifacts | unavailable plan diagnostic until implemented | Keep planned reference/estimate selection plus Chamfer and F-score metric ids. |
 | `summary` | `[stages.summary]` | in-process runtime | pipeline-owned generic provenance: `RunSummary`, `StageManifest[]`, `StageOutcome` | durable `StageCompleted(summary)` | Keep projection-only; no metric computation. |
-
-## Extension Stage Matrix
-
-| Stage key | Config section | Runtime target | Semantic payload owner | Event/Rerun path | Required changes |
-| --- | --- | --- | --- | --- | --- |
-| `evaluate.cloud` | `[stages.evaluate_cloud]` | future runtime, unavailable until implemented | eval-owned dense-cloud metric artifacts | durable `StageCompleted` when implemented | Keep metric result concepts in `eval`. |
-| `evaluate.efficiency` | `[stages.evaluate_efficiency]` | future runtime, unavailable until implemented | eval-owned efficiency metrics derived from durable events and runtime status | durable `StageCompleted`; telemetry is live-only input unless summarized | Define metrics from the event/status model rather than ad hoc timers. |
-
-## Migration Contacts
-
-| Target stage key | Current implementation contacts |
-| --- | --- |
-| `source` | [SourceSpec](../../src/prml_vslam/pipeline/contracts/request.py#L118), [run_ingest_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L60), [OfflineSourceResolver](../../src/prml_vslam/pipeline/source_resolver.py) |
-| `slam` | [SlamStageConfig](../../src/prml_vslam/pipeline/contracts/request.py#L150), [BackendConfig](../../src/prml_vslam/methods/configs.py#L251), [OfflineSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L42), [StreamingSlamStageActor](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L203) |
-| `gravity.align` | current `gravity.align` stage key, [AlignmentConfig](../../src/prml_vslam/alignment/contracts.py#L26), [GroundAlignmentService](../../src/prml_vslam/alignment/services.py), [run_ground_alignment_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L179) |
-| `evaluate.trajectory` | [TrajectoryBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), [TrajectoryEvaluationService](../../src/prml_vslam/eval/services.py), [run_trajectory_evaluation_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L137) |
-| `reconstruction` | [ReferenceReconstructionConfig](../../src/prml_vslam/benchmark/contracts.py), current [reference.reconstruct stage](../../src/prml_vslam/pipeline/stage_registry.py#L164), [run_reference_reconstruction_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L212), [reconstruction package](../../src/prml_vslam/reconstruction) |
-| `evaluate.cloud` | [CloudBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), [stage placeholders](../../src/prml_vslam/pipeline/stage_registry.py#L171), [eval package](../../src/prml_vslam/eval) |
-| `evaluate.efficiency` | [EfficiencyBenchmarkConfig](../../src/prml_vslam/benchmark/contracts.py), [stage placeholders](../../src/prml_vslam/pipeline/stage_registry.py#L180), [RunEvent](../../src/prml_vslam/pipeline/contracts/events.py) |
-| `summary` | [run_summary_stage](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L257), [project_summary](../../src/prml_vslam/pipeline/finalization.py), [provenance contracts](../../src/prml_vslam/pipeline/contracts/provenance.py) |
 
 ## Decision Register
 
@@ -1801,9 +1779,9 @@ Decide by:
 - Needs GPU placement or remote node affinity: Ray-host the runtime.
 - Pure projection over already materialized artifacts: in-process runtime.
 
-Migration contact points: [stage_program.py](../../src/prml_vslam/pipeline/ray_runtime/stage_program.py#L117),
-[stage_execution.py](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L1),
-[stage_actors.py](../../src/prml_vslam/pipeline/ray_runtime/stage_actors.py#L1).
+Implemented contact points: [RuntimeManager](../../src/prml_vslam/pipeline/runtime_manager.py),
+[stage bindings](../../src/prml_vslam/pipeline/stages/bindings.py),
+[stage runtimes](../../src/prml_vslam/pipeline/stages).
 
 ### Runtime Protocol Taxonomy
 
@@ -1850,9 +1828,11 @@ deployment options before execution starts. It instantiates local runtimes,
 runtime proxies, payload stores, and sidecar collaborators only when a stage is
 about to run.
 
-Ray process-level initialization policy belongs in `RunRuntimeConfig.ray` or a
-future runtime-manager config, not in hard-coded backend kwargs. The target
-must expose public, repo-owned options for `log_to_driver` and
+Ray process-level local-head lifecycle policy is represented directly on
+`RunConfig.ray_local_head_lifecycle`, not in hard-coded backend kwargs or a
+single-field runtime wrapper DTO. Future runtime-manager config may own broader
+deployment policy if it grows beyond the current local-head lifecycle decision.
+The target must expose public, repo-owned options for `log_to_driver` and
 `include_dashboard`; keep private Ray init knobs such as `_skip_env_hook`
 backend-internal unless the project has a stable public reason to expose them.
 
@@ -1865,19 +1845,16 @@ External context: use
 Ray runtime environment, resource, placement, actor creation, and State API
 diagnostic considerations.
 
-Migration contact points:
-[RayRuntimeConfig](../../src/prml_vslam/pipeline/contracts/request.py#L136),
-[RayPipelineBackend._ensure_ray](../../src/prml_vslam/pipeline/backend_ray.py#L190).
+Implemented contact points:
+[RunConfig](../../src/prml_vslam/pipeline/config.py),
+[RayPipelineBackend._ensure_ray](../../src/prml_vslam/pipeline/backend_ray.py).
 
 ### Stage Execution Helper Fate
 
 Decision: eliminate free `run_*` functions as target runtime APIs.
 
-The existing [stage_execution.py](../../src/prml_vslam/pipeline/ray_runtime/stage_execution.py#L1)
-module is a migration contact only. Bounded helper bodies move into
-stage-local runtime classes, and local/Ray-hosted runtime deployment moves into
-`RuntimeManager` plus `StageRuntimeProxy`. Temporary wrapper functions may
-exist only to stage the migration.
+Bounded helper bodies live in stage-local runtime classes, and local/Ray-hosted
+runtime deployment moves through `RuntimeManager` plus `StageRuntimeProxy`.
 
 ### Stage Runner And Result Store
 
@@ -2000,10 +1977,9 @@ behavior.
 Decision: use one umbrella public `reconstruction` stage.
 
 Reference reconstruction, 3DGS, and future reconstruction methods are
-configuration/backend variants under `[stages.reconstruction]`. The current
-`reference.reconstruct` key remains a migration contact only. In-process
+configuration/backend variants under `[stages.reconstruction]`. In-process
 reference reconstruction and GPU-heavy Ray-hosted 3DGS variants should share
-the same `ReconstructionStageInput`, `ReconstructionStageOutput`, and
+the same stage-owned runtime input, `ReconstructionArtifacts`, and
 `StageResult` handoff shape.
 
 ### Config Hierarchy
@@ -2018,30 +1994,30 @@ stages.
 
 Reasoning: named stage sections keep TOML readable for operators and easy for
 Streamlit/app controls to edit, while making every executable stage explicit.
-`RunLaunchRequest` is deprecated from the target vocabulary; launch consumes
+legacy launch request DTOs are deprecated from the target vocabulary; launch consumes
 `RunConfig -> RunPlan`.
 
-Migration contact points: [RunRequest](../../src/prml_vslam/pipeline/contracts/request.py#L175),
-[SlamStageConfig](../../src/prml_vslam/pipeline/contracts/request.py#L150),
-[PlacementPolicy](../../src/prml_vslam/pipeline/contracts/request.py#L130).
+Implemented contact points: [RunConfig](../../src/prml_vslam/pipeline/config.py),
+[SlamStageConfig](../../src/prml_vslam/pipeline/stages/slam/config.py),
+[StageExecutionConfig](../../src/prml_vslam/pipeline/stages/base/config.py).
 
 ### Backend And Source Muxing
 
 Decision: use Pydantic discriminated unions for backend/source config variants
 and factories for implementation construction. Use `method_id` for method
 backend variants and `source_id` for source backend variants. Backend/source
-factories may call domain-owned config factories, but pipeline stage configs do
-not construct stage runtimes.
+variant configs build domain/source targets directly, but pipeline stage configs
+do not construct stage runtimes.
 
-Reasoning: [BackendConfig](../../src/prml_vslam/methods/configs.py#L251)
-already gives typed variant-specific config. The weaker part is that
-[OfflineSourceResolver](../../src/prml_vslam/pipeline/source_resolver.py#L45)
-uses manual `match` while method backends already validate concrete config
-variants. Source variants should move to the same typed discriminated-union and
-config-as-factory style.
+Reasoning: stage-owned config variants keep persisted muxing near the stage
+that consumes it, while method/reconstruction/source packages remain reusable
+implementation owners. Runtime creation still goes through stage bindings and
+`RuntimeManager`; backend configs only construct concrete implementation
+targets.
 
-Migration contact points: [source_resolver.py](../../src/prml_vslam/pipeline/source_resolver.py#L45),
-[methods/factory.py](../../src/prml_vslam/methods/factory.py#L24),
+Implemented contact points: [source config](../../src/prml_vslam/pipeline/stages/source/config.py),
+[SLAM config](../../src/prml_vslam/pipeline/stages/slam/config.py),
+[reconstruction config](../../src/prml_vslam/pipeline/stages/reconstruction/config.py),
 [FactoryConfig](../../src/prml_vslam/utils/base_config.py#L118).
 
 The target muxing pattern should be the same for source variants, method
@@ -2117,8 +2093,8 @@ classDiagram
         source_id = "record3d"
     }
 
-    class ReferenceReconstructionBackendConfig {
-        reconstruction_id = "reference"
+    class Open3dTsdfReconstructionConfig {
+        reconstruction_id = "open3d_tsdf"
     }
 
     class GaussianSplattingReconstructionConfig {
@@ -2141,13 +2117,13 @@ classDiagram
     BackendConfig <|-- MockSlamBackendConfig
     SourceBackendConfig <|-- AdvioSourceConfig
     SourceBackendConfig <|-- Record3DSourceConfig
-    ReconstructionBackendConfig <|-- ReferenceReconstructionBackendConfig
+    ReconstructionBackendConfig <|-- Open3dTsdfReconstructionConfig
     ReconstructionBackendConfig <|-- GaussianSplattingReconstructionConfig
     VistaSlamBackendConfig --> SlamBackend
     MockSlamBackendConfig --> SlamBackend
     AdvioSourceConfig --> SourceRuntime
     Record3DSourceConfig --> SourceRuntime
-    ReferenceReconstructionBackendConfig --> ReconstructionRuntime
+    Open3dTsdfReconstructionConfig --> ReconstructionRuntime
     GaussianSplattingReconstructionConfig --> ReconstructionRuntime
     RuntimeManager --> BackendConfig
     RuntimeManager --> SourceBackendConfig
@@ -2313,20 +2289,20 @@ External context: use
 official Ray resources, runtime environments, placement, and retry/fault
 tolerance context.
 
-Migration contact points: [StagePlacement](../../src/prml_vslam/pipeline/contracts/request.py#L124),
-[actor_options_for_stage](../../src/prml_vslam/pipeline/placement.py#L22),
-[RunCoordinatorActor._stage_actor_options](../../src/prml_vslam/pipeline/ray_runtime/coordinator.py#L540).
+Implemented contact points: [StageExecutionConfig](../../src/prml_vslam/pipeline/stages/base/config.py),
+[actor_options_for_stage](../../src/prml_vslam/pipeline/placement.py),
+[RuntimeManager](../../src/prml_vslam/pipeline/runtime_manager.py).
 
 ### Benchmark Versus Eval
 
-Decision: split benchmark policy from evaluation computation.
+Decision: keep benchmark reference identifiers separate from evaluation
+computation and pipeline stage policy.
 
-`benchmark` owns policy and requested baselines; `eval` owns metric
-computation, metric result DTOs, and metric artifact loading.
+`benchmark` owns reusable reference-source identifiers for prepared benchmark
+inputs. Stage modules own persisted enablement and selected baselines. `eval`
+owns metric computation, metric result DTOs, and metric artifact loading.
 
-Reasoning: this resolves the responsibility conflict identified in
-[benchmark/__init__.py](../../src/prml_vslam/benchmark/__init__.py#L25) and
-matches the existing service split where
+Reasoning: this preserves the existing service split where
 [TrajectoryEvaluationService](../../src/prml_vslam/eval/services.py)
 computes metrics from prepared inputs and SLAM artifacts.
 
@@ -2403,22 +2379,22 @@ Migration contact points: [finalization.py](../../src/prml_vslam/pipeline/finali
 
 ### Placeholder Stages
 
-Decision: include `reconstruction`, `evaluate.cloud`, and
-`evaluate.efficiency` in target docs as public or future public stage surfaces.
-Reference reconstruction and 3DGS are variants under `reconstruction`, not
-separate target stage keys. Keep unavailable variants or metric stages
-diagnostic until each has a runtime. Do not make `source.capture` or
-`visualization.export` public stages by default. Capture loops, packet readers,
-and Rerun export remain collaborators/sinks unless they own durable outputs
+Decision: include `reconstruction` and `evaluate.cloud` in target docs as
+public stage surfaces. Performance telemetry metrics stay outside the public stage
+vocabulary until there is a concrete metric contract and runtime. Reference reconstruction and 3DGS are variants
+under `reconstruction`, not separate target stage keys. Keep unavailable
+variants or metric stages diagnostic until each has a runtime. Do not make
+`source.capture` or `visualization.export` public stages by default. Capture
+loops, packet readers, and Rerun export remain collaborators/sinks unless they
+own durable outputs
 plus failure/provenance semantics.
 
-Reasoning: [StageRegistry.default](../../src/prml_vslam/pipeline/stage_registry.py#L136)
-already includes three placeholders. The project scope in
-[Questions.md](../Questions.md) also points to streaming operator visualization
-and optional 3DGS reconstruction.
+Reasoning: target stage bindings now own availability diagnostics. The project
+scope in [Questions.md](../Questions.md) also points to streaming operator
+visualization and optional 3DGS reconstruction.
 
-Migration contact points: [StageKey](../../src/prml_vslam/pipeline/contracts/stages.py),
-[StageRegistry placeholders](../../src/prml_vslam/pipeline/stage_registry.py#L162),
+Implemented contact points: [StageKey](../../src/prml_vslam/pipeline/contracts/stages.py),
+[CloudEvaluationStageBinding](../../src/prml_vslam/pipeline/stages/cloud_eval/binding.py),
 [reconstruction package](../../src/prml_vslam/reconstruction).
 
 ### App And CLI Contract
@@ -2492,8 +2468,8 @@ It is not part of the docs/requirements consistency patch itself.
   expose Ray mailbox depth as a portable queue metric.
 - Keep `StageConfig.failure_outcome(...)` declarative and use shared helpers
   for consistent failed `StageOutcome` construction.
-- Decompose `stage_execution.py`: move bounded `run_*` bodies into stage-local
-  runtime classes, and remove the free functions as target APIs.
+- Keep bounded `run_*` bodies in stage-local runtime classes; do not reintroduce
+  central stage-execution helper APIs.
 - Merge offline and streaming SLAM behavior behind one `SlamStageRuntime`
   implementing offline and streaming protocols, and hide current
   method-specific session objects plus private actor helpers behind migration
@@ -2591,8 +2567,7 @@ the next one starts:
    `LiveUpdateStageRuntime`, `StreamingStageRuntime`, capability-typed
    `StageRuntimeProxy`, hybrid-lazy `RuntimeManager`, `StageRunner`, and
    `StageResultStore` while adapting existing bounded helpers.
-5. Decompose `stage_execution.py` by moving bounded `run_*` bodies into
-   stage-local runtimes, leaving only temporary wrappers if needed.
+5. Keep bounded stage execution in stage-local runtimes and bindings.
 6. Merge SLAM actor/session surfaces behind the new runtime/proxy protocol.
 7. Route `StageRuntimeUpdate` to live snapshot/status and observer sinks.
 8. Implement status querying/projection and finalize-then-mark stop/failure handling.

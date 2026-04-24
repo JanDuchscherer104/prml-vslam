@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from prml_vslam.plotting import build_evo_ape_colormap_figure
+from prml_vslam.app.models import PipelineTelemetryViewMode
+from prml_vslam.plotting import build_evo_ape_colormap_figure, build_stage_telemetry_figure
 
 from ..live_session import (
     render_camera_intrinsics,
@@ -29,15 +30,23 @@ def render_pipeline_snapshot(model: PipelineSnapshotRenderModel) -> None:
 def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
     if model.is_offline:
         st.caption("Offline runs skip the live replay panels and focus on stage progress plus persisted outputs.")
-        tabs = st.tabs(["Plan", "Artifacts"])
+        tabs = st.tabs(["Stage Status", "Plan", "Artifacts"])
         with tabs[0]:
-            _render_pipeline_plan_tab(model)
+            _render_stage_status_tab(model)
         with tabs[1]:
+            _render_pipeline_plan_tab(model)
+        with tabs[2]:
             _render_pipeline_artifacts_tab(model)
         return
 
     if model.streaming is None:
-        st.info("Streaming telemetry is not available for this run.")
+        tabs = st.tabs(["Stage Status", "Plan", "Artifacts"])
+        with tabs[0]:
+            _render_stage_status_tab(model)
+        with tabs[1]:
+            _render_pipeline_plan_tab(model)
+        with tabs[2]:
+            _render_pipeline_artifacts_tab(model)
         return
     packet_metadata = model.streaming.packet_metadata
     has_frame_data = (
@@ -45,8 +54,10 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
         or model.streaming.frame_image is not None
         or model.streaming.preview_image is not None
     )
-    tabs = st.tabs(["Frames", "Trajectory", "Plan", "Artifacts"])
+    tabs = st.tabs(["Stage Status", "Frames", "Trajectory", "Plan", "Artifacts"])
     with tabs[0]:
+        _render_stage_status_tab(model)
+    with tabs[1]:
         if not has_frame_data:
             st.info("No frame has been processed yet.")
         else:
@@ -84,7 +95,7 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
                         intrinsics=model.streaming.intrinsics,
                         missing_message=model.streaming.intrinsics_missing_message,
                     )
-    with tabs[1]:
+    with tabs[2]:
         render_live_trajectory(
             positions_xyz=model.streaming.positions_xyz,
             timestamps_s=model.streaming.timestamps_s,
@@ -97,7 +108,7 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
             key="pipeline_show_evo_preview",
         )
         if not model.streaming.show_evo_preview:
-            st.caption("Enable the toggle to run explicit evo APE preview for the current demo slice.")
+            st.caption("Enable the toggle to run explicit evo APE preview for the current slice.")
         else:
             if model.streaming.evo_error is not None:
                 st.warning(model.streaming.evo_error)
@@ -117,10 +128,38 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
                     f"`{len(model.streaming.evo_preview.error_series.values)}`"
                     f" · RMSE: `{model.streaming.evo_preview.stats.rmse:.4f} m`"
                 )
-    with tabs[2]:
-        _render_pipeline_plan_tab(model)
     with tabs[3]:
+        _render_pipeline_plan_tab(model)
+    with tabs[4]:
         _render_pipeline_artifacts_tab(model)
+
+
+def _render_stage_status_tab(model: PipelineSnapshotRenderModel) -> None:
+    if not model.telemetry_visible:
+        st.info("Stage telemetry is hidden.")
+        return
+    if not model.stage_status_rows:
+        st.info("Start a run to inspect stage status.")
+        return
+    st.dataframe([row.table_row() for row in model.stage_status_rows], hide_index=True, width="stretch")
+    if model.telemetry_view_mode is not PipelineTelemetryViewMode.ROLLING:
+        return
+    if model.telemetry_chart is None or not model.telemetry_chart.rows:
+        empty_message = (
+            "No rolling telemetry samples are available yet."
+            if model.telemetry_chart is None
+            else model.telemetry_chart.empty_message
+        )
+        st.info(empty_message)
+        return
+    st.plotly_chart(
+        build_stage_telemetry_figure(
+            rows=model.telemetry_chart.rows,
+            metric_label=model.telemetry_chart.metric_label,
+            unit_label=model.telemetry_chart.unit_label,
+        ),
+        width="stretch",
+    )
 
 
 def _render_pipeline_plan_tab(model: PipelineSnapshotRenderModel) -> None:
@@ -147,7 +186,7 @@ def _render_pipeline_plan_tab(model: PipelineSnapshotRenderModel) -> None:
 
 def _render_pipeline_artifacts_tab(model: PipelineSnapshotRenderModel) -> None:
     if model.stage_outcomes_json is None and model.artifacts_json is None and model.stage_runtime_status_json is None:
-        st.info("Run the demo to inspect stage outcomes, stage runtime status, and materialized artifacts.")
+        st.info("Run the pipeline to inspect stage outcomes, stage runtime status, and materialized artifacts.")
         return
 
     left, right = st.columns(2, gap="large")

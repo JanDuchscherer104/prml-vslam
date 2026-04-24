@@ -8,6 +8,7 @@ normalized artifact bundles.
 
 from .alignment import GroundAlignmentMetadata, GroundPlaneModel, GroundPlaneVisualizationHint
 from .camera import CameraIntrinsics, CameraIntrinsicsSample, CameraIntrinsicsSeries
+from .geometry import DepthMap, PointCloud, PointMap
 from .ingest import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
@@ -36,6 +37,7 @@ __all__ = [
     "CameraIntrinsics",
     "CameraIntrinsicsSample",
     "CameraIntrinsicsSeries",
+    "DepthMap",
     "FramePacket",
     "FramePacketProvenance",
     "FrameTransform",
@@ -43,6 +45,8 @@ __all__ = [
     "GroundPlaneModel",
     "GroundPlaneVisualizationHint",
     "PreparedBenchmarkInputs",
+    "PointCloud",
+    "PointMap",
     "Record3DTransportId",
     "ReferenceCloudRef",
     "ReferencePointCloudSequenceRef",

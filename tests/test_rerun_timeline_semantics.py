@@ -46,7 +46,7 @@ def _payload_ref(handle_id: str, *, payload_kind: str, shape: tuple[int, ...], d
 
 def _source_update(frame_index: int) -> StageRuntimeUpdate:
     return StageRuntimeUpdate(
-        stage_key=StageKey.INGEST,
+        stage_key=StageKey.SOURCE,
         timestamp_ns=1,
         visualizations=[
             VisualizationItem(

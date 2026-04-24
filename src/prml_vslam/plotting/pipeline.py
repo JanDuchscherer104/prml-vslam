@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 import plotly.graph_objects as go
 
@@ -10,6 +12,9 @@ from prml_vslam.utils.image_utils import normalize_grayscale_image
 
 from .theme import BLUE, GRAY
 from .trajectories import _add_3d_trajectory_trace, _apply_standard_trajectory_3d_layout
+
+TelemetryChartValue = str | int | float
+TelemetryChartRow = dict[str, TelemetryChartValue]
 
 
 def build_evo_ape_colormap_figure(
@@ -90,4 +95,37 @@ def pointmap_preview_image(pointmap: np.ndarray | None) -> np.ndarray | None:
     return normalize_grayscale_image(magnitude)
 
 
-__all__ = ["build_evo_ape_colormap_figure", "pointmap_preview_image"]
+def build_stage_telemetry_figure(
+    *,
+    rows: Sequence[TelemetryChartRow],
+    metric_label: str,
+    unit_label: str,
+) -> go.Figure:
+    """Build a compact rolling telemetry line chart for one stage metric."""
+    x_values = [int(row["sample"]) for row in rows]
+    y_values = [float(row["value"]) for row in rows]
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=y_values,
+            mode="lines+markers",
+            name=metric_label,
+            line={"color": BLUE, "width": 2},
+            marker={"size": 6},
+            hovertemplate=f"{metric_label}: %{{y:.3f}} {unit_label}<br>sample=%{{x}}<extra></extra>",
+        )
+    )
+    figure.update_layout(
+        title=f"Rolling {metric_label}",
+        xaxis_title="Sample",
+        yaxis_title=unit_label,
+        margin={"l": 8, "r": 8, "t": 42, "b": 8},
+        height=320,
+        template="plotly_white",
+        showlegend=False,
+    )
+    return figure
+
+
+__all__ = ["build_evo_ape_colormap_figure", "build_stage_telemetry_figure", "pointmap_preview_image"]

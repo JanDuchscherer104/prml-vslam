@@ -25,6 +25,7 @@ from prml_vslam.pipeline.stages.reconstruction.visualization import (
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
 from prml_vslam.pipeline.stages.slam.visualization import (
+    COLORS_REF,
     DEPTH_REF,
     IMAGE_REF,
     POINTMAP_REF,
@@ -32,7 +33,24 @@ from prml_vslam.pipeline.stages.slam.visualization import (
     ROLE_SOURCE_RGB,
     SlamVisualizationAdapter,
 )
-from prml_vslam.utils.geometry import transform_points_world_camera
+from prml_vslam.pipeline.stages.source.visualization import (
+    METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT,
+)
+from prml_vslam.pipeline.stages.source.visualization import (
+    POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT,
+)
+from prml_vslam.pipeline.stages.source.visualization import (
+    ROLE_SOURCE_CAMERA_POSE,
+    ROLE_SOURCE_CAMERA_RGB,
+    ROLE_SOURCE_DEPTH,
+    ROLE_SOURCE_PINHOLE,
+    ROLE_SOURCE_POINTMAP,
+    ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    ROLE_SOURCE_REFERENCE_TRAJECTORY,
+    TRAJECTORY_ARTIFACT,
+)
+from prml_vslam.utils.geometry import transform_points_world_camera, write_point_cloud_ply
+from prml_vslam.visualization.validation import load_recording_summary
 
 
 class _FakeRecordingStream:
@@ -159,7 +177,7 @@ def _slam_keyframe_update(
 
 def _source_rgb_update(*, frame_index: int, ref: TransientPayloadRef) -> StageRuntimeUpdate:
     return StageRuntimeUpdate(
-        stage_key=StageKey.INGEST,
+        stage_key=StageKey.SOURCE,
         timestamp_ns=1,
         visualizations=[
             VisualizationItem(
@@ -568,7 +586,7 @@ def test_rerun_sink_logs_reconstruction_artifacts(tmp_path: Path, monkeypatch) -
     sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
     sink.observe_update(
         StageRuntimeUpdate(
-            stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+            stage_key=StageKey.RECONSTRUCTION,
             timestamp_ns=1,
             visualizations=[
                 VisualizationItem(
@@ -594,6 +612,242 @@ def test_rerun_sink_logs_reconstruction_artifacts(tmp_path: Path, monkeypatch) -
     assert streams[0].timelines == {}
 
 
+def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, Path | tuple[tuple[float, float, float], ...]]] = []
+    trajectory = tmp_path / "ground_truth.tum"
+    trajectory.write_text("0.0 1 2 3 0 0 0 1\n1.0 2 3 4 0 0 0 1\n", encoding="utf-8")
+    cloud = tmp_path / "reference_cloud.ply"
+    metadata = tmp_path / "reference_cloud.metadata.json"
+    metadata.write_text('{"point_count": 2, "skipped_out_of_range_payloads": 1}', encoding="utf-8")
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, static=False: calls.append(
+            ("trajectory", entity_path, tuple(map(tuple, np.asarray(positions_xyz, dtype=float))))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_pointcloud_ply",
+        lambda stream, *, entity_path, path: calls.append(("points", entity_path, path)),
+    )
+
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    sink.observe_update(
+        StageRuntimeUpdate(
+            stage_key=StageKey.SOURCE,
+            timestamp_ns=1,
+            visualizations=[
+                VisualizationItem(
+                    intent=VisualizationIntent.TRAJECTORY,
+                    role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
+                    artifact_refs={TRAJECTORY_ARTIFACT: _artifact_ref(trajectory, kind="tum")},
+                    metadata={
+                        "reference_source": "ground_truth",
+                        "target_frame": "advio_gt_world",
+                        "coordinate_status": "aligned",
+                    },
+                ),
+                VisualizationItem(
+                    intent=VisualizationIntent.POINT_CLOUD,
+                    role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+                    artifact_refs={
+                        SOURCE_POINT_CLOUD_ARTIFACT: _artifact_ref(cloud),
+                        SOURCE_METADATA_ARTIFACT: _artifact_ref(metadata, kind="json"),
+                    },
+                    metadata={
+                        "reference_source": "tango_raw",
+                        "coordinate_status": "aligned",
+                        "target_frame": "advio_gt_world",
+                    },
+                ),
+                VisualizationItem(
+                    intent=VisualizationIntent.POINT_CLOUD,
+                    role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+                    artifact_refs={
+                        SOURCE_POINT_CLOUD_ARTIFACT: _artifact_ref(cloud),
+                        SOURCE_METADATA_ARTIFACT: _artifact_ref(metadata, kind="json"),
+                    },
+                    metadata={
+                        "reference_source": "tango_raw",
+                        "coordinate_status": "source_native",
+                        "target_frame": "advio_tango_raw_world",
+                    },
+                ),
+            ],
+        )
+    )
+
+    assert calls == [
+        (
+            "trajectory",
+            "world/reference/advio_gt_world/ground_truth/aligned/trajectory",
+            ((1.0, 2.0, 3.0), (2.0, 3.0, 4.0)),
+        ),
+        ("points", "world/reference/advio_gt_world/tango_raw/aligned/points_2_skipped_1/point_cloud", cloud),
+        (
+            "points",
+            "world/reference/advio_tango_raw_world/tango_raw/source_native/points_2_skipped_1/point_cloud",
+            cloud,
+        ),
+    ]
+
+
+def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tmp_path: Path) -> None:
+    trajectory = tmp_path / "ground_truth.tum"
+    trajectory.write_text("0.0 1 2 3 0 0 0 1\n1.0 2 3 4 0 0 0 1\n", encoding="utf-8")
+    cloud = write_point_cloud_ply(tmp_path / "reference_cloud.ply", np.asarray([[1, 2, 3], [4, 5, 6]], dtype=float))
+    metadata = tmp_path / "reference_cloud.metadata.json"
+    metadata.write_text('{"point_count": 2, "skipped_out_of_range_payloads": 0}', encoding="utf-8")
+    viewer_path = tmp_path / "viewer.rrd"
+
+    sink = RerunEventSink(grpc_url=None, target_path=viewer_path, recording_id="reference-validation")
+    sink.observe_update(
+        StageRuntimeUpdate(
+            stage_key=StageKey.SOURCE,
+            timestamp_ns=1,
+            visualizations=[
+                VisualizationItem(
+                    intent=VisualizationIntent.TRAJECTORY,
+                    role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
+                    artifact_refs={TRAJECTORY_ARTIFACT: _artifact_ref(trajectory, kind="tum")},
+                    metadata={
+                        "reference_source": "ground_truth",
+                        "target_frame": "advio_gt_world",
+                        "coordinate_status": "aligned",
+                    },
+                ),
+                VisualizationItem(
+                    intent=VisualizationIntent.POINT_CLOUD,
+                    role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+                    artifact_refs={
+                        SOURCE_POINT_CLOUD_ARTIFACT: _artifact_ref(cloud),
+                        SOURCE_METADATA_ARTIFACT: _artifact_ref(metadata, kind="json"),
+                    },
+                    metadata={
+                        "reference_source": "tango_raw",
+                        "coordinate_status": "aligned",
+                        "target_frame": "advio_gt_world",
+                    },
+                ),
+            ],
+        )
+    )
+    sink.close()
+
+    summary = load_recording_summary(viewer_path)
+
+    assert summary.reference_trajectory_entities == ["/world/reference/advio_gt_world/ground_truth/aligned/trajectory"]
+    assert [(snapshot.entity_path, snapshot.point_count) for snapshot in summary.reference_point_clouds] == [
+        ("/world/reference/advio_gt_world/tango_raw/aligned/points_2_skipped_0/point_cloud", 2)
+    ]
+
+
+def test_rerun_sink_logs_source_posed_camera_geometry(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, str, int | None, int | None]] = []
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None: calls.append(
+            ("pose", entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_pinhole",
+        lambda stream, *, entity_path, intrinsics: calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_depth_image",
+        lambda stream, *, entity_path, depth_m: calls.append(("depth", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "log_pointcloud",
+        lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+            ("points", entity_path, *_timeline_state(stream))
+        ),
+    )
+
+    pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0)
+    intrinsics = CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3)
+    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd", log_source_rgb=True)
+    sink.observe_update(
+        StageRuntimeUpdate(
+            stage_key=StageKey.SOURCE,
+            timestamp_ns=1,
+            visualizations=[
+                VisualizationItem(
+                    intent=VisualizationIntent.POSE_TRANSFORM,
+                    role=ROLE_SOURCE_CAMERA_POSE,
+                    pose=pose,
+                    frame_index=2,
+                ),
+                VisualizationItem(
+                    intent=VisualizationIntent.PINHOLE_CAMERA,
+                    role=ROLE_SOURCE_PINHOLE,
+                    payload_refs={
+                        IMAGE_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                        DEPTH_REF: _payload_ref("depth", payload_kind="depth", shape=(3, 4), dtype="float32"),
+                    },
+                    intrinsics=intrinsics,
+                    frame_index=2,
+                ),
+                VisualizationItem(
+                    intent=VisualizationIntent.RGB_IMAGE,
+                    role=ROLE_SOURCE_CAMERA_RGB,
+                    payload_refs={IMAGE_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8")},
+                    frame_index=2,
+                ),
+                VisualizationItem(
+                    intent=VisualizationIntent.DEPTH_IMAGE,
+                    role=ROLE_SOURCE_DEPTH,
+                    payload_refs={
+                        DEPTH_REF: _payload_ref("depth", payload_kind="depth", shape=(3, 4), dtype="float32")
+                    },
+                    frame_index=2,
+                ),
+                VisualizationItem(
+                    intent=VisualizationIntent.POINT_CLOUD,
+                    role=ROLE_SOURCE_POINTMAP,
+                    payload_refs={
+                        POINTMAP_REF: _payload_ref(
+                            "pointmap", payload_kind="point_cloud", shape=(3, 4, 3), dtype="float32"
+                        ),
+                        COLORS_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                    },
+                    frame_index=2,
+                ),
+            ],
+        ),
+        payloads={
+            "rgb": np.zeros((3, 4, 3), dtype=np.uint8),
+            "depth": np.ones((3, 4), dtype=np.float32),
+            "pointmap": np.ones((3, 4, 3), dtype=np.float32),
+        },
+    )
+
+    assert calls == [
+        ("pose", "world/live/source/camera", 2, None),
+        ("pinhole", "world/live/source/camera/image", 2, None),
+        ("rgb", "world/live/source/camera/image", 2, None),
+        ("depth", "world/live/source/camera/image/depth", 2, None),
+        ("points", "world/live/source/camera/points", 2, None),
+    ]
+
+
 def test_rerun_policy_skips_invalid_reconstruction_artifact(caplog, monkeypatch) -> None:
     stream = _FakeRecordingStream()
     policy = rerun_sink_module.RerunLoggingPolicy(
@@ -614,7 +868,7 @@ def test_rerun_policy_skips_invalid_reconstruction_artifact(caplog, monkeypatch)
         policy.observe_update(
             stream,
             StageRuntimeUpdate(
-                stage_key=StageKey.REFERENCE_RECONSTRUCTION,
+                stage_key=StageKey.RECONSTRUCTION,
                 timestamp_ns=1,
                 visualizations=[
                     VisualizationItem(

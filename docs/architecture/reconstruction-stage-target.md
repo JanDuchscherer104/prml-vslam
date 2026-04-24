@@ -110,8 +110,7 @@ should therefore consume `RgbdObservation`, not `FramePacket`.
 
 The public target stage key is `reconstruction`. Reference reconstruction,
 3DGS, and future reconstruction methods are backend/mode variants under
-`[stages.reconstruction]`, not separate public stage keys. The current
-`reference.reconstruct` key is a migration contact for executable code only.
+`[stages.reconstruction]`, not separate public stage keys.
 The stage should be implemented as the reconstruction stage package in the
 target pipeline layout:
 

@@ -15,6 +15,7 @@ dependencies = [
   "plotly>=6.6.0,<7",
   "evo>=1.31,<2",
   "pydantic>=2.11,<3",
+  "pydantic-settings>=2.14,<3",
   "ray>=2.40,<3",
   "rich>=13.7,<15",
   "seaborn>=0.13,<1",

@@ -43,7 +43,7 @@ def test_vista_full_streaming_pipeline_end_to_end() -> None:
         service.shutdown()
 
     assert snapshot.state is RunState.COMPLETED, snapshot.error_message
-    assert snapshot.stage_outcomes[StageKey.INGEST].status.value == "completed"
+    assert snapshot.stage_outcomes[StageKey.SOURCE].status.value == "completed"
     assert snapshot.stage_outcomes[StageKey.SLAM].status.value == "completed"
     assert snapshot.stage_outcomes[StageKey.SUMMARY].status.value == "completed"
 

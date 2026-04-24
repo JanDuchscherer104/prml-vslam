@@ -197,61 +197,50 @@ but the present launch surface is still mixed:
 That means `WP-09A` is still a real blocker even though the planning and
 backend seams are already mostly `RunConfig`-shaped.
 
-### 2. Stage-key vocabulary is still transitional
+### 2. Stage-key vocabulary is target-only
 
-The current executable vocabulary is still the existing `StageKey` set:
+The current executable vocabulary is now the canonical target `StageKey` set:
 
-- `ingest`
+- `source`
 - `slam`
 - `gravity.align`
-- `trajectory.evaluate`
-- `reference.reconstruct`
-- `cloud.evaluate`
-- `efficiency.evaluate`
+- `evaluate.trajectory`
+- `reconstruction`
+- `evaluate.cloud`
 - `summary`
 
-The alias/projection helpers in [`pipeline/config.py`](../../src/prml_vslam/pipeline/config.py)
-still mediate between that executable vocabulary and the target public
-`TargetStageKey`/section names. `WP-10` cannot remove those helpers until all
-production callers and persisted outputs stop depending on the current keys.
+`evaluate.cloud` remains a diagnostic binding without a runtime. The old
+stage-key aliases and the deleted `evaluate.efficiency` placeholder are no
+longer current executable or persisted config vocabulary.
 
-### 3. Transitional planning DTOs still exist
+### 3. Migration DTOs are removed from the active launch path
 
-The old runtime-program DTOs are gone from tracked source, but some migration
-DTOs remain:
+The old runtime-program DTOs, request DTOs, stage-key aliases, live-handle
+DTOs, and snapshot compatibility fields are gone from tracked source. Any
+remaining references should be historical work-package notes or migration
+ledger rows.
 
-- [`RunRequest`](../../src/prml_vslam/pipeline/contracts/request.py)
-- `SourceSpec` and request source variants
-- [`StageAvailability`](../../src/prml_vslam/pipeline/contracts/stages.py)
-- placement/runtime request compatibility DTOs in `contracts/request.py`
+### 4. Runtime-manager wording matches current execution
 
-These are no longer the main execution authority, but they still widen the
-launch/config surface and keep `WP-10` blocked.
+[`RuntimeManager`](../../src/prml_vslam/pipeline/runtime_manager.py) is used by
+the coordinator for executable runtime registration and preflight. The
+remaining runtime-manager gap is Ray-hosted `StageRuntimeProxy` invocation, not
+coordinator bypass.
 
-### 4. Runtime-manager messaging is slightly stale
-
-[`RuntimeManager`](../../src/prml_vslam/pipeline/runtime_manager.py) still has
-docstrings/TODO wording that describe it as additive and partially legacy.
-That no longer matches the current worktree very well: the coordinator now
-does build and use it for executable runtime registration and preflight.
-
-This is a documentation/cleanup issue, not a design blocker.
-
-### 5. Planned stage coverage is still uneven
+### 5. Planned stage coverage is intentionally uneven
 
 The coordinator currently registers executable runtimes for:
 
-- `ingest`
+- `source`
 - `slam`
 - `gravity.align`
-- `trajectory.evaluate`
-- `reference.reconstruct`
+- `evaluate.trajectory`
+- `reconstruction`
 - `summary`
 
-`cloud.evaluate` and `efficiency.evaluate` remain planned stage keys without
-registered runtimes. That is acceptable current state, but it means plan
-generation and runtime execution still cover different subsets of the full
-stage vocabulary.
+`evaluate.cloud` remains planned without a registered runtime. That is
+acceptable current state because it is a diagnostic placeholder, not an
+executable metric stage.
 
 ## WP-09B Closure Audit
 

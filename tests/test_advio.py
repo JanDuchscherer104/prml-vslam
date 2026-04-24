@@ -11,6 +11,7 @@ import pytest
 
 import prml_vslam.datasets.advio.advio_replay_adapter as advio_replay_module
 import prml_vslam.datasets.advio.advio_sequence as advio_sequence_module
+from prml_vslam.benchmark.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
@@ -29,7 +30,7 @@ from prml_vslam.datasets.advio import (
     AdvioUpstreamMetadata,
 )
 from prml_vslam.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
-from prml_vslam.datasets.advio.advio_loading import load_advio_calibration
+from prml_vslam.datasets.advio.advio_loading import _read_numeric_csv, load_advio_calibration
 from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
 from prml_vslam.io.cv2_producer import Cv2FramePayload, Cv2ProducerConfig
 from prml_vslam.utils import PathConfig
@@ -230,6 +231,14 @@ def test_load_advio_sequence_returns_offline_sample(tmp_path: Path) -> None:
     assert sample.ground_truth.orientations_quat_wxyz[0].tolist() == [1.0, 0.0, 0.0, 0.0]
     assert sample.arcore.positions_xyz[2].tolist() == [2.0, 3.0, 4.0]
     assert sample.duration_s == 0.2
+
+
+def test_advio_numeric_csv_loader_rejects_non_rectangular_rows(tmp_path: Path) -> None:
+    path = tmp_path / "bad.csv"
+    path.write_text("0.0,1.0\n0.1,1.0,2.0\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="rectangular"):
+        _read_numeric_csv(path, min_columns=2)
 
 
 def test_advio_sequence_uses_catalog_calibration_metadata(tmp_path: Path) -> None:
@@ -483,6 +492,32 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     ]
     assert benchmark_inputs.reference_point_cloud_sequences[0].trajectory_path.exists()
     assert benchmark_inputs.reference_clouds[0].path.exists()
+    cloud_metadata = benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8")
+    assert '"point_count": 9' in cloud_metadata
+    assert '"point_stride": 1' in cloud_metadata
+    assert '"skipped_out_of_range_payloads": 0' in cloud_metadata
+
+
+def test_advio_tango_reference_clouds_skip_out_of_range_payloads(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    _write_pose_csv_rows(
+        sequence_dir / "tango" / "area-learning.csv",
+        rows=((0.0, 1.0, 2.0, 3.0), (0.1, 1.5, 2.5, 3.5)),
+    )
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    benchmark_inputs = sequence.to_benchmark_inputs()
+
+    area_learning_native = next(
+        reference
+        for reference in benchmark_inputs.reference_clouds
+        if reference.source is ReferenceCloudSource.TANGO_AREA_LEARNING
+        and reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+    )
+    metadata = area_learning_native.metadata_path.read_text(encoding="utf-8")
+    assert '"point_count": 6' in metadata
+    assert '"payloads_used": 2' in metadata
+    assert '"skipped_out_of_range_payloads": 1' in metadata
 
 
 def test_advio_benchmark_inputs_skip_invalid_optional_provider_trajectory(tmp_path: Path) -> None:
@@ -537,7 +572,7 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     assert packet.pose.tx == 1.0
 
 
-def test_advio_open_stream_supports_tango_raw_provider_and_pointmap_payload(tmp_path: Path) -> None:
+def test_advio_open_stream_supports_tango_raw_provider_and_point_cloud_payload(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
@@ -552,8 +587,10 @@ def test_advio_open_stream_supports_tango_raw_provider_and_pointmap_payload(tmp_
     stream.disconnect()
 
     assert packet.pose is not None
-    assert packet.pointmap is not None
-    assert packet.pointmap.shape[2] == 3
+    assert packet.pointmap is None
+    assert packet.point_cloud is not None
+    assert packet.point_cloud.points_xyz.shape == (3, 3)
+    assert packet.point_cloud.frame == "advio_tango_raw_depth_sensor"
     assert packet.provenance.pose_source == AdvioPoseSource.TANGO_RAW.value
 
 

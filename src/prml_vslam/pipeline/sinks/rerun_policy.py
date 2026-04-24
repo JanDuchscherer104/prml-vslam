@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections import deque
 from collections.abc import Callable, Mapping
@@ -43,6 +44,23 @@ from prml_vslam.pipeline.stages.slam.visualization import (
     ROLE_TRACKING_POSE,
     ROLE_TRACKING_TRAJECTORY,
 )
+from prml_vslam.pipeline.stages.source.visualization import (
+    METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT,
+)
+from prml_vslam.pipeline.stages.source.visualization import (
+    POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT,
+)
+from prml_vslam.pipeline.stages.source.visualization import (
+    ROLE_SOURCE_CAMERA_POSE,
+    ROLE_SOURCE_CAMERA_RGB,
+    ROLE_SOURCE_DEPTH,
+    ROLE_SOURCE_PINHOLE,
+    ROLE_SOURCE_POINTMAP,
+    ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    ROLE_SOURCE_REFERENCE_TRAJECTORY,
+    TRAJECTORY_ARTIFACT,
+)
+from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.visualization.rerun import MODEL_RGB_2D_ENTITY_PATH
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,8 +106,8 @@ class RerunLoggingPolicy:
         payloads: Mapping[str, np.ndarray] | None = None,
     ) -> None:
         """Log one live runtime update from neutral visualization items."""
-        # TODO(pipeline-refactor/WP-08): Replace this materialized payload map
-        # with the canonical TransientPayloadRef resolver API once it lands.
+        # TODO(pipeline-refactor/post-target-alignment): Replace this
+        # materialized payload map with a typed TransientPayloadRef resolver.
         resolved_payloads = {} if payloads is None else payloads
         for semantic_event in update.semantic_events:
             if isinstance(semantic_event, GroundAlignmentMetadata):
@@ -113,6 +131,8 @@ class RerunLoggingPolicy:
             case VisualizationIntent.POINT_CLOUD:
                 if item.role == ROLE_RECONSTRUCTION_POINT_CLOUD:
                     self._log_reconstruction_point_cloud_item(stream, item)
+                elif item.role == ROLE_SOURCE_REFERENCE_POINT_CLOUD:
+                    self._log_source_reference_point_cloud_item(stream, item)
                 else:
                     self._log_pointcloud_item(stream, item, payloads=payloads)
             case VisualizationIntent.TRAJECTORY:
@@ -143,6 +163,10 @@ class RerunLoggingPolicy:
                 if not self.log_source_rgb:
                     return
                 entity_path = "world/live/source/rgb"
+            case role if role == ROLE_SOURCE_CAMERA_RGB:
+                if not self.log_source_rgb:
+                    return
+                entity_path = "world/live/source/camera/image"
             case role if role == ROLE_MODEL_RGB:
                 entity_path = MODEL_RGB_2D_ENTITY_PATH
             case role if role == ROLE_MODEL_CAMERA_RGB:
@@ -183,6 +207,8 @@ class RerunLoggingPolicy:
         match item.role:
             case _ if item.role == ROLE_MODEL_DEPTH:
                 entity_path = "world/live/model/camera/image/depth"
+            case _ if item.role == ROLE_SOURCE_DEPTH:
+                entity_path = "world/live/source/camera/image/depth"
             case _ if item.role == ROLE_KEYFRAME_DEPTH:
                 keyframe_index = self._require_keyframe_index(item)
                 if keyframe_index is None:
@@ -207,6 +233,8 @@ class RerunLoggingPolicy:
         match item.role:
             case _ if item.role == ROLE_MODEL_POINTMAP:
                 entity_path = "world/live/model/points"
+            case _ if item.role == ROLE_SOURCE_POINTMAP:
+                entity_path = "world/live/source/camera/points"
             case _ if item.role == ROLE_KEYFRAME_POINTMAP:
                 keyframe_index = self._require_keyframe_index(item)
                 if keyframe_index is None:
@@ -231,6 +259,32 @@ class RerunLoggingPolicy:
         except Exception as exc:
             _LOGGER.warning("Skipping reconstruction point cloud artifact '%s': %s", artifact.path, exc)
 
+    def _log_source_reference_point_cloud_item(self, stream, item: VisualizationItem) -> None:
+        artifact = item.artifact_refs.get(SOURCE_POINT_CLOUD_ARTIFACT)
+        if artifact is None:
+            return
+        reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
+        coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "native"))
+        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
+        metadata = self._load_source_reference_metadata(item)
+        point_count = _metadata_int(metadata, "point_count")
+        skipped_payloads = _metadata_int(metadata, "skipped_out_of_range_payloads")
+        stats_segment = (
+            f"/points_{point_count}_skipped_{skipped_payloads}"
+            if point_count is not None and skipped_payloads is not None
+            else ""
+        )
+        try:
+            self.log_pointcloud_ply(
+                stream,
+                entity_path=(
+                    f"world/reference/{target_frame}/{reference_source}/{coordinate_status}{stats_segment}/point_cloud"
+                ),
+                path=artifact.path,
+            )
+        except Exception as exc:
+            _LOGGER.warning("Skipping source reference point cloud artifact '%s': %s", artifact.path, exc)
+
     def _log_reconstruction_mesh_item(self, stream, item: VisualizationItem) -> None:
         if item.role != ROLE_RECONSTRUCTION_MESH:
             return
@@ -248,10 +302,42 @@ class RerunLoggingPolicy:
             _LOGGER.warning("Skipping reconstruction mesh artifact '%s': %s", artifact.path, exc)
 
     def _log_trajectory_item(self, stream, item: VisualizationItem) -> None:
+        if item.role == ROLE_SOURCE_REFERENCE_TRAJECTORY:
+            self._log_source_reference_trajectory_item(stream, item)
+            return
         if item.role != ROLE_TRACKING_TRAJECTORY or item.pose is None:
             return
         self._set_item_frame_time(stream, item)
         self._log_tracking_trajectory(stream, pose=item.pose)
+
+    def _log_source_reference_trajectory_item(self, stream, item: VisualizationItem) -> None:
+        artifact = item.artifact_refs.get(TRAJECTORY_ARTIFACT)
+        if artifact is None:
+            return
+        reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
+        coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "source_native"))
+        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
+        try:
+            trajectory = load_tum_trajectory(artifact.path)
+            self.log_line_strip3d(
+                stream,
+                entity_path=f"world/reference/{target_frame}/{reference_source}/{coordinate_status}/trajectory",
+                positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float32),
+                static=True,
+            )
+        except Exception as exc:
+            _LOGGER.warning("Skipping source reference trajectory artifact '%s': %s", artifact.path, exc)
+
+    def _load_source_reference_metadata(self, item: VisualizationItem) -> dict[str, object]:
+        artifact = item.artifact_refs.get(SOURCE_METADATA_ARTIFACT)
+        if artifact is None:
+            return {}
+        try:
+            payload = json.loads(artifact.path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            _LOGGER.warning("Skipping source reference metadata artifact '%s': %s", artifact.path, exc)
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
     def _log_pose_item(self, stream, item: VisualizationItem) -> None:
         if item.pose is None:
@@ -259,6 +345,8 @@ class RerunLoggingPolicy:
         match item.role:
             case _ if item.role == ROLE_TRACKING_POSE:
                 entity_path = "world/live/tracking/camera"
+            case _ if item.role == ROLE_SOURCE_CAMERA_POSE:
+                entity_path = "world/live/source/camera"
             case _ if item.role == ROLE_LIVE_MODEL_POSE:
                 entity_path = "world/live/model"
             case _ if item.role == ROLE_KEYFRAME_CAMERA_POSE:
@@ -286,6 +374,8 @@ class RerunLoggingPolicy:
         match item.role:
             case _ if item.role == ROLE_MODEL_PINHOLE:
                 entity_path = "world/live/model/camera/image"
+            case _ if item.role == ROLE_SOURCE_PINHOLE:
+                entity_path = "world/live/source/camera/image"
             case _ if item.role == ROLE_KEYFRAME_PINHOLE:
                 keyframe_index = self._require_keyframe_index(item)
                 if keyframe_index is None:
@@ -417,6 +507,23 @@ class RerunLoggingPolicy:
             return None
         payload = payloads.get(ref.handle_id)
         return None if payload is None else np.asarray(payload)
+
+
+def _entity_token(value: str) -> str:
+    """Return a conservative token for one Rerun entity path component."""
+    stripped = value.strip().replace(" ", "_")
+    return "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in stripped) or "reference"
+
+
+def _metadata_int(metadata: Mapping[str, object], key: str) -> int | None:
+    value = metadata.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
 
 
 __all__ = ["RerunLoggingPolicy"]

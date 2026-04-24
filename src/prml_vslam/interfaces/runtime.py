@@ -18,6 +18,7 @@ from pydantic import ConfigDict, Field
 from prml_vslam.utils.base_data import BaseData
 
 from .camera import CameraIntrinsics
+from .geometry import PointCloud
 from .transforms import FrameTransform
 
 
@@ -122,7 +123,9 @@ class FramePacket(BaseData):
     confidence: NDArray[np.float32] | None = None
     """Optional HxW sensor-confidence raster aligned with the depth image."""
     pointmap: NDArray[np.float32] | None = None
-    """Optional pointmap-like XYZ payload aligned with the emitted frame when available."""
+    """Optional HxWx3 raster-aligned camera-local XYZ pointmap for the emitted frame."""
+    point_cloud: PointCloud | None = None
+    """Optional unstructured XYZ point cloud sample with explicit frame semantics."""
     intrinsics: CameraIntrinsics | None = None
     """Optional intrinsics describing the raster carried by :attr:`rgb` and related payloads."""
     pose: FrameTransform | None = None

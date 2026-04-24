@@ -28,6 +28,7 @@ from prml_vslam.utils import BaseConfig, BaseData, PathConfig, RunArtifactPaths
 class PlanContext:
     """Inputs available while compiling a deterministic run plan."""
 
+    # TODO: must use RunConfig type!
     run_config: BaseConfig
     path_config: PathConfig
     run_paths: RunArtifactPaths

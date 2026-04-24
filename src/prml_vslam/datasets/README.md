@@ -55,14 +55,15 @@ The dataset layer feeds the current pipeline/app/runtime stack through a small
 set of typed boundaries. Those boundaries are the current source of truth for
 what downstream code is allowed to rely on.
 
-### Request Boundary
+### Source-Config Boundary
 
-Upstream of the dataset package, pipeline requests use:
+Upstream of the dataset package, pipeline source-stage configs use:
 
-- [DatasetSourceSpec](../pipeline/contracts/request.py:57)
-  - selects `dataset_id` and `sequence_id`
+- [AdvioSourceConfig](../pipeline/stages/source/config.py)
+  - selects `source_id = "advio"` and `sequence_id`
   - carries shared frame sampling via [FrameSelectionConfig](./contracts.py:115)
-  - for ADVIO, may also carry `dataset_serving`
+- [TumRgbdSourceConfig](../pipeline/stages/source/config.py)
+  - selects `source_id = "tum_rgbd"` and `sequence_id`
 
 Dataset-serving semantics currently live in `prml_vslam.datasets.contracts`:
 
@@ -78,8 +79,8 @@ Dataset-serving semantics currently live in `prml_vslam.datasets.contracts`:
 
 Datasets normalize local source data into two pipeline-facing outputs:
 
-- [SequenceManifest](../pipeline/contracts/sequence.py:11)
-  - canonical offline ingest boundary
+- [SequenceManifest](../interfaces/ingest.py)
+  - canonical offline source-preparation boundary
   - always carries `sequence_id`
   - may carry `dataset_id`, `dataset_serving`, `video_path` or `rgb_dir`,
     `timestamps_path`, `intrinsics_path`, `rotation_metadata_path`

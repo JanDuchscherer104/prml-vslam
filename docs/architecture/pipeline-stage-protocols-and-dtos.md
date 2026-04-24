@@ -22,15 +22,15 @@ The current source of truth for the executable slice is the code in:
 
 The current executable stage slice is:
 
-- `ingest`
+- `source`
 - `slam`
 - optional `gravity.align`
-- optional `trajectory.evaluate`
-- optional `reference.reconstruct`
+- optional `evaluate.trajectory`
+- optional `reconstruction`
 - `summary`
 
-`cloud.evaluate` and `efficiency.evaluate` are still planned/configurable stage
-keys, but they do not currently register executable runtimes.
+`evaluate.cloud` is still a planned/configurable diagnostic stage key, but it
+does not currently register an executable runtime.
 
 Historical note: the old `RuntimeStageProgram` / `StageCompletionPayload`
 runtime-program path is no longer current executable code in this worktree.
@@ -182,12 +182,11 @@ executed slice, but the stage-local runtime boundaries do not change.
 - [`RunService`](../../src/prml_vslam/pipeline/run_service.py),
   [`RayPipelineBackend`](../../src/prml_vslam/pipeline/backend_ray.py), and
   [`StageExecutionContext`](../../src/prml_vslam/pipeline/execution_context.py)
-  still preserve temporary `RunRequest` compatibility while `WP-09A` is in
-  flight.
-- [`StageKey`](../../src/prml_vslam/pipeline/contracts/stages.py) is still the
+  now use the target `RunConfig` and stage-runtime inputs.
+- [`StageKey`](../../src/prml_vslam/pipeline/contracts/stages.py) is the
   current executable vocabulary persisted into events and manifests:
-  `ingest`, `slam`, `gravity.align`, `trajectory.evaluate`,
-  `reference.reconstruct`, `cloud.evaluate`, `efficiency.evaluate`, `summary`.
+  `source`, `slam`, `gravity.align`, `evaluate.trajectory`, `reconstruction`,
+  `evaluate.cloud`, `summary`.
 
 ### Bounded Stage Runtimes
 

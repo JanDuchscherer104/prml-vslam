@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-# Import pipeline first to avoid the known package-init cycle between
-# `visualization.contracts` and `pipeline.contracts.request` during test collection.
+# Import pipeline first to keep visualization and curated pipeline exports initialized
+# in the same order used by the app.
 import prml_vslam.pipeline  # noqa: F401
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.visualization import rerun as rerun_helpers
@@ -162,8 +162,13 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].origin == "world"
     assert layout.views[0].contents == [
         "+ world/alignment/**",
+        "+ world/reference/**",
         "+ world/reconstruction/**",
         "+ world/live/tracking/**",
+        "+ world/live/source/camera",
+        "+ world/live/source/camera/points",
+        "- world/live/source/camera/image",
+        "- world/live/source/camera/image/**",
         "+ world/live/model",
         "- world/live/model/camera/image",
         "- world/live/model/camera/image/**",

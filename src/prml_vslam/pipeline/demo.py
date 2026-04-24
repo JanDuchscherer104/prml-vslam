@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
-from prml_vslam.methods import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig, build_run_config
+from prml_vslam.pipeline.stages.slam.config import MethodId
 from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig
 from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
@@ -22,7 +23,7 @@ class _CappedPacketStream(FramePacketStream):
         self._max_frames = max_frames
         self._seen_frames = 0
 
-    def connect(self) -> object:
+    def connect(self) -> Any:
         return self._stream.connect()
 
     def disconnect(self) -> None:

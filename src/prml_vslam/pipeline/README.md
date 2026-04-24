@@ -11,11 +11,11 @@ The pipeline is a linear benchmark runtime, not a generic workflow engine. The
 current executable order is:
 
 ```text
-source/ingest -> slam -> [gravity.align] -> [trajectory.evaluate] -> [reference.reconstruct] -> summary
+source -> slam -> [gravity.align] -> [evaluate.trajectory] -> [reconstruction] -> [evaluate.cloud] -> summary
 ```
 
-`cloud.evaluate` and `efficiency.evaluate` remain planned placeholders until
-their concrete runtime implementations land.
+`evaluate.cloud` is a diagnostic planning binding without a runtime. Efficiency
+evaluation is intentionally out of the current public pipeline surface.
 
 ## Current Entry Points
 
@@ -29,9 +29,7 @@ their concrete runtime implementations land.
   log, live snapshot, stage sequencing, payload cache, sinks, and streaming
   credit loop.
 
-Compatibility request contracts still exist while the remaining WP-09A/WP-09C
-and WP-09D cutovers are unfinished. New launch code should prefer `RunConfig`
-and target stage sections.
+Launch code accepts `RunConfig` and target stage sections only.
 
 ## Runtime Model
 
@@ -61,8 +59,8 @@ Target runtime telemetry flows through
 [`StageRuntimeUpdate`](./stages/base/contracts.py), and live bulk payloads should
 use [`TransientPayloadRef`](./stages/base/handles.py).
 
-The remaining old telemetry events and handle DTOs are migration contacts for
-WP-09C/WP-09D. Do not introduce new consumers of those compatibility surfaces.
+Live telemetry and previews stay in `StageRuntimeUpdate`; durable events remain
+limited to lifecycle and provenance.
 
 ## Artifact Ownership
 
@@ -88,7 +86,6 @@ scientific outputs.
   `StageRuntimeUpdate`.
 - Keep Rerun SDK calls inside sink/policy modules, not in core DTOs or stage
   result models.
-- Keep launch/config additions in `RunConfig` and target stage sections rather
-  than widening request compatibility surfaces.
-- Update focused runtime tests and the DTO migration ledger when retiring a
-  migration contact.
+- Keep launch/config additions in `RunConfig` and stage-owned config modules.
+- Update focused runtime tests and architecture docs when changing a stage
+  boundary.

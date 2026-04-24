@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 from pydantic import Field
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform, PointCloud
 from prml_vslam.utils import BaseConfig, BaseData
 
 
@@ -33,6 +33,7 @@ class Cv2FramePayload(BaseData):
     depth: np.ndarray | None = None
     confidence: np.ndarray | None = None
     pointmap: np.ndarray | None = None
+    point_cloud: PointCloud | None = None
 
 
 class Cv2ProducerConfig(BaseConfig):
@@ -138,6 +139,7 @@ class Cv2FrameProducer:
                 pointmap=None
                 if payload is None or payload.pointmap is None
                 else np.asarray(payload.pointmap, dtype=np.float32),
+                point_cloud=None if payload is None else payload.point_cloud,
                 intrinsics=self.config.intrinsics,
                 pose=self._pose_for_frame(source_frame_index),
                 provenance=self.config.base_provenance.model_copy(
