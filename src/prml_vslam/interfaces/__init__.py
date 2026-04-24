@@ -12,10 +12,6 @@ from .geometry import DepthMap, PointCloud, PointMap
 from .ingest import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
-    PreparedBenchmarkInputs,
-    ReferenceCloudRef,
-    ReferencePointCloudSequenceRef,
-    ReferenceTrajectoryRef,
     SequenceManifest,
 )
 from .rgbd import (
@@ -27,7 +23,6 @@ from .rgbd import (
     RgbdObservationSequenceRef,
 )
 from .runtime import FramePacket, FramePacketProvenance, Record3DTransportId
-from .slam import SlamArtifacts
 from .transforms import FrameTransform
 from .visualization import VisualizationArtifacts
 
@@ -44,13 +39,9 @@ __all__ = [
     "GroundAlignmentMetadata",
     "GroundPlaneModel",
     "GroundPlaneVisualizationHint",
-    "PreparedBenchmarkInputs",
     "PointCloud",
     "PointMap",
     "Record3DTransportId",
-    "ReferenceCloudRef",
-    "ReferencePointCloudSequenceRef",
-    "ReferenceTrajectoryRef",
     "RGBD_OBSERVATION_SEQUENCE_FORMAT",
     "RgbdObservation",
     "RgbdObservationIndexEntry",
@@ -58,6 +49,5 @@ __all__ = [
     "RgbdObservationSequenceIndex",
     "RgbdObservationSequenceRef",
     "SequenceManifest",
-    "SlamArtifacts",
     "VisualizationArtifacts",
 ]

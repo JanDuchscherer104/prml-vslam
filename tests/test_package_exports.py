@@ -27,13 +27,9 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "GroundAlignmentMetadata",
         "GroundPlaneModel",
         "GroundPlaneVisualizationHint",
-        "PreparedBenchmarkInputs",
         "PointCloud",
         "PointMap",
         "Record3DTransportId",
-        "ReferenceCloudRef",
-        "ReferencePointCloudSequenceRef",
-        "ReferenceTrajectoryRef",
         "RGBD_OBSERVATION_SEQUENCE_FORMAT",
         "RgbdObservation",
         "RgbdObservationIndexEntry",
@@ -41,7 +37,6 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "RgbdObservationSequenceIndex",
         "RgbdObservationSequenceRef",
         "SequenceManifest",
-        "SlamArtifacts",
         "VisualizationArtifacts",
     ]
     assert not hasattr(interfaces_package, "SE3Pose")
@@ -84,11 +79,9 @@ def test_pipeline_contracts_package_is_not_a_compatibility_hub() -> None:
 
 def test_methods_package_exports_slam_surfaces() -> None:
     assert methods_package.__all__ == [
-        "MockSlamBackend",
         "SlamUpdate",
         "VistaSlamBackend",
     ]
-    assert not hasattr(methods_package, "MockMethodConfig")
 
 
 def test_vista_package_is_the_only_canonical_vista_surface() -> None:

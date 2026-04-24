@@ -17,6 +17,7 @@ from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.protocols import FramePacketStream
 
+from .advio_frames import transform_advio_trajectory_to_rdf
 from .advio_geometry import Sim3Alignment, fit_planar_rigid_alignment, interpolate_trajectory_poses
 from .advio_loading import load_advio_trajectory
 
@@ -51,7 +52,7 @@ def _load_pose_trajectory(
         if pose_source is AdvioPoseSource.NONE:
             return None
         raise FileNotFoundError(f"Sequence {scene.sequence_slug} does not include {pose_source.label} pose data.")
-    return load_advio_trajectory(path)
+    return transform_advio_trajectory_to_rdf(load_advio_trajectory(path), source=pose_source)
 
 
 def load_advio_served_trajectory(
@@ -67,7 +68,10 @@ def load_advio_served_trajectory(
         raise ValueError("ADVIO serving config must resolve to a real pose provider.")
     return serve_loaded_advio_trajectory(
         trajectory=trajectory,
-        ground_truth_trajectory=load_advio_trajectory(paths.ground_truth_csv_path),
+        ground_truth_trajectory=transform_advio_trajectory_to_rdf(
+            load_advio_trajectory(paths.ground_truth_csv_path),
+            source=AdvioPoseSource.GROUND_TRUTH,
+        ),
         pose_source=pose_source,
         pose_frame_mode=(
             AdvioPoseFrameMode.PROVIDER_WORLD if dataset_serving is None else dataset_serving.pose_frame_mode

@@ -12,7 +12,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 
 from .runtime import FramePacketStream
 

@@ -12,10 +12,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs
 from prml_vslam.io import Cv2ReplayMode
 from prml_vslam.protocols import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.utils import BaseData, Console, PathConfig
 
 from .contracts import FrameSelectionConfig, SequenceKey
@@ -100,6 +100,7 @@ class DatasetServiceBase:
             console=Console(self.__class__.__module__).child(self.__class__.__name__),
         )
 
+    # TODO: fix typing
     def summarize(self, statuses: list[Any] | None = None) -> BaseData:
         """Return the high-level local-coverage summary for the dataset."""
         statuses = self.local_scene_statuses() if statuses is None else statuses

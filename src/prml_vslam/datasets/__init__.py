@@ -5,7 +5,7 @@ normalization helpers, replay preparation, and typed dataset contracts. It does
 not own pipeline stage order or backend execution; instead it feeds normalized
 inputs such as :class:`prml_vslam.pipeline.SequenceManifest` into
 :mod:`prml_vslam.pipeline` and benchmark-side references into
-:mod:`prml_vslam.benchmark`.
+:mod:`prml_vslam.sources.contracts`.
 """
 
 from .contracts import DatasetId
