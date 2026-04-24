@@ -239,14 +239,14 @@ def _render_pipeline_viewer_link(*, connect_live_viewer: bool, grpc_url: str) ->
         connect_live_viewer=connect_live_viewer,
         grpc_url=grpc_url,
     )
-    if viewer_link.web_url is None:
-        st.caption(viewer_link.status_message)
+    if viewer_link["web_url"] is None:
+        st.caption(viewer_link["status_message"])
         return
     left, right = st.columns((0.4, 1.6), gap="small")
     with left:
-        st.link_button("Open Rerun Viewer", viewer_link.web_url, width="stretch")
+        st.link_button("Open Rerun Viewer", viewer_link["web_url"], width="stretch")
     with right:
-        st.caption(f"{viewer_link.status_message} Endpoint: `{viewer_link.grpc_url}`")
+        st.caption(f"{viewer_link['status_message']} Endpoint: `{viewer_link['grpc_url']}`")
 
 
 def _render_telemetry_stage_selector(

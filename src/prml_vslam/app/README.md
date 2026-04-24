@@ -2,7 +2,7 @@
 
 This package contains the packaged Streamlit workbench for PRML VSLAM.
 
-The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.datasets`, `prml_vslam.eval`, `prml_vslam.pipeline`, `prml_vslam.benchmark`, `prml_vslam.visualization`, and `prml_vslam.utils`.
+The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.datasets`, `prml_vslam.eval`, `prml_vslam.pipeline`, `prml_vslam.sources`, `prml_vslam.visualization`, and `prml_vslam.utils`.
 
 Use this document together with the other app-specific and repo-wide guidance:
 
@@ -210,8 +210,8 @@ sequenceDiagram
   - Owns run planning, execution orchestration, manifests, and runtime state.
   - The Streamlit app may expose pipeline-facing controls, but it should not define pipeline semantics itself.
 
-- `prml_vslam.benchmark`
-  - Owns benchmark reference identifiers consumed by prepared benchmark-side inputs.
+- `prml_vslam.sources`
+  - Owns source-stage preparation and reference identifiers consumed by prepared benchmark-side inputs.
 
 - `prml_vslam.visualization`
   - Owns viewer policy and preserved native Rerun artifacts.
@@ -299,8 +299,8 @@ When adding features, prefer extending the existing pattern rather than adding n
 - new chart -> `plotting/<name>.py`
 - new app session-state model -> `models.py`
 - new evaluation/discovery contract -> `prml_vslam.eval`
-- new benchmark reference identifier -> `prml_vslam.benchmark`
-- new prepared benchmark-input contract -> `prml_vslam.interfaces`
+- new benchmark reference identifier -> `prml_vslam.sources.contracts`
+- new prepared benchmark-input contract -> `prml_vslam.sources.contracts`
 - new viewer/export artifact contract -> `prml_vslam.visualization`
 - new app-facing orchestration or runtime behavior -> `services.py`
 - new persisted state slot -> `state.py`

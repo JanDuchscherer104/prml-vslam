@@ -9,9 +9,9 @@ import streamlit as st
 
 from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
 from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, build_backend_spec
-from prml_vslam.pipeline.stages.slam.config import MethodId, MockSlamBackendConfig, VistaSlamBackendConfig
 
 from ..models import PipelinePageState, PipelineSourceId
 from ..pipeline_controls import PipelinePageAction, parse_optional_float, parse_optional_int
@@ -142,8 +142,6 @@ def _render_source_selector(page_state: PipelinePageState) -> PipelineSourceId:
 
 def _pipeline_method_help(method: MethodId) -> str:
     """Explain the current execution semantics for the selected method."""
-    if method is MethodId.MOCK:
-        return "Repository-local backend for smoke runs and UI validation."
     if method is MethodId.MAST3R:
         return "MASt3R-SLAM is retained as a method id, but this repository has no executable backend yet."
     return "Real ViSTA-SLAM backend for offline and streaming runs."
@@ -376,8 +374,6 @@ def _render_slam_settings(page_state: PipelinePageState) -> tuple[MethodId, int 
     match method:
         case MethodId.VISTA:
             backend_spec = _render_vista_backend_settings(backend_spec, max_frames=slam_max_frames)
-        case MethodId.MOCK:
-            backend_spec = _render_mock_backend_settings(backend_spec, max_frames=slam_max_frames)
         case MethodId.MAST3R:
             st.warning("MASt3R-SLAM is not executable in the current pipeline runtime.")
     return method, slam_max_frames, backend_spec, slam_max_frames_error
@@ -452,44 +448,6 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
         pgo_every=pgo_every,
         random_seed=random_seed,
         device=device,
-    )
-
-
-def _render_mock_backend_settings(backend_spec: BackendSpec, *, max_frames: int | None) -> MockSlamBackendConfig:
-    backend = (
-        backend_spec
-        if isinstance(backend_spec, MockSlamBackendConfig)
-        else build_backend_spec(method=MethodId.MOCK, max_frames=max_frames)
-    )
-    if not isinstance(backend, MockSlamBackendConfig):
-        raise TypeError("Expected a mock SLAM backend config.")
-
-    col_a, col_b = st.columns(2, gap="small")
-    with col_a:
-        trajectory_position_noise_mean_m = float(
-            st.number_input("Trajectory Noise Mean", value=float(backend.trajectory_position_noise_mean_m))
-        )
-        trajectory_position_noise_variance_m2 = float(
-            st.number_input(
-                "Trajectory Noise Variance",
-                min_value=0.0,
-                value=float(backend.trajectory_position_noise_variance_m2),
-            )
-        )
-    with col_b:
-        point_noise_mean_m = float(st.number_input("Point Noise Mean", value=float(backend.point_noise_mean_m)))
-        point_noise_variance_m2 = float(
-            st.number_input("Point Noise Variance", min_value=0.0, value=float(backend.point_noise_variance_m2))
-        )
-    random_seed = int(st.number_input("Mock Random Seed", value=backend.random_seed))
-    return MockSlamBackendConfig(
-        method_id=MethodId.MOCK,
-        max_frames=max_frames,
-        trajectory_position_noise_mean_m=trajectory_position_noise_mean_m,
-        trajectory_position_noise_variance_m2=trajectory_position_noise_variance_m2,
-        point_noise_mean_m=point_noise_mean_m,
-        point_noise_variance_m2=point_noise_variance_m2,
-        random_seed=random_seed,
     )
 
 

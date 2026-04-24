@@ -21,14 +21,14 @@ def render_pipeline_snapshot(model: PipelineSnapshotRenderModel) -> None:
     render_live_session_shell(
         title=None,
         status_renderer=lambda: _render_pipeline_notice(model),
-        metrics=model.metrics,
-        caption=model.caption,
+        metrics=model["metrics"],
+        caption=model["caption"],
         body_renderer=lambda: _render_pipeline_tabs(model),
     )
 
 
 def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
-    if model.is_offline:
+    if model["is_offline"]:
         st.caption("Offline runs skip the live replay panels and focus on stage progress plus persisted outputs.")
         tabs = st.tabs(["Stage Status", "Plan", "Artifacts"])
         with tabs[0]:
@@ -39,7 +39,8 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
             _render_pipeline_artifacts_tab(model)
         return
 
-    if model.streaming is None:
+    streaming = model["streaming"]
+    if streaming is None:
         tabs = st.tabs(["Stage Status", "Plan", "Artifacts"])
         with tabs[0]:
             _render_stage_status_tab(model)
@@ -48,11 +49,9 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
         with tabs[2]:
             _render_pipeline_artifacts_tab(model)
         return
-    packet_metadata = model.streaming.packet_metadata
+    packet_metadata = streaming["packet_metadata"]
     has_frame_data = (
-        packet_metadata is not None
-        or model.streaming.frame_image is not None
-        or model.streaming.preview_image is not None
+        packet_metadata is not None or streaming["frame_image"] is not None or streaming["preview_image"] is not None
     )
     tabs = st.tabs(["Stage Status", "Frames", "Trajectory", "Plan", "Artifacts"])
     with tabs[0]:
@@ -63,70 +62,69 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
         else:
             preview_left, preview_right = st.columns(2, gap="large")
             with preview_left:
-                st.markdown(f"**{model.streaming.frame_panel_title}**")
-                if model.streaming.frame_image is None:
+                st.markdown(f"**{streaming['frame_panel_title']}**")
+                if streaming["frame_image"] is None:
                     st.info("The latest frame payload is not available in the local handle cache anymore.")
                 else:
-                    render_live_image(model.streaming.frame_image, channels="RGB", clamp=True, width="stretch")
+                    render_live_image(streaming["frame_image"], channels="RGB", clamp=True, width="stretch")
             with preview_right:
-                st.markdown(f"**{model.streaming.preview_panel_title}**")
-                if model.streaming.preview_image is None:
-                    st.info(model.streaming.preview_empty_message)
+                st.markdown(f"**{streaming['preview_panel_title']}**")
+                if streaming["preview_image"] is None:
+                    st.info(streaming["preview_empty_message"])
                 else:
-                    render_live_image(model.streaming.preview_image, clamp=True, width="stretch")
-                    if model.streaming.preview_status_message is not None:
-                        st.caption(model.streaming.preview_status_message)
+                    render_live_image(streaming["preview_image"], clamp=True, width="stretch")
+                    if streaming["preview_status_message"] is not None:
+                        st.caption(streaming["preview_status_message"])
             details_left, details_right = st.columns((1.0, 1.0), gap="large")
             with details_left:
                 st.markdown("**Latest Backend Event**")
-                if model.streaming.backend_notice is None:
-                    st.info(model.streaming.backend_notice_empty_message)
+                if streaming["backend_notice"] is None:
+                    st.info(streaming["backend_notice_empty_message"])
                 else:
-                    st.json(model.streaming.backend_notice.payload, expanded=False)
+                    st.json(streaming["backend_notice"]["payload"], expanded=False)
             with details_right:
                 st.markdown("**Frame Metadata**")
                 if packet_metadata is None:
                     st.info("Stage runtime metadata is not available yet.")
                 else:
                     st.json(packet_metadata, expanded=False)
-                if model.streaming.backend_notice is not None:
+                if streaming["backend_notice"] is not None:
                     st.markdown("**Camera Intrinsics**")
                     render_camera_intrinsics(
-                        intrinsics=model.streaming.intrinsics,
-                        missing_message=model.streaming.intrinsics_missing_message,
+                        intrinsics=streaming["intrinsics"],
+                        missing_message=streaming["intrinsics_missing_message"],
                     )
     with tabs[2]:
         render_live_trajectory(
-            positions_xyz=model.streaming.positions_xyz,
-            timestamps_s=model.streaming.timestamps_s,
-            empty_message=model.streaming.trajectory_empty_message,
+            positions_xyz=streaming["positions_xyz"],
+            timestamps_s=streaming["timestamps_s"],
+            empty_message=streaming["trajectory_empty_message"],
         )
         st.markdown("**Evo APE Colormap**")
         st.toggle(
             "Enable evo APE preview",
-            value=model.streaming.show_evo_preview,
+            value=streaming["show_evo_preview"],
             key="pipeline_show_evo_preview",
         )
-        if not model.streaming.show_evo_preview:
+        if not streaming["show_evo_preview"]:
             st.caption("Enable the toggle to run explicit evo APE preview for the current slice.")
         else:
-            if model.streaming.evo_error is not None:
-                st.warning(model.streaming.evo_error)
-            elif model.streaming.evo_preview is None:
-                st.info(model.streaming.evo_empty_message)
+            if streaming["evo_error"] is not None:
+                st.warning(streaming["evo_error"])
+            elif streaming["evo_preview"] is None:
+                st.info(streaming["evo_empty_message"])
             else:
+                evo_preview = streaming["evo_preview"]
                 st.plotly_chart(
                     build_evo_ape_colormap_figure(
-                        reference=model.streaming.evo_preview.reference,
-                        estimate=model.streaming.evo_preview.estimate,
-                        error_series=model.streaming.evo_preview.error_series,
+                        reference=evo_preview.reference,
+                        estimate=evo_preview.estimate,
+                        error_series=evo_preview.error_series,
                     ),
                     width="stretch",
                 )
                 st.caption(
-                    "Matched pairs: "
-                    f"`{len(model.streaming.evo_preview.error_series.values)}`"
-                    f" · RMSE: `{model.streaming.evo_preview.stats.rmse:.4f} m`"
+                    f"Matched pairs: `{len(evo_preview.error_series.values)}` · RMSE: `{evo_preview.stats.rmse:.4f} m`"
                 )
     with tabs[3]:
         _render_pipeline_plan_tab(model)
@@ -135,84 +133,90 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
 
 
 def _render_stage_status_tab(model: PipelineSnapshotRenderModel) -> None:
-    if not model.telemetry_visible:
+    if not model["telemetry_visible"]:
         st.info("Stage telemetry is hidden.")
         return
-    if not model.stage_status_rows:
+    if not model["stage_status_rows"]:
         st.info("Start a run to inspect stage status.")
         return
-    st.dataframe([row.table_row() for row in model.stage_status_rows], hide_index=True, width="stretch")
-    if model.telemetry_view_mode is not PipelineTelemetryViewMode.ROLLING:
+    st.dataframe(model["stage_status_rows"], hide_index=True, width="stretch")
+    if model["telemetry_view_mode"] is not PipelineTelemetryViewMode.ROLLING:
         return
-    if model.telemetry_chart is None or not model.telemetry_chart.rows:
+    telemetry_chart = model["telemetry_chart"]
+    if telemetry_chart is None or not telemetry_chart["rows"]:
         empty_message = (
             "No rolling telemetry samples are available yet."
-            if model.telemetry_chart is None
-            else model.telemetry_chart.empty_message
+            if telemetry_chart is None
+            else telemetry_chart["empty_message"]
         )
         st.info(empty_message)
         return
     st.plotly_chart(
         build_stage_telemetry_figure(
-            rows=model.telemetry_chart.rows,
-            metric_label=model.telemetry_chart.metric_label,
-            unit_label=model.telemetry_chart.unit_label,
+            rows=telemetry_chart["rows"],
+            metric_label=telemetry_chart["metric_label"],
+            unit_label=telemetry_chart["unit_label"],
         ),
         width="stretch",
     )
 
 
 def _render_pipeline_plan_tab(model: PipelineSnapshotRenderModel) -> None:
-    if not model.plan_rows:
+    if not model["plan_rows"]:
         st.info("Start a run to inspect the generated plan and execution records.")
         return
 
     left, right = st.columns(2, gap="large")
     with left:
         st.markdown("**Planned Stages**")
-        st.dataframe(model.plan_rows, hide_index=True, width="stretch")
+        st.dataframe(model["plan_rows"], hide_index=True, width="stretch")
     with right:
         st.markdown("**Stage Outcomes**")
-        if model.stage_outcome_rows:
-            st.dataframe(model.stage_outcome_rows, hide_index=True, width="stretch")
+        if model["stage_outcome_rows"]:
+            st.dataframe(model["stage_outcome_rows"], hide_index=True, width="stretch")
         else:
             st.info("Stage outcomes will appear once the run starts writing outputs.")
         st.markdown("**Recent Events**")
-        if not model.recent_events:
+        if not model["recent_events"]:
             st.info("Recent events will appear once the run starts.")
         else:
-            st.json(model.recent_events, expanded=False)
+            st.json(model["recent_events"], expanded=False)
 
 
 def _render_pipeline_artifacts_tab(model: PipelineSnapshotRenderModel) -> None:
-    if model.stage_outcomes_json is None and model.artifacts_json is None and model.stage_runtime_status_json is None:
+    if (
+        model["stage_outcomes_json"] is None
+        and model["artifacts_json"] is None
+        and model["stage_runtime_status_json"] is None
+    ):
         st.info("Run the pipeline to inspect stage outcomes, stage runtime status, and materialized artifacts.")
         return
 
     left, right = st.columns(2, gap="large")
     with left:
-        if model.stage_outcomes_json is not None:
+        if model["stage_outcomes_json"] is not None:
             st.markdown("**Stage Outcomes**")
-            st.code(model.stage_outcomes_json, language="json")
-        if model.stage_runtime_status_json is not None:
+            st.code(model["stage_outcomes_json"], language="json")
+        if model["stage_runtime_status_json"] is not None:
             st.markdown("**Stage Runtime Status**")
-            st.code(model.stage_runtime_status_json, language="json")
+            st.code(model["stage_runtime_status_json"], language="json")
     with right:
-        if model.artifacts_json is not None:
+        if model["artifacts_json"] is not None:
             st.markdown("**Artifacts**")
-            st.code(model.artifacts_json, language="json")
+            st.code(model["artifacts_json"], language="json")
 
 
 def _render_pipeline_notice(model: PipelineSnapshotRenderModel) -> None:
-    match model.notice.level:
+    notice = model["notice"]
+    match notice["level"]:
         case "info":
-            st.info(model.notice.message)
+            st.info(notice["message"])
         case "success":
-            st.success(model.notice.message)
+            st.success(notice["message"])
         case "warning":
-            st.warning(model.notice.message)
+            st.warning(notice["message"])
         case "error":
-            st.error(model.notice.message)
+            st.error(notice["message"])
 
 
 __all__ = ["render_pipeline_snapshot"]

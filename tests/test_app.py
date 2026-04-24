@@ -14,7 +14,6 @@ from prml_vslam.app.models import (
     PipelinePageState,
     PipelineSourceId,
     PipelineTelemetryMetricId,
-    PipelineTelemetrySample,
     PipelineTelemetryViewMode,
 )
 from prml_vslam.app.pipeline_controller import (
@@ -31,6 +30,7 @@ from prml_vslam.app.pipeline_controls import (
 )
 from prml_vslam.datasets.advio import AdvioServingConfig
 from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_backend_spec, build_run_config
 from prml_vslam.pipeline.contracts.events import RunStarted, StageOutcome
@@ -40,8 +40,7 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.slam.config import MethodId
-from prml_vslam.pipeline.stages.source.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.utils import PathConfig
 
 
@@ -266,7 +265,7 @@ def test_build_run_config_from_action_uses_record3d_frame_timeout(tmp_path: Path
         experiment_name="record3d-console",
         source_kind=PipelineSourceId.RECORD3D,
         mode=PipelineMode.STREAMING,
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         record3d_transport=Record3DTransportId.WIFI,
         record3d_wifi_device_address="192.168.1.22",
         record3d_frame_timeout_seconds=2.5,
@@ -354,7 +353,7 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
             sequence_id="advio-01",
             dataset_serving={"pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
         ),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         evaluate_cloud=True,
     )
     plan = run_config.compile_plan(path_config)
@@ -423,21 +422,21 @@ def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path
         snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
     )
 
-    assert model.caption is not None
-    assert "ViSTA-SLAM" in model.caption
-    assert model.streaming is not None
-    assert model.streaming.frame_image is not None
-    assert model.streaming.preview_image is not None
-    assert model.streaming.packet_metadata == {
+    assert model["caption"] is not None
+    assert "ViSTA-SLAM" in model["caption"]
+    assert model["streaming"] is not None
+    assert model["streaming"]["frame_image"] is not None
+    assert model["streaming"]["preview_image"] is not None
+    assert model["streaming"]["packet_metadata"] == {
         "stage": "slam",
         "processed_items": 4,
         "fps": 20.0,
         "throughput": 5.0,
         "updated_at_ns": 44,
     }
-    assert model.streaming.backend_notice is None
-    assert model.stage_outcome_rows[0]["Stage"] == "slam"
-    assert model.recent_events[-1]["kind"] == "run.started"
+    assert model["streaming"]["backend_notice"] is None
+    assert model["stage_outcome_rows"][0]["Stage"] == "slam"
+    assert model["recent_events"][-1]["kind"] == "run.started"
 
 
 def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path) -> None:
@@ -502,11 +501,11 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
     model = build_pipeline_snapshot_render_model(
         snapshot,
         FakeRunService(),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         show_evo_preview=False,
         now_ns=2_000_000_000,
     )
-    rows = {row.stage_id: row.table_row() for row in model.stage_status_rows}
+    rows = {row["Id"]: row for row in model["stage_status_rows"]}
 
     assert rows["source"]["State"] == "running"
     assert rows["source"]["Progress"] == "4 frames"
@@ -600,9 +599,9 @@ def test_pipeline_snapshot_render_model_builds_rolling_telemetry_chart(tmp_path:
     )
     snapshot = RunSnapshot(run_id="telemetry-demo", state=RunState.RUNNING, plan=plan)
     history = [
-        PipelineTelemetrySample(run_id="telemetry-demo", stage_key=StageKey.SOURCE, updated_at_ns=1, fps=10.0),
-        PipelineTelemetrySample(run_id="telemetry-demo", stage_key=StageKey.SLAM, updated_at_ns=2, fps=5.0),
-        PipelineTelemetrySample(run_id="telemetry-demo", stage_key=StageKey.SOURCE, updated_at_ns=3, fps=12.0),
+        StageRuntimeStatus(stage_key=StageKey.SOURCE, updated_at_ns=1, fps=10.0),
+        StageRuntimeStatus(stage_key=StageKey.SLAM, updated_at_ns=2, fps=5.0),
+        StageRuntimeStatus(stage_key=StageKey.SOURCE, updated_at_ns=3, fps=12.0),
     ]
 
     class FakeRunService:
@@ -617,7 +616,7 @@ def test_pipeline_snapshot_render_model_builds_rolling_telemetry_chart(tmp_path:
     model = build_pipeline_snapshot_render_model(
         snapshot,
         FakeRunService(),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
         show_evo_preview=False,
         telemetry_history=history,
         telemetry_visible=True,
@@ -626,9 +625,9 @@ def test_pipeline_snapshot_render_model_builds_rolling_telemetry_chart(tmp_path:
         telemetry_selected_metric=PipelineTelemetryMetricId.FPS,
     )
 
-    assert model.telemetry_chart is not None
-    assert model.telemetry_chart.metric_label == "FPS"
-    assert [row["value"] for row in model.telemetry_chart.rows] == [10.0, 12.0]
+    assert model["telemetry_chart"] is not None
+    assert model["telemetry_chart"]["metric_label"] == "FPS"
+    assert [row["value"] for row in model["telemetry_chart"]["rows"]] == [10.0, 12.0]
 
 
 def test_pipeline_viewer_link_model_disabled_without_live_viewer() -> None:
@@ -637,10 +636,10 @@ def test_pipeline_viewer_link_model_disabled_without_live_viewer() -> None:
         grpc_url="rerun+http://127.0.0.1:9876/proxy",
     )
 
-    assert model.enabled is False
-    assert model.web_url is None
-    assert model.grpc_url == "rerun+http://127.0.0.1:9876/proxy"
-    assert "disabled" in model.status_message
+    assert model["enabled"] is False
+    assert model["web_url"] is None
+    assert model["grpc_url"] == "rerun+http://127.0.0.1:9876/proxy"
+    assert "disabled" in model["status_message"]
 
 
 def test_pipeline_viewer_link_model_encodes_default_grpc_url() -> None:
@@ -649,8 +648,8 @@ def test_pipeline_viewer_link_model_encodes_default_grpc_url() -> None:
         grpc_url="rerun+http://127.0.0.1:9876/proxy",
     )
 
-    assert model.enabled is True
-    assert model.web_url == "http://127.0.0.1:9090/?url=rerun%2Bhttp%3A%2F%2F127.0.0.1%3A9876%2Fproxy"
+    assert model["enabled"] is True
+    assert model["web_url"] == "http://127.0.0.1:9090/?url=rerun%2Bhttp%3A%2F%2F127.0.0.1%3A9876%2Fproxy"
 
 
 def test_pipeline_viewer_link_model_encodes_custom_grpc_url() -> None:
@@ -659,9 +658,9 @@ def test_pipeline_viewer_link_model_encodes_custom_grpc_url() -> None:
         grpc_url="rerun+http://localhost:9877/proxy?recording=run 1",
     )
 
-    assert model.enabled is True
+    assert model["enabled"] is True
     assert (
-        model.web_url
+        model["web_url"]
         == "http://127.0.0.1:9090/?url=rerun%2Bhttp%3A%2F%2Flocalhost%3A9877%2Fproxy%3Frecording%3Drun%201"
     )
 
@@ -669,10 +668,10 @@ def test_pipeline_viewer_link_model_encodes_custom_grpc_url() -> None:
 def test_pipeline_viewer_link_model_requires_non_empty_grpc_url() -> None:
     model = build_pipeline_viewer_link_model(connect_live_viewer=True, grpc_url="  ")
 
-    assert model.enabled is False
-    assert model.web_url is None
-    assert model.grpc_url == ""
-    assert "no gRPC URL" in model.status_message
+    assert model["enabled"] is False
+    assert model["web_url"] is None
+    assert model["grpc_url"] == ""
+    assert "no gRPC URL" in model["status_message"]
 
 
 def test_pipeline_snapshot_render_model_prefers_target_live_refs(tmp_path: Path) -> None:
@@ -722,13 +721,13 @@ def test_pipeline_snapshot_render_model_prefers_target_live_refs(tmp_path: Path)
         snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
     )
 
-    assert model.streaming is not None
-    assert model.streaming.frame_image is not None
-    assert model.streaming.preview_image is not None
-    assert model.streaming.preview_status_message == "Current keyframe artifact."
-    assert ("Received Frames", "3") in model.metrics
-    assert ("Packet FPS", "12.50 fps") in model.metrics
-    assert ("Keyframe FPS", "2.50 fps") in model.metrics
+    assert model["streaming"] is not None
+    assert model["streaming"]["frame_image"] is not None
+    assert model["streaming"]["preview_image"] is not None
+    assert model["streaming"]["preview_status_message"] == "Current keyframe artifact."
+    assert ("Received Frames", "3") in model["metrics"]
+    assert ("Packet FPS", "12.50 fps") in model["metrics"]
+    assert ("Keyframe FPS", "2.50 fps") in model["metrics"]
 
 
 def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path) -> None:
@@ -753,9 +752,9 @@ def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path
         snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
     )
 
-    assert model.streaming is not None
-    assert "ViSTA-SLAM has not produced" in model.streaming.preview_empty_message
-    assert "ViSTA-SLAM has not accepted" in model.streaming.trajectory_empty_message
+    assert model["streaming"] is not None
+    assert "ViSTA-SLAM has not produced" in model["streaming"]["preview_empty_message"]
+    assert "ViSTA-SLAM has not accepted" in model["streaming"]["trajectory_empty_message"]
 
 
 def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
@@ -787,14 +786,14 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
     monkeypatch.setattr("prml_vslam.app.pipeline_controller.resolve_evo_preview", fake_resolve_evo_preview)
 
     disabled = build_pipeline_snapshot_render_model(
-        snapshot, FakeRunService(), method=MethodId.MOCK, show_evo_preview=False
+        snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
     )
     enabled = build_pipeline_snapshot_render_model(
-        snapshot, FakeRunService(), method=MethodId.MOCK, show_evo_preview=True
+        snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=True
     )
 
-    assert disabled.streaming is not None
-    assert disabled.streaming.evo_error is None
-    assert enabled.streaming is not None
-    assert enabled.streaming.evo_error == "preview boom"
+    assert disabled["streaming"] is not None
+    assert disabled["streaming"]["evo_error"] is None
+    assert enabled["streaming"] is not None
+    assert enabled["streaming"]["evo_error"] == "preview boom"
     assert calls["count"] == 1
