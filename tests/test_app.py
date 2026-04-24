@@ -1067,7 +1067,7 @@ def test_pipeline_page_rejects_unsupported_cloud_evaluation_stage(tmp_path: Path
     assert "cloud_evaluation" in error_message
 
 
-def test_pipeline_page_rejects_mast3r_execution_until_backend_exists(tmp_path: Path) -> None:
+def test_pipeline_page_allows_mast3r_execution(tmp_path: Path) -> None:
     from prml_vslam.app import pipeline_controller
 
     path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
@@ -1086,8 +1086,7 @@ def test_pipeline_page_rejects_mast3r_execution_until_backend_exists(tmp_path: P
         previewable_statuses=[],
     )
 
-    assert error_message is not None
-    assert "MASt3R-SLAM is not executable yet" in error_message
+    assert error_message is None
 
 
 def test_pipeline_source_input_error_requires_wifi_device_address() -> None:

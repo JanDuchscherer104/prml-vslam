@@ -20,6 +20,7 @@ Architecture (mirrors VistaSlamBackend):
 
 from __future__ import annotations
 
+import json
 import sys
 import threading
 import time
@@ -110,6 +111,14 @@ class Mast3rSlamSession:
         self._K: Any = None  # torch.Tensor | None
         self._h: int = 0
         self._w: int = 0
+        self._lietorch: Any = None
+        self._Mode: Any = None
+        self._create_frame: Any = None
+        self._resize_img: Any = None
+        self._SharedKeyframes: Any = None
+        self._SharedStates: Any = None
+        self._FrameTracker: Any = None
+        self._mast3r_inference_mono: Any = None
 
         # Frontend bookkeeping.
         self._source_frame_count = 0
@@ -117,6 +126,7 @@ class Mast3rSlamSession:
         self._num_dense_points = 0
         self._timestamps_s: list[float] = []  # indexed by internal frame_id (= step call order)
         self._pending_updates: list[SlamUpdate] = []
+        self._backend_error: Exception | None = None
 
         # Backend thread control.
         self._backend_thread: threading.Thread | None = None
@@ -127,7 +137,7 @@ class Mast3rSlamSession:
     # ---- initialisation -------------------------------------------------
 
     def _initialize(self) -> None:
-        """Load model, build shared state, start backend thread."""
+        """Load the upstream runtime and model state needed before first-frame setup."""
         import torch  # noqa: PLC0415
 
         self._inject_sys_path()
@@ -149,46 +159,45 @@ class Mast3rSlamSession:
 
         # Load model + share memory so backend thread (same process) sees same weights.
         from mast3r_slam.mast3r_utils import load_mast3r  # noqa: PLC0415
+        from mast3r_slam.frame import Mode, SharedKeyframes, SharedStates, create_frame  # noqa: PLC0415
+        from mast3r_slam.mast3r_utils import mast3r_inference_mono, resize_img  # noqa: PLC0415
+        from mast3r_slam.tracker import FrameTracker  # noqa: PLC0415
+        import lietorch  # noqa: PLC0415
 
         checkpoint = str(self._resolve_path(self._cfg.checkpoint_path))
         self._console.info("Loading MASt3R model from '%s'...", checkpoint)
         self._model = load_mast3r(path=checkpoint, device=self._device)
         self._model.share_memory()
+        self._lietorch = lietorch
+        self._Mode = Mode
+        self._create_frame = create_frame
+        self._resize_img = resize_img
+        self._SharedKeyframes = SharedKeyframes
+        self._SharedStates = SharedStates
+        self._FrameTracker = FrameTracker
+        self._mast3r_inference_mono = mast3r_inference_mono
 
     # ---- streaming step -------------------------------------------------
 
     def step(self, frame: FramePacket) -> None:
         """Feed one frame to MASt3R and emit an incremental SlamUpdate."""
+        self._raise_if_backend_failed()
         if frame.rgb is None:
             self._emit_empty_update(frame)
             return
-        
-        if self._keyframes is None:
-            from mast3r_slam.mast3r_utils import resize_img
-            from mast3r_slam.frame import SharedKeyframes, SharedStates
-            from mast3r_slam.tracker import FrameTracker
 
+        if self._keyframes is None:
             # Probe the actual output size from the first frame.
             img_f32_dummy = frame.rgb.astype(np.float32) / 255.0
-            probe = resize_img(img_f32_dummy, self._img_size)
+            probe = self._resize_img(img_f32_dummy, self._img_size)
             self._h, self._w = int(probe["img"].shape[2]), int(probe["img"].shape[3])
 
             # Build shared state buffers and tracker with the correct dimensions.
             self._manager = _InProcessManager()
-            self._keyframes = SharedKeyframes(self._manager, self._h, self._w, device=self._device)
-            self._states = SharedStates(self._manager, self._h, self._w, device=self._device)
-            self._tracker = FrameTracker(self._model, self._keyframes, self._device)
-
-            # Start the backend thread now that dimensions are known.
-            self._backend_stop.clear()
-            self._backend_thread = threading.Thread(
-                target=self._backend_loop, name="mast3r-backend", daemon=True
-            )
-            self._backend_thread.start()
+            self._keyframes = self._SharedKeyframes(self._manager, self._h, self._w, device=self._device)
+            self._states = self._SharedStates(self._manager, self._h, self._w, device=self._device)
+            self._tracker = self._FrameTracker(self._model, self._keyframes, self._device)
             self._console.info(f"MASt3R initialized with dynamic size: {self._h}x{self._w}")
-
-        import torch  # noqa: PLC0415
-        from mast3r_slam.frame import Mode, create_frame  # noqa: PLC0415
 
         internal_idx = self._source_frame_count
         self._timestamps_s.append(frame.timestamp_ns / 1e9)
@@ -197,20 +206,20 @@ class Mast3rSlamSession:
         # from the packet. We compute K_frame on first use (scaled intrinsics
         # for the resized MASt3R image).
         self._maybe_set_intrinsics(frame)
+        if self._backend_thread is None:
+            self._start_backend_thread()
 
         # uint8 RGB H×W×3 → float32 [0,1] (what mast3r_slam.frame.create_frame expects).
         img_f32 = (frame.rgb.astype(np.float32) / 255.0) if frame.rgb.dtype != np.float32 else frame.rgb
 
         # Prior pose for this frame: last tracked frame's pose, or identity for the very first.
-        import lietorch  # noqa: PLC0415
-
         if internal_idx == 0:
-            T_WC = lietorch.Sim3.Identity(1, device=self._device)
+            T_WC = self._lietorch.Sim3.Identity(1, device=self._device)
         else:
             prev = self._states.get_frame()
             T_WC = prev.T_WC
 
-        mast3r_frame = create_frame(
+        mast3r_frame = self._create_frame(
             internal_idx, img_f32, T_WC, img_size=self._img_size, device=self._device
         )
 
@@ -219,24 +228,22 @@ class Mast3rSlamSession:
         keyframe_index: int | None = None
         pose_updated = False
 
-        if mode == Mode.INIT:
-            from mast3r_slam.mast3r_utils import mast3r_inference_mono  # noqa: PLC0415
-
-            X_init, C_init = mast3r_inference_mono(self._model, mast3r_frame)
+        if mode == self._Mode.INIT:
+            X_init, C_init = self._mast3r_inference_mono(self._model, mast3r_frame)
             mast3r_frame.update_pointmap(X_init, C_init)
             self._keyframes.append(mast3r_frame)
             self._states.queue_global_optimization(len(self._keyframes) - 1)
-            self._states.set_mode(Mode.TRACKING)
+            self._states.set_mode(self._Mode.TRACKING)
             self._states.set_frame(mast3r_frame)
             is_keyframe = True
             keyframe_index = len(self._keyframes) - 1
             self._accepted_keyframe_count = 1
             pose_updated = True
 
-        elif mode == Mode.TRACKING:
+        elif mode == self._Mode.TRACKING:
             add_new_kf, _match_info, try_reloc = self._tracker.track(mast3r_frame)
             if try_reloc:
-                self._states.set_mode(Mode.RELOC)
+                self._states.set_mode(self._Mode.RELOC)
             self._states.set_frame(mast3r_frame)
             pose_updated = True  # tracker.track updates mast3r_frame.T_WC in place
             if add_new_kf:
@@ -246,10 +253,8 @@ class Mast3rSlamSession:
                 keyframe_index = len(self._keyframes) - 1
                 self._accepted_keyframe_count += 1
 
-        elif mode == Mode.RELOC:
-            from mast3r_slam.mast3r_utils import mast3r_inference_mono  # noqa: PLC0415
-
-            X, C = mast3r_inference_mono(self._model, mast3r_frame)
+        elif mode == self._Mode.RELOC:
+            X, C = self._mast3r_inference_mono(self._model, mast3r_frame)
             mast3r_frame.update_pointmap(X, C)
             self._states.set_frame(mast3r_frame)
             self._states.queue_reloc()
@@ -272,6 +277,7 @@ class Mast3rSlamSession:
 
     def try_get_updates(self) -> list[SlamUpdate]:
         """Return and clear any pending SLAM updates."""
+        self._raise_if_backend_failed()
         updates = self._pending_updates
         self._pending_updates = []
         return updates
@@ -279,6 +285,10 @@ class Mast3rSlamSession:
     def close(self) -> SlamArtifacts:
         """Stop the backend thread, persist artifacts, return them canonical."""
         from mast3r_slam.frame import Mode  # noqa: PLC0415
+
+        if self._states is None or self._keyframes is None:
+            raise RuntimeError("MASt3R-SLAM cannot close before any RGB frame has been processed.")
+        self._raise_if_backend_failed()
 
         # Signal backend to stop and drain any in-flight optimisation.
         self._states.set_mode(Mode.TERMINATED)
@@ -427,8 +437,10 @@ class Mast3rSlamSession:
                         self._states.global_optimizer_tasks.pop(0)
 
             except Exception as exc:  # pragma: no cover - defensive
-                self._console.error("MASt3R backend loop error (continuing): %s", exc)
-                time.sleep(poll)
+                self._backend_error = RuntimeError(f"MASt3R backend loop failed: {exc}")
+                self._console.error("MASt3R backend loop error: %s", exc)
+                self._backend_stop.set()
+                break
 
     def _relocalization(
         self, frame: Any, factor_graph: Any, retrieval_database: Any, use_calib: bool
@@ -576,7 +588,7 @@ class Mast3rSlamSession:
     def _extract_keyframe_visuals(
         self, mast3r_frame: Any
     ) -> tuple[np.ndarray | None, np.ndarray | None, int]:
-        """Pull the pointmap + RGB preview for live Rerun visualisation."""
+        """Pull the camera-local RDF pointmap + RGB preview for live visualisation."""
         try:
             x_canon = mast3r_frame.X_canon
             c_avg = mast3r_frame.get_average_conf()
@@ -594,9 +606,9 @@ class Mast3rSlamSession:
                 return None, None, 0
             h, w = int(shape_vals[0]), int(shape_vals[1])
 
-            # Pose X_canon (camera frame) into world frame for consistent Rerun logging.
-            points_world = mast3r_frame.T_WC.act(x_canon).detach().cpu().numpy().astype(np.float32)
-            points_world = points_world.reshape(h, w, 3)
+            # X_canon is the per-keyframe camera-local pointmap. Keep it camera-local
+            # so SlamUpdate.pointmap remains consistent with the repository contract.
+            points_camera = x_canon.detach().cpu().numpy().astype(np.float32).reshape(h, w, 3)
 
             preview_rgb: np.ndarray | None = None
             if mast3r_frame.uimg is not None:
@@ -608,7 +620,7 @@ class Mast3rSlamSession:
 
             conf = c_avg.detach().cpu().numpy().reshape(-1)
             valid = int(np.count_nonzero(conf > self._cfg.c_conf_threshold))
-            return points_world, preview_rgb, valid
+            return points_camera, preview_rgb, valid
         except Exception:
             return None, None, 0
 
@@ -624,6 +636,19 @@ class Mast3rSlamSession:
     def _resolve_path(self, path: Path) -> Path:
         """Resolve a repo-relative path against the project root."""
         return PathConfig().resolve_repo_path(path)
+
+    def _start_backend_thread(self) -> None:
+        """Start the optimization backend after shared state and intrinsics are ready."""
+        self._backend_stop.clear()
+        self._backend_thread = threading.Thread(
+            target=self._backend_loop, name="mast3r-backend", daemon=True
+        )
+        self._backend_thread.start()
+
+    def _raise_if_backend_failed(self) -> None:
+        """Raise any deferred backend exception on the frontend thread."""
+        if self._backend_error is not None:
+            raise self._backend_error
 
     def _inject_sys_path(self) -> None:
         """Make ``mast3r_slam`` importable from this process."""
@@ -739,15 +764,19 @@ class Mast3rSlamBackend(SlamBackend):
             console=self._console,
         )
         self._console.info("Running MASt3R-SLAM on %d frames …", len(image_paths))
-        for seq, image_path in enumerate(image_paths):
-            bgr = cv2.imread(str(image_path))
-            if bgr is None:
-                raise RuntimeError(f"Failed to read input frame '{image_path}'.")
-            rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            # Synthesize a timestamp_ns if none is provided — 30 fps fallback.
-            timestamp_ns = int(seq * 1e9 / 30.0)
-            session.step(FramePacket(seq=seq, timestamp_ns=timestamp_ns, rgb=rgb))
-        return session.close()
+        timestamps_ns = self._load_timestamps_ns(sequence=sequence, num_frames=len(image_paths))
+        try:
+            for seq, image_path in enumerate(image_paths):
+                bgr = cv2.imread(str(image_path))
+                if bgr is None:
+                    raise RuntimeError(f"Failed to read input frame '{image_path}'.")
+                rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                session.step(FramePacket(seq=seq, timestamp_ns=timestamps_ns[seq], rgb=rgb))
+            return session.close()
+        finally:
+            if session._states is not None and session._backend_thread is not None and session._backend_thread.is_alive():
+                session._backend_stop.set()
+                session._backend_thread.join(timeout=self._cfg.backend_join_timeout_s)
 
     def _resolve_frames(
         self,
@@ -795,6 +824,33 @@ class Mast3rSlamBackend(SlamBackend):
         capture.release()
         self._console.info("Extracted %d frames to '%s'.", written, output_dir)
         return output_dir.resolve()
+
+    def _load_timestamps_ns(self, *, sequence: SequenceManifest, num_frames: int) -> list[int]:
+        """Load normalized timestamps from the manifest, falling back to synthetic 30 FPS."""
+        fallback = [int(index * 1e9 / 30.0) for index in range(num_frames)]
+        if sequence.timestamps_path is None or not sequence.timestamps_path.exists():
+            return fallback
+
+        source_path = sequence.timestamps_path
+        if source_path.suffix.lower() == ".json":
+            payload = json.loads(source_path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict) and isinstance(payload.get("timestamps_ns"), list):
+                values = [int(value) for value in payload["timestamps_ns"][:num_frames]]
+                if len(values) < num_frames:
+                    values.extend(fallback[len(values) :])
+                return values
+
+        rows = []
+        for line in source_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rows.append(line.split(",", maxsplit=1)[0].strip())
+        if rows:
+            values = [int(round(float(value) * 1e9)) for value in rows[:num_frames]]
+            if len(values) < num_frames:
+                values.extend(fallback[len(values) :])
+            return values
+        return fallback
 
 
 # ---------------------------------------------------------------------------
