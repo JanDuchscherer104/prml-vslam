@@ -1,19 +1,13 @@
-"""Thin benchmark-policy contracts kept outside the pipeline core.
+"""Benchmark reference identifiers shared by datasets, methods, and eval.
 
-Benchmark config answers which comparison or reference-preparation stages are
-requested and which baseline source they should use. It does not compute
-metrics, execute SLAM methods, or own artifact formats; those responsibilities
-remain in :mod:`prml_vslam.eval`, :mod:`prml_vslam.methods`, and
-:mod:`prml_vslam.pipeline`.
+The benchmark package owns reusable semantic identifiers for prepared
+reference trajectories and clouds. Persisted pipeline stage policy lives under
+``prml_vslam.pipeline.stages.*`` so run configuration stays stage-local.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-
-from pydantic import Field
-
-from prml_vslam.utils import BaseConfig
 
 
 class ReferenceSource(StrEnum):
@@ -52,80 +46,8 @@ class ReferenceCloudCoordinateStatus(StrEnum):
     ALIGNED = "aligned"
 
 
-# TODO(pipeline-refactor/WP-02): Replace with [stages.reconstruction] reference
-# mode policy once ReconstructionStageConfig covers current reference behavior.
-class ReferenceReconstructionConfig(BaseConfig):
-    """Migration policy toggle for optional reference reconstruction.
-
-    The target public pipeline stage is ``reconstruction`` with backend/mode
-    variants. This config remains benchmark-owned compatibility policy until
-    target reconstruction stage config covers the same reference-mode behavior.
-    """
-
-    enabled: bool = False
-    """Whether the run should include the corresponding stage."""
-
-    extract_mesh: bool = False
-    """Whether the reference reconstruction stage should also persist a triangle mesh."""
-
-
-class TrajectoryBenchmarkConfig(BaseConfig):
-    """Policy for trajectory evaluation stage enablement and baseline choice.
-
-    Metric computation, alignment mode, and persisted result schema belong to
-    :mod:`prml_vslam.eval`. This config only requests the stage and names the
-    reference trajectory source prepared by ingest.
-    """
-
-    enabled: bool = False
-    """Whether the run should include trajectory evaluation."""
-
-    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
-    """Explicit reference source used by the trajectory evaluation stage when available."""
-
-
-class CloudBenchmarkConfig(BaseConfig):
-    """Policy for dense-cloud comparison."""
-
-    enabled: bool = False
-    """Whether the run should include dense-cloud comparison."""
-
-
-class EfficiencyBenchmarkConfig(BaseConfig):
-    """Policy for efficiency evaluation."""
-
-    enabled: bool = False
-    """Whether the run should include efficiency metrics."""
-
-
-class BenchmarkConfig(BaseConfig):
-    """Bundle benchmark-stage policy without becoming a runtime owner.
-
-    Pipeline planning reads this bundle to mark evaluation/reconstruction stages
-    requested or unavailable. Runtime execution and result DTOs stay in their
-    owning packages so benchmark policy remains a small composition layer.
-    """
-
-    reference: ReferenceReconstructionConfig = Field(default_factory=ReferenceReconstructionConfig)
-    """Reference-reconstruction policy."""
-
-    trajectory: TrajectoryBenchmarkConfig = Field(default_factory=TrajectoryBenchmarkConfig)
-    """Trajectory-evaluation policy."""
-
-    cloud: CloudBenchmarkConfig = Field(default_factory=CloudBenchmarkConfig)
-    """Dense-cloud evaluation policy."""
-
-    efficiency: EfficiencyBenchmarkConfig = Field(default_factory=EfficiencyBenchmarkConfig)
-    """Efficiency-evaluation policy."""
-
-
 __all__ = [
-    "BenchmarkConfig",
-    "CloudBenchmarkConfig",
-    "EfficiencyBenchmarkConfig",
     "ReferenceCloudCoordinateStatus",
     "ReferenceCloudSource",
     "ReferenceSource",
-    "ReferenceReconstructionConfig",
-    "TrajectoryBenchmarkConfig",
 ]

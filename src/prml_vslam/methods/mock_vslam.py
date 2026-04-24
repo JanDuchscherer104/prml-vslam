@@ -30,8 +30,8 @@ from prml_vslam.interfaces.ingest import (
 )
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.configs import MockSlamBackendConfig
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.options import MockSlamBackendOptions
 from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.pipeline.contracts.provenance import ArtifactRef
 from prml_vslam.utils.geometry import (
@@ -65,7 +65,7 @@ class _PointCloudSequenceRuntime:
 class MockSlamBackend(SlamBackend):
     """Mock SLAM backend that supports both batch and streaming execution."""
 
-    def __init__(self, config: MockSlamBackendConfig) -> None:
+    def __init__(self, config: MockSlamBackendOptions) -> None:
         self.config = config
         self.method_id = config.method_id
         self._streaming_runtime: MockSlamRuntime | None = None
@@ -139,7 +139,7 @@ class MockSlamRuntime:
     def __init__(
         self,
         *,
-        config: MockSlamBackendConfig,
+        config: MockSlamBackendOptions,
         sequence_manifest: SequenceManifest,
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
@@ -714,4 +714,4 @@ def _artifact_ref(path: Path, *, kind: str, fingerprint: str) -> ArtifactRef:
     return ArtifactRef(path=path, kind=kind, fingerprint=fingerprint)
 
 
-__all__ = ["MockSlamBackend", "MockSlamBackendConfig", "MockSlamRuntime"]
+__all__ = ["MockSlamBackend", "MockSlamRuntime"]

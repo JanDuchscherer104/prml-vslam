@@ -11,18 +11,32 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
 from prml_vslam.interfaces import RgbdObservation
 from prml_vslam.utils.geometry import write_point_cloud_ply
 
-from .config import Open3dTsdfBackendConfig, ReconstructionBackendConfig
 from .contracts import (
     ReconstructionArtifacts,
     ReconstructionMetadata,
     ReconstructionMethodId,
 )
+
+
+class Open3dTsdfConfig(Protocol):
+    """Structural Open3D TSDF config consumed by the backend."""
+
+    voxel_length_m: float
+    sdf_trunc_m: float
+    depth_scale: float
+    depth_trunc_m: float
+    integrate_color: bool
+    convert_rgb_to_intensity: bool
+    volume_unit_resolution: int
+    depth_sampling_stride: int
+    extract_mesh: bool
 
 
 class Open3dTsdfBackend:
@@ -36,14 +50,14 @@ class Open3dTsdfBackend:
 
     method_id = ReconstructionMethodId.OPEN3D_TSDF
 
-    def __init__(self, config: Open3dTsdfBackendConfig) -> None:
+    def __init__(self, config: Open3dTsdfConfig) -> None:
         self._config = config
 
     def run_sequence(
         self,
         observations: Iterable[RgbdObservation],
         *,
-        backend_config: ReconstructionBackendConfig,
+        backend_config: Open3dTsdfConfig,
         artifact_root: Path,
     ) -> ReconstructionArtifacts:
         """Integrate one offline RGB-D sequence into a fused world-space cloud.
@@ -51,9 +65,6 @@ class Open3dTsdfBackend:
         The output point cloud is extracted in the observation world frame and
         persisted as ``reference_cloud.ply`` alongside typed side metadata.
         """
-        if not isinstance(backend_config, Open3dTsdfBackendConfig):
-            raise TypeError(f"Open3dTsdfBackend requires Open3dTsdfBackendConfig, got {type(backend_config).__name__}.")
-
         ordered_observations = list(observations)
         if not ordered_observations:
             raise ValueError("Open3D TSDF reconstruction requires at least one observation.")

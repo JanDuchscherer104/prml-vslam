@@ -76,8 +76,6 @@ class RunArtifactPaths(BaseData):
     """Path to persisted trajectory evaluation metrics."""
     cloud_metrics_path: Path
     """Path to persisted dense-cloud evaluation metrics."""
-    efficiency_metrics_path: Path
-    """Path to persisted runtime-efficiency metrics."""
     reference_cloud_path: Path
     """Path to the reference reconstruction artifact."""
     summary_path: Path
@@ -114,7 +112,6 @@ class RunArtifactPaths(BaseData):
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
             trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
-            efficiency_metrics_path=(resolved_root / "evaluation" / "efficiency_metrics.json").resolve(),
             reference_cloud_path=(resolved_root / "reference" / "reference_cloud.ply").resolve(),
             summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),
             stage_manifests_path=(resolved_root / "summary" / "stage_manifests.json").resolve(),

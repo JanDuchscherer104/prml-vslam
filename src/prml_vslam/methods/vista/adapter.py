@@ -12,8 +12,8 @@ from prml_vslam.interfaces import FramePacket
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.configs import VistaSlamBackendConfig
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.options import VistaSlamBackendOptions
 from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.utils import Console, PathConfig
 
@@ -27,7 +27,7 @@ class VistaSlamBackend(SlamBackend):
 
     def __init__(
         self,
-        config: VistaSlamBackendConfig,
+        config: VistaSlamBackendOptions,
         path_config: PathConfig | None = None,
     ) -> None:
         self._cfg = config

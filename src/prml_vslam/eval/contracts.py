@@ -18,7 +18,6 @@ from pydantic import Field
 
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces.camera import CameraIntrinsics
-from prml_vslam.methods.config_contracts import MethodId
 from prml_vslam.utils import BaseData
 
 
@@ -129,14 +128,14 @@ class TrajectoryEvaluationSemantics(BaseData):
     )
 
 
-# TODO(pipeline-refactor/future-eval): Rename or specialize once cloud and
-# efficiency evaluation artifacts become first-class stage outputs.
+# TODO(pipeline-refactor/future-eval): Rename or specialize once cloud
+# evaluation artifacts become first-class stage outputs.
 class EvaluationArtifact(BaseData):
     """Represent one loaded or freshly computed trajectory-evaluation artifact.
 
     This is currently trajectory-specific even though the class name is generic;
-    future dense-cloud and efficiency stages should specialize rather than
-    overloading this payload. The artifact is app/plotting friendly but still
+    future dense-cloud stages should specialize rather than overloading this
+    payload. The artifact is app/plotting friendly but still
     preserves reference and estimate paths plus metric semantics for review.
     """
 
@@ -210,26 +209,6 @@ class DenseCloudEvaluationArtifact(BaseData):
     """Scalar dense-cloud metrics keyed by metric name."""
 
 
-class EfficiencyEvaluationSelection(BaseData):
-    """Describe the resolved runtime-efficiency inputs for one evaluation action."""
-
-    artifact_root: Path
-    """Artifact root that owns the run-level runtime outputs."""
-
-
-class EfficiencyEvaluationArtifact(BaseData):
-    """Persist one runtime-efficiency evaluation result for later review."""
-
-    path: Path
-    """Path to the persisted result payload."""
-
-    title: str
-    """Short title shown to downstream consumers."""
-
-    metrics: dict[str, float] = Field(default_factory=dict)
-    """Scalar runtime-efficiency metrics keyed by metric name."""
-
-
 class DiscoveredRun(BaseData):
     """Describe one normalized run discovered under the configured artifacts root."""
 
@@ -239,8 +218,8 @@ class DiscoveredRun(BaseData):
     estimate_path: Path
     """Estimated trajectory path for the run."""
 
-    method: MethodId | None = None
-    """Known benchmark method, when it can be inferred from the path."""
+    method: str | None = None
+    """Known benchmark method id, when it can be inferred from the path."""
 
     label: str
     """Compact user-facing label for selection widgets."""
@@ -291,8 +270,6 @@ __all__ = [
     "ErrorSeries",
     "EvaluationArtifact",
     "EvaluationSelection",
-    "EfficiencyEvaluationArtifact",
-    "EfficiencyEvaluationSelection",
     "IntrinsicsComparisonDiagnostics",
     "MetricStats",
     "SelectionSnapshot",

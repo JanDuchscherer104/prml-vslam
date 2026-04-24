@@ -21,9 +21,12 @@ from prml_vslam.interfaces.ingest import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend, VistaSlamBackendConfig
+from prml_vslam.methods import VistaSlamBackend
+from prml_vslam.methods.config_contracts import MethodId as DomainMethodId
 from prml_vslam.methods.config_contracts import SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.mock_vslam import _rasterize_world_points_to_pointmap
 from prml_vslam.pipeline.finalization import stable_hash
+from prml_vslam.pipeline.stages.slam.config import MethodId, MockSlamBackendConfig, VistaSlamBackendConfig
 from prml_vslam.utils import Console
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply_with_colors,
@@ -36,7 +39,7 @@ from prml_vslam.utils.geometry import (
 def test_mast3r_placeholder_module_imports_after_refactor() -> None:
     module = importlib.import_module("prml_vslam.methods.mast3r")
 
-    assert module.Mast3rSlamBackend.method_id is MethodId.MAST3R
+    assert module.Mast3rSlamBackend.method_id is DomainMethodId.MAST3R
 
 
 def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,6 +98,17 @@ def _write_normalized_timestamps(path: Path, timestamps_ns: list[int]) -> Path:
 
 def _pose(tx: float, *, ty: float = 0.0, tz: float = 0.0) -> FrameTransform:
     return FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=ty, tz=tz)
+
+
+def test_mock_pointmap_rasterizer_keeps_nearest_depth_for_duplicate_pixel() -> None:
+    pointmap = _rasterize_world_points_to_pointmap(
+        points_xyz_world=np.asarray([[0.0, 0.0, 2.0], [0.0, 0.0, 1.0]], dtype=np.float64),
+        pose_world_camera=_pose(0.0),
+        intrinsics=CameraIntrinsics(fx=10.0, fy=10.0, cx=2.0, cy=2.0, width_px=5, height_px=5),
+        image_shape=(5, 5),
+    )
+
+    np.testing.assert_allclose(pointmap[2, 2], np.asarray([0.0, 0.0, 1.0], dtype=np.float32))
 
 
 def _write_reference_bundle(tmp_path: Path) -> PreparedBenchmarkInputs:
@@ -1382,13 +1396,10 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
         _frame_transform_from_vista_pose(pose)
 
 
-def test_vista_config_models_reject_removed_dead_knobs() -> None:
-    for payload in (
-        {"stride": 5},
-        {"keyframe_detection": "stride"},
-    ):
-        with pytest.raises(ValidationError):
-            VistaSlamBackendConfig.model_validate(payload)
+def test_vista_config_models_ignore_removed_dead_knobs() -> None:
+    config = VistaSlamBackendConfig.model_validate({"stride": 5, "keyframe_detection": "stride"})
+    assert not hasattr(config, "stride")
+    assert not hasattr(config, "keyframe_detection")
 
     with pytest.raises(ValidationError):
         VistaSlamBackendConfig.model_validate({"device": "tpu"})

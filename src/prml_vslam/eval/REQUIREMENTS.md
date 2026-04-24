@@ -8,8 +8,8 @@ This document is the concise source of truth for `prml_vslam.eval`.
 
 - the package is still a thin explicit evaluation surface around persisted
   artifacts and `evo`
-- benchmark-policy composition is no longer a pipeline-core concern, but it
-  still does not belong here
+- persisted trajectory-evaluation policy is stage-local, and benchmark
+  reference identifiers stay outside this package
 
 ## Responsibilities
 

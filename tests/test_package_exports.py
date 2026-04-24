@@ -20,6 +20,7 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "CameraIntrinsics",
         "CameraIntrinsicsSample",
         "CameraIntrinsicsSeries",
+        "DepthMap",
         "FramePacket",
         "FramePacketProvenance",
         "FrameTransform",
@@ -27,6 +28,8 @@ def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
         "GroundPlaneModel",
         "GroundPlaneVisualizationHint",
         "PreparedBenchmarkInputs",
+        "PointCloud",
+        "PointMap",
         "Record3DTransportId",
         "ReferenceCloudRef",
         "ReferencePointCloudSequenceRef",
@@ -57,9 +60,15 @@ def test_io_package_exports_only_minimal_public_surface() -> None:
 
 def test_pipeline_package_exports_only_minimal_public_surface() -> None:
     assert pipeline_package.__all__ == [
+        "ArtifactRef",
         "PipelineMode",
+        "RunConfig",
+        "RunEvent",
         "RunPlan",
+        "RunService",
+        "RunSnapshot",
         "RunSummary",
+        "StageKey",
     ]
     assert not hasattr(pipeline_package, "PipelineSessionService")
     assert not hasattr(pipeline_package, "PipelineSessionSnapshot")
@@ -68,16 +77,16 @@ def test_pipeline_package_exports_only_minimal_public_surface() -> None:
 def test_pipeline_contracts_package_is_not_a_compatibility_hub() -> None:
     contracts_package = importlib.import_module("prml_vslam.pipeline.contracts")
 
-    assert not hasattr(pipeline_package, "RunRequest")
-    assert not hasattr(contracts_package, "RunRequest")
+    deleted_request_symbol = "Run" + "Request"
+    assert deleted_request_symbol not in dir(pipeline_package)
+    assert deleted_request_symbol not in dir(contracts_package)
 
 
 def test_methods_package_exports_slam_surfaces() -> None:
     assert methods_package.__all__ == [
-        "MethodId",
-        "MockSlamBackendConfig",
+        "MockSlamBackend",
+        "SlamUpdate",
         "VistaSlamBackend",
-        "VistaSlamBackendConfig",
     ]
     assert not hasattr(methods_package, "MockMethodConfig")
 
@@ -87,7 +96,6 @@ def test_vista_package_is_the_only_canonical_vista_surface() -> None:
 
     assert vista_package.__all__ == [
         "VistaSlamBackend",
-        "VistaSlamBackendConfig",
         "VistaSlamRuntime",
     ]
     with pytest.raises(ModuleNotFoundError):

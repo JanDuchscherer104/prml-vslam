@@ -25,7 +25,7 @@ This document is the concise source of truth for `prml_vslam.methods`.
 - wrappers must stay thin and importer-oriented
 - upstream-native outputs may be preserved, but normalized artifacts remain the
   repo contract
-- method code must not own benchmark policy or viewer orchestration
+- method code must not own stage policy or viewer orchestration
 
 ### Mock Slam Backend
 - The [Mock Slam Backend](mock_vslam.py) must forward the selected reference trajectory from the dataset (i.e. ARKit, ARCore, GT), as well as the point cloud or point map from the dataset (i.e. tango point clouds in case of advio dataset).
