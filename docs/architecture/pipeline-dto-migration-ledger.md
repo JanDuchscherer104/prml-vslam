@@ -258,8 +258,6 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `AdvioPreviewFormData` | `app.models` | Keep app form DTO. | app | App tests. |
 | `AdvioPageData` | `app.models` | Keep app render DTO. | app | App tests. |
 | `PipelineSourceId` | `app.models` | Keep app-local source selector enum. | app | Pipeline page tests. |
-| `GraphifySourceScope` | `app.pages.graphify` | Keep app page enum. | app | Graphify page tests. |
-| `GraphifyViewerFilter` | `app.pages.graphify` | Keep app page enum. | app | Graphify page tests. |
 | `TangoCloudMetadata` | `datasets.advio.advio_geometry` | Keep dataset-local geometry metadata. | datasets | ADVIO geometry tests. |
 | `Sim3Alignment` | `datasets.advio.advio_geometry` | Keep dataset-local alignment helper DTO. | datasets | ADVIO geometry tests. |
 | `AdvioCalibration` | `datasets.advio.advio_loading` | Keep dataset-local calibration DTO. | datasets | ADVIO loading tests. |

@@ -67,7 +67,6 @@ src/prml_vslam/
 │   │   ├── __init__.py [C]
 │   │   ├── artifacts.py [A]
 │   │   ├── datasets.py [C]
-│   │   ├── graphify.py [C]
 │   │   ├── metrics.py [A]
 │   │   ├── pipeline.py [A]
 │   │   ├── pipeline_request_editor.py [A]
