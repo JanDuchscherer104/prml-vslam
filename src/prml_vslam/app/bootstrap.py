@@ -48,7 +48,6 @@ _PAGE_SPECS = (
     (AppPageId.PIPELINE, ":material/account_tree:", "pipeline", False),
     (AppPageId.ARTIFACTS, ":material/folder_open:", "artifacts", False),
     (AppPageId.METRICS, ":material/show_chart:", "metrics", False),
-    (AppPageId.GRAPHIFY, ":material/schema:", "graphify", False),
 )
 
 
