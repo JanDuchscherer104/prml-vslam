@@ -10,17 +10,9 @@ from pydantic import ValidationError
 from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces import Record3DTransportId
-from prml_vslam.methods import MethodId
 from prml_vslam.pipeline.config import (
     RunConfig,
-    TargetStageKey,
     build_run_config,
-    current_stage_key_for_section,
-    current_stage_key_for_target,
-    section_for_current_stage,
-    section_for_target_stage,
-    target_stage_key_for_current,
-    target_stage_key_for_section,
 )
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import (
@@ -31,6 +23,8 @@ from prml_vslam.pipeline.stages.base.config import (
     StageExecutionConfig,
     StageTelemetryConfig,
 )
+from prml_vslam.pipeline.stages.bindings import STAGE_BINDINGS
+from prml_vslam.pipeline.stages.slam.config import MethodId
 from prml_vslam.pipeline.stages.source.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
@@ -100,28 +94,25 @@ def test_resource_spec_rejects_negative_values() -> None:
         ResourceSpec(custom_resources={"custom": -1.0})
 
 
-def test_stage_key_section_alias_mapping_covers_current_and_target_names() -> None:
-    expected = {
-        StageKey.INGEST: (TargetStageKey.SOURCE, "source"),
-        StageKey.SLAM: (TargetStageKey.SLAM, "slam"),
-        StageKey.GRAVITY_ALIGNMENT: (TargetStageKey.ALIGN_GROUND, "align_ground"),
-        StageKey.TRAJECTORY_EVALUATION: (
-            TargetStageKey.EVALUATE_TRAJECTORY,
-            "evaluate_trajectory",
-        ),
-        StageKey.REFERENCE_RECONSTRUCTION: (TargetStageKey.RECONSTRUCTION, "reconstruction"),
-        StageKey.CLOUD_EVALUATION: (TargetStageKey.EVALUATE_CLOUD, "evaluate_cloud"),
-        StageKey.EFFICIENCY_EVALUATION: (TargetStageKey.EVALUATE_EFFICIENCY, "evaluate_efficiency"),
-        StageKey.SUMMARY: (TargetStageKey.SUMMARY, "summary"),
-    }
-
-    for current_key, (target_key, section) in expected.items():
-        assert target_stage_key_for_current(current_key) is target_key
-        assert current_stage_key_for_target(target_key) is current_key
-        assert section_for_current_stage(current_key) is section
-        assert section_for_target_stage(target_key) is section
-        assert target_stage_key_for_section(section) is target_key
-        assert current_stage_key_for_section(section) is current_key
+def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> None:
+    assert [key.value for key in StageKey] == [
+        "source",
+        "slam",
+        "gravity.align",
+        "evaluate.trajectory",
+        "reconstruction",
+        "evaluate.cloud",
+        "summary",
+    ]
+    assert [(binding.key, binding.section_name) for binding in STAGE_BINDINGS] == [
+        (StageKey.SOURCE, "source"),
+        (StageKey.SLAM, "slam"),
+        (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
+        (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
+        (StageKey.RECONSTRUCTION, "reconstruction"),
+        (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+        (StageKey.SUMMARY, "summary"),
+    ]
 
 
 def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> None:
@@ -133,7 +124,6 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
         reference_enabled=True,
         trajectory_eval_enabled=True,
         evaluate_cloud=True,
-        evaluate_efficiency=True,
         ground_alignment_enabled=True,
     )
 
@@ -143,7 +133,6 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
     assert config.stages.evaluate_trajectory.enabled is True
     assert config.stages.reconstruction.enabled is True
     assert config.stages.evaluate_cloud.enabled is True
-    assert config.stages.evaluate_efficiency.enabled is True
 
 
 def test_run_config_uses_stage_execution_config_for_resource_policy(tmp_path: Path) -> None:
@@ -195,7 +184,8 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     assert run_config_plan.source.sequence_id == "advio-20"
     assert run_config_plan.source.metadata["pose_source"] == "ground_truth"
     assert run_config.stages.align_ground.enabled is True
-    assert run_config.stages.reconstruction.enabled is False
+    assert run_config.stages.reconstruction.enabled is True
+    assert run_config.stages.reconstruction.backend.extract_mesh is True
     assert run_config.stages.evaluate_trajectory.enabled is False
 
 
@@ -248,17 +238,17 @@ def test_source_stage_config_sampling_policy_is_shared() -> None:
             SourceStageConfig.model_validate({"backend": {**backend, "frame_stride": 2, "target_fps": 15.0}})
 
 
-def test_source_stage_config_keeps_serving_variant_owned() -> None:
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        SourceStageConfig.model_validate(
-            {
-                "backend": {
-                    "source_id": "tum_rgbd",
-                    "sequence_id": "freiburg1_room",
-                    "dataset_serving": {"pose_source": "ground_truth"},
-                }
+def test_source_stage_config_ignores_unknown_variant_fields() -> None:
+    tum = SourceStageConfig.model_validate(
+        {
+            "backend": {
+                "source_id": "tum_rgbd",
+                "sequence_id": "freiburg1_room",
+                "dataset_serving": {"pose_source": "ground_truth"},
             }
-        )
+        }
+    )
+    assert isinstance(tum.backend, TumRgbdSourceConfig)
 
     advio = SourceStageConfig.model_validate({"backend": {"source_id": "advio", "sequence_id": "advio-20"}})
 
@@ -266,20 +256,28 @@ def test_source_stage_config_keeps_serving_variant_owned() -> None:
     assert advio.backend.dataset_serving.pose_source.value == "ground_truth"
 
 
-def test_run_config_rejects_legacy_request_source_shape() -> None:
-    payload = {
-        "experiment_name": "invalid-advio",
-        "mode": "streaming",
-        "output_dir": ".artifacts",
-        "source": {
-            "dataset_id": "advio",
-            "sequence_id": "advio-20",
-        },
-        "slam": {"backend": {"method_id": "mock"}},
-    }
+def test_run_config_warns_and_ignores_unknown_fields() -> None:
+    with pytest.warns(UserWarning, match="Ignoring unknown config field `source`"):
+        config = RunConfig.from_toml(
+            """
+experiment_name = "invalid-advio"
+mode = "streaming"
+output_dir = ".artifacts"
 
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        RunConfig.model_validate(payload)
+[source]
+dataset_id = "advio"
+sequence_id = "advio-20"
+
+[stages.source.backend]
+source_id = "video"
+video_path = "captures/demo.mp4"
+legacy = true
+
+[stages.slam.backend]
+method_id = "mock"
+"""
+        )
+    assert "Ignoring unknown config field `stages.source.backend.legacy`." in config.config_warnings
 
 
 def test_target_generic_stages_toml_parses_into_stage_bundle() -> None:
@@ -309,7 +307,7 @@ enabled = true
 """.strip()
     )
 
-    assert config.stages.source.stage_key is StageKey.INGEST
+    assert config.stages.source.stage_key is StageKey.SOURCE
     assert config.stages.slam.execution.resources.num_cpus == 2.0
     assert config.stages.align_ground.enabled is True
     assert config.stages.reconstruction.cleanup.artifact_keys == ["reference_cloud", "extra:*"]

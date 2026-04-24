@@ -1,8 +1,4 @@
-"""Typed stage vocabulary and planning helper contracts.
-
-This module names the canonical stage keys shared across planning, runtime
-state, and artifact provenance. It does not execute stages itself.
-"""
+"""Typed stage vocabulary shared across planning, runtime, and provenance."""
 
 from __future__ import annotations
 
@@ -10,35 +6,26 @@ from enum import StrEnum
 
 
 class StageKey(StrEnum):
-    """Name the current executable linear stage vocabulary.
+    """Name the canonical target stage vocabulary."""
 
-    These values are persisted in existing run events, summaries, and manifests.
-    The target public vocabulary uses names such as ``source``,
-    ``gravity.align``, and ``evaluate.trajectory``; aliases are handled by
-    :mod:`prml_vslam.pipeline.config` until the migration-removal work package
-    retires the current spellings.
-    """
-
-    INGEST = "ingest"
+    SOURCE = "source"
     SLAM = "slam"
     GRAVITY_ALIGNMENT = "gravity.align"
-    TRAJECTORY_EVALUATION = "trajectory.evaluate"
-    REFERENCE_RECONSTRUCTION = "reference.reconstruct"
-    CLOUD_EVALUATION = "cloud.evaluate"
-    EFFICIENCY_EVALUATION = "efficiency.evaluate"
+    TRAJECTORY_EVALUATION = "evaluate.trajectory"
+    RECONSTRUCTION = "reconstruction"
+    CLOUD_EVALUATION = "evaluate.cloud"
     SUMMARY = "summary"
 
     @property
     def label(self) -> str:
         """Return the human-readable label shown in plan previews."""
         return {
-            StageKey.INGEST: "Normalize Input Sequence",
+            StageKey.SOURCE: "Normalize Input Sequence",
             StageKey.SLAM: "Run SLAM Backend",
             StageKey.GRAVITY_ALIGNMENT: "Detect Ground Plane",
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
-            StageKey.REFERENCE_RECONSTRUCTION: "Build Reference Reconstruction",
+            StageKey.RECONSTRUCTION: "Build Reconstruction",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
-            StageKey.EFFICIENCY_EVALUATION: "Measure Efficiency",
             StageKey.SUMMARY: "Write Run Summary",
         }[self]
 

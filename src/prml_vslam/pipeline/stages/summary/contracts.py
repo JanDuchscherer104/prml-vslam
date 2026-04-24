@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import StageOutcome
+from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.utils import BaseData, RunArtifactPaths
 
@@ -16,8 +16,11 @@ class SummaryRuntimeInput(BaseData):
     metrics or reinterpret domain payloads.
     """
 
-    run_config: RunConfig
-    """Current run config carrying summary fingerprint inputs."""
+    experiment_name: str
+    """Human-readable experiment name used in summary fingerprinting."""
+
+    mode: PipelineMode
+    """Pipeline execution mode used in summary fingerprinting."""
 
     plan: RunPlan
     """Compiled run plan whose artifact root owns summary outputs."""

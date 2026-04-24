@@ -74,6 +74,9 @@ class RunPlan(BaseData):
     stages: list[RunPlanStage] = Field(default_factory=list)
     """Ordered execution stages for the benchmark run."""
 
+    config_warnings: list[str] = Field(default_factory=list)
+    """Lenient config diagnostics collected while loading TOML."""
+
     def stage_rows(self) -> list[dict[str, str]]:
         """Return compact rows suitable for CLI or UI plan previews."""
         return [

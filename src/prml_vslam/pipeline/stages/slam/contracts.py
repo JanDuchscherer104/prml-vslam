@@ -7,25 +7,35 @@ to shared interfaces.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.runtime import FramePacket
-from prml_vslam.pipeline.config import RunConfig
-from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.stages.slam.config import BackendConfig, SlamOutputPolicy
 from prml_vslam.utils import BaseData, PathConfig
 
 
 class SlamOfflineInput(BaseData):
     """Input needed to run SLAM over one bounded normalized sequence."""
 
-    run_config: RunConfig
-    """Run config carrying backend, benchmark baseline, output, and visualization policy."""
+    backend: BackendConfig
+    """Concrete backend config used to construct the method adapter."""
 
-    plan: RunPlan
-    """Compiled run plan with artifact-root ownership."""
+    outputs: SlamOutputPolicy
+    """SLAM output materialization policy."""
+
+    artifact_root: Path
+    """Run-owned artifact root where SLAM outputs are written."""
 
     path_config: PathConfig
     """Repository path configuration for backend construction."""
+
+    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
+    """Selected benchmark trajectory baseline used by replay helpers."""
+
+    preserve_native_rerun: bool = False
+    """Whether native Rerun outputs should be retained as durable artifacts."""
 
     sequence_manifest: SequenceManifest
     """Normalized source sequence consumed by the SLAM backend."""
@@ -37,11 +47,14 @@ class SlamOfflineInput(BaseData):
 class SlamStreamingStartInput(BaseData):
     """Input needed to start one incremental SLAM runtime."""
 
-    run_config: RunConfig
-    """Run config carrying backend, output, and visualization policy."""
+    backend: BackendConfig
+    """Concrete backend config used to construct the method adapter."""
 
-    plan: RunPlan
-    """Compiled run plan with artifact-root ownership."""
+    outputs: SlamOutputPolicy
+    """SLAM output materialization policy."""
+
+    artifact_root: Path
+    """Run-owned artifact root where SLAM outputs are written."""
 
     path_config: PathConfig
     """Repository path configuration for backend construction."""
@@ -54,6 +67,12 @@ class SlamStreamingStartInput(BaseData):
 
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
     """Selected benchmark trajectory baseline used by backend replay helpers."""
+
+    log_diagnostic_preview: bool = False
+    """Whether live preview images should be emitted in runtime updates."""
+
+    preserve_native_rerun: bool = False
+    """Whether native Rerun outputs should be retained as durable artifacts."""
 
 
 class SlamFrameInput(BaseData):

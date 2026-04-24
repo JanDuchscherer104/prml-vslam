@@ -11,6 +11,7 @@ from typing import TypeAlias
 from prml_vslam.methods.descriptors import BackendDescriptor
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.bindings import STAGE_BINDINGS
 
 RayActorResources: TypeAlias = dict[str, float]
 RayActorOptionsValue: TypeAlias = float | int | RayActorResources | None
@@ -29,20 +30,7 @@ def actor_options_for_stage(
 ) -> RayActorOptions:
     """Translate one repo-owned stage execution policy into Ray actor options."""
     stage_config = next(
-        (
-            config
-            for config in (
-                run_config.stages.source,
-                run_config.stages.slam,
-                run_config.stages.align_ground,
-                run_config.stages.evaluate_trajectory,
-                run_config.stages.reconstruction,
-                run_config.stages.evaluate_cloud,
-                run_config.stages.evaluate_efficiency,
-                run_config.stages.summary,
-            )
-            if config.stage_key is stage_key
-        ),
+        (binding.stage_config(run_config) for binding in STAGE_BINDINGS if binding.key is stage_key),
         None,
     )
     if stage_config is None:

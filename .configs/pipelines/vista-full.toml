@@ -1,13 +1,13 @@
 # Canonical ViSTA-SLAM Pipeline Configuration
 # -------------------------------------------
-# This file defines a complete pipeline request, including the RGB-D source,
-# SLAM backend overrides, reference reconstruction, benchmarking, and
-# visualization settings. It will appear in the Streamlit UI under the
-# "Pipeline Config" selector.
+# This file defines a complete pipeline run config, including the source, SLAM
+# backend overrides, stage-local evaluation/reconstruction policy, and
+# visualization settings.
 
 experiment_name = "vista-full-tuning"
 mode            = "streaming"
 output_dir      = ".artifacts"
+ray_local_head_lifecycle = "ephemeral"
 
 [stages.source]
 enabled = true
@@ -68,41 +68,25 @@ enabled = true
 [stages.align_ground]
 enabled = true
 
+    [stages.align_ground.ground]
+    strategy       = "ransac_point_cloud"
+    min_confidence = 0.6
+
 [stages.evaluate_trajectory]
 enabled = false
 
 [stages.reconstruction]
-enabled = false
+enabled = true
+
+    [stages.reconstruction.backend]
+    reconstruction_id = "open3d_tsdf"
+    extract_mesh      = true
 
 [stages.evaluate_cloud]
 enabled = false
 
-[stages.evaluate_efficiency]
-enabled = false
-
 [stages.summary]
 enabled = true
-
-[benchmark.reference]
-enabled      = true
-extract_mesh = true
-
-[benchmark.trajectory]
-enabled = false
-
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = false
-
-[alignment.ground]
-enabled        = true
-strategy       = "ransac_point_cloud"
-min_confidence = 0.6
-
-[runtime.ray]
-local_head_lifecycle = "ephemeral"
 
 # ------------------------------------------
 # Visualization Configuration

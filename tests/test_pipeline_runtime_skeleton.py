@@ -30,7 +30,7 @@ class _StreamItem(BaseData):
 
 
 class _FakeOfflineRuntime:
-    def __init__(self, *, stage_key: StageKey = StageKey.INGEST, fail: bool = False) -> None:
+    def __init__(self, *, stage_key: StageKey = StageKey.SOURCE, fail: bool = False) -> None:
         self.stage_key = stage_key
         self.fail = fail
         self.stopped = False
@@ -102,7 +102,7 @@ def _plan(mode: PipelineMode = PipelineMode.OFFLINE) -> RunPlan:
         artifact_root=Path(".artifacts/runtime-skeleton"),
         source=PlannedSource(source_id="video", video_path=Path("captures/demo.mp4")),
         stages=[
-            RunPlanStage(key=StageKey.INGEST),
+            RunPlanStage(key=StageKey.SOURCE),
             RunPlanStage(key=StageKey.SLAM),
             RunPlanStage(key=StageKey.SUMMARY, available=False, availability_reason="placeholder"),
         ],
@@ -126,10 +126,10 @@ def test_result_store_reads_target_source_and_slam_payloads() -> None:
         trajectory_tum=ArtifactRef(path=Path("slam/trajectory.tum"), kind="tum", fingerprint="traj"),
     )
     ingest_result = StageResult(
-        stage_key=StageKey.INGEST,
+        stage_key=StageKey.SOURCE,
         payload=SourceStageOutput(sequence_manifest=manifest, benchmark_inputs=benchmark_inputs),
-        outcome=_completed_outcome(StageKey.INGEST),
-        final_runtime_status=StageRuntimeStatus(stage_key=StageKey.INGEST, lifecycle_state=StageStatus.COMPLETED),
+        outcome=_completed_outcome(StageKey.SOURCE),
+        final_runtime_status=StageRuntimeStatus(stage_key=StageKey.SOURCE, lifecycle_state=StageStatus.COMPLETED),
     )
     slam_result = StageResult(
         stage_key=StageKey.SLAM,
@@ -145,7 +145,7 @@ def test_result_store_reads_target_source_and_slam_payloads() -> None:
     assert store.require_sequence_manifest() == manifest
     assert store.require_benchmark_inputs() == benchmark_inputs
     assert store.require_slam_artifacts() == slam_artifacts
-    assert [outcome.stage_key for outcome in store.ordered_outcomes()] == [StageKey.INGEST, StageKey.SLAM]
+    assert [outcome.stage_key for outcome in store.ordered_outcomes()] == [StageKey.SOURCE, StageKey.SLAM]
 
 
 def test_result_store_reads_target_source_output_payload() -> None:
@@ -154,11 +154,11 @@ def test_result_store_reads_target_source_output_payload() -> None:
     benchmark_inputs = PreparedBenchmarkInputs()
     store.put(
         StageResult(
-            stage_key=StageKey.INGEST,
+            stage_key=StageKey.SOURCE,
             payload=SourceStageOutput(sequence_manifest=manifest, benchmark_inputs=benchmark_inputs),
-            outcome=_completed_outcome(StageKey.INGEST),
+            outcome=_completed_outcome(StageKey.SOURCE),
             final_runtime_status=StageRuntimeStatus(
-                stage_key=StageKey.INGEST,
+                stage_key=StageKey.SOURCE,
                 lifecycle_state=StageStatus.COMPLETED,
             ),
         )
@@ -185,10 +185,10 @@ def test_stage_runner_records_success_and_failure_callbacks() -> None:
     failed: list[StageKey] = []
 
     result = runner.run_offline_stage(
-        stage_key=StageKey.INGEST,
+        stage_key=StageKey.SOURCE,
         runtime=_FakeOfflineRuntime(),
         input_payload=_RuntimeInput(label="seq-1"),
-        stage_config=StageConfig(stage_key=StageKey.INGEST),
+        stage_config=StageConfig(stage_key=StageKey.SOURCE),
         config_hash="config",
         input_fingerprint="seq-1",
         on_stage_started=started.append,
@@ -196,10 +196,10 @@ def test_stage_runner_records_success_and_failure_callbacks() -> None:
         on_stage_failed=lambda stage_key, _outcome: failed.append(stage_key),
     )
 
-    assert result.stage_key is StageKey.INGEST
+    assert result.stage_key is StageKey.SOURCE
     assert store.require_sequence_manifest().sequence_id == "seq-1"
-    assert started == [StageKey.INGEST]
-    assert completed == [StageKey.INGEST]
+    assert started == [StageKey.SOURCE]
+    assert completed == [StageKey.SOURCE]
     assert failed == []
 
     with pytest.raises(ValueError, match="runtime boom"):
@@ -219,8 +219,8 @@ def test_runtime_manager_preflight_is_lazy_and_checks_capabilities() -> None:
     allocations: list[StageKey] = []
     manager = RuntimeManager()
     manager.register(
-        StageKey.INGEST,
-        factory=lambda: allocations.append(StageKey.INGEST) or _FakeOfflineRuntime(),
+        StageKey.SOURCE,
+        factory=lambda: allocations.append(StageKey.SOURCE) or _FakeOfflineRuntime(),
         capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
     manager.register(
@@ -243,7 +243,7 @@ def test_runtime_manager_preflight_is_lazy_and_checks_capabilities() -> None:
 def test_runtime_manager_accepts_streaming_slam_with_live_updates() -> None:
     manager = RuntimeManager()
     manager.register(
-        StageKey.INGEST,
+        StageKey.SOURCE,
         factory=_FakeOfflineRuntime,
         capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
@@ -263,19 +263,19 @@ def test_runtime_manager_constructs_proxy_lazily() -> None:
     allocations: list[StageKey] = []
     manager = RuntimeManager()
     manager.register(
-        StageKey.INGEST,
-        factory=lambda: allocations.append(StageKey.INGEST) or _FakeOfflineRuntime(),
+        StageKey.SOURCE,
+        factory=lambda: allocations.append(StageKey.SOURCE) or _FakeOfflineRuntime(),
         capabilities=frozenset({RuntimeCapability.OFFLINE}),
         executor_id="local-ingest",
         resource_assignment={"CPU": 1.0},
     )
 
-    proxy = manager.runtime_for(StageKey.INGEST)
-    same_proxy = manager.runtime_for(StageKey.INGEST)
+    proxy = manager.runtime_for(StageKey.SOURCE)
+    same_proxy = manager.runtime_for(StageKey.SOURCE)
 
     assert proxy is same_proxy
-    assert allocations == [StageKey.INGEST]
-    assert proxy.offline().run_offline(_RuntimeInput(label="seq-1")).stage_key is StageKey.INGEST
+    assert allocations == [StageKey.SOURCE]
+    assert proxy.offline().run_offline(_RuntimeInput(label="seq-1")).stage_key is StageKey.SOURCE
     status = proxy.status()
     assert status.executor_id == "local-ingest"
     assert status.submitted_count == 1
@@ -286,19 +286,19 @@ def test_runtime_manager_constructs_proxy_lazily() -> None:
 def test_runtime_manager_rejects_unimplemented_ray_proxy_deployment() -> None:
     manager = RuntimeManager()
     manager.register(
-        StageKey.INGEST,
+        StageKey.SOURCE,
         factory=_FakeOfflineRuntime,
         capabilities=frozenset({RuntimeCapability.OFFLINE}),
         deployment_kind="ray",
     )
 
     preflight = manager.preflight(_plan())
-    assert preflight.unsupported_deployments == {StageKey.INGEST: "ray"}
+    assert preflight.unsupported_deployments == {StageKey.SOURCE: "ray"}
     with pytest.raises(RuntimeError, match="unsupported deployment kinds"):
         preflight.raise_for_errors()
 
     with pytest.raises(NotImplementedError, match="requested deployment_kind='ray'"):
-        manager.runtime_for(StageKey.INGEST)
+        manager.runtime_for(StageKey.SOURCE)
 
 
 def test_stage_runtime_proxy_exposes_only_supported_views() -> None:

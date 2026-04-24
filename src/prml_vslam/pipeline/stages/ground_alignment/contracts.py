@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from prml_vslam.alignment.contracts import GroundAlignmentConfig
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.utils import BaseData, RunArtifactPaths
 
 
@@ -15,8 +15,8 @@ class GroundAlignmentRuntimeInput(BaseData):
     trajectory or point cloud referenced by :attr:`slam`.
     """
 
-    run_config: RunConfig
-    """Current run config carrying alignment policy."""
+    config: GroundAlignmentConfig
+    """Alignment policy consumed by the runtime."""
 
     run_paths: RunArtifactPaths
     """Canonical artifact paths for the current run."""
