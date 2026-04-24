@@ -12,6 +12,7 @@ from prml_vslam.benchmark import BenchmarkConfig
 from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.vista.config import VistaSlamBackendConfig
+from prml_vslam.methods.mast3r.config import Mast3rSlamBackendConfig
 from prml_vslam.utils import BaseConfig, PathConfig
 from prml_vslam.visualization.contracts import VisualizationConfig
 
@@ -119,7 +120,7 @@ class Record3DLiveSourceSpec(BaseConfig):
 
 
 SourceSpec = VideoSourceSpec | DatasetSourceSpec | Record3DLiveSourceSpec
-BackendConfig = SlamBackendConfig | VistaSlamBackendConfig
+BackendConfig = SlamBackendConfig | VistaSlamBackendConfig | Mast3rSlamBackendConfig
 
 
 class SlamStageConfig(BaseConfig):
@@ -150,6 +151,8 @@ class SlamStageConfig(BaseConfig):
         backend_payload = backend.model_dump(mode="python") if isinstance(backend, SlamBackendConfig) else backend
         if method_id is MethodId.VISTA:
             payload["backend"] = VistaSlamBackendConfig.model_validate(backend_payload)
+        elif method_id is MethodId.MAST3R:
+            payload["backend"] = Mast3rSlamBackendConfig.model_validate(backend_payload)
         elif isinstance(backend, VistaSlamBackendConfig):
             payload["backend"] = SlamBackendConfig.model_validate({"max_frames": backend.max_frames})
         else:
@@ -160,7 +163,11 @@ class SlamStageConfig(BaseConfig):
     def _normalize_backend_default(self) -> SlamStageConfig:
         if self.method is MethodId.VISTA and not isinstance(self.backend, VistaSlamBackendConfig):
             self.backend = VistaSlamBackendConfig.model_validate(self.backend.model_dump(mode="python"))
-        if self.method is not MethodId.VISTA and isinstance(self.backend, VistaSlamBackendConfig):
+        if self.method is MethodId.MAST3R and not isinstance(self.backend, Mast3rSlamBackendConfig):
+            self.backend = Mast3rSlamBackendConfig.model_validate(self.backend.model_dump(mode="python"))
+        if self.method not in {MethodId.VISTA, MethodId.MAST3R} and isinstance(
+            self.backend, VistaSlamBackendConfig | Mast3rSlamBackendConfig
+        ):
             self.backend = SlamBackendConfig.model_validate({"max_frames": self.backend.max_frames})
         return self
 

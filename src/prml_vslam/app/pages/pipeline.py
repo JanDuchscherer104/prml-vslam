@@ -68,7 +68,10 @@ def _pipeline_method_help(method: MethodId) -> str:
     if method is MethodId.MOCK:
         return "Repository-local mock backend that emits live pose and pointmap telemetry for UI validation."
     if method is MethodId.MAST3R:
-        return "MASt3R-SLAM is retained as a method id, but this repository has no executable MASt3R backend yet."
+        return (
+            "MASt3R-SLAM backend. Offline runs produce real trajectory and dense point cloud artifacts; "
+            "streaming runs show incremental keyframe poses and live pointmap previews."
+        )
     return (
         "Real ViSTA-SLAM backend. Offline runs produce real artifacts; streaming runs show packet FPS, accepted "
         "keyframe FPS, and live previews only when the backend produces a new keyframe artifact."
