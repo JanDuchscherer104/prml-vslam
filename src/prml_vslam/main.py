@@ -241,8 +241,8 @@ class _TimestampedRunLogTee:
 def _capture_run_config_logs(*, path_config: PathConfig, run_id: str) -> Iterator[Path]:
     """Capture one `run-config` command invocation to a timestamped run log."""
     log_dir = path_config.resolve_run_logs_dir(run_id, create=True)
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-    log_path = log_dir / f"{timestamp}-pid{os.getpid()}.log"
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H:%M:%S")
+    log_path = log_dir / f"{timestamp}_{run_id}.log"
     lock = threading.Lock()
     with log_path.open("w", encoding="utf-8") as log_handle:
         stdout_tee = _TimestampedRunLogTee(target=sys.stdout, log_handle=log_handle, lock=lock)

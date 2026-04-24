@@ -328,7 +328,7 @@ def test_run_config_persists_timestamped_command_log(monkeypatch: pytest.MonkeyP
 
     log_files = list(path_config.resolve_run_logs_dir("demo-streaming").glob("*.log"))
     assert len(log_files) == 1
-    assert re.fullmatch(r"\d{8}T\d{6}\.\d{6}Z-pid\d+\.log", log_files[0].name)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}_demo-streaming\.log", log_files[0].name)
     lines = log_files[0].read_text(encoding="utf-8").splitlines()
     assert lines
     assert all(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z ", line) for line in lines)
