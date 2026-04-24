@@ -11,7 +11,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.stage_cache import ContentFingerprinter, StageCacheKey, StageCacheStore
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
-from prml_vslam.pipeline.stages.slam.config import MockSlamBackendConfig
+from prml_vslam.pipeline.stages.slam.config import MockSlamBackendConfig, SlamStageConfig
 
 
 def test_content_fingerprint_uses_file_bytes_not_run_root_for_paths_and_artifacts(tmp_path: Path) -> None:
@@ -35,8 +35,8 @@ def test_content_fingerprint_uses_file_bytes_not_run_root_for_paths_and_artifact
 
 
 def test_stage_cache_key_ignores_cache_policy_for_same_stage_config() -> None:
-    first_config = MockSlamBackendConfig()
-    second_config = MockSlamBackendConfig()
+    first_config = SlamStageConfig(backend=MockSlamBackendConfig())
+    second_config = SlamStageConfig(backend=MockSlamBackendConfig())
     second_config.cache.enabled = True
     second_config.cache.cache_root = Path("/tmp/other-cache-root")
     fingerprinter = ContentFingerprinter()

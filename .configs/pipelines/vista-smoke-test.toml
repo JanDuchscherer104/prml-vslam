@@ -33,20 +33,5 @@ enabled = false
 [stages.evaluate_cloud]
 enabled = false
 
-[stages.evaluate_efficiency]
-enabled = false
-
 [stages.summary]
 enabled = true
-
-[benchmark.reference]
-enabled = false
-
-[benchmark.trajectory]
-enabled = false
-
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = false

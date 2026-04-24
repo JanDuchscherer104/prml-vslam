@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.pipeline.config import RunConfig
-from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.stages.slam.config import MethodId
 from prml_vslam.utils import BaseData
 
 
@@ -18,11 +20,17 @@ class TrajectoryEvaluationRuntimeInput(BaseData):
     walking dataset folders independently.
     """
 
-    run_config: RunConfig
-    """Current run config carrying benchmark trajectory policy."""
+    artifact_root: Path
+    """Run-owned artifact root where evaluation outputs are written."""
 
-    plan: RunPlan
-    """Compiled run plan whose artifact root owns evaluation outputs."""
+    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
+    """Prepared reference trajectory selected for evaluation."""
+
+    method_id: MethodId | None = None
+    """Selected SLAM backend id, when available for labels."""
+
+    method_label: str = "unknown"
+    """Human-readable SLAM backend label used in loaded evaluation artifacts."""
 
     sequence_manifest: SequenceManifest
     """Normalized source sequence manifest."""

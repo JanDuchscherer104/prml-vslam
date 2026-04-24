@@ -35,24 +35,8 @@ enabled = false
 [stages.evaluate_cloud]
 enabled = false
 
-[stages.evaluate_efficiency]
-enabled = false
-
 [stages.summary]
 enabled = true
-
-[benchmark.reference]
-enabled = false
-
-[benchmark.trajectory]
-enabled     = false
-baseline_source = "ground_truth"
-
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = false
 
 [visualization]
 export_viewer_rrd     = false

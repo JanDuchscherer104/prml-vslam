@@ -41,7 +41,7 @@ class _StreamItem(BaseData):
     seq: int
 
 
-def _outcome(stage_key: StageKey = StageKey.INGEST) -> StageOutcome:
+def _outcome(stage_key: StageKey = StageKey.SOURCE) -> StageOutcome:
     return StageOutcome(
         stage_key=stage_key,
         status=StageStatus.COMPLETED,
@@ -50,7 +50,7 @@ def _outcome(stage_key: StageKey = StageKey.INGEST) -> StageOutcome:
     )
 
 
-def _status(stage_key: StageKey = StageKey.INGEST) -> StageRuntimeStatus:
+def _status(stage_key: StageKey = StageKey.SOURCE) -> StageRuntimeStatus:
     return StageRuntimeStatus(
         stage_key=stage_key,
         lifecycle_state=StageStatus.COMPLETED,
@@ -74,7 +74,7 @@ def _status(stage_key: StageKey = StageKey.INGEST) -> StageRuntimeStatus:
 def test_stage_result_holds_domain_payload_and_final_status() -> None:
     manifest = SequenceManifest(sequence_id="seq-1")
     result = StageResult(
-        stage_key=StageKey.INGEST,
+        stage_key=StageKey.SOURCE,
         payload=manifest,
         outcome=_outcome(),
         final_runtime_status=_status(),
@@ -164,10 +164,10 @@ def test_runtime_protocols_accept_small_fake_implementations() -> None:
 
         def run_offline(self, input_payload: _OfflineInput) -> StageResult:
             return StageResult(
-                stage_key=StageKey.INGEST,
+                stage_key=StageKey.SOURCE,
                 payload=input_payload.sequence,
-                outcome=_outcome(StageKey.INGEST),
-                final_runtime_status=_status(StageKey.INGEST),
+                outcome=_outcome(StageKey.SOURCE),
+                final_runtime_status=_status(StageKey.SOURCE),
             )
 
         def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
@@ -194,7 +194,7 @@ def test_runtime_protocols_accept_small_fake_implementations() -> None:
     assert isinstance(runtime, LiveUpdateStageRuntime)
     assert isinstance(runtime, StreamingStageRuntime)
     assert (
-        runtime.run_offline(_OfflineInput(sequence=SequenceManifest(sequence_id="seq-1"))).stage_key is StageKey.INGEST
+        runtime.run_offline(_OfflineInput(sequence=SequenceManifest(sequence_id="seq-1"))).stage_key is StageKey.SOURCE
     )
     assert runtime.drain_runtime_updates(max_items=1)[0].stage_key is StageKey.SLAM
     runtime.start_streaming(_StreamingInput(run_label="demo"))

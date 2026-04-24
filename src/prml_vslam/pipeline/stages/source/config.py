@@ -8,7 +8,7 @@ dataset, video, or live-source adapters through ``setup_target(...)``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field
 
@@ -32,7 +32,7 @@ class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSourc
     source variants or later benchmark preparation.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["video"] = "video"
     """Typed source discriminator for raw-video inputs."""
@@ -40,7 +40,7 @@ class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSourc
     video_path: Path
     """Repo-relative or absolute video path."""
 
-    def setup_target(self, *, path_config: PathConfig, **_kwargs: object) -> OfflineSequenceSource:
+    def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> OfflineSequenceSource:
         """Build the normalized raw-video source adapter."""
         return VideoOfflineSequenceSource(
             path_config=path_config,
@@ -58,7 +58,7 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
     benchmark- or eval-owned.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["tum_rgbd"] = "tum_rgbd"
     """Typed source discriminator for TUM RGB-D inputs."""
@@ -66,7 +66,7 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
     sequence_id: str
     """TUM RGB-D sequence slug or canonical sequence id."""
 
-    def setup_target(self, *, path_config: PathConfig, **_kwargs: object) -> StreamingSequenceSource:
+    def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized TUM RGB-D source adapter."""
         service = TumRgbdDatasetService(path_config)
         return service.build_streaming_source(
@@ -85,7 +85,7 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     than being promoted into the generic source backend base.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["advio"] = "advio"
     """Typed source discriminator for ADVIO inputs."""
@@ -99,7 +99,7 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     respect_video_rotation: bool = False
     """Whether replay should honor ADVIO video rotation metadata."""
 
-    def setup_target(self, *, path_config: PathConfig, **_kwargs: object) -> StreamingSequenceSource:
+    def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized ADVIO source adapter."""
         service = AdvioDatasetService(path_config)
         return service.build_streaming_source(
@@ -119,7 +119,7 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
     selection.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["record3d"] = "record3d"
     """Typed source discriminator for Record3D live inputs."""
@@ -136,7 +136,7 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
     frame_timeout_seconds: float = 5.0
     """Maximum time to wait for the next live frame."""
 
-    def setup_target(self, *, path_config: PathConfig | None = None, **_kwargs: object) -> StreamingSequenceSource:
+    def setup_target(self, *, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized Record3D source adapter."""
         del path_config
         source = Record3DStreamingSourceConfig(
@@ -168,12 +168,12 @@ class SourceStageConfig(StageConfig):
     follows the same config-as-factory pattern as methods and reconstruction.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    stage_key: StageKey | None = StageKey.INGEST
-    """Current executable stage key used during migration."""
+    stage_key: StageKey | None = StageKey.SOURCE
+    """Canonical source stage key."""
 
-    backend: SourceBackendConfig
+    backend: SourceBackendConfig | None = None
     """Concrete source backend config that constructs the source adapter."""
 
 
