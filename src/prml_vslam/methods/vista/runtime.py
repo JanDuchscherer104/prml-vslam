@@ -17,7 +17,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
 
-from prml_vslam.methods.options import VistaSlamBackendOptions
+from prml_vslam.methods.stage.config import VistaSlamBackendConfig
 from prml_vslam.utils import Console, PathConfig
 
 from .preprocess import UpstreamVistaFramePreprocessor, VistaFramePreprocessor
@@ -89,7 +89,7 @@ class VistaRuntimeComponents:
 
 def build_vista_runtime_components(
     *,
-    config: VistaSlamBackendOptions,
+    config: VistaSlamBackendConfig,
     path_config: PathConfig,
     console: Console,
     live_mode: bool,
@@ -177,7 +177,7 @@ def build_vista_runtime_components(
     )
 
 
-def _resolve_torch_device(torch_module: Any, *, config: VistaSlamBackendOptions):
+def _resolve_torch_device(torch_module: Any, *, config: VistaSlamBackendConfig):
     if config.device == "cuda":
         if not torch_module.cuda.is_available():
             raise RuntimeError("ViSTA-SLAM was configured with device='cuda', but no CUDA GPU is available.")

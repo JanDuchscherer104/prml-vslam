@@ -7,14 +7,13 @@ from pathlib import Path
 
 import cv2
 
-from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.config_contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.options import VistaSlamBackendOptions
 from prml_vslam.methods.protocols import SlamBackend
+from prml_vslam.methods.stage.config import MethodId, SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.utils import Console, PathConfig
 
 from .session import VistaSlamRuntime, create_vista_runtime
@@ -27,7 +26,7 @@ class VistaSlamBackend(SlamBackend):
 
     def __init__(
         self,
-        config: VistaSlamBackendOptions,
+        config: VistaSlamBackendConfig,
         path_config: PathConfig | None = None,
     ) -> None:
         self._cfg = config

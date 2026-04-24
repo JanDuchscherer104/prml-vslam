@@ -7,7 +7,6 @@ from typing import Any
 from .contracts import SlamUpdate
 
 __all__ = [
-    "MockSlamBackend",
     "SlamUpdate",
     "VistaSlamBackend",
 ]
@@ -15,10 +14,6 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     """Provide lazy access to concrete backend wrappers."""
-    if name == "MockSlamBackend":
-        from .mock_vslam import MockSlamBackend
-
-        return MockSlamBackend
     if name == "VistaSlamBackend":
         from .vista.adapter import VistaSlamBackend
 

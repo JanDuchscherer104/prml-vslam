@@ -7,24 +7,25 @@ from pathlib import Path
 import numpy as np
 from pydantic import PrivateAttr
 
-from prml_vslam.benchmark.contracts import ReferenceSource
 from prml_vslam.interfaces import FramePacket, FrameTransform
-from prml_vslam.interfaces.ingest import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.stage import SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
+from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import ArtifactRef, StageStatus
+from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
-from prml_vslam.pipeline.stages.slam import SlamFrameInput, SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
-from prml_vslam.pipeline.stages.slam.config import MethodId, MockSlamBackendConfig
-from prml_vslam.pipeline.stages.source.config import VideoSourceConfig
+from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
 from prml_vslam.utils import PathConfig
 
 
-class _FakeBackendConfig(MockSlamBackendConfig):
+class _FakeBackendConfig(VistaSlamBackendConfig):
     _backend: _FakeBackend = PrivateAttr()
 
     def __init__(self, backend: _FakeBackend) -> None:
@@ -37,7 +38,7 @@ class _FakeBackendConfig(MockSlamBackendConfig):
 
 
 class _FakeBackend:
-    method_id = MethodId.MOCK
+    method_id = MethodId.VISTA
 
     def __init__(self, artifact_root: Path) -> None:
         self.artifact_root = artifact_root
@@ -112,7 +113,7 @@ def _run_config(tmp_path: Path, *, mode: PipelineMode = PipelineMode.STREAMING) 
         mode=mode,
         output_dir=tmp_path / ".artifacts",
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
-        method=MethodId.MOCK,
+        method=MethodId.VISTA,
     )
 
 
@@ -178,7 +179,7 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
             log_diagnostic_preview=True,
         )
     )
-    runtime.submit_stream_item(SlamFrameInput(frame=FramePacket(seq=1, timestamp_ns=10, rgb=np.zeros((2, 3, 3)))))
+    runtime.submit_stream_item(FramePacket(seq=1, timestamp_ns=10, rgb=np.zeros((2, 3, 3))))
     updates = runtime.drain_runtime_updates()
 
     assert len(updates) == 1

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
-from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.slam.visualization import (
+from prml_vslam.methods.stage.visualization import (
     DEPTH_REF,
     IMAGE_REF,
     POINTMAP_REF,
@@ -25,6 +23,8 @@ from prml_vslam.pipeline.stages.slam.visualization import (
     ROLE_TRACKING_TRAJECTORY,
     SlamVisualizationAdapter,
 )
+from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 
 
 def _pose() -> FrameTransform:
