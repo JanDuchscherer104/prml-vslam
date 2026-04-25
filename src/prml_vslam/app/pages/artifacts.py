@@ -160,7 +160,7 @@ def _render_overview(inspection: RunArtifactInspection) -> None:
         ("Run ID", snapshot.run_id or "unknown"),
         ("State", snapshot.state.value.upper()),
         ("Events", str(inspection.event_count)),
-        ("Files", str(sum(1 for row in inspection.file_inventory if row.kind != "dir"))),
+        ("Files", str(sum(1 for row in inspection.file_inventory if row["kind"] != "dir"))),
     )
     for column, (label, value) in zip(st.columns(4, gap="small"), metric_values, strict=True):
         column.metric(label, value)
@@ -573,11 +573,11 @@ def _render_rerun_validation(context: AppContext, inspection: RunArtifactInspect
 
 def _render_raw_previews(inspection: RunArtifactInspection) -> None:
     preview_paths = [
-        row.path
+        Path(str(row["path"]))
         for row in inspection.file_inventory
-        if row.kind in {"json", "yaml", "yml"}
-        and row.size_bytes is not None
-        and row.size_bytes <= _RAW_PREVIEW_MAX_BYTES
+        if row["kind"] in {"json", "yaml", "yml"}
+        and row.get("size_bytes") is not None
+        and int(row["size_bytes"]) <= _RAW_PREVIEW_MAX_BYTES
     ]
     if not preview_paths:
         st.info("No small JSON or YAML metadata files are available for raw preview.")
@@ -617,9 +617,9 @@ def _metadata_json(label: str, value: BaseData | None) -> None:
 def _inventory_rows(inspection: RunArtifactInspection) -> list[TableRow]:
     return [
         {
-            "Path": row.relative_path,
-            "Kind": row.kind,
-            "Size": row.size_label,
+            "Path": row["relative_path"],
+            "Kind": row["kind"],
+            "Size": row.get("size_label", ""),
         }
         for row in inspection.file_inventory
     ]
@@ -642,11 +642,11 @@ def _attempt_rows(inspection: RunArtifactInspection) -> list[TableRow]:
 def _path_rows(inspection: RunArtifactInspection) -> list[TableRow]:
     return [
         {
-            "Name": row.name,
-            "Exists": row.exists,
-            "Kind": row.kind,
-            "Size": row.size_label,
-            "Path": row.path.as_posix(),
+            "Name": row["name"],
+            "Exists": row["exists"],
+            "Kind": row["kind"],
+            "Size": row.get("size_label", ""),
+            "Path": Path(str(row["path"])).as_posix(),
         }
         for row in inspection.canonical_paths
     ]
@@ -655,12 +655,12 @@ def _path_rows(inspection: RunArtifactInspection) -> list[TableRow]:
 def _stage_output_rows(inspection: RunArtifactInspection) -> list[TableRow]:
     return [
         {
-            "Stage": row.stage_id,
-            "Name": row.name,
-            "Exists": row.exists,
-            "Kind": row.kind,
-            "Size": row.size_label,
-            "Path": row.path.as_posix(),
+            "Stage": row["stage_id"],
+            "Name": row["name"],
+            "Exists": row["exists"],
+            "Kind": row["kind"],
+            "Size": row.get("size_label", ""),
+            "Path": Path(str(row["path"])).as_posix(),
         }
         for row in inspection.stage_output_paths
     ]
