@@ -23,6 +23,7 @@ from prml_vslam.methods.stage import SlamStageRuntime
 from prml_vslam.methods.stage.config import SlamBackendConfig
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.events import (
     ArtifactRegistered,
     RunCompleted,
@@ -43,7 +44,6 @@ from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.execution_context import StageExecutionContext
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     EVENT_RING_LIMIT,
@@ -58,7 +58,6 @@ from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
-from prml_vslam.pipeline.stages.base.config import StageInputContext, StageRuntimeBuildContext
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -78,7 +77,6 @@ from prml_vslam.reconstruction.stage.visualization import (
 from prml_vslam.sources.contracts import SourceStageOutput
 from prml_vslam.sources.visualization import SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
-from prml_vslam.utils.serialization import stable_hash
 from prml_vslam.visualization.rerun_policy import (
     ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT,
     ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
@@ -543,37 +541,26 @@ class RunCoordinatorActor:
             "Offline source prepared via %s path.",
             "injected runtime source" if runtime_source is not None else "run-config source backend",
         )
+        self._result_store = StageResultStore()
+        self._stage_runner = StageRunner(self._result_store)
         context = self._stage_execution_context(
             run_config=run_config,
             plan=plan,
             path_config=path_config,
+            source=source,
         )
-        runtime_manager = self._build_runtime_manager(plan=plan, source=source)
+        runtime_manager = self._build_runtime_manager(plan=plan, context=context)
         runtime_manager.preflight(plan).raise_for_errors()
-        self._result_store = StageResultStore()
-        self._stage_runner = StageRunner(self._result_store)
         for stage in plan.stages:
             if not stage.available:
                 continue
             stage_key = stage.key
             if stage_key is StageKey.TRAJECTORY_EVALUATION and self._stop_requested:
                 continue
-            runtime_proxy = runtime_manager.runtime_for(stage_key)
-            stage_config = runtime_manager.stage_config(stage_key)
-            input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
-            config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
-            self._stage_runner.run_offline_stage(
+            runtime_proxy = self._run_bounded_stage(
                 stage_key=stage_key,
-                runtime=runtime_proxy,
-                input_payload=input_payload,
-                stage_config=stage_config,
-                config_hash=config_hash,
-                input_fingerprint=input_fingerprint,
-                on_stage_started=self._emit_stage_started,
-                on_stage_completed=lambda completed_stage_key, result: self._record_stage_result(
-                    completed_stage_key, result
-                ),
-                on_stage_failed=self._record_stage_failure,
+                runtime_manager=runtime_manager,
+                context=context,
             )
             self._publish_runtime_updates_from_proxy(runtime_proxy)
         terminal_state = "stopped" if self._stop_requested else "completed"
@@ -584,21 +571,14 @@ class RunCoordinatorActor:
             else RunCompleted(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns())
         )
 
-    def _build_runtime_manager(self, *, plan: RunPlan, source: OfflineSequenceSource) -> RuntimeManager:
+    def _build_runtime_manager(self, *, plan: RunPlan, context: PipelineExecutionContext) -> RuntimeManager:
         manager = RuntimeManager()
         run_config = self._require_run_config()
         for stage in plan.stages:
             if not stage.available:
                 continue
             stage_config = run_config.stages.section(stage.key)
-            factory = stage_config.runtime_factory(
-                StageRuntimeBuildContext(
-                    run_config=run_config,
-                    plan=plan,
-                    path_config=self._require_path_config(),
-                    source=source,
-                )
-            )
+            factory = stage_config.runtime_factory(context)
             if factory is None:
                 continue
             manager.register(
@@ -608,16 +588,24 @@ class RunCoordinatorActor:
             )
         return manager
 
-    def _build_offline_stage_input(self, *, stage_key: StageKey, context: StageExecutionContext):
-        return context.run_config.stages.section(stage_key).build_offline_input(self._stage_input_context(context))
-
-    def _failure_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
-        fingerprint = context.run_config.stages.section(stage_key).failure_fingerprint(
-            self._stage_input_context(context)
+    def _run_bounded_stage(
+        self,
+        *,
+        stage_key: StageKey,
+        runtime_manager: RuntimeManager,
+        context: PipelineExecutionContext,
+    ) -> StageRuntimeHandle:
+        runtime_proxy = runtime_manager.runtime_for(stage_key)
+        self._stage_runner.run_configured_offline_stage(
+            stage_key=stage_key,
+            runtime=runtime_proxy,
+            stage_config=context.run_config.stages.section(stage_key),
+            context=context,
+            on_stage_started=self._emit_stage_started,
+            on_stage_completed=self._record_stage_result,
+            on_stage_failed=self._record_stage_failure,
         )
-        config_payload = fingerprint.config_payload
-        input_payload = fingerprint.input_payload
-        return stable_hash(config_payload), stable_hash(input_payload)
+        return runtime_proxy
 
     def _record_stage_result(self, stage_key: StageKey, result: StageResult) -> None:
         payload = result.payload
@@ -680,16 +668,17 @@ class RunCoordinatorActor:
     ) -> None:
         if runtime_source is None:
             raise RuntimeError("Streaming runs require an explicit runtime source.")
+        self._result_store = StageResultStore()
+        self._stage_runner = StageRunner(self._result_store)
         context = self._stage_execution_context(
             run_config=run_config,
             plan=plan,
             path_config=path_config,
+            source=runtime_source,
         )
-        runtime_manager = self._build_runtime_manager(plan=plan, source=runtime_source)
+        runtime_manager = self._build_runtime_manager(plan=plan, context=context)
         runtime_manager.preflight(plan).raise_for_errors()
         self._streaming_runtime_manager = runtime_manager
-        self._result_store = StageResultStore()
-        self._stage_runner = StageRunner(self._result_store)
         self._run_streaming_prepare(context=context, runtime_manager=runtime_manager)
         self._source_actor = PacketSourceActor.options(
             **clean_actor_options(
@@ -715,28 +704,16 @@ class RunCoordinatorActor:
             loop=False,
         )
 
-    def _run_streaming_prepare(self, *, context: StageExecutionContext, runtime_manager: RuntimeManager) -> None:
+    def _run_streaming_prepare(self, *, context: PipelineExecutionContext, runtime_manager: RuntimeManager) -> None:
         for stage in context.plan.stages:
             if not stage.available:
                 continue
             stage_key = stage.key
             if stage_key is StageKey.SOURCE:
-                runtime_proxy = runtime_manager.runtime_for(stage_key)
-                stage_config = runtime_manager.stage_config(stage_key)
-                input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
-                config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
-                self._stage_runner.run_offline_stage(
+                self._run_bounded_stage(
                     stage_key=stage_key,
-                    runtime=runtime_proxy,
-                    input_payload=input_payload,
-                    stage_config=stage_config,
-                    config_hash=config_hash,
-                    input_fingerprint=input_fingerprint,
-                    on_stage_started=self._emit_stage_started,
-                    on_stage_completed=lambda completed_stage_key, result: self._record_stage_result(
-                        completed_stage_key, result
-                    ),
-                    on_stage_failed=self._record_stage_failure,
+                    runtime_manager=runtime_manager,
+                    context=context,
                 )
                 continue
             if stage_key is StageKey.SLAM:
@@ -747,32 +724,19 @@ class RunCoordinatorActor:
     def _start_streaming_slam_runtime(
         self,
         *,
-        context: StageExecutionContext,
+        context: PipelineExecutionContext,
         runtime_manager: RuntimeManager,
     ) -> None:
         stage_key = StageKey.SLAM
         runtime_proxy = runtime_manager.runtime_for(stage_key)
-        stage_config = runtime_manager.stage_config(stage_key)
-        config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
-        try:
-            self._stage_runner.start_streaming_stage(
-                stage_key=stage_key,
-                runtime=runtime_proxy,
-                input_payload=context.run_config.stages.section(stage_key).build_streaming_start_input(
-                    self._stage_input_context(context)
-                ),
-                on_stage_started=self._emit_stage_started,
-            )
-        except Exception as exc:
-            self._record_stage_failure(
-                stage_key,
-                stage_config.failure_outcome(
-                    error_message=str(exc),
-                    config_hash=config_hash,
-                    input_fingerprint=input_fingerprint,
-                ),
-            )
-            raise
+        self._stage_runner.start_configured_streaming_stage(
+            stage_key=stage_key,
+            runtime=runtime_proxy,
+            stage_config=context.run_config.stages.section(stage_key),
+            context=context,
+            on_stage_started=self._emit_stage_started,
+            on_stage_failed=self._record_stage_failure,
+        )
         self._slam_runtime_proxy = runtime_proxy
 
     def _finalize_streaming(self) -> None:
@@ -813,13 +777,15 @@ class RunCoordinatorActor:
         finally:
             self._streaming_done.set()
 
-    def _finalize_slam_streaming_stage(self, *, context: StageExecutionContext) -> None:
+    def _finalize_slam_streaming_stage(self, *, context: PipelineExecutionContext) -> None:
         if self._slam_runtime_proxy is None:
             return
-        runtime_manager = self._require_streaming_runtime_manager()
         stage_key = StageKey.SLAM
-        stage_config = runtime_manager.stage_config(stage_key)
-        config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
+        stage_config = context.run_config.stages.section(stage_key)
+        config_hash, input_fingerprint = self._stage_runner.failure_hash_inputs(
+            stage_config=stage_config,
+            context=context,
+        )
         try:
             slam_result = self._stage_runner.finish_streaming_stage(
                 stage_key=stage_key,
@@ -880,7 +846,7 @@ class RunCoordinatorActor:
             self._result_store.put(slam_result)
         self._record_stage_result(stage_key, slam_result)
 
-    def _run_streaming_finalize_stages(self, *, context: StageExecutionContext) -> None:
+    def _run_streaming_finalize_stages(self, *, context: PipelineExecutionContext) -> None:
         runtime_manager = self._require_streaming_runtime_manager()
         for stage in context.plan.stages:
             if not stage.available:
@@ -892,22 +858,10 @@ class RunCoordinatorActor:
                 self._streaming_error is not None or self._stop_requested
             ):
                 continue
-            runtime_proxy = runtime_manager.runtime_for(stage_key)
-            stage_config = runtime_manager.stage_config(stage_key)
-            input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
-            config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
-            self._stage_runner.run_offline_stage(
+            runtime_proxy = self._run_bounded_stage(
                 stage_key=stage_key,
-                runtime=runtime_proxy,
-                input_payload=input_payload,
-                stage_config=stage_config,
-                config_hash=config_hash,
-                input_fingerprint=input_fingerprint,
-                on_stage_started=self._emit_stage_started,
-                on_stage_completed=lambda completed_stage_key, result: self._record_stage_result(
-                    completed_stage_key, result
-                ),
-                on_stage_failed=self._record_stage_failure,
+                runtime_manager=runtime_manager,
+                context=context,
             )
             self._publish_runtime_updates_from_proxy(runtime_proxy)
 
@@ -1177,22 +1131,16 @@ class RunCoordinatorActor:
         run_config: RunConfig,
         plan: RunPlan,
         path_config: PathConfig | None = None,
-    ) -> StageExecutionContext:
-        return StageExecutionContext(
+        source: OfflineSequenceSource | None = None,
+    ) -> PipelineExecutionContext:
+        return PipelineExecutionContext(
             run_config=run_config,
             plan=plan,
             path_config=self._require_path_config() if path_config is None else path_config,
             run_paths=RunArtifactPaths.build(plan.artifact_root),
-            slam_backend=self._require_slam_backend(),
-        )
-
-    def _stage_input_context(self, context: StageExecutionContext) -> StageInputContext:
-        return StageInputContext(
-            run_config=context.run_config,
-            plan=context.plan,
-            path_config=context.path_config,
-            run_paths=context.run_paths,
+            source=source,
             results=self._result_store,
+            slam_backend=self._require_slam_backend(),
         )
 
 

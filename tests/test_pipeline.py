@@ -36,6 +36,7 @@ from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.events import (
     RunStopped,
     StageCompleted,
@@ -47,14 +48,13 @@ from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanSt
 from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.execution_context import StageExecutionContext
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
 from prml_vslam.pipeline.ray_runtime.substrate import build_runtime_env, prepare_ray_environment
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.runner import StageRunner
+from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.stages.base.contracts import (
@@ -475,11 +475,12 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
         run_config=run_config,
         stage_keys=[StageKey.RECONSTRUCTION],
     )
-    context = StageExecutionContext(
+    context = PipelineExecutionContext(
         run_config=run_config,
         plan=plan,
         path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
         run_paths=RunArtifactPaths.build(plan.artifact_root),
+        results=StageResultStore(),
         slam_backend=run_config.stages.slam.backend,
     )
     benchmark_inputs = _rgbd_benchmark_inputs(tmp_path)
@@ -999,8 +1000,10 @@ def test_run_coordinator_runtime_manager_registers_reconstruction_live_updates(t
     )
     coordinator._run_config = run_config
     coordinator._path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    coordinator._slam_backend = run_config.stages.slam.backend
+    context = coordinator._stage_execution_context(run_config=run_config, plan=plan, source=FakeOfflineSource())
 
-    runtime_manager = coordinator._build_runtime_manager(plan=plan, source=FakeOfflineSource())
+    runtime_manager = coordinator._build_runtime_manager(plan=plan, context=context)
     runtime_proxy = runtime_manager.runtime_for(StageKey.RECONSTRUCTION)
 
     assert isinstance(runtime_proxy.runtime, ReconstructionRuntime)

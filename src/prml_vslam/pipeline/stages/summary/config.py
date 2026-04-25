@@ -7,14 +7,9 @@ from pathlib import Path
 
 from pydantic import ConfigDict
 
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import (
-    FailureFingerprint,
-    StageConfig,
-    StageInputContext,
-    StagePlanContext,
-    StageRuntimeBuildContext,
-)
+from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 
 
@@ -25,16 +20,16 @@ class SummaryStageConfig(StageConfig):
 
     stage_key: StageKey | None = StageKey.SUMMARY
 
-    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         return [context.run_paths.summary_path, context.run_paths.stage_manifests_path]
 
-    def runtime_factory(self, context: StageRuntimeBuildContext) -> Callable[[], BaseStageRuntime]:
+    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
         del context
         from prml_vslam.pipeline.stages.summary.runtime import SummaryRuntime
 
         return SummaryRuntime
 
-    def build_offline_input(self, context: StageInputContext):
+    def build_offline_input(self, context: PipelineExecutionContext):
         from prml_vslam.pipeline.stages.summary.runtime import SummaryStageInput
 
         return SummaryStageInput(
@@ -45,7 +40,7 @@ class SummaryStageConfig(StageConfig):
             stage_outcomes=context.results.ordered_outcomes(),
         )
 
-    def failure_fingerprint(self, context: StageInputContext) -> FailureFingerprint:
+    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
         return FailureFingerprint(
             config_payload={
                 "experiment_name": context.run_config.experiment_name,

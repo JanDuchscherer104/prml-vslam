@@ -16,52 +16,16 @@ from typing import TYPE_CHECKING
 from pydantic import ConfigDict, Field, field_validator
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.protocols.source import OfflineSequenceSource
-from prml_vslam.utils import BaseConfig, BaseData, JsonScalar, PathConfig, RunArtifactPaths
+from prml_vslam.utils import BaseConfig, BaseData, JsonScalar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from prml_vslam.methods.stage.config import SlamBackendConfig
-    from prml_vslam.pipeline.config import RunConfig
-    from prml_vslam.pipeline.runner import StageResultStore
     from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
-
-
-# TODO: streamline (collapse ?) handling of all context classes! This also includes StageExecutionContext from src/prml_vslam/pipeline/execution_context.py. (from this file StagePlanContext, StageRuntimeBuildContext, StageInputContext! How many different context types do we really need?)
-@dataclass(frozen=True, slots=True)
-class StagePlanContext:
-    """Inputs available while compiling a deterministic run plan."""
-
-    run_config: RunConfig
-    path_config: PathConfig
-    run_paths: RunArtifactPaths
-    backend: SlamBackendConfig | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class StageRuntimeBuildContext:
-    """Inputs available while lazily constructing one stage runtime."""
-
-    run_config: RunConfig
-    plan: RunPlan
-    path_config: PathConfig
-    source: OfflineSequenceSource | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class StageInputContext:
-    """Inputs available while constructing one runtime-boundary DTO."""
-
-    run_config: RunConfig
-    plan: RunPlan
-    path_config: PathConfig
-    run_paths: RunArtifactPaths
-    results: StageResultStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,31 +123,31 @@ class StageConfig(BaseConfig):
         """Return the declared output paths for a generic stage section."""
         return list(output_paths)
 
-    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         """Return deterministic output paths declared by this stage."""
         del context
         return []
 
-    def availability(self, context: StagePlanContext) -> tuple[bool, str | None]:
+    def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         """Return whether the configured stage can run."""
         del context
         return True, None
 
-    def runtime_factory(self, context: StageRuntimeBuildContext) -> Callable[[], BaseStageRuntime] | None:
+    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime] | None:
         """Return a lazy runtime factory for this stage, or ``None`` for diagnostics."""
         del context
         return None
 
-    def build_offline_input(self, context: StageInputContext) -> BaseData:
+    def build_offline_input(self, context: PipelineExecutionContext) -> BaseData:
         """Build the narrow DTO consumed by this stage runtime."""
         raise RuntimeError(f"No offline input builder for stage '{self.stage_key}'.")
 
-    def build_streaming_start_input(self, context: StageInputContext) -> BaseData:
+    def build_streaming_start_input(self, context: PipelineExecutionContext) -> BaseData:
         """Build the narrow DTO used to start a streaming runtime."""
         del context
         raise RuntimeError(f"No streaming input builder for stage '{self.stage_key}'.")
 
-    def failure_fingerprint(self, context: StageInputContext) -> FailureFingerprint:
+    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
         """Return stable config and input payloads for failure provenance."""
         stage_key = self.stage_key.value if self.stage_key is not None else "unknown"
         return FailureFingerprint(
@@ -230,7 +194,4 @@ def _valid_artifact_selector(selector: str) -> bool:
 __all__ = [
     "FailureFingerprint",
     "StageConfig",
-    "StageInputContext",
-    "StagePlanContext",
-    "StageRuntimeBuildContext",
 ]
