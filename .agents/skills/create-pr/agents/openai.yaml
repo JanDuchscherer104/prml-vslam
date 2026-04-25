@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create PR"
+  short_description: "Reviewer-friendly pull requests"
+  default_prompt: "Use $create-pr to write or update a pull request with a summary paragraph, focused verification, work-package sections, and explicit gh commands."

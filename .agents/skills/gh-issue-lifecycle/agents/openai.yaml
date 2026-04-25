@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Issue Lifecycle"
+  short_description: "Create and resolve structured GitHub issues"
+  default_prompt: "Use $gh-issue-lifecycle to create, de-duplicate, sync, or resolve GitHub issues with clear acceptance criteria, explicit test expectations, and linked closure flow."
