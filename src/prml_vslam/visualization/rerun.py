@@ -38,6 +38,19 @@ GROUND_PLANE_FILL_RGBA = np.array([[80, 180, 120, 96]] * 4, dtype=np.uint8)
 """Semi-transparent per-vertex color for the ground-plane mesh patch."""
 GROUND_PLANE_OUTLINE_RGBA = np.array([[24, 140, 84, 255]], dtype=np.uint8)
 """Opaque outline color for the ground-plane patch."""
+DEFAULT_3D_SCENE_CONTENTS = (
+    "+ world/alignment/**",
+    "+ world/reference/**/aligned/**",
+    "+ world/reconstruction/**",
+    "+ world/slam/vista_slam_world/**",
+    "+ world/overlays/**",
+    "+ world/live/tracking/**",
+    "+ world/live/source/camera",
+    "+ world/live/model",
+    "+ world/keyframes/cameras/*",
+    "+ world/keyframes/points/**",
+)
+"""Default 3D view query: spatial map/history only, without 2D raster branches."""
 
 
 def build_default_blueprint(
@@ -88,29 +101,7 @@ def build_default_blueprint(
             rrb.Spatial3DView(
                 origin="world",
                 name="3D Scene",
-                contents=[
-                    "+ world/alignment/**",
-                    "+ world/reference/**",
-                    "- world/reference/**/source_native/**",
-                    "+ world/reconstruction/**",
-                    "+ world/slam/vista_slam_world/**",
-                    "+ world/overlays/**",
-                    "+ world/live/tracking/**",
-                    "+ world/live/source/camera",
-                    "+ world/live/source/camera/points",
-                    "- world/live/source/camera/image",
-                    "- world/live/source/camera/image/**",
-                    "+ world/live/model",
-                    "- world/live/model/camera/image",
-                    "- world/live/model/camera/image/**",
-                    "- world/live/model/camera/image/depth",
-                    "- world/live/model/camera/image/depth/**",
-                    "- world/live/model/points",
-                    "- world/live/model/points/**",
-                    "- world/keyframes/cameras/**",
-                    "+ world/keyframes/points/**",
-                    "+ world/slam/vista_slam_world/trajectory/raw",
-                ],
+                contents=list(DEFAULT_3D_SCENE_CONTENTS),
             ),
             rrb.Tabs(*views, name="2D Views"),
         ),

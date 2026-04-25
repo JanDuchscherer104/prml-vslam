@@ -167,29 +167,12 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert len(sent_blueprints) == 1
     layout = sent_blueprints[0].layout
     assert layout.views[0].origin == "world"
-    assert layout.views[0].contents == [
-        "+ world/alignment/**",
-        "+ world/reference/**",
-        "- world/reference/**/source_native/**",
-        "+ world/reconstruction/**",
-        "+ world/slam/vista_slam_world/**",
-        "+ world/overlays/**",
-        "+ world/live/tracking/**",
-        "+ world/live/source/camera",
-        "+ world/live/source/camera/points",
-        "- world/live/source/camera/image",
-        "- world/live/source/camera/image/**",
-        "+ world/live/model",
-        "- world/live/model/camera/image",
-        "- world/live/model/camera/image/**",
-        "- world/live/model/camera/image/depth",
-        "- world/live/model/camera/image/depth/**",
-        "- world/live/model/points",
-        "- world/live/model/points/**",
-        "- world/keyframes/cameras/**",
-        "+ world/keyframes/points/**",
-        "+ world/slam/vista_slam_world/trajectory/raw",
-    ]
+    assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
+    assert all(not query.startswith("- ") for query in layout.views[0].contents)
+    assert "+ world/reference/**/aligned/**" in layout.views[0].contents
+    assert "+ world/keyframes/cameras/*" in layout.views[0].contents
+    assert "- world/live/model/camera/image/**" not in layout.views[0].contents
+    assert "- world/reference/**/source_native/**" not in layout.views[0].contents
     assert layout.views[1].name == "2D Views"
     assert [view.origin for view in layout.views[1].views] == [
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
