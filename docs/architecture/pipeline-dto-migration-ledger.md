@@ -276,8 +276,6 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `VistaViewGraphNodeDegree` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |
 | `VistaViewGraphDiagnostics` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |
 | `VistaNativeSlamDiagnostics` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |
-| `_VistaImageDataset` | `methods.vista.preprocess` | Keep private ViSTA preprocess protocol. | methods.vista | ViSTA preprocess tests. |
-| `VistaFramePreprocessor` | `methods.vista.preprocess` | Keep ViSTA preprocess protocol. | methods.vista | ViSTA preprocess tests. |
 | `VistaFlowTracker` | `methods.vista.runtime` | Keep private ViSTA runtime protocol. | methods.vista | ViSTA runtime tests. |
 | `VistaOnlineSlam` | `methods.vista.runtime` | Keep private ViSTA runtime protocol. | methods.vista | ViSTA runtime tests. |
 | `_DbowVocabulary` | `methods.vista.runtime` | Keep private ViSTA runtime protocol. | methods.vista | ViSTA runtime tests. |

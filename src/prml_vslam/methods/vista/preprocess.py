@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -20,15 +19,6 @@ class PreparedVistaFrame:
     image_rgb: np.ndarray
     gray_u8: np.ndarray
     rgb_tensor: torch.Tensor
-
-
-# TODO: remove this protocol!
-class VistaFramePreprocessor(Protocol):
-    """Prepare one repo RGB frame for upstream ViSTA ingestion."""
-
-    @abstractmethod
-    def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> PreparedVistaFrame:
-        """Return the upstream-ready frame payload."""
 
 
 class UpstreamVistaFramePreprocessor:
@@ -63,4 +53,4 @@ def vista_numpy_array(
     return np.asarray(value.detach().cpu().numpy(), dtype=dtype)
 
 
-__all__ = ["PreparedVistaFrame", "UpstreamVistaFramePreprocessor", "VistaFramePreprocessor", "vista_numpy_array"]
+__all__ = ["PreparedVistaFrame", "UpstreamVistaFramePreprocessor", "vista_numpy_array"]
