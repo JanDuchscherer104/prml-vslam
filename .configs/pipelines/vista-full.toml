@@ -13,16 +13,30 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id    = "advio"
-    sequence_id  = "advio-20"
-    frame_stride = 5
-    replay_mode = "realtime"
+    source_id                   = "advio"
+    sequence_id                 = "advio-20"
+    frame_stride                = 5
+    replay_mode                 = "realtime"
     normalize_video_orientation = true
 
 [stages.slam]
 enabled = true
 
+# --- Resource & Placement Policy ---
+# num_cpus = 1.0
+num_gpus = 1.0
+affinity = "gpu-node"
+# memory_bytes = 4294967296  # 4GB
+
+# --- Telemetry Policy ---
+emit_progress           = true
+emit_queue_metrics      = true
+emit_latency_metrics    = true
+emit_throughput_metrics = true
+sampling_interval_ms    = 1000
+
     [stages.slam.outputs]
+
     # ViSTA only emits dense pointmaps
     emit_dense_points  = true
     emit_sparse_points = false
@@ -80,6 +94,10 @@ enabled = false
 [stages.reconstruction]
 enabled = true
 
+# --- Resource & Placement Policy ---
+# num_cpus = 1.0
+# memory_bytes = 2147483648  # 2GB
+
     [stages.reconstruction.backend]
     method_id    = "open3d_tsdf"
     extract_mesh = true
@@ -106,12 +124,23 @@ grpc_url = "rerun+http://127.0.0.1:9876/proxy"
 # Optional Rerun blueprint loaded by the auto-launched web viewer.
 viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
 
+# Whether native upstream `.rrd` recordings should be preserved.
+preserve_native_rerun = true
+
+# Whether to log original source RGB frames.
+log_source_rgb = false
+
+# Whether to log method-specific diagnostic/preview images.
+log_diagnostic_preview = false
+
+# Whether to project the RGB image onto the 3D camera frustum.
+log_camera_image_rgb = false
+
 # Keep only a few recent frusta visible in the streaming viewer.
 frusta_history_window_streaming = 5
 
 # Keep the full tracking trajectory visible.
 show_tracking_trajectory = true
 
-# Keep dense reference trajectories compact; set a positive value to show
-# per-pose trajectory axes when debugging SE(3) orientation.
-trajectory_pose_axis_length = 0.0
+# Keep dense reference trajectories compact.
+trajectory_pose_axis_length = 0.5
