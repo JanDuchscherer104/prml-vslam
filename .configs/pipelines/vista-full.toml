@@ -13,8 +13,8 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id                   = "advio"
-    sequence_id                 = "advio-20"
+    source_id                   = "tum_rgbd"
+    sequence_id                 = "freiburg1_room"
     frame_stride                = 5
     replay_mode                 = "realtime"
     normalize_video_orientation = true
@@ -143,4 +143,4 @@ frusta_history_window_streaming = 5
 show_tracking_trajectory = true
 
 # Keep dense reference trajectories compact.
-trajectory_pose_axis_length = 0.5
+trajectory_pose_axis_length = 0.005
