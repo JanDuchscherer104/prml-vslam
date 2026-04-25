@@ -22,7 +22,7 @@ def main() -> None:
     blueprint_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Generating Rerun blueprint at '{blueprint_path.resolve()}'...")
-    rr.init("prml-vslam-blueprint")
+    rr.init("prml-vslam")
     blueprint = build_default_blueprint()
 
     rr.save(blueprint_path, default_blueprint=blueprint)
