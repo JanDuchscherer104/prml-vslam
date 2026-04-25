@@ -1505,6 +1505,33 @@ def test_ray_backend_keeps_inprocess_init_for_pytest_namespaces(
     assert captured["_skip_env_hook"] is True
 
 
+def test_ray_backend_coordinator_placement_is_backend_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(namespace="pytest-unit")
+    captured: dict[str, Any] = {}
+
+    class FakeCoordinatorOptions:
+        def remote(self, *, run_id: str, namespace: str) -> object:
+            return SimpleNamespace(run_id=run_id, namespace=namespace)
+
+    def fake_options(**options: Any) -> FakeCoordinatorOptions:
+        captured.update(options)
+        return FakeCoordinatorOptions()
+
+    monkeypatch.setattr(backend, "_shutdown_run", lambda run_id: None)
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.RunCoordinatorActor.options", fake_options)
+
+    backend._create_coordinator("coordinator-placement")
+
+    assert captured == {
+        "name": "prml-vslam-run-coordinator-placement",
+        "namespace": "pytest-unit",
+        "num_cpus": 1.0,
+        "num_gpus": 0.0,
+        "max_restarts": 0,
+        "max_task_retries": 0,
+    }
+
+
 def test_ray_backend_logs_pytest_init_path(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

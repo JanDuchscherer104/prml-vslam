@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import shutil
 import time
-from typing import Any
 
 # Ray snapshots this flag at import time. Set it before importing `ray` so the
 # local Streamlit/CLI path does not get rewritten back to `uv run ...`.
@@ -25,8 +24,6 @@ from prml_vslam.pipeline.backend import PipelineBackend, PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import coordinator_actor_name
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.substrate import LocalRayHead, build_runtime_env, prepare_ray_environment
@@ -36,19 +33,12 @@ from prml_vslam.utils import Console, PathConfig
 _DEFAULT_NAMESPACE = "prml_vslam.local"
 _MAX_LOCAL_HEAD_INIT_ATTEMPTS = 5
 RayActorOption = str | float | int | dict[str, float] | None
-
-
-# TODO: What is this? Must respect the respective StageConfig's ressource settings!.
-def _coordinator_actor_options(run_config: RunConfig) -> dict[str, RayActorOption]:
-    options = actor_options_for_stage(
-        stage_key=StageKey.SLAM,
-        run_config=run_config,
-        default_num_cpus=1.0,
-        default_num_gpus=0.0,
-        restartable=False,
-        inherit_backend_defaults=True,
-    )
-    return {key: value for key, value in options.items() if value is not None and value != {}}
+_COORDINATOR_ACTOR_OPTIONS: dict[str, RayActorOption] = {
+    "num_cpus": 1.0,
+    "num_gpus": 0.0,
+    "max_restarts": 0,
+    "max_task_retries": 0,
+}
 
 
 class RayPipelineBackend(PipelineBackend):
@@ -67,7 +57,6 @@ class RayPipelineBackend(PipelineBackend):
         self._coordinators: dict[str, ActorHandle] = {}
         self._local_head = LocalRayHead(path_config=self._path_config, console=self._console)
         self._reuse_local_head = False
-        self._next_coordinator_options: dict[str, Any] = {}
 
     def submit_run(
         self,
@@ -93,7 +82,6 @@ class RayPipelineBackend(PipelineBackend):
             plan.mode.value,
             len(plan.stages),
         )
-        self._next_coordinator_options = _coordinator_actor_options(run_config)
         coordinator = self._create_coordinator(plan.run_id)
         coordinator.start.remote(
             run_config=run_config,
@@ -145,9 +133,11 @@ class RayPipelineBackend(PipelineBackend):
 
     def _create_coordinator(self, run_id: str):
         self._shutdown_run(run_id)
-        options = {"name": coordinator_actor_name(run_id), "namespace": self._namespace}
-        options.update(self._next_coordinator_options)
-        self._next_coordinator_options = {}
+        options = {
+            "name": coordinator_actor_name(run_id),
+            "namespace": self._namespace,
+            **_COORDINATOR_ACTOR_OPTIONS,
+        }
         if not self._namespace.startswith("pytest-"):
             options["lifetime"] = "detached"
         coordinator = RunCoordinatorActor.options(**options).remote(run_id=run_id, namespace=self._namespace)
