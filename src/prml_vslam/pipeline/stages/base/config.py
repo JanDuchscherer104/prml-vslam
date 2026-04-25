@@ -117,22 +117,6 @@ class PlacementConstraint(BaseConfig):
     """Optional affinity label interpreted only by runtime placement adapters."""
 
 
-# TODO: remove StageExecutionConfig and inline into StageConfig!
-class StageExecutionConfig(BaseConfig):
-    """Collect stage execution policy without constructing runtime targets."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    resources: ResourceSpec = Field(default_factory=ResourceSpec)
-    """Substrate-neutral resource request for this stage."""
-
-    placement: PlacementConstraint = Field(default_factory=PlacementConstraint)
-    """Optional placement preference for this stage."""
-
-    runtime_env: dict[str, JsonScalar] = Field(default_factory=dict)
-    """Small runtime-environment hints kept below runtime construction."""
-
-
 class StageTelemetryConfig(BaseConfig):
     """Configure which live status metrics a stage should emit."""
 
@@ -217,8 +201,14 @@ class StageConfig(BaseConfig):
     enabled: bool = True
     """Whether this stage section is requested by the target config."""
 
-    execution: StageExecutionConfig = Field(default_factory=StageExecutionConfig)
-    """Execution and placement policy for the stage."""
+    resources: ResourceSpec = Field(default_factory=ResourceSpec)
+    """Substrate-neutral resource request for this stage."""
+
+    placement: PlacementConstraint = Field(default_factory=PlacementConstraint)
+    """Optional placement preference for this stage."""
+
+    runtime_env: dict[str, JsonScalar] = Field(default_factory=dict)
+    """Small runtime-environment hints kept below runtime construction."""
 
     telemetry: StageTelemetryConfig = Field(default_factory=StageTelemetryConfig)
     """Live status and telemetry emission policy for the stage."""
@@ -309,7 +299,6 @@ __all__ = [
     "StageCacheConfig",
     "StageCacheMode",
     "StageConfig",
-    "StageExecutionConfig",
     "StageInputContext",
     "StagePlanContext",
     "StageRuntimeBuildContext",
