@@ -62,12 +62,14 @@ from prml_vslam.sources.visualization import (
     TRAJECTORY_ARTIFACT,
 )
 from prml_vslam.utils.geometry import load_tum_trajectory
+from prml_vslam.visualization.artifacts import (
+    ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT,
+    ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
+    ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
+)
 from prml_vslam.visualization.rerun import MODEL_RGB_2D_ENTITY_PATH
 
 _LOGGER = logging.getLogger(__name__)
-ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT = "slam_raw_trajectory_artifact"
-ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY = "slam_sim3_aligned_trajectory"
-ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD = "slam_sim3_aligned_point_cloud"
 _RGB_ENTITY_PATHS = {
     ROLE_SOURCE_RGB: "world/live/source/rgb",
     ROLE_SOURCE_CAMERA_RGB: "world/live/source/camera/image",
