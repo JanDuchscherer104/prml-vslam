@@ -13,7 +13,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, TextIO
 
@@ -242,7 +242,7 @@ class _TimestampedRunLogTee:
                 self._pending = ""
 
     def _write_log_line(self, line: str) -> None:
-        timestamp = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        timestamp = datetime.now().astimezone().isoformat(timespec="milliseconds")
         self._log_handle.write(f"{timestamp} {_ANSI_ESCAPE_PATTERN.sub('', line)}\n")
         self._log_handle.flush()
 
@@ -254,7 +254,7 @@ class _TimestampedRunLogTee:
 def _capture_run_config_logs(*, path_config: PathConfig, run_id: str) -> Iterator[Path]:
     """Capture one `run-config` command invocation to a timestamped run log."""
     log_dir = path_config.resolve_run_logs_dir(run_id, create=True)
-    timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H:%M:%S")
+    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d_%H:%M:%S")
     log_path = log_dir / f"{timestamp}_{run_id}.log"
     lock = threading.Lock()
     with log_path.open("w", encoding="utf-8") as log_handle:
