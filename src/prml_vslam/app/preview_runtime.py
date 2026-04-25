@@ -10,8 +10,8 @@ from typing import Generic, TypeVar
 import numpy as np
 from pydantic import Field
 
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.protocols import FramePacketStream
+from prml_vslam.interfaces import Observation
+from prml_vslam.sources.replay import ObservationStream
 from prml_vslam.utils import BaseData
 
 SnapshotT = TypeVar("SnapshotT", bound=BaseData)
@@ -22,7 +22,7 @@ _EMPTY_TRAJECTORY_TIMESTAMPS_S = np.empty((0,), dtype=np.float64)
 class PacketSessionSnapshot(BaseData):
     """Generic snapshot fields shared by app-owned packet preview consumers."""
 
-    preview_packet: FramePacket | None = None
+    preview_packet: Observation | None = None
     """Most recent frame packet, if any."""
 
     preview_frame_count: int = 0
@@ -47,11 +47,13 @@ class PacketSessionSnapshot(BaseData):
     """Last surfaced runtime error."""
 
 
-def extract_pose_position(packet: FramePacket) -> np.ndarray | None:
+def extract_pose_position(packet: Observation) -> np.ndarray | None:
     """Extract one finite XYZ camera position from one frame packet."""
-    if packet.pose is None:
+    if packet.T_world_camera is None:
         return None
-    position = np.array([packet.pose.tx, packet.pose.ty, packet.pose.tz], dtype=np.float64)
+    position = np.array(
+        [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz], dtype=np.float64
+    )
     return position if np.all(np.isfinite(position)) else None
 
 
@@ -138,7 +140,7 @@ class PacketSessionMetrics:
 
 
 class PacketSessionRuntime(Generic[SnapshotT]):
-    """Own one threaded `FramePacketStream` worker plus its snapshot state."""
+    """Own one threaded `ObservationStream` worker plus its snapshot state."""
 
     def __init__(
         self,
@@ -150,7 +152,7 @@ class PacketSessionRuntime(Generic[SnapshotT]):
         self._stop_timeout_message = stop_timeout_message
         self._lock = Lock()
         self._snapshot = empty_snapshot()
-        self._active_stream: FramePacketStream | None = None
+        self._active_stream: ObservationStream | None = None
         self._active_stop_event: Event | None = None
         self._worker_thread: Thread | None = None
 
@@ -176,7 +178,7 @@ class PacketSessionRuntime(Generic[SnapshotT]):
             self._snapshot = connecting_snapshot
         worker.start()
 
-    def register_stream(self, *, stop_event: Event, stream: FramePacketStream) -> None:
+    def register_stream(self, *, stop_event: Event, stream: ObservationStream) -> None:
         """Register the active stream for cooperative stop/disconnect handling."""
         with self._lock:
             if self._active_stop_event is stop_event:
@@ -226,7 +228,7 @@ class PacketSessionRuntime(Generic[SnapshotT]):
         snapshot_update: Callable[[SnapshotT], SnapshotT],
     ) -> None:
         """Clear the active worker state and persist the final snapshot."""
-        stream: FramePacketStream | None = None
+        stream: ObservationStream | None = None
         with self._lock:
             if self._active_stop_event is stop_event:
                 stream = self._active_stream

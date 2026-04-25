@@ -7,13 +7,12 @@ from pathlib import Path
 
 import cv2
 
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces import Observation, ObservationProvenance
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import SlamBackend
 from prml_vslam.methods.stage.config import MethodId, SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.utils import Console, PathConfig
 
 from .session import VistaSlamRuntime, create_vista_runtime
@@ -54,7 +53,7 @@ class VistaSlamBackend(SlamBackend):
             live_mode=True,
         )
 
-    def step_streaming(self, frame: FramePacket) -> None:
+    def step_streaming(self, frame: Observation) -> None:
         """Consume one streaming frame through the active ViSTA runtime."""
         self._require_streaming_runtime().step(frame)
 
@@ -98,7 +97,14 @@ class VistaSlamBackend(SlamBackend):
             if bgr is None:
                 raise RuntimeError(f"Failed to read input frame '{image_path}'.")
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            runtime.step(FramePacket(seq=seq, timestamp_ns=timestamp_ns, rgb=rgb))
+            runtime.step(
+                Observation(
+                    seq=seq,
+                    timestamp_ns=timestamp_ns,
+                    rgb=rgb,
+                    provenance=ObservationProvenance(source_id="vista_offline"),
+                )
+            )
         return runtime.finish()
 
     def _require_streaming_runtime(self) -> VistaSlamRuntime:

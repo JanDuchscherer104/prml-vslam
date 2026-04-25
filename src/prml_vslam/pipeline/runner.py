@@ -4,19 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from prml_vslam.interfaces.ingest import SequenceManifest
-from prml_vslam.interfaces.runtime import FramePacket
+from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime, StreamingStageRuntime
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SourceStageOutput
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.utils import BaseData
 
 RuntimeInput = BaseData
-StreamItem = BaseData | FramePacket
+StreamItem = BaseData | Observation
 StageStartedCallback = Callable[[StageKey], None]
 StageCompletedCallback = Callable[[StageKey, StageResult], None]
 StageFailedCallback = Callable[[StageKey, StageOutcome], None]
@@ -32,7 +31,7 @@ class StageResultStore:
 
     The store replaces broad mutable handoff bags with one keyed result map.
     It may expose common accessors for shared payloads such as
-    :class:`prml_vslam.interfaces.ingest.SequenceManifest` and
+    :class:`prml_vslam.sources.contracts.SequenceManifest` and
     :class:`prml_vslam.interfaces.slam.SlamArtifacts`, but individual stage
     modules remain responsible for building their own stage-specific input DTOs.
     """

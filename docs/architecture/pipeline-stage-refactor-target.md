@@ -50,8 +50,8 @@ method/source variants, and concrete domain event kinds.
 ```mermaid
 flowchart TB
     subgraph Shared["Shared repo surfaces"]
-        Interfaces["interfaces<br/>FramePacket, SequenceManifest,<br/>SlamArtifacts, FrameTransform"]
-        Protocols["protocols<br/>OfflineSequenceSource,<br/>StreamingSequenceSource,<br/>FramePacketStream"]
+        Interfaces["interfaces<br/>Observation, SequenceManifest,<br/>SlamArtifacts, FrameTransform"]
+        Protocols["protocols<br/>OfflineSequenceSource,<br/>StreamingSequenceSource,<br/>ObservationStream"]
         Utils["utils<br/>BaseConfig, FactoryConfig,<br/>PathConfig, serialization helpers"]
     end
 
@@ -892,12 +892,12 @@ flowchart LR
 ```mermaid
 flowchart LR
     ReconRuntime["ReconstructionRuntime<br/>offline runtime first"]
-    ObsSource["RgbdObservationSource"]
+    ObsLoader["source-owned observation sequence loader"]
     ReconBackend["ReconstructionBackend"]
     SummaryRuntime["SummaryRuntime<br/>offline runtime"]
     SummaryExecutor["project_summary()"]
 
-    ReconRuntime --> ObsSource --> ReconBackend
+    ReconRuntime --> ObsLoader --> ReconBackend
     SummaryRuntime --> SummaryExecutor
 ```
 
@@ -974,7 +974,7 @@ clear.
 
 Recommended private wrapper boundaries:
 
-- `SlamOfflineInput`, `SlamStreamingStartInput`, `FramePacket`, and
+- `SlamOfflineInput`, `SlamStreamingStartInput`, `Observation`, and
   `SlamStageOutput`: offline sequence input, streaming startup input, hot-path
   frame input, and normalized SLAM completion output.
 - `ReconstructionStageInput` and `ReconstructionStageOutput`: wrapper around
@@ -994,7 +994,7 @@ For SLAM, the target runtime boundary specifically uses:
   policy, and artifact root for offline execution.
 - `SlamStreamingStartInput`: normalized startup context for a streaming SLAM
   runtime.
-- `FramePacket`: one hot-path frame item plus transient payload refs or
+- `Observation`: one hot-path frame item plus transient payload refs or
   resolved arrays needed by the runtime.
 - `SlamStageOutput`: normalized `SlamArtifacts` plus visualization-owned
   artifacts collected at completion.
@@ -1005,7 +1005,7 @@ The public generic streaming runtime method names are
 `drain_runtime_updates(...)` through `LiveUpdateStageRuntime`. Stage modules
 may keep private helpers with narrower names, such as `push_frame(...)`, but
 `StageRunner` and `RunCoordinatorActor` must depend on the generic method
-names. For SLAM, `submit_stream_item(FramePacket)` maps to the backend's
+names. For SLAM, `submit_stream_item(Observation)` maps to the backend's
 stream-item execution surface, while `drain_runtime_updates()` maps to the
 backend update-drain surface plus translation into `StageRuntimeUpdate` values.
 
@@ -1226,7 +1226,7 @@ conceptual layer:
 | `StreamingRunSnapshot` | collapse into keyed snapshot fields | Streaming counters belong in `StageRuntimeStatus`, durable outcomes, or live `StageRuntimeUpdate` projections. |
 | `StageProgress` | collapse into `StageRuntimeStatus.progress` | Too narrow to carry queue, latency, throughput, status, and resource state. |
 | `BackendNoticeReceived` | remove from durable target path | Method telemetry should travel through `StageRuntimeUpdate` to live projection and Rerun, not durable JSONL. |
-| `PacketObserved` and `FramePacketSummary` | make live-update payloads | Packet telemetry is live-only unless capture becomes a public durable stage. |
+| `PacketObserved` and `ObservationSummary` | make live-update payloads | Packet telemetry is live-only unless capture becomes a public durable stage. |
 | `StageProgressed` | remove from target `RunEvent` | Progress belongs in `StageRuntimeStatus` or `StageRuntimeUpdate`, not durable provenance. |
 | `StageDefinition` | remove | It currently wraps `StageKey`; stage configs and `RunPlanStage` should own meaningful planning metadata. |
 | separate stage availability DTO | remove | Availability collapses into `RunPlanStage.available` and `RunPlanStage.availability_reason`; do not keep a separate migration DTO. |
@@ -1263,7 +1263,7 @@ conceptual layer:
 Keep these DTOs as canonical semantic or provenance payloads, with ownership
 adjustments where noted:
 
-- shared semantic DTOs: `FramePacket`, `FramePacketProvenance`,
+- shared semantic DTOs: `Observation`, `ObservationProvenance`,
   `CameraIntrinsics`, `FrameTransform`, `SequenceManifest`,
   `PreparedBenchmarkInputs`, and `SlamArtifacts`
 - domain payloads: `GroundAlignmentMetadata`, `VisualizationArtifacts`,
@@ -1634,10 +1634,10 @@ sequenceDiagram
         Coord->>RuntimeProxy: start_streaming(SlamStreamingStartInput)
         RuntimeProxy->>SlamRuntime: start_streaming(input)
         SlamRuntime->>Backend: start_streaming(...)
-        loop each FramePacket
-            Coord->>RuntimeProxy: submit_stream_item(FramePacket)
+        loop each Observation
+            Coord->>RuntimeProxy: submit_stream_item(Observation)
             RuntimeProxy->>SlamRuntime: submit_stream_item(item)
-            SlamRuntime->>Backend: submit_stream_item(FramePacket)
+            SlamRuntime->>Backend: submit_stream_item(Observation)
             Coord->>RuntimeProxy: drain_runtime_updates(max_items=None)
             RuntimeProxy->>SlamRuntime: drain_runtime_updates(...)
             SlamRuntime->>Backend: drain backend updates
@@ -2175,7 +2175,7 @@ Migration contact points: [interfaces](../../src/prml_vslam/interfaces),
 
 Specific target placement:
 
-- Keep `FramePacket`, `SequenceManifest`, `FrameTransform`, and
+- Keep `Observation`, `SequenceManifest`, `FrameTransform`, and
   `SlamArtifacts` in `interfaces`.
 - Move live SLAM update and backend-event DTOs out of `interfaces` into
   `methods.contracts` because they are runtime boundary DTOs, not stable
@@ -2306,19 +2306,15 @@ Migration contact points: [sources/contracts.py](../../src/prml_vslam/sources/co
 
 ### IO Versus Datasets
 
-Decision: datasets remain a top-level package.
+Decision: `sources` is the only top-level owner for datasets, replay adapters,
+Record3D transports, source manifests, and prepared benchmark references.
 
-Keep `datasets` top-level. Remove compatibility aliases only after checking
-app/tests/config imports.
+Reasoning: source adapters should own raw data semantics and materialization,
+while pipeline only consumes normalized source outputs and observations.
+Compatibility import surfaces for old dataset and IO packages are intentionally
+removed.
 
-Reasoning: datasets own catalogs, sequence preparation, and benchmark
-references. IO owns transports and packet ingestion. The ownership issue at
-[io/__init__.py](../../src/prml_vslam/io/__init__.py#L20) and the alias in
-[datasets/__init__.py](../../src/prml_vslam/datasets/__init__.py) should be
-resolved by keeping ownership separate.
-
-Migration contact points: [io/__init__.py](../../src/prml_vslam/io/__init__.py#L1),
-[datasets/__init__.py](../../src/prml_vslam/datasets/__init__.py),
+Migration contact points: [sources](../../src/prml_vslam/sources),
 [protocols/source.py](../../src/prml_vslam/protocols/source.py#L1).
 
 ### Snapshot And Event Ownership
@@ -2546,7 +2542,7 @@ the next one starts:
 | Failure/stop | finalize-then-mark behavior, source error, backend error, stop during streaming, downstream skip policy, and terminal run state. |
 | Payloads/Rerun | backend-owned transient refs, typed read-after-eviction, sink failure isolation, and no SDK calls from DTOs, stage runtimes, or proxies. |
 | Attempts/cleanup | `attempt_id` projection for reused run roots, active-attempt summary selection, and `StageConfig.cleanup` config/provenance behavior. |
-| Compatibility cleanup | import audit confirms no `prml_vslam.io.datasets` alias remains. |
+| Compatibility cleanup | import audit confirms no `prml_vslam.sources.replay.datasets` alias remains. |
 
 ## Future Recommended Implementation Order
 

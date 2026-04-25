@@ -6,19 +6,19 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig, build_run_config
-from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
+from prml_vslam.sources.replay import ObservationStream
 from prml_vslam.utils import PathConfig
 
 
-class _CappedPacketStream(FramePacketStream):
-    def __init__(self, stream: FramePacketStream, *, max_frames: int) -> None:
+class _CappedPacketStream(ObservationStream):
+    def __init__(self, stream: ObservationStream, *, max_frames: int) -> None:
         self._stream = stream
         self._max_frames = max_frames
         self._seen_frames = 0
@@ -29,10 +29,10 @@ class _CappedPacketStream(FramePacketStream):
     def disconnect(self) -> None:
         self._stream.disconnect()
 
-    def wait_for_packet(self, timeout_seconds: float | None = None):
+    def wait_for_observation(self, timeout_seconds: float | None = None):
         if self._seen_frames >= self._max_frames:
             raise EOFError
-        packet = self._stream.wait_for_packet(timeout_seconds=timeout_seconds)
+        packet = self._stream.wait_for_observation(timeout_seconds=timeout_seconds)
         self._seen_frames += 1
         return packet
 
@@ -51,7 +51,7 @@ class _CappedStreamingSource(StreamingSequenceSource):
             return None
         return self._source.prepare_benchmark_inputs(output_dir)
 
-    def open_stream(self, *, loop: bool) -> FramePacketStream:
+    def open_stream(self, *, loop: bool) -> ObservationStream:
         return _CappedPacketStream(self._source.open_stream(loop=loop), max_frames=self._max_frames)
 
 

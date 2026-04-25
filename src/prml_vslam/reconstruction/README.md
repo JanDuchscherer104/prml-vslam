@@ -6,7 +6,7 @@ surface. It is the reconstruction analogue of
 reconstruction methods, owns reconstruction-private config and artifact DTOs,
 and provides thin adapters around external or library-backed reconstruction
 implementations. The shared posed RGB-D observation boundary lives in
-[`prml_vslam.interfaces.rgbd`](../interfaces/rgbd.py) so datasets and SLAM
+[`prml_vslam.interfaces.observation`](../interfaces/observation.py) so datasets and SLAM
 methods can normalize into the same reconstruction input. Benchmark policy stays in
 [`prml_vslam.sources.contracts`](../sources/contracts.py), pipeline orchestration stays
 in [`prml_vslam.pipeline`](../pipeline/README.md), and Rerun logging stays in
@@ -25,7 +25,7 @@ stage executable with one well-typed, easy-to-extend method boundary.
 - one config-driven method boundary that selects the configured backend
   without a separate harness object
 - one normalized offline reconstruction boundary built from shared
-  `RgbdObservation` values plus explicit `T_world_camera` poses
+  `Observation` values plus explicit `T_world_camera` poses
 - one normalized durable output for the stage: a world-space
   `reference_cloud.ply`
 - optional extra artifacts such as a mesh or debug metadata only when the
@@ -63,9 +63,7 @@ src/prml_vslam/reconstruction
 │   ├── ReconstructionArtifacts      # normalized durable outputs
 │   └── ReconstructionMetadata       # typed side metadata for outputs
 ├── protocols.py                     # package-local execution seam
-│   ├── OfflineReconstructionBackend # normalized offline reconstruction protocol
-│   ├── StreamingReconstructionBackend # future streaming backend protocol
-│   └── ReconstructionSession        # future streaming session protocol
+│   └── OfflineReconstructionBackend # normalized offline reconstruction protocol
 ├── config.py                        # discriminated backend config union
 │   ├── ReconstructionBackendConfig  # shared reconstruction config base
 │   └── Open3dTsdfBackendConfig      # concrete Open3D TSDF config
@@ -87,8 +85,7 @@ class OfflineReconstructionBackend(Protocol):
 
     def run_sequence(
         self,
-        observations: Iterable[RgbdObservation],
-        backend_config: ReconstructionBackendConfig,
+        observations: Iterable[Observation],
         artifact_root: Path,
     ) -> ReconstructionArtifacts: ...
 ```
@@ -96,7 +93,8 @@ class OfflineReconstructionBackend(Protocol):
 That is enough for the first Open3D TSDF implementation. Add a streaming
 session/update seam only when there is a real second use case for it. Until
 then, one offline protocol is the more elegant interface because it keeps the
-surface honest.
+surface honest. Backends are configured at construction time from the single
+package-owned `ReconstructionBackendConfig` instance.
 
 Persisted method selection uses the package-owned backend configs directly.
 The pipeline reconstruction stage references the same discriminated config
@@ -132,25 +130,26 @@ The key rule is to keep geometry semantics explicit:
 - live or debug payloads, if added later, should use repo-owned array/handle
   DTOs rather than Rerun SDK types
 
-The minimum shared observation DTO lives in `prml_vslam.interfaces.rgbd` and
+The minimum shared observation DTO lives in `prml_vslam.interfaces.observation` and
 should look roughly like this:
 
 ```python
-class RgbdObservation(BaseData):
+class Observation(BaseData):
     seq: int
     timestamp_ns: int
-    T_world_camera: FrameTransform
-    camera_intrinsics: CameraIntrinsics
-    image_rgb: NDArray[np.uint8] | None = None
-    depth_map_m: NDArray[np.float32]
-    provenance: RgbdObservationProvenance
+    provenance: ObservationProvenance
+    camera_frame: Literal["camera_rdf"] = "camera_rdf"
+    rgb: NDArray[np.uint8] | None = None
+    depth_m: NDArray[np.float32] | None = None
+    intrinsics: CameraIntrinsics | None = None
+    T_world_camera: FrameTransform | None = None
 ```
 
 Contract requirements:
 
-- `T_world_camera` follows the repo convention world <- camera
-- `camera_intrinsics`, `image_rgb`, and `depth_map_m` refer to the same raster
-- `depth_map_m` is metric depth in meters, not a visualization depth product
+- `T_world_camera` maps world <- camera_rdf when metric geometry is present
+- `intrinsics`, `rgb`, and `depth_m` refer to the same raster when combined
+- `depth_m` is metric depth in meters, not a visualization depth product
 - the DTO is transport- and sink-friendly without importing `rerun`
 
 The durable result DTO should separate required public outputs from optional

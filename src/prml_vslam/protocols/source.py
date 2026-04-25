@@ -13,11 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs
-
-from .runtime import FramePacketStream
+from prml_vslam.sources.replay import ObservationStream
 
 if TYPE_CHECKING:
-    from prml_vslam.interfaces.ingest import SequenceManifest
+    from prml_vslam.sources.contracts import SequenceManifest
 
 
 @runtime_checkable
@@ -25,7 +24,7 @@ class OfflineSequenceSource(Protocol):
     """Materialize the normalized offline input boundary for one run.
 
     Implementations are responsible for producing a
-    :class:`prml_vslam.interfaces.ingest.SequenceManifest`, not for
+    :class:`prml_vslam.sources.contracts.SequenceManifest`, not for
     deciding which stages run next. This keeps source-specific setup in the
     source owner while leaving orchestration to :mod:`prml_vslam.pipeline`.
     """
@@ -52,12 +51,12 @@ class StreamingSequenceSource(OfflineSequenceSource, Protocol):
 
     Streaming execution still relies on an offline-style normalized source
     manifest for session initialization, then consumes live
-    :class:`prml_vslam.interfaces.FramePacket` values through
-    :class:`prml_vslam.protocols.runtime.FramePacketStream`.
+    :class:`prml_vslam.sources.contracts.Observation` values through
+    :class:`prml_vslam.sources.replay.ObservationStream`.
     """
 
     @abstractmethod
-    def open_stream(self, *, loop: bool) -> FramePacketStream:
+    def open_stream(self, *, loop: bool) -> ObservationStream:
         """Open the frame stream that feeds the active SLAM session."""
 
 

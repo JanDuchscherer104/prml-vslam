@@ -28,8 +28,6 @@ from prml_vslam.app.pipeline_controls import (
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
-from prml_vslam.datasets.advio import AdvioServingConfig
-from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_backend_spec, build_run_config
@@ -41,6 +39,8 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.datasets.advio import AdvioServingConfig
+from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
 
 

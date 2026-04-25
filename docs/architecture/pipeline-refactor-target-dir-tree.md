@@ -127,23 +127,24 @@ src/prml_vslam/
 │   ├── __init__.py [A]
 │   ├── alignment.py [C]
 │   ├── camera.py [A]
-│   ├── ingest.py [C]
 │   ├── rgbd.py [C]
-│   ├── runtime.py [C]
 │   ├── slam.py [A]
 │   ├── transforms.py [C]
 │   └── visualization.py [A]
-├── io [A]
-│   ├── README.md [C]
-│   ├── RECORD3D_PROTOCOL.md [C]
-│   ├── __init__.py [M]
-│   ├── cv2_producer.py [C]
-│   ├── record3d.py [C]
-│   ├── record3d_source.py [A]
-│   ├── wifi_packets.py [C]
-│   ├── wifi_receiver.py [C]
-│   ├── wifi_session.py [C]
-│   └── wifi_signaling.py [C]
+├── sources [A]
+│   ├── contracts.py [C]
+│   ├── replay [C]
+│   │   ├── clock.py [C]
+│   │   ├── image_sequence.py [C]
+│   │   ├── protocols.py [C]
+│   │   └── video.py [C]
+│   └── record3d [C]
+│       ├── record3d.py [C]
+│       ├── source.py [A]
+│       ├── wifi_packets.py [C]
+│       ├── wifi_receiver.py [C]
+│       ├── wifi_session.py [C]
+│       └── wifi_signaling.py [C]
 ├── main.py [A]
 ├── methods [A]
 │   ├── README.md [C]
@@ -530,8 +531,7 @@ src/prml_vslam/
 │   │   └── ReconstructionMetadata
 │   ├── protocols.py
 │   │   └── ReconstructionBackend
-│   └── rgbd_source.py
-│       └── RgbdObservationSource
+│   └── source-owned observation sequence loader moved under sources
 ├── utils
 │   ├── __init__.py
 │   │   └── utility export cleanup

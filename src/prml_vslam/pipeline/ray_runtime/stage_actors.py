@@ -81,7 +81,7 @@ class PacketSourceActor:
                         self._console.debug("Stop requested while waiting for packet credits.")
                         break
                     self._credits -= 1
-                packet = stream.wait_for_packet(timeout_seconds=self._frame_timeout_seconds)
+                packet = stream.wait_for_observation(timeout_seconds=self._frame_timeout_seconds)
                 self._processed_frame_count += 1
                 self._packet_timestamps.append(time.monotonic())
                 frame_payload_ref, frame_ref = put_transient_payload(
@@ -91,14 +91,14 @@ class PacketSourceActor:
                     metadata={"slot": "image"},
                 )
                 depth_payload_ref, depth_ref = put_transient_payload(
-                    packet.depth,
+                    packet.depth_m,
                     payload_kind="depth",
                     media_type="image/depth",
                     metadata={"slot": "depth"},
                 )
                 confidence_ref = None if packet.confidence is None else ray.put(np.asarray(packet.confidence))
                 pointmap_payload_ref, pointmap_ref = put_transient_payload(
-                    packet.pointmap,
+                    packet.pointmap_xyz,
                     payload_kind="point_cloud",
                     media_type="application/x.pointmap",
                     metadata={"slot": "pointmap"},
@@ -110,7 +110,7 @@ class PacketSourceActor:
                     confidence_ref=confidence_ref,
                     pointmap_ref=pointmap_ref,
                     intrinsics=packet.intrinsics,
-                    pose=packet.pose,
+                    pose=packet.T_world_camera,
                     provenance=packet.provenance.model_copy(deep=True),
                     processed_frame_count=self._processed_frame_count,
                     measured_fps=rolling_fps(self._packet_timestamps),

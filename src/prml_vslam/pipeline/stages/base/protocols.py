@@ -10,13 +10,13 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Protocol, TypeVar, runtime_checkable
 
-from prml_vslam.interfaces.runtime import FramePacket
+from prml_vslam.interfaces import Observation
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.utils import BaseData
 
 TOfflineInput = TypeVar("TOfflineInput", bound=BaseData)
 TStreamingInput = TypeVar("TStreamingInput", bound=BaseData)
-TStreamItem = TypeVar("TStreamItem", bound=BaseData | FramePacket)
+TStreamItem = TypeVar("TStreamItem", bound=BaseData | Observation)
 
 
 @runtime_checkable

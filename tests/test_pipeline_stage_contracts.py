@@ -8,7 +8,6 @@ import pytest
 from pydantic import ValidationError
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -27,6 +26,7 @@ from prml_vslam.pipeline.stages.base.protocols import (
     OfflineStageRuntime,
     StreamingStageRuntime,
 )
+from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.utils import BaseData
 
 

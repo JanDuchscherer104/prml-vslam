@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket
+from prml_vslam.interfaces import CameraIntrinsics, Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage.config import SlamOutputPolicy, VistaSlamBackendConfig
@@ -29,7 +29,7 @@ class VistaSlamRuntime:
 
     The session preserves two different visualization surfaces:
 
-    - source frames arrive as repo `FramePacket.rgb` payloads and can be logged
+    - source frames arrive as repo `Observation.rgb` payloads and can be logged
       independently by the repo-owned Rerun sink;
     - ViSTA model outputs (`image_rgb`, `depth_map`, `camera_intrinsics`,
       `pointmap`, `preview_rgb`) all live on the preprocessed ViSTA raster.
@@ -61,7 +61,7 @@ class VistaSlamRuntime:
         self._live_preview_wait_logged = False
         self._pending_updates: list[SlamUpdate] = []
 
-    def step(self, frame: FramePacket) -> None:
+    def step(self, frame: Observation) -> None:
         """Feed one frame to OnlineSLAM and buffer incremental telemetry."""
         self._source_frame_count += 1
 

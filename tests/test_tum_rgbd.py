@@ -6,9 +6,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from prml_vslam.datasets.contracts import DatasetId, FrameSelectionConfig
-from prml_vslam.datasets.registry import list_sequence_slugs, resolve_reference_path
-from prml_vslam.datasets.tum_rgbd import (
+from prml_vslam.interfaces import CAMERA_RDF_FRAME
+from prml_vslam.sources import FileObservationSequenceLoader
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
+from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdCatalog,
     TumRgbdDatasetService,
     TumRgbdDownloadRequest,
@@ -17,8 +19,7 @@ from prml_vslam.datasets.tum_rgbd import (
     TumRgbdSequence,
     TumRgbdSequenceConfig,
 )
-from prml_vslam.io import Cv2ReplayMode
-from prml_vslam.reconstruction import FileRgbdObservationSource
+from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
 
@@ -107,7 +108,7 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     assert manifest.intrinsics_path == sequence_dir / "intrinsics.yaml"
     assert manifest.intrinsics_path.exists()
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
-    assert benchmark_inputs.rgbd_observation_sequences[0].observation_count == 3
+    assert benchmark_inputs.observation_sequences[0].observation_count == 3
     assert load_tum_trajectory(benchmark_inputs.reference_trajectories[0].path).positions_xyz.shape == (3, 3)
     assert list_sequence_slugs(DatasetId.TUM_RGBD, tmp_path) == ["freiburg1_desk"]
     assert (
@@ -133,32 +134,33 @@ def test_tum_rgbd_sequence_manifest_materializes_sampled_rgb_dir(tmp_path: Path)
 
 
 def test_tum_rgbd_stream_loops_rgbd_frames_with_pose_metadata(tmp_path: Path) -> None:
-    _write_tum_rgbd_sequence(tmp_path)
+    _write_tum_rgbd_sequence(tmp_path, image_shape=(480, 640))
     sequence = TumRgbdSequence(config=TumRgbdSequenceConfig(dataset_root=tmp_path, sequence_id="freiburg1_desk"))
 
-    stream = sequence.open_stream(loop=True, replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE)
+    stream = sequence.open_stream(loop=True, replay_mode=ReplayMode.FAST_AS_POSSIBLE)
 
     stream.connect()
-    packet_0 = stream.wait_for_packet()
-    packet_1 = stream.wait_for_packet()
-    packet_2 = stream.wait_for_packet()
-    packet_3 = stream.wait_for_packet()
+    packet_0 = stream.wait_for_observation()
+    packet_1 = stream.wait_for_observation()
+    packet_2 = stream.wait_for_observation()
+    packet_3 = stream.wait_for_observation()
     stream.disconnect()
 
     assert packet_0.seq == 0
     assert packet_1.seq == 1
     assert packet_2.seq == 2
-    assert packet_3.seq == 0
-    assert packet_3.provenance.loop_index == 1
-    assert packet_0.rgb.shape == (48, 64, 3)
-    assert packet_0.depth is not None
-    assert packet_0.depth.shape == (48, 64)
+    assert packet_3.seq == 3
+    assert packet_3.source_frame_index == 0
+    assert packet_3.loop_index == 1
+    assert packet_0.rgb.shape == (480, 640, 3)
+    assert packet_0.depth_m is not None
+    assert packet_0.depth_m.shape == (480, 640)
     assert packet_0.intrinsics is not None
     assert packet_0.intrinsics.width_px == 640
-    assert packet_2.pose is not None
-    assert packet_2.pose.tx == 2.0
-    assert packet_2.pose.target_frame == "tum_rgbd_mocap_world"
-    assert packet_2.pose.source_frame == "tum_rgbd_rgb_camera"
+    assert packet_2.T_world_camera is not None
+    assert packet_2.T_world_camera.tx == 2.0
+    assert packet_2.T_world_camera.target_frame == "tum_rgbd_mocap_world"
+    assert packet_2.T_world_camera.source_frame == CAMERA_RDF_FRAME
     assert packet_0.provenance.source_id == "tum_rgbd"
     assert packet_0.provenance.dataset_id == "tum_rgbd"
 
@@ -195,19 +197,21 @@ def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None
     sequence = TumRgbdSequence(config=TumRgbdSequenceConfig(dataset_root=tmp_path, sequence_id="freiburg1_desk"))
 
     benchmark_inputs = sequence.to_benchmark_inputs(output_dir=tmp_path / "benchmark")
-    sequence_ref = benchmark_inputs.rgbd_observation_sequences[0]
-    observations = list(FileRgbdObservationSource(sequence_ref).iter_observations())
+    sequence_ref = benchmark_inputs.observation_sequences[0]
+    observations = list(FileObservationSequenceLoader(sequence_ref).iter_observations())
 
     assert sequence_ref.source_id == "tum_rgbd"
     assert sequence_ref.observation_count == 3
     assert len(observations) == 3
-    assert observations[0].image_rgb is not None
-    assert observations[0].image_rgb.shape == (480, 640, 3)
-    assert observations[0].depth_map_m.shape == (480, 640)
-    assert observations[0].camera_intrinsics.width_px == 640
-    assert observations[0].camera_intrinsics.height_px == 480
+    assert observations[0].rgb is not None
+    assert observations[0].rgb.shape == (480, 640, 3)
+    assert observations[0].depth_m is not None
+    assert observations[0].depth_m.shape == (480, 640)
+    assert observations[0].intrinsics is not None
+    assert observations[0].intrinsics.width_px == 640
+    assert observations[0].intrinsics.height_px == 480
     assert observations[2].T_world_camera.tx == 2.0
     assert observations[2].T_world_camera.target_frame == "tum_rgbd_mocap_world"
-    assert observations[2].T_world_camera.source_frame == "tum_rgbd_rgb_camera"
+    assert observations[2].T_world_camera.source_frame == CAMERA_RDF_FRAME
     assert observations[0].provenance.dataset_id == "tum_rgbd"
     assert observations[0].provenance.world_frame == "tum_rgbd_mocap_world"

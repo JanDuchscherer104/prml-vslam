@@ -6,14 +6,14 @@ import numpy as np
 import plotly.graph_objects as go
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.datasets.advio import (
+from prml_vslam.sources.datasets.advio import (
     AdvioEnvironment,
     AdvioLocalSceneStatus,
     AdvioPeopleLevel,
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
-from prml_vslam.datasets.advio.advio_replay_adapter import serve_loaded_advio_trajectory
+from prml_vslam.sources.datasets.advio.advio_replay_adapter import serve_loaded_advio_trajectory
 
 from .theme import BLUE, GRAY, GREEN, ORANGE, PURPLE, RED, apply_standard_xy_layout
 

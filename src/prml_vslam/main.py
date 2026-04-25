@@ -25,15 +25,6 @@ from rich.panel import Panel
 from rich.table import Table
 from typer.core import TyperCommand
 
-from prml_vslam.datasets.advio import (
-    AdvioDatasetService,
-    AdvioDownloadPreset,
-    AdvioDownloadRequest,
-    AdvioModality,
-    AdvioPoseFrameMode,
-    AdvioPoseSource,
-)
-from prml_vslam.io import Record3DStreamConfig
 from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
@@ -49,6 +40,15 @@ from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
 from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.datasets.advio import (
+    AdvioDatasetService,
+    AdvioDownloadPreset,
+    AdvioDownloadRequest,
+    AdvioModality,
+    AdvioPoseFrameMode,
+    AdvioPoseSource,
+)
+from prml_vslam.sources.record3d import Record3DStreamConfig
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 

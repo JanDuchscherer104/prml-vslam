@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import StageOutcome
@@ -18,8 +17,7 @@ from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SourceStageOutput
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.utils import BaseData
 
 
@@ -217,27 +215,22 @@ def test_stage_runner_records_success_and_failure_callbacks() -> None:
     assert failed == [StageKey.SLAM]
 
 
-def test_runtime_manager_preflight_is_lazy_and_checks_capabilities() -> None:
+def test_runtime_manager_preflight_is_lazy_and_reports_missing_runtimes() -> None:
     allocations: list[StageKey] = []
     manager = RuntimeManager()
     manager.register(
         StageKey.SOURCE,
         factory=lambda: allocations.append(StageKey.SOURCE) or _FakeOfflineRuntime(),
-        capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
     manager.register(
         StageKey.SLAM,
         factory=lambda: allocations.append(StageKey.SLAM) or _FakeOfflineRuntime(stage_key=StageKey.SLAM),
-        capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
 
     result = manager.preflight(_plan(mode=PipelineMode.STREAMING))
 
     assert allocations == []
     assert result.missing_runtime_keys == []
-    assert result.unsupported_capabilities == {
-        StageKey.SLAM: [RuntimeCapability.LIVE_UPDATES, RuntimeCapability.STREAMING]
-    }
     with pytest.raises(RuntimeError, match="No runtime registered"):
         manager.runtime_for(StageKey.SUMMARY)
 
@@ -247,18 +240,15 @@ def test_runtime_manager_accepts_streaming_slam_with_live_updates() -> None:
     manager.register(
         StageKey.SOURCE,
         factory=_FakeOfflineRuntime,
-        capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
     manager.register(
         StageKey.SLAM,
         factory=_FakeStreamingRuntime,
-        capabilities=frozenset({RuntimeCapability.LIVE_UPDATES, RuntimeCapability.STREAMING}),
     )
 
     result = manager.preflight(_plan(mode=PipelineMode.STREAMING))
 
     assert result.ok
-    assert result.unsupported_capabilities == {}
 
 
 def test_runtime_manager_constructs_proxy_lazily() -> None:
@@ -267,7 +257,6 @@ def test_runtime_manager_constructs_proxy_lazily() -> None:
     manager.register(
         StageKey.SOURCE,
         factory=lambda: allocations.append(StageKey.SOURCE) or _FakeOfflineRuntime(),
-        capabilities=frozenset({RuntimeCapability.OFFLINE}),
         executor_id="local-ingest",
         resource_assignment={"CPU": 1.0},
     )
@@ -285,35 +274,13 @@ def test_runtime_manager_constructs_proxy_lazily() -> None:
     assert status.in_flight_count == 0
 
 
-def test_runtime_manager_rejects_unimplemented_ray_proxy_deployment() -> None:
-    manager = RuntimeManager()
-    manager.register(
-        StageKey.SOURCE,
-        factory=_FakeOfflineRuntime,
-        capabilities=frozenset({RuntimeCapability.OFFLINE}),
-        deployment_kind="ray",
-    )
-
-    preflight = manager.preflight(_plan())
-    assert preflight.unsupported_deployments == {StageKey.SOURCE: "ray"}
-    with pytest.raises(RuntimeError, match="unsupported deployment kinds"):
-        preflight.raise_for_errors()
-
-    with pytest.raises(NotImplementedError, match="requested deployment_kind='ray'"):
-        manager.runtime_for(StageKey.SOURCE)
-
-
-def test_stage_runtime_proxy_exposes_only_supported_views() -> None:
+def test_stage_runtime_proxy_counts_streaming_calls() -> None:
     manager = RuntimeManager()
     manager.register(
         StageKey.SLAM,
         factory=_FakeStreamingRuntime,
-        capabilities=frozenset({RuntimeCapability.STREAMING}),
     )
     proxy = manager.runtime_for(StageKey.SLAM)
-
-    with pytest.raises(RuntimeError, match="does not support 'offline'"):
-        proxy.run_offline(_RuntimeInput(label="run"))
 
     proxy.start_streaming(_RuntimeInput(label="run"))
     proxy.submit_stream_item(_StreamItem(seq=7))

@@ -8,7 +8,6 @@ from typing import Annotated, TypeAlias
 
 from pydantic import ConfigDict, Field
 
-from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import (
     FailureFingerprint,
@@ -18,7 +17,6 @@ from prml_vslam.pipeline.stages.base.config import (
     StageRuntimeBuildContext,
 )
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig, ReconstructionBackendConfig
 from prml_vslam.sources.config import TumRgbdSourceConfig
 
@@ -51,10 +49,6 @@ class ReconstructionStageConfig(StageConfig):
         from prml_vslam.reconstruction.stage.runtime import ReconstructionRuntime
 
         return ReconstructionRuntime
-
-    def runtime_capabilities(self, mode: PipelineMode) -> frozenset[RuntimeCapability]:
-        del mode
-        return frozenset({RuntimeCapability.OFFLINE, RuntimeCapability.LIVE_UPDATES})
 
     def build_offline_input(self, context: StageInputContext):
         from prml_vslam.reconstruction.stage.contracts import ReconstructionRuntimeInput

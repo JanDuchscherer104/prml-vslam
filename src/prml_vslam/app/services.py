@@ -8,16 +8,16 @@ from dataclasses import dataclass
 from threading import Event
 from typing import TypeVar
 
-from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.io.record3d import (
+from prml_vslam.interfaces import Observation
+from prml_vslam.sources.datasets.advio import AdvioPoseSource
+from prml_vslam.sources.record3d.record3d import (
     Record3DDevice,
     Record3DTransportId,
     open_record3d_usb_packet_stream,
 )
-from prml_vslam.io.wifi_packets import Record3DWiFiMetadata
-from prml_vslam.io.wifi_session import Record3DWiFiPreviewStreamConfig
-from prml_vslam.protocols import FramePacketStream
+from prml_vslam.sources.record3d.wifi_packets import Record3DWiFiMetadata
+from prml_vslam.sources.record3d.wifi_session import Record3DWiFiPreviewStreamConfig
+from prml_vslam.sources.replay import ObservationStream
 
 from .models import (
     AdvioPreviewSnapshot,
@@ -34,7 +34,7 @@ SnapshotT = TypeVar("SnapshotT", bound=PreviewSessionSnapshot)
 class _PacketObservation:
     """One packet plus the timing metadata needed by shared preview metrics."""
 
-    packet: FramePacket
+    packet: Observation
     arrival_time_s: float
     trajectory_time_s: float | None
 
@@ -57,11 +57,11 @@ def _run_packet_stream_worker(
     runtime: PacketSessionRuntime[SnapshotT],
     *,
     stop_event: Event,
-    stream_factory: Callable[[], FramePacketStream],
+    stream_factory: Callable[[], ObservationStream],
     fps_window_size: int,
     trajectory_window_size: int,
-    connect_snapshot: Callable[[SnapshotT, FramePacketStream], SnapshotT],
-    read_observation: Callable[[FramePacketStream], _PacketObservation | None],
+    connect_snapshot: Callable[[SnapshotT, ObservationStream], SnapshotT],
+    read_observation: Callable[[ObservationStream], _PacketObservation | None],
     streaming_snapshot: Callable[[SnapshotT, _PacketObservation, PacketSessionMetrics], SnapshotT],
     failure_snapshot: Callable[[SnapshotT, str], SnapshotT],
     empty_snapshot: Callable[[], SnapshotT],
@@ -124,7 +124,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         sequence_id: int | str,
         sequence_label: str,
         pose_source: AdvioPoseSource,
-        stream: FramePacketStream,
+        stream: ObservationStream,
     ) -> None:
         self.launch(
             connecting_snapshot=AdvioPreviewSnapshot(
@@ -149,12 +149,12 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         sequence_id: int | str,
         sequence_label: str,
         pose_source: AdvioPoseSource,
-        stream: FramePacketStream,
+        stream: ObservationStream,
         stop_event: Event,
     ) -> None:
         first_packet_timestamp_ns: int | None = None
 
-        def _connect_snapshot(snapshot: AdvioPreviewSnapshot, active_stream: FramePacketStream) -> AdvioPreviewSnapshot:
+        def _connect_snapshot(snapshot: AdvioPreviewSnapshot, active_stream: ObservationStream) -> AdvioPreviewSnapshot:
             active_stream.connect()
             return snapshot.model_copy(
                 update={
@@ -166,9 +166,9 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
                 }
             )
 
-        def _read_observation(active_stream: FramePacketStream) -> _PacketObservation:
+        def _read_observation(active_stream: ObservationStream) -> _PacketObservation:
             nonlocal first_packet_timestamp_ns
-            packet = active_stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
+            packet = active_stream.wait_for_observation(timeout_seconds=self.frame_timeout_seconds)
             if first_packet_timestamp_ns is None:
                 first_packet_timestamp_ns = packet.timestamp_ns
             return _PacketObservation(
@@ -226,8 +226,8 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         frame_timeout_seconds: float = 0.5,
         fps_window_size: int = 30,
         trajectory_window_size: int = 512,
-        usb_stream_factory: Callable[[int, float], FramePacketStream] | None = None,
-        wifi_preview_stream_factory: Callable[[str, float], FramePacketStream] | None = None,
+        usb_stream_factory: Callable[[int, float], ObservationStream] | None = None,
+        wifi_preview_stream_factory: Callable[[str, float], ObservationStream] | None = None,
     ) -> None:
         self.frame_timeout_seconds = frame_timeout_seconds
         self.fps_window_size = fps_window_size
@@ -289,11 +289,11 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
         transport: Record3DTransportId,
         source_descriptor: str,
         stop_event: Event,
-        stream_factory: Callable[[], FramePacketStream],
+        stream_factory: Callable[[], ObservationStream],
     ) -> None:
         def _connect_snapshot(
             snapshot: Record3DStreamSnapshot,
-            active_stream: FramePacketStream,
+            active_stream: ObservationStream,
         ) -> Record3DStreamSnapshot:
             connected_target = active_stream.connect()
             return snapshot.model_copy(
@@ -309,9 +309,9 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
                 }
             )
 
-        def _read_observation(active_stream: FramePacketStream) -> _PacketObservation | None:
+        def _read_observation(active_stream: ObservationStream) -> _PacketObservation | None:
             try:
-                packet = active_stream.wait_for_packet(timeout_seconds=self.frame_timeout_seconds)
+                packet = active_stream.wait_for_observation(timeout_seconds=self.frame_timeout_seconds)
             except RuntimeError as exc:
                 message = str(exc)
                 if message.startswith("Timed out waiting ") and "Record3D" in message and " frame." in message:

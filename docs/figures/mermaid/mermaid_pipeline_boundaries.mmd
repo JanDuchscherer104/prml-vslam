@@ -14,7 +14,7 @@ flowchart TD
     subgraph ingress["Ingress and source normalization"]
         Source["StreamingSequenceSource"]
         Manifest["SequenceManifest"]
-        Stream["FramePacketStream"]
+        Stream["ObservationStream"]
         SourceCfg --> Source
         Source -->|"materialize once"| Manifest
         Source -->|"open runtime stream"| Stream
@@ -23,7 +23,7 @@ flowchart TD
     subgraph execution["SLAM execution path"]
         Backend["StreamingSlamBackend"]
         Session["SlamSession"]
-        Packet["FramePacket"]
+        Packet["Observation"]
         Update["SlamUpdate"]
         Artifacts["SlamArtifacts"]
         SlamCfg --> Backend

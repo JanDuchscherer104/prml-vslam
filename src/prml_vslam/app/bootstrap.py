@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.advio import AdvioDatasetService
-from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.eval import TrajectoryEvaluationService
 from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.sources.datasets.advio import AdvioDatasetService
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState

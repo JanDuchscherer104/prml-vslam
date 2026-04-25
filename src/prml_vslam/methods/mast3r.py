@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import SlamBackend
@@ -15,7 +14,7 @@ from prml_vslam.methods.stage.config import (
     SlamBackendConfig,
     SlamOutputPolicy,
 )
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 
 
 class Mast3rSlamBackend(SlamBackend):
@@ -39,7 +38,7 @@ class Mast3rSlamBackend(SlamBackend):
         del sequence_manifest, benchmark_inputs, baseline_source, backend_config, output_policy, artifact_root
         raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
 
-    def step_streaming(self, frame: FramePacket) -> None:
+    def step_streaming(self, frame: Observation) -> None:
         """Fail because MASt3R streaming execution is not implemented."""
         del frame
         raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")

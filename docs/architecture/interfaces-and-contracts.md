@@ -7,10 +7,10 @@ contract split after the offline/streaming refactor.
 
 - `prml_vslam.interfaces`
   - repo-wide shared semantic DTOs such as `CameraIntrinsics`,
-    `FramePacket`, `FrameTransform`, `PointCloud`, `PointMap`, and `DepthMap`
+    `Observation`, `FrameTransform`, `PointCloud`, `PointMap`, and `DepthMap`
 - `prml_vslam.protocols`
   - repo-wide behavior seams such as `OfflineSequenceSource`,
-    `StreamingSequenceSource`, and `FramePacketStream`
+    `StreamingSequenceSource`, and `ObservationStream`
 - `prml_vslam.pipeline`
   - run requests, plans, normalized sequence manifests, stage artifacts,
     provenance, runtime events, projected snapshots, and execution orchestration
@@ -68,7 +68,7 @@ The architectural center is an artifact-first pipeline with one public
 orchestration model and two stage-execution strategies:
 
 - batch/offline stage execution over a materialized `SequenceManifest`
-- streaming stage execution over incremental `FramePacket` updates
+- streaming stage execution over incremental `Observation` updates
 
 The runtime truth is event-first:
 
@@ -97,7 +97,7 @@ policy.
 Streaming method startup is intentionally symmetric with offline execution: a
 backend session can receive the normalized `SequenceManifest`, optional
 prepared benchmark inputs, and the selected reference baseline before the first
-`FramePacket` arrives. That keeps dataset-backed replay logic, such as
+`Observation` arrives. That keeps dataset-backed replay logic, such as
 reference-trajectory selection and Tango point-cloud forwarding, inside the
 method layer instead of leaking dataset-specific hooks into the transport path.
 

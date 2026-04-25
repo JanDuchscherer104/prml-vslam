@@ -2,7 +2,7 @@
 
 This package contains the packaged Streamlit workbench for PRML VSLAM.
 
-The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.datasets`, `prml_vslam.eval`, `prml_vslam.pipeline`, `prml_vslam.sources`, `prml_vslam.visualization`, and `prml_vslam.utils`.
+The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.sources.replay`, `prml_vslam.sources.datasets`, `prml_vslam.eval`, `prml_vslam.pipeline`, `prml_vslam.sources`, `prml_vslam.visualization`, and `prml_vslam.utils`.
 
 Use this document together with the other app-specific and repo-wide guidance:
 
@@ -50,7 +50,7 @@ sequenceDiagram
     participant Page as pages/*.py
     participant Service as prml_vslam.eval/services.py
     participant Runtime as Record3DStreamRuntimeController
-    participant IO as prml_vslam.io
+    participant IO as prml_vslam.sources.replay
 
     User->>Browser: Open app or interact with a widget
     Browser->>Bootstrap: Trigger script rerun
@@ -70,8 +70,8 @@ sequenceDiagram
         Runtime->>IO: Create Record3D packet stream
         IO-->>Runtime: Blocking packet stream
         loop Background worker thread
-            Runtime->>IO: wait_for_packet(...)
-            IO-->>Runtime: FramePacket
+            Runtime->>IO: wait_for_observation(...)
+            IO-->>Runtime: Observation
             Runtime->>Runtime: Update Record3DStreamSnapshot
         end
         loop Fragment rerun
@@ -194,11 +194,11 @@ sequenceDiagram
 
 ## Boundaries To Other Packages
 
-- `prml_vslam.io`
+- `prml_vslam.sources.replay`
   - Owns Record3D capture, frame decoding, typed packet/snapshot contracts, and the official USB plus Wi-Fi Preview transport integrations.
   - The app consumes shared typed IO contracts; it does not implement transport protocols itself.
 
-- `prml_vslam.datasets`
+- `prml_vslam.sources.datasets`
   - Owns ADVIO metadata, local dataset normalization, and selective download semantics.
   - The app renders dataset summaries and forwards explicit user actions into dataset-owned services.
 

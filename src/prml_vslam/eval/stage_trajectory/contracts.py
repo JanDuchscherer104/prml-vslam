@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.config import MethodId
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.utils import BaseData
 
 

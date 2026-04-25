@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from prml_vslam.io.record3d import Record3DTransportId
+from prml_vslam.sources.record3d.record3d import Record3DTransportId
 
 from .models import ACTIVE_PREVIEW_STREAM_STATES, Record3DPageAction, Record3DStreamSnapshot
 from .state import save_model_updates

@@ -26,7 +26,6 @@ from prml_vslam.pipeline.stages.base.config import (
     StageRuntimeBuildContext,
 )
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 from prml_vslam.utils import BaseConfig, FactoryConfig, PathConfig
 
 if TYPE_CHECKING:
@@ -308,12 +307,6 @@ class SlamStageConfig(StageConfig):
         from prml_vslam.methods.stage.runtime import SlamStageRuntime
 
         return SlamStageRuntime
-
-    def runtime_capabilities(self, mode: PipelineMode) -> frozenset[RuntimeCapability]:
-        """Return capabilities exposed by the SLAM runtime."""
-        if mode is PipelineMode.STREAMING:
-            return frozenset({RuntimeCapability.OFFLINE, RuntimeCapability.LIVE_UPDATES, RuntimeCapability.STREAMING})
-        return frozenset({RuntimeCapability.OFFLINE})
 
     def build_offline_input(self, context: StageInputContext):
         """Build the narrow offline SLAM input DTO."""

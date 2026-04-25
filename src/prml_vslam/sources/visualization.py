@@ -10,10 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from prml_vslam.datasets.contracts import DatasetId
+from prml_vslam.interfaces import Observation, ObservationSequenceRef
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.rgbd import RgbdObservationSequenceRef
-from prml_vslam.interfaces.runtime import FramePacket
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent, VisualizationItem
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.contracts import (
@@ -24,6 +22,7 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SourceStageOutput,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId
 
 IMAGE_REF = "image"
 DEPTH_REF = "depth"
@@ -49,7 +48,7 @@ class SourceVisualizationAdapter:
     def build_packet_items(
         self,
         *,
-        packet: FramePacket,
+        packet: Observation,
         frame_payload_ref: TransientPayloadRef | None,
         depth_payload_ref: TransientPayloadRef | None = None,
         pointmap_payload_ref: TransientPayloadRef | None = None,
@@ -67,7 +66,7 @@ class SourceVisualizationAdapter:
                 )
             )
 
-        if packet.pose is None or packet.intrinsics is None:
+        if packet.T_world_camera is None or packet.intrinsics is None:
             return items
 
         camera_payload_refs = {
@@ -81,16 +80,16 @@ class SourceVisualizationAdapter:
                     VisualizationItem(
                         intent=VisualizationIntent.POSE_TRANSFORM,
                         role=ROLE_SOURCE_CAMERA_POSE,
-                        pose=packet.pose,
+                        pose=packet.T_world_camera,
                         intrinsics=packet.intrinsics,
                         frame_index=packet.seq,
-                        space=packet.pose.target_frame,
+                        space=packet.T_world_camera.target_frame,
                     ),
                     VisualizationItem(
                         intent=VisualizationIntent.PINHOLE_CAMERA,
                         role=ROLE_SOURCE_PINHOLE,
                         payload_refs=camera_payload_refs,
-                        pose=packet.pose,
+                        pose=packet.T_world_camera,
                         intrinsics=packet.intrinsics,
                         frame_index=packet.seq,
                         space="source_camera_raster",
@@ -103,7 +102,7 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.RGB_IMAGE,
                     role=ROLE_SOURCE_CAMERA_RGB,
                     payload_refs={IMAGE_REF: frame_payload_ref},
-                    pose=packet.pose,
+                    pose=packet.T_world_camera,
                     intrinsics=packet.intrinsics,
                     frame_index=packet.seq,
                     space="source_camera_raster",
@@ -115,7 +114,7 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.DEPTH_IMAGE,
                     role=ROLE_SOURCE_DEPTH,
                     payload_refs={DEPTH_REF: depth_payload_ref},
-                    pose=packet.pose,
+                    pose=packet.T_world_camera,
                     intrinsics=packet.intrinsics,
                     frame_index=packet.seq,
                     space="source_camera_raster",
@@ -131,7 +130,7 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_POINTMAP,
                     payload_refs=pointmap_refs,
-                    pose=packet.pose,
+                    pose=packet.T_world_camera,
                     intrinsics=packet.intrinsics,
                     frame_index=packet.seq,
                     space="camera_local",
@@ -267,9 +266,9 @@ def reference_point_cloud_sequence_payload_artifact_key(reference: ReferencePoin
     )
 
 
-def rgbd_observation_sequence_artifact_key(reference: RgbdObservationSequenceRef) -> str:
-    """Return the source-stage artifact key for one RGB-D observation sequence index."""
-    return f"rgbd_observation_sequence:{reference.source_id}:{reference.sequence_id}"
+def observation_sequence_artifact_key(reference: ObservationSequenceRef) -> str:
+    """Return the source-stage artifact key for one observation sequence index."""
+    return f"observation_sequence:{reference.source_id}:{reference.sequence_id}"
 
 
 def _trajectory_world_frame(dataset_id: DatasetId | None, source: ReferenceSource) -> str:
@@ -318,5 +317,5 @@ __all__ = [
     "reference_point_cloud_sequence_payload_artifact_key",
     "reference_point_cloud_sequence_trajectory_artifact_key",
     "reference_trajectory_artifact_key",
-    "rgbd_observation_sequence_artifact_key",
+    "observation_sequence_artifact_key",
 ]

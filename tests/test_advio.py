@@ -9,9 +9,9 @@ import cv2
 import numpy as np
 import pytest
 
-import prml_vslam.datasets.advio.advio_replay_adapter as advio_replay_module
-import prml_vslam.datasets.advio.advio_sequence as advio_sequence_module
-from prml_vslam.datasets.advio import (
+import prml_vslam.sources.replay.video as replay_video_module
+from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
+from prml_vslam.sources.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
     AdvioDownloadPreset,
@@ -28,17 +28,19 @@ from prml_vslam.datasets.advio import (
     AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
 )
-from prml_vslam.datasets.advio.advio_frames import (
+from prml_vslam.sources.datasets.advio.advio_frames import (
     APPLE_Y_UP_TO_RDF,
     TANGO_Z_UP_TO_RDF,
     transform_advio_points_to_rdf,
     transform_advio_trajectory_to_rdf,
 )
-from prml_vslam.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
-from prml_vslam.datasets.advio.advio_loading import _read_numeric_csv, load_advio_calibration, load_advio_trajectory
-from prml_vslam.io import Cv2FrameProducer, Cv2ReplayMode
-from prml_vslam.io.cv2_producer import Cv2FramePayload, Cv2ProducerConfig
-from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
+from prml_vslam.sources.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
+from prml_vslam.sources.datasets.advio.advio_loading import (
+    _read_numeric_csv,
+    load_advio_calibration,
+    load_advio_trajectory,
+)
+from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
 
 
@@ -317,64 +319,39 @@ def test_load_advio_calibration_tolerates_tab_indentation(tmp_path: Path) -> Non
     assert calibration.t_cam_imu.tx == 0.01
 
 
-def test_advio_open_stream_loops_through_sample_with_cv2_producer(tmp_path: Path) -> None:
+def test_advio_open_stream_loops_through_sample_with_pyav_replay(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
     stream = sequence.open_stream(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
         loop=True,
-        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
 
-    assert isinstance(stream, Cv2FrameProducer)
+    assert isinstance(stream, PyAvVideoObservationSource)
     stream.connect()
-    packet_0 = stream.wait_for_packet()
-    packet_1 = stream.wait_for_packet()
-    packet_2 = stream.wait_for_packet()
-    packet_3 = stream.wait_for_packet()
+    packet_0 = stream.wait_for_observation()
+    packet_1 = stream.wait_for_observation()
+    packet_2 = stream.wait_for_observation()
+    packet_3 = stream.wait_for_observation()
     stream.disconnect()
 
     assert packet_0.seq == 0
     assert packet_1.seq == 1
     assert packet_2.seq == 2
-    assert packet_3.seq == 0
+    assert packet_3.seq == 3
+    assert packet_3.source_frame_index == 0
     assert packet_0.timestamp_ns == 0
     assert packet_1.timestamp_ns == 100_000_000
     assert packet_0.intrinsics is not None
-    assert packet_0.pose is not None
-    assert packet_0.pose.tx == 1.0
-    assert packet_2.pose is not None
-    assert packet_2.pose.tz == 4.0
-    assert packet_3.provenance.loop_index == 1
+    assert packet_0.T_world_camera is not None
+    assert packet_0.T_world_camera.tx == 1.0
+    assert packet_2.T_world_camera is not None
+    assert packet_2.T_world_camera.tz == 4.0
+    assert packet_3.loop_index == 1
     assert packet_0.provenance.dataset_id == "advio"
     assert packet_0.provenance.pose_source == AdvioPoseSource.GROUND_TRUTH.value
-
-
-def test_cv2_frame_producer_emits_optional_payloads(tmp_path: Path) -> None:
-    video_path = tmp_path / "frames.mov"
-    _write_video(video_path)
-    producer = Cv2FrameProducer(
-        Cv2ProducerConfig(
-            video_path=video_path,
-            payload_provider=lambda frame_index, timestamp_ns: Cv2FramePayload(
-                depth=np.full((2, 2), frame_index + 1, dtype=np.float32),
-                confidence=np.full((2, 2), timestamp_ns / 1e9, dtype=np.float32),
-                pointmap=np.full((2, 2, 3), frame_index, dtype=np.float32),
-            ),
-        )
-    )
-
-    producer.connect()
-    packet = producer.wait_for_packet()
-    producer.disconnect()
-
-    assert packet.depth is not None
-    assert packet.confidence is not None
-    assert packet.pointmap is not None
-    assert packet.depth.shape == (2, 2)
-    assert packet.confidence.shape == (2, 2)
-    assert packet.pointmap.shape == (2, 2, 3)
 
 
 def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path: Path) -> None:
@@ -385,49 +362,27 @@ def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path:
     stream = sequence.open_stream(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
         loop=True,
-        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
 
     stream.connect()
-    packet = stream.wait_for_packet()
+    packet = stream.wait_for_observation()
     stream.disconnect()
 
     assert packet.seq == 0
-    assert packet.pose is not None
-    assert packet.pose.tx == 1.0
+    assert packet.T_world_camera is not None
+    assert packet.T_world_camera.tx == 1.0
 
 
 def test_advio_open_stream_rotation_opt_in_keeps_default_behavior_without_metadata(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
-    class _Container:
-        streams = type("_Streams", (), {"video": [type("_Stream", (), {"metadata": {}})()]})()
+    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
 
-        def __enter__(self) -> _Container:
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def decode(self, *, video: int) -> list[object]:
-            del video
-            return []
-
-    class _Av:
-        @staticmethod
-        def open(path: str) -> _Container:
-            del path
-            return _Container()
-
-    monkeypatch.setattr(advio_replay_module, "_load_pyav", lambda: _Av())
-
-    stream = sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
-
-    assert isinstance(stream, Cv2FrameProducer)
+    assert isinstance(stream, PyAvVideoObservationSource)
 
 
 def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
@@ -436,11 +391,11 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
 ) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-    monkeypatch.setattr(advio_sequence_module, "read_advio_video_rotation_degrees", lambda path: 90)
+    monkeypatch.setattr(replay_video_module, "read_video_rotation_degrees", lambda path: 90)
 
-    stream = sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
     stream.connect()
-    packet = stream.wait_for_packet()
+    packet = stream.wait_for_observation()
     stream.disconnect()
 
     assert packet.rgb.shape == (64, 48, 3)
@@ -454,24 +409,14 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
     assert packet.intrinsics.cy == 32.0
 
 
-def test_advio_open_stream_rotation_opt_in_requires_pyav(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_advio_open_stream_rotation_opt_in_uses_pyav_replay_source(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-    monkeypatch.setattr(
-        advio_replay_module,
-        "_load_pyav",
-        lambda: (_ for _ in ()).throw(
-            RuntimeError(
-                "Rotation-aware ADVIO replay requires the optional `av` dependency. Install it with `uv sync --extra replay`."
-            )
-        ),
-    )
 
-    with pytest.raises(RuntimeError, match="uv sync --extra replay"):
-        sequence.open_stream(replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+
+    assert isinstance(stream, PyAvVideoObservationSource)
+    assert stream.apply_video_rotation is True
 
 
 def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> None:
@@ -600,10 +545,10 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     assert source.prepare_sequence_manifest(tmp_path / "manifest").sequence_id == "advio-15"
     stream = source.open_stream(loop=False)
     stream.connect()
-    packet = stream.wait_for_packet()
+    packet = stream.wait_for_observation()
     stream.disconnect()
-    assert packet.pose is not None
-    assert packet.pose.tx == 1.0
+    assert packet.T_world_camera is not None
+    assert packet.T_world_camera.tx == 1.0
 
 
 def test_advio_open_stream_supports_tango_raw_provider_and_point_cloud_payload(tmp_path: Path) -> None:
@@ -613,18 +558,16 @@ def test_advio_open_stream_supports_tango_raw_provider_and_point_cloud_payload(t
     stream = sequence.open_stream(
         dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.TANGO_RAW),
         loop=False,
-        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
 
     stream.connect()
-    packet = stream.wait_for_packet()
+    packet = stream.wait_for_observation()
     stream.disconnect()
 
-    assert packet.pose is not None
-    assert packet.pointmap is None
-    assert packet.point_cloud is not None
-    assert packet.point_cloud.points_xyz.shape == (3, 3)
-    assert packet.point_cloud.frame == "advio_tango_raw_depth_sensor"
+    assert packet.T_world_camera is not None
+    assert packet.pointmap_xyz is None
+    assert packet.point_cloud_xyz is None
     assert packet.provenance.pose_source == AdvioPoseSource.TANGO_RAW.value
 
 
@@ -642,7 +585,7 @@ def test_advio_reference_world_and_local_first_pose_modes_transform_provider_pos
             pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
         ),
         loop=False,
-        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
     local_first = sequence.open_stream(
         dataset_serving=AdvioServingConfig(
@@ -650,7 +593,7 @@ def test_advio_reference_world_and_local_first_pose_modes_transform_provider_pos
             pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE,
         ),
         loop=False,
-        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
     reference_world = sequence.open_stream(
         dataset_serving=AdvioServingConfig(
@@ -658,25 +601,25 @@ def test_advio_reference_world_and_local_first_pose_modes_transform_provider_pos
             pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
         ),
         loop=False,
-        replay_mode=Cv2ReplayMode.FAST_AS_POSSIBLE,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
 
     provider_world.connect()
-    provider_packet = provider_world.wait_for_packet()
+    provider_packet = provider_world.wait_for_observation()
     provider_world.disconnect()
     local_first.connect()
-    local_packet = local_first.wait_for_packet()
+    local_packet = local_first.wait_for_observation()
     local_first.disconnect()
     reference_world.connect()
-    reference_packet = reference_world.wait_for_packet()
+    reference_packet = reference_world.wait_for_observation()
     reference_world.disconnect()
 
-    assert provider_packet.pose is not None
-    assert local_packet.pose is not None
-    assert reference_packet.pose is not None
-    assert provider_packet.pose.tx == 10.0
-    assert local_packet.pose.tx == pytest.approx(0.0, abs=1e-6)
-    assert reference_packet.pose.tx == pytest.approx(1.0, abs=1e-3)
+    assert provider_packet.T_world_camera is not None
+    assert local_packet.T_world_camera is not None
+    assert reference_packet.T_world_camera is not None
+    assert provider_packet.T_world_camera.tx == 10.0
+    assert local_packet.T_world_camera.tx == pytest.approx(0.0, abs=1e-6)
+    assert reference_packet.T_world_camera.tx == pytest.approx(1.0, abs=1e-3)
 
 
 def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> None:

@@ -1450,6 +1450,7 @@ name = "prml-vslam"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "av" },
     { name = "evo" },
     { name = "jaxtyping" },
     { name = "matplotlib" },
@@ -1483,9 +1484,6 @@ dev = [
     { name = "rebiber" },
     { name = "ruff" },
 ]
-replay = [
-    { name = "av" },
-]
 streaming = [
     { name = "aiortc" },
     { name = "record3d" },
@@ -1513,7 +1511,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiortc", marker = "extra == 'streaming'", specifier = ">=1.9,<2" },
-    { name = "av", marker = "extra == 'replay'", specifier = ">=16,<17" },
+    { name = "av", specifier = ">=16,<17" },
     { name = "bibtex-updater", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "dbow3py", marker = "extra == 'vista'", directory = "external/vista-slam/DBoW3Py" },
     { name = "einops", marker = "extra == 'vista'", specifier = ">=0.6" },

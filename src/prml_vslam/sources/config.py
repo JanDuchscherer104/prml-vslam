@@ -13,12 +13,6 @@ from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field
 
-from prml_vslam.datasets.advio import AdvioDatasetService, AdvioServingConfig
-from prml_vslam.datasets.contracts import FrameSelectionConfig
-from prml_vslam.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
-from prml_vslam.interfaces.runtime import Record3DTransportId
-from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
-from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.stages.base.config import (
@@ -29,8 +23,12 @@ from prml_vslam.pipeline.stages.base.config import (
     StageRuntimeBuildContext,
 )
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.contracts import Record3DTransportId
+from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingConfig
+from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
+from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
 from prml_vslam.sources.runtime import (
     SampledStreamingSource,
     SourceRuntime,
@@ -134,7 +132,7 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
     """Configure one live Record3D source adapter.
 
     The source owns transport-level capture for USB or Wi-Fi Preview and emits
-    normalized :class:`prml_vslam.interfaces.runtime.FramePacket` values. It
+    normalized :class:`prml_vslam.sources.contracts.Observation` values. It
     does not own app session state, pipeline stage order, or SLAM backend
     selection.
     """
@@ -227,11 +225,6 @@ class SourceStageConfig(StageConfig):
         """Return source config and input fingerprint payloads."""
         del context
         return FailureFingerprint(config_payload=self.backend, input_payload=self.backend)
-
-    def runtime_capabilities(self, mode: PipelineMode) -> frozenset[RuntimeCapability]:
-        """Return source runtime capabilities."""
-        del mode
-        return frozenset({RuntimeCapability.OFFLINE})
 
 
 __all__ = [

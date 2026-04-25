@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId, list_record3d_usb_devices
+from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId, list_record3d_usb_devices
 
 from .models import Record3DTransportSelection
 

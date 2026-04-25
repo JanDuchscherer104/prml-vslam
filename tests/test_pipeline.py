@@ -21,16 +21,15 @@ import ray
 from pydantic import ValidationError
 
 from prml_vslam.interfaces import (
-    FramePacket,
-    FramePacketProvenance,
+    CAMERA_RDF_FRAME,
     FrameTransform,
-    RgbdObservationIndexEntry,
-    RgbdObservationProvenance,
-    RgbdObservationSequenceIndex,
-    RgbdObservationSequenceRef,
+    Observation,
+    ObservationIndexEntry,
+    ObservationProvenance,
+    ObservationSequenceIndex,
+    ObservationSequenceRef,
 )
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
@@ -71,10 +70,14 @@ from prml_vslam.pipeline.stages.base.contracts import (
     VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionRuntimeInput
 from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SourceStageOutput
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceSource,
+    SequenceManifest,
+    SourceStageOutput,
+)
 from prml_vslam.sources.runtime import SourceRuntimeInput, _max_frames_for_input
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
@@ -141,8 +144,10 @@ class _FakeVistaBackend:
         self._output_policy = output_policy
         self._artifact_root = artifact_root
 
-    def step_streaming(self, frame: FramePacket) -> None:
-        pose = frame.pose or FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(frame.seq), ty=0.0, tz=0.0)
+    def step_streaming(self, frame: Observation) -> None:
+        pose = frame.T_world_camera or FrameTransform(
+            qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(frame.seq), ty=0.0, tz=0.0
+        )
         self._pending_updates.append(
             SlamUpdate(
                 seq=frame.seq,
@@ -895,14 +900,14 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
     )
 
     coordinator.on_packet(
-        packet=FramePacket(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
+        packet=Observation(seq=1, timestamp_ns=1, provenance=ObservationProvenance()),
         frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
         depth_ref=None,
         confidence_ref=None,
         pointmap_ref=None,
         intrinsics=None,
         pose=None,
-        provenance=FramePacketProvenance(),
+        provenance=ObservationProvenance(),
         processed_frame_count=1,
         measured_fps=30.0,
         frame_payload_ref=TransientPayloadRef(
@@ -969,7 +974,6 @@ def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_r
     runtime_manager.register(
         StageKey.RECONSTRUCTION,
         factory=FakeReconstructionRuntime,
-        capabilities=frozenset({RuntimeCapability.OFFLINE, RuntimeCapability.LIVE_UPDATES}),
     )
     runtime_proxy = runtime_manager.runtime_for(StageKey.RECONSTRUCTION)
     coordinator._rerun_sink = SimpleNamespace(observe_update=FakeObserveUpdateRemote())
@@ -1003,8 +1007,7 @@ def test_run_coordinator_runtime_manager_registers_reconstruction_live_updates(t
     runtime_manager = coordinator._build_runtime_manager(plan=plan, source=FakeOfflineSource())
     runtime_proxy = runtime_manager.runtime_for(StageKey.RECONSTRUCTION)
 
-    assert RuntimeCapability.OFFLINE in runtime_proxy.supported_capabilities
-    assert RuntimeCapability.LIVE_UPDATES in runtime_proxy.supported_capabilities
+    assert isinstance(runtime_proxy.runtime, ReconstructionRuntime)
 
 
 def test_run_coordinator_releases_streaming_credit_before_update_observer_routing() -> None:
@@ -1043,7 +1046,6 @@ def test_run_coordinator_releases_streaming_credit_before_update_observer_routin
     runtime_manager.register(
         StageKey.SLAM,
         factory=_FakeStreamingRuntime,
-        capabilities=frozenset({RuntimeCapability.LIVE_UPDATES, RuntimeCapability.STREAMING}),
     )
     coordinator._slam_runtime_proxy = runtime_manager.runtime_for(StageKey.SLAM)
     coordinator._source_actor = SimpleNamespace(
@@ -1058,14 +1060,14 @@ def test_run_coordinator_releases_streaming_credit_before_update_observer_routin
     coordinator.on_slam_runtime_updates = _fail_update_routing
 
     coordinator.on_packet(
-        packet=FramePacket(seq=1, timestamp_ns=1, provenance=FramePacketProvenance()),
+        packet=Observation(seq=1, timestamp_ns=1, provenance=ObservationProvenance()),
         frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
         depth_ref=None,
         confidence_ref=None,
         pointmap_ref=None,
         intrinsics=None,
         pose=None,
-        provenance=FramePacketProvenance(),
+        provenance=ObservationProvenance(),
         processed_frame_count=1,
         measured_fps=30.0,
         frame_payload_ref=TransientPayloadRef(
@@ -1360,17 +1362,14 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     runtime_manager.register(
         StageKey.SLAM,
         factory=lambda: slam_runtime,
-        capabilities=frozenset({RuntimeCapability.LIVE_UPDATES, RuntimeCapability.STREAMING}),
     )
     runtime_manager.register(
         StageKey.TRAJECTORY_EVALUATION,
         factory=_FakeTrajectoryRuntime,
-        capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
     runtime_manager.register(
         StageKey.SUMMARY,
         factory=_FakeSummaryRuntime,
-        capabilities=frozenset({RuntimeCapability.OFFLINE}),
     )
     coordinator._run_config = run_config
     coordinator._plan = plan
@@ -1995,18 +1994,27 @@ def _rgbd_benchmark_inputs(tmp_path: Path) -> PreparedBenchmarkInputs:
     payload_root.mkdir(parents=True, exist_ok=True)
     np.save(payload_root / "rgb.npy", np.full((32, 32, 3), 127, dtype=np.uint8))
     np.save(payload_root / "depth.npy", np.ones((32, 32), dtype=np.float32))
-    index = RgbdObservationSequenceIndex(
+    index = ObservationSequenceIndex(
         source_id="test",
         sequence_id="test-sequence",
         observation_count=1,
         rows=[
-            RgbdObservationIndexEntry(
+            ObservationIndexEntry(
                 seq=0,
                 timestamp_ns=0,
                 rgb_path=Path("rgb.npy"),
                 depth_path=Path("depth.npy"),
-                T_world_camera=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                camera_intrinsics={
+                T_world_camera=FrameTransform(
+                    qx=0.0,
+                    qy=0.0,
+                    qz=0.0,
+                    qw=1.0,
+                    tx=0.0,
+                    ty=0.0,
+                    tz=0.0,
+                    source_frame=CAMERA_RDF_FRAME,
+                ),
+                intrinsics={
                     "fx": 32.0,
                     "fy": 32.0,
                     "cx": 15.5,
@@ -2014,15 +2022,15 @@ def _rgbd_benchmark_inputs(tmp_path: Path) -> PreparedBenchmarkInputs:
                     "width_px": 32,
                     "height_px": 32,
                 },
-                provenance=RgbdObservationProvenance(source_id="test", sequence_id="test-sequence"),
+                provenance=ObservationProvenance(source_id="test", sequence_id="test-sequence"),
             )
         ],
     )
-    index_path = payload_root / "rgbd_observations.json"
+    index_path = payload_root / "observations.json"
     index_path.write_text(json.dumps(index.model_dump(mode="json"), indent=2), encoding="utf-8")
     return PreparedBenchmarkInputs(
-        rgbd_observation_sequences=[
-            RgbdObservationSequenceRef(
+        observation_sequences=[
+            ObservationSequenceRef(
                 source_id="test",
                 sequence_id="test-sequence",
                 index_path=index_path,

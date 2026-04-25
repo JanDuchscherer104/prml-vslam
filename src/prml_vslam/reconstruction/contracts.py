@@ -13,7 +13,6 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field
 
-from prml_vslam.interfaces import RgbdObservation
 from prml_vslam.utils import BaseData
 
 
@@ -28,10 +27,6 @@ class ReconstructionMethodId(StrEnum):
         match self:
             case ReconstructionMethodId.OPEN3D_TSDF:
                 return "Open3D TSDF"
-
-
-ReconstructionObservation = RgbdObservation
-"""Temporary compatibility alias for the shared RGB-D observation DTO."""
 
 
 class ReconstructionMetadata(BaseData):
@@ -99,5 +94,4 @@ __all__ = [
     "ReconstructionArtifacts",
     "ReconstructionMetadata",
     "ReconstructionMethodId",
-    "ReconstructionObservation",
 ]

@@ -3,7 +3,7 @@
 This package owns the planning, runtime orchestration, event, snapshot,
 artifact, and provenance surfaces for repository pipeline runs. Shared source
 protocols live in [`prml_vslam.protocols.source`](../protocols/source.py) and
-[`prml_vslam.protocols.runtime`](../protocols/runtime.py). SLAM backend and
+[`prml_vslam.sources.replay`](../protocols/runtime.py). SLAM backend and
 session protocols live in [`prml_vslam.methods.protocols`](../methods/protocols.py).
 Package constraints live in [REQUIREMENTS.md](./REQUIREMENTS.md).
 

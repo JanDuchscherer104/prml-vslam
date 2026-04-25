@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.interfaces import FramePacket, FramePacketProvenance, FrameTransform
-from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces import CAMERA_RDF_FRAME, FrameTransform, Observation, ObservationProvenance
+from prml_vslam.sources.contracts import SequenceManifest
 
 
 class FakeOfflineSource:
@@ -32,18 +32,27 @@ class FakePacketStream:
     def disconnect(self) -> None:
         return None
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
+    def wait_for_observation(self, timeout_seconds: float | None = None) -> Observation:
         del timeout_seconds
         if self._index >= 3:
             raise EOFError("done")
         index = self._index
         self._index += 1
-        return FramePacket(
+        return Observation(
             seq=index,
             timestamp_ns=index * 1_000_000,
             rgb=np.full((8, 8, 3), fill_value=index * 25, dtype=np.uint8),
-            pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(index), ty=0.0, tz=0.0),
-            provenance=FramePacketProvenance(source_id="fake-stream"),
+            T_world_camera=FrameTransform(
+                qx=0.0,
+                qy=0.0,
+                qz=0.0,
+                qw=1.0,
+                tx=float(index),
+                ty=0.0,
+                tz=0.0,
+                source_frame=CAMERA_RDF_FRAME,
+            ),
+            provenance=ObservationProvenance(source_id="fake-stream"),
         )
 
 

@@ -18,7 +18,7 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FramePacketProvenance, FrameTransform
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage import SlamStageRuntime
@@ -77,7 +77,7 @@ from prml_vslam.pipeline.stages.base.contracts import (
     VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability, StageRuntimeHandle
+from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.reconstruction.stage.visualization import (
     MESH_ARTIFACT,
@@ -314,14 +314,14 @@ class RunCoordinatorActor:
     def on_packet(
         self,
         *,
-        packet: FramePacket,
+        packet: Observation,
         frame_ref: HandlePayload | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
         pointmap_ref: HandlePayload | None,
         intrinsics: CameraIntrinsics | None,
         pose: FrameTransform | None,
-        provenance: FramePacketProvenance,
+        provenance: ObservationProvenance,
         processed_frame_count: int,
         measured_fps: float,
         frame_payload_ref: TransientPayloadRef | None = None,
@@ -426,29 +426,30 @@ class RunCoordinatorActor:
     def _submit_frame_to_slam_runtime(
         self,
         *,
-        packet: FramePacket,
+        packet: Observation,
         frame_ref: HandlePayload | None,
         depth_ref: HandlePayload | None,
         confidence_ref: HandlePayload | None,
         pointmap_ref: HandlePayload | None,
         intrinsics: CameraIntrinsics | None,
         pose: FrameTransform | None,
-        provenance: FramePacketProvenance,
+        provenance: ObservationProvenance,
     ) -> None:
         if self._slam_runtime_proxy is None:
             raise RuntimeError("Streaming SLAM runtime has not been started.")
         self._stage_runner.submit_stream_item(
             runtime=self._slam_runtime_proxy,
-            item=FramePacket(
+            item=Observation(
                 seq=packet.seq,
                 timestamp_ns=packet.timestamp_ns,
                 rgb=self._resolve_handle_payload(frame_ref),
-                depth=self._resolve_handle_payload(depth_ref),
+                depth_m=self._resolve_handle_payload(depth_ref) if pose is not None else None,
                 confidence=self._resolve_handle_payload(confidence_ref),
-                pointmap=self._resolve_handle_payload(pointmap_ref),
-                point_cloud=packet.point_cloud,
+                pointmap_xyz=self._resolve_handle_payload(pointmap_ref) if pose is not None else None,
+                point_cloud_xyz=packet.point_cloud_xyz if pose is not None else None,
+                point_cloud_rgb=packet.point_cloud_rgb if pose is not None else None,
                 intrinsics=intrinsics,
-                pose=pose,
+                T_world_camera=pose,
                 provenance=provenance,
             ),
         )
@@ -639,7 +640,6 @@ class RunCoordinatorActor:
             manager.register(
                 stage.key,
                 factory=factory,
-                capabilities=stage_config.runtime_capabilities(plan.mode),
                 stage_config=stage_config,
             )
         return manager
@@ -1104,7 +1104,7 @@ class RunCoordinatorActor:
     def _emit_source_visualization_update(
         self,
         *,
-        packet: FramePacket,
+        packet: Observation,
         frame_payload_ref: TransientPayloadRef | None,
         depth_payload_ref: TransientPayloadRef | None,
         pointmap_payload_ref: TransientPayloadRef | None,
@@ -1170,8 +1170,6 @@ class RunCoordinatorActor:
             )
 
     def _publish_runtime_updates_from_proxy(self, runtime_proxy: StageRuntimeHandle) -> None:
-        if RuntimeCapability.LIVE_UPDATES not in runtime_proxy.supported_capabilities:
-            return
         updates = runtime_proxy.drain_runtime_updates(max_items=None)
         if not updates:
             return

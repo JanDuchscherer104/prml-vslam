@@ -8,8 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces import (
+    CAMERA_RDF_FRAME,
+    CameraIntrinsics,
+    FrameTransform,
+    Observation,
+    ObservationProvenance,
+)
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -28,6 +33,7 @@ from prml_vslam.sources.contracts import (
     ReferencePointCloudSequenceRef,
     ReferenceSource,
     ReferenceTrajectoryRef,
+    SequenceManifest,
     SourceStageOutput,
 )
 from prml_vslam.sources.runtime import (
@@ -211,12 +217,12 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
 
 
 def test_source_visualization_adapter_emits_posed_packet_geometry_items() -> None:
-    packet = FramePacket(
+    packet = Observation(
         seq=7,
         timestamp_ns=1,
-        pose=FrameTransform(
+        T_world_camera=FrameTransform(
             target_frame="tum_rgbd_mocap_world",
-            source_frame="tum_rgbd_rgb_camera",
+            source_frame=CAMERA_RDF_FRAME,
             qx=0.0,
             qy=0.0,
             qz=0.0,
@@ -226,6 +232,7 @@ def test_source_visualization_adapter_emits_posed_packet_geometry_items() -> Non
             tz=3.0,
         ),
         intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3),
+        provenance=ObservationProvenance(source_id="test"),
     )
     image_ref = TransientPayloadRef(handle_id="rgb", payload_kind="image")
     depth_ref = TransientPayloadRef(handle_id="depth", payload_kind="depth")
@@ -246,7 +253,7 @@ def test_source_visualization_adapter_emits_posed_packet_geometry_items() -> Non
         ROLE_SOURCE_DEPTH,
         ROLE_SOURCE_POINTMAP,
     ]
-    assert items[1].pose == packet.pose
+    assert items[1].pose == packet.T_world_camera
     assert items[2].intrinsics == packet.intrinsics
     assert items[-1].space == "camera_local"
 

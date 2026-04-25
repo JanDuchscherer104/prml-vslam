@@ -15,7 +15,6 @@ import click
 import pytest
 import typer
 
-from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.main import (
     _build_rerun_viewer_command,
     _find_rerun_viewer_processes,
@@ -45,6 +44,7 @@ from prml_vslam.pipeline.demo import (
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
 
@@ -1196,7 +1196,7 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
         def disconnect(self) -> None:
             self.connected = False
 
-        def wait_for_packet(self, timeout_seconds: float | None = None) -> object:
+        def wait_for_observation(self, timeout_seconds: float | None = None) -> object:
             del timeout_seconds
             packet = f"frame-{self.index}"
             self.index += 1
@@ -1236,7 +1236,7 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
 
     stream = capped_source.open_stream(loop=False)
     stream.connect()
-    assert stream.wait_for_packet() == "frame-0"
-    assert stream.wait_for_packet() == "frame-1"
+    assert stream.wait_for_observation() == "frame-0"
+    assert stream.wait_for_observation() == "frame-1"
     with pytest.raises(EOFError):
-        stream.wait_for_packet()
+        stream.wait_for_observation()

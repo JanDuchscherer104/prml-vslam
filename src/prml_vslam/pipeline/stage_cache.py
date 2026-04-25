@@ -21,7 +21,6 @@ from pydantic import Field
 from prml_vslam.eval.contracts import EvaluationArtifact
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageCacheInfo, StageStatus
@@ -30,7 +29,7 @@ from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.reconstruction.contracts import ReconstructionArtifacts
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SourceStageOutput
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.utils import BaseConfig, BaseData, RunArtifactPaths
 
 HashPayload: TypeAlias = (

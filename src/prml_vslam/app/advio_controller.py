@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from prml_vslam.datasets.advio import (
+from prml_vslam.sources.datasets.advio import (
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
     AdvioOfflineSample,

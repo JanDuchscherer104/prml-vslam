@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 
-from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
-from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, RunConfig, build_run_config
@@ -15,6 +13,13 @@ from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
 from prml_vslam.sources.config import AdvioSourceConfig, Record3DSourceConfig
+from prml_vslam.sources.datasets.advio import (
+    AdvioLocalSceneStatus,
+    AdvioPoseFrameMode,
+    AdvioPoseSource,
+    AdvioServingConfig,
+)
+from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import BaseData, PathConfig
 
 from .models import PipelinePageState, PipelineSourceId

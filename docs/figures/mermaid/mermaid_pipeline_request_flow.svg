@@ -165,9 +165,9 @@
   <rect x="450.0629999999999" y="1396.8" width="126.42399999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
   <text x="513.2749999999999" y="1415.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">open_stream()</text>
 </g>
-<g class="node" data-id="stream" data-label="FramePacketStream" data-shape="rectangle">
+<g class="node" data-id="stream" data-label="ObservationStream" data-shape="rectangle">
   <rect x="431.5379999999999" y="1481.7" width="163.474" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="513.2749999999999" y="1500.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">FramePacketStream</text>
+  <text x="513.2749999999999" y="1500.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">ObservationStream</text>
 </g>
 <g class="node" data-id="start" data-label="start_session()" data-shape="rectangle">
   <rect x="617.0839999999998" y="1396.8" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
@@ -177,9 +177,9 @@
   <rect x="623.012" y="1481.7" width="119.01400000000001" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
   <text x="682.519" y="1500.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SlamSession</text>
 </g>
-<g class="node" data-id="frame" data-label="FramePacket" data-shape="rectangle">
+<g class="node" data-id="frame" data-label="Observation" data-shape="rectangle">
   <rect x="452.28599999999994" y="1706.9" width="121.978" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="513.275" y="1725.3500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">FramePacket</text>
+  <text x="513.275" y="1725.3500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Observation</text>
 </g>
 <g class="node" data-id="step" data-label="SlamSession.step()" data-shape="rectangle">
   <rect x="435.9839999999999" y="1791.8000000000002" width="154.582" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
