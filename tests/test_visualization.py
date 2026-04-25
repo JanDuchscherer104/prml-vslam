@@ -337,6 +337,58 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_p
     assert pose_calls[1][3].tx == 1.0
 
 
+def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(tmp_path: Path) -> None:
+    trajectory_path = write_tum_trajectory(
+        tmp_path / "trajectory.tum",
+        [
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+        ],
+        [0.0, 1.0],
+    )
+    line_calls: list[tuple[str, bool]] = []
+    pose_calls: list[str] = []
+    policy = RerunLoggingPolicy(
+        log_pinhole=lambda *args, **kwargs: None,
+        log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
+        log_line_strip3d=lambda stream, *, entity_path, positions_xyz, static=False: line_calls.append(
+            (entity_path, static)
+        ),
+        log_clear=lambda *args, **kwargs: None,
+        log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
+        log_rgb_image=lambda *args, **kwargs: None,
+        log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(
+            entity_path
+        ),
+    )
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SOURCE,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.TRAJECTORY,
+                role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
+                artifact_refs={
+                    TRAJECTORY_ARTIFACT: ArtifactRef(path=trajectory_path, kind="tum", fingerprint="trajectory")
+                },
+                metadata={
+                    "reference_source": "ground_truth",
+                    "coordinate_status": "aligned",
+                    "target_frame": "advio_gt_world",
+                },
+            )
+        ],
+    )
+
+    policy.observe_update(object(), update)
+
+    assert line_calls == [("world/reference/advio_gt_world/ground_truth/aligned/trajectory", True)]
+    assert pose_calls == []
+
+
 def test_log_mesh3d_logs_one_mesh(monkeypatch) -> None:
     logged: list[tuple[str, object]] = []
 

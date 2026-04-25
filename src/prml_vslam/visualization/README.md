@@ -62,6 +62,10 @@ show_tracking_trajectory = true
 trajectory_pose_axis_length = 0.0
 ```
 
+Set `trajectory_pose_axis_length` to a positive value only when pose axes are
+needed. The default keeps dense reference trajectories as compact line strips
+instead of emitting one `Transform3D` entity per TUM pose.
+
 Inspect a persisted repo-owned recording:
 
 ```bash
@@ -108,8 +112,8 @@ per-modality toggle matrix.
 - `world/keyframes/cameras/<id>` and `world/keyframes/points/<id>`: stable
   keyed-history branches.
 - `world/slam/vista_slam_world/trajectory/raw`: tracking polyline.
-- `world/slam/vista_slam_world/trajectory/raw/poses/<id>`: per-pose SE3
-  trajectory transforms.
+- `world/slam/vista_slam_world/trajectory/raw/poses/<id>`: optional per-pose
+  SE3 trajectory transforms when `trajectory_pose_axis_length > 0`.
 
 Current operational constraints:
 

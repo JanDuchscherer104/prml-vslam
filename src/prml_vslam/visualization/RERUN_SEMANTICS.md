@@ -41,7 +41,7 @@ Treat the integration as four separate concerns:
 | `rr.DepthImage` | Metric depth rasters back-projected through `Pinhole`. |
 | `rr.Points3D` | Camera-local pointmaps or world-space clouds. |
 | `rr.LineStrips3D` | Trajectory polylines. |
-| `rr.Transform3D` under `.../trajectory/.../poses/<id>` | Per-pose SE3 trajectory samples. |
+| `rr.Transform3D` under `.../trajectory/.../poses/<id>` | Optional visible per-pose SE3 trajectory axes when `trajectory_pose_axis_length > 0`. |
 | `rr.Clear` | Sliding-window frusta cleanup without clearing keyed point history. |
 | `rr.blueprint.Spatial3DView`, `rr.blueprint.Spatial2DView` | Stable 3D + 2D default layout. |
 
@@ -116,6 +116,7 @@ world/keyframes/points/000000/points    Points3D(pointmap_xyz_camera_keyframe)
 world/slam/vista_slam_world/trajectory/raw
 world/slam/vista_slam_world/trajectory/raw/poses/000000
                                          Transform3D(T_world_camera_pose, axis_length=configured)
+                                         # only when trajectory_pose_axis_length > 0
 world/global_dense_points               Points3D(world-space fused cloud)
 ```
 
@@ -173,7 +174,7 @@ Current repo-owned export surfaces:
 - metric `DepthImage` payloads
 - keyed pointmaps as `Points3D`
 - diagnostic preview images
-- trajectory polylines plus per-pose `Transform3D` children
+- trajectory polylines plus optional per-pose `Transform3D` axis children
 - live gRPC streaming and repo-owned `.rrd` export for streaming runs
 - preserved native upstream `.rrd` files when present
 
