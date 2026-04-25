@@ -40,7 +40,7 @@ GROUND_PLANE_OUTLINE_RGBA = np.array([[24, 140, 84, 255]], dtype=np.uint8)
 """Opaque outline color for the ground-plane patch."""
 DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/alignment/**",
-    "+ world/reference/**/aligned/**",
+    "+ world/reference/**",
     "+ world/reconstruction/**",
     "+ world/slam/vista_slam_world/**",
     "+ world/overlays/**",

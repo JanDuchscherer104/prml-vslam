@@ -169,8 +169,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].origin == "world"
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert all(not query.startswith("- ") for query in layout.views[0].contents)
-    assert "+ world/reference/trajectory/*/aligned/**" in layout.views[0].contents
-    assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
+    assert "+ world/reference/**" in layout.views[0].contents
     assert "+ world/keyframes/cameras/*" in layout.views[0].contents
     assert "- world/live/model/camera/image/**" not in layout.views[0].contents
     assert "- world/reference/**/source_native/**" not in layout.views[0].contents

@@ -104,5 +104,7 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - the trajectory polyline grows across pose updates without truncating keyed
   point history; optional per-pose axes are emitted only when explicitly enabled
 - after `N + 1` keyed camera logs, only the oldest keyed camera subtree is cleared while all keyed point subtrees remain
-- aligned reference clouds only are logged under `world/reference/...`
+- prepared references are logged under type-first paths:
+  `world/reference/trajectory/<source>/<status>` and
+  `world/reference/points/<source>/<status>/...`
 - docs and code stay aligned with the pinned `rerun-sdk==0.24.1`
