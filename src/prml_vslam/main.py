@@ -906,6 +906,35 @@ def pipeline_demo(
         raise typer.Exit(code=1)
 
 
+@app.command("app")
+def launch_app(
+    browser: Annotated[
+        bool,
+        typer.Option("--browser/--no-browser", help="Whether to open the app in a browser automatically."),
+    ] = True,
+) -> None:
+    """Launch the Streamlit workbench."""
+    path_config = get_path_config()
+    app_path = path_config.root / "streamlit_app.py"
+
+    if not app_path.exists():
+        console.error("Streamlit app file not found: %s", app_path)
+        raise typer.Exit(code=1)
+
+    cmd = [sys.executable, "-m", "streamlit", "run", str(app_path)]
+    if not browser:
+        cmd.extend(["--server.headless", "true"])
+
+    console.info("Launching Streamlit app...")
+    try:
+        subprocess.run(cmd, check=True)
+    except KeyboardInterrupt:
+        console.info("Streamlit app stopped.")
+    except subprocess.CalledProcessError as exc:
+        console.error("Streamlit app exited with error: %s", exc)
+        raise typer.Exit(code=exc.returncode) from exc
+
+
 @advio_app.command("summary")
 def advio_summary() -> None:
     """Print committed and local ADVIO dataset coverage."""
