@@ -107,6 +107,40 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
     assert live_intrinsics.height_px == 3
 
 
+def test_policy_does_not_log_diagnostic_preview_by_default() -> None:
+    stream = _FakeRecordingStream()
+    rgb_calls: list[str] = []
+    policy = RerunLoggingPolicy(
+        log_pinhole=lambda *args, **kwargs: None,
+        log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
+        log_line_strip3d=lambda *args, **kwargs: None,
+        log_clear=lambda *args, **kwargs: None,
+        log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
+        log_rgb_image=lambda stream, *, entity_path, image_rgb: rgb_calls.append(entity_path),
+        log_transform=lambda *args, **kwargs: None,
+    )
+
+    policy.observe_update(
+        stream,
+        _keyframe_update(
+            refs={
+                IMAGE_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                PREVIEW_REF: _payload_ref("preview", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+            }
+        ),
+        payloads={
+            "rgb": np.zeros((3, 4, 3), dtype=np.uint8),
+            "preview": np.zeros((3, 4, 3), dtype=np.uint8),
+        },
+    )
+
+    assert "world/live/model/diag/preview" not in rgb_calls
+    assert "world/keyframes/cameras/000007/diag/preview" not in rgb_calls
+
+
 def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
     stream = _FakeRecordingStream()
     policy = RerunLoggingPolicy(
@@ -213,6 +247,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     layout = sent_blueprints[0].layout
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert all(not query.startswith("- ") for query in layout.views[0].contents)
+    assert "+ world/reference/**" in layout.views[0].contents
     assert "+ world/keyframes/cameras/*" in layout.views[0].contents
     assert "+ world/keyframes/points/**" in layout.views[0].contents
     assert "+ world/live/model" in layout.views[0].contents

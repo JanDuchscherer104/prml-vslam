@@ -92,7 +92,10 @@ The current repo-owned scene tree should converge on the following shape:
 
 ```text
 world
-world/reference/aligned_gt_world/...    Points3D in world coordinates
+world/reference/trajectory/ground_truth/aligned
+                                         LineStrips3D(reference trajectory)
+world/reference/points/tango_area_learning/aligned/...
+                                         Points3D(reference cloud)
 
 world/live/source/rgb                   Image(source_rgb)
 world/live/tracking/camera              Transform3D(T_world_camera_tracking, axis_length=0)
@@ -102,7 +105,7 @@ world/live/model/diag/rgb               Image(rgb_live_model_raster)        # 2D
 world/live/model/camera/image           Pinhole(K_live, resolution, camera_xyz=RDF)
 world/live/model/camera/image           Image(rgb_live_camera_surface)
 world/live/model/camera/image/depth     DepthImage(depth_live_m, meter=1.0)
-world/live/model/diag/preview           Image(debug_preview_live)
+world/live/model/diag/preview           Image(debug_preview_live)           # only when enabled
 world/live/model/points                 Points3D(pointmap_xyz_camera_live)  # latest/debug surface
 
 world/keyframes/cameras/000000          Transform3D(T_world_camera_keyframe, axis_length=0)

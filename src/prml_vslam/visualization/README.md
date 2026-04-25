@@ -107,12 +107,15 @@ per-modality toggle matrix.
 - `world/live/model/diag/rgb`: dedicated 2D-only model-raster RGB surface.
 - `world/live/model/camera/image`: 3D camera entity with `Pinhole`, image, and
   depth when the camera bundle is coherent.
-- `world/live/model/diag/preview`: diagnostic preview surface.
+- `world/live/model/diag/preview`: diagnostic preview surface, logged only
+  when `log_diagnostic_preview = true`.
 - `world/live/model/points`: latest/debug camera-local pointmap surface.
 - `world/keyframes/cameras/<id>` and `world/keyframes/points/<id>`: stable
   keyed-history branches.
-- `world/reference/**/aligned/**`: aligned reference trajectories and clouds
-  shown in the default 3D scene.
+- `world/reference/trajectory/<source>/<status>`: prepared reference
+  trajectories.
+- `world/reference/points/<source>/<status>/...`: prepared reference point
+  clouds.
 - `world/slam/vista_slam_world/trajectory/raw`: tracking polyline.
 - `world/slam/vista_slam_world/trajectory/raw/poses/<id>`: optional per-pose
   SE3 trajectory transforms when `trajectory_pose_axis_length > 0`.
@@ -123,9 +126,9 @@ Current operational constraints:
   than synthesizing a repo-owned offline `.rrd`;
 - the default 3D scene is keyed-history first and treats
   `world/live/model/points` as mutable latest/debug geometry;
-- the default 3D scene uses a narrow allow-list for aligned references,
-  trajectories, keyed point clouds, and the recent frusta window instead of
-  broad includes with red exclusion filters;
+- the default 3D scene uses a narrow allow-list for references, trajectories,
+  keyed point clouds, and the recent frusta window instead of broad includes
+  with red exclusion filters;
 - live pointmaps and exported `pointcloud.ply` are different geometry products.
 
 ## Where To Read Next
