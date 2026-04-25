@@ -87,7 +87,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
         context.state.advio,
         preview_sequence_id=form.sequence_id,
         preview_pose_source=form.pose_source,
-        preview_respect_video_rotation=form.respect_video_rotation,
+        preview_normalize_video_orientation=form.normalize_video_orientation,
     )
     if form.stop_requested:
         context.advio_runtime.stop()
@@ -104,7 +104,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
             stream=context.advio_service.open_preview_stream(
                 sequence_id=form.sequence_id,
                 dataset_serving=AdvioServingConfig(pose_source=form.pose_source),
-                respect_video_rotation=form.respect_video_rotation,
+                normalize_video_orientation=form.normalize_video_orientation,
             ),
         )
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=True)

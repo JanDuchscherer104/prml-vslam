@@ -221,7 +221,7 @@ def test_build_advio_demo_run_config_enables_live_viewer_by_default(tmp_path: Pa
         pose_source=AdvioPoseSource.GROUND_TRUTH,
         pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     )
-    assert request.stages.source.backend.respect_video_rotation is False
+    assert request.stages.source.backend.normalize_video_orientation is True
 
 
 def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: Path) -> None:
@@ -231,14 +231,14 @@ def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: P
         mode=PipelineMode.STREAMING,
         method=MethodId.VISTA,
         pose_source=AdvioPoseSource.ARCORE,
-        respect_video_rotation=True,
+        normalize_video_orientation=True,
     )
 
     assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.ARCORE,
         pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     )
-    assert request.stages.source.backend.respect_video_rotation is True
+    assert request.stages.source.backend.normalize_video_orientation is True
 
 
 def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -1179,7 +1179,7 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
                 "pose_source": "ground_truth",
                 "pose_frame_mode": "provider_world",
             },
-            respect_video_rotation=True,
+            normalize_video_orientation=True,
         ),
         method=MethodId.VISTA,
         max_frames=2,

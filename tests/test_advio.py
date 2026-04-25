@@ -374,18 +374,42 @@ def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path:
     assert packet.T_world_camera.tx == 1.0
 
 
-def test_advio_open_stream_rotation_opt_in_keeps_default_behavior_without_metadata(
+def test_advio_open_stream_orientation_normalization_keeps_default_behavior_without_metadata(
     tmp_path: Path,
 ) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
-    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, normalize_video_orientation=True)
 
     assert isinstance(stream, PyAvVideoObservationSource)
 
 
-def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
+def test_read_video_rotation_degrees_uses_opencv_orientation_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video_path = tmp_path / "demo.mp4"
+    _write_video(video_path)
+
+    class FakeCapture:
+        def isOpened(self) -> bool:
+            return True
+
+        def get(self, prop_id: int) -> float:
+            del prop_id
+            return 90.0
+
+        def release(self) -> None:
+            return None
+
+    monkeypatch.setattr(cv2, "CAP_PROP_ORIENTATION_META", 48, raising=False)
+    monkeypatch.setattr(cv2, "VideoCapture", lambda path: FakeCapture())
+
+    assert replay_video_module.read_video_rotation_degrees(video_path) == 90
+
+
+def test_advio_open_stream_orientation_normalization_rotates_packets_and_intrinsics(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -393,13 +417,15 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
     monkeypatch.setattr(replay_video_module, "read_video_rotation_degrees", lambda path: 90)
 
-    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, normalize_video_orientation=True)
     stream.connect()
     packet = stream.wait_for_observation()
     stream.disconnect()
 
     assert packet.rgb.shape == (64, 48, 3)
     assert packet.provenance.video_rotation_degrees == 90
+    assert packet.provenance.original_width == 64
+    assert packet.provenance.original_height == 48
     assert packet.intrinsics is not None
     assert packet.intrinsics.width_px == 48
     assert packet.intrinsics.height_px == 64
@@ -409,14 +435,14 @@ def test_advio_open_stream_rotation_opt_in_rotates_packets_and_intrinsics(
     assert packet.intrinsics.cy == 32.0
 
 
-def test_advio_open_stream_rotation_opt_in_uses_pyav_replay_source(tmp_path: Path) -> None:
+def test_advio_open_stream_orientation_normalization_uses_pyav_replay_source(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
-    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, respect_video_rotation=True)
+    stream = sequence.open_stream(replay_mode=ReplayMode.FAST_AS_POSSIBLE, normalize_video_orientation=True)
 
     assert isinstance(stream, PyAvVideoObservationSource)
-    assert stream.apply_video_rotation is True
+    assert stream.normalize_video_orientation is True
 
 
 def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> None:

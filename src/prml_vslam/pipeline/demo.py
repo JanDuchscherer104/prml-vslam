@@ -63,7 +63,7 @@ def build_advio_demo_run_config(
     method: MethodId,
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
     pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD,
-    respect_video_rotation: bool = False,
+    normalize_video_orientation: bool = True,
     dataset_frame_stride: int = 1,
     dataset_target_fps: float | None = None,
 ) -> RunConfig:
@@ -80,7 +80,7 @@ def build_advio_demo_run_config(
                 pose_source=pose_source,
                 pose_frame_mode=pose_frame_mode,
             ),
-            respect_video_rotation=respect_video_rotation,
+            normalize_video_orientation=normalize_video_orientation,
         ),
         method=method,
         connect_live_viewer=True,

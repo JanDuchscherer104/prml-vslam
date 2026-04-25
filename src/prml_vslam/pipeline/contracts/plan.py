@@ -27,12 +27,13 @@ class PlannedSource(BaseData):
     frame_stride: int = 1
     target_fps: float | None = None
     expected_fps: float | None = None
+    replay_mode: str | None = None
     sequence_id: str | None = None
     video_path: Path | None = None
     transport: str | None = None
     device_index: int | None = None
     device_address: str = ""
-    respect_video_rotation: bool = False
+    normalize_video_orientation: bool = True
     metadata: dict[str, SourceMetadataValue] = Field(default_factory=dict)
 
 

@@ -179,6 +179,7 @@ def log_transform(
     entity_path: str,
     transform: FrameTransform,
     axis_length: float | None = None,
+    static: bool = False,
 ) -> None:
     """Log one explicit transform using repo-owned direction semantics."""
     translation = transform.translation_xyz().tolist()
@@ -191,6 +192,7 @@ def log_transform(
             relation=rr.TransformRelation.ParentFromChild,
             axis_length=axis_length,
         ),
+        static=static,
     )
 
 

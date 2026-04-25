@@ -11,8 +11,14 @@ import numpy as np
 # in the same order used by the app.
 import prml_vslam.pipeline  # noqa: F401
 from prml_vslam.interfaces import FrameTransform
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
+from prml_vslam.sources.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, TRAJECTORY_ARTIFACT
+from prml_vslam.utils.geometry import write_tum_trajectory
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.contracts import VisualizationConfig
+from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
 
 
 def test_visualization_config_serializes_optional_viewer_blueprint_path() -> None:
@@ -29,6 +35,7 @@ def test_visualization_config_serializes_optional_viewer_blueprint_path() -> Non
     assert reloaded.log_source_rgb is False
     assert reloaded.log_diagnostic_preview is False
     assert reloaded.log_camera_image_rgb is False
+    assert reloaded.trajectory_pose_axis_length == 0.0
 
 
 def test_attach_recording_sinks_configures_grpc_and_file_together(
@@ -269,6 +276,65 @@ def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
     assert entity_path == "world/slam/vista_slam_world/trajectory/raw"
     assert len(payload.strips) == 1
     assert np.array_equal(payload.strips[0], np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]], dtype=np.float32))
+
+
+def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_path: Path) -> None:
+    trajectory_path = write_tum_trajectory(
+        tmp_path / "trajectory.tum",
+        [
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+        ],
+        [0.0, 1.0],
+    )
+    line_calls: list[tuple[str, bool]] = []
+    pose_calls: list[tuple[str, float | None, bool, FrameTransform]] = []
+    policy = RerunLoggingPolicy(
+        log_pinhole=lambda *args, **kwargs: None,
+        log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
+        log_line_strip3d=lambda stream, *, entity_path, positions_xyz, static=False: line_calls.append(
+            (entity_path, static)
+        ),
+        log_clear=lambda *args, **kwargs: None,
+        log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
+        log_rgb_image=lambda *args, **kwargs: None,
+        log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(
+            (entity_path, axis_length, static, transform)
+        ),
+        trajectory_pose_axis_length=0.25,
+    )
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SOURCE,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.TRAJECTORY,
+                role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
+                artifact_refs={
+                    TRAJECTORY_ARTIFACT: ArtifactRef(path=trajectory_path, kind="tum", fingerprint="trajectory")
+                },
+                metadata={
+                    "reference_source": "ground_truth",
+                    "coordinate_status": "aligned",
+                    "target_frame": "advio_gt_world",
+                },
+            )
+        ],
+    )
+
+    policy.observe_update(object(), update)
+
+    assert line_calls == [("world/reference/advio_gt_world/ground_truth/aligned/trajectory", True)]
+    assert [call[0] for call in pose_calls] == [
+        "world/reference/advio_gt_world/ground_truth/aligned/trajectory/poses/000000",
+        "world/reference/advio_gt_world/ground_truth/aligned/trajectory/poses/000001",
+    ]
+    assert all(axis_length == 0.25 and static is True for _, axis_length, static, _ in pose_calls)
+    assert pose_calls[1][3].target_frame == "advio_gt_world"
+    assert pose_calls[1][3].tx == 1.0
 
 
 def test_log_mesh3d_logs_one_mesh(monkeypatch) -> None:

@@ -59,6 +59,7 @@ connect_live_viewer = true
 export_viewer_rrd = true
 frusta_history_window_streaming = 20
 show_tracking_trajectory = true
+trajectory_pose_axis_length = 0.0
 ```
 
 Inspect a persisted repo-owned recording:
@@ -98,7 +99,7 @@ per-modality toggle matrix.
 
 - `world`: static root world convention for the viewer.
 - `world/live/source/rgb`: original source-frame RGB packets.
-- `world/live/tracking/camera`: live tracking pose plus trajectory input.
+- `world/live/tracking/camera`: live tracking pose.
 - `world/live/model/diag/rgb`: dedicated 2D-only model-raster RGB surface.
 - `world/live/model/camera/image`: 3D camera entity with `Pinhole`, image, and
   depth when the camera bundle is coherent.
@@ -106,7 +107,9 @@ per-modality toggle matrix.
 - `world/live/model/points`: latest/debug camera-local pointmap surface.
 - `world/keyframes/cameras/<id>` and `world/keyframes/points/<id>`: stable
   keyed-history branches.
-- `world/trajectory/tracking`: full tracking polyline.
+- `world/slam/vista_slam_world/trajectory/raw`: tracking polyline.
+- `world/slam/vista_slam_world/trajectory/raw/poses/<id>`: per-pose SE3
+  trajectory transforms.
 
 Current operational constraints:
 

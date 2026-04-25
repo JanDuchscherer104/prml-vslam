@@ -15,7 +15,15 @@ from .clock import ReplayClock, ReplayMode
 
 
 class PyAvVideoObservationSource:
-    """Replay one local video through the shared source-observation seam."""
+    """Stream a local video iteratively as if it were a live camera source.
+
+    This source acts as an adapter for disk-backed video media using ``pyav``.
+    It waits for an emulated clock to pace the video's presentation timestamps
+    (or dataset-provided frame timestamps), unpacks geometry transformations,
+    and handles automatic orientation normalization for upright rendering. Use
+    this abstraction to evaluate algorithms against pre-recorded continuous video
+    in the same pipeline designed for live hardware.
+    """
 
     def __init__(
         self,
@@ -30,8 +38,29 @@ class PyAvVideoObservationSource:
         allow_synthetic_timestamps: bool = False,
         synthetic_fps: float | None = None,
         base_provenance: ObservationProvenance | None = None,
-        apply_video_rotation: bool = False,
+        normalize_video_orientation: bool = True,
     ) -> None:
+        """Initialize the video playback state.
+
+        Args:
+            video_path: The file path to the continuous media payload.
+            frame_timestamps_ns: An optional sequence of explicit nanosecond
+                timestamps. If provided, overrides PyAV presentation times.
+            stride: The frame sampling step size. Must be >= 1.
+            loop: Whether to wrap around seamlessly when the video ends.
+            replay_mode: The time-sync pacing strategy applied when a frame is read.
+            intrinsics: Emulated camera geometry to attach to observations.
+            poses_by_frame: Indexed frame-to-world metrics, such as ground truth
+                trajectories from benchmarks.
+            allow_synthetic_timestamps: Whether to generate timestamps synthetically
+                if the video lacks them.
+            synthetic_fps: The framerate to assume when calculating synthetic
+                timestamps. Required if ``allow_synthetic_timestamps=True``.
+            base_provenance: A shared metadata footprint applied to all emitted
+                observations to record the video origin.
+            normalize_video_orientation: Whether to rotate out metadata-encoded
+                display orientations before emitting the frame.
+        """
         if stride < 1:
             raise ValueError("stride must be >= 1.")
         self.video_path = video_path
@@ -43,7 +72,7 @@ class PyAvVideoObservationSource:
         self.allow_synthetic_timestamps = allow_synthetic_timestamps
         self.synthetic_fps = synthetic_fps
         self.base_provenance = base_provenance or ObservationProvenance()
-        self.apply_video_rotation = apply_video_rotation
+        self.normalize_video_orientation = normalize_video_orientation
         self._clock = ReplayClock(replay_mode)
         self._container: av.container.InputContainer | None = None
         self._frames = None
@@ -53,14 +82,25 @@ class PyAvVideoObservationSource:
         self._rotation_degrees = 0
 
     def connect(self) -> Path:
-        """Open the configured video file and prepare playback state."""
+        """Open the configured video and prepare playback state.
+
+        This method initializes PyAV decoding decoders, parses stream
+        metadata for orientation hints, and resets the replay clock.
+        Must be called prior to requesting observations.
+
+        Returns:
+            The validated video file path.
+
+        Raises:
+            ValueError: When no valid video stream is detected.
+        """
         self.disconnect()
         self._container = av.open(str(self.video_path))
         stream = next(iter(self._container.streams.video), None)
         if stream is None:
             self.disconnect()
             raise ValueError(f"No video stream found in {self.video_path}.")
-        self._rotation_degrees = read_video_rotation_degrees(self.video_path) if self.apply_video_rotation else 0
+        self._rotation_degrees = read_video_rotation_degrees(self.video_path) if self.normalize_video_orientation else 0
         self._frames = self._container.decode(video=0)
         self._frame_index = 0
         self._emitted_seq = 0
@@ -69,14 +109,35 @@ class PyAvVideoObservationSource:
         return self.video_path
 
     def disconnect(self) -> None:
-        """Close the underlying PyAV container if one is open."""
+        """Release sequence resources and halt PyAV container playback.
+
+        This method acts safely as a no-op if the session is uninitialized
+        or already closed.
+        """
         if self._container is not None:
             self._container.close()
         self._container = None
         self._frames = None
 
     def wait_for_observation(self, timeout_seconds: float | None = None) -> Observation:
-        """Decode and return the next sampled RGB observation."""
+        """Decode and return the next sampled RGB observation seamlessly.
+
+        This method blocks until the emulated clock matches the actual payload timestamp
+        for the frame. It decodes the next valid raster, normalizes display orientation
+        if configured to do so, rotates any supplied intrinsic camera models symmetrically,
+        and constructs an :class:`~prml_vslam.interfaces.Observation` struct.
+
+        Args:
+            timeout_seconds: An optional wait maximum. Unused and ignored
+                by this implementation.
+
+        Returns:
+            The fully synced observation payload.
+
+        Raises:
+            RuntimeError: If playback has not been initialized with ``connect()``.
+            EOFError: If decoding finishes and ``loop`` is false.
+        """
         del timeout_seconds
         self._require_connected()
         while True:
@@ -94,6 +155,7 @@ class PyAvVideoObservationSource:
             timestamp_ns = self._timestamp_ns_for_frame(source_frame_index, frame)
             self._clock.wait_until(timestamp_ns)
             rgb = np.asarray(frame.to_ndarray(format="rgb24"), dtype=np.uint8)
+            original_height, original_width = rgb.shape[:2]
             intrinsics = self.intrinsics
             if self._rotation_degrees:
                 rgb = _rotate_rgb(rgb, self._rotation_degrees)
@@ -111,6 +173,8 @@ class PyAvVideoObservationSource:
                 provenance=self.base_provenance.model_copy(
                     update={
                         "video_rotation_degrees": self._rotation_degrees,
+                        "original_width": int(original_width),
+                        "original_height": int(original_height),
                     }
                 ),
             )
@@ -148,19 +212,43 @@ class PyAvVideoObservationSource:
 
 
 def read_video_rotation_degrees(video_path: Path) -> int:
-    """Read display rotation metadata from one video file."""
+    """Read display rotation metadata from a video file.
+
+    Extracts the angle encoded by smartphones (or other video devices) using PyAV tools
+    to inspect container properties, streams, and side data. If PyAV fails, falls back
+    to OpenCV's orientation metadata capture.
+
+    Args:
+        video_path: The file path to the video.
+
+    Returns:
+        The normalized rotation in degrees (e.g., ``0, 90, 180, 270``), constrained
+        to valid right-angle increments.
+
+    Raises:
+        ValueError: If no video stream is found or if PyAV abruptly raises
+            container initialization errors without a fallback possible.
+    """
+    pyav_rotation: int | None = None
     try:
         with av.open(str(video_path)) as container:
             stream = next(iter(container.streams.video), None)
             if stream is None:
                 raise ValueError("No video stream found.")
             if (rotation := _rotation_from_metadata(getattr(stream, "metadata", {}))) is not None:
-                return rotation
-            for frame in container.decode(video=0):
-                return _rotation_from_frame(frame)
+                pyav_rotation = rotation
+            if pyav_rotation in (None, 0):
+                for frame in container.decode(video=0):
+                    pyav_rotation = _rotation_from_frame(frame)
+                    break
     except Exception as exc:
         raise ValueError(f"Failed to read video rotation metadata from {video_path}: {exc}") from exc
-    return 0
+    if pyav_rotation not in (None, 0):
+        return pyav_rotation
+    cv2_rotation = _rotation_from_cv2(video_path)
+    if cv2_rotation is not None:
+        return cv2_rotation
+    return 0 if pyav_rotation is None else pyav_rotation
 
 
 def _rotation_from_metadata(metadata: dict[str, str] | None) -> int | None:
@@ -172,7 +260,7 @@ def _rotation_from_metadata(metadata: dict[str, str] | None) -> int | None:
     return None
 
 
-def _rotation_from_frame(frame: av.VideoFrame) -> int:
+def _rotation_from_frame(frame: av.VideoFrame) -> int | None:
     return next(
         (
             rotation
@@ -180,8 +268,24 @@ def _rotation_from_frame(frame: av.VideoFrame) -> int:
             if "display" in str(getattr(side_data, "type", "")).lower()
             and (rotation := _rotation_from_side_data(side_data)) is not None
         ),
-        0,
+        None,
     )
+
+
+def _rotation_from_cv2(video_path: Path) -> int | None:
+    import cv2
+
+    orientation_meta = getattr(cv2, "CAP_PROP_ORIENTATION_META", None)
+    if orientation_meta is None:
+        return None
+    capture = cv2.VideoCapture(str(video_path))
+    try:
+        if not capture.isOpened():
+            return None
+        rotation = float(capture.get(orientation_meta))
+    finally:
+        capture.release()
+    return None if not np.isfinite(rotation) else _normalize_rotation(rotation)
 
 
 def _rotation_from_side_data(side_data: Any) -> int | None:

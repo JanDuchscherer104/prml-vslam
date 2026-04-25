@@ -25,6 +25,7 @@ from prml_vslam.sources.config import (
 from prml_vslam.sources.contracts import Record3DTransportId
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.utils import PathConfig
 
 
@@ -154,12 +155,15 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     assert isinstance(run_config.stages.source.backend, AdvioSourceConfig)
     assert run_config.stages.source.backend.sequence_id == "advio-20"
     assert run_config.stages.source.backend.frame_stride == 5
+    assert run_config.stages.source.backend.replay_mode is ReplayMode.REALTIME
+    assert run_config.stages.source.backend.normalize_video_orientation is True
     assert run_config.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
         pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     )
     assert run_config_plan.source.source_id == DatasetId.ADVIO.value
     assert run_config_plan.source.sequence_id == "advio-20"
+    assert run_config_plan.source.replay_mode == "realtime"
     assert run_config_plan.source.metadata["pose_source"] == "ground_truth"
     assert run_config.stages.align_ground.enabled is True
     assert run_config.stages.reconstruction.enabled is True
@@ -226,7 +230,14 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
         {"backend": {"source_id": "video", "video_path": "captures/demo.mp4", "frame_stride": 2}}
     )
     tum = SourceStageConfig.model_validate(
-        {"backend": {"source_id": "tum_rgbd", "sequence_id": "freiburg1_room", "target_fps": 15.0}}
+        {
+            "backend": {
+                "source_id": "tum_rgbd",
+                "sequence_id": "freiburg1_room",
+                "target_fps": 15.0,
+                "replay_mode": "fast_as_possible",
+            }
+        }
     )
     advio = SourceStageConfig.model_validate(
         {
@@ -253,8 +264,11 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
 
     assert isinstance(video.backend, VideoSourceConfig)
     assert isinstance(tum.backend, TumRgbdSourceConfig)
+    assert tum.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert isinstance(advio.backend, AdvioSourceConfig)
     assert isinstance(advio.backend.dataset_serving, AdvioServingConfig)
+    assert advio.backend.replay_mode is ReplayMode.REALTIME
+    assert advio.backend.normalize_video_orientation is True
     assert isinstance(record3d.backend, Record3DSourceConfig)
     assert record3d.backend.transport is Record3DTransportId.USB
 

@@ -24,6 +24,7 @@ from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.sources.materialization import VideoOfflineSequenceSource
 from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
+from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.runtime import SourceRuntime, SourceStageInput
 from prml_vslam.sources.streaming import SampledStreamingSource
 from prml_vslam.utils import FactoryConfig, PathConfig
@@ -71,12 +72,16 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
     sequence_id: str
     """TUM RGB-D sequence slug or canonical sequence id."""
 
+    replay_mode: ReplayMode = ReplayMode.REALTIME
+    """Replay pacing policy for streaming TUM RGB-D observations."""
+
     def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized TUM RGB-D source adapter."""
         service = TumRgbdDatasetService(path_config)
         return service.build_streaming_source(
             sequence_id=service.resolve_sequence_id(self.sequence_id),
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            replay_mode=self.replay_mode,
             pose_source=TumRgbdPoseSource.GROUND_TRUTH,
             include_depth=True,
         )
@@ -85,7 +90,7 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
 class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
     """Configure one ADVIO dataset source adapter.
 
-    ADVIO adds dataset-serving policy for pose source, video rotation, and
+    ADVIO adds dataset-serving policy for pose source, video orientation, and
     optional Tango reference payloads. Those semantics stay ADVIO-owned rather
     than being promoted into the generic source backend base.
     """
@@ -101,8 +106,11 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     dataset_serving: AdvioServingConfig = Field(default_factory=AdvioServingConfig)
     """ADVIO-only pose provider and frame semantics."""
 
-    respect_video_rotation: bool = False
-    """Whether replay should honor ADVIO video rotation metadata."""
+    replay_mode: ReplayMode = ReplayMode.REALTIME
+    """Replay pacing policy for streaming ADVIO observations."""
+
+    normalize_video_orientation: bool = True
+    """Whether replay should normalize video display orientation before emission."""
 
     tango_reference_point_stride: int = Field(default=1, ge=1)
     """Stride for prepared static ADVIO Tango reference clouds; ``1`` keeps every payload point."""
@@ -114,7 +122,8 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
             sequence_id=service.resolve_sequence_id(self.sequence_id),
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             dataset_serving=self.dataset_serving,
-            respect_video_rotation=self.respect_video_rotation,
+            replay_mode=self.replay_mode,
+            normalize_video_orientation=self.normalize_video_orientation,
             tango_reference_point_stride=self.tango_reference_point_stride,
         )
 

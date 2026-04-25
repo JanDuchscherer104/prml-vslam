@@ -795,6 +795,7 @@ class RunCoordinatorActor:
             recording_id=self._run_id,
             frusta_history_window_streaming=run_config.visualization.frusta_history_window_streaming,
             show_tracking_trajectory=run_config.visualization.show_tracking_trajectory,
+            trajectory_pose_axis_length=run_config.visualization.trajectory_pose_axis_length,
             log_source_rgb=run_config.visualization.log_source_rgb,
             log_diagnostic_preview=run_config.visualization.log_diagnostic_preview,
             log_camera_image_rgb=run_config.visualization.log_camera_image_rgb,

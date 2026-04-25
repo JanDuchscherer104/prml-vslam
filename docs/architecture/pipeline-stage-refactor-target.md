@@ -491,6 +491,7 @@ classDiagram
         +sequence_id
         +frame_stride
         +target_fps
+        +replay_mode
         +setup_target()
     }
 
@@ -500,7 +501,8 @@ classDiagram
         +frame_stride
         +target_fps
         +dataset_serving
-        +respect_video_rotation
+        +replay_mode
+        +normalize_video_orientation
         +setup_target()
     }
 
