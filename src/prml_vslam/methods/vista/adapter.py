@@ -113,6 +113,7 @@ class VistaSlamBackend(SlamBackend):
         return self._streaming_runtime
 
 
+# TODO: this kind of io should optimally be handeled by shared dedicated artifact i/o utilities!
 def _load_offline_frame_inputs(
     *,
     sequence: SequenceManifest,

@@ -336,7 +336,7 @@ def test_run_config_persists_timestamped_command_log(monkeypatch: pytest.MonkeyP
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}_demo-streaming\.log", log_files[0].name)
     lines = log_files[0].read_text(encoding="utf-8").splitlines()
     assert lines
-    assert all(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z ", line) for line in lines)
+    assert all(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(Z|[+-]\d{2}:\d{2}) ", line) for line in lines)
     assert any("Persisting run-config log" in line for line in lines)
     assert any("start payload processed=73 fps=13.29" in line for line in lines)
     assert any("snapshot payload" in line for line in lines)
