@@ -223,32 +223,3 @@ class SlamVisualizationAdapter:
             )
         )
         return items
-
-
-__all__ = [
-    "COLORS_REF",
-    "DEPTH_REF",
-    "IMAGE_REF",
-    "POINTMAP_REF",
-    "PREVIEW_REF",
-    "ROLE_KEYFRAME_CAMERA_POSE",
-    "ROLE_KEYFRAME_CAMERA_WINDOW",
-    "ROLE_KEYFRAME_DEPTH",
-    "ROLE_KEYFRAME_PINHOLE",
-    "ROLE_KEYFRAME_POINTMAP",
-    "ROLE_KEYFRAME_POINTS_POSE",
-    "ROLE_KEYFRAME_PREVIEW",
-    "ROLE_KEYFRAME_RGB",
-    "ROLE_LIVE_MODEL_POSE",
-    "ROLE_MODEL_CAMERA_RGB",
-    "ROLE_MODEL_DEPTH",
-    "ROLE_MODEL_PINHOLE",
-    "ROLE_MODEL_POINTMAP",
-    "ROLE_MODEL_PREVIEW",
-    "ROLE_MODEL_RGB",
-    "ROLE_SOURCE_RGB",
-    "ROLE_TRACKING_POSE",
-    "ROLE_TRACKING_TRAJECTORY",
-    "SOURCE_RGB_REF",
-    "SlamVisualizationAdapter",
-]

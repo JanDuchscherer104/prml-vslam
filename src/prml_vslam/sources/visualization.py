@@ -292,30 +292,3 @@ def _trajectory_coordinate_status(dataset_id: DatasetId | None, target_frame: st
 def _entity_token(value: str) -> str:
     stripped = value.strip().replace(" ", "_")
     return "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in stripped) or "reference"
-
-
-__all__ = [
-    "IMAGE_REF",
-    "COLORS_REF",
-    "DEPTH_REF",
-    "METADATA_ARTIFACT",
-    "POINT_CLOUD_ARTIFACT",
-    "POINTMAP_REF",
-    "ROLE_SOURCE_CAMERA_POSE",
-    "ROLE_SOURCE_CAMERA_RGB",
-    "ROLE_SOURCE_DEPTH",
-    "ROLE_SOURCE_PINHOLE",
-    "ROLE_SOURCE_POINTMAP",
-    "ROLE_SOURCE_REFERENCE_POINT_CLOUD",
-    "ROLE_SOURCE_REFERENCE_TRAJECTORY",
-    "ROLE_SOURCE_RGB",
-    "SourceVisualizationAdapter",
-    "TRAJECTORY_ARTIFACT",
-    "reference_cloud_artifact_key",
-    "reference_cloud_metadata_artifact_key",
-    "reference_point_cloud_sequence_index_artifact_key",
-    "reference_point_cloud_sequence_payload_artifact_key",
-    "reference_point_cloud_sequence_trajectory_artifact_key",
-    "reference_trajectory_artifact_key",
-    "observation_sequence_artifact_key",
-]
