@@ -50,7 +50,7 @@ sequenceDiagram
     participant Page as pages/*.py
     participant Service as prml_vslam.eval/services.py
     participant Runtime as Record3DStreamRuntimeController
-    participant IO as prml_vslam.sources.replay
+    participant Source as prml_vslam.sources
 
     User->>Browser: Open app or interact with a widget
     Browser->>Bootstrap: Trigger script rerun
@@ -67,11 +67,11 @@ sequenceDiagram
         Page->>Browser: Render sidebar controls
         User->>Page: Submit Start/Restart form
         Page->>Runtime: start_usb(...) or start_wifi_preview(...)
-        Runtime->>IO: Create Record3D packet stream
-        IO-->>Runtime: Blocking packet stream
+        Runtime->>Source: Create Record3D observation stream
+        Source-->>Runtime: Blocking observation stream
         loop Background worker thread
-            Runtime->>IO: wait_for_observation(...)
-            IO-->>Runtime: Observation
+            Runtime->>Source: wait_for_observation(...)
+            Source-->>Runtime: Observation
             Runtime->>Runtime: Update Record3DStreamSnapshot
         end
         loop Fragment rerun
@@ -195,8 +195,13 @@ sequenceDiagram
 ## Boundaries To Other Packages
 
 - `prml_vslam.sources.replay`
-  - Owns Record3D capture, frame decoding, typed packet/snapshot contracts, and the official USB plus Wi-Fi Preview transport integrations.
-  - The app consumes shared typed IO contracts; it does not implement transport protocols itself.
+  - Owns replay clocking and shared observation-stream mechanics.
+  - The app consumes shared typed source contracts; it does not implement
+    transport protocols itself.
+
+- `prml_vslam.sources.record3d`
+  - Owns Record3D capture, frame decoding, and the official USB plus Wi-Fi
+    Preview transport integrations.
 
 - `prml_vslam.sources.datasets`
   - Owns ADVIO metadata, local dataset normalization, and selective download semantics.
@@ -263,7 +268,7 @@ The Record3D page uses an explicit runtime-controller pattern:
 
 - the UI starts or stops a session through `Record3DStreamRuntimeController`
 - the runtime owns a background worker thread
-- the worker consumes `Record3DPacketStream` objects from the IO layer
+- the worker consumes `ObservationStream` objects from the source layer
 - the worker continuously updates one shared `Record3DStreamSnapshot`
 - the page reads that snapshot during fragment reruns and renders it
 

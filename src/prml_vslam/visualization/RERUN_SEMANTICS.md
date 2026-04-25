@@ -177,7 +177,7 @@ Current limitations:
 Current repo-owned export surfaces:
 
 - aligned reference clouds from benchmark inputs
-- source RGB packets
+- source RGB observations
 - live tracking and live model transforms
 - model-raster RGB camera images
 - metric `DepthImage` payloads

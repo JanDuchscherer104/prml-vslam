@@ -182,7 +182,7 @@ src/prml_vslam/pipeline/
 │   │   ├── contracts.py       # StageResult, StageRuntimeStatus, StageRuntimeUpdate
 │   │   ├── handles.py         # TransientPayloadRef
 │   │   ├── protocols.py       # BaseStageRuntime, Offline/LiveUpdate/Streaming protocols
-│   │   ├── proxy.py           # StageRuntimeHandle for local/Ray-hosted invocation
+│   │   ├── proxy.py           # StageRuntimeHandle for local invocation
 │   │   └── ray.py             # Ray placement and invocation helpers
 │   ├── source/
 │   │   ├── __init__.py
@@ -445,8 +445,8 @@ connect_live_viewer = false
 executor = "ray"
 ```
 
-Target source config detail:
-<!-- TODO(docs): This is an important UML diagram that should be included in prml_vslam/sources/README.md -->
+Target source config detail. The current source-package version is maintained in
+[`src/prml_vslam/sources/README.md`](../../src/prml_vslam/sources/README.md).
 ```mermaid
 classDiagram
     class RunConfig {
@@ -560,7 +560,8 @@ Per-stage cleanup is available through an optional nested
 key, not filesystem path; see the dedicated
 [artifact cleanup policy](./pipeline-stage-artifact-cleanup-policy.md).
 
-<!-- TODO(docs): This is an important UML diagram that should be included in prml_vslam/README.md; remove the specific *StageConfigs, and indicate that stage specific StageConfig's usually have a backend field that contains the config of the respective backend -->
+The current package-level stage/config overview is maintained in
+[`src/prml_vslam/README.md`](../../src/prml_vslam/README.md).
 
 ```mermaid
 classDiagram
@@ -879,7 +880,7 @@ Compact per-stage runtime patterns:
 ```mermaid
 flowchart LR
     Runner["StageRunner / Coordinator"]
-    Proxy["StageRuntimeHandle<br/>local or Ray-hosted"]
+    Proxy["StageRuntimeHandle<br/>local runtime handle"]
     SlamRuntime["SlamStageRuntime<br/>offline + streaming"]
     SlamBackend["SlamBackend"]
 
@@ -967,7 +968,7 @@ Initial classification:
 | Stage | Runtime target | Reason |
 | --- | --- | --- |
 | `source` | In-process runtime first; streaming source backend may use an internal sidecar | Source backend selection and normalization; live packet readers are collaborators, not public stages. |
-| `slam` | `SlamStageRuntime` through `StageRuntimeHandle`, Ray-hosted when needed | Stateful backend, streaming hot path, GPU placement. |
+| `slam` | `SlamStageRuntime` through `StageRuntimeHandle`; independent per-stage Ray hosting is deferred | Stateful backend, streaming hot path, GPU placement. |
 | `gravity.align` | In-process runtime first | Derived artifact from `SlamArtifacts`; can be upgraded if point-cloud size demands remote placement. |
 | `evaluate.trajectory` | In-process runtime first | Offline/finalize metric computation over materialized trajectories. |
 | `reconstruction` | Runtime selected by reconstruction backend/mode | Reference reconstruction can stay in-process first; GPU-heavy 3DGS variants use Ray hosting. |
@@ -1130,7 +1131,8 @@ private implementation inputs, but public payloads inside `StageResult` and
 the durable/provenance subset, and semantic outputs remain domain-owned
 payloads from their owning package.
 
-<!-- TODO(docs): This is an important UML diagram that should be included in prml_vslam/pipeline/README.md. Ensure that it is up-to-date with the source code! -->
+The current generic DTO and payload diagram is maintained in
+[`src/prml_vslam/pipeline/README.md`](../../src/prml_vslam/pipeline/README.md).
 
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "22px", "nodeTextColor": "#111827", "nodeBkg": "#ffffff", "nodeBorder": "#6b7280", "mainBkg": "transparent", "clusterBkg": "transparent", "clusterBorder": "#d1d5db"}, "flowchart": {"htmlLabels": true}}}%%
@@ -1618,7 +1620,8 @@ when implementing or reviewing the SLAM visualization path. Keep Rerun
 transform, pinhole, depth, timeline, and blueprint semantics inside the
 sink/policy layer.
 
-<!-- TODO: This is an important UML diagram. Include it in src/prml_vslam/pipeline/README.md with a gneric Stage (not slam specific)  -->
+The current generic stage lifecycle sequence is maintained in
+[`src/prml_vslam/pipeline/README.md`](../../src/prml_vslam/pipeline/README.md).
 ```mermaid
 sequenceDiagram
     autonumber
@@ -2052,7 +2055,8 @@ unions, validators, `Field`, serialization, and the repo's
 `BaseConfig` / `BaseData` conventions. Pydantic is the config/modeling tool
 here; it must not become a second runtime construction authority.
 
-<!-- TODO: This is an important mermaid UML diagram. include it in src/prml_vslam/README.md and bring it up-to-date. I.e.SourceBackendConfig also supports advio.  -->
+The current package-level config muxing diagram is maintained in
+[`src/prml_vslam/README.md`](../../src/prml_vslam/README.md).
 ```mermaid
 classDiagram
     class StageConfig {

@@ -193,7 +193,7 @@ For the current TUM RGB-D replay path:
 - [TumRgbdImageSequenceStream](./tum_rgbd_replay_adapter.py:25) replays RGB frames from `rgb.txt`
 - optional depth is loaded from the nearest associated `depth.txt` row
 - pose is loaded from the nearest associated ground-truth row
-- packet intrinsics are the Freiburg RGB intrinsics (or an explicit
+- observation intrinsics are the Freiburg RGB intrinsics (or an explicit
   `intrinsics.txt` override when present)
 
 The stream therefore emits one repository-owned `Observation` carrying:

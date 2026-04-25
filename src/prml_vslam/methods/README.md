@@ -1,35 +1,53 @@
-# Methods Guide
+# Methods
 
-This package owns concrete SLAM wrapper execution: ViSTA adapter bootstrap,
-backend-native live updates, and normalized `SlamArtifacts` production.
-Persisted backend selection and backend config muxing belong to
-`prml_vslam.methods.stage.config`.
+This package owns concrete SLAM wrapper execution: backend config variants,
+method protocols, ViSTA adapter bootstrap, backend-native live updates, and
+normalized `SlamArtifacts` production.
 
-## Current Implementation
+Persisted SLAM stage policy lives under `methods/stage/`; reusable method
+wrappers and native artifact interpretation remain in the method package.
 
-The pipeline constructs stage-owned backend configs, then the SLAM stage runtime
-calls the selected config's `setup_target(...)` inside the execution process.
-The resulting method wrapper consumes normalized repository inputs and returns
-normalized artifacts. There is no central method factory in this package.
+## Stage Integration
 
-The method package keeps these concerns local:
+- [`stage/backend_config.py`](./stage/backend_config.py): public SLAM backend
+  discriminator `method_id`, concrete backend configs, and `SlamOutputPolicy`.
+  Concrete backend configs construct wrappers through `setup_target(...)`.
+- [`stage/config.py`](./stage/config.py): `SlamStageConfig`, which declares
+  planned SLAM outputs, availability, runtime construction, input building, and
+  failure fingerprints.
+- [`stage/contracts.py`](./stage/contracts.py): `SlamOfflineStageInput` and
+  `SlamStreamingStartStageInput`.
+- [`stage/runtime.py`](./stage/runtime.py): `SlamStageRuntime`, the runtime
+  adapter implementing offline, streaming, and live-update capability surfaces.
+- [`stage/visualization.py`](./stage/visualization.py): neutral
+  visualization-item adapter for SLAM artifacts and live updates.
 
-- `contracts.py`: normalized `SlamArtifacts` outputs and backend-native
-  `SlamUpdate` telemetry.
-- `protocols.py`: offline and streaming backend/session behavior seams.
-- `mast3r.py`: placeholder MASt3R backend.
-- `vista/`: canonical ViSTA-SLAM wrapper, runtime bootstrap, preprocessing,
-  session stepping, and native artifact import.
+## I/O And Protocols
 
-## Boundaries
+- Offline SLAM backends consume `Iterable[Observation]`, not source manifests
+  or backend-private file layouts.
+- Streaming SLAM sessions consume shared `Observation` stream items after
+  `SlamStageRuntime` has started the session.
+- [`protocols.py`](./protocols.py) owns `OfflineSlamBackend`,
+  `StreamingSlamBackend`, and `StreamingSlamSession`.
+- [`contracts.py`](./contracts.py) owns `SlamUpdate` and backend notice/event
+  payloads emitted by method wrappers.
+- SLAM completion returns normalized [`SlamArtifacts`](../interfaces/slam.py)
+  inside a pipeline `StageResult`.
 
-Methods must not own stage order, persisted run config, resource placement,
-pipeline events, app state, viewer orchestration, or evaluation policy. They may
-resolve backend prerequisites, instantiate upstream runtimes, preserve selected
-native outputs, emit backend-native live updates, and normalize outputs into the
-shared artifact contracts consumed by the pipeline.
+Source manifest dematerialization belongs to source-owned helpers and the SLAM
+stage runtime. Method wrappers own backend-specific preprocessing, upstream
+runtime initialization, native-output validation, and normalization into
+repo-owned artifacts.
 
-When adding a backend, add the persisted config variant and planning metadata in
-`prml_vslam.methods.stage.config`, then implement the wrapper here
-against `protocols.py`. Keep heavy upstream imports and allocations in wrapper
-construction or runtime startup, not in import-time package code.
+## Concrete Backends
+
+- [`vista/`](./vista/README.md): canonical ViSTA-SLAM wrapper, runtime
+  bootstrap, frame preprocessing, live session stepping, and native artifact
+  import.
+- [`mast3r.py`](./mast3r.py): placeholder MASt3R backend that remains fail-fast
+  until the repository owns a real integration.
+
+Methods must not own stage order, persisted run config beyond backend variant
+fields, resource placement, pipeline events, app state, viewer orchestration, or
+evaluation policy.

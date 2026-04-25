@@ -23,3 +23,24 @@ again.
 selection lives in `prml_vslam.eval.stage_trajectory`, reusable
 reference identifiers live in `prml_vslam.sources.contracts`, and evaluation execution
 remains here.
+
+## Stage Integration
+
+- Config: [`stage_trajectory/config.py`](./stage_trajectory/config.py) defines
+  `TrajectoryEvaluationStageConfig` for `evaluate.trajectory`. It declares the
+  trajectory metrics artifact, verifies backend support, selects the reference
+  source, and builds the runtime input.
+- Input DTO: [`stage_trajectory/contracts.py`](./stage_trajectory/contracts.py)
+  defines `TrajectoryEvaluationStageInput` with the artifact root, selected
+  baseline, source manifest, prepared benchmark inputs, and normalized
+  `SlamArtifacts`.
+- Runtime: [`stage_trajectory/runtime.py`](./stage_trajectory/runtime.py)
+  adapts `TrajectoryEvaluationService` into `OfflineStageRuntime` and returns
+  an `EvaluationArtifact` inside `StageResult`.
+- Diagnostic config: [`stage_cloud/config.py`](./stage_cloud/config.py) defines
+  `CloudEvaluationStageConfig` for `evaluate.cloud`. It records planned dense
+  cloud metrics and artifact selection, but no runtime is registered yet.
+
+Evaluation consumes prepared references and normalized method outputs. It does
+not prepare sources, execute SLAM backends, own Rerun logging, or compute
+summary projections.

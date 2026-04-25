@@ -1,6 +1,6 @@
 # Reconstruction Guide
 
-This package should own the repository's minimal dense-reconstruction execution
+This package owns the repository's minimal dense-reconstruction execution
 surface. It is the reconstruction analogue of
 [`prml_vslam.methods`](../methods/README.md): a small package that names
 reconstruction methods, owns reconstruction-private config and artifact DTOs,
@@ -12,14 +12,14 @@ methods can normalize into the same reconstruction input. Benchmark policy stays
 in [`prml_vslam.pipeline`](../pipeline/README.md), and Rerun logging stays in
 [`prml_vslam.visualization`](../visualization/README.md) plus the pipeline sink.
 
-The current target is intentionally narrow: one minimal Open3D TSDF
+The current implementation is intentionally narrow: one minimal Open3D TSDF
 implementation backed by the repo pin `open3d>=0.19.0,<0.20` from
 [`../../../pyproject.toml`](../../../pyproject.toml). The package should not
 start with a general-purpose reconstruction framework, a zoo of backends, or a
 repo-local TSDF implementation. It first makes the pipeline `reconstruction`
 stage executable with one well-typed, easy-to-extend method boundary.
 
-## Current Target State
+## Current State
 
 - one executable reconstruction method: Open3D `ScalableTSDFVolume`
 - one config-driven method boundary that selects the configured backend
@@ -48,10 +48,10 @@ and artifact DTOs for three reasons:
    explicit frame and raster semantics so later Rerun logging stays
    straightforward and truthful
 
-## Proposed Package Surface
+## Package Surface
 
-The package should stay small and mirror the good parts of the methods package
-without copying complexity that is not needed yet.
+The package stays small and mirrors the useful parts of the methods package
+without copying complexity that is not needed.
 
 ```text
 src/prml_vslam/reconstruction
@@ -115,6 +115,25 @@ class Open3dTsdfBackendConfig(ReconstructionBackendConfig, FactoryConfig[Open3dT
 
 This gives the stage one discriminated config union and one obvious extension
 path when a second reconstruction backend appears later.
+
+## Stage Integration
+
+- Config: [`stage/config.py`](./stage/config.py) defines
+  `ReconstructionStageConfig` for the `reconstruction` stage. It reuses the
+  package-owned reconstruction backend config union, declares the reference
+  cloud output, and currently enables execution for TUM RGB-D sources.
+- Input DTO: [`stage/contracts.py`](./stage/contracts.py) defines
+  `ReconstructionStageInput` with the selected backend, run paths, and prepared
+  benchmark inputs.
+- Runtime: [`stage/runtime.py`](./stage/runtime.py) adapts
+  `OfflineReconstructionBackend` into the pipeline `OfflineStageRuntime`
+  contract and returns `ReconstructionArtifacts` inside `StageResult`.
+- Visualization: [`stage/visualization.py`](./stage/visualization.py) turns
+  reconstruction artifacts into neutral visualization items; Rerun SDK calls
+  stay in the sink layer.
+- I/O: reconstruction consumes prepared `ObservationSequenceRef` values through
+  source-owned observation loading and produces a world-space
+  `reference_cloud.ply` plus metadata.
 
 ## DTO Design For Easy Rerun Integration
 

@@ -102,7 +102,7 @@ The current repo-owned live sink logs a fixed surface rather than a
 per-modality toggle matrix.
 
 - `world`: static root world convention for the viewer.
-- `world/live/source/rgb`: original source-frame RGB packets.
+- `world/live/source/rgb`: original source-frame RGB observations.
 - `world/live/tracking/camera`: live tracking pose.
 - `world/live/model/diag/rgb`: dedicated 2D-only model-raster RGB surface.
 - `world/live/model/camera/image`: 3D camera entity with `Pinhole`, image, and
@@ -119,6 +119,12 @@ per-modality toggle matrix.
 - `world/slam/vista_slam_world/trajectory/raw`: tracking polyline.
 - `world/slam/vista_slam_world/trajectory/raw/poses/<id>`: optional per-pose
   SE3 trajectory transforms when `trajectory_pose_axis_length > 0`.
+
+Stage and domain visualization adapters do not call the Rerun SDK. They emit
+neutral `VisualizationItem` values with roles, intents, payload refs, artifact
+refs, frame metadata, and optional typed poses/intrinsics. The Rerun sink and
+policy layer are the only owners that translate those items into entity paths,
+timelines, transforms, images, depth images, point clouds, or blueprint policy.
 
 Current operational constraints:
 

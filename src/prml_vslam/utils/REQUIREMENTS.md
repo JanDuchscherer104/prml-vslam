@@ -45,7 +45,8 @@ This document is the concise source of truth for the shared utility package in `
 - `utils` is not a workspace manager.
 - `utils` is not a persistence layer for experiment metadata beyond generic TOML helpers.
 - `utils` should not introduce global registries or hidden caches unless there is a concrete performance need and correctness is unaffected.
-- `utils` should not absorb feature-specific workflow logic that belongs in `pipeline`, `io`, `datasets`, `methods`, or `eval`.
+- `utils` should not absorb feature-specific workflow logic that belongs in
+  `pipeline`, `sources`, `methods`, `reconstruction`, or `eval`.
 
 ## Validation
 

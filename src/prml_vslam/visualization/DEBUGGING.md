@@ -85,7 +85,7 @@ Important caveat:
 
 - `summary/run-events.jsonl` currently contains durable run/stage summary
   events. It is useful for run lifecycle correlation, but it does not currently
-  guarantee packet-level `packet.observed` / `pose.estimated` / keyframe notice
+  guarantee observation-level source / pose-estimate / keyframe notice
   timing for every run.
 
 ## Questions To Ask First
