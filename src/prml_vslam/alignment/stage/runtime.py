@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+from prml_vslam.alignment.contracts import GroundAlignmentConfig
 from prml_vslam.alignment.services import GroundAlignmentService
-from prml_vslam.alignment.stage.contracts import GroundAlignmentRuntimeInput
+from prml_vslam.interfaces.artifacts import artifact_ref
+from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash, write_json
-from prml_vslam.pipeline.ray_runtime.common import artifact_ref
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
+from prml_vslam.utils import BaseData, RunArtifactPaths
+from prml_vslam.utils.serialization import stable_hash, write_json
 
 
-class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
+class GroundAlignmentStageInput(BaseData):
+    """Inputs required to derive ground-alignment metadata from SLAM outputs."""
+
+    config: GroundAlignmentConfig
+    run_paths: RunArtifactPaths
+    slam: SlamArtifacts
+
+
+class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentStageInput]):
     """Adapt :class:`GroundAlignmentService` to the generic bounded runtime API.
 
     The runtime owns stage-result construction, artifact registration, and live
@@ -33,7 +43,7 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
         """Mark the bounded runtime as stopped."""
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
-    def run_offline(self, input_payload: GroundAlignmentRuntimeInput) -> StageResult:
+    def run_offline(self, input_payload: GroundAlignmentStageInput) -> StageResult:
         """Detect and persist the derived ground-alignment artifact.
 
         Returns a skipped stage outcome when the alignment service explicitly
@@ -59,7 +69,7 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentRuntimeInput]):
         self._status = result.final_runtime_status
         return result
 
-    def _run(self, input_payload: GroundAlignmentRuntimeInput) -> StageResult:
+    def _run(self, input_payload: GroundAlignmentStageInput) -> StageResult:
         metadata = self._service_type(config=input_payload.config).estimate_from_slam_artifacts(slam=input_payload.slam)
         write_json(input_payload.run_paths.ground_alignment_path, metadata)
         outcome_status = StageStatus.COMPLETED if metadata.applied else StageStatus.SKIPPED
@@ -113,4 +123,4 @@ def _final_status(
     )
 
 
-__all__ = ["GroundAlignmentRuntime", "GroundAlignmentRuntimeInput"]
+__all__ = ["GroundAlignmentRuntime", "GroundAlignmentStageInput"]

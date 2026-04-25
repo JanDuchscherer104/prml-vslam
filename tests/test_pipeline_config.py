@@ -14,13 +14,7 @@ from prml_vslam.pipeline.config import (
     build_run_config,
 )
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import (
-    PlacementConstraint,
-    ResourceSpec,
-    StageCleanupPolicy,
-    StageConfig,
-    StageTelemetryConfig,
-)
+from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
@@ -41,53 +35,45 @@ def _repo_root() -> Path:
 def test_stage_config_sections_round_trip_without_runtime_factory() -> None:
     config = StageConfig(
         stage_key=StageKey.SLAM,
-        resources=ResourceSpec(
-            num_cpus=2.0,
-            num_gpus=1.0,
-            memory_bytes=1024,
-            custom_resources={"accelerator": 1.0},
-        ),
-        placement=PlacementConstraint(
-            node_ip_address="127.0.0.1",
-            node_labels={"zone": "local"},
-            affinity="same-node",
-        ),
+        num_cpus=2.0,
+        num_gpus=1.0,
+        memory_bytes=1024,
+        custom_resources={"accelerator": 1.0},
+        node_ip_address="127.0.0.1",
+        node_labels={"zone": "local"},
+        affinity="same-node",
         runtime_env={"profile": "smoke"},
-        telemetry=StageTelemetryConfig(
-            emit_queue_metrics=True,
-            emit_latency_metrics=True,
-            emit_throughput_metrics=True,
-            sampling_interval_ms=250,
-        ),
-        cleanup=StageCleanupPolicy(
-            artifact_keys=["native_output_dir", "extra:*"],
-            on_completed=True,
-            on_failed=False,
-            on_stopped=False,
-        ),
+        emit_queue_metrics=True,
+        emit_latency_metrics=True,
+        emit_throughput_metrics=True,
+        sampling_interval_ms=250,
+        cleanup_artifact_keys=["native_output_dir", "extra:*"],
+        cleanup_on_completed=True,
+        cleanup_on_failed=False,
+        cleanup_on_stopped=False,
     )
 
     reloaded = StageConfig.from_toml(config.to_toml())
 
     assert reloaded == config
-    assert config.model_dump_jsonable()["cleanup"]["artifact_keys"] == ["native_output_dir", "extra:*"]
+    assert config.model_dump_jsonable()["cleanup_artifact_keys"] == ["native_output_dir", "extra:*"]
     assert not hasattr(config, "setup_target")
 
 
-def test_stage_cleanup_policy_rejects_filesystem_like_selectors() -> None:
-    StageCleanupPolicy(artifact_keys=["viewer_rrd", "visualization:*"])
+def test_stage_config_rejects_filesystem_like_cleanup_selectors() -> None:
+    StageConfig(cleanup_artifact_keys=["viewer_rrd", "visualization:*"])
 
     for selector in ["../native", "native/output", "*.rrd", "extra:**", "visualization:rrd"]:
         with pytest.raises(ValidationError):
-            StageCleanupPolicy(artifact_keys=[selector])
+            StageConfig(cleanup_artifact_keys=[selector])
 
 
-def test_resource_spec_rejects_negative_values() -> None:
+def test_stage_config_rejects_negative_resource_values() -> None:
     with pytest.raises(ValidationError):
-        ResourceSpec(num_cpus=-1.0)
+        StageConfig(num_cpus=-1.0)
 
     with pytest.raises(ValidationError):
-        ResourceSpec(custom_resources={"custom": -1.0})
+        StageConfig(custom_resources={"custom": -1.0})
 
 
 def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> None:
@@ -131,7 +117,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
     assert config.stages.evaluate_cloud.enabled is True
 
 
-def test_run_config_uses_stage_execution_config_for_resource_policy(tmp_path: Path) -> None:
+def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> None:
     config = build_run_config(
         experiment_name="placement-policy",
         output_dir=tmp_path,
@@ -142,20 +128,18 @@ def test_run_config_uses_stage_execution_config_for_resource_policy(tmp_path: Pa
         update={
             "slam": config.stages.slam.model_copy(
                 update={
-                    "resources": ResourceSpec(
-                        num_cpus=2.0,
-                        num_gpus=1.0,
-                        custom_resources={"custom_accelerator": 3.0},
-                    )
+                    "num_cpus": 2.0,
+                    "num_gpus": 1.0,
+                    "custom_resources": {"custom_accelerator": 3.0},
                 }
             )
         }
     )
     config = config.model_copy(update={"stages": stages})
 
-    assert config.stages.slam.resources.num_cpus == 2.0
-    assert config.stages.slam.resources.num_gpus == 1.0
-    assert config.stages.slam.resources.custom_resources == {"custom_accelerator": 3.0}
+    assert config.stages.slam.num_cpus == 2.0
+    assert config.stages.slam.num_gpus == 1.0
+    assert config.stages.slam.custom_resources == {"custom_accelerator": 3.0}
 
 
 def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> None:
@@ -338,17 +322,17 @@ output_dir = ".artifacts"
 [stages.source]
 enabled = true
 
-[stages.slam.resources]
+[stages.slam]
 num_cpus = 2.0
 
 [stages.align_ground]
 enabled = true
 
-[stages.reconstruction.cleanup]
-artifact_keys = ["reference_cloud", "extra:*"]
-on_completed = true
-on_failed = false
-on_stopped = false
+[stages.reconstruction]
+cleanup_artifact_keys = ["reference_cloud", "extra:*"]
+cleanup_on_completed = true
+cleanup_on_failed = false
+cleanup_on_stopped = false
 
 [stages.summary]
 enabled = true
@@ -356,9 +340,9 @@ enabled = true
     )
 
     assert config.stages.source.stage_key is StageKey.SOURCE
-    assert config.stages.slam.resources.num_cpus == 2.0
+    assert config.stages.slam.num_cpus == 2.0
     assert config.stages.align_ground.enabled is True
-    assert config.stages.reconstruction.cleanup.artifact_keys == ["reference_cloud", "extra:*"]
+    assert config.stages.reconstruction.cleanup_artifact_keys == ["reference_cloud", "extra:*"]
 
 
 def test_run_config_fail_on_unavailable_stages_happens_during_planning(tmp_path: Path) -> None:

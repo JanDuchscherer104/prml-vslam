@@ -14,7 +14,7 @@ from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSourc
 from prml_vslam.utils import BaseData, PathConfig
 
 
-class SlamOfflineInput(BaseData):
+class SlamOfflineStageInput(BaseData):
     """Input needed to run SLAM over one bounded normalized sequence."""
 
     backend: BackendConfig
@@ -42,7 +42,7 @@ class SlamOfflineInput(BaseData):
     """Optional prepared benchmark-side inputs used by method wrappers."""
 
 
-class SlamStreamingStartInput(BaseData):
+class SlamStreamingStartStageInput(BaseData):
     """Input needed to start one incremental SLAM runtime."""
 
     backend: BackendConfig
@@ -73,4 +73,4 @@ class SlamStreamingStartInput(BaseData):
     """Whether native Rerun outputs should be retained as durable artifacts."""
 
 
-__all__ = ["SlamOfflineInput", "SlamStreamingStartInput"]
+__all__ = ["SlamOfflineStageInput", "SlamStreamingStartStageInput"]

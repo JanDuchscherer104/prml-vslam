@@ -4,15 +4,27 @@ from __future__ import annotations
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
+from prml_vslam.pipeline.contracts.mode import PipelineMode
+from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
-from prml_vslam.pipeline.stages.summary.contracts import SummaryRuntimeInput
+from prml_vslam.utils import BaseData, RunArtifactPaths
+from prml_vslam.utils.serialization import stable_hash, write_json
 
 
-class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
+class SummaryStageInput(BaseData):
+    """Inputs required to project durable summary artifacts."""
+
+    experiment_name: str
+    mode: PipelineMode
+    plan: RunPlan
+    run_paths: RunArtifactPaths
+    stage_outcomes: list[StageOutcome]
+
+
+class SummaryRuntime(OfflineStageRuntime[SummaryStageInput]):
     """Project durable run summaries from terminal stage outcomes.
 
     The runtime is the final pipeline stage and should remain pure projection:
@@ -41,7 +53,7 @@ class SummaryRuntime(OfflineStageRuntime[SummaryRuntimeInput]):
         """Mark the bounded runtime as stopped."""
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
-    def run_offline(self, input_payload: SummaryRuntimeInput) -> StageResult:
+    def run_offline(self, input_payload: SummaryStageInput) -> StageResult:
         """Project summary artifacts and return a canonical stage result.
 
         The result payload is the pipeline-owned :class:`RunSummary`; the
@@ -105,7 +117,6 @@ def _project_summary(
             input_fingerprint=outcome.input_fingerprint,
             output_paths={name: artifact.path for name, artifact in outcome.artifacts.items()},
             status=outcome.status,
-            cache=outcome.cache,
         )
         for outcome in stage_outcomes
     ]
@@ -138,4 +149,4 @@ def _project_summary(
     return summary, stage_manifests, summary_outcome
 
 
-__all__ = ["SummaryRuntime", "SummaryRuntimeInput"]
+__all__ = ["SummaryRuntime", "SummaryStageInput"]

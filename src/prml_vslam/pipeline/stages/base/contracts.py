@@ -20,9 +20,7 @@ from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.contracts.transport import TransportModel
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.utils import BaseData
-
-JsonScalar = str | int | float | bool | None
+from prml_vslam.utils import BaseData, JsonScalar
 
 
 class VisualizationIntent(StrEnum):

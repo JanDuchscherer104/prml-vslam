@@ -14,9 +14,8 @@ from prml_vslam.pipeline.stages.base.protocols import (
     OfflineStageRuntime,
     StreamingStageRuntime,
 )
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, JsonScalar
 
-JsonScalar = str | int | float | bool | None
 RuntimeInput = BaseData
 StreamItem = BaseData | Observation
 

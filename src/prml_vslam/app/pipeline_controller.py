@@ -21,15 +21,13 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.utils import JsonObject
 
 from .models import PipelinePageState, PipelineTelemetryMetricId, PipelineTelemetryViewMode
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.run_service import RunService
 
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
-JsonObject: TypeAlias = dict[str, JsonValue]
 TelemetryChartValue: TypeAlias = str | int | float
 TelemetryChartRow: TypeAlias = dict[str, TelemetryChartValue]
 PipelineViewerLinkModel: TypeAlias = dict[str, str | bool | None]

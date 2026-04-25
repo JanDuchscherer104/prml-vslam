@@ -67,6 +67,39 @@ _LOGGER = logging.getLogger(__name__)
 ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT = "slam_raw_trajectory_artifact"
 ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY = "slam_sim3_aligned_trajectory"
 ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD = "slam_sim3_aligned_point_cloud"
+_RGB_ENTITY_PATHS = {
+    ROLE_SOURCE_RGB: "world/live/source/rgb",
+    ROLE_SOURCE_CAMERA_RGB: "world/live/source/camera/image",
+    ROLE_MODEL_RGB: MODEL_RGB_2D_ENTITY_PATH,
+    ROLE_MODEL_CAMERA_RGB: "world/live/model/camera/image",
+    ROLE_MODEL_PREVIEW: "world/live/model/diag/preview",
+    ROLE_KEYFRAME_RGB: "world/keyframes/cameras/{keyframe_index:06d}/image",
+    ROLE_KEYFRAME_PREVIEW: "world/keyframes/cameras/{keyframe_index:06d}/diag/preview",
+}
+_SOURCE_RGB_ROLES = {ROLE_SOURCE_RGB, ROLE_SOURCE_CAMERA_RGB}
+_DIAGNOSTIC_PREVIEW_ROLES = {ROLE_MODEL_PREVIEW, ROLE_KEYFRAME_PREVIEW}
+_DEPTH_ENTITY_PATHS = {
+    ROLE_MODEL_DEPTH: "world/live/model/camera/image/depth",
+    ROLE_SOURCE_DEPTH: "world/live/source/camera/image/depth",
+    ROLE_KEYFRAME_DEPTH: "world/keyframes/cameras/{keyframe_index:06d}/image/depth",
+}
+_POINTMAP_ENTITY_PATHS = {
+    ROLE_MODEL_POINTMAP: "world/live/model/points",
+    ROLE_SOURCE_POINTMAP: "world/live/source/camera/points",
+    ROLE_KEYFRAME_POINTMAP: "world/keyframes/points/{keyframe_index:06d}/points",
+}
+_POSE_ENTITY_PATHS = {
+    ROLE_TRACKING_POSE: "world/live/tracking/camera",
+    ROLE_SOURCE_CAMERA_POSE: "world/live/source/camera",
+    ROLE_LIVE_MODEL_POSE: "world/live/model",
+    ROLE_KEYFRAME_CAMERA_POSE: "world/keyframes/cameras/{keyframe_index:06d}",
+    ROLE_KEYFRAME_POINTS_POSE: "world/keyframes/points/{keyframe_index:06d}",
+}
+_PINHOLE_ENTITY_PATHS = {
+    ROLE_MODEL_PINHOLE: "world/live/model/camera/image",
+    ROLE_SOURCE_PINHOLE: "world/live/source/camera/image",
+    ROLE_KEYFRAME_PINHOLE: "world/keyframes/cameras/{keyframe_index:06d}/image",
+}
 
 
 @dataclass(slots=True)
@@ -163,39 +196,15 @@ class RerunLoggingPolicy:
         image = self._resolve_visualization_array(item.payload_refs.get(IMAGE_REF), payloads=payloads)
         if image is None:
             return
-        match item.role:
-            case role if role == ROLE_SOURCE_RGB:
-                if not self.log_source_rgb:
-                    return
-                entity_path = "world/live/source/rgb"
-            case role if role == ROLE_SOURCE_CAMERA_RGB:
-                if not self.log_source_rgb:
-                    return
-                entity_path = "world/live/source/camera/image"
-            case role if role == ROLE_MODEL_RGB:
-                entity_path = MODEL_RGB_2D_ENTITY_PATH
-            case role if role == ROLE_MODEL_CAMERA_RGB:
-                if not self.log_camera_image_rgb:
-                    return
-                entity_path = "world/live/model/camera/image"
-            case role if role == ROLE_MODEL_PREVIEW:
-                if not self.log_diagnostic_preview:
-                    return
-                entity_path = "world/live/model/diag/preview"
-            case role if role == ROLE_KEYFRAME_RGB:
-                keyframe_index = self._require_keyframe_index(item)
-                if keyframe_index is None:
-                    return
-                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/image"
-            case role if role == ROLE_KEYFRAME_PREVIEW:
-                if not self.log_diagnostic_preview:
-                    return
-                keyframe_index = self._require_keyframe_index(item)
-                if keyframe_index is None:
-                    return
-                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/diag/preview"
-            case _:
-                return
+        if item.role in _SOURCE_RGB_ROLES and not self.log_source_rgb:
+            return
+        if item.role == ROLE_MODEL_CAMERA_RGB and not self.log_camera_image_rgb:
+            return
+        if item.role in _DIAGNOSTIC_PREVIEW_ROLES and not self.log_diagnostic_preview:
+            return
+        entity_path = self._entity_path_for_role(item, _RGB_ENTITY_PATHS)
+        if entity_path is None:
+            return
         self._set_item_frame_time(stream, item)
         self.log_rgb_image(stream, entity_path=entity_path, image_rgb=image)
 
@@ -209,18 +218,9 @@ class RerunLoggingPolicy:
         depth_image = self._resolve_visualization_array(item.payload_refs.get(DEPTH_REF), payloads=payloads)
         if depth_image is None:
             return
-        match item.role:
-            case _ if item.role == ROLE_MODEL_DEPTH:
-                entity_path = "world/live/model/camera/image/depth"
-            case _ if item.role == ROLE_SOURCE_DEPTH:
-                entity_path = "world/live/source/camera/image/depth"
-            case _ if item.role == ROLE_KEYFRAME_DEPTH:
-                keyframe_index = self._require_keyframe_index(item)
-                if keyframe_index is None:
-                    return
-                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/image/depth"
-            case _:
-                return
+        entity_path = self._entity_path_for_role(item, _DEPTH_ENTITY_PATHS)
+        if entity_path is None:
+            return
         self._set_item_frame_time(stream, item)
         self.log_depth_image(stream, entity_path=entity_path, depth_m=depth_image)
 
@@ -235,18 +235,9 @@ class RerunLoggingPolicy:
         if pointmap is None:
             return
         colors = self._resolve_visualization_array(item.payload_refs.get(COLORS_REF), payloads=payloads)
-        match item.role:
-            case _ if item.role == ROLE_MODEL_POINTMAP:
-                entity_path = "world/live/model/points"
-            case _ if item.role == ROLE_SOURCE_POINTMAP:
-                entity_path = "world/live/source/camera/points"
-            case _ if item.role == ROLE_KEYFRAME_POINTMAP:
-                keyframe_index = self._require_keyframe_index(item)
-                if keyframe_index is None:
-                    return
-                entity_path = f"world/keyframes/points/{keyframe_index:06d}/points"
-            case _:
-                return
+        entity_path = self._entity_path_for_role(item, _POINTMAP_ENTITY_PATHS)
+        if entity_path is None:
+            return
         self._set_item_frame_time(stream, item)
         self.log_pointcloud(stream, entity_path=entity_path, pointmap=pointmap, colors=colors)
 
@@ -390,25 +381,9 @@ class RerunLoggingPolicy:
     def _log_pose_item(self, stream, item: VisualizationItem) -> None:
         if item.pose is None:
             return
-        match item.role:
-            case _ if item.role == ROLE_TRACKING_POSE:
-                entity_path = "world/live/tracking/camera"
-            case _ if item.role == ROLE_SOURCE_CAMERA_POSE:
-                entity_path = "world/live/source/camera"
-            case _ if item.role == ROLE_LIVE_MODEL_POSE:
-                entity_path = "world/live/model"
-            case _ if item.role == ROLE_KEYFRAME_CAMERA_POSE:
-                keyframe_index = self._require_keyframe_index(item)
-                if keyframe_index is None:
-                    return
-                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}"
-            case _ if item.role == ROLE_KEYFRAME_POINTS_POSE:
-                keyframe_index = self._require_keyframe_index(item)
-                if keyframe_index is None:
-                    return
-                entity_path = f"world/keyframes/points/{keyframe_index:06d}"
-            case _:
-                return
+        entity_path = self._entity_path_for_role(item, _POSE_ENTITY_PATHS)
+        if entity_path is None:
+            return
         self._set_item_frame_time(stream, item)
         self.log_transform(stream, entity_path=entity_path, transform=item.pose, axis_length=0.0)
 
@@ -419,18 +394,9 @@ class RerunLoggingPolicy:
         *,
         payloads: Mapping[str, np.ndarray],
     ) -> None:
-        match item.role:
-            case _ if item.role == ROLE_MODEL_PINHOLE:
-                entity_path = "world/live/model/camera/image"
-            case _ if item.role == ROLE_SOURCE_PINHOLE:
-                entity_path = "world/live/source/camera/image"
-            case _ if item.role == ROLE_KEYFRAME_PINHOLE:
-                keyframe_index = self._require_keyframe_index(item)
-                if keyframe_index is None:
-                    return
-                entity_path = f"world/keyframes/cameras/{keyframe_index:06d}/image"
-            case _:
-                return
+        entity_path = self._entity_path_for_role(item, _PINHOLE_ENTITY_PATHS)
+        if entity_path is None:
+            return
         rgb = self._resolve_visualization_array(item.payload_refs.get(IMAGE_REF), payloads=payloads)
         depth_image = self._resolve_visualization_array(item.payload_refs.get(DEPTH_REF), payloads=payloads)
         viewer_intrinsics = self._resolve_viewer_intrinsics(
@@ -442,6 +408,15 @@ class RerunLoggingPolicy:
             return
         self._set_item_frame_time(stream, item)
         self.log_pinhole(stream, entity_path=entity_path, intrinsics=viewer_intrinsics)
+
+    def _entity_path_for_role(self, item: VisualizationItem, mapping: Mapping[str, str]) -> str | None:
+        template = mapping.get(item.role)
+        if template is None:
+            return None
+        if "{keyframe_index" not in template:
+            return template
+        keyframe_index = self._require_keyframe_index(item)
+        return None if keyframe_index is None else template.format(keyframe_index=keyframe_index)
 
     def _log_clear_item(self, stream, item: VisualizationItem) -> None:
         if item.role != ROLE_KEYFRAME_CAMERA_WINDOW or item.keyframe_index is None:

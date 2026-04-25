@@ -20,7 +20,7 @@ from prml_vslam.sources.datasets.advio import (
     AdvioServingConfig,
 )
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
-from prml_vslam.utils import BaseData, PathConfig
+from prml_vslam.utils import BaseData, JsonObject, PathConfig
 
 from .models import PipelinePageState, PipelineSourceId
 from .record3d_controls import record3d_transport_input_error
@@ -40,10 +40,6 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
         StageKey.SUMMARY,
     }
 )
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
-JsonObject: TypeAlias = dict[str, JsonValue]
 
 PipelinePageStateUpdateValue: TypeAlias = (
     PipelineSourceId

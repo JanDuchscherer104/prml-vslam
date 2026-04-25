@@ -50,9 +50,9 @@ class GroundAlignmentStageConfig(StageConfig):
         return GroundAlignmentRuntime
 
     def build_offline_input(self, context: StageInputContext):
-        from prml_vslam.alignment.stage.contracts import GroundAlignmentRuntimeInput
+        from prml_vslam.alignment.stage.runtime import GroundAlignmentStageInput
 
-        return GroundAlignmentRuntimeInput(
+        return GroundAlignmentStageInput(
             config=self.ground,
             run_paths=context.run_paths,
             slam=context.results.require_slam_artifacts(),

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,7 +21,7 @@ from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.protocols.source import OfflineSequenceSource
-from prml_vslam.utils import BaseConfig, BaseData, PathConfig, RunArtifactPaths
+from prml_vslam.utils import BaseConfig, BaseData, JsonScalar, PathConfig, RunArtifactPaths
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -32,10 +31,8 @@ if TYPE_CHECKING:
     from prml_vslam.pipeline.runner import StageResultStore
     from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 
-JsonScalar = str | int | float | bool | None
 
-
-# TODO: collapse StagePanContext and StageRuntimeBuildContext!
+# TODO: streamline (collapse ?) handling of all context classes! This also includes StageExecutionContext from src/prml_vslam/pipeline/execution_context.py. (from this file StagePlanContext, StageRuntimeBuildContext, StageInputContext! How many different context types do we really need?)
 @dataclass(frozen=True, slots=True)
 class StagePlanContext:
     """Inputs available while compiling a deterministic run plan."""
@@ -75,10 +72,16 @@ class FailureFingerprint:
     input_payload: BaseConfig | BaseData | dict[str, JsonScalar] | list[BaseData] | None
 
 
-class ResourceSpec(BaseConfig):
-    """Describe substrate-neutral resources requested by one stage."""
+class StageConfig(BaseConfig):
+    """Base declarative policy shared by target stage config sections."""
 
     model_config = ConfigDict(extra="ignore")
+
+    stage_key: StageKey | None = None
+    """Canonical stage key represented by this section."""
+
+    enabled: bool = True
+    """Whether this stage section is requested by the target config."""
 
     num_cpus: float | None = Field(default=None, ge=0.0)
     """Requested CPU count, when explicitly constrained."""
@@ -92,21 +95,6 @@ class ResourceSpec(BaseConfig):
     custom_resources: dict[str, float] = Field(default_factory=dict)
     """Substrate-specific custom resource quantities keyed by resource name."""
 
-    @field_validator("custom_resources")
-    @classmethod
-    def validate_custom_resources(cls, value: dict[str, float]) -> dict[str, float]:
-        """Reject negative custom resource quantities."""
-        negative = [name for name, quantity in value.items() if quantity < 0.0]
-        if negative:
-            raise ValueError(f"Custom resource quantities must be non-negative: {', '.join(sorted(negative))}.")
-        return value
-
-
-class PlacementConstraint(BaseConfig):
-    """Describe optional substrate-neutral placement preferences."""
-
-    model_config = ConfigDict(extra="ignore")
-
     node_ip_address: str | None = None
     """Preferred node IP address, when a stage needs node locality."""
 
@@ -116,11 +104,8 @@ class PlacementConstraint(BaseConfig):
     affinity: str | None = None
     """Optional affinity label interpreted only by runtime placement adapters."""
 
-
-class StageTelemetryConfig(BaseConfig):
-    """Configure which live status metrics a stage should emit."""
-
-    model_config = ConfigDict(extra="ignore")
+    runtime_env: dict[str, JsonScalar] = Field(default_factory=dict)
+    """Small runtime-environment hints kept below runtime construction."""
 
     emit_progress: bool = True
     """Whether the runtime should emit coarse progress status when available."""
@@ -137,25 +122,31 @@ class StageTelemetryConfig(BaseConfig):
     sampling_interval_ms: int = Field(default=1000, ge=1)
     """Minimum status sampling interval in milliseconds."""
 
-
-class StageCleanupPolicy(BaseConfig):
-    """Describe stage artifact cleanup policy by artifact key."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    artifact_keys: list[str] = Field(default_factory=list)
+    cleanup_artifact_keys: list[str] = Field(default_factory=list)
     """Stage artifact-key selectors to prune after the run epilogue."""
 
-    on_completed: bool = True
+    cleanup_on_completed: bool = True
     """Whether cleanup applies after a completed run."""
 
-    on_failed: bool = False
+    cleanup_on_failed: bool = False
     """Whether cleanup applies after a failed run."""
 
-    on_stopped: bool = False
+    cleanup_on_stopped: bool = False
     """Whether cleanup applies after a stopped run."""
 
-    @field_validator("artifact_keys")
+    cache_enabled: bool = False
+    """Reserved cache switch; active content-addressed cache execution is deferred."""
+
+    @field_validator("custom_resources")
+    @classmethod
+    def validate_custom_resources(cls, value: dict[str, float]) -> dict[str, float]:
+        """Reject negative custom resource quantities."""
+        negative = [name for name, quantity in value.items() if quantity < 0.0]
+        if negative:
+            raise ValueError(f"Custom resource quantities must be non-negative: {', '.join(sorted(negative))}.")
+        return value
+
+    @field_validator("cleanup_artifact_keys")
     @classmethod
     def validate_artifact_key_selectors(cls, value: list[str]) -> list[str]:
         """Allow only exact artifact keys or safe ``prefix:*`` selectors."""
@@ -163,61 +154,6 @@ class StageCleanupPolicy(BaseConfig):
         if invalid:
             raise ValueError(f"Invalid cleanup artifact selector(s): {', '.join(invalid)}.")
         return value
-
-
-class StageCacheMode(StrEnum):
-    """Read/write policy for one stage's content-addressed cache."""
-
-    READ_WRITE = "read_write"
-    READ_ONLY = "read_only"
-    WRITE_ONLY = "write_only"
-
-
-class StageCacheConfig(BaseConfig):
-    """Opt-in content-addressed cache policy for one stage.
-
-    The cache is disabled by default so existing benchmark runs remain
-    execution-faithful unless a stage section explicitly asks for reuse.
-    """
-
-    enabled: bool = False
-    """Whether this stage may read from or write to the stage-result cache."""
-
-    mode: StageCacheMode = StageCacheMode.READ_WRITE
-    """Whether the stage reads, writes, or does both when caching is enabled."""
-
-    cache_root: Path | None = None
-    """Optional cache root; defaults to `<artifacts_dir>/_stage_cache`."""
-
-
-class StageConfig(BaseConfig):
-    """Base declarative policy shared by target stage config sections."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    stage_key: StageKey | None = None
-    """Canonical stage key represented by this section."""
-
-    enabled: bool = True
-    """Whether this stage section is requested by the target config."""
-
-    resources: ResourceSpec = Field(default_factory=ResourceSpec)
-    """Substrate-neutral resource request for this stage."""
-
-    placement: PlacementConstraint = Field(default_factory=PlacementConstraint)
-    """Optional placement preference for this stage."""
-
-    runtime_env: dict[str, JsonScalar] = Field(default_factory=dict)
-    """Small runtime-environment hints kept below runtime construction."""
-
-    telemetry: StageTelemetryConfig = Field(default_factory=StageTelemetryConfig)
-    """Live status and telemetry emission policy for the stage."""
-
-    cleanup: StageCleanupPolicy = Field(default_factory=StageCleanupPolicy)
-    """Artifact cleanup policy keyed by stage artifact names."""
-
-    cache: StageCacheConfig = Field(default_factory=StageCacheConfig)
-    """Optional content-addressed cache policy for terminal stage results."""
 
     def declared_outputs(self, output_paths: Sequence[Path] = ()) -> list[Path]:
         """Return the declared output paths for a generic stage section."""
@@ -292,15 +228,9 @@ def _valid_artifact_selector(selector: str) -> bool:
 
 
 __all__ = [
-    "PlacementConstraint",
-    "ResourceSpec",
     "FailureFingerprint",
-    "StageCleanupPolicy",
-    "StageCacheConfig",
-    "StageCacheMode",
     "StageConfig",
     "StageInputContext",
     "StagePlanContext",
     "StageRuntimeBuildContext",
-    "StageTelemetryConfig",
 ]

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections import deque
-from pathlib import Path
 from typing import TypeAlias
 
 import numpy as np
@@ -14,13 +12,11 @@ import ray
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import RayActorOptions
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 
 EVENT_RING_LIMIT = 400
 HANDLE_LIMIT = 256
-FPS_WINDOW = 20
 DEFAULT_MAX_FRAMES_IN_FLIGHT = 2
 HandlePayload: TypeAlias = ray.ObjectRef[np.ndarray] | np.ndarray
 
@@ -51,24 +47,6 @@ def put_transient_payload(
         metadata={} if metadata is None else metadata,
     )
     return ref, ray.put(payload)
-
-
-def rolling_fps(timestamps: deque[float]) -> float:
-    """Compute a rolling frames-per-second estimate."""
-    if len(timestamps) < 2:
-        return 0.0
-    elapsed = timestamps[-1] - timestamps[0]
-    return 0.0 if elapsed <= 0.0 else (len(timestamps) - 1) / elapsed
-
-
-def artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
-    """Build one stable artifact reference for a materialized path."""
-    resolved_path = path.resolve()
-    return ArtifactRef(
-        path=resolved_path,
-        kind=kind,
-        fingerprint=stable_hash({"path": str(resolved_path), "kind": kind}),
-    )
 
 
 def slam_artifacts_map(slam: SlamArtifacts) -> dict[str, ArtifactRef]:
@@ -110,14 +88,11 @@ def ts_ns() -> int:
 __all__ = [
     "DEFAULT_MAX_FRAMES_IN_FLIGHT",
     "EVENT_RING_LIMIT",
-    "FPS_WINDOW",
     "HANDLE_LIMIT",
     "HandlePayload",
-    "artifact_ref",
     "clean_actor_options",
     "coordinator_actor_name",
     "put_transient_payload",
-    "rolling_fps",
     "slam_artifacts_map",
     "ts_ns",
     "visualization_artifact_map",

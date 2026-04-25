@@ -11,7 +11,7 @@ from prml_vslam.interfaces import FrameTransform, Observation, ObservationProven
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.stage import SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
+from prml_vslam.methods.stage import SlamOfflineStageInput, SlamStageRuntime, SlamStreamingStartStageInput
 from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.mode import PipelineMode
@@ -141,7 +141,7 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     runtime = SlamStageRuntime()
 
     result = runtime.run_offline(
-        SlamOfflineInput(
+        SlamOfflineStageInput(
             backend=backend_config,
             outputs=run_config.stages.slam.outputs,
             artifact_root=plan.artifact_root,
@@ -167,7 +167,7 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
     sequence_manifest = SequenceManifest(sequence_id="seq-1")
 
     runtime.start_streaming(
-        SlamStreamingStartInput(
+        SlamStreamingStartStageInput(
             backend=backend_config,
             outputs=run_config.stages.slam.outputs,
             artifact_root=plan.artifact_root,

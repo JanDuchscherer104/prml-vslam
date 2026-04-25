@@ -48,7 +48,6 @@ from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.execution_context import StageExecutionContext
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
@@ -58,9 +57,6 @@ from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.runner import StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
-from prml_vslam.pipeline.stages.base.config import (
-    ResourceSpec,
-)
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -69,7 +65,7 @@ from prml_vslam.pipeline.stages.base.contracts import (
     VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionStageInput
 from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
@@ -77,8 +73,9 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
     SourceStageOutput,
 )
-from prml_vslam.sources.runtime import SourceRuntimeInput, _max_frames_for_input
+from prml_vslam.sources.runtime import SourceStageInput, _max_frames_for_input
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils.serialization import stable_hash
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
 
@@ -488,7 +485,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
     benchmark_inputs = _rgbd_benchmark_inputs(tmp_path)
 
     result = ReconstructionRuntime().run_offline(
-        ReconstructionRuntimeInput(
+        ReconstructionStageInput(
             backend=run_config.stages.reconstruction.backend,
             run_paths=context.run_paths,
             benchmark_inputs=benchmark_inputs,
@@ -1424,7 +1421,7 @@ def test_slam_backend_config_uses_stage_owned_method_id_for_vista() -> None:
 def test_streaming_source_config_input_caps_video_extraction_by_backend_max_frames() -> None:
     assert (
         _max_frames_for_input(
-            SourceRuntimeInput(
+            SourceStageInput(
                 artifact_root=Path("/tmp/source"),
                 mode=PipelineMode.STREAMING,
                 frame_stride=1,
@@ -2056,10 +2053,8 @@ def _placement_run_config(*, placement: dict[str, dict[str, dict[str, float]]] |
         resources = stage_placement.get("resources", {})
         updates[stage_name] = getattr(stages, stage_name).model_copy(
             update={
-                "resources": ResourceSpec(
-                    num_cpus=resources.get("CPU"),
-                    num_gpus=resources.get("GPU"),
-                )
+                "num_cpus": resources.get("CPU"),
+                "num_gpus": resources.get("GPU"),
             }
         )
     return run_config.model_copy(update={"stages": stages.model_copy(update=updates)})

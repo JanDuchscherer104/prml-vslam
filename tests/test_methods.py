@@ -16,7 +16,6 @@ from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, Obse
 from prml_vslam.methods import VistaSlamBackend
 from prml_vslam.methods.stage.config import MethodId as DomainMethodId
 from prml_vslam.methods.stage.config import SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.sources.contracts import (
     ReferenceSource,
     SequenceManifest,
@@ -27,6 +26,7 @@ from prml_vslam.utils.geometry import (
     load_tum_trajectory,
     write_point_cloud_ply,
 )
+from prml_vslam.utils.serialization import stable_hash
 
 
 def test_mast3r_placeholder_module_imports_after_refactor() -> None:

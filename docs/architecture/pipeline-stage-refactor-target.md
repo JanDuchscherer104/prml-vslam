@@ -165,7 +165,7 @@ src/prml_vslam/pipeline/
 │   ├── __init__.py
 │   ├── base/
 │   │   ├── __init__.py
-│   │   ├── config.py          # StageConfig, StageExecutionConfig, runtime policy
+│   │   ├── config.py          # StageConfig, runtime policy fields, runtime policy
 │   │   ├── contracts.py       # StageResult, StageRuntimeStatus, StageRuntimeUpdate
 │   │   ├── handles.py         # TransientPayloadRef
 │   │   ├── protocols.py       # BaseStageRuntime, Offline/LiveUpdate/Streaming protocols
@@ -210,10 +210,10 @@ method backend.
 flowchart TB
     subgraph Base["pipeline.stages.base"]
         StageConfig["StageConfig<br/>validated stage policy"]
-        ExecutionConfig["StageExecutionConfig"]
-        Resources["ResourceSpec<br/>num_cpus, num_gpus,<br/>memory_bytes, custom_resources"]
-        Placement["PlacementConstraint<br/>node_ip_address,<br/>node_labels, affinity"]
-        Telemetry["StageTelemetryConfig<br/>progress, queue, latency,<br/>throughput/FPS, sampling"]
+        ExecutionConfig["runtime policy fields"]
+        Resources["resource fields<br/>num_cpus, num_gpus,<br/>memory_bytes, custom_resources"]
+        Placement["placement fields<br/>node_ip_address,<br/>node_labels, affinity"]
+        Telemetry["telemetry fields<br/>progress, queue, latency,<br/>throughput/FPS, sampling"]
         RuntimeStatus["StageRuntimeStatus"]
         StageResult["StageResult"]
         StageUpdate["StageRuntimeUpdate"]
@@ -357,7 +357,7 @@ Rules:
   artifacts.
 - Stage configs own failure-provenance policy so runtime failures can still
   produce stage-specific `StageOutcome` values without a central stage catalog.
-- Stage configs own artifact cleanup policy through `StageConfig.cleanup`.
+- Stage configs own artifact cleanup policy through `StageConfig cleanup_* fields`.
   Cleanup semantics are defined in
   [Pipeline Stage Artifact Cleanup Policy](./pipeline-stage-artifact-cleanup-policy.md)
   and remain stage runtime policy, not backend output policy.
@@ -540,8 +540,8 @@ to the common source backend base until another dataset exposes equivalent
 serving choices.
 
 Per-stage cleanup is available through an optional nested
-`[stages.<stage>.cleanup]` table once the active config model supports
-`StageConfig.cleanup`. The cleanup policy selects artifacts by stage artifact
+`[stages.<stage>]` table once the active config model supports
+`StageConfig cleanup_* fields`. The cleanup policy selects artifacts by stage artifact
 key, not filesystem path; see the dedicated
 [artifact cleanup policy](./pipeline-stage-artifact-cleanup-policy.md).
 
@@ -603,26 +603,26 @@ classDiagram
         +mode
     }
 
-    class StageExecutionConfig {
+    class runtime policy fields {
         +resources
         +placement
         +runtime_env
     }
 
-    class ResourceSpec {
+    class resource fields {
         +num_cpus
         +num_gpus
         +memory_bytes
         +custom_resources
     }
 
-    class PlacementConstraint {
+    class placement fields {
         +node_ip_address
         +node_labels
         +affinity
     }
 
-    class StageTelemetryConfig {
+    class telemetry fields {
         +emit_progress
         +emit_queue_metrics
         +emit_latency_metrics
@@ -632,10 +632,10 @@ classDiagram
 
     RunConfig --> StageBundle
     StageBundle --> StageConfig
-    StageConfig --> StageExecutionConfig
-    StageConfig --> StageTelemetryConfig
-    StageExecutionConfig --> ResourceSpec
-    StageExecutionConfig --> PlacementConstraint
+    StageConfig --> runtime policy fields
+    StageConfig --> telemetry fields
+    runtime policy fields --> resource fields
+    runtime policy fields --> placement fields
     SourceStageConfig --> SourceBackendConfig
     SlamStageConfig --> BackendConfig
     ReconstructionStageConfig --> ReconstructionBackendConfig
@@ -940,7 +940,7 @@ All stages are real stages, but not all stages need Ray-hosted execution.
 | Question | If yes | If no |
 | --- | --- | --- |
 | Does the stage keep mutable state across frames, batches, or calls? | Implement the needed runtime protocol and consider Ray-hosting. | In-process deployment is sufficient. |
-| Does the stage need GPU, custom resource, or remote-node placement? | Deploy the runtime through a Ray-hosted `StageRuntimeHandle` with `StageExecutionConfig` / `ResourceSpec`. | Keep it in-process unless the stage is slow enough to justify remote execution. |
+| Does the stage need GPU, custom resource, or remote-node placement? | Deploy the runtime through a Ray-hosted `StageRuntimeHandle` with `runtime policy fields` / `resource fields`. | Keep it in-process unless the stage is slow enough to justify remote execution. |
 | Does the stage participate in the streaming hot path? | Implement `StreamingStageRuntime` and let `RuntimeManager` choose in-process or Ray-hosted deployment. | Implement only `OfflineStageRuntime` / `finish_streaming()` where needed. |
 | Does the stage need independent stop/cancel/status semantics? | Keep the protocol surface uniform; Ray-host only if cancellation/status requires a separate worker. | Coordinator can treat it as a bounded call through the same proxy surface. |
 | Is the stage a pure projection over existing artifacts/events? | Keep in-process by default. | Reconsider only if artifact size or runtime cost demands placement. |
@@ -974,7 +974,7 @@ clear.
 
 Recommended private wrapper boundaries:
 
-- `SlamOfflineInput`, `SlamStreamingStartInput`, `Observation`, and
+- `SlamOfflineStageInput`, `SlamStreamingStartStageInput`, `Observation`, and
   `SlamStageOutput`: offline sequence input, streaming startup input, hot-path
   frame input, and normalized SLAM completion output.
 - `ReconstructionStageInput` and `ReconstructionStageOutput`: wrapper around
@@ -990,9 +990,9 @@ Simple local runtimes may consume domain payloads directly. For example,
 
 For SLAM, the target runtime boundary specifically uses:
 
-- `SlamOfflineInput`: normalized sequence, prepared benchmark inputs, output
+- `SlamOfflineStageInput`: normalized sequence, prepared benchmark inputs, output
   policy, and artifact root for offline execution.
-- `SlamStreamingStartInput`: normalized startup context for a streaming SLAM
+- `SlamStreamingStartStageInput`: normalized startup context for a streaming SLAM
   runtime.
 - `Observation`: one hot-path frame item plus transient payload refs or
   resolved arrays needed by the runtime.
@@ -1049,7 +1049,7 @@ flowchart TB
     Projector["SnapshotProjector"]
 
     RuntimeManager["RuntimeManager<br/>Ray/bootstrap/stage target setup"]
-    Placement["PlacementTranslator<br/>StageExecutionConfig -> Ray options"]
+    Placement["PlacementTranslator<br/>runtime policy fields -> Ray options"]
     ArtifactMapper["ArtifactRef builders"]
     RerunPolicy["RerunLoggingPolicy<br/>internal sink policy"]
     PayloadStore["Transient payload store"]
@@ -1249,13 +1249,13 @@ conceptual layer:
 | --- | --- |
 | legacy request root | removed; `RunConfig` is the persisted declarative root. |
 | legacy source request DTOs | `SourceBackendConfig` under `SourceStageConfig`. |
-| `StagePlacement` / `PlacementPolicy` | `StageExecutionConfig`, `ResourceSpec`, and `PlacementConstraint`; current Ray retry knobs stay backend/runtime implementation details. |
+| `StagePlacement` / `PlacementPolicy` | `runtime policy fields`, `resource fields`, and `placement fields`; current Ray retry knobs stay backend/runtime implementation details. |
 | `ingest` stage key | `source` stage key. |
 | `gravity.align` stage key | keep as target public stage key. |
 | legacy reference-reconstruction stage key | `reconstruction` umbrella stage with reference/3DGS/future backend variants. |
 | `EvaluationArtifact` | trajectory-evaluation artifact; dense-cloud metrics should use cloud-specific DTOs when implemented. |
 | `ArtifactRef` | move out of `interfaces.slam` to a generic artifact contract owner. |
-| current SLAM streaming init DTO | private `SlamStreamingStartInput` at the pipeline stage boundary or method-owned streaming init, not a public shared DTO. |
+| current SLAM streaming init DTO | private `SlamStreamingStartStageInput` at the pipeline stage boundary or method-owned streaming init, not a public shared DTO. |
 | `SlamUpdate` and `BackendEvent` | move out of `interfaces.slam` into `methods.contracts`. |
 
 ### Keep
@@ -1623,7 +1623,7 @@ sequenceDiagram
     BackendCfg-->>SlamRuntime: SlamBackend
 
     alt offline mode
-        Coord->>RuntimeProxy: run_offline(SlamOfflineInput)
+        Coord->>RuntimeProxy: run_offline(SlamOfflineStageInput)
         RuntimeProxy->>SlamRuntime: run_offline(input)
         SlamRuntime->>Backend: run_sequence(...)
         Backend-->>SlamRuntime: SlamArtifacts
@@ -1631,7 +1631,7 @@ sequenceDiagram
         RuntimeProxy-->>Coord: StageResult(SlamArtifacts + StageOutcome)
         Coord->>Events: StageCompleted(slam)
     else streaming mode
-        Coord->>RuntimeProxy: start_streaming(SlamStreamingStartInput)
+        Coord->>RuntimeProxy: start_streaming(SlamStreamingStartStageInput)
         RuntimeProxy->>SlamRuntime: start_streaming(input)
         SlamRuntime->>Backend: start_streaming(...)
         loop each Observation
@@ -2000,7 +2000,7 @@ legacy launch request DTOs are deprecated from the target vocabulary; launch con
 
 Implemented contact points: [RunConfig](../../src/prml_vslam/pipeline/config.py),
 [SlamStageConfig](../../src/prml_vslam/methods/stage/config.py),
-[StageExecutionConfig](../../src/prml_vslam/pipeline/stages/base/config.py).
+[runtime policy fields](../../src/prml_vslam/pipeline/stages/base/config.py).
 
 ### Backend And Source Muxing
 
@@ -2263,9 +2263,9 @@ Decision: introduce typed substrate-neutral resource config.
 
 Target execution policy models:
 
-- `StageExecutionConfig`
-- `ResourceSpec`
-- `PlacementConstraint`
+- `runtime policy fields`
+- `resource fields`
+- `placement fields`
 - optional runtime environment tag
 
 Ray translation happens only in the Ray backend/runtime layer. Keep legacy
@@ -2283,7 +2283,7 @@ External context: use
 official Ray resources, runtime environments, placement, and retry/fault
 tolerance context.
 
-Implemented contact points: [StageExecutionConfig](../../src/prml_vslam/pipeline/stages/base/config.py),
+Implemented contact points: [runtime policy fields](../../src/prml_vslam/pipeline/stages/base/config.py),
 [actor_options_for_stage](../../src/prml_vslam/pipeline/placement.py),
 [RuntimeManager](../../src/prml_vslam/pipeline/runtime_manager.py).
 
@@ -2353,7 +2353,7 @@ Decision: move generic serialization helpers out of pipeline finalization when
 that cleanup is in scope.
 
 Move generic deterministic JSON serialization to `BaseData` or
-`utils.serialization`, but keep summary projection in `pipeline.finalization`.
+`utils.serialization`, but keep summary projection in `utils.serialization`.
 
 Reasoning: [write_json](../../src/prml_vslam/pipeline/finalization.py#L88)
 is generic. [project_summary](../../src/prml_vslam/pipeline/finalization.py)
@@ -2419,8 +2419,8 @@ It is not part of the docs/requirements consistency patch itself.
 
 ### Target Contract Expectations
 
-- Document `StageConfig`, `StageExecutionConfig`, `ResourceSpec`,
-  `PlacementConstraint`, `StageTelemetryConfig`, `StageConfig.cleanup`, and
+- Document `StageConfig`, `runtime policy fields`, `resource fields`,
+  `placement fields`, `telemetry fields`, `StageConfig cleanup_* fields`, and
   `StageRuntimeStatus` under pipeline-owned contracts.
 - Document `StageResult` as the canonical runtime stage handoff.
 - Keep durable `StageCompleted` and `StageFailed` events centered on
@@ -2541,13 +2541,13 @@ the next one starts:
 | Update routing | `StageRuntimeUpdate` reaches live snapshot/status and observer sinks without durable telemetry JSONL; durable completions still persist `StageOutcome`. |
 | Failure/stop | finalize-then-mark behavior, source error, backend error, stop during streaming, downstream skip policy, and terminal run state. |
 | Payloads/Rerun | backend-owned transient refs, typed read-after-eviction, sink failure isolation, and no SDK calls from DTOs, stage runtimes, or proxies. |
-| Attempts/cleanup | `attempt_id` projection for reused run roots, active-attempt summary selection, and `StageConfig.cleanup` config/provenance behavior. |
+| Attempts/cleanup | `attempt_id` projection for reused run roots, active-attempt summary selection, and `StageConfig cleanup_* fields` config/provenance behavior. |
 | Compatibility cleanup | import audit confirms no `prml_vslam.sources.replay.datasets` alias remains. |
 
 ## Future Recommended Implementation Order
 
 1. Implement contracts only: `RunConfig`, `SourceStageConfig`, `StageConfig`,
-   `StageExecutionConfig`, `StageTelemetryConfig`, `StageRuntimeStatus`,
+   `runtime policy fields`, `telemetry fields`, `StageRuntimeStatus`,
    `StageRuntimeUpdate`, `StageResult`, `TransientPayloadRef`, minimal private
    runtime-boundary DTOs, and reconstruction stage config variants.
 2. Update docs and inline issue comments to point to the new ownership decisions.

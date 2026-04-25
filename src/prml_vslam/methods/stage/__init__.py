@@ -15,7 +15,7 @@ from prml_vslam.methods.stage.config import (
     VistaSlamBackendConfig,
     build_slam_backend_config,
 )
-from prml_vslam.methods.stage.contracts import SlamOfflineInput, SlamStreamingStartInput
+from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStreamingStartStageInput
 
 __all__ = [
     "BackendConfig",
@@ -23,11 +23,11 @@ __all__ = [
     "Mast3rSlamBackendConfig",
     "MethodId",
     "SlamBackendConfig",
-    "SlamOfflineInput",
+    "SlamOfflineStageInput",
     "SlamOutputPolicy",
     "SlamStageConfig",
     "SlamStageRuntime",
-    "SlamStreamingStartInput",
+    "SlamStreamingStartStageInput",
     "VistaSlamBackendConfig",
     "build_slam_backend_config",
 ]
