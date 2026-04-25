@@ -15,39 +15,61 @@ sequenceDiagram
     participant Service as RunService
     participant Backend as RayPipelineBackend
     participant Coord as RunCoordinatorActor
-    participant Program as RuntimeStageProgram
-    participant Source as StreamingSequenceSource
+    participant RtmMgr as RuntimeManager
+    participant Source as SourceRuntime
     participant Packet as PacketSourceActor
-    participant Slam as StreamingSlamStageActor
-    participant Summary as project_summary()
+    participant Proxy as StageRuntimeHandle
+    participant Slam as SlamStageRuntime
+    participant Summary as SummaryRuntime
 
-    Caller->>Service: start_run(request, runtime_source)
-    Service->>Backend: submit_run(request, runtime_source)
+    Caller->>Service: start_run(request)
+    Service->>Backend: submit_run(request)
     Backend->>Backend: request.build(path_config)
-    Backend->>Coord: start(request, plan, path_config, runtime_source)
-    Coord->>Program: execute_streaming_prepare(...)
-    Program->>Source: prepare_sequence_manifest(...)
-    Source-->>Program: prepared SequenceManifest
-    Program-->>Coord: ingest StageCompletionPayload
-    Coord->>Slam: start_stage(request, plan, path_config)
+    Backend->>Coord: start(request, plan)
+    Coord->>RtmMgr: preflight(request, plan)
+    Coord->>Coord: record run.submitted and run.started
+
+    Coord->>RtmMgr: runtime_for(source)
+    RtmMgr-->>Coord: SourceRuntime
+    Coord->>Source: run_offline(...)
+    Source-->>Coord: StageResult (SequenceManifest)
+
+    Coord->>RtmMgr: runtime_for(slam)
+    RtmMgr-->>Coord: Proxy (Slam)
+    Coord->>Proxy: start_streaming(...)
+    Proxy->>Slam: start_streaming(...)
+
     Coord->>Packet: start_stream(source, initial_credits)
     loop packet credit loop
         Packet->>Source: wait_for_observation()
         Source-->>Packet: Observation
-        Packet-->>Coord: on_packet(packet summary, frame handle)
-        Coord->>Slam: push_frame(...)
-        Slam-->>Coord: on_slam_notices(..., released_credits=1)
+        Packet-->>Coord: on_packet(observation)
+        Coord->>Proxy: submit_stream_item(observation)
+        Proxy->>Slam: submit_stream_item(observation)
+        Coord->>Proxy: drain_runtime_updates()
+        Proxy-->>Coord: StageRuntimeUpdate[]
+        Coord->>Coord: publish updates
         Coord->>Packet: grant_credit(1)
     end
+
     alt source EOF or error
         Packet-->>Coord: on_source_eof() / on_source_error()
     end
-    Coord->>Program: execute_streaming_finalize(...)
-    Program->>Slam: close_stage(request, plan, sequence_manifest)
-    Slam-->>Program: SlamStageResult
+
+    Coord->>Proxy: finish_streaming()
+    Proxy->>Slam: finish_streaming()
+    Slam-->>Proxy: StageResult
+    Proxy-->>Coord: StageResult
+
     opt trajectory evaluation enabled and no stop/error
-        Program->>Program: run_trajectory_evaluation_stage(...)
+        Coord->>RtmMgr: runtime_for(evaluate.trajectory)
+        RtmMgr-->>Coord: TrajectoryEvaluationRuntime
+        Coord->>TrajectoryEvaluationRuntime: run_offline(...)
+        TrajectoryEvaluationRuntime-->>Coord: StageResult
     end
-    Program->>Summary: project_summary(stage_outcomes)
-    Summary-->>Coord: RunSummary + StageManifest[] + summary StageOutcome
+
+    Coord->>RtmMgr: runtime_for(summary)
+    RtmMgr-->>Coord: SummaryRuntime
+    Coord->>Summary: run_offline(stage_outcomes)
+    Summary-->>Coord: StageResult
     Coord->>Coord: emit run.completed / run.failed / run.stopped

@@ -11,7 +11,7 @@
 flowchart LR
     UI["App / CLI<br/>Streamlit page or CLI command"] --> Service["RunService"]
     Service --> Backend["RayPipelineBackend"]
-    Backend --> Planner["RunConfig.build()<br/>StageRegistry.compile()"]
+    Backend --> Planner["RunConfig.build()"]
     Backend --> Coord["RunCoordinatorActor"]
     Coord --> Program["RuntimeStageProgram"]
     Program --> Batch["stage_execution.py<br/>ingest / trajectory / summary"]

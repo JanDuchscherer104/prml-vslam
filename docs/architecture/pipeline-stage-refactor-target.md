@@ -1,4 +1,17 @@
-# Pipeline Stage Refactor Target Architecture
+# [HISTORICAL] Pipeline Stage Refactor Target Architecture
+
+> **NOTICE**: This document is preserved for historical context. The refactor target
+> described here has been mostly implemented. The canonical requirements and
+> design rules have been moved into package-local `REQUIREMENTS.md` and `README.md`
+> files.
+>
+> New sources of truth:
+> - `src/prml_vslam/pipeline/REQUIREMENTS.md`
+> - `src/prml_vslam/methods/REQUIREMENTS.md`
+> - `src/prml_vslam/sources/REQUIREMENTS.md`
+> - `src/prml_vslam/eval/REQUIREMENTS.md`
+> - `src/prml_vslam/reconstruction/REQUIREMENTS.md`
+> - `src/prml_vslam/visualization/REQUIREMENTS.md`
 
 This document describes the intended target architecture for the next
 `prml_vslam` package refactor. It deliberately avoids explaining the current
@@ -433,7 +446,7 @@ executor = "ray"
 ```
 
 Target source config detail:
-
+<!-- TODO(docs): This is an important UML diagram that should be included in prml_vslam/sources/README.md -->
 ```mermaid
 classDiagram
     class RunConfig {
@@ -546,6 +559,8 @@ Per-stage cleanup is available through an optional nested
 `StageConfig cleanup_* fields`. The cleanup policy selects artifacts by stage artifact
 key, not filesystem path; see the dedicated
 [artifact cleanup policy](./pipeline-stage-artifact-cleanup-policy.md).
+
+<!-- TODO(docs): This is an important UML diagram that should be included in prml_vslam/README.md; remove the specific *StageConfigs, and indicate that stage specific StageConfig's usually have a backend field that contains the config of the respective backend -->
 
 ```mermaid
 classDiagram
@@ -1115,6 +1130,8 @@ private implementation inputs, but public payloads inside `StageResult` and
 the durable/provenance subset, and semantic outputs remain domain-owned
 payloads from their owning package.
 
+<!-- TODO(docs): This is an important UML diagram that should be included in prml_vslam/pipeline/README.md. Ensure that it is up-to-date with the source code! -->
+
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "22px", "nodeTextColor": "#111827", "nodeBkg": "#ffffff", "nodeBorder": "#6b7280", "mainBkg": "transparent", "clusterBkg": "transparent", "clusterBorder": "#d1d5db"}, "flowchart": {"htmlLabels": true}}}%%
 flowchart LR
@@ -1601,6 +1618,7 @@ when implementing or reviewing the SLAM visualization path. Keep Rerun
 transform, pinhole, depth, timeline, and blueprint semantics inside the
 sink/policy layer.
 
+<!-- TODO: This is an important UML diagram. Include it in src/prml_vslam/pipeline/README.md with a gneric Stage (not slam specific)  -->
 ```mermaid
 sequenceDiagram
     autonumber
@@ -2034,6 +2052,7 @@ unions, validators, `Field`, serialization, and the repo's
 `BaseConfig` / `BaseData` conventions. Pydantic is the config/modeling tool
 here; it must not become a second runtime construction authority.
 
+<!-- TODO: This is an important mermaid UML diagram. include it in src/prml_vslam/README.md and bring it up-to-date. I.e.SourceBackendConfig also supports advio.  -->
 ```mermaid
 classDiagram
     class StageConfig {
