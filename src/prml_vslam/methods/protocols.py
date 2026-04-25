@@ -9,40 +9,40 @@ upstream-private runtime APIs to the rest of the repository.
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.stage.config import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.methods.stage.backend_config import MethodId, SlamBackendConfig, SlamOutputPolicy
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 
 
 @runtime_checkable
 class OfflineSlamBackend(Protocol):
-    """Execute a backend over a normalized offline sequence manifest.
+    """Execute a backend over normalized offline observations.
 
     Implementations adapt upstream systems such as ViSTA-SLAM or MASt3R-SLAM
-    into repository contracts. They may create backend-native workspaces, but
-    they must return normalized :class:`prml_vslam.interfaces.slam.SlamArtifacts`
-    and keep evaluation, alignment, and viewer policy outside the method
-    wrapper.
+    into repository contracts. Source dematerialization belongs to the stage
+    runtime or source helpers; backends consume observations and return
+    normalized :class:`prml_vslam.interfaces.slam.SlamArtifacts`.
     """
 
     method_id: MethodId
 
     @abstractmethod
-    def run_sequence(
+    def run_observations(
         self,
-        sequence: SequenceManifest,
+        observations: Iterable[Observation],
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
-        """Run the backend over a materialized sequence and persist artifacts."""
+        """Run the backend over normalized observations and persist artifacts."""
 
 
 @runtime_checkable

@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import AliasChoices, Field
 
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec
 from prml_vslam.pipeline.contracts.stages import StageKey

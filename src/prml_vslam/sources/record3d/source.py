@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from prml_vslam.protocols.source import StreamingSequenceSource
 from prml_vslam.sources.contracts import Record3DTransportId, SequenceManifest
+from prml_vslam.sources.protocols import StreamingSequenceSource
 from prml_vslam.utils import BaseConfig, FactoryConfig
 
 from .record3d import open_record3d_usb_packet_stream

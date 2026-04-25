@@ -14,7 +14,7 @@ from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     put_transient_payload,
 )
-from prml_vslam.protocols.source import StreamingSequenceSource
+from prml_vslam.sources.protocols import StreamingSequenceSource
 from prml_vslam.utils import FPS_WINDOW, Console, rolling_fps
 
 

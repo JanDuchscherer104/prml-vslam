@@ -14,7 +14,7 @@ import numpy as np
 
 from prml_vslam.eval.contracts import TrajectoryEvaluationPreview
 from prml_vslam.eval.services import compute_trajectory_ape_preview
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState

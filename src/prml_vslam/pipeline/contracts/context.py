@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from prml_vslam.methods.stage.config import SlamBackendConfig
+    from prml_vslam.methods.stage.backend_config import SlamBackendConfig
     from prml_vslam.pipeline.config import RunConfig
     from prml_vslam.pipeline.contracts.plan import RunPlan
     from prml_vslam.pipeline.runner import StageResultStore
-    from prml_vslam.protocols.source import OfflineSequenceSource
+    from prml_vslam.sources.protocols import OfflineSequenceSource
     from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 

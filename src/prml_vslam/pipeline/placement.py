@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TypeAlias
 
-from prml_vslam.methods.stage.config import BackendConfigValue
+from prml_vslam.methods.stage.backend_config import BackendConfigValue
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.stages import StageKey
 

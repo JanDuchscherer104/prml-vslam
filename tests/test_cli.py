@@ -9,7 +9,7 @@ import typer
 from typer.testing import CliRunner
 
 from prml_vslam.main import Record3DStreamConfig, _apply_dotted_overrides_to_run_config, app
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey

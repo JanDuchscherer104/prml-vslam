@@ -14,7 +14,7 @@ from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
-from prml_vslam.sources.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, TRAJECTORY_ARTIFACT
+from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, TRAJECTORY_ARTIFACT
 from prml_vslam.utils.geometry import write_tum_trajectory
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -169,7 +169,8 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].origin == "world"
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert all(not query.startswith("- ") for query in layout.views[0].contents)
-    assert "+ world/reference/**/aligned/**" in layout.views[0].contents
+    assert "+ world/reference/trajectory/*/aligned/**" in layout.views[0].contents
+    assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
     assert "+ world/keyframes/cameras/*" in layout.views[0].contents
     assert "- world/live/model/camera/image/**" not in layout.views[0].contents
     assert "- world/reference/**/source_native/**" not in layout.views[0].contents
@@ -310,10 +311,10 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_p
 
     policy.observe_update(object(), update)
 
-    assert line_calls == [("world/reference/advio_gt_world/ground_truth/aligned/trajectory", True)]
+    assert line_calls == [("world/reference/trajectory/ground_truth/aligned", True)]
     assert [call[0] for call in pose_calls] == [
-        "world/reference/advio_gt_world/ground_truth/aligned/trajectory/poses/000000",
-        "world/reference/advio_gt_world/ground_truth/aligned/trajectory/poses/000001",
+        "world/reference/trajectory/ground_truth/aligned/poses/000000",
+        "world/reference/trajectory/ground_truth/aligned/poses/000001",
     ]
     assert all(axis_length == 0.25 and static is True for _, axis_length, static, _ in pose_calls)
     assert pose_calls[1][3].target_frame == "advio_gt_world"
@@ -368,7 +369,7 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
 
     policy.observe_update(object(), update)
 
-    assert line_calls == [("world/reference/advio_gt_world/ground_truth/aligned/trajectory", True)]
+    assert line_calls == [("world/reference/trajectory/ground_truth/aligned", True)]
     assert pose_calls == []
 
 

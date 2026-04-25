@@ -12,8 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs
+from prml_vslam.sources.protocols import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.replay import ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData, Console, PathConfig
 

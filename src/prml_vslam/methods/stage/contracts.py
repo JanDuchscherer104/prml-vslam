@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.methods.stage.config import BackendConfig, SlamOutputPolicy
+from prml_vslam.methods.stage.backend_config import BackendConfig, SlamOutputPolicy
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.utils import BaseData, PathConfig
 

@@ -2,25 +2,15 @@
 
 from __future__ import annotations
 
-from prml_vslam.alignment.contracts import GroundAlignmentConfig
 from prml_vslam.alignment.services import GroundAlignmentService
+from prml_vslam.alignment.stage.contracts import GroundAlignmentStageInput
 from prml_vslam.interfaces.artifacts import artifact_ref
-from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
-from prml_vslam.utils import BaseData, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash, write_json
-
-
-class GroundAlignmentStageInput(BaseData):
-    """Inputs required to derive ground-alignment metadata from SLAM outputs."""
-
-    config: GroundAlignmentConfig
-    run_paths: RunArtifactPaths
-    slam: SlamArtifacts
 
 
 class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentStageInput]):
@@ -123,4 +113,4 @@ def _final_status(
     )
 
 
-__all__ = ["GroundAlignmentRuntime", "GroundAlignmentStageInput"]
+__all__ = ["GroundAlignmentRuntime"]

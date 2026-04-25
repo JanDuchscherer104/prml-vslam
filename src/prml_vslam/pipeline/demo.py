@@ -6,13 +6,13 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig, build_run_config
-from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
+from prml_vslam.sources.protocols import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.replay import ObservationStream
 from prml_vslam.utils import PathConfig
 

@@ -45,13 +45,13 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.sources.visualization import (
+from prml_vslam.sources.stage.visualization import (
     METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT,
 )
-from prml_vslam.sources.visualization import (
+from prml_vslam.sources.stage.visualization import (
     POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT,
 )
-from prml_vslam.sources.visualization import (
+from prml_vslam.sources.stage.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
     ROLE_SOURCE_CAMERA_RGB,
     ROLE_SOURCE_DEPTH,
@@ -280,7 +280,6 @@ class RerunLoggingPolicy:
             return
         reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
         coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "native"))
-        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
         metadata = self._load_source_reference_metadata(item)
         point_count = _metadata_int(metadata, "point_count")
         skipped_payloads = _metadata_int(metadata, "skipped_out_of_range_payloads")
@@ -292,7 +291,7 @@ class RerunLoggingPolicy:
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
-            entity_path=f"world/reference/{target_frame}/{reference_source}/{coordinate_status}{stats_segment}/point_cloud",
+            entity_path=f"world/reference/points/{reference_source}/{coordinate_status}{stats_segment}/point_cloud",
             warning_label="source reference point cloud",
         )
 
@@ -328,11 +327,10 @@ class RerunLoggingPolicy:
             return
         reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
         coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "source_native"))
-        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
         self._log_tum_trajectory_artifact(
             stream,
             artifact_path=artifact.path,
-            entity_path=f"world/reference/{target_frame}/{reference_source}/{coordinate_status}/trajectory",
+            entity_path=f"world/reference/trajectory/{reference_source}/{coordinate_status}",
             warning_label="source reference trajectory",
             target_frame=str(item.metadata.get("target_frame") or item.space or "world"),
         )

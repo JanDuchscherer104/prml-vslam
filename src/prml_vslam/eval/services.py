@@ -34,7 +34,7 @@ from prml_vslam.eval.contracts import (
 )
 from prml_vslam.eval.protocols import TrajectoryEvaluator
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path

@@ -45,7 +45,7 @@ class GroundAlignmentStageConfig(StageConfig):
         return GroundAlignmentRuntime
 
     def build_offline_input(self, context: PipelineExecutionContext):
-        from prml_vslam.alignment.stage.runtime import GroundAlignmentStageInput
+        from prml_vslam.alignment.stage.contracts import GroundAlignmentStageInput
 
         return GroundAlignmentStageInput(
             config=self.ground,

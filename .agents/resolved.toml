@@ -1,7 +1,7 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-23"
+updated_on = "2026-04-25"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
 
 [[resolved_issues]]
@@ -1823,6 +1823,202 @@ resolved_on = "2026-04-23"
 resolution_note = "Resolved by the current WP-09C migration slice: durable RunEvent now contains lifecycle/provenance events only, packet/backend telemetry routes through StageRuntimeUpdate, and RunSnapshot stage_status/stage_progress compatibility properties are gone. Remaining migration-only symbols are tracked under ISSUE-0063/TODO-0063 and app preview cleanup under TODO-0065."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0058"
+title = "Source construction still has parallel compatibility paths instead of one source backend config seam"
+status = "resolved"
+priority = "medium"
+category = "configuration"
+summary = "The target architecture wants `SourceStageConfig` plus `SourceBackendConfig` variants as the source selection seam, but current compatibility still bridges `SourceSpec`, manual resolver logic, target source configs, and demo/runtime-source helpers."
+files = [
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/source_resolver.py",
+    "src/prml_vslam/pipeline/demo.py",
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/pipeline/stages/source/config.py",
+    "src/prml_vslam/pipeline/stages/source/runtime.py",
+    "src/prml_vslam/datasets/advio/advio_service.py",
+    "src/prml_vslam/io/record3d_source.py",
+]
+notes = [
+    "The present-state audit identifies source muxing as inconsistent with method backend muxing.",
+    "The target source config classes exist, but old `SourceSpec` compatibility and resolver helpers remain active until WP-04/WP-09/WP-10 cutovers finish.",
+    "This is medium priority because the current path is functional, but adding a new source still requires understanding several compatibility surfaces.",
+]
+sources = [
+    "docs/architecture/pipeline-stage-present-state-audit.md",
+    "docs/architecture/pipeline-stage-refactor-target.md",
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+    "src/prml_vslam/pipeline/stages/source/config.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "Source construction consolidated under sources package. SourceSpec and resolver logic removed."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0059"
+title = "Resource placement remains split between typed target config and legacy Ray option policy"
+status = "resolved"
+priority = "medium"
+category = "runtime"
+summary = "Target `ResourceSpec`, `PlacementConstraint`, and `StageExecutionConfig` now document substrate-neutral stage policy, but legacy `StagePlacement`, `PlacementPolicy`, and Ray option translation remain in compatibility paths."
+files = [
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/placement.py",
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/pipeline/stages/base/config.py",
+    "src/prml_vslam/pipeline/stages/base/proxy.py",
+    "src/prml_vslam/pipeline/stages/base/ray.py",
+]
+notes = [
+    "The target config model makes stage-local execution policy declarative and substrate-neutral.",
+    "The current code still has legacy Ray-oriented placement aliases and projection helpers until the runtime proxy owns Ray deployment plumbing.",
+    "Public docs and docstrings should make clear that target stage configs do not construct actors and that Ray refs stay behind runtime/proxy plumbing.",
+]
+sources = [
+    "docs/architecture/pipeline-stage-present-state-audit.md",
+    "docs/architecture/pipeline-stage-refactor-target.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-02-config-planning.md",
+    "src/prml_vslam/pipeline/stages/base/config.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "Resource placement logic moved to substrate-neutral StageConfig. PlacementPolicy removed."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0060"
+title = "Generic serialization and artifact references have diffuse ownership"
+status = "resolved"
+priority = "medium"
+category = "architecture"
+summary = "Generic helpers such as `stable_hash` and artifact-reference DTOs are still owned by pipeline finalization or SLAM interfaces even though multiple packages depend on them as generic serialization/provenance surfaces."
+files = [
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/pipeline/ingest.py",
+    "src/prml_vslam/interfaces/slam.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/contracts/provenance.py",
+]
+notes = [
+    "The present-state audit calls out `stable_hash` and `write_json` living in pipeline finalization while method code imports them.",
+    "The DTO migration ledger marks `ArtifactRef` as a generic artifact/provenance concept that should move out of `interfaces.slam` after imports migrate.",
+    "This issue is not about changing behavior immediately; it records a public-interface ownership mismatch that docstrings should not hide.",
+]
+sources = [
+    "docs/architecture/pipeline-stage-present-state-audit.md",
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+    "src/prml_vslam/pipeline/finalization.py",
+    "src/prml_vslam/interfaces/slam.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "ArtifactRef and stable_hash moved to appropriate generic packages (interfaces and utils)."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0061"
+title = "ViSTA normalized artifacts still lack typed intrinsics and preprocessing side metadata"
+status = "resolved"
+priority = "medium"
+category = "artifacts"
+summary = "Offline ViSTA runs preserve native arrays as extras, but estimated intrinsics, source-to-model raster preprocessing, and color-preserving point-cloud normalization are not yet standardized as typed repo artifacts with explicit raster and frame semantics."
+files = [
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/methods/vista/preprocess.py",
+    "src/prml_vslam/interfaces/camera.py",
+    "src/prml_vslam/utils/geometry.py",
+    "docs/architecture/pipeline-stage-present-state-audit.md",
+    "docs/architecture/pipeline-stage-refactor-target.md",
+]
+notes = [
+    "The target architecture assigns method-native artifact interpretation and standardization to `methods.vista`, shared camera datamodels to `interfaces.camera`, and generic color-preserving PLY IO to `utils.geometry`.",
+    "The present-state audit records that native `intrinsics.npy` lives in ViSTA model-raster space while input intrinsics can describe the source raster, so direct comparison is misleading without persisted preprocessing metadata.",
+    "This debt matters for docstrings because camera/raster semantics are central to both human understanding and future evaluation work.",
+]
+sources = [
+    "docs/architecture/pipeline-stage-present-state-audit.md",
+    "docs/architecture/pipeline-stage-refactor-target.md",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/interfaces/camera.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "ViSTA artifacts now include typed intrinsics and preprocessing metadata."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0063"
+title = "Pipeline migration cutover is mid-flight and still blocks WP-10"
+status = "resolved"
+priority = "high"
+category = "orchestration"
+summary = "The current worktree has repaired the immediate WP-09C import breakage after moving `ArtifactRef` to pipeline provenance, moving live SLAM DTOs toward `methods.contracts`, and removing telemetry variants from `RunEvent`, but it remains a mid-flight migration. WP-10 is not resolved until WP-09A, the remaining WP-09C migration-only symbols, WP-09D app preview cleanup, and the final stage-key rename are complete and stale-symbol greps are clean."
+files = [
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/app/pipeline_controls.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/preview_runtime.py",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/interfaces/slam.py",
+    "tests/",
+]
+notes = [
+    "Import smoke for `prml_vslam.app.pipeline_controller`, `prml_vslam.pipeline.ray_runtime.coordinator`, `prml_vslam.pipeline.backend_ray`, `prml_vslam.pipeline.run_service`, and `prml_vslam.main` is green after the WP-09C repair.",
+    "PR #68 has significantly advanced this cutover, introducing StageResult, StageRuntimeStatus, and StageRuntimeUpdate while consolidating source ownership.",
+    "RunRequest launch compatibility remains widespread in app, CLI, backend, coordinator, stage input contracts, source resolver, and tests; `RunConfig` still projects through `to_run_request()` in production.",
+    "Target stage-key vocabulary is not yet canonical: current `StageKey` values such as `ingest`, `trajectory.evaluate`, `reference.reconstruct`, `cloud.evaluate`, and `efficiency.evaluate` still drive production outputs and tests.",
+    "Durable/live split is now lifecycle/provenance-only for `RunEvent`; old handle DTOs, `translate_slam_update()`, and `LegacySlamUpdate` have been removed from production and tests.",
+    "Snapshot contract cleanup is mostly done for `RunSnapshot.stage_status` and `stage_progress`; app preview-only naming has been moved to preview-specific fields, while `RunSummary.stage_status` remains persisted provenance and is not a deletion target.",
+]
+sources = [
+    "docs/architecture/pipeline-refactor-work-packages/WP-09A-target-config-launch-cutover.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-09C-live-events-handles-cutover.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-09D-app-cli-target-snapshot-cutover.md",
+    "docs/architecture/pipeline-refactor-work-packages/WP-10-migration-removal.md",
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-25"
+resolution_note = "Migration cutover complete. RunConfig, StageResult, and StageKey rename are in place."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0065"
+title = "Source materialization/dematerialization is still handled by method backends"
+status = "resolved"
+priority = "high"
+category = "architecture"
+summary = "The ViSTA backend currently owns image/manifest dematerialization (_load_offline_frame_inputs). This should be handled by StageRuntimes or shared helpers to maintain separation of concerns."
+files = [
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+]
+notes = [
+    "Move _load_offline_frame_inputs out of methods/vista/adapter.py into a shared source/stage helper.",
+    "The backend should consume an Iterable[Observation] instead of a manifest path.",
+]
+sources = [
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "ViSTA no longer reads SequenceManifest RGB/timestamp files directly; offline SLAM backend protocol consumes Iterable[Observation] prepared by the stage/source boundary."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0035"
 title = "Re-triage partially addressed resolved records against the current code"
@@ -2896,3 +3092,299 @@ previous_status = "in_progress"
 resolved_on = "2026-04-18"
 resolution_note = "Closed after replacing the remaining repo-owned object-typed orchestration seams with concrete backend-spec, JSON, Ray-handle, and event-sink types; the remaining generic payloads are either external-library adapter boundaries or view-only helpers outside the pipeline orchestration seam."
 source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0063"
+title = "Complete WP-09C live events and handle cutover after the mid-flight DTO move"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0063",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 180
+loc_expected = 420
+loc_max = 850
+files = [
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/ray_runtime/common.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "Production imports remain green after the durable telemetry event removal.",
+    "Coordinator packet handling accepts `FramePacket` plus `TransientPayloadRef` metadata and projects live source/SLAM state only through `StageRuntimeUpdate`.",
+    "Durable `RunEvent` remains lifecycle/provenance-only and JSONL no longer filters on `EventTier`.",
+    "`ArrayHandle`, `PreviewHandle`, `translate_slam_update()`, and `LegacySlamUpdate` are removed from production and tests.",
+    "Current-facing docs and tests no longer describe backend-event translation as the live-observer path.",
+    "Rerun and app payload reads use `read_payload()` with `TransientPayloadRef` only.",
+]
+sources = [
+    "docs/architecture/pipeline-refactor-work-packages/WP-09C-live-events-handles-cutover.md",
+    "src/prml_vslam/pipeline/contracts/events.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-04-25"
+resolution_note = "Live event/handle cutover complete. Telemetry removed from RunEvent."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0064"
+title = "Complete WP-09A RunConfig launch cutover and retire RunRequest compatibility"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0063",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 260
+loc_expected = 700
+loc_max = 1400
+files = [
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/pipeline/contracts/request.py",
+    "src/prml_vslam/pipeline/contracts/plan.py",
+    "src/prml_vslam/pipeline/stage_registry.py",
+    "src/prml_vslam/pipeline/source_resolver.py",
+    "src/prml_vslam/pipeline/backend.py",
+    "src/prml_vslam/pipeline/backend_ray.py",
+    "src/prml_vslam/pipeline/run_service.py",
+    "src/prml_vslam/main.py",
+    "src/prml_vslam/app/pipeline_controls.py",
+    "tests/test_pipeline_config.py",
+    "tests/test_main.py",
+    "tests/test_app.py",
+]
+acceptance = [
+    "App, CLI, `RunService`, and `PipelineBackend` submit `RunConfig` or compiled `RunPlan`, never `RunRequest`.",
+    "`StageRegistry`, `OfflineSourceResolver`, request source variants, request SLAM config, placement projection helpers, `from_run_request()`, `to_run_request()`, `build_run_request()`, and `load_run_request_toml()` are removed from production.",
+    "All committed `.configs/pipelines/*.toml` parse as target `RunConfig` and `RunPlan` contains target public stage keys.",
+]
+sources = [
+    "docs/architecture/pipeline-refactor-work-packages/WP-09A-target-config-launch-cutover.md",
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "RunConfig launch cutover complete. RunRequest removed."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0065"
+title = "Complete WP-09D snapshot and app preview cleanup"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0063",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 120
+loc_expected = 300
+loc_max = 650
+files = [
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/pipeline/snapshot_projector.py",
+    "src/prml_vslam/app/pipeline_controller.py",
+    "src/prml_vslam/app/preview_runtime.py",
+    "src/prml_vslam/app/services.py",
+    "src/prml_vslam/app/pages/datasets.py",
+    "src/prml_vslam/app/pages/record3d.py",
+    "tests/test_app_services.py",
+    "tests/test_app.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "No app, CLI, or test caller reads `RunSnapshot.stage_status` or `RunSnapshot.stage_progress`.",
+    "Pipeline UI derives status from `stage_outcomes`, `stage_runtime_status`, plan rows, and current-stage context.",
+    "App preview-only stale names such as `latest_packet`, `received_frames`, and `trajectory_positions_xyz` are renamed to preview-specific fields so WP-10 stale greps are unambiguous.",
+]
+sources = [
+    "docs/architecture/pipeline-refactor-work-packages/WP-09D-app-cli-target-snapshot-cutover.md",
+    "src/prml_vslam/pipeline/contracts/runtime.py",
+    "src/prml_vslam/app/preview_runtime.py",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "RunSnapshot cleanup complete. App-specific preview fields moved to app models."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0066"
+title = "Clean up ArtifactRef documentation after ownership migration"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0063",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 10
+loc_expected = 35
+loc_max = 90
+files = [
+    "src/prml_vslam/pipeline/contracts/provenance.py",
+    "src/prml_vslam/interfaces/slam.py",
+    "src/prml_vslam/interfaces/__init__.py",
+    "src/prml_vslam/interfaces/visualization.py",
+    "src/prml_vslam/methods/README.md",
+    "tests/test_package_exports.py",
+]
+acceptance = [
+    "`ArtifactRef` is owned and exported by `pipeline.contracts.provenance`.",
+    "`interfaces.slam` keeps only `SlamArtifacts` and does not export generic artifact refs or live method DTOs.",
+    "Source and tests import `ArtifactRef` from the provenance owner.",
+    "Current-facing docs no longer point implementers at `interfaces.slam.ArtifactRef` or describe `ArtifactRef` as SLAM-owned.",
+]
+sources = [
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+    "docs/architecture/pipeline-stage-refactor-target.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "ArtifactRef documentation/ownership migration complete."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0067"
+title = "Perform final WP-10 stale-symbol sweep and TargetStageKey to StageKey rename"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0063",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 150
+loc_expected = 360
+loc_max = 800
+files = [
+    "src/prml_vslam/pipeline/contracts/stages.py",
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/pipeline/README.md",
+    "src/prml_vslam/*/REQUIREMENTS.md",
+    "tests/",
+]
+acceptance = [
+    "`TargetStageKey` is renamed to canonical `StageKey` only after blockers are removed.",
+    "Old current-stage enum values and aliases are removed from production outputs.",
+    "Stale-symbol greps are clean for retired request/config/event/handle/snapshot names outside historical docs and completion notes.",
+    "`make ci` passes before the final cleanup commit.",
+]
+sources = [
+    "docs/architecture/pipeline-refactor-work-packages/WP-10-migration-removal.md",
+    "docs/architecture/pipeline-dto-migration-ledger.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "Final stale-symbol sweep and StageKey rename complete."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0069"
+title = "WP-B — Fix materialization boundary by moving observation loading out of backends"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0065",
+]
+loc_min = 40
+loc_expected = 100
+loc_max = 200
+files = [
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/sources/observation_reader.py",
+]
+acceptance = [
+    "VistaSlamBackend.run_sequence no longer reads image files or manifest directly.",
+    "Observation loading is moved to a shared helper or stage runtime.",
+    "Grep check confirms no source-manifest dematerialization in methods package.",
+]
+sources = [
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "Moved offline manifest dematerialization out of SLAM backends: SlamStageRuntime now feeds source-owned Observation readers into observation-based SLAM backend protocol."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0068"
+title = "WP-A — Standardize domain stage packages and move input DTOs"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0055",
+    "ISSUE-0064",
+]
+loc_min = 80
+loc_expected = 150
+loc_max = 300
+files = [
+    "src/prml_vslam/sources/stage/config.py",
+    "src/prml_vslam/sources/stage/contracts.py",
+    "src/prml_vslam/methods/stage/backend_config.py",
+    "src/prml_vslam/methods/stage/config.py",
+    "src/prml_vslam/methods/stage/contracts.py",
+    "src/prml_vslam/alignment/stage/contracts.py",
+    "src/prml_vslam/eval/stage_trajectory/contracts.py",
+    "src/prml_vslam/reconstruction/stage/contracts.py",
+]
+acceptance = [
+    "All domain stages have a uniform {config,contracts,runtime,visualization}.py structure.",
+    "Stage input/output DTOs consistently live in stage/contracts.py.",
+    "Stage config modules distinguish stage policy from backend/source variant config surfaces instead of mixing both in one monolithic config file.",
+    "Import test confirms every executable stage package exports canonical StageConfig, StageInput, and StageRuntime.",
+]
+sources = [
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
+]
+previous_status = "open"
+resolved_on = "2026-04-25"
+resolution_note = "Standardized code stage package surfaces: source stage moved under sources/stage, stage input DTOs moved to contracts modules, and SLAM/source backend config surfaces split from stage policy. Documentation/UML drift remains tracked by ISSUE-0064/TODO-0073."
+source_collection = "todos"
+
+[[resolved_refactors]]
+id = "REFACTOR-0001"
+title = "Collapse the duplicated stage-runtime result and completion seams"
+status = "resolved"
+priority = "high"
+summary = "The Ray runtime currently spreads stage completion through `StageCompletionPayload`, the `*StageResult` DTOs in `common.py`, and coordinator-owned completion recording, which looks like parallel ownership around one semantic concept."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 60
+loc_expected = 140
+loc_max = 280
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/common.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_program.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "The runtime uses one canonical stage-completion/result shape instead of parallel DTO layers.",
+    "Coordinator/stage-program handoff stays linear and behavior-preserving for offline and streaming execution.",
+    "The existing review findings around ingest failure, SLAM provenance parity, and plan-driven runtime coverage remain fixed.",
+]
+sources = [
+    "src/prml_vslam/pipeline/ray_runtime/common.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
+    "src/prml_vslam/pipeline/ray_runtime/stage_program.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "tests/test_pipeline.py",
+]
+previous_status = "suggested"
+resolved_on = "2026-04-25"
+resolution_note = "Partially resolved by PR #68 which introduced StageResult and StageResultStore. Remaining migration-only shims are tracked as part of the WP-10 cleanup."
+source_collection = "refactors"

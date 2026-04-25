@@ -18,7 +18,7 @@ from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 
 PipelineRuntimeSource: TypeAlias = OfflineSequenceSource | StreamingSequenceSource | None
 

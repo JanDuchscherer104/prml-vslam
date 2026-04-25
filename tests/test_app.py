@@ -28,7 +28,7 @@ from prml_vslam.app.pipeline_controls import (
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_backend_spec, build_run_config
 from prml_vslam.pipeline.contracts.events import RunStarted, StageOutcome

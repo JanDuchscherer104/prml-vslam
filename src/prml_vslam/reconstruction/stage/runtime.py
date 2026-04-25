@@ -11,20 +11,10 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.protocols import LiveUpdateStageRuntime, OfflineStageRuntime
 from prml_vslam.reconstruction import ReconstructionArtifacts
-from prml_vslam.reconstruction.stage.config import ReconstructionBackend
+from prml_vslam.reconstruction.stage.contracts import ReconstructionStageInput
 from prml_vslam.reconstruction.stage.visualization import ReconstructionVisualizationAdapter
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.sources.observation_sequence import FileObservationSequenceLoader
-from prml_vslam.utils import BaseData, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash
-
-
-class ReconstructionStageInput(BaseData):
-    """Inputs required to build one offline reference reconstruction."""
-
-    backend: ReconstructionBackend
-    run_paths: RunArtifactPaths
-    benchmark_inputs: PreparedBenchmarkInputs | None = None
 
 
 class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveUpdateStageRuntime):
@@ -159,4 +149,4 @@ def _artifact_map(artifacts: ReconstructionArtifacts) -> dict[str, ArtifactRef]:
     return artifact_map
 
 
-__all__ = ["ReconstructionRuntime", "ReconstructionStageInput"]
+__all__ = ["ReconstructionRuntime"]

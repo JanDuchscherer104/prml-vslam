@@ -31,13 +31,13 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.sources.visualization import (
+from prml_vslam.sources.stage.visualization import (
     METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT,
 )
-from prml_vslam.sources.visualization import (
+from prml_vslam.sources.stage.visualization import (
     POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT,
 )
-from prml_vslam.sources.visualization import (
+from prml_vslam.sources.stage.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
     ROLE_SOURCE_CAMERA_RGB,
     ROLE_SOURCE_DEPTH,
@@ -681,13 +681,13 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
     assert calls == [
         (
             "trajectory",
-            "world/reference/advio_gt_world/ground_truth/aligned/trajectory",
+            "world/reference/trajectory/ground_truth/aligned",
             ((1.0, 2.0, 3.0), (2.0, 3.0, 4.0)),
         ),
-        ("points", "world/reference/advio_gt_world/tango_raw/aligned/points_2_skipped_1/point_cloud", cloud),
+        ("points", "world/reference/points/tango_raw/aligned/points_2_skipped_1/point_cloud", cloud),
         (
             "points",
-            "world/reference/advio_tango_raw_world/tango_raw/source_native/points_2_skipped_1/point_cloud",
+            "world/reference/points/tango_raw/source_native/points_2_skipped_1/point_cloud",
             cloud,
         ),
     ]
@@ -737,9 +737,9 @@ def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tm
 
     summary = load_recording_summary(viewer_path)
 
-    assert summary.reference_trajectory_entities == ["/world/reference/advio_gt_world/ground_truth/aligned/trajectory"]
+    assert summary.reference_trajectory_entities == ["/world/reference/trajectory/ground_truth/aligned"]
     assert [(snapshot.entity_path, snapshot.point_count) for snapshot in summary.reference_point_clouds] == [
-        ("/world/reference/advio_gt_world/tango_raw/aligned/points_2_skipped_0/point_cloud", 2)
+        ("/world/reference/points/tango_raw/aligned/points_2_skipped_0/point_cloud", 2)
     ]
 
 

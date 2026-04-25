@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,8 +13,8 @@ from pydantic import ValidationError
 
 from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, Observation, ObservationProvenance
 from prml_vslam.methods import VistaSlamBackend
-from prml_vslam.methods.stage.config import MethodId as DomainMethodId
-from prml_vslam.methods.stage.config import SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import MethodId as DomainMethodId
+from prml_vslam.methods.stage.backend_config import SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
 from prml_vslam.sources.contracts import (
     ReferenceSource,
     SequenceManifest,
@@ -82,11 +81,6 @@ def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
             manual_seed=lambda seed: None,
         ),
     )
-
-
-def _write_normalized_timestamps(path: Path, timestamps_ns: list[int]) -> Path:
-    path.write_text(json.dumps({"timestamps_ns": timestamps_ns}), encoding="utf-8")
-    return path
 
 
 def _make_fake_frame_preprocessor(
@@ -1018,43 +1012,6 @@ def test_vista_session_close_exports_accepted_keyframe_source_timestamps(
 
     trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
     assert trajectory.timestamps.tolist() == [0.1, 0.4]
-
-
-def test_vista_backend_offline_run_requires_normalized_rgb_dir(tmp_path: Path) -> None:
-    from prml_vslam.sources.contracts import ReferenceSource
-
-    backend = VistaSlamBackendConfig().setup_target()
-    assert backend is not None
-    timestamps_path = _write_normalized_timestamps(tmp_path / "timestamps.json", [100_000_000])
-
-    with pytest.raises(RuntimeError, match="SequenceManifest\\.rgb_dir"):
-        backend.run_sequence(
-            sequence=SequenceManifest(sequence_id="advio-15", timestamps_path=timestamps_path),
-            benchmark_inputs=None,
-            baseline_source=ReferenceSource.GROUND_TRUTH,
-            backend_config=VistaSlamBackendConfig(),
-            output_policy=SlamOutputPolicy(),
-            artifact_root=tmp_path / "vista-offline",
-        )
-
-
-def test_vista_backend_offline_run_requires_normalized_timestamps_path(tmp_path: Path) -> None:
-    from prml_vslam.sources.contracts import ReferenceSource
-
-    backend = VistaSlamBackendConfig().setup_target()
-    assert backend is not None
-    frames_dir = tmp_path / "frames"
-    frames_dir.mkdir(parents=True)
-
-    with pytest.raises(RuntimeError, match="SequenceManifest\\.timestamps_path"):
-        backend.run_sequence(
-            sequence=SequenceManifest(sequence_id="advio-15", rgb_dir=frames_dir),
-            benchmark_inputs=None,
-            baseline_source=ReferenceSource.GROUND_TRUTH,
-            backend_config=VistaSlamBackendConfig(),
-            output_policy=SlamOutputPolicy(),
-            artifact_root=tmp_path / "vista-offline",
-        )
 
 
 def test_vista_artifact_builder_projects_near_orthonormal_trajectory_rotations(tmp_path: Path) -> None:

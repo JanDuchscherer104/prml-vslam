@@ -1,35 +1,4 @@
 [[refactors]]
-id = "REFACTOR-0001"
-title = "Collapse the duplicated stage-runtime result and completion seams"
-status = "suggested"
-priority = "high"
-summary = "The Ray runtime currently spreads stage completion through `StageCompletionPayload`, the `*StageResult` DTOs in `common.py`, and coordinator-owned completion recording, which looks like parallel ownership around one semantic concept."
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 60
-loc_expected = 140
-loc_max = 280
-files = [
-    "src/prml_vslam/pipeline/ray_runtime/common.py",
-    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
-    "src/prml_vslam/pipeline/ray_runtime/stage_program.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "The runtime uses one canonical stage-completion/result shape instead of parallel DTO layers.",
-    "Coordinator/stage-program handoff stays linear and behavior-preserving for offline and streaming execution.",
-    "The existing review findings around ingest failure, SLAM provenance parity, and plan-driven runtime coverage remain fixed.",
-]
-sources = [
-    "src/prml_vslam/pipeline/ray_runtime/common.py",
-    "src/prml_vslam/pipeline/ray_runtime/stage_execution.py",
-    "src/prml_vslam/pipeline/ray_runtime/stage_program.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-    "tests/test_pipeline.py",
-]
-
-[[refactors]]
 id = "REFACTOR-0002"
 title = "Inline low-value one-use helpers in the Pipeline app controller"
 status = "suggested"
@@ -56,10 +25,65 @@ sources = [
     "tests/test_app.py",
 ]
 
+[[refactors]]
+id = "REFACTOR-0003"
+title = "Split pipeline config planning, TOML IO, and source FPS inference"
+status = "suggested"
+priority = "medium"
+summary = "pipeline/config.py still owns RunConfig schema, plan compilation, source-specific FPS inference, TOML loading, and unknown-field diagnostics. Source cadence logic belongs in sources, while config IO and plan compilation can be separate pipeline helpers."
+loc_min = 50
+loc_expected = 140
+loc_max = 300
+files = [
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/pipeline/plan_compiler.py",
+    "src/prml_vslam/pipeline/config_io.py",
+    "src/prml_vslam/sources/fps.py",
+    "tests/test_pipeline_config.py",
+]
+acceptance = [
+    "RunConfig and StageBundle remain the canonical persisted schema in pipeline/config.py.",
+    "Plan compilation and TOML warning/diagnostic code move into focused helpers without changing public CLI/app behavior.",
+    "Source-specific native FPS inference moves under sources and pipeline planning calls that source-owned helper.",
+]
+sources = [
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
+    "src/prml_vslam/pipeline/config.py",
+]
+
+[[refactors]]
+id = "REFACTOR-0004"
+title = "Split the monolithic CLI entry module into focused command helpers"
+status = "suggested"
+priority = "medium"
+summary = "src/prml_vslam/main.py remains a 1000+ line CLI module that mixes run execution, dotted overrides, Rerun viewer process handling, bundles, dataset commands, and output formatting."
+loc_min = 100
+loc_expected = 260
+loc_max = 520
+files = [
+    "src/prml_vslam/main.py",
+    "src/prml_vslam/main/overrides.py",
+    "src/prml_vslam/main/run_execution.py",
+    "src/prml_vslam/main/rerun_viewer.py",
+    "src/prml_vslam/main/dataset_commands.py",
+    "tests/test_main.py",
+]
+acceptance = [
+    "main.py becomes a thin Typer command registry and no longer owns run waiting, viewer process handling, dotted override parsing, bundle helpers, and dataset command implementation.",
+    "CLI behavior and named options remain equivalent from the user's perspective.",
+    "Focused tests cover dotted override precedence, run execution output, viewer launch handling, and dataset commands after the split.",
+]
+sources = [
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
+    "src/prml_vslam/main.py",
+]
+
 [meta]
 schema_version = 3
 repo = "prml-vslam"
-updated_on = "2026-04-19"
+updated_on = "2026-04-25"
 source = "Seeded from the repo-local simplification workflow, current code-index triage, and the validated simplification guidance favoring one canonical owner, deletion of trivial wrappers, and inlining of one-use minimal-logic helpers."
 active_collection = "refactors"
 loc_unit = "lines"

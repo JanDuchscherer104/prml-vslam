@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import cv2
 import numpy as np
 from pydantic import PrivateAttr
 
@@ -12,7 +14,7 @@ from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage import SlamOfflineStageInput, SlamStageRuntime, SlamStreamingStartStageInput
-from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
@@ -42,10 +44,11 @@ class _FakeBackend:
     def __init__(self, artifact_root: Path) -> None:
         self.artifact_root = artifact_root
         self.runtime = _FakeStreamingRuntime(artifact_root)
+        self.observations: list[Observation] = []
 
-    def run_sequence(
+    def run_observations(
         self,
-        sequence: SequenceManifest,
+        observations,
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
         *,
@@ -53,7 +56,8 @@ class _FakeBackend:
         output_policy,
         artifact_root: Path,
     ) -> SlamArtifacts:
-        del sequence, benchmark_inputs, baseline_source, backend_config, output_policy
+        self.observations = list(observations)
+        del benchmark_inputs, baseline_source, backend_config, output_policy
         return _slam_artifacts(artifact_root)
 
     def start_streaming(self, **kwargs) -> None:
@@ -134,6 +138,20 @@ def _slam_artifacts(artifact_root: Path) -> SlamArtifacts:
     )
 
 
+def _sequence_manifest(tmp_path: Path, *, frame_count: int = 1) -> SequenceManifest:
+    rgb_dir = tmp_path / "frames"
+    rgb_dir.mkdir()
+    for index in range(frame_count):
+        frame_rgb = np.full((2, 3, 3), index, dtype=np.uint8)
+        cv2.imwrite(str(rgb_dir / f"{index:06d}.png"), cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+    timestamps_path = tmp_path / "timestamps.json"
+    timestamps_path.write_text(
+        json.dumps({"timestamps_ns": [index * 100_000_000 for index in range(frame_count)]}),
+        encoding="utf-8",
+    )
+    return SequenceManifest(sequence_id="seq-1", rgb_dir=rgb_dir, timestamps_path=timestamps_path)
+
+
 def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     run_config = _run_config(tmp_path, mode=PipelineMode.OFFLINE)
     plan = _plan(tmp_path, run_config)
@@ -147,11 +165,12 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
             artifact_root=plan.artifact_root,
             path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
             baseline_source=ReferenceSource.GROUND_TRUTH,
-            sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+            sequence_manifest=_sequence_manifest(tmp_path),
             benchmark_inputs=None,
         )
     )
 
+    assert [observation.seq for observation in backend_config._backend.observations] == [0]
     assert result.stage_key is StageKey.SLAM
     assert result.outcome.status is StageStatus.COMPLETED
     assert isinstance(result.payload, SlamArtifacts)

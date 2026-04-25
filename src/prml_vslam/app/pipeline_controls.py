@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.plan import RunPlan

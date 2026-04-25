@@ -17,7 +17,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
 
-from prml_vslam.methods.stage.config import VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import VistaSlamBackendConfig
 from prml_vslam.utils import Console, PathConfig
 
 from .preprocess import UpstreamVistaFramePreprocessor

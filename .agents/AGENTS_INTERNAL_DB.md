@@ -23,9 +23,10 @@ This file is operational memory, not a replacement for the full repo-wide policy
 ## Stable Ownership Snapshot
 
 - `prml_vslam.interfaces.*` owns canonical shared datamodels.
-- `prml_vslam.protocols.*` owns shared protocol seams such as `FramePacketStream`.
+- `prml_vslam.protocols.source` owns shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource`.
+- `prml_vslam.sources.replay` owns `ObservationStream`; `prml_vslam.interfaces.observation` owns the shared `Observation` DTO.
 - `app` owns Streamlit-only state and rendering concerns.
-- `io` owns transport and packet ingestion, not app session snapshots.
+- `sources` owns source configs, source runtime preparation, replay adapters, Record3D capture adapters, and dataset normalization under `sources.datasets`.
 - `pipeline` owns planning, normalized run contracts, event-projected snapshots, and Ray-backed run coordination.
 
 ## Current Stable Facts
@@ -35,11 +36,11 @@ This file is operational memory, not a replacement for the full repo-wide policy
 - The documentation split is intentional: root `README.md` owns project framing and high-level status, `SETUP.md` owns environment and runbook detail, `src/prml_vslam/pipeline/README.md` owns TOML planning mechanics, and `src/prml_vslam/visualization/README.md` owns Rerun usage mechanics.
 - The active pipeline runtime surface is `prml_vslam.pipeline.run_service.RunService` over the repo-owned `PipelineBackend` and current `RayPipelineBackend`, not app-owned orchestration.
 - The current Ray pipeline runtime no longer uses a separate supervisor actor; `RayPipelineBackend` owns named coordinator lifecycle directly, and `RunCoordinatorActor` is the single semantic runtime owner per run.
-- In the current pipeline runtime, ingest materialization, trajectory evaluation, and summary projection run directly inside the coordinator through pure helpers; only the stateful or ordered execution seams remain Ray actors.
-- The current pipeline request is also the authoritative streaming execution contract for ADVIO replay controls: `DatasetSourceSpec` now carries replay pose-source and video-rotation settings, and CLI `run-config`, CLI `pipeline-demo`, and Streamlit all resolve runtime sources through `build_runtime_source_from_request(...)`.
-- `prml_vslam.app` still uses `prml_vslam.utils.packet_session` for Record3D preview/runtime helpers, but the pipeline orchestration path is no longer built on that packet-session utility.
+- Pipeline launch uses `RunConfig` and fixed target stage sections. Source selection lives on `RunConfig.stages.source.backend`, with ADVIO/TUM/Record3D replay policy owned by `prml_vslam.sources.config` and source/dataset packages.
+- Stage execution is coordinated through `RuntimeManager`, `StageRunner`, and domain-owned stage runtimes such as `SourceRuntime`, `SlamStageRuntime`, `GroundAlignmentRuntime`, `TrajectoryEvaluationRuntime`, `ReconstructionRuntime`, and `SummaryRuntime`; the coordinator should not grow new stage-specific execution helpers.
+- `prml_vslam.app` uses `ObservationStream`-based preview helpers for dataset and Record3D preview/runtime paths, but the pipeline orchestration path is not app-owned.
 - Record3D Wi-Fi is treated in this repository as a stable supported path equivalent to USB. Do not describe it in backlog or docs as preview-only, lower-fidelity, optional fallback, or non-canonical unless a concrete upstream/runtime limitation is being discussed narrowly.
-- The current repo-owned live Rerun path after the pipeline refactor is `src/prml_vslam/pipeline/sinks/rerun.py` fed by `StageRuntimeUpdate.visualizations` from `SlamStageRuntime`; the older direct viewer path in `pipeline/streaming_coordinator.py` is useful historical context but is no longer the primary sink surface.
+- The current repo-owned live Rerun path is `src/prml_vslam/visualization/rerun_sink.py` plus `src/prml_vslam/visualization/rerun_policy.py`, fed by neutral `StageRuntimeUpdate.visualizations` from stage/domain visualization adapters. Historical `pipeline/sinks/rerun.py` paths are not the current sink surface.
 - The intended repo-local Rerun architecture is observer-sidecar based: Rerun is a sink surface, not a stage owner and not the place where the coordinator should perform coordinate normalization or hot-path visualization payload resolution.
 - Upstream ViSTA's own Rerun integration in `external/vista-slam/run.py` and `run_live.py` logs raw `Transform3D(translation=pose[:3,3], mat3x3=pose[:3,:3])`, uses `Pinhole(..., camera_xyz=rr.ViewCoordinates.RDF)`, and logs camera-local `Points3D` under the posed camera entity. It does not apply a viewer-only basis flip or a root Y-up world declaration in the Rerun path.
 - The older viewer-only remap `diag([1,-1,-1])` plus a root Y-up world existed in the older `bd39b4c` streaming path, but not in the later `b5731e6` / `55afaeb` behavior that was treated as the "working" post-fix state. Do not confuse those two historical states when debugging Rerun regressions.

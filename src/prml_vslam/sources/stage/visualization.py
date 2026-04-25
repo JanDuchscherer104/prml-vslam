@@ -2,7 +2,7 @@
 
 The source stage owns dataset/reference semantics, but it does not own Rerun
 entity paths or SDK calls. This adapter turns source-stage outputs and live
-source packets into neutral :class:`VisualizationItem` values for observer
+source observations into neutral :class:`VisualizationItem` values for observer
 sinks.
 """
 
@@ -10,19 +10,22 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from prml_vslam.interfaces import Observation, ObservationSequenceRef
+from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent, VisualizationItem
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
-    ReferenceCloudRef,
-    ReferencePointCloudSequenceRef,
     ReferenceSource,
-    ReferenceTrajectoryRef,
-    SourceStageOutput,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.stage.artifacts import (
+    reference_cloud_artifact_key,
+    reference_cloud_metadata_artifact_key,
+    reference_point_cloud_sequence_trajectory_artifact_key,
+    reference_trajectory_artifact_key,
+)
+from prml_vslam.sources.stage.contracts import SourceStageOutput
 
 IMAGE_REF = "image"
 DEPTH_REF = "depth"
@@ -45,15 +48,15 @@ ROLE_SOURCE_REFERENCE_POINT_CLOUD = "source_reference_point_cloud"
 class SourceVisualizationAdapter:
     """Build neutral visualization descriptors for source-owned payloads."""
 
-    def build_packet_items(
+    def build_observation_items(
         self,
         *,
-        packet: Observation,
+        observation: Observation,
         frame_payload_ref: TransientPayloadRef | None,
         depth_payload_ref: TransientPayloadRef | None = None,
         pointmap_payload_ref: TransientPayloadRef | None = None,
     ) -> list[VisualizationItem]:
-        """Return live source-packet visualization items."""
+        """Return live source observation visualization items."""
         items: list[VisualizationItem] = []
         if frame_payload_ref is not None:
             items.append(
@@ -61,12 +64,12 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.RGB_IMAGE,
                     role=ROLE_SOURCE_RGB,
                     payload_refs={IMAGE_REF: frame_payload_ref},
-                    frame_index=packet.seq,
+                    frame_index=observation.seq,
                     space="source_raster",
                 )
             )
 
-        if packet.T_world_camera is None or packet.intrinsics is None:
+        if observation.T_world_camera is None or observation.intrinsics is None:
             return items
 
         camera_payload_refs = {
@@ -80,18 +83,18 @@ class SourceVisualizationAdapter:
                     VisualizationItem(
                         intent=VisualizationIntent.POSE_TRANSFORM,
                         role=ROLE_SOURCE_CAMERA_POSE,
-                        pose=packet.T_world_camera,
-                        intrinsics=packet.intrinsics,
-                        frame_index=packet.seq,
-                        space=packet.T_world_camera.target_frame,
+                        pose=observation.T_world_camera,
+                        intrinsics=observation.intrinsics,
+                        frame_index=observation.seq,
+                        space=observation.T_world_camera.target_frame,
                     ),
                     VisualizationItem(
                         intent=VisualizationIntent.PINHOLE_CAMERA,
                         role=ROLE_SOURCE_PINHOLE,
                         payload_refs=camera_payload_refs,
-                        pose=packet.T_world_camera,
-                        intrinsics=packet.intrinsics,
-                        frame_index=packet.seq,
+                        pose=observation.T_world_camera,
+                        intrinsics=observation.intrinsics,
+                        frame_index=observation.seq,
                         space="source_camera_raster",
                     ),
                 ]
@@ -102,9 +105,9 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.RGB_IMAGE,
                     role=ROLE_SOURCE_CAMERA_RGB,
                     payload_refs={IMAGE_REF: frame_payload_ref},
-                    pose=packet.T_world_camera,
-                    intrinsics=packet.intrinsics,
-                    frame_index=packet.seq,
+                    pose=observation.T_world_camera,
+                    intrinsics=observation.intrinsics,
+                    frame_index=observation.seq,
                     space="source_camera_raster",
                 )
             )
@@ -114,9 +117,9 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.DEPTH_IMAGE,
                     role=ROLE_SOURCE_DEPTH,
                     payload_refs={DEPTH_REF: depth_payload_ref},
-                    pose=packet.T_world_camera,
-                    intrinsics=packet.intrinsics,
-                    frame_index=packet.seq,
+                    pose=observation.T_world_camera,
+                    intrinsics=observation.intrinsics,
+                    frame_index=observation.seq,
                     space="source_camera_raster",
                     metadata={"meter": 1.0},
                 )
@@ -130,9 +133,9 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_POINTMAP,
                     payload_refs=pointmap_refs,
-                    pose=packet.T_world_camera,
-                    intrinsics=packet.intrinsics,
-                    frame_index=packet.seq,
+                    pose=observation.T_world_camera,
+                    intrinsics=observation.intrinsics,
+                    frame_index=observation.seq,
                     space="camera_local",
                 )
             )
@@ -225,52 +228,6 @@ class SourceVisualizationAdapter:
         return items
 
 
-def reference_trajectory_artifact_key(reference: ReferenceTrajectoryRef | ReferenceSource) -> str:
-    """Return the source-stage artifact key for one prepared trajectory."""
-    if isinstance(reference, ReferenceSource):
-        return f"reference_tum:{reference.value}"
-    target_frame = _entity_token(reference.target_frame or "world")
-    coordinate_status = _entity_token(
-        reference.coordinate_status.value if reference.coordinate_status is not None else "source_native"
-    )
-    return f"reference_tum:{reference.source.value}:{target_frame}:{coordinate_status}"
-
-
-def reference_cloud_artifact_key(reference: ReferenceCloudRef) -> str:
-    """Return the source-stage artifact key for one prepared static cloud."""
-    return f"reference_cloud:{reference.source.value}:{reference.coordinate_status.value}"
-
-
-def reference_cloud_metadata_artifact_key(reference: ReferenceCloudRef) -> str:
-    """Return the source-stage artifact key for one static cloud metadata file."""
-    return f"reference_cloud_metadata:{reference.source.value}:{reference.coordinate_status.value}"
-
-
-def reference_point_cloud_sequence_index_artifact_key(reference: ReferencePointCloudSequenceRef) -> str:
-    """Return the source-stage artifact key for one point-cloud sequence index."""
-    return f"reference_point_cloud_sequence_index:{reference.source.value}:{_entity_token(reference.coordinate_status.value)}"
-
-
-def reference_point_cloud_sequence_trajectory_artifact_key(reference: ReferencePointCloudSequenceRef) -> str:
-    """Return the source-stage artifact key for one point-cloud sequence trajectory."""
-    target_frame = _entity_token(reference.target_frame)
-    coordinate_status = _entity_token(reference.coordinate_status.value)
-    return f"reference_point_cloud_sequence_trajectory:{reference.source.value}:{target_frame}:{coordinate_status}"
-
-
-def reference_point_cloud_sequence_payload_artifact_key(reference: ReferencePointCloudSequenceRef) -> str:
-    """Return the source-stage artifact key for one point-cloud sequence payload root."""
-    return (
-        f"reference_point_cloud_sequence_payload_root:{reference.source.value}:"
-        f"{_entity_token(reference.coordinate_status.value)}"
-    )
-
-
-def observation_sequence_artifact_key(reference: ObservationSequenceRef) -> str:
-    """Return the source-stage artifact key for one observation sequence index."""
-    return f"observation_sequence:{reference.source_id}:{reference.sequence_id}"
-
-
 def _trajectory_world_frame(dataset_id: DatasetId | None, source: ReferenceSource) -> str:
     if dataset_id is DatasetId.TUM_RGBD:
         return "tum_rgbd_mocap_world"
@@ -287,8 +244,3 @@ def _trajectory_coordinate_status(dataset_id: DatasetId | None, target_frame: st
     if dataset_id is DatasetId.ADVIO and target_frame == "advio_gt_world":
         return ReferenceCloudCoordinateStatus.ALIGNED.value
     return ReferenceCloudCoordinateStatus.SOURCE_NATIVE.value
-
-
-def _entity_token(value: str) -> str:
-    stripped = value.strip().replace(" ", "_")
-    return "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in stripped) or "reference"

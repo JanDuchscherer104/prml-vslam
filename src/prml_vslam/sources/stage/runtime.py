@@ -1,53 +1,22 @@
-"""Source stage runtime for normalized sequence preparation.
-
-This runtime owns the target source-stage boundary. It prepares the canonical
-``SequenceManifest`` and optional ``PreparedBenchmarkInputs`` once, then returns
-them as a single ``SourceStageOutput`` payload for downstream stages.
-"""
+"""Source-stage runtime for normalized sequence preparation."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
-from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource
-from prml_vslam.sources.contracts import SourceStageOutput
-from prml_vslam.sources.materialization import materialize_manifest, source_artifacts
-from prml_vslam.utils import BaseData, RunArtifactPaths
+from prml_vslam.sources.materialization import materialize_manifest
+from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
+from prml_vslam.sources.stage.artifacts import source_artifacts
+from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
+from prml_vslam.utils import RunArtifactPaths
 from prml_vslam.utils.serialization import write_json
 
 
-class SourceStageInput(BaseData):
-    """Run-scoped input required to prepare one normalized source stage.
-
-    The input carries the source launch policy plus the small amount of run
-    context needed for artifact ownership and streaming-only frame caps.
-    """
-
-    artifact_root: Path
-    """Root directory for run-owned source artifacts."""
-
-    mode: PipelineMode
-    frame_stride: int = 1
-    streaming_max_frames: int | None = None
-    config_hash: str = ""
-    input_fingerprint: str = ""
-
-
 class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
-    """Prepare the normalized source output for offline or streaming runs.
-
-    The runtime is method-agnostic: it materializes a
-    :class:`prml_vslam.sources.contracts.SequenceManifest`, optional
-    :class:`prml_vslam.sources.contracts.PreparedBenchmarkInputs`, and a
-    terminal :class:`prml_vslam.pipeline.stages.base.contracts.StageResult`.
-    It does not resize images for a SLAM backend or choose evaluation policy.
-    """
+    """Prepare the normalized source output for offline or streaming runs."""
 
     def __init__(self, *, source: OfflineSequenceSource) -> None:
         self._source = source
@@ -58,21 +27,11 @@ class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
         return self._status
 
     def stop(self) -> None:
-        """Mark the source runtime as stopped.
-
-        Source preparation is currently a bounded synchronous operation, so
-        stopping only updates status for callers that use the uniform runtime
-        lifecycle surface.
-        """
+        """Mark the source runtime as stopped."""
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
     def run_offline(self, input_payload: SourceStageInput) -> StageResult:
-        """Prepare and persist the canonical source-stage output.
-
-        The result payload is :class:`prml_vslam.sources.contracts.SourceStageOutput`.
-        Downstream stages should read this payload from the result store rather
-        than reaching back into source adapters or dataset services.
-        """
+        """Prepare and persist the canonical source-stage output."""
         self._status = self._status.model_copy(
             update={
                 "lifecycle_state": StageStatus.RUNNING,
@@ -101,7 +60,9 @@ class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
             if benchmark_inputs is not None:
                 write_json(run_paths.benchmark_inputs_path, benchmark_inputs)
         sequence_manifest = materialize_manifest(
-            input_payload=input_payload,
+            mode=input_payload.mode,
+            frame_stride=input_payload.frame_stride,
+            streaming_max_frames=input_payload.streaming_max_frames,
             prepared_manifest=prepared_manifest,
             run_paths=run_paths,
         )
@@ -129,7 +90,4 @@ class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
         )
 
 
-__all__ = [
-    "SourceRuntime",
-    "SourceStageInput",
-]
+__all__ = ["SourceRuntime"]

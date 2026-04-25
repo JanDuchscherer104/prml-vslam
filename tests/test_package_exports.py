@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 
+import prml_vslam.alignment.stage as alignment_stage_package
+import prml_vslam.eval.stage_trajectory as trajectory_stage_package
 import prml_vslam.interfaces as interfaces_package
 import prml_vslam.methods as methods_package
+import prml_vslam.methods.stage as methods_stage_package
 import prml_vslam.pipeline as pipeline_package
 import prml_vslam.reconstruction as reconstruction_package
+import prml_vslam.reconstruction.stage as reconstruction_stage_package
 import prml_vslam.sources as sources_package
 import prml_vslam.sources.replay as replay_package
+import prml_vslam.sources.stage as sources_stage_package
 
 
 def test_interfaces_package_exports_only_canonical_pose_surface() -> None:
@@ -24,6 +30,30 @@ def test_sources_package_exports_source_owned_contracts() -> None:
     assert "FileObservationSequenceLoader" in sources_package.__all__
     assert "PreparedBenchmarkInputs" in sources_package.__all__
     assert "SequenceManifest" in sources_package.__all__
+    assert "SourceStageOutput" not in sources_package.__all__
+
+
+def test_source_materialization_does_not_import_stage_package() -> None:
+    source_text = Path("src/prml_vslam/sources/materialization.py").read_text(encoding="utf-8")
+    assert "prml_vslam.sources.stage" not in source_text
+
+
+def test_executable_stage_packages_export_canonical_surfaces() -> None:
+    assert "SourceStageConfig" in sources_stage_package.__all__
+    assert "SourceStageInput" in sources_stage_package.__all__
+    assert "SourceRuntime" in sources_stage_package.__all__
+    assert "SlamStageConfig" in methods_stage_package.__all__
+    assert "SlamOfflineStageInput" in methods_stage_package.__all__
+    assert "SlamStageRuntime" in methods_stage_package.__all__
+    assert "ReconstructionStageConfig" in reconstruction_stage_package.__all__
+    assert "ReconstructionStageInput" in reconstruction_stage_package.__all__
+    assert "ReconstructionRuntime" in reconstruction_stage_package.__all__
+    assert "GroundAlignmentStageConfig" in alignment_stage_package.__all__
+    assert "GroundAlignmentStageInput" in alignment_stage_package.__all__
+    assert "GroundAlignmentRuntime" in alignment_stage_package.__all__
+    assert "TrajectoryEvaluationStageConfig" in trajectory_stage_package.__all__
+    assert "TrajectoryEvaluationStageInput" in trajectory_stage_package.__all__
+    assert "TrajectoryEvaluationRuntime" in trajectory_stage_package.__all__
 
 
 def test_replay_package_exports_only_replay_primitives() -> None:

@@ -6,40 +6,32 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 
 ## Current State
 
-- the package exists as a stub and does not yet own an executable
-  reconstruction implementation
-- the pipeline exposes the target `reconstruction` stage; the first executable
-  runtime uses the Open3D TSDF implementation in this package
-- the repository currently pins `open3d>=0.19.0,<0.20`
-
-## Target State
-
-- The public pipeline stage is `reconstruction`; reference, 3DGS, and future
-  reconstruction implementations are backend/mode variants under that umbrella
-  rather than separate public stage keys.
-- The pipeline stage config owns persisted stage-facing backend variants and
-  enablement policy. This package owns reusable backend execution, protocol
-  seams, and reconstruction artifact semantics.
+- The package owns reconstruction backends (e.g., Open3D TSDF) and mode variants.
+- The pipeline exposes the single `reconstruction` umbrella stage; reference,
+  3DGS, and future reconstruction methods are backend/mode variants under that
+  umbrella.
+- `ReconstructionArtifacts` and `ReconstructionMetadata` are the canonical outputs.
+- The repository currently pins `open3d>=0.19.0,<0.20`.
 
 ## Responsibilities
 
-- own reconstruction backend ids and reconstruction-private config variants
+- own reconstruction backend IDs (`method_id`) and reconstruction-private config variants
 - own reconstruction artifact DTOs and consume shared RGB-D observation DTOs
 - own typed backend configs and protocol seams that switch between
   reconstruction methods
 - own thin library-backed reconstruction adapters
-- stay separate from stage policy, benchmark reference identifiers, pipeline orchestration, and Rerun
-  logging policy
+- stay separate from stage policy, benchmark reference identifiers, pipeline
+  orchestration, and Rerun logging policy
 
 ## Non-Negotiable Requirements
 
-- the first executable reconstruction method must be a minimal Open3D TSDF
-  backend based on `ScalableTSDFVolume`
+- the reconstruction umbrella stage handles all variants (reference/3DGS/future);
+  do not add separate public stage keys for each reconstruction flavor
 - the package must provide one elegant method-selection seam, analogous to
   `prml_vslam.methods`, instead of scattering method switches through pipeline
   code
-- the public execution seam must stay minimal and offline-first until a real
-  streaming reconstruction use case exists
+- `ReconstructionRuntime` selects the deployment target (in-process vs Ray-hosted)
+  based on the backend's resource needs (e.g., GPU for 3DGS)
 - RGB-D DTOs crossing the package boundary must keep explicit frame semantics
   and use the repo convention `T_world_camera`
 - `camera_intrinsics`, `image_rgb`, and `depth_map_m` for one observation must
@@ -55,9 +47,10 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
   versions; implement directly against the repo-targeted Open3D API
 - the package must not re-implement TSDF fusion locally while Open3D remains
   sufficient
-- reconstruction stage enablement belongs to the pipeline stage config.
-- pipeline planning, run events, and stage execution stay in
-  `prml_vslam.pipeline`
+- the first executable reconstruction method must be a minimal Open3D TSDF
+  backend based on `ScalableTSDFVolume`
+- the public execution seam must stay minimal and offline-first until a real
+  streaming reconstruction use case exists
 
 ## Validation
 

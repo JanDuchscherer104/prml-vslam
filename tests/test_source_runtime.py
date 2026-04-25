@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import cv2
+import numpy as np
 import pytest
 
 from prml_vslam.interfaces import (
@@ -34,12 +36,14 @@ from prml_vslam.sources.contracts import (
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
-    SourceStageOutput,
 )
 from prml_vslam.sources.materialization import materialize_manifest
+from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
 from prml_vslam.sources.replay import ReplayMode
-from prml_vslam.sources.runtime import SourceRuntime, SourceStageInput
-from prml_vslam.sources.visualization import (
+from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
+from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
+from prml_vslam.sources.stage.runtime import SourceRuntime
+from prml_vslam.sources.stage.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
     ROLE_SOURCE_CAMERA_RGB,
     ROLE_SOURCE_DEPTH,
@@ -49,7 +53,6 @@ from prml_vslam.sources.visualization import (
     ROLE_SOURCE_REFERENCE_TRAJECTORY,
     ROLE_SOURCE_RGB,
     SourceVisualizationAdapter,
-    reference_trajectory_artifact_key,
 )
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 
@@ -133,6 +136,78 @@ def _config_input(
     }
 
 
+def _write_rgb_manifest(
+    tmp_path: Path,
+    *,
+    frame_count: int = 2,
+    timestamps_ns: list[int] | None = None,
+) -> SequenceManifest:
+    rgb_dir = tmp_path / "frames"
+    rgb_dir.mkdir()
+    for index in range(frame_count):
+        frame_rgb = np.full((2, 3, 3), index + 1, dtype=np.uint8)
+        cv2.imwrite(str(rgb_dir / f"{index:06d}.png"), cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+    timestamps_path = tmp_path / "timestamps.json"
+    timestamps_path.write_text(
+        json.dumps({"timestamps_ns": timestamps_ns or [index * 100_000_000 for index in range(frame_count)]}),
+        encoding="utf-8",
+    )
+    return SequenceManifest(sequence_id="seq-rgb", rgb_dir=rgb_dir, timestamps_path=timestamps_path)
+
+
+def test_sequence_manifest_observation_reader_yields_rgb_observations(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=2, timestamps_ns=[10, 20])
+
+    observations = list(iter_sequence_manifest_observations(manifest))
+
+    assert [observation.seq for observation in observations] == [0, 1]
+    assert [observation.timestamp_ns for observation in observations] == [10, 20]
+    assert observations[0].rgb is not None
+    assert observations[0].rgb.shape == (2, 3, 3)
+    assert observations[0].provenance.source_id == "source_manifest"
+    assert observations[0].provenance.sequence_id == "seq-rgb"
+
+
+def test_sequence_manifest_observation_reader_applies_max_frames(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=3)
+
+    observations = list(iter_sequence_manifest_observations(manifest, max_frames=2))
+
+    assert [observation.seq for observation in observations] == [0, 1]
+
+
+def test_sequence_manifest_observation_reader_requires_rgb_dir(tmp_path: Path) -> None:
+    timestamps_path = tmp_path / "timestamps.json"
+    timestamps_path.write_text(json.dumps({"timestamps_ns": [10]}), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="SequenceManifest\\.rgb_dir"):
+        list(iter_sequence_manifest_observations(SequenceManifest(sequence_id="seq", timestamps_path=timestamps_path)))
+
+
+def test_sequence_manifest_observation_reader_requires_timestamps_path(tmp_path: Path) -> None:
+    rgb_dir = tmp_path / "frames"
+    rgb_dir.mkdir()
+
+    with pytest.raises(RuntimeError, match="SequenceManifest\\.timestamps_path"):
+        list(iter_sequence_manifest_observations(SequenceManifest(sequence_id="seq", rgb_dir=rgb_dir)))
+
+
+def test_sequence_manifest_observation_reader_rejects_malformed_timestamps(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path)
+    assert manifest.timestamps_path is not None
+    manifest.timestamps_path.write_text(json.dumps({"values": [10]}), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="timestamps_ns"):
+        list(iter_sequence_manifest_observations(manifest))
+
+
+def test_sequence_manifest_observation_reader_rejects_count_mismatch(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=2, timestamps_ns=[10])
+
+    with pytest.raises(RuntimeError, match="inconsistent"):
+        list(iter_sequence_manifest_observations(manifest))
+
+
 def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path) -> None:
     rgb_dir = tmp_path / "prepared-rgb"
     rgb_dir.mkdir()
@@ -214,8 +289,8 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
     assert items[2].space == "advio_gt_world"
 
 
-def test_source_visualization_adapter_emits_posed_packet_geometry_items() -> None:
-    packet = Observation(
+def test_source_visualization_adapter_emits_posed_observation_geometry_items() -> None:
+    observation = Observation(
         seq=7,
         timestamp_ns=1,
         T_world_camera=FrameTransform(
@@ -236,8 +311,8 @@ def test_source_visualization_adapter_emits_posed_packet_geometry_items() -> Non
     depth_ref = TransientPayloadRef(handle_id="depth", payload_kind="depth")
     pointmap_ref = TransientPayloadRef(handle_id="pointmap", payload_kind="point_cloud")
 
-    items = SourceVisualizationAdapter().build_packet_items(
-        packet=packet,
+    items = SourceVisualizationAdapter().build_observation_items(
+        observation=observation,
         frame_payload_ref=image_ref,
         depth_payload_ref=depth_ref,
         pointmap_payload_ref=pointmap_ref,
@@ -251,8 +326,8 @@ def test_source_visualization_adapter_emits_posed_packet_geometry_items() -> Non
         ROLE_SOURCE_DEPTH,
         ROLE_SOURCE_POINTMAP,
     ]
-    assert items[1].pose == packet.T_world_camera
-    assert items[2].intrinsics == packet.intrinsics
+    assert items[1].pose == observation.T_world_camera
+    assert items[2].intrinsics == observation.intrinsics
     assert items[-1].space == "camera_local"
 
 
@@ -268,7 +343,9 @@ def test_source_runtime_materialization_reuses_extraction_cache(tmp_path: Path) 
         encoding="utf-8",
     )
     manifest = materialize_manifest(
-        input_payload=SourceStageInput(**_config_input(frame_stride=1), artifact_root=run_paths.artifact_root),
+        mode=PipelineMode.OFFLINE,
+        frame_stride=1,
+        streaming_max_frames=None,
         prepared_manifest=SequenceManifest(sequence_id="ingest-cache", video_path=video_path),
         run_paths=run_paths,
     )
@@ -294,7 +371,9 @@ def test_source_runtime_materialization_normalizes_tum_rgbd_timestamps(tmp_path:
         encoding="utf-8",
     )
     manifest = materialize_manifest(
-        input_payload=SourceStageInput(**_config_input(), artifact_root=run_paths.artifact_root),
+        mode=PipelineMode.OFFLINE,
+        frame_stride=1,
+        streaming_max_frames=None,
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",
             rgb_dir=rgb_dir,
@@ -315,7 +394,9 @@ def test_source_runtime_materialization_normalizes_advio_csv_timestamps(tmp_path
     timestamps_path = tmp_path / "frames.csv"
     timestamps_path.write_text("0.000000000,1\n0.100000000,2\n", encoding="utf-8")
     manifest = materialize_manifest(
-        input_payload=SourceStageInput(**_config_input(), artifact_root=run_paths.artifact_root),
+        mode=PipelineMode.OFFLINE,
+        frame_stride=1,
+        streaming_max_frames=None,
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
             rgb_dir=rgb_dir,
@@ -355,7 +436,9 @@ def test_source_runtime_materialization_applies_advio_video_frame_stride(
     monkeypatch.setattr("prml_vslam.sources.materialization.extract_video_frames", fake_extract_video_frames)
 
     manifest = materialize_manifest(
-        input_payload=SourceStageInput(**_config_input(frame_stride=3), artifact_root=run_paths.artifact_root),
+        mode=PipelineMode.OFFLINE,
+        frame_stride=3,
+        streaming_max_frames=None,
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
             video_path=video_path,
@@ -377,7 +460,9 @@ def test_source_runtime_materialization_does_not_double_sample_dataset_timestamp
     timestamps_path = tmp_path / "sampled-rgb.txt"
     timestamps_path.write_text("0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n", encoding="utf-8")
     manifest = materialize_manifest(
-        input_payload=SourceStageInput(**_config_input(frame_stride=2), artifact_root=run_paths.artifact_root),
+        mode=PipelineMode.OFFLINE,
+        frame_stride=2,
+        streaming_max_frames=None,
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",
             rgb_dir=rgb_dir,
