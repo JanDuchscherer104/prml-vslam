@@ -22,13 +22,10 @@ from prml_vslam.sources.contracts import Record3DTransportId
 from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
+from prml_vslam.sources.materialization import VideoOfflineSequenceSource
 from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
-from prml_vslam.sources.runtime import (
-    SampledStreamingSource,
-    SourceRuntime,
-    SourceStageInput,
-    VideoOfflineSequenceSource,
-)
+from prml_vslam.sources.runtime import SourceRuntime, SourceStageInput
+from prml_vslam.sources.streaming import SampledStreamingSource
 from prml_vslam.utils import FactoryConfig, PathConfig
 from prml_vslam.utils.serialization import stable_hash
 
@@ -54,7 +51,6 @@ class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSourc
         return VideoOfflineSequenceSource(
             path_config=path_config,
             video_path=path_config.resolve_video_path(self.video_path, must_exist=True),
-            frame_stride=self.frame_stride,
         )
 
 

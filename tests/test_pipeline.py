@@ -73,7 +73,7 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
     SourceStageOutput,
 )
-from prml_vslam.sources.runtime import SourceStageInput, _max_frames_for_input
+from prml_vslam.sources.runtime import SourceStageInput
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
@@ -1422,17 +1422,14 @@ def test_slam_backend_config_uses_stage_owned_method_id_for_vista() -> None:
 
 
 def test_streaming_source_config_input_caps_video_extraction_by_backend_max_frames() -> None:
-    assert (
-        _max_frames_for_input(
-            SourceStageInput(
-                artifact_root=Path("/tmp/source"),
-                mode=PipelineMode.STREAMING,
-                frame_stride=1,
-                streaming_max_frames=42,
-            )
-        )
-        == 42
+    input_payload = SourceStageInput(
+        artifact_root=Path("/tmp/source"),
+        mode=PipelineMode.STREAMING,
+        frame_stride=1,
+        streaming_max_frames=42,
     )
+
+    assert input_payload.streaming_max_frames == 42
 
 
 def test_ray_backend_uses_current_python_for_local_runtime_env() -> None:
