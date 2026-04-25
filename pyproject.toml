@@ -58,6 +58,7 @@ dependencies = [
 
   [project.scripts]
   prml-vslam = "prml_vslam.main:main"
+  prml_vslam = "prml_vslam.main:main"
 
 [build-system]
 requires      = ["hatchling"]
