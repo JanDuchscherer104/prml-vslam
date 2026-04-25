@@ -7,7 +7,6 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 - `AGENTS.md`: the only full repo-wide agent policy. Nested `AGENTS.md` files should add scope-specific deltas only.
 - `README.md`: repository workflow, setup, developer commands, and high-level deliverables.
 - `docs/Questions.md`: high-quality human-maintained ground truth for challenge intent, clarified requirements, operator-facing scope, and product constraints. Consult it whenever a task touches project scope, assumptions, or evaluation intent.
-- `.github/CODEOWNERS`: ownership hints for code paths, review surfaces, and intent resolution when repo responsibilities are ambiguous.
 - `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary sources relevant to this project.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
 
@@ -37,7 +36,6 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 
 - When drafting requirements or specs, first extract every explicit user requirement before translating it into product or engineering requirements.
 - When promoting prompt-derived guidance into scaffold files or skills, persist only reusable rules, boundaries, and stable facts. Keep one-off task wording, temporary branch context, and transient cleanup notes out of canonical guidance.
-- For requirements work, prioritize `README.md`, `docs/Questions.md`, the nearest `AGENTS.md`, and `.github/CODEOWNERS` when resolving intent.
 - Prefer package `README.md` and `REQUIREMENTS.md` files for ownership and implementation notes rather than restating that material in nested `AGENTS.md` files.
 - Resolve discoverable repo facts locally before asking questions. If ambiguity still materially changes the spec, ask clarifying questions before finalizing it. In Plan Mode, prefer extensive clarification when ambiguity remains.
 
