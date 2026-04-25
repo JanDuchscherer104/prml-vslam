@@ -8,7 +8,9 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 ## Current State
 
-- The repository already has stable top-level package slices: `alignment`, `app`, `datasets`, `eval`, `interfaces`, `io`, `methods`, `pipeline`, `plotting`, `protocols`, and `utils`.
+- The repository has stable top-level package slices: `alignment`, `app`,
+  `eval`, `interfaces`, `methods`, `pipeline`, `plotting`, `reconstruction`,
+  `sources`, `utils`, and `visualization`.
 - This file is the current canonical location for top-level module ownership and cross-package contract placement rules.
 - Package-local `README.md` and `REQUIREMENTS.md` files already carry the deeper package-level guidance.
 - The current architecture is typed and artifact-first, with offline benchmark execution as the core and bounded live streaming around it.
@@ -29,10 +31,6 @@ Use this file for package-root ownership rules and cross-package contract constr
 - `app`
   - owns Streamlit pages, typed page state (`prml_vslam.app.models`), UI composition, and launch surfaces
   - does not own pipeline semantics, transport decoding, dataset normalization, or stage-policy logic
-- `datasets`
-  - owns dataset catalogs, dataset-facing contracts, fetch/extract flows, and normalization into repository contracts
-  - preserves the currently supported dataset modalities and dataset-specific auxiliary/reference assets, including ADVIO Tango data and reference-cloud preparation
-  - does not own evaluation policy or method-specific execution
 - `eval`
   - owns explicit evaluation logic and typed evaluation contracts
   - owns typed comparison artifacts and statistics, including future persisted
@@ -46,13 +44,15 @@ Use this file for package-root ownership rules and cross-package contract constr
     when the same intrinsics semantics cross method, evaluation, plotting, and
     app boundaries
 - `sources`
-  - owns source-stage config, runtime preparation, source-stage outputs, and
-    prepared reference identifiers and DTOs such as `PreparedBenchmarkInputs`
+  - owns source backend config variants, source-stage config/runtime/contracts,
+    dataset catalogs, replay adapters, Record3D transports, sequence
+    materialization, source-stage outputs, and prepared reference identifiers
+    and DTOs such as `PreparedBenchmarkInputs`
+  - preserves the currently supported dataset modalities and dataset-specific
+    auxiliary/reference assets, including ADVIO Tango data and reference-cloud
+    preparation
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
-- `io`
-  - owns transport adapters, packet ingestion, replay mechanics, and transport-level normalization
-  - does not own app session state or stage policy
 - `methods`
   - owns backend-specific execution seams and thin method-wrapper integration
   - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend`
@@ -63,17 +63,14 @@ Use this file for package-root ownership rules and cross-package contract constr
   - owns orchestration, run contracts, artifact layout, stage planning, events,
     projected snapshots, manifests, summaries, pipeline-owned runtime
     coordination, and repo-local execution-lifecycle policy
-  - uses `RunConfig` as the canonical launch/planning contract; stage-facing
-    config belongs to `pipeline.stages.<stage>` modules
+  - uses `RunConfig` as the canonical launch/planning contract; domain
+    stage-facing configs belong to each domain package's `stage/` modules
   - `RunPlan` source snapshots include configured source sampling policy and
     nullable expected source cadence, not measured runtime throughput
   - does not own transport decoding, app rendering, or benchmark metrics logic
 - `plotting`
   - owns reusable figure construction helpers
   - does not own orchestration or domain-policy decisions
-- `protocols`
-  - owns repo-wide shared behavior seams only
-  - examples include `ObservationStream`, `OfflineSequenceSource`, and `StreamingSequenceSource`
 - `utils`
   - owns shared low-level infrastructure such as config helpers, path handling, logging, and generic geometry/runtime helpers
   - may own generic reusable IO/math helpers, such as color-preserving PLY IO,
@@ -93,9 +90,9 @@ Use this file for package-root ownership rules and cross-package contract constr
   projection step.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
-- Shared repo-wide behavior seams belong in `prml_vslam.protocols.*`.
 - `prml_vslam.sources.replay` owns `ObservationStream`.
-- `prml_vslam.protocols.source` owns shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource`.
+- `prml_vslam.sources.protocols` owns source-provider seams such as
+  `OfflineSequenceSource` and `StreamingSequenceSource`.
 - Package-local DTOs, configs, manifests, requests, and results belong in `<package>/contracts.py` or
   `<package>/contracts/` when a package owns several distinct contract slices.
 - Package-local `Protocol` seams belong in `<package>/protocols.py` when a package truly owns that behavior boundary.
@@ -137,9 +134,10 @@ Use this file for package-root ownership rules and cross-package contract constr
 - Stage configs are declarative policy contracts. They validate stage policy,
   resource hints, telemetry, cleanup, and failure-provenance settings; they do
   not construct runtime objects or Ray actors.
-- `RuntimeManager` is the construction authority for stage runtimes,
-  capability-typed `StageRuntimeHandle` instances, sink sidecars, payload
-  stores, and placement-specific runtime wrappers.
+- `RuntimeManager` is the current construction authority for lazy local stage
+  runtime handles. Ray-backed run orchestration lives in `RayPipelineBackend`
+  and `RunCoordinatorActor`; independent per-stage Ray-hosted runtimes are not
+  a current public contract.
 - Backend, source, and reconstruction variant configs may use
   `FactoryConfig.setup_target()` when they construct concrete domain or source
   implementations. Stage policy configs must not duplicate that construction

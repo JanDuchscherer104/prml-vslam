@@ -30,12 +30,13 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 - the package must provide one elegant method-selection seam, analogous to
   `prml_vslam.methods`, instead of scattering method switches through pipeline
   code
-- `ReconstructionRuntime` selects the deployment target (in-process vs Ray-hosted)
-  based on the backend's resource needs (e.g., GPU for 3DGS)
-- RGB-D DTOs crossing the package boundary must keep explicit frame semantics
-  and use the repo convention `T_world_camera`
-- `camera_intrinsics`, `image_rgb`, and `depth_map_m` for one observation must
-  describe the same raster
+- `ReconstructionRuntime` currently executes through the local stage runtime
+  handle; future Ray-hosted reconstruction must stay behind pipeline runtime
+  plumbing.
+- `Observation` DTOs crossing the package boundary must keep explicit frame
+  semantics and use the repo convention `T_world_camera`.
+- `intrinsics`, `rgb`, and `depth_m` for one observation must describe the same
+  raster.
 - depth inputs must be metric depth in meters, not visualization products
 - durable normalized output must include one world-space
   `reference_cloud.ply`; optional mesh/debug artifacts may exist but must not

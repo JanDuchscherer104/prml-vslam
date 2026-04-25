@@ -1,6 +1,7 @@
-# Streaming IO for VSLAM Benchmarking
+# Record3D Sources
 
-This README explains the current Record3D transport implementation in `prml_vslam.sources.replay`.
+This README explains the current Record3D transport implementation under
+`prml_vslam.sources.record3d`.
 
 Use [RECORD3D_PROTOCOL.md](./RECORD3D_PROTOCOL.md) for the detailed transport breakdown. Use this file for the repo-owned entry points and the current capability split between transports.
 
@@ -25,8 +26,14 @@ Use [RECORD3D_PROTOCOL.md](./RECORD3D_PROTOCOL.md) for the detailed transport br
 - `uv run streamlit run streamlit_app.py`
   - exposes a dedicated `Record3D` page for USB and Wi-Fi Preview
 - `Record3DStreamingSource`
-  - satisfies the shared `StreamingSequenceSource` protocol for pipeline-owned live sessions and currently supports both Record3D transports
+  - satisfies the shared `StreamingSequenceSource` protocol from
+    `prml_vslam.sources.protocols`
+  - opens an `ObservationStream` that emits shared
+    `prml_vslam.interfaces.Observation` values
+  - currently supports both Record3D transports
 
 ## Current Limitations
 
-- The bounded pipeline live path can plan both Record3D transports, but the live `SequenceManifest` boundary is still minimal today and does not yet capture the richer source metadata that the longer-term offline-core design wants.
+- The bounded pipeline live path can plan both Record3D transports, but the
+  live `SequenceManifest` boundary is still minimal today and does not yet
+  capture richer source metadata such as detailed transport session state.

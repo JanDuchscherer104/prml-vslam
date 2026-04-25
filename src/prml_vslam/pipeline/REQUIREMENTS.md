@@ -13,9 +13,9 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - The current executable slice uses target persisted stage keys: `source`,
   `slam`, optional `gravity.align`, optional `evaluate.trajectory`, optional
   `reconstruction`, diagnostic `evaluate.cloud`, and `summary`.
-- Runtime execution flows through stage-owned bindings plus lazy runtime
-  construction. Ray is a backend/deployment option, not the semantic owner of
-  stage behavior.
+- Runtime execution flows through domain-owned stage configs plus lazy local
+  runtime-handle construction. Ray is the pipeline backend infrastructure, not
+  the semantic owner of stage behavior.
 
 ## Responsibilities
 
@@ -64,11 +64,13 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   failure-provenance policy; they do not construct runtimes, proxies, Ray
   actors, sink sidecars, or payload stores.
 - `RuntimeManager` is the only construction authority for stage runtimes,
-  capability-typed `StageRuntimeHandle` instances, payload stores, sink sidecars,
-  and placement-specific runtime wrappers.
+  local `StageRuntimeHandle` instances, and the current stage-runtime cache.
+  It must not be documented as providing independent per-stage Ray-hosted
+  runtime execution until that behavior exists.
 - Runtime capability and deployment stay separate. Stage runners and the
-  coordinator consume protocol-capable proxies, while Ray refs, task refs,
-  mailboxes, and `.remote()` calls stay inside runtime/proxy plumbing.
+  coordinator consume protocol-capable handles, while Ray refs, task refs,
+  mailboxes, and `.remote()` calls stay inside backend and coordinator
+  plumbing.
 - Pipeline-owned runtime DTOs stay generic: terminal `StageResult`, live
   `StageRuntimeUpdate`, queryable `StageRuntimeStatus`, artifact refs, and
   transient payload refs. Semantic payload DTOs remain with their domain owner.
@@ -80,15 +82,15 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - Rerun SDK calls belong only in sinks/policy/helper modules. Stage runtimes,
   DTOs, proxies, and visualization adapters may expose neutral visualization
   items but must not call the Rerun SDK.
-- The full target module and leaf-symbol tree is canonical in
-  [Pipeline Refactor Target Directory Tree](../../../docs/architecture/pipeline-refactor-target-dir-tree.md);
-  this file records only pipeline-local requirements.
+- Package-local README and REQUIREMENTS files are the canonical stage-ownership
+  docs; the historical stage-refactor target is not an active implementation
+  source.
 
 ## Validation
 
 - planning remains deterministic
-- offline runs no longer require injected packet streams
-- streaming runs still surface truthful packet/session telemetry without
+- offline runs no longer require injected observation streams
+- streaming runs still surface truthful observation/session telemetry without
   persisting raw arrays in public contracts
 - stage manifests and run summaries remain explicit and durable
 - target stage keys are used without alias maps

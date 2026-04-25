@@ -59,11 +59,15 @@ what downstream code is allowed to rely on.
 
 Upstream of the dataset package, pipeline source-stage configs use:
 
-- [AdvioSourceConfig](../pipeline/stages/source/config.py)
+- [AdvioSourceConfig](../config.py)
   - selects `source_id = "advio"` and `sequence_id`
   - carries shared frame sampling via [FrameSelectionConfig](./contracts.py:115)
-- [TumRgbdSourceConfig](../pipeline/stages/source/config.py)
+- [TumRgbdSourceConfig](../config.py)
   - selects `source_id = "tum_rgbd"` and `sequence_id`
+
+The persisted source-stage wrapper is
+[`SourceStageConfig`](../stage/config.py). Source-stage runtime inputs and
+outputs live in [`../stage/contracts.py`](../stage/contracts.py).
 
 Dataset-serving semantics currently live in `prml_vslam.sources.datasets.contracts`:
 
@@ -111,14 +115,14 @@ Datasets expose replay-capable runtime sources through:
   - shared adapter used by dataset services for process-backed replay sessions
 - `Observation`
   - canonical source observation emitted by dataset replay
-  - may carry `rgb`, `depth`, `confidence`, `pointmap`, `intrinsics`, `T_world_camera`,
-    and typed provenance
+  - may carry `rgb`, `depth_m`, `confidence`, `pointmap_xyz`, `intrinsics`,
+    `T_world_camera`, and typed provenance
 
 The replay path is intentionally layered:
 
 - `prml_vslam.sources.replay`
   - generic replay pacing, PyAV-backed video decoding, and image-sequence replay
-  - shared optional modality injection (`depth`, `confidence`, `pointmap`)
+  - shared observation stream mechanics
 - dataset-specific replay adapters
   - ADVIO: timestamped provider-pose serving, frame-mode semantics, optional
     rotation handling
@@ -209,7 +213,7 @@ stream = sequence.open_stream(
 )
 
 stream.connect()
-packet = stream.wait_for_observation()
+observation = stream.wait_for_observation()
 stream.disconnect()
 ```
 
