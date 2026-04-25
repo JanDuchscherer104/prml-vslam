@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from prml_vslam.methods.stage.config import VistaSlamBackendConfig
 from prml_vslam.utils import Console, PathConfig
 
-from .preprocess import UpstreamVistaFramePreprocessor, VistaFramePreprocessor
+from .preprocess import UpstreamVistaFramePreprocessor
 
 if TYPE_CHECKING:
     import torch
@@ -84,7 +84,7 @@ class VistaRuntimeComponents:
 
     slam: VistaOnlineSlam
     flow_tracker: VistaFlowTracker
-    frame_preprocessor: VistaFramePreprocessor
+    frame_preprocessor: UpstreamVistaFramePreprocessor
 
 
 def build_vista_runtime_components(

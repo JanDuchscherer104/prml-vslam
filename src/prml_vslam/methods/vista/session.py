@@ -20,7 +20,7 @@ from prml_vslam.methods.stage.config import SlamOutputPolicy, VistaSlamBackendCo
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 from .artifacts import _frame_transform_from_vista_pose, build_vista_artifacts
-from .preprocess import VistaFramePreprocessor, vista_numpy_array
+from .preprocess import UpstreamVistaFramePreprocessor, vista_numpy_array
 from .runtime import VistaFlowTracker, VistaOnlineSlam, build_vista_runtime_components
 
 
@@ -43,7 +43,7 @@ class VistaSlamRuntime:
         *,
         slam: VistaOnlineSlam,
         flow_tracker: VistaFlowTracker,
-        frame_preprocessor: VistaFramePreprocessor,
+        frame_preprocessor: UpstreamVistaFramePreprocessor,
         artifact_root: Path,
         output_policy: SlamOutputPolicy,
         console: Console,
