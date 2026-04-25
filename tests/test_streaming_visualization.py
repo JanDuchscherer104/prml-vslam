@@ -379,7 +379,6 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
     assert calls == [
         ("pose", "world/live/tracking/camera", 8, None),
         ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 8, None),
-        ("pose", "world/slam/vista_slam_world/trajectory/raw/poses/000000", 8, None),
         ("pose", "world/live/model", 8, None),
         ("pose", "world/keyframes/cameras/000003", 8, None),
         ("pose", "world/keyframes/points/000003", 8, None),
@@ -396,7 +395,6 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
         ("points", "world/keyframes/points/000003/points", 8, None),
     ]
     assert transform_axis_lengths["world/live/tracking/camera"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/trajectory/raw/poses/000000"] == 0.0
     assert transform_axis_lengths["world/live/model"] == 0.0
     assert transform_axis_lengths["world/keyframes/cameras/000003"] == 0.0
     assert transform_axis_lengths["world/keyframes/points/000003"] == 0.0
@@ -493,7 +491,6 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
     assert calls == [
         ("pose", "world/live/tracking/camera", 8, None),
         ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 8, None),
-        ("pose", "world/slam/vista_slam_world/trajectory/raw/poses/000000", 8, None),
         ("pose", "world/live/model", 8, None),
         ("pose", "world/keyframes/cameras/000003", 8, None),
         ("pose", "world/keyframes/points/000003", 8, None),
@@ -510,7 +507,6 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
         ("points", "world/keyframes/points/000003/points", 8, None),
     ]
     assert transform_axis_lengths["world/live/tracking/camera"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/trajectory/raw/poses/000000"] == 0.0
     assert transform_axis_lengths["world/live/model"] == 0.0
     assert transform_axis_lengths["world/keyframes/cameras/000003"] == 0.0
     assert transform_axis_lengths["world/keyframes/points/000003"] == 0.0
@@ -923,7 +919,6 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
 
     assert calls == [
         ("pose", "world/live/tracking/camera", 4, None),
-        ("pose", "world/slam/vista_slam_world/trajectory/raw/poses/000000", 4, None),
         ("pose", "world/live/model", 4, None),
         ("pose", "world/keyframes/cameras/000000", 4, None),
         ("pose", "world/keyframes/points/000000", 4, None),
@@ -993,10 +988,8 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
         ("rgb", "world/live/source/rgb", 1, None),
         ("pose", "world/live/tracking/camera", 7, None),
         ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
-        ("pose", "world/slam/vista_slam_world/trajectory/raw/poses/000000", 7, None),
     ]
     assert tracking_axis_lengths["world/live/tracking/camera"] == 0.0
-    assert tracking_axis_lengths["world/slam/vista_slam_world/trajectory/raw/poses/000000"] == 0.0
 
 
 def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_path: Path, monkeypatch) -> None:
@@ -1103,7 +1096,6 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
 
     assert paths == [
         ("world/live/tracking/camera", 2, None),
-        ("world/slam/vista_slam_world/trajectory/raw/poses/000000", 2, None),
     ]
     assert "world" not in [path for path, _, _ in paths]
 
@@ -1249,7 +1241,6 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
 
     assert calls == [
         ("pose", "world/live/tracking/camera", 8, None),
-        ("pose", "world/slam/vista_slam_world/trajectory/raw/poses/000000", 8, None),
         ("pose", "world/live/model", 8, None),
         ("pose", "world/keyframes/cameras/000003", 8, None),
         ("pose", "world/keyframes/points/000003", 8, None),

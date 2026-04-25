@@ -497,6 +497,8 @@ class RerunLoggingPolicy:
         static: bool = False,
     ) -> None:
         """Log one transform child per trajectory pose."""
+        if self.trajectory_pose_axis_length <= 0.0:
+            return
         for offset, pose in enumerate(poses):
             self.log_transform(
                 stream,

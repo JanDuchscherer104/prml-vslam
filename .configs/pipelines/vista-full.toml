@@ -111,3 +111,7 @@ frusta_history_window_streaming = 5
 
 # Keep the full tracking trajectory visible.
 show_tracking_trajectory = true
+
+# Keep dense reference trajectories compact; set a positive value to show
+# per-pose trajectory axes when debugging SE(3) orientation.
+trajectory_pose_axis_length = 0.0

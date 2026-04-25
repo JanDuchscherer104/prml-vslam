@@ -130,7 +130,6 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -
         ("rgb", "world/live/source/rgb", 5, None),
         ("pose", "world/live/tracking/camera", 7, None),
         ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
-        ("pose", "world/slam/vista_slam_world/trajectory/raw/poses/000000", 7, None),
     ]
 
 
