@@ -7,14 +7,9 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field
 
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import (
-    FailureFingerprint,
-    StageConfig,
-    StageInputContext,
-    StagePlanContext,
-    StageRuntimeBuildContext,
-)
+from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.utils import BaseConfig
@@ -43,25 +38,25 @@ class TrajectoryEvaluationStageConfig(StageConfig):
         """Return the selected reference trajectory source."""
         return self.evaluation.baseline_source
 
-    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         return [context.run_paths.trajectory_metrics_path]
 
-    def availability(self, context: StagePlanContext) -> tuple[bool, str | None]:
+    def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         slam_backend = context.run_config.stages.slam.backend
         if slam_backend is None:
             return False, "Trajectory evaluation requires `[stages.slam.backend]`."
-        backend = context.backend if context.backend is not None else slam_backend
+        backend = context.slam_backend if context.slam_backend is not None else slam_backend
         if not backend.supports_trajectory_benchmark:
             return False, f"{backend.display_name} does not support repository trajectory evaluation."
         return True, None
 
-    def runtime_factory(self, context: StageRuntimeBuildContext) -> Callable[[], BaseStageRuntime]:
+    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
         del context
         from prml_vslam.eval.stage_trajectory.runtime import TrajectoryEvaluationRuntime
 
         return TrajectoryEvaluationRuntime
 
-    def build_offline_input(self, context: StageInputContext):
+    def build_offline_input(self, context: PipelineExecutionContext):
         from prml_vslam.eval.stage_trajectory.runtime import TrajectoryEvaluationStageInput
 
         slam_backend = context.run_config.stages.slam.backend
@@ -75,7 +70,7 @@ class TrajectoryEvaluationStageConfig(StageConfig):
             slam=context.results.require_slam_artifacts(),
         )
 
-    def failure_fingerprint(self, context: StageInputContext) -> FailureFingerprint:
+    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
         slam = context.results.require_slam_artifacts()
         return FailureFingerprint(
             config_payload=self.evaluation,

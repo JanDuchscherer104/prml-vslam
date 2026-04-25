@@ -181,7 +181,7 @@ executed slice, but the stage-local runtime boundaries do not change.
   `RunConfig`-first.
 - [`RunService`](../../src/prml_vslam/pipeline/run_service.py),
   [`RayPipelineBackend`](../../src/prml_vslam/pipeline/backend_ray.py), and
-  [`StageExecutionContext`](../../src/prml_vslam/pipeline/execution_context.py)
+  [`PipelineExecutionContext`](../../src/prml_vslam/pipeline/contracts/context.py)
   now use the target `RunConfig` and stage-runtime inputs.
 - [`StageKey`](../../src/prml_vslam/pipeline/contracts/stages.py) is the
   current executable vocabulary persisted into events and manifests:

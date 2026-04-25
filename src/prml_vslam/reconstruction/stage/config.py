@@ -8,14 +8,9 @@ from typing import Annotated, TypeAlias
 
 from pydantic import ConfigDict, Field
 
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import (
-    FailureFingerprint,
-    StageConfig,
-    StageInputContext,
-    StagePlanContext,
-    StageRuntimeBuildContext,
-)
+from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig, ReconstructionBackendConfig
 from prml_vslam.sources.config import TumRgbdSourceConfig
@@ -35,22 +30,22 @@ class ReconstructionStageConfig(StageConfig):
     backend: ReconstructionBackend = Field(default_factory=Open3dTsdfBackendConfig)
     """Concrete reconstruction backend config."""
 
-    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         return [context.run_paths.reference_cloud_path]
 
-    def availability(self, context: StagePlanContext) -> tuple[bool, str | None]:
+    def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         source_backend = context.run_config.stages.source.backend
         if not isinstance(source_backend, TumRgbdSourceConfig):
             return False, "Reconstruction currently requires a TUM RGB-D dataset source."
         return True, None
 
-    def runtime_factory(self, context: StageRuntimeBuildContext) -> Callable[[], BaseStageRuntime]:
+    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
         del context
         from prml_vslam.reconstruction.stage.runtime import ReconstructionRuntime
 
         return ReconstructionRuntime
 
-    def build_offline_input(self, context: StageInputContext):
+    def build_offline_input(self, context: PipelineExecutionContext):
         from prml_vslam.reconstruction.stage.runtime import ReconstructionStageInput
 
         return ReconstructionStageInput(
@@ -59,7 +54,7 @@ class ReconstructionStageConfig(StageConfig):
             benchmark_inputs=context.results.require_benchmark_inputs(),
         )
 
-    def failure_fingerprint(self, context: StageInputContext) -> FailureFingerprint:
+    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
         return FailureFingerprint(
             config_payload=self.backend,
             input_payload=context.results.require_benchmark_inputs(),

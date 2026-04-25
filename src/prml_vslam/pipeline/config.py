@@ -25,10 +25,11 @@ from prml_vslam.methods.stage.config import (
     SlamStageConfig,
     build_slam_backend_config,
 )
+from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import StageConfig, StagePlanContext
+from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
 from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
@@ -166,7 +167,7 @@ class RunConfig(BaseConfig):
         path_config: PathConfig | None = None,
         *,
         fail_on_unavailable: bool = False,
-        backend: BackendConfigValue | None = None,
+        backend: BackendConfig | None = None,
     ) -> RunPlan:
         """Compile a deterministic plan directly from target stage sections."""
         config = PathConfig() if path_config is None else path_config
@@ -185,7 +186,7 @@ def _compile_run_plan(
     *,
     run_config: RunConfig,
     path_config: PathConfig,
-    backend: BackendConfigValue | None = None,
+    backend: BackendConfig | None = None,
 ) -> RunPlan:
     source_backend = run_config.stages.source.backend
     if source_backend is None:
@@ -199,11 +200,11 @@ def _compile_run_plan(
         output_dir=run_config.output_dir,
     )
     resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
-    plan_context = StagePlanContext(
+    plan_context = PipelinePlanContext(
         run_config=run_config,
         path_config=path_config,
         run_paths=resolved_run_paths,
-        backend=backend if backend is not None else slam_backend,
+        slam_backend=backend if backend is not None else slam_backend,
     )
     plan_stages: list[RunPlanStage] = []
     for stage_config in run_config.stages.ordered_sections():

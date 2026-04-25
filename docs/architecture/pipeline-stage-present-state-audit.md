@@ -58,10 +58,10 @@ src/prml_vslam/pipeline/
 │   ├── runtime.py       # keyed RunSnapshot and RunState
 │   ├── provenance.py    # RunSummary, StageManifest, ArtifactRef, StageStatus
 │   └── transport.py     # transport-safe base models
+│   ├── context.py       # run-scoped planning and execution context bundles
 ├── config.py            # RunConfig, StageBundle, plan compilation, stage-key alias helpers
 ├── runtime_manager.py   # runtime registration, capability preflight, proxy construction
 ├── runner.py            # StageRunner and StageResultStore
-├── execution_context.py # run-scoped orchestration input bundle
 ├── backend.py           # PipelineBackend protocol
 ├── backend_ray.py       # RayPipelineBackend
 ├── run_service.py       # app/CLI facade
@@ -189,7 +189,7 @@ but the present launch surface is still mixed:
   accepts `run_config` and legacy `request`
 - [`RayPipelineBackend.submit_run()`](../../src/prml_vslam/pipeline/backend_ray.py)
   also accepts both
-- [`StageExecutionContext`](../../src/prml_vslam/pipeline/execution_context.py)
+- [`PipelineExecutionContext`](../../src/prml_vslam/pipeline/contracts/context.py)
   still accepts `run_config` or legacy `request`
 - several coordinator helper paths still hash or branch on `request` when it is
   present

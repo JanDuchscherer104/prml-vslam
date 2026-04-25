@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
@@ -13,6 +14,7 @@ from prml_vslam.pipeline.stages.base.contracts import StageResult
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime, StreamingStageRuntime
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
 from prml_vslam.utils import BaseData
+from prml_vslam.utils.serialization import stable_hash
 
 RuntimeInput = BaseData
 StreamItem = BaseData | Observation
@@ -97,6 +99,43 @@ class StageRunner:
     def __init__(self, result_store: StageResultStore) -> None:
         self._result_store = result_store
 
+    def failure_hash_inputs(
+        self,
+        *,
+        stage_config: StageConfig,
+        context: PipelineExecutionContext,
+    ) -> tuple[str, str]:
+        """Return stable failure-provenance hashes for one configured stage."""
+        fingerprint = stage_config.failure_fingerprint(context)
+        return stable_hash(fingerprint.config_payload), stable_hash(fingerprint.input_payload)
+
+    def run_configured_offline_stage(
+        self,
+        *,
+        stage_key: StageKey,
+        runtime: OfflineStageRuntime[RuntimeInput],
+        stage_config: StageConfig,
+        context: PipelineExecutionContext,
+        on_stage_started: StageStartedCallback | None = None,
+        on_stage_completed: StageCompletedCallback | None = None,
+        on_stage_failed: StageFailedCallback | None = None,
+        transform_result: StageResultTransform | None = None,
+    ) -> StageResult:
+        """Build input, invoke one configured bounded stage, and store its result."""
+        config_hash, input_fingerprint = self.failure_hash_inputs(stage_config=stage_config, context=context)
+        return self.run_offline_stage(
+            stage_key=stage_key,
+            runtime=runtime,
+            input_payload=stage_config.build_offline_input(context),
+            stage_config=stage_config,
+            config_hash=config_hash,
+            input_fingerprint=input_fingerprint,
+            on_stage_started=on_stage_started,
+            on_stage_completed=on_stage_completed,
+            on_stage_failed=on_stage_failed,
+            transform_result=transform_result,
+        )
+
     def run_offline_stage(
         self,
         *,
@@ -131,6 +170,37 @@ class StageRunner:
         if on_stage_completed is not None:
             on_stage_completed(stage_key, result)
         return result
+
+    def start_configured_streaming_stage(
+        self,
+        *,
+        stage_key: StageKey,
+        runtime: StreamingStageRuntime[RuntimeInput, StreamItem],
+        stage_config: StageConfig,
+        context: PipelineExecutionContext,
+        on_stage_started: StageStartedCallback | None = None,
+        on_stage_failed: StageFailedCallback | None = None,
+    ) -> None:
+        """Build start input and start one configured streaming stage."""
+        config_hash, input_fingerprint = self.failure_hash_inputs(stage_config=stage_config, context=context)
+        try:
+            self.start_streaming_stage(
+                stage_key=stage_key,
+                runtime=runtime,
+                input_payload=stage_config.build_streaming_start_input(context),
+                on_stage_started=on_stage_started,
+            )
+        except Exception as exc:
+            if on_stage_failed is not None:
+                on_stage_failed(
+                    stage_key,
+                    stage_config.failure_outcome(
+                        error_message=str(exc),
+                        config_hash=config_hash,
+                        input_fingerprint=input_fingerprint,
+                    ),
+                )
+            raise
 
     def start_streaming_stage(
         self,

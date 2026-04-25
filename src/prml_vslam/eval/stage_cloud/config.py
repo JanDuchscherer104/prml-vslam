@@ -7,8 +7,9 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field
 
+from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import StageConfig, StagePlanContext
+from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.utils import BaseConfig
 
 
@@ -43,10 +44,10 @@ class CloudEvaluationStageConfig(StageConfig):
         default_factory=lambda: [CloudMetricId.CHAMFER_DISTANCE, CloudMetricId.F_SCORE]
     )
 
-    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         return [context.run_paths.cloud_metrics_path]
 
-    def availability(self, context: StagePlanContext) -> tuple[bool, str | None]:
+    def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         del context
         return False, "Dense-cloud evaluation is planned but no runtime is registered yet."
 

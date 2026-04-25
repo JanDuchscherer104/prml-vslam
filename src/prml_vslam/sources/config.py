@@ -13,14 +13,9 @@ from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field
 
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import (
-    FailureFingerprint,
-    StageConfig,
-    StageInputContext,
-    StagePlanContext,
-    StageRuntimeBuildContext,
-)
+from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.contracts import Record3DTransportId
@@ -194,11 +189,11 @@ class SourceStageConfig(StageConfig):
     backend: SourceBackendConfig | None = None
     """Concrete source backend config that constructs the source adapter."""
 
-    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         """Return source-owned normalized input artifacts."""
         return [context.run_paths.sequence_manifest_path, context.run_paths.benchmark_inputs_path]
 
-    def runtime_factory(self, context: StageRuntimeBuildContext) -> Callable[[], BaseStageRuntime]:
+    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
         """Return a lazy source runtime factory bound to the prepared source."""
         if context.source is None:
             raise RuntimeError("Source stage runtime construction requires a source adapter.")
@@ -208,7 +203,7 @@ class SourceStageConfig(StageConfig):
 
         return _factory
 
-    def build_offline_input(self, context: StageInputContext) -> SourceStageInput:
+    def build_offline_input(self, context: PipelineExecutionContext) -> SourceStageInput:
         """Build the narrow source runtime input."""
         source_backend = self.backend
         slam_backend = context.run_config.stages.slam.backend
@@ -221,7 +216,7 @@ class SourceStageConfig(StageConfig):
             input_fingerprint=stable_hash(source_backend),
         )
 
-    def failure_fingerprint(self, context: StageInputContext) -> FailureFingerprint:
+    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
         """Return source config and input fingerprint payloads."""
         del context
         return FailureFingerprint(config_payload=self.backend, input_payload=self.backend)

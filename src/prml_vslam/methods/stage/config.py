@@ -16,15 +16,10 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field
 
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import (
-    FailureFingerprint,
-    StageConfig,
-    StageInputContext,
-    StagePlanContext,
-    StageRuntimeBuildContext,
-)
+from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 from prml_vslam.utils import BaseConfig, FactoryConfig, PathConfig
 
@@ -274,7 +269,7 @@ class SlamStageConfig(StageConfig):
     outputs: SlamOutputPolicy = Field(default_factory=SlamOutputPolicy)
     """SLAM output materialization policy."""
 
-    def planned_outputs(self, context: StagePlanContext) -> list[Path]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         """Return SLAM-owned output artifacts."""
         if self.backend is None:
             return []
@@ -290,25 +285,25 @@ class SlamStageConfig(StageConfig):
             artifact_paths.append(run_paths.dense_points_path)
         return artifact_paths
 
-    def availability(self, context: StagePlanContext) -> tuple[bool, str | None]:
+    def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         """Return whether the selected backend can execute in the selected mode."""
         if self.backend is None:
             return False, "SLAM stage requires `[stages.slam.backend]`."
-        backend = context.backend if context.backend is not None else self.backend
+        backend = context.slam_backend if context.slam_backend is not None else self.backend
         if context.run_config.mode is PipelineMode.OFFLINE and not backend.supports_offline:
             return False, f"{backend.display_name} does not support offline execution."
         if context.run_config.mode is PipelineMode.STREAMING and not backend.supports_streaming:
             return False, f"{backend.display_name} does not support streaming execution."
         return True, None
 
-    def runtime_factory(self, context: StageRuntimeBuildContext) -> Callable[[], BaseStageRuntime]:
+    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
         """Return a lazy SLAM runtime factory."""
         del context
         from prml_vslam.methods.stage.runtime import SlamStageRuntime
 
         return SlamStageRuntime
 
-    def build_offline_input(self, context: StageInputContext):
+    def build_offline_input(self, context: PipelineExecutionContext):
         """Build the narrow offline SLAM input DTO."""
         from prml_vslam.methods.stage.contracts import SlamOfflineStageInput
 
@@ -325,7 +320,7 @@ class SlamStageConfig(StageConfig):
             preserve_native_rerun=context.run_config.visualization.preserve_native_rerun,
         )
 
-    def build_streaming_start_input(self, context: StageInputContext):
+    def build_streaming_start_input(self, context: PipelineExecutionContext):
         """Build the narrow streaming-start SLAM input DTO."""
         from prml_vslam.methods.stage.contracts import SlamStreamingStartStageInput
 
@@ -343,7 +338,7 @@ class SlamStageConfig(StageConfig):
             preserve_native_rerun=context.run_config.visualization.preserve_native_rerun,
         )
 
-    def failure_fingerprint(self, context: StageInputContext) -> FailureFingerprint:
+    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
         """Return SLAM config and normalized sequence fingerprint payloads."""
         return FailureFingerprint(config_payload=self, input_payload=context.results.require_sequence_manifest())
 
