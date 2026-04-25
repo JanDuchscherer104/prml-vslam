@@ -8,7 +8,12 @@ from typing import Literal
 
 from pydantic import AliasChoices, Field
 
-from prml_vslam.datasets.advio import (
+from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.config import BackendSpec
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
+from prml_vslam.sources.datasets.advio import (
     AdvioDatasetSummary,
     AdvioDownloadPreset,
     AdvioDownloadRequest,
@@ -17,14 +22,9 @@ from prml_vslam.datasets.advio import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
-from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
-from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
-from prml_vslam.methods.stage.config import MethodId
-from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.config import BackendSpec
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
+from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.utils import BaseData
 
 from .preview_runtime import PacketSessionSnapshot

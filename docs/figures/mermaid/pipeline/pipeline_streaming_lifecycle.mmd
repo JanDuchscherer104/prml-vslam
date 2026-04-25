@@ -32,8 +32,8 @@ sequenceDiagram
     Coord->>Slam: start_stage(request, plan, path_config)
     Coord->>Packet: start_stream(source, initial_credits)
     loop packet credit loop
-        Packet->>Source: wait_for_packet()
-        Source-->>Packet: FramePacket
+        Packet->>Source: wait_for_observation()
+        Source-->>Packet: Observation
         Packet-->>Coord: on_packet(packet summary, frame handle)
         Coord->>Slam: push_frame(...)
         Slam-->>Coord: on_slam_notices(..., released_credits=1)

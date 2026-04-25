@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.datasets.advio import AdvioPoseFrameMode
 from prml_vslam.eval.contracts import ErrorSeries, IntrinsicsComparisonDiagnostics, TrajectorySeries
 from prml_vslam.interfaces import CameraIntrinsics
 from prml_vslam.methods.vista.diagnostics import VistaNativeSlamDiagnostics, VistaViewGraphDiagnostics
@@ -23,6 +22,7 @@ from prml_vslam.plotting.metrics import build_trajectory_figure
 from prml_vslam.plotting.pipeline import build_evo_ape_colormap_figure, pointmap_preview_image
 from prml_vslam.plotting.record3d import build_live_trajectory_figure
 from prml_vslam.plotting.trajectories import build_bev_trajectory_figure, build_height_profile_figure
+from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode
 
 
 def _trajectory_series(name: str) -> TrajectorySeries:

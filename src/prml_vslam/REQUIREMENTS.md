@@ -40,7 +40,7 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own method execution, source normalization, or app state
 - `interfaces`
   - owns repo-wide shared datamodels only
-  - examples include `CameraIntrinsics`, `FrameTransform`, `FramePacket`,
+  - examples include `CameraIntrinsics`, `FrameTransform`, `Observation`,
     `PointCloud`, `PointMap`, and `DepthMap`
   - owns reusable camera artifact datamodels and pure camera-model transforms
     when the same intrinsics semantics cross method, evaluation, plotting, and
@@ -73,7 +73,7 @@ Use this file for package-root ownership rules and cross-package contract constr
   - does not own orchestration or domain-policy decisions
 - `protocols`
   - owns repo-wide shared behavior seams only
-  - examples include `FramePacketStream`, `OfflineSequenceSource`, and `StreamingSequenceSource`
+  - examples include `ObservationStream`, `OfflineSequenceSource`, and `StreamingSequenceSource`
 - `utils`
   - owns shared low-level infrastructure such as config helpers, path handling, logging, and generic geometry/runtime helpers
   - may own generic reusable IO/math helpers, such as color-preserving PLY IO,
@@ -94,7 +94,7 @@ Use this file for package-root ownership rules and cross-package contract constr
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - Shared repo-wide behavior seams belong in `prml_vslam.protocols.*`.
-- `prml_vslam.protocols.runtime` owns `FramePacketStream`.
+- `prml_vslam.sources.replay` owns `ObservationStream`.
 - `prml_vslam.protocols.source` owns shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource`.
 - Package-local DTOs, configs, manifests, requests, and results belong in `<package>/contracts.py` or
   `<package>/contracts/` when a package owns several distinct contract slices.

@@ -68,9 +68,9 @@
   <rect x="435.5583333333333" y="269.20000000000005" width="223.495" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
   <text x="547.3058333333333" y="287.65000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Plan is attached to the snapshot</text>
 </g>
-<g class="node" data-id="Running" data-label="Live FramePacket to SlamUpdate flow is active" data-shape="rounded">
+<g class="node" data-id="Running" data-label="Live Observation to SlamUpdate flow is active" data-shape="rounded">
   <rect x="237.40200000000004" y="422.40000000000003" width="310.1919999999999" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="392.498" y="440.85" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Live FramePacket to SlamUpdate flow is active</text>
+  <text x="392.498" y="440.85" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Live Observation to SlamUpdate flow is active</text>
 </g>
 <g class="node" data-id="Completed" data-label="Bounded replay reached EOF" data-shape="rounded">
   <rect x="40" y="563.6000000000001" width="217.56699999999998" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />

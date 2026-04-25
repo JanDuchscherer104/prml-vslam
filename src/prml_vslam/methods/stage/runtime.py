@@ -14,8 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.interfaces.ingest import SequenceManifest
-from prml_vslam.interfaces.runtime import FramePacket
+from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
@@ -44,6 +43,7 @@ from prml_vslam.pipeline.stages.base.protocols import (
     OfflineStageRuntime,
     StreamingStageRuntime,
 )
+from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
 
@@ -93,7 +93,7 @@ class _TransientPayloadStore:
 class SlamStageRuntime(
     OfflineStageRuntime[SlamOfflineInput],
     LiveUpdateStageRuntime,
-    StreamingStageRuntime[SlamStreamingStartInput, FramePacket],
+    StreamingStageRuntime[SlamStreamingStartInput, Observation],
 ):
     """Pipeline-facing runtime for offline and streaming SLAM execution."""
 
@@ -189,7 +189,7 @@ class SlamStageRuntime(
         self._lifecycle_state = StageStatus.RUNNING
         self._stopped = False
 
-    def submit_stream_item(self, item: FramePacket) -> None:
+    def submit_stream_item(self, item: Observation) -> None:
         """Submit one frame to the active streaming backend."""
         if self._streaming_backend is None:
             raise RuntimeError("SLAM streaming runtime has not been started.")

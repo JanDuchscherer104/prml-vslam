@@ -12,13 +12,6 @@ from typing import Annotated, Any, Literal, Self, TypeAlias, Union, get_args, ge
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
-from prml_vslam.datasets.advio.advio_layout import resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir
-from prml_vslam.datasets.advio.advio_loading import load_advio_frame_timestamps_ns
-from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.datasets.tum_rgbd.tum_rgbd_layout import (
-    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
-)
-from prml_vslam.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_list
 from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
 from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
@@ -48,6 +41,15 @@ from prml_vslam.sources.config import (
     VideoSourceConfig,
 )
 from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.datasets.advio.advio_layout import (
+    resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir,
+)
+from prml_vslam.sources.datasets.advio.advio_loading import load_advio_frame_timestamps_ns
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
+    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
+)
+from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_list
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
 

@@ -18,7 +18,6 @@ from pydantic import ConfigDict, Field, field_validator
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
-from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -32,11 +31,11 @@ if TYPE_CHECKING:
     from prml_vslam.pipeline.config import RunConfig
     from prml_vslam.pipeline.runner import StageResultStore
     from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
-    from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
 
 JsonScalar = str | int | float | bool | None
 
 
+# TODO: collapse StagePanContext and StageRuntimeBuildContext!
 @dataclass(frozen=True, slots=True)
 class StagePlanContext:
     """Inputs available while compiling a deterministic run plan."""
@@ -76,7 +75,6 @@ class FailureFingerprint:
     input_payload: BaseConfig | BaseData | dict[str, JsonScalar] | list[BaseData] | None
 
 
-# TODO: remove and inline into StageConfig. Only expose num_cpus, num_gpus!
 class ResourceSpec(BaseConfig):
     """Describe substrate-neutral resources requested by one stage."""
 
@@ -104,7 +102,6 @@ class ResourceSpec(BaseConfig):
         return value
 
 
-# TODO: remove PlacementConstraint and donwstream usage!
 class PlacementConstraint(BaseConfig):
     """Describe optional substrate-neutral placement preferences."""
 
@@ -250,13 +247,6 @@ class StageConfig(BaseConfig):
         """Return a lazy runtime factory for this stage, or ``None`` for diagnostics."""
         del context
         return None
-
-    def runtime_capabilities(self, mode: PipelineMode) -> frozenset[RuntimeCapability]:
-        """Return runtime capabilities advertised by this stage runtime."""
-        from prml_vslam.pipeline.stages.base.proxy import RuntimeCapability
-
-        del mode
-        return frozenset({RuntimeCapability.OFFLINE})
 
     def build_offline_input(self, context: StageInputContext) -> BaseData:
         """Build the narrow DTO consumed by this stage runtime."""

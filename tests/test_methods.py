@@ -12,15 +12,15 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, FramePacket
-from prml_vslam.interfaces.ingest import (
-    SequenceManifest,
-)
+from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, Observation, ObservationProvenance
 from prml_vslam.methods import VistaSlamBackend
 from prml_vslam.methods.stage.config import MethodId as DomainMethodId
 from prml_vslam.methods.stage.config import SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
 from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.contracts import (
+    ReferenceSource,
+    SequenceManifest,
+)
 from prml_vslam.utils import Console
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply_with_colors,
@@ -327,7 +327,14 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
@@ -410,7 +417,14 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
@@ -478,7 +492,9 @@ def test_vista_session_live_outputs_follow_model_raster_not_source_raster(
     )
 
     source_rgb = np.zeros((11, 13, 3), dtype=np.uint8)
-    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=source_rgb))
+    session.step(
+        Observation(seq=0, timestamp_ns=123, rgb=source_rgb, provenance=ObservationProvenance(source_id="test"))
+    )
     update = session.drain_updates()[0]
 
     assert update.image_rgb is not None
@@ -540,7 +556,14 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
@@ -581,7 +604,14 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
@@ -624,7 +654,14 @@ def test_vista_session_warns_when_dense_pointmap_is_missing(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=11, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=11,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     update = session.drain_updates()[0]
 
     assert update.pointmap is None
@@ -665,7 +702,14 @@ def test_vista_session_warns_when_dense_pointmap_has_no_valid_points(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=13, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=13,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     update = session.drain_updates()[0]
 
     assert update.pointmap is not None
@@ -716,7 +760,14 @@ def test_vista_session_accepts_tensor_backed_live_pointmap(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=17, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=17,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     update = session.drain_updates()[0]
 
     assert update.pointmap is not None
@@ -789,9 +840,30 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=100, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    session.step(FramePacket(seq=1, timestamp_ns=200, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    session.step(FramePacket(seq=2, timestamp_ns=300, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=100,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
+    session.step(
+        Observation(
+            seq=1,
+            timestamp_ns=200,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
+    session.step(
+        Observation(
+            seq=2,
+            timestamp_ns=300,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     updates = session.drain_updates()
 
     assert len(updates) == 3
@@ -847,7 +919,14 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=123, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     updates = session.drain_updates()
     assert len(updates) == 1
     update = updates[0]
@@ -911,9 +990,30 @@ def test_vista_session_close_exports_accepted_keyframe_source_timestamps(
         console=Console(__name__).child("vista-test"),
     )
 
-    session.step(FramePacket(seq=0, timestamp_ns=100_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    session.step(FramePacket(seq=1, timestamp_ns=250_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
-    session.step(FramePacket(seq=2, timestamp_ns=400_000_000, rgb=np.zeros((8, 8, 3), dtype=np.uint8)))
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=100_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
+    session.step(
+        Observation(
+            seq=1,
+            timestamp_ns=250_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
+    session.step(
+        Observation(
+            seq=2,
+            timestamp_ns=400_000_000,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     artifacts = session.finish()
 
     trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)

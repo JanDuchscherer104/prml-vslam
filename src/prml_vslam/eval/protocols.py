@@ -11,7 +11,6 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import (
     DenseCloudEvaluationArtifact,
     DenseCloudEvaluationSelection,
@@ -20,6 +19,7 @@ from prml_vslam.eval.contracts import (
     EvaluationSelection,
     SelectionSnapshot,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId
 
 
 @runtime_checkable

@@ -20,7 +20,7 @@ rows.
 | `StageProgress` | `pipeline.contracts.events` | Narrow progress message DTO. | Collapse into `StageRuntimeStatus.progress` or live `StageRuntimeUpdate`. | `pipeline.stages.base.contracts` | WP-08, WP-10 | Keep projection compatibility until app/CLI reads runtime status. | Delete after `StageProgressed` and `RunSnapshot.stage_progress` consumers migrate. | Grep for `StageProgress`; app snapshot tests pass. |
 | `StageProgressed` | `pipeline.contracts.events` | Telemetry `RunEvent` for progress. | Move progress telemetry to `StageRuntimeUpdate`; target `RunEvent` is durable-only. | `pipeline.stages.base.contracts` | WP-08, WP-10 | Preserve event reader compatibility until live update projection replaces it. | Delete after no app/CLI/sink consumer requires progress events. | Grep for `StageProgressed`; event JSONL tests prove durable-only model. |
 | `PacketObserved` | `pipeline.contracts.events` | Telemetry `RunEvent` for streaming packets. | Move packet telemetry to `StageRuntimeUpdate` or source live update payloads. | `pipeline.stages.base.contracts` / `sources` | WP-08, WP-10 | Keep current streaming projection until source/SLAM live updates cover packet status. | Delete after source packet telemetry reaches snapshots without durable telemetry events. | Grep for `PacketObserved`; streaming snapshot tests pass. |
-| `FramePacketSummary` | `pipeline.contracts.events` | Transport-safe packet summary. | Make it a live-update payload or stage-local/private runtime DTO. | `sources` or `pipeline.stages.base.contracts` | WP-08, WP-10 | Keep as migration payload while `PacketObserved` and current actors use it. | Delete or move after current event and actor paths migrate. | Grep for `FramePacketSummary`; source/SLAM streaming tests pass. |
+| `ObservationSummary` | `pipeline.contracts.events` | Transport-safe packet summary. | Make it a live-update payload or stage-local/private runtime DTO. | `sources` or `pipeline.stages.base.contracts` | WP-08, WP-10 | Keep as migration payload while `PacketObserved` and current actors use it. | Delete or move after current event and actor paths migrate. | Grep for `ObservationSummary`; source/SLAM streaming tests pass. |
 | `BackendNoticeReceived` | `pipeline.contracts.events` | Telemetry `RunEvent` carrying `BackendEvent`. | Replace with `StageRuntimeUpdate.semantic_events` and visualization items. | `pipeline.stages.base.contracts` | WP-08, WP-10 | Keep for current Rerun/projector paths until `VisualizationItem` routing lands. | Delete after Rerun sink and snapshot projector consume live updates. | Grep for `BackendNoticeReceived`; Rerun tests use `VisualizationItem`. |
 | `StreamingRunSnapshot` | `pipeline.contracts.runtime` | Streaming-specific snapshot subclass. | Collapse into keyed `stage_runtime_status`, `stage_outcomes`, and live refs on `RunSnapshot`. | `pipeline.contracts.runtime` | WP-08, WP-09, WP-10 | Keep while app and CLI render current streaming fields. | Delete after app/CLI display status and live refs derive from target snapshot. | Grep for `StreamingRunSnapshot`; app/CLI snapshot tests pass. |
 | Top-level `RunSnapshot` stage fields | `pipeline.contracts.runtime` | Convenience stage-specific projections such as `sequence_manifest`, `slam`, `summary`. | Replace with keyed outcomes, artifact refs, runtime status, and minimal convenience views only where needed. | `pipeline.contracts.runtime` | WP-08, WP-09 | Keep compatibility views until app/CLI and old run inspection migrate. | Remove only after every consumer reads keyed fields or explicit helper views. | App artifact/snapshot tests and old run inspection pass. |
@@ -86,14 +86,14 @@ refactor says otherwise.
 
 | Current symbol | Current owner | Current role | Target action | Target owner | Work package | Compatibility requirement | Deletion gate | Verification |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `SequenceManifest` | `interfaces.ingest` | Normalized source/ingest manifest. | Keep canonical shared DTO. | `interfaces.ingest` | WP-04 | Must remain the source-to-downstream boundary. | Not deleted. | Source/runtime tests. |
+| `SequenceManifest` | `sources.contracts` | Normalized source manifest. | Keep canonical source-owned DTO. | `sources.contracts` | WP-04 | Must remain the source-to-downstream boundary. | Not deleted. | Source/runtime tests. |
 | `PreparedBenchmarkInputs` | `sources.contracts` | Prepared reference inputs. | Keep canonical source-prepared reference DTO. | `sources.contracts` | WP-04, WP-05 | Existing source/eval stages consume it. | Not deleted. | Eval/reconstruction tests. |
 | `SourceStageOutput` | `sources.contracts` | Source-stage result payload bundling the normalized sequence and optional prepared benchmark inputs. | Keep canonical source output DTO for `StageResult.payload`. | `sources.contracts` | WP-04 | Downstream source accessors read this before legacy split fields. | Not deleted. | Source runtime and result-store tests. |
 | `ReferenceTrajectoryRef` | `sources.contracts` | Durable reference trajectory ref. | Keep source-prepared reference DTO. | `sources.contracts` | WP-04 | Existing eval consumes it through prepared inputs. | Not deleted. | Trajectory eval tests. |
 | `ReferenceCloudRef` | `sources.contracts` | Durable reference cloud ref. | Keep source-prepared reference DTO. | `sources.contracts` | WP-04, WP-05 | Existing/future cloud/reconstruction consumers remain compatible. | Not deleted. | Reconstruction/cloud planning tests. |
 | `ReferencePointCloudSequenceRef` | `sources.contracts` | Durable point-cloud sequence ref. | Keep source-prepared reference DTO. | `sources.contracts` | WP-04 | Preserve ADVIO/Tango references. | Not deleted. | ADVIO ingest tests. |
-| `FramePacket` | `interfaces.runtime` | Live/replay frame packet. | Keep shared runtime DTO. | `interfaces.runtime` | WP-04, WP-06 | Current replay and streaming use it. | Not deleted. | Streaming tests. |
-| `FramePacketProvenance` | `interfaces.runtime` | Packet provenance metadata. | Keep shared runtime DTO. | `interfaces.runtime` | WP-04, WP-06 | Preserve provenance through source/SLAM. | Not deleted. | Streaming/source tests. |
+| `Observation` | `sources.contracts` | Live/replay source observation. | Keep source-owned streaming DTO. | `sources.contracts` | WP-04, WP-06 | Current replay and streaming use it. | Not deleted. | Streaming tests. |
+| `ObservationProvenance` | `sources.contracts` | Source observation provenance metadata. | Keep source-owned streaming DTO. | `sources.contracts` | WP-04, WP-06 | Preserve provenance through source/SLAM. | Not deleted. | Streaming/source tests. |
 | `FrameTransform` | `interfaces.transforms` | Shared transform DTO. | Keep shared DTO. | `interfaces.transforms` | WP-06, WP-07 | Preserve pose semantics. | Not deleted. | SLAM/Rerun tests. |
 | `CameraIntrinsics` | `interfaces.camera` | Shared camera model. | Keep shared DTO. | `interfaces.camera` | WP-06, WP-07 | Preserve intrinsics semantics. | Not deleted. | Camera/Rerun tests. |
 | `CameraIntrinsicsSample` | `interfaces.camera` | Intrinsics sample in series. | Keep shared DTO. | `interfaces.camera` | future eval/diagnostics | Preserve artifact diagnostics. | Not deleted. | Intrinsics diagnostics tests. |
@@ -102,11 +102,11 @@ refactor says otherwise.
 | `GroundPlaneModel` | `interfaces.alignment` | Ground plane model. | Keep alignment-owned semantic DTO. | `interfaces.alignment` | WP-05 | Preserve alignment metadata. | Not deleted. | Alignment tests. |
 | `GroundPlaneVisualizationHint` | `interfaces.alignment` | Visualization hint for ground plane. | Keep until visualization adapter explicitly replaces/uses it. | `interfaces.alignment` | WP-05, WP-07 | Preserve current viewer behavior. | Not deleted. | Rerun/alignment tests. |
 | `VisualizationArtifacts` | `interfaces.visualization` | Durable visualization artifact refs. | Keep visualization-owned semantic DTO. | `interfaces.visualization` | WP-07 | Preserve native/repo viewer artifacts. | Not deleted. | Visualization artifact tests. |
-| `RgbdObservation` | `interfaces.rgbd` | Normalized posed RGB-D observation. | Keep shared DTO. | `interfaces.rgbd` | WP-05 | Reconstruction consumes it. | Not deleted. | Reconstruction tests. |
-| `RgbdObservationProvenance` | `interfaces.rgbd` | RGB-D observation provenance. | Keep shared DTO. | `interfaces.rgbd` | WP-05 | Preserve source/method provenance. | Not deleted. | Reconstruction tests. |
-| `RgbdObservationIndexEntry` | `interfaces.rgbd` | RGB-D sequence index row. | Keep shared DTO. | `interfaces.rgbd` | WP-05 | Preserve file-backed observation loading. | Not deleted. | RGB-D source tests. |
-| `RgbdObservationSequenceIndex` | `interfaces.rgbd` | RGB-D sequence index. | Keep shared DTO. | `interfaces.rgbd` | WP-05 | Preserve reconstruction source loading. | Not deleted. | RGB-D source tests. |
-| `RgbdObservationSequenceRef` | `interfaces.rgbd` | Durable prepared RGB-D sequence ref. | Keep shared DTO. | `interfaces.rgbd` | WP-05 | Preserve reconstruction stage input. | Not deleted. | Reconstruction planning/runtime tests. |
+| `Observation` | `interfaces.observation` | Normalized posed RGB-D observation. | Keep shared DTO. | `interfaces.observation` | WP-05 | Reconstruction consumes it. | Not deleted. | Reconstruction tests. |
+| `ObservationProvenance` | `interfaces.observation` | RGB-D observation provenance. | Keep shared DTO. | `interfaces.observation` | WP-05 | Preserve source/method provenance. | Not deleted. | Reconstruction tests. |
+| `ObservationIndexEntry` | `interfaces.observation` | RGB-D sequence index row. | Keep shared DTO. | `interfaces.observation` | WP-05 | Preserve file-backed observation loading. | Not deleted. | RGB-D source tests. |
+| `ObservationSequenceIndex` | `interfaces.observation` | RGB-D sequence index. | Keep shared DTO. | `interfaces.observation` | WP-05 | Preserve reconstruction source loading. | Not deleted. | RGB-D source tests. |
+| `ObservationSequenceRef` | `interfaces.observation` | Durable prepared RGB-D sequence ref. | Keep shared DTO. | `interfaces.observation` | WP-05 | Preserve reconstruction stage input. | Not deleted. | Reconstruction planning/runtime tests. |
 | `ReconstructionArtifacts` | `reconstruction.contracts` | Reconstruction output artifact bundle. | Keep reconstruction-owned DTO. | `reconstruction.contracts` | WP-05 | Preserve reconstruction package boundary. | Not deleted. | Reconstruction tests. |
 | `ReconstructionMetadata` | `reconstruction.contracts` | Reconstruction side metadata. | Keep reconstruction-owned DTO. | `reconstruction.contracts` | WP-05 | Preserve reconstruction artifacts. | Not deleted. | Reconstruction tests. |
 
@@ -151,8 +151,7 @@ current owners.
 | `Record3DStreamingSourceConfig` | `io.record3d_source` | Keep IO streaming source config. | io | Record3D source tests. |
 | `Record3DWiFiMetadata` | `io.wifi_packets` | Keep Wi-Fi metadata DTO. | io | Wi-Fi tests. |
 | `Record3DWiFiPreviewStreamConfig` | `io.wifi_session` | Keep Wi-Fi preview config. | io | Wi-Fi tests. |
-| `Cv2FramePayload` | `io.cv2_producer` | Keep CV2 payload DTO. | io | IO tests. |
-| `Cv2ProducerConfig` | `io.cv2_producer` | Keep CV2 producer config. | io | IO tests. |
+| `PyAvVideoObservationSource` | `sources.replay.video` | Keep canonical PyAV video observation source. | sources.replay | Source/replay tests. |
 | `PipelinePageState` | `app.models` | Keep Streamlit state DTO. | app | App tests. |
 | `AppState` | `app.models` | Keep Streamlit root state DTO. | app | App tests. |
 | `AdvioPageState` | `app.models` | Keep app state DTO. | app | App tests. |
@@ -212,9 +211,9 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `TrajectoryEvaluator` | `eval.protocols` | Keep eval-owned protocol seam. | eval | Eval service/protocol tests. |
 | `DenseCloudEvaluator` | `eval.protocols` | Keep eval-owned future dense-cloud protocol. | eval | Future dense-cloud eval tests. |
 | `EfficiencyEvaluator` | `eval.protocols` | Keep eval-owned future efficiency protocol. | eval | Future efficiency eval tests. |
-| `AdvioRawPoseRefs` | `interfaces.ingest` | Keep shared ingest DTO for ADVIO-native pose refs. | interfaces | Ingest and ADVIO tests. |
-| `AdvioManifestAssets` | `interfaces.ingest` | Keep shared ingest DTO for ADVIO-specific normalized assets. | interfaces | Ingest and ADVIO tests. |
-| `Record3DTransportId` | `interfaces.runtime` | Keep shared transport enum used by live/replay frame sources. | interfaces | Record3D and streaming tests. |
+| `AdvioRawPoseRefs` | `sources.contracts` | Keep source-owned DTO for ADVIO-native pose refs. | sources | Source and ADVIO tests. |
+| `AdvioManifestAssets` | `sources.contracts` | Keep source-owned DTO for ADVIO-specific normalized assets. | sources | Source and ADVIO tests. |
+| `Record3DTransportId` | `sources.contracts` | Keep source-owned transport enum used by live/replay source observations. | sources | Record3D and streaming tests. |
 | `SlamArtifacts` | `interfaces.slam` | Keep shared normalized SLAM artifact bundle. | interfaces | SLAM, evaluation, alignment, and artifact tests. |
 | `SlamUpdate` | `methods.contracts` | Unified live SLAM semantic update. | Keep one compact method-owned update DTO; pose, keyframe, map stats, warnings, and previews flow through it plus `StageRuntimeStatus`. | methods | WP-10 | Dedicated notice DTO variants are removed. | Done. | Live update and Rerun tests. |
 | `MethodId` | `methods.stage.config` | Canonical SLAM backend discriminator. | Single enum used by stage configs, wrappers, protocols, tests, and eval labels. | pipeline stages / methods | WP-10 | The old method config module is deleted. | Done. | Backend config tests. |
@@ -224,15 +223,12 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `StreamingSlamBackend` | `methods.protocols` | Keep method-owned streaming backend protocol. | methods | Streaming backend tests. |
 | `SlamBackend` | `methods.protocols` | Keep combined method backend protocol. | methods | Backend tests. |
 | `PipelineBackend` | `pipeline.backend` | Move to pipeline-local protocol owner when target public surface cleanup lands. | pipeline migration | App/CLI run-service tests. |
-| `RgbdObservationSource` | `protocols.rgbd` | Keep shared RGB-D observation source protocol. | protocols | Reconstruction source tests. |
-| `FramePacketStream` | `protocols.runtime` | Keep shared runtime packet-stream protocol. | protocols | Streaming tests. |
+| `ObservationStream` | `sources.replay.protocols` | Keep source-owned observation-stream protocol. | sources.replay | Streaming tests. |
 | `OfflineSequenceSource` | `protocols.source` | Keep shared offline source protocol. | protocols | Source/ingest tests. |
 | `BenchmarkInputSource` | `protocols.source` | Keep shared benchmark-input source protocol. | protocols | Source/ingest/eval tests. |
 | `StreamingSequenceSource` | `protocols.source` | Keep shared streaming source protocol. | protocols | Streaming source tests. |
 | `ReconstructionMethodId` | `reconstruction.contracts` | Keep reconstruction-owned backend id enum. | reconstruction | Reconstruction config tests. |
 | `OfflineReconstructionBackend` | `reconstruction.protocols` | Keep reconstruction-owned offline backend protocol. | reconstruction | Reconstruction backend tests. |
-| `ReconstructionSession` | `reconstruction.protocols` | Keep reconstruction-owned future streaming session protocol. | reconstruction | Future reconstruction tests. |
-| `StreamingReconstructionBackend` | `reconstruction.protocols` | Keep reconstruction-owned future streaming backend protocol. | reconstruction | Future reconstruction tests. |
 | `_ConfigFactory` | `utils.base_config` | Keep private utility protocol for config factories. | utils | Config tests. |
 | `BaseConfig` | `utils.base_config` | Keep shared config base. | utils | Config serialization tests. |
 | `BaseData` | `utils.base_data` | Keep shared data base. | utils | DTO serialization tests. |
@@ -275,7 +271,7 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `TumRgbdCatalog` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local catalog DTO. | datasets | TUM RGB-D catalog tests. |
 | `TumRgbdSequencePaths` | `datasets.tum_rgbd.tum_rgbd_sequence` | Keep dataset-local path DTO. | datasets | TUM RGB-D sequence tests. |
 | `TumRgbdSequence` | `datasets.tum_rgbd.tum_rgbd_sequence` | Keep dataset-local sequence DTO. | datasets | TUM RGB-D sequence tests. |
-| `Cv2ReplayMode` | `io.cv2_producer` | Keep IO-local replay enum. | io | CV2 producer tests. |
+| `ReplayMode` | `sources.replay.clock` | Keep source replay pacing enum. | sources.replay | Source/replay tests. |
 | `Record3DDeviceType` | `io.record3d` | Keep IO-local device enum. | io | Record3D tests. |
 | `VistaViewGraphArtifact` | `methods.vista.artifact_io` | Keep ViSTA-native artifact DTO. | methods.vista | ViSTA artifact tests. |
 | `VistaViewGraphEdge` | `methods.vista.diagnostics` | Keep ViSTA diagnostics DTO. | methods.vista | ViSTA diagnostics tests. |

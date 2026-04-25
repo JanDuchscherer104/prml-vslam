@@ -7,9 +7,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
-from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.interfaces import Record3DTransportId
 from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline.config import (
     STAGE_SECTION_ORDER,
@@ -32,6 +29,9 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
+from prml_vslam.sources.contracts import Record3DTransportId
+from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
+from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils import PathConfig
 
 

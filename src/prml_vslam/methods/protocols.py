@@ -12,12 +12,11 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.interfaces.ingest import SequenceManifest
+from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage.config import MethodId, SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 
 
 @runtime_checkable
@@ -71,7 +70,7 @@ class StreamingSlamBackend(Protocol):
         """Prepare backend-owned streaming state before frames arrive."""
 
     @abstractmethod
-    def step_streaming(self, frame: FramePacket) -> None:
+    def step_streaming(self, frame: Observation) -> None:
         """Consume one streaming frame through backend-owned state."""
 
     @abstractmethod

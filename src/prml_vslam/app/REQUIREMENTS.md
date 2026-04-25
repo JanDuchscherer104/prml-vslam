@@ -39,7 +39,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 - App-facing state must remain Pydantic-backed and JSON-friendly across reruns.
 - The same session-state adapter must continue to own the opaque runtime controllers.
 - `PathConfig` remains the authoritative source of repo paths and defaults.
-- Heavy capture and decoding work must stay in `prml_vslam.io`.
+- Heavy capture and decoding work must stay in `prml_vslam.sources.replay`.
 - Runtime objects launched by the app must still consume typed repo-owned contracts rather than transport-specific browser state.
 - `Start` and `Stop` actions on live pages must remain mutually exclusive and share the same action slot.
 - Camera intrinsics should remain rendered as LaTeX instead of plain JSON.

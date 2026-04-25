@@ -18,8 +18,6 @@ from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 
-from prml_vslam.datasets.contracts import DatasetId
-from prml_vslam.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.eval.contracts import (
     DiscoveredRun,
     ErrorSeries,
@@ -35,10 +33,11 @@ from prml_vslam.eval.contracts import (
     TrajectorySeries,
 )
 from prml_vslam.eval.protocols import TrajectoryEvaluator
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.config import MethodId
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors, load_tum_trajectory, write_point_cloud_ply
 from prml_vslam.utils.path_config import PathConfig
 

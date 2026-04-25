@@ -7,9 +7,8 @@ from pathlib import Path
 import numpy as np
 from pydantic import PrivateAttr
 
-from prml_vslam.interfaces import FramePacket, FrameTransform
+from prml_vslam.interfaces import FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage import SlamOfflineInput, SlamStageRuntime, SlamStreamingStartInput
@@ -21,7 +20,7 @@ from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.sources.config import VideoSourceConfig
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.utils import PathConfig
 
 
@@ -61,7 +60,7 @@ class _FakeBackend:
         del kwargs
         self.runtime.started = True
 
-    def step_streaming(self, frame: FramePacket) -> None:
+    def step_streaming(self, frame: Observation) -> None:
         self.runtime.step(frame)
 
     def drain_streaming_updates(self) -> list[SlamUpdate]:
@@ -78,7 +77,7 @@ class _FakeStreamingRuntime:
         self.closed = False
         self.started = False
 
-    def step(self, frame: FramePacket) -> None:
+    def step(self, frame: Observation) -> None:
         self.pending.append(
             SlamUpdate(
                 seq=frame.seq,
@@ -179,7 +178,14 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
             log_diagnostic_preview=True,
         )
     )
-    runtime.submit_stream_item(FramePacket(seq=1, timestamp_ns=10, rgb=np.zeros((2, 3, 3))))
+    runtime.submit_stream_item(
+        Observation(
+            seq=1,
+            timestamp_ns=10,
+            rgb=np.zeros((2, 3, 3)),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
     updates = runtime.drain_runtime_updates()
 
     assert len(updates) == 1

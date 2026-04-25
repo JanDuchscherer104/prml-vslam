@@ -12,10 +12,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from prml_vslam.datasets.contracts import FrameSelectionConfig
+from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
-from prml_vslam.interfaces.runtime import FramePacket
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -23,17 +21,18 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
-from prml_vslam.protocols.runtime import FramePacketStream
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SourceStageOutput
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
+from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
+from prml_vslam.sources.replay import ObservationStream
 from prml_vslam.sources.visualization import (
+    observation_sequence_artifact_key,
     reference_cloud_artifact_key,
     reference_cloud_metadata_artifact_key,
     reference_point_cloud_sequence_index_artifact_key,
     reference_point_cloud_sequence_payload_artifact_key,
     reference_point_cloud_sequence_trajectory_artifact_key,
     reference_trajectory_artifact_key,
-    rgbd_observation_sequence_artifact_key,
 )
 from prml_vslam.utils import BaseData, Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.video_frames import extract_video_frames
@@ -62,7 +61,7 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
     """Prepare the normalized source output for offline or streaming runs.
 
     The runtime is method-agnostic: it materializes a
-    :class:`prml_vslam.interfaces.ingest.SequenceManifest`, optional
+    :class:`prml_vslam.sources.contracts.SequenceManifest`, optional
     :class:`prml_vslam.sources.contracts.PreparedBenchmarkInputs`, and a
     terminal :class:`prml_vslam.pipeline.stages.base.contracts.StageResult`.
     It does not resize images for a SLAM backend or choose evaluation policy.
@@ -88,7 +87,7 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
     def run_offline(self, input_payload: SourceRuntimeInput) -> StageResult:
         """Prepare and persist the canonical source-stage output.
 
-        The result payload is :class:`prml_vslam.interfaces.ingest.SourceStageOutput`.
+        The result payload is :class:`prml_vslam.sources.contracts.SourceStageOutput`.
         Downstream stages should read this payload from the result store rather
         than reaching back into source adapters or dataset services.
         """
@@ -184,10 +183,10 @@ def _source_artifacts(*, run_paths: RunArtifactPaths, output: SourceStageOutput)
                 reference.payload_root,
                 kind="dir",
             )
-        for reference in output.benchmark_inputs.rgbd_observation_sequences:
-            artifacts[rgbd_observation_sequence_artifact_key(reference)] = _artifact_ref(
+        for reference in output.benchmark_inputs.observation_sequences:
+            artifacts[observation_sequence_artifact_key(reference)] = _artifact_ref(
                 reference.index_path,
-                kind="rgbd_observation_sequence",
+                kind="observation_sequence",
             )
     return artifacts
 
@@ -402,10 +401,10 @@ class VideoOfflineSequenceSource:
         )
 
 
-class SampledFramePacketStream:
+class SampledObservationStream:
     """Apply source sampling policy to an existing packet stream."""
 
-    def __init__(self, stream: FramePacketStream, *, frame_selection: FrameSelectionConfig) -> None:
+    def __init__(self, stream: ObservationStream, *, frame_selection: FrameSelectionConfig) -> None:
         self._stream = stream
         self._frame_selection = frame_selection
         self._seen_packets = 0
@@ -419,17 +418,17 @@ class SampledFramePacketStream:
         """Disconnect the wrapped stream."""
         self._stream.disconnect()
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
+    def wait_for_observation(self, timeout_seconds: float | None = None) -> Observation:
         """Return the next packet accepted by the configured sampling policy."""
         while True:
-            packet = self._stream.wait_for_packet(timeout_seconds=timeout_seconds)
+            packet = self._stream.wait_for_observation(timeout_seconds=timeout_seconds)
             self._seen_packets += 1
             if not self._should_emit(packet):
                 continue
             self._last_emitted_timestamp_ns = packet.timestamp_ns
             return packet
 
-    def _should_emit(self, packet: FramePacket) -> bool:
+    def _should_emit(self, packet: Observation) -> bool:
         if self._frame_selection.target_fps is not None:
             if self._last_emitted_timestamp_ns is None:
                 return True
@@ -456,16 +455,16 @@ class SampledStreamingSource(StreamingSequenceSource):
             return None
         return self._source.prepare_benchmark_inputs(output_dir)
 
-    def open_stream(self, *, loop: bool) -> FramePacketStream:
+    def open_stream(self, *, loop: bool) -> ObservationStream:
         """Open the wrapped source stream with sampling applied."""
-        return SampledFramePacketStream(
+        return SampledObservationStream(
             self._source.open_stream(loop=loop),
             frame_selection=self._frame_selection,
         )
 
 
 __all__ = [
-    "SampledFramePacketStream",
+    "SampledObservationStream",
     "SampledStreamingSource",
     "SourceRuntime",
     "SourceRuntimeInput",

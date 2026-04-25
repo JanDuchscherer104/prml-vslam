@@ -13,7 +13,7 @@ Companion references:
 - [Present-state audit](./pipeline-stage-present-state-audit.md)
 - [Executable stage protocol reference](./pipeline-stage-protocols-and-dtos.md)
 - [Reconstruction package guide](../../src/prml_vslam/reconstruction/README.md)
-- [TUM RGB-D dataset guide](../../src/prml_vslam/datasets/tum_rgbd/README.md)
+- [TUM RGB-D dataset guide](../../src/prml_vslam/sources/datasets/tum_rgbd/README.md)
 - [ViSTA-SLAM wrapper guide](../../src/prml_vslam/methods/vista/README.md)
 
 Terminology matches the pipeline-stage target document:
@@ -39,7 +39,7 @@ observations or feed them to an explicit live reconstruction sidecar through
 the same normalized boundary.
 
 The current implementation already has an experimental reconstruction package
-with `ReconstructionObservation`, `ReconstructionArtifacts`,
+with `Observation`, `ReconstructionArtifacts`,
 `Open3dTsdfBackendConfig`, `OfflineReconstructionBackend`, and
 `Open3dTsdfBackend`. This document describes how that method-level surface
 should integrate into the broader stage refactor.
@@ -64,9 +64,9 @@ above source-specific adapters and below reconstruction backends.
 
 ```mermaid
 flowchart TB
-    Interfaces["interfaces<br/>RgbdObservation<br/>RgbdObservationSequenceRef"]
-    Protocols["protocols<br/>RgbdObservationSource"]
-    Datasets["datasets.tum_rgbd<br/>TUM RGB-D normalizer"]
+    Interfaces["interfaces<br/>Observation<br/>ObservationSequenceRef"]
+    Sources["sources<br/>FileObservationSequenceLoader"]
+    Datasets["sources.datasets.tum_rgbd<br/>TUM RGB-D normalizer"]
     Methods["methods.vista / slam stage<br/>ViSTA keyframe normalizer"]
     Pipeline["reconstruction.stage<br/>stage config/runtime/result"]
     Reconstruction["reconstruction<br/>Open3D TSDF backend<br/>ReconstructionArtifacts"]
@@ -75,8 +75,8 @@ flowchart TB
 
     Datasets --> Interfaces
     Methods --> Interfaces
-    Interfaces --> Protocols
-    Protocols --> Pipeline
+    Interfaces --> Sources
+    Sources --> Pipeline
     Pipeline --> Reconstruction
     Benchmark --> Pipeline
     Pipeline --> Rerun
@@ -84,27 +84,27 @@ flowchart TB
 
 Ownership rules:
 
-- `interfaces` owns `RgbdObservation` because both dataset adapters and method
+- `interfaces` owns `Observation` because both dataset adapters and method
   outputs can produce it, and reconstruction consumes it.
-- `interfaces` owns `RgbdObservationSequenceRef`, while
+- `interfaces` owns `ObservationSequenceRef`, while
   `PreparedBenchmarkInputs` carries prepared refs from ingest/source
   preparation into later stages.
-- `protocols` owns `RgbdObservationSource`, the repo-wide behavior seam that
-  opens a prepared observation sequence and yields normalized observations.
-- `datasets.tum_rgbd` owns TUM-specific association and file loading, then
-  normalizes into `RgbdObservation`.
+- `sources` owns the file-backed observation sequence loader that opens a
+  prepared observation sequence and yields normalized observations.
+- `sources.datasets.tum_rgbd` owns TUM-specific association and file loading, then
+  normalizes into `Observation`.
 - `methods.vista` and the future SLAM stage runtime own ViSTA keyframe
-  normalization, then normalize into `RgbdObservation`.
+  normalization, then normalize into `Observation`.
 - `reconstruction.stage` owns stage config, stage input/output DTOs,
   runtime status, and `StageResult` integration.
 - `reconstruction` owns backend ids, backend configs, method harnesses, Open3D
   TSDF execution, and `ReconstructionArtifacts`.
 - `benchmark` owns enablement policy only.
 
-This boundary deliberately differs from `FramePacket`. A `FramePacket` is a
+This boundary deliberately differs from `Observation`. A `Observation` is a
 flexible runtime packet where RGB, depth, intrinsics, and pose are optional.
 Open3D TSDF needs complete posed RGB-D observations. The reconstruction stage
-should therefore consume `RgbdObservation`, not `FramePacket`.
+should therefore consume `Observation`, not `Observation`.
 
 ## Stage Vocabulary And Runtime Scope
 
@@ -139,7 +139,7 @@ The normalized observation DTO is source-agnostic and strict:
 
 ```mermaid
 classDiagram
-    class RgbdObservation {
+    class Observation {
         +seq
         +timestamp_ns
         +T_world_camera
@@ -149,7 +149,7 @@ classDiagram
         +provenance
     }
 
-    class RgbdObservationSequenceRef {
+    class ObservationSequenceRef {
         +source_id
         +sequence_id
         +index_path
@@ -159,8 +159,7 @@ classDiagram
         +raster_space
     }
 
-    class RgbdObservationSource {
-        <<Protocol>>
+    class FileObservationSequenceLoader {
         +iter_observations()
     }
 
@@ -181,13 +180,13 @@ classDiagram
         +extras
     }
 
-    RgbdObservationSource --> RgbdObservation
-    RgbdObservationSequenceRef --> RgbdObservationSource
-    ReconstructionStageInput --> RgbdObservationSequenceRef
+    FileObservationSequenceLoader --> Observation
+    ObservationSequenceRef --> FileObservationSequenceLoader
+    ReconstructionStageInput --> ObservationSequenceRef
     ReconstructionStageOutput --> ReconstructionArtifacts
 ```
 
-`RgbdObservation` target fields:
+`Observation` target fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -199,7 +198,7 @@ classDiagram
 | `image_rgb` | Optional HxWx3 RGB image aligned with `depth_map_m`. |
 | `provenance` | Source, dataset/method id, world frame, pose source, and raster-space metadata. |
 
-`RgbdObservationSequenceRef` should be a durable descriptor, not a list of
+`ObservationSequenceRef` should be a durable descriptor, not a list of
 arrays. It points to a prepared index or manifest and a payload root that a
 runtime can open locally or on a worker. This matches the current artifact-first
 pipeline design and avoids treating transient Ray handles as replayable
@@ -209,7 +208,7 @@ scientific inputs.
 
 ```text
 ReconstructionStageInput
-  observation_sequence: RgbdObservationSequenceRef
+  observation_sequence: ObservationSequenceRef
   backend: ReconstructionBackendConfig
 ```
 
@@ -231,7 +230,7 @@ flowchart TB
         TumDepth["depth PNG / 5000 -> depth_m"]
         TumPose["GT T_world_camera"]
         TumIntr["Freiburg RGB intrinsics"]
-        TumObs["RgbdObservation"]
+        TumObs["Observation"]
         TumAssoc --> TumRGB --> TumObs
         TumAssoc --> TumDepth --> TumObs
         TumAssoc --> TumPose --> TumObs
@@ -245,7 +244,7 @@ flowchart TB
         VRGB["image_rgb"]
         VPose["pose T_world_camera"]
         VPointmap["pointmap<br/>not TSDF input"]
-        VObs["RgbdObservation"]
+        VObs["Observation"]
         Update --> VDepth --> VObs
         Update --> VIntr --> VObs
         Update --> VRGB --> VObs
@@ -265,10 +264,10 @@ exists durably:
 - Intrinsics are Freiburg RGB intrinsics loaded by the TUM adapter.
 - Poses are nearest ground-truth RGB camera poses in the mocap world.
 
-The TUM adapter should prepare a `RgbdObservationSequenceRef` during source or
+The TUM adapter should prepare a `ObservationSequenceRef` during source or
 benchmark-input preparation. That ref is then carried through
 `PreparedBenchmarkInputs` or the equivalent target prepared-input boundary.
-The reconstruction runtime opens the ref through `RgbdObservationSource` and
+The reconstruction runtime opens the ref through the source-owned file loader and
 streams observations into Open3D TSDF.
 
 ### ViSTA SLAM-Derived Path
@@ -295,7 +294,7 @@ The ViSTA source path remains unavailable until one of these lifecycle choices
 is implemented:
 
 - persist accepted keyframe RGB-D observations into a durable
-  `RgbdObservationSequenceRef`; or
+  `ObservationSequenceRef`; or
 - run reconstruction as an explicit live sidecar while transient keyframe
   payloads are still available.
 
@@ -306,7 +305,7 @@ observations and write normalized artifacts:
 
 ```text
 OfflineReconstructionBackend.run_sequence(
-    observations: Iterable[RgbdObservation],
+    observations: Iterable[Observation],
     *,
     backend_config: ReconstructionBackendConfig,
     artifact_root: Path,
@@ -339,10 +338,10 @@ runs the backend, and returns `StageResult`.
 ```mermaid
 flowchart LR
     Source["source / ingest"]
-    Prepared["PreparedBenchmarkInputs<br/>RgbdObservationSequenceRef"]
+    Prepared["PreparedBenchmarkInputs<br/>ObservationSequenceRef"]
     StageInput["ReconstructionStageInput"]
     Runtime["ReconstructionStageRuntime"]
-    Provider["RgbdObservationSource"]
+    Provider["FileObservationSequenceLoader"]
     Backend["Open3dTsdfBackend"]
     Output["ReconstructionStageOutput<br/>ReconstructionArtifacts"]
     Outcome["StageResult / StageOutcome"]
@@ -364,7 +363,7 @@ sequenceDiagram
     participant Plan as RunPlan
     participant RuntimeMgr as RuntimeManager
     participant Runtime as ReconstructionStageRuntime
-    participant Source as RgbdObservationSource
+    participant Source as FileObservationSequenceLoader
     participant Backend as Open3dTsdfBackend
     participant Events as RunEvent stream
 
@@ -373,14 +372,14 @@ sequenceDiagram
     Runtime->>Source: open observation_sequence
     Runtime->>Backend: run_sequence(observations, config, artifact_root)
     loop each observation
-        Source-->>Backend: RgbdObservation
+        Source-->>Backend: Observation
     end
     Backend-->>Runtime: ReconstructionArtifacts
     Runtime->>Events: StageCompleted(reconstruction)
 ```
 
 The stage should be unavailable during planning when no
-`RgbdObservationSequenceRef` exists. In v1, this means TUM RGB-D can enable the
+`ObservationSequenceRef` exists. In v1, this means TUM RGB-D can enable the
 stage after source preparation, while ADVIO-only monocular video cannot.
 
 The stage output should be usable by `evaluate.cloud` later, but cloud metrics
@@ -414,7 +413,7 @@ Planning availability should fail closed with explicit reasons:
 
 | Condition | Planning or runtime behavior |
 | --- | --- |
-| No `RgbdObservationSequenceRef` | Stage unavailable. |
+| No `ObservationSequenceRef` | Stage unavailable. |
 | Observation source cannot be opened | Stage fails before backend execution. |
 | Missing depth, pose, or intrinsics | Stage fails with source-normalization error. |
 | RGB/depth/intrinsics raster mismatch | Stage fails with validation error. |
@@ -429,9 +428,9 @@ silently skip reconstruction when the stage was explicitly enabled.
 
 Contract additions:
 
-- Add `RgbdObservation` and observation provenance to `interfaces`.
-- Add `RgbdObservationSequenceRef` to the shared prepared-input boundary.
-- Add `RgbdObservationSource` to `protocols`.
+- Add `Observation` and observation provenance to `interfaces`.
+- Add `ObservationSequenceRef` to the shared prepared-input boundary.
+- Add the file-backed observation sequence loader to `sources`.
 - Add `ReconstructionStageInput` and `ReconstructionStageOutput` to the
   reconstruction stage package.
 
@@ -440,27 +439,27 @@ Dataset changes:
 - Add a TUM RGB-D observation-sequence preparer.
 - Include the prepared observation sequence in `PreparedBenchmarkInputs` or the
   target equivalent prepared-input DTO.
-- Add a TUM RGB-D `RgbdObservationSource` that reuses existing association,
+- Add a TUM RGB-D observation sequence path that reuses existing association,
   depth loading, intrinsics loading, and ground-truth pose loading logic.
 
 Method / SLAM changes:
 
 - Add a ViSTA keyframe normalizer from accepted `SlamUpdate` values into
-  `RgbdObservation`.
+  `Observation`.
 - Defer executable ViSTA reconstruction until durable keyframe observation
   persistence or an explicit live reconstruction sidecar exists.
 
 Pipeline changes:
 
 - Add `reconstruction.stage`.
-- Add planning availability based on `RgbdObservationSequenceRef`.
+- Add planning availability based on `ObservationSequenceRef`.
 - Add stage runtime integration with `StageResult`, `StageOutcome`, artifact
   registration, and status reporting.
 
 Reconstruction package changes:
 
-- Generalize the existing backend from `Sequence[ReconstructionObservation]`
-  to `Iterable[RgbdObservation]`.
+- Generalize the existing backend from `Sequence[Observation]`
+  to `Iterable[Observation]`.
 - Keep Open3D TSDF as the only v1 backend.
 - Keep method switching inside the reconstruction harness/config union.
 
@@ -468,9 +467,9 @@ Reconstruction package changes:
 
 Future implementation should include these tests:
 
-- TUM RGB-D normalizer yields complete `RgbdObservation` values.
+- TUM RGB-D normalizer yields complete `Observation` values.
 - Missing depth, pose, intrinsics, or mismatched raster shape fails early.
-- Open3D TSDF consumes `Iterable[RgbdObservation]`.
+- Open3D TSDF consumes `Iterable[Observation]`.
 - Reconstruction stage produces `reference_cloud.ply`, metadata,
   `StageResult`, and `StageOutcome`.
 - ViSTA keyframe normalizer rejects incomplete updates.

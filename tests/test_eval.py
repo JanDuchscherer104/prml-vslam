@@ -18,14 +18,18 @@ from prml_vslam.eval.contracts import (
 from prml_vslam.eval.services import TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan
 from prml_vslam.sources.config import VideoSourceConfig
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+    SequenceManifest,
+)
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 

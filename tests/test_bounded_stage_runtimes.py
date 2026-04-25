@@ -16,10 +16,9 @@ from prml_vslam.eval.stage_trajectory import (
     TrajectoryEvaluationRuntime,
     TrajectoryEvaluationRuntimeInput,
 )
+from prml_vslam.interfaces import ObservationSequenceRef
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
-from prml_vslam.interfaces.rgbd import RgbdObservationSequenceRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline import PipelineMode
@@ -38,7 +37,7 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
 from prml_vslam.sources.config import VideoSourceConfig
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.utils import RunArtifactPaths
 
 
@@ -137,8 +136,8 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
             return FakeBackend()
 
     class FakeBackend:
-        def run_sequence(self, observations, *, backend_config, artifact_root: Path) -> ReconstructionArtifacts:
-            del observations, backend_config
+        def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
+            del observations
             artifact_root.mkdir(parents=True, exist_ok=True)
             cloud = artifact_root / "reference_cloud.ply"
             metadata = artifact_root / "reconstruction_metadata.json"
@@ -148,16 +147,16 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
             mesh.write_text("ply\n", encoding="utf-8")
             return ReconstructionArtifacts(reference_cloud_path=cloud, metadata_path=metadata, mesh_path=mesh)
 
-    class FakeRgbdObservationSource:
-        def __init__(self, sequence_ref: RgbdObservationSequenceRef) -> None:
+    class FakeObservationSequenceLoader:
+        def __init__(self, sequence_ref: ObservationSequenceRef) -> None:
             self.sequence_ref = sequence_ref
 
         def iter_observations(self):
             return iter(())
 
     monkeypatch.setattr(
-        "prml_vslam.reconstruction.stage.runtime.FileRgbdObservationSource",
-        FakeRgbdObservationSource,
+        "prml_vslam.reconstruction.stage.runtime.FileObservationSequenceLoader",
+        FakeObservationSequenceLoader,
     )
 
     runtime = ReconstructionRuntime()
@@ -207,8 +206,8 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
             return FakeBackend()
 
     class FakeBackend:
-        def run_sequence(self, observations, *, backend_config, artifact_root: Path) -> ReconstructionArtifacts:
-            del observations, backend_config
+        def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
+            del observations
             artifact_root.mkdir(parents=True, exist_ok=True)
             cloud = artifact_root / "reference_cloud.ply"
             metadata = artifact_root / "reconstruction_metadata.json"
@@ -216,16 +215,16 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
             metadata.write_text("{}\n", encoding="utf-8")
             return ReconstructionArtifacts(reference_cloud_path=cloud, metadata_path=metadata, mesh_path=None)
 
-    class FakeRgbdObservationSource:
-        def __init__(self, sequence_ref: RgbdObservationSequenceRef) -> None:
+    class FakeObservationSequenceLoader:
+        def __init__(self, sequence_ref: ObservationSequenceRef) -> None:
             self.sequence_ref = sequence_ref
 
         def iter_observations(self):
             return iter(())
 
     monkeypatch.setattr(
-        "prml_vslam.reconstruction.stage.runtime.FileRgbdObservationSource",
-        FakeRgbdObservationSource,
+        "prml_vslam.reconstruction.stage.runtime.FileObservationSequenceLoader",
+        FakeObservationSequenceLoader,
     )
 
     runtime = ReconstructionRuntime()
@@ -325,11 +324,11 @@ def _evaluation_artifact(tmp_path: Path) -> EvaluationArtifact:
 
 def _rgbd_benchmark_inputs(tmp_path: Path) -> PreparedBenchmarkInputs:
     return PreparedBenchmarkInputs(
-        rgbd_observation_sequences=[
-            RgbdObservationSequenceRef(
+        observation_sequences=[
+            ObservationSequenceRef(
                 source_id="test",
                 sequence_id="test-sequence",
-                index_path=tmp_path / "rgbd_observations.json",
+                index_path=tmp_path / "observations.json",
                 payload_root=tmp_path,
                 observation_count=2,
             )

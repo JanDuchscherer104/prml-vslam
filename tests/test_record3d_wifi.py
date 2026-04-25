@@ -8,26 +8,26 @@ from urllib.error import HTTPError
 
 import numpy as np
 
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.io import wifi_session as wifi_session_module
-from prml_vslam.io.record3d import Record3DTransportId
-from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
-from prml_vslam.io.wifi_packets import (
+import prml_vslam.sources.record3d.wifi_session as wifi_session_module
+from prml_vslam.interfaces import Observation
+from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.record3d.record3d import Record3DTransportId
+from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
+from prml_vslam.sources.record3d.wifi_packets import (
     Record3DWiFiMetadata,
     decode_record3d_wifi_depth,
-    record3d_wifi_packet_from_video_frame,
+    record3d_wifi_observation_from_video_frame,
 )
-from prml_vslam.io.wifi_receiver import (
+from prml_vslam.sources.record3d.wifi_receiver import (
     _Record3DWiFiReceiverRuntime,
     _should_suppress_record3d_async_exception,
 )
-from prml_vslam.io.wifi_session import Record3DWiFiPreviewStreamConfig
-from prml_vslam.io.wifi_signaling import (
+from prml_vslam.sources.record3d.wifi_session import Record3DWiFiPreviewStreamConfig
+from prml_vslam.sources.record3d.wifi_signaling import (
     Record3DWiFiSignalingClient,
     build_record3d_answer_request_payload,
     normalize_record3d_device_address,
 )
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 
 
 def _build_runtime(
@@ -148,12 +148,12 @@ def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
         device_address="http://myiPhone.local",
         payload={"K": [[100.0, 0.0, 10.0], [0.0, 200.0, 20.0], [0.0, 0.0, 1.0]], "maxDepth": 3.0},
     )
-    packet = record3d_wifi_packet_from_video_frame(FakeVideoFrame(), metadata=metadata, seq=0)
+    packet = record3d_wifi_observation_from_video_frame(FakeVideoFrame(), metadata=metadata, seq=0)
 
-    assert isinstance(packet, FramePacket)
-    assert packet.provenance.transport is Record3DTransportId.WIFI
+    assert isinstance(packet, Observation)
+    assert packet.provenance.transport == Record3DTransportId.WIFI.value
     assert packet.rgb.shape == (2, 2, 3)
-    assert packet.depth.shape == (2, 2)
+    assert packet.depth_m is None
     assert packet.confidence is None
     assert packet.intrinsics is not None
     assert packet.intrinsics.fx == 100.0

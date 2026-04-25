@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.eval.contracts import EvaluationArtifact, SelectionSnapshot
 from prml_vslam.plotting import build_error_figure, build_trajectory_figure
+from prml_vslam.sources.datasets.contracts import DatasetId
 
 from ..state import save_model_updates
 from ..ui import render_page_intro

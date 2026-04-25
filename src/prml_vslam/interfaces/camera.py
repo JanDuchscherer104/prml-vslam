@@ -5,7 +5,7 @@ pinhole camera model plus optional raster and distortion metadata. Dataset
 loaders, IO transports, method wrappers, visualization helpers, and the
 pipeline all use this DTO when they need a shared description of one camera
 raster. It does not own frame transforms or runtime packets; see
-:mod:`prml_vslam.interfaces.transforms` and :mod:`prml_vslam.interfaces.runtime`
+:mod:`prml_vslam.interfaces.transforms` and :mod:`prml_vslam.sources.contracts`
 for those boundaries.
 """
 
@@ -29,8 +29,8 @@ class CameraIntrinsics(BaseData):
     Use this DTO whenever a package boundary needs stable focal lengths,
     principal point, optional raster size, and optional distortion metadata
     without depending on an upstream-specific calibration format. The object is
-    shared by :class:`prml_vslam.interfaces.runtime.FramePacket`,
-    :class:`prml_vslam.interfaces.ingest.AdvioManifestAssets`, and current
+    shared by :class:`prml_vslam.sources.contracts.Observation`,
+    :class:`prml_vslam.sources.contracts.AdvioManifestAssets`, and current
     method live updates such as :class:`prml_vslam.interfaces.slam.SlamUpdate`.
     The width and height describe the same raster as ``fx``, ``fy``, ``cx``,
     and ``cy``; method wrappers that crop or resize images must either update

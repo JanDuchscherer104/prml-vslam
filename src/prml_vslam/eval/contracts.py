@@ -16,8 +16,8 @@ import numpy as np
 from jaxtyping import Float
 from pydantic import Field
 
-from prml_vslam.datasets.contracts import DatasetId
 from prml_vslam.interfaces.camera import CameraIntrinsics
+from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils import BaseData
 
 

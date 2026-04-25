@@ -12,9 +12,10 @@ from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import artifact_ref
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.protocols import LiveUpdateStageRuntime, OfflineStageRuntime
-from prml_vslam.reconstruction import FileRgbdObservationSource, ReconstructionArtifacts
+from prml_vslam.reconstruction import ReconstructionArtifacts
 from prml_vslam.reconstruction.stage.contracts import ReconstructionRuntimeInput
 from prml_vslam.reconstruction.stage.visualization import ReconstructionVisualizationAdapter
+from prml_vslam.sources.observation_sequence import FileObservationSequenceLoader
 
 
 class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], LiveUpdateStageRuntime):
@@ -80,18 +81,17 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
     def _run(self, input_payload: ReconstructionRuntimeInput) -> StageResult:
         if input_payload.benchmark_inputs is None:
             raise RuntimeError("Reference reconstruction requires prepared benchmark inputs.")
-        if len(input_payload.benchmark_inputs.rgbd_observation_sequences) != 1:
+        if len(input_payload.benchmark_inputs.observation_sequences) != 1:
             raise RuntimeError(
-                "Reference reconstruction requires exactly one prepared RGB-D observation sequence; "
-                f"got {len(input_payload.benchmark_inputs.rgbd_observation_sequences)}."
+                "Reference reconstruction requires exactly one prepared observation sequence; "
+                f"got {len(input_payload.benchmark_inputs.observation_sequences)}."
             )
 
-        sequence_ref = input_payload.benchmark_inputs.rgbd_observation_sequences[0]
+        sequence_ref = input_payload.benchmark_inputs.observation_sequences[0]
         backend_config = input_payload.backend
         backend = backend_config.setup_target()
         artifacts = backend.run_sequence(
-            FileRgbdObservationSource(sequence_ref).iter_observations(),
-            backend_config=backend_config,
+            FileObservationSequenceLoader(sequence_ref).iter_observations(),
             artifact_root=input_payload.run_paths.reference_cloud_path.parent,
         )
         artifact_map = _artifact_map(artifacts)

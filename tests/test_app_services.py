@@ -9,16 +9,16 @@ import numpy as np
 
 from prml_vslam.app.models import PreviewStreamState
 from prml_vslam.app.services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
-from prml_vslam.datasets.advio import AdvioPoseSource
-from prml_vslam.interfaces import FramePacket, FramePacketProvenance, FrameTransform
-from prml_vslam.io.record3d import Record3DDevice, Record3DTransportId
+from prml_vslam.interfaces import CAMERA_RDF_FRAME, FrameTransform, Observation, ObservationProvenance
+from prml_vslam.sources.datasets.advio import AdvioPoseSource
+from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId
 
 
 class _BlockingPacketStream:
     """Emit one packet, then block until the test disconnects the stream."""
 
     def __init__(
-        self, *, packet: FramePacket, connected_target: Record3DDevice | None = None, timeout_error: str
+        self, *, packet: Observation, connected_target: Record3DDevice | None = None, timeout_error: str
     ) -> None:
         self._packet = packet
         self._connected_target = connected_target
@@ -35,7 +35,7 @@ class _BlockingPacketStream:
         self.disconnected = True
         self._disconnect_event.set()
 
-    def wait_for_packet(self, timeout_seconds: float | None = None) -> FramePacket:
+    def wait_for_observation(self, timeout_seconds: float | None = None) -> Observation:
         if self._packet is not None:
             packet, self._packet = self._packet, None
             return packet
@@ -44,13 +44,22 @@ class _BlockingPacketStream:
         raise RuntimeError(self._timeout_error)
 
 
-def _packet(*, seq: int, timestamp_ns: int, arrival_timestamp_s: float | None) -> FramePacket:
-    return FramePacket(
+def _packet(*, seq: int, timestamp_ns: int, arrival_timestamp_s: float | None) -> Observation:
+    return Observation(
         seq=seq,
         timestamp_ns=timestamp_ns,
         arrival_timestamp_s=arrival_timestamp_s,
-        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
-        provenance=FramePacketProvenance(source_id="test"),
+        T_world_camera=FrameTransform(
+            qx=0.0,
+            qy=0.0,
+            qz=0.0,
+            qw=1.0,
+            tx=1.0,
+            ty=2.0,
+            tz=3.0,
+            source_frame=CAMERA_RDF_FRAME,
+        ),
+        provenance=ObservationProvenance(source_id="test"),
     )
 
 

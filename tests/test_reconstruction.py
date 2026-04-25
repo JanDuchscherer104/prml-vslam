@@ -9,20 +9,33 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
-from prml_vslam.interfaces.rgbd import RgbdObservation
+from prml_vslam.interfaces import (
+    CAMERA_RDF_FRAME,
+    CameraIntrinsics,
+    FrameTransform,
+    Observation,
+    ObservationProvenance,
+)
 from prml_vslam.reconstruction import (
     Open3dTsdfBackend,
     Open3dTsdfBackendConfig,
     ReconstructionMethodId,
-    ReconstructionObservation,
 )
 from prml_vslam.reconstruction.protocols import OfflineReconstructionBackend
 from prml_vslam.utils.geometry import load_point_cloud_ply
 
 
 def _pose_identity() -> FrameTransform:
-    return FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
+    return FrameTransform(
+        qx=0.0,
+        qy=0.0,
+        qz=0.0,
+        qw=1.0,
+        tx=0.0,
+        ty=0.0,
+        tz=0.0,
+        source_frame=CAMERA_RDF_FRAME,
+    )
 
 
 def _observation(
@@ -31,14 +44,14 @@ def _observation(
     timestamp_ns: int = 0,
     depth_m: float = 1.0,
     with_rgb: bool = False,
-) -> ReconstructionObservation:
+) -> Observation:
     depth_map_m = np.full((32, 32), depth_m, dtype=np.float32)
     image_rgb = None if not with_rgb else np.full((32, 32, 3), 127, dtype=np.uint8)
-    return RgbdObservation(
+    return Observation(
         seq=seq,
         timestamp_ns=timestamp_ns,
         T_world_camera=_pose_identity(),
-        camera_intrinsics=CameraIntrinsics(
+        intrinsics=CameraIntrinsics(
             fx=32.0,
             fy=32.0,
             cx=15.5,
@@ -46,8 +59,9 @@ def _observation(
             width_px=32,
             height_px=32,
         ),
-        image_rgb=image_rgb,
-        depth_map_m=depth_map_m,
+        rgb=image_rgb,
+        depth_m=depth_map_m,
+        provenance=ObservationProvenance(source_id="test"),
     )
 
 
@@ -66,24 +80,41 @@ def test_reconstruction_config_builds_open3d_offline_backend() -> None:
     assert backend.method_id is ReconstructionMethodId.OPEN3D_TSDF
 
 
-def test_reconstruction_observation_alias_accepts_legacy_pose_name() -> None:
-    observation = ReconstructionObservation(
-        seq=0,
-        timestamp_ns=0,
-        pose_world_camera=_pose_identity(),
-        camera_intrinsics=CameraIntrinsics(
-            fx=32.0,
-            fy=32.0,
-            cx=15.5,
-            cy=15.5,
-            width_px=32,
-            height_px=32,
-        ),
-        depth_map_m=np.ones((32, 32), dtype=np.float32),
-    )
+def test_observation_requires_camera_rdf_pose_frame() -> None:
+    with pytest.raises(ValidationError, match="source_frame must be 'camera_rdf'"):
+        Observation(
+            seq=0,
+            timestamp_ns=0,
+            T_world_camera=FrameTransform(
+                qx=0.0,
+                qy=0.0,
+                qz=0.0,
+                qw=1.0,
+                tx=0.0,
+                ty=0.0,
+                tz=0.0,
+                source_frame="camera",
+            ),
+            provenance=ObservationProvenance(source_id="test"),
+        )
 
-    assert isinstance(observation, RgbdObservation)
-    assert observation.pose_world_camera == observation.T_world_camera
+
+def test_observation_rejects_geometry_without_pose() -> None:
+    with pytest.raises(ValidationError, match="Metric observation geometry requires T_world_camera"):
+        Observation(
+            seq=0,
+            timestamp_ns=0,
+            intrinsics=CameraIntrinsics(
+                fx=32.0,
+                fy=32.0,
+                cx=15.5,
+                cy=15.5,
+                width_px=32,
+                height_px=32,
+            ),
+            depth_m=np.ones((32, 32), dtype=np.float32),
+            provenance=ObservationProvenance(source_id="test"),
+        )
 
 
 def test_reconstruction_config_runs_minimal_open3d_tsdf_sequence(tmp_path: Path) -> None:
@@ -97,7 +128,6 @@ def test_reconstruction_config_runs_minimal_open3d_tsdf_sequence(tmp_path: Path)
 
     artifacts = backend.run_sequence(
         (_observation() for _ in range(1)),
-        backend_config=config,
         artifact_root=tmp_path / "reference",
     )
 
@@ -123,18 +153,17 @@ def test_open3d_tsdf_backend_rejects_color_integration_without_rgb(tmp_path: Pat
     with pytest.raises(ValueError, match="requires image_rgb"):
         backend.run_sequence(
             [_observation(with_rgb=False)],
-            backend_config=config,
             artifact_root=tmp_path / "reference",
         )
 
 
-def test_rgbd_observation_rejects_mismatched_raster_shapes() -> None:
+def test_observation_rejects_mismatched_raster_shapes() -> None:
     with pytest.raises(ValidationError, match="Expected RGB image shape"):
-        ReconstructionObservation(
+        Observation(
             seq=0,
             timestamp_ns=0,
             T_world_camera=_pose_identity(),
-            camera_intrinsics=CameraIntrinsics(
+            intrinsics=CameraIntrinsics(
                 fx=32.0,
                 fy=32.0,
                 cx=15.5,
@@ -142,6 +171,7 @@ def test_rgbd_observation_rejects_mismatched_raster_shapes() -> None:
                 width_px=32,
                 height_px=32,
             ),
-            image_rgb=np.zeros((16, 16, 3), dtype=np.uint8),
-            depth_map_m=np.ones((32, 32), dtype=np.float32),
+            rgb=np.zeros((16, 16), dtype=np.uint8),
+            depth_m=np.ones((32, 32), dtype=np.float32),
+            provenance=ObservationProvenance(source_id="test"),
         )

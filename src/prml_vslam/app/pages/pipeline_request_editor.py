@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
-from prml_vslam.io.record3d import Record3DTransportId
 from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, build_backend_spec
+from prml_vslam.sources.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.record3d.record3d import Record3DTransportId
 
 from ..models import PipelinePageState, PipelineSourceId
 from ..pipeline_controls import PipelinePageAction, parse_optional_float, parse_optional_int

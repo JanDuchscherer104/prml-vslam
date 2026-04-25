@@ -3,7 +3,7 @@
 This module provides :class:`BaseData`, the canonical low-level base model for
 typed contracts across the repository. Higher-level packages such as
 :mod:`prml_vslam.interfaces`, :mod:`prml_vslam.pipeline`, and
-:mod:`prml_vslam.datasets` build their public DTOs on top of it so validation,
+:mod:`prml_vslam.sources.datasets` build their public DTOs on top of it so validation,
 inspection, and IPC serialization stay consistent.
 """
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.methods.stage.config import SlamStageConfig, VistaSlamBackendConfig
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -13,6 +12,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.stage_cache import ContentFingerprinter, StageCacheKey, StageCacheStore
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
+from prml_vslam.sources.contracts import SequenceManifest
 
 
 def test_content_fingerprint_uses_file_bytes_not_run_root_for_paths_and_artifacts(tmp_path: Path) -> None:

@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.interfaces.ingest import SequenceManifest
 from prml_vslam.pipeline.artifact_inspection import inspect_run_artifacts
 from prml_vslam.pipeline.contracts.events import RunCompleted, RunStarted, RunSubmitted, StageCompleted, StageOutcome
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
@@ -17,6 +16,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_bundle, import_run_bundle
 from prml_vslam.pipeline.sinks.jsonl import JsonlEventSink
+from prml_vslam.sources.contracts import SequenceManifest
 
 
 def test_run_bundle_export_import_relocates_run_metadata(tmp_path: Path) -> None:

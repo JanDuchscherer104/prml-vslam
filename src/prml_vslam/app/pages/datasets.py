@@ -10,7 +10,8 @@ import numpy as np
 import streamlit as st
 
 import prml_vslam.plotting as plots
-from prml_vslam.datasets.advio import (
+from prml_vslam.interfaces import CameraIntrinsics, Observation
+from prml_vslam.sources.datasets.advio import (
     AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
@@ -19,7 +20,7 @@ from prml_vslam.datasets.advio import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
-from prml_vslam.datasets.tum_rgbd import (
+from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDownloadPreset,
     TumRgbdDownloadRequest,
     TumRgbdLocalSceneStatus,
@@ -27,7 +28,6 @@ from prml_vslam.datasets.tum_rgbd import (
     TumRgbdOfflineSample,
     TumRgbdPoseSource,
 )
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket
 from prml_vslam.utils import BaseConfig
 
 from ..advio_controller import (
@@ -698,7 +698,7 @@ def _render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:
 
 def _preview_metrics(snapshot: AdvioPreviewSnapshot) -> tuple[LiveMetric, ...]:
     packet = snapshot.preview_packet
-    loop_index = 0 if packet is None else int(packet.metadata.get("loop_index", 0))
+    loop_index = 0 if packet is None else packet.loop_index
     return (
         ("Status", snapshot.state.value.upper()),
         ("Received Frames", str(snapshot.preview_frame_count)),
@@ -718,12 +718,12 @@ def _preview_caption(snapshot: AdvioPreviewSnapshot) -> str | None:
     return f"Sequence: {snapshot.sequence_label} · Pose Source: {pose_label}"
 
 
-def _render_preview_frame(packet: FramePacket) -> None:
+def _render_preview_frame(packet: Observation) -> None:
     st.markdown("**RGB Frame**")
     st.image(packet.rgb, channels="RGB", clamp=True)
-    if packet.depth is not None:
+    if packet.depth_m is not None:
         st.markdown("**Depth Frame**")
-        st.image(packet.depth, clamp=True)
+        st.image(packet.depth_m, clamp=True)
 
 
 def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
@@ -741,18 +741,18 @@ def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
                 st.warning(snapshot.error_message)
 
 
-def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: FramePacket) -> dict[str, object]:
+def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: Observation) -> dict[str, object]:
     pose = (
         None
-        if packet.pose is None
+        if packet.T_world_camera is None
         else {
-            "qx": packet.pose.qx,
-            "qy": packet.pose.qy,
-            "qz": packet.pose.qz,
-            "qw": packet.pose.qw,
-            "tx": packet.pose.tx,
-            "ty": packet.pose.ty,
-            "tz": packet.pose.tz,
+            "qx": packet.T_world_camera.qx,
+            "qy": packet.T_world_camera.qy,
+            "qz": packet.T_world_camera.qz,
+            "qw": packet.T_world_camera.qw,
+            "tx": packet.T_world_camera.tx,
+            "ty": packet.T_world_camera.ty,
+            "tz": packet.T_world_camera.tz,
         }
     )
     return {
@@ -761,11 +761,9 @@ def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: FramePacket) 
         "pose_source": None if snapshot.pose_source is None else snapshot.pose_source.value,
         "frame_index": packet.seq,
         "timestamp_ns": packet.timestamp_ns,
-        "source_frame_index": packet.metadata.get("source_frame_index"),
-        "loop_index": packet.metadata.get("loop_index", 0),
-        "video_rotation_degrees": packet.metadata.get("video_rotation_degrees", 0),
-        "rgb_path": packet.metadata.get("rgb_path"),
-        "depth_path": packet.metadata.get("depth_path"),
+        "source_frame_index": packet.source_frame_index,
+        "loop_index": packet.loop_index,
+        "video_rotation_degrees": packet.provenance.video_rotation_degrees,
         "pose": pose,
-        "metadata": packet.metadata,
+        "provenance": packet.provenance.compact_payload(),
     }

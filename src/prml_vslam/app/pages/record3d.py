@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.io.record3d import build_record3d_frame_details
+from prml_vslam.interfaces import Observation
+from prml_vslam.sources.record3d.record3d import build_record3d_frame_details
 from prml_vslam.utils.image_utils import normalize_grayscale_image
 
 from ..live_session import (
@@ -108,14 +108,17 @@ def _snapshot_metrics(snapshot: Record3DStreamSnapshot) -> tuple[LiveMetric, ...
     )
 
 
-def _render_frame_preview(packet: FramePacket) -> None:
+def _render_frame_preview(packet: Observation) -> None:
     frame_columns = st.columns(2, gap="large")
     with frame_columns[0]:
         st.markdown("**RGB Frame**")
         st.image(packet.rgb, channels="RGB", clamp=True)
     with frame_columns[1]:
         st.markdown("**Depth Frame**")
-        st.image(normalize_grayscale_image(packet.depth), clamp=True)
+        if packet.depth_m is None:
+            st.info("Depth is not available for this transport.")
+        else:
+            st.image(normalize_grayscale_image(packet.depth_m), clamp=True)
     st.markdown("**Depth Confidence**")
     if packet.confidence is None:
         st.info("Depth confidence is not available for this transport.")
