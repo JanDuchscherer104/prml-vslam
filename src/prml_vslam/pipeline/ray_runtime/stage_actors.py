@@ -9,6 +9,7 @@ from collections import deque
 import numpy as np
 import ray
 
+from prml_vslam.interfaces import Observation
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     put_transient_payload,
@@ -102,7 +103,7 @@ class PacketSourceActor:
                     metadata={"slot": "pointmap"},
                 )
                 self._coordinator.on_packet.remote(
-                    packet=packet,
+                    packet=observation_metadata_for_transport(packet),
                     frame_ref=frame_ref,
                     depth_ref=depth_ref,
                     confidence_ref=confidence_ref,
@@ -129,4 +130,16 @@ class PacketSourceActor:
                 pass
 
 
-__all__ = ["PacketSourceActor"]
+def observation_metadata_for_transport(packet: Observation) -> Observation:
+    """Drop raster payloads that are transported through explicit Ray refs."""
+    return packet.model_copy(
+        update={
+            "rgb": None,
+            "depth_m": None,
+            "confidence": None,
+            "pointmap_xyz": None,
+        }
+    )
+
+
+__all__ = ["PacketSourceActor", "observation_metadata_for_transport"]

@@ -51,7 +51,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
-from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
+from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, observation_metadata_for_transport
 from prml_vslam.pipeline.ray_runtime.substrate import build_runtime_env, prepare_ray_environment
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
@@ -797,6 +797,18 @@ def test_clean_actor_options_keeps_nonempty_resources_dict() -> None:
     assert cleaned == {"num_cpus": 1.0, "resources": {"capture": 1.0}}
 
 
+def test_observation_metadata_for_transport_strips_ref_backed_arrays() -> None:
+    rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+    packet = Observation(seq=1, timestamp_ns=10, rgb=rgb, provenance=ObservationProvenance(source_id="test"))
+
+    metadata = observation_metadata_for_transport(packet)
+
+    assert metadata.rgb is None
+    assert metadata.seq == packet.seq
+    assert metadata.timestamp_ns == packet.timestamp_ns
+    assert packet.rgb is rgb
+
+
 def test_run_coordinator_resolves_materialized_handle_payloads_without_ray_get() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
@@ -1505,7 +1517,7 @@ def test_ray_backend_keeps_inprocess_init_for_pytest_namespaces(
     assert captured["_skip_env_hook"] is True
 
 
-def test_ray_backend_coordinator_placement_is_backend_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ray_backend_create_coordinator_applies_actor_options(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = RayPipelineBackend(namespace="pytest-unit")
     captured: dict[str, Any] = {}
 
@@ -1520,13 +1532,16 @@ def test_ray_backend_coordinator_placement_is_backend_owned(monkeypatch: pytest.
     monkeypatch.setattr(backend, "_shutdown_run", lambda run_id: None)
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.RunCoordinatorActor.options", fake_options)
 
-    backend._create_coordinator("coordinator-placement")
+    backend._create_coordinator(
+        "coordinator-placement",
+        actor_options={"num_cpus": 2.0, "num_gpus": 1.0, "max_restarts": 0, "max_task_retries": 0},
+    )
 
     assert captured == {
         "name": "prml-vslam-run-coordinator-placement",
         "namespace": "pytest-unit",
-        "num_cpus": 1.0,
-        "num_gpus": 0.0,
+        "num_cpus": 2.0,
+        "num_gpus": 1.0,
         "max_restarts": 0,
         "max_task_retries": 0,
     }
@@ -1730,6 +1745,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     )
     snapshot = RunSnapshot(run_id="backend-unit", state=RunState.COMPLETED)
     submitted: list[tuple[str, str | None]] = []
+    coordinator_options: dict[str, Any] = {}
     stopped: list[str] = []
 
     class _Remote:
@@ -1753,13 +1769,20 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
 
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get", lambda value: value)
     monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
-    monkeypatch.setattr(backend, "_create_coordinator", lambda run_id: fake_coordinator)
+
+    def fake_create_coordinator(run_id: str, *, actor_options: dict[str, Any]):
+        coordinator_options.update(actor_options)
+        return fake_coordinator
+
+    monkeypatch.setattr(backend, "_create_coordinator", fake_create_coordinator)
     monkeypatch.setattr(backend, "_coordinator_for", lambda run_id: fake_coordinator)
 
     run_id = backend.submit_run(run_config=run_config, runtime_source="runtime")
 
     assert run_id == "backend-unit"
     assert submitted == [("backend-unit", "runtime")]
+    assert coordinator_options["num_cpus"] == 2.0
+    assert coordinator_options["num_gpus"] == 1.0
     assert backend.get_snapshot(run_id).state is RunState.COMPLETED
     assert backend.get_events(run_id) == []
     assert backend.read_payload(run_id, TransientPayloadRef(handle_id="payload", payload_kind="image")) is not None
@@ -1791,7 +1814,11 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
     created_runs: list[str] = []
 
     monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
-    monkeypatch.setattr(backend, "_create_coordinator", lambda run_id: created_runs.append(run_id))
+    monkeypatch.setattr(
+        backend,
+        "_create_coordinator",
+        lambda run_id, *, actor_options: created_runs.append(run_id),
+    )
 
     with pytest.raises(RuntimeError, match="no runtime is registered yet"):
         backend.submit_run(run_config=run_config)
