@@ -4135,11 +4135,11 @@ Nodes (1): Fully typed app state persisted in Streamlit session storage.
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `StageKey` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 12`?**
-  _High betweenness centrality (0.187) - this node is a cross-community bridge._
+  _High betweenness centrality (0.185) - this node is a cross-community bridge._
 - **Why does `Test package helpers and suites for PRML VSLAM.` connect `Community 5` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
-- **Why does `DatasetId` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
+  _High betweenness centrality (0.103) - this node is a cross-community bridge._
+- **Why does `CameraIntrinsics` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 12`?**
+  _High betweenness centrality (0.049) - this node is a cross-community bridge._
 - **Are the 2285 inferred relationships involving `StageKey` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
   _`StageKey` has 2285 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 982 inferred relationships involving `RunPlan` (e.g. with `TrajectoryEvaluationService` and `Reusable live-preview services for the packaged Streamlit app. Every component o`) actually correct?**
