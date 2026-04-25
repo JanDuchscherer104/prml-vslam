@@ -17,14 +17,14 @@ from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
     TrajectoryEvaluationStageConfig,
 )
-from prml_vslam.methods.stage.config import (
+from prml_vslam.methods.stage.backend_config import (
     BackendConfig,
     BackendConfigValue,
     MethodId,
     SlamOutputPolicy,
-    SlamStageConfig,
     build_slam_backend_config,
 )
+from prml_vslam.methods.stage.config import SlamStageConfig
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
@@ -37,7 +37,6 @@ from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
     SourceBackendConfig,
-    SourceStageConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
@@ -51,6 +50,7 @@ from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
     resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
 )
 from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_list
+from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
 

@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from prml_vslam.interfaces import Observation
-from prml_vslam.protocols.source import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
+from prml_vslam.sources.protocols import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.replay import ObservationStream
 
 

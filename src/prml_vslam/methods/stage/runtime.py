@@ -19,7 +19,7 @@ from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import StreamingSlamBackend
-from prml_vslam.methods.stage.config import BackendConfig, SlamOutputPolicy
+from prml_vslam.methods.stage.backend_config import BackendConfig, SlamOutputPolicy
 from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStreamingStartStageInput
 from prml_vslam.methods.stage.visualization import (
     DEPTH_REF,
@@ -43,6 +43,7 @@ from prml_vslam.pipeline.stages.base.protocols import (
     StreamingStageRuntime,
 )
 from prml_vslam.sources.contracts import SequenceManifest
+from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
 from prml_vslam.utils import FPS_WINDOW, Console, RunArtifactPaths, rolling_fps
 from prml_vslam.utils.serialization import stable_hash
 from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
@@ -146,8 +147,12 @@ class SlamStageRuntime(
         try:
             backend_config = input_payload.backend
             backend = backend_config.setup_target(path_config=input_payload.path_config)
-            slam = backend.run_sequence(
+            observations = iter_sequence_manifest_observations(
                 input_payload.sequence_manifest,
+                max_frames=backend_config.max_frames,
+            )
+            slam = backend.run_observations(
+                observations,
                 input_payload.benchmark_inputs,
                 input_payload.baseline_source,
                 backend_config=backend_config,

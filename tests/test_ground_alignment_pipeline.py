@@ -11,7 +11,7 @@ from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentSt
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.stages import StageKey

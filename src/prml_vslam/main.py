@@ -25,7 +25,7 @@ from rich.panel import Panel
 from rich.table import Table
 from typer.core import TyperCommand
 
-from prml_vslam.methods.stage.config import MethodId
+from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState

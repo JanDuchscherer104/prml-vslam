@@ -1,34 +1,27 @@
-"""Declarative source stage config and source backend factories.
+"""Declarative source backend factories.
 
-This module owns the target source-stage config shape. ``SourceStageConfig``
-describes stage policy, while concrete source backend config variants construct
-dataset, video, or live-source adapters through ``setup_target(...)``.
+Concrete source backend config variants construct dataset, video, or live-source
+adapters through ``setup_target(...)``. Stage policy lives in
+``prml_vslam.sources.stage.config``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field
 
-from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
-from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
-from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.contracts import Record3DTransportId
 from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.sources.materialization import VideoOfflineSequenceSource
+from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
 from prml_vslam.sources.replay import ReplayMode
-from prml_vslam.sources.runtime import SourceRuntime, SourceStageInput
 from prml_vslam.sources.streaming import SampledStreamingSource
 from prml_vslam.utils import FactoryConfig, PathConfig
-from prml_vslam.utils.serialization import stable_hash
 
 
 class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSource]):
@@ -132,7 +125,7 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
     """Configure one live Record3D source adapter.
 
     The source owns transport-level capture for USB or Wi-Fi Preview and emits
-    normalized :class:`prml_vslam.sources.contracts.Observation` values. It
+    normalized :class:`prml_vslam.interfaces.observation.Observation` values. It
     does not own app session state, pipeline stage order, or SLAM backend
     selection.
     """
@@ -177,61 +170,10 @@ SourceBackendConfig: TypeAlias = Annotated[
 ]
 
 
-class SourceStageConfig(StageConfig):
-    """Target source stage policy plus source backend selection.
-
-    Stage policy such as enablement, telemetry, cleanup, and resources lives on
-    the inherited :class:`prml_vslam.pipeline.stages.base.config.StageConfig`.
-    Concrete source construction lives in :attr:`backend` so adding a new source
-    follows the same config-as-factory pattern as methods and reconstruction.
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    stage_key: StageKey | None = StageKey.SOURCE
-    """Canonical source stage key."""
-
-    backend: SourceBackendConfig | None = None
-    """Concrete source backend config that constructs the source adapter."""
-
-    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
-        """Return source-owned normalized input artifacts."""
-        return [context.run_paths.sequence_manifest_path, context.run_paths.benchmark_inputs_path]
-
-    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
-        """Return a lazy source runtime factory bound to the prepared source."""
-        if context.source is None:
-            raise RuntimeError("Source stage runtime construction requires a source adapter.")
-
-        def _factory() -> BaseStageRuntime:
-            return SourceRuntime(source=context.source)
-
-        return _factory
-
-    def build_offline_input(self, context: PipelineExecutionContext) -> SourceStageInput:
-        """Build the narrow source runtime input."""
-        source_backend = self.backend
-        slam_backend = context.run_config.stages.slam.backend
-        return SourceStageInput(
-            artifact_root=context.plan.artifact_root,
-            mode=context.run_config.mode,
-            frame_stride=1 if source_backend is None else source_backend.frame_stride,
-            streaming_max_frames=None if slam_backend is None else slam_backend.max_frames,
-            config_hash=stable_hash(source_backend),
-            input_fingerprint=stable_hash(source_backend),
-        )
-
-    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
-        """Return source config and input fingerprint payloads."""
-        del context
-        return FailureFingerprint(config_payload=self.backend, input_payload=self.backend)
-
-
 __all__ = [
     "AdvioSourceConfig",
     "Record3DSourceConfig",
     "SourceBackendConfig",
-    "SourceStageConfig",
     "TumRgbdSourceConfig",
     "VideoSourceConfig",
 ]

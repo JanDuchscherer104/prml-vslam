@@ -17,7 +17,8 @@ from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.utils import BaseData
 
 

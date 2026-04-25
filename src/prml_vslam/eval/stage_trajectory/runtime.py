@@ -2,33 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from prml_vslam.eval.contracts import DiscoveredRun, EvaluationArtifact, SelectionSnapshot
 from prml_vslam.eval.services import TrajectoryEvaluationService
+from prml_vslam.eval.stage_trajectory.contracts import TrajectoryEvaluationStageInput
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
-from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
-from prml_vslam.utils import BaseData, PathConfig
+from prml_vslam.utils import PathConfig
 from prml_vslam.utils.serialization import stable_hash
-
-
-class TrajectoryEvaluationStageInput(BaseData):
-    """Inputs required to compute repository trajectory metrics."""
-
-    artifact_root: Path
-    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
-    method_id: MethodId | None = None
-    method_label: str = "unknown"
-    sequence_manifest: SequenceManifest
-    benchmark_inputs: PreparedBenchmarkInputs | None = None
-    slam: SlamArtifacts
 
 
 class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationStageInput]):
@@ -157,4 +141,4 @@ def _path_config_for(input_payload: TrajectoryEvaluationStageInput) -> PathConfi
     return PathConfig(artifacts_dir=input_payload.artifact_root.parent)
 
 
-__all__ = ["TrajectoryEvaluationRuntime", "TrajectoryEvaluationStageInput"]
+__all__ = ["TrajectoryEvaluationRuntime"]

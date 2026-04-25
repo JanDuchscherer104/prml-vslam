@@ -20,7 +20,7 @@ from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation,
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage import SlamStageRuntime
-from prml_vslam.methods.stage.config import SlamBackendConfig
+from prml_vslam.methods.stage.backend_config import SlamBackendConfig
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
@@ -65,9 +65,9 @@ from prml_vslam.pipeline.stages.base.contracts import (
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.sources.contracts import SourceStageOutput
-from prml_vslam.sources.visualization import SourceVisualizationAdapter
+from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.stage.contracts import SourceStageOutput
+from prml_vslam.sources.stage.visualization import SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.artifacts import artifact_visualizations
 
@@ -873,8 +873,8 @@ class RunCoordinatorActor:
         visualization_owner = self._run_config
         if visualization_owner is None or not visualization_owner.visualization.log_source_rgb:
             return
-        visualizations = self._source_visualization_adapter.build_packet_items(
-            packet=packet,
+        visualizations = self._source_visualization_adapter.build_observation_items(
+            observation=packet,
             frame_payload_ref=frame_payload_ref,
             depth_payload_ref=depth_payload_ref,
             pointmap_payload_ref=pointmap_payload_ref,

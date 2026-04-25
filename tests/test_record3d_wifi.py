@@ -10,7 +10,7 @@ import numpy as np
 
 import prml_vslam.sources.record3d.wifi_session as wifi_session_module
 from prml_vslam.interfaces import Observation
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
 from prml_vslam.sources.record3d.wifi_packets import (
@@ -276,15 +276,17 @@ def test_record3d_wifi_streaming_source_satisfies_shared_source_protocol(monkeyp
     monkeypatch.setattr(
         wifi_session_module.Record3DWiFiPreviewStreamConfig,
         "setup_target",
-        lambda self: sentinel_stream
-        if (
-            self.device_address,
-            self.frame_timeout_seconds,
-            self.signaling_timeout_seconds,
-            self.setup_timeout_seconds,
-        )
-        == ("myiPhone.local", 1.0, 10.0, 12.0)
-        else None,
+        lambda self: (
+            sentinel_stream
+            if (
+                self.device_address,
+                self.frame_timeout_seconds,
+                self.signaling_timeout_seconds,
+                self.setup_timeout_seconds,
+            )
+            == ("myiPhone.local", 1.0, 10.0, 12.0)
+            else None
+        ),
     )
 
     source = Record3DStreamingSourceConfig(

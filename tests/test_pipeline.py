@@ -32,7 +32,7 @@ from prml_vslam.interfaces import (
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
@@ -71,9 +71,8 @@ from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceSource,
     SequenceManifest,
-    SourceStageOutput,
 )
-from prml_vslam.sources.runtime import SourceStageInput
+from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
@@ -110,17 +109,19 @@ class _FakeVistaBackend:
         self._output_policy = None
         self._artifact_root: Path | None = None
         self._pending_updates: list[SlamUpdate] = []
+        self.observations: list[Observation] = []
 
-    def run_sequence(
+    def run_observations(
         self,
-        sequence: SequenceManifest,
+        observations,
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
         backend_config,
         output_policy,
         artifact_root: Path,
     ) -> SlamArtifacts:
-        del sequence, benchmark_inputs, baseline_source, backend_config
+        self.observations = list(observations)
+        del benchmark_inputs, baseline_source, backend_config
         return _fake_slam_artifacts(
             artifact_root,
             emit_sparse_points=output_policy.emit_sparse_points,
@@ -180,7 +181,7 @@ class _FakeVistaBackend:
 @pytest.fixture(autouse=True)
 def _fake_vista_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "prml_vslam.methods.stage.config.VistaSlamBackendConfig.setup_target",
+        "prml_vslam.methods.stage.backend_config.VistaSlamBackendConfig.setup_target",
         lambda self, *, path_config=None, **_kwargs: _FakeVistaBackend(),
     )
 
@@ -1144,7 +1145,7 @@ def test_run_coordinator_emits_source_stage_failure_before_run_failed(
     coordinator._slam_backend = run_config.stages.slam.backend
     monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        "prml_vslam.sources.runtime.SourceRuntime.run_offline",
+        "prml_vslam.sources.stage.runtime.SourceRuntime.run_offline",
         lambda self, input_payload: (_ for _ in ()).throw(RuntimeError("source boom")),
     )
 

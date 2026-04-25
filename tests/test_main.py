@@ -31,7 +31,7 @@ from prml_vslam.main import (
     plan_run,
     run_config,
 )
-from prml_vslam.methods.stage.config import MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import RunEvent

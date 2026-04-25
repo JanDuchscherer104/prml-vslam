@@ -16,7 +16,7 @@ import numpy as np
 from prml_vslam.interfaces import CameraIntrinsics, Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.stage.config import SlamOutputPolicy, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import SlamOutputPolicy, VistaSlamBackendConfig
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
 from .artifacts import _frame_transform_from_vista_pose, build_vista_artifacts

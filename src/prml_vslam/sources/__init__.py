@@ -6,7 +6,6 @@ from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     Record3DTransportId,
     SequenceManifest,
-    SourceStageOutput,
 )
 from prml_vslam.sources.observation_sequence import FileObservationSequenceLoader, load_observation_sequence_index
 
@@ -16,5 +15,4 @@ __all__ = [
     "PreparedBenchmarkInputs",
     "Record3DTransportId",
     "SequenceManifest",
-    "SourceStageOutput",
 ]

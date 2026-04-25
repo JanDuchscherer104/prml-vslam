@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, FrameTransform, Observation, ObservationProvenance
@@ -16,8 +18,13 @@ class FakeOfflineSource:
     label = "fake-offline"
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
-        del output_dir
-        return SequenceManifest(sequence_id="fake-offline")
+        rgb_dir = output_dir / "fake-rgb"
+        rgb_dir.mkdir(parents=True, exist_ok=True)
+        frame_rgb = np.zeros((8, 8, 3), dtype=np.uint8)
+        cv2.imwrite(str(rgb_dir / "000000.png"), cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+        timestamps_path = output_dir / "fake-timestamps.json"
+        timestamps_path.write_text(json.dumps({"timestamps_ns": [0]}), encoding="utf-8")
+        return SequenceManifest(sequence_id="fake-offline", rgb_dir=rgb_dir, timestamps_path=timestamps_path)
 
 
 class FakePacketStream:

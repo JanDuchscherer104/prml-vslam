@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from prml_vslam.methods.stage.config import (
+from prml_vslam.methods.stage.backend_config import (
     BackendConfig,
     BackendConfigValue,
     Mast3rSlamBackendConfig,
     MethodId,
     SlamBackendConfig,
     SlamOutputPolicy,
-    SlamStageConfig,
     VistaSlamBackendConfig,
     build_slam_backend_config,
 )
+from prml_vslam.methods.stage.config import SlamStageConfig
 from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStreamingStartStageInput
 
 __all__ = [

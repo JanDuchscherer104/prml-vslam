@@ -1,30 +1,16 @@
-"""Source-owned manifest materialization and artifact projection helpers."""
+"""Source-owned manifest materialization helpers."""
 
 from __future__ import annotations
 
 import json
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.pipeline.contracts.mode import PipelineMode
-from prml_vslam.sources.contracts import SequenceManifest, SourceStageOutput
-from prml_vslam.sources.visualization import (
-    observation_sequence_artifact_key,
-    reference_cloud_artifact_key,
-    reference_cloud_metadata_artifact_key,
-    reference_point_cloud_sequence_index_artifact_key,
-    reference_point_cloud_sequence_payload_artifact_key,
-    reference_point_cloud_sequence_trajectory_artifact_key,
-    reference_trajectory_artifact_key,
-)
+from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import write_json
 from prml_vslam.utils.video_frames import extract_video_frames
-
-if TYPE_CHECKING:
-    from prml_vslam.sources.runtime import SourceStageInput
 
 _CONSOLE = Console(__name__).child("SourceMaterialization")
 
@@ -51,48 +37,11 @@ class VideoOfflineSequenceSource:
         )
 
 
-def source_artifacts(*, run_paths: RunArtifactPaths, output: SourceStageOutput) -> dict[str, ArtifactRef]:
-    """Project source output contracts into durable stage artifact refs."""
-    sequence_manifest = output.sequence_manifest
-    artifacts = {
-        "sequence_manifest": artifact_ref(run_paths.sequence_manifest_path, kind="json"),
-    }
-    for key, path, kind in (
-        ("rgb_dir", sequence_manifest.rgb_dir, "dir"),
-        ("timestamps", sequence_manifest.timestamps_path, "json"),
-        ("intrinsics", sequence_manifest.intrinsics_path, "yaml"),
-        ("rotation_metadata", sequence_manifest.rotation_metadata_path, "json"),
-    ):
-        if path is not None:
-            artifacts[key] = artifact_ref(path, kind=kind)
-    if output.benchmark_inputs is not None:
-        artifacts["benchmark_inputs"] = artifact_ref(run_paths.benchmark_inputs_path, kind="json")
-        for reference in output.benchmark_inputs.reference_trajectories:
-            artifacts[reference_trajectory_artifact_key(reference)] = artifact_ref(reference.path, kind="tum")
-        for reference in output.benchmark_inputs.reference_clouds:
-            artifacts[reference_cloud_artifact_key(reference)] = artifact_ref(reference.path, kind="ply")
-            artifacts[reference_cloud_metadata_artifact_key(reference)] = artifact_ref(
-                reference.metadata_path,
-                kind="json",
-            )
-        for reference in output.benchmark_inputs.reference_point_cloud_sequences:
-            for key_func, path, kind in (
-                (reference_point_cloud_sequence_index_artifact_key, reference.index_path, "csv"),
-                (reference_point_cloud_sequence_trajectory_artifact_key, reference.trajectory_path, "tum"),
-                (reference_point_cloud_sequence_payload_artifact_key, reference.payload_root, "dir"),
-            ):
-                artifacts[key_func(reference)] = artifact_ref(path, kind=kind)
-        for reference in output.benchmark_inputs.observation_sequences:
-            artifacts[observation_sequence_artifact_key(reference)] = artifact_ref(
-                reference.index_path,
-                kind="observation_sequence",
-            )
-    return artifacts
-
-
 def materialize_manifest(
     *,
-    input_payload: SourceStageInput,
+    mode: PipelineMode,
+    frame_stride: int,
+    streaming_max_frames: int | None,
     prepared_manifest: SequenceManifest,
     run_paths: RunArtifactPaths,
 ) -> SequenceManifest:
@@ -102,12 +51,12 @@ def materialize_manifest(
     rgb_dir = prepared_manifest.rgb_dir
     timestamps_path = prepared_manifest.timestamps_path
     intrinsics_path = prepared_manifest.intrinsics_path
-    frame_stride = input_payload.frame_stride if prepared_manifest.video_path is not None else 1
+    frame_stride = frame_stride if prepared_manifest.video_path is not None else 1
     cached_rgb_dir: Path | None = None
     fallback_timestamps_ns: list[int] = []
 
     if prepared_manifest.video_path is not None and rgb_dir is None:
-        max_frames = input_payload.streaming_max_frames if input_payload.mode is PipelineMode.STREAMING else None
+        max_frames = streaming_max_frames if mode is PipelineMode.STREAMING else None
         cached_rgb_dir = _check_extraction_cache(
             video_path=prepared_manifest.video_path,
             output_dir=run_paths.input_frames_dir,

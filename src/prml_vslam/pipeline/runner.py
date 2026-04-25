@@ -12,7 +12,8 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime, StreamingStageRuntime
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest, SourceStageOutput
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.serialization import stable_hash
 

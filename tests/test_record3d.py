@@ -9,7 +9,7 @@ import pytest
 
 import prml_vslam.sources.record3d.record3d as record3d_module
 import prml_vslam.sources.record3d.source as record3d_source_module
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.record3d.record3d import (
     Record3DDeviceType,
     Record3DStreamConfig,

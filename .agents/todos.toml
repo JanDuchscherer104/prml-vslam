@@ -77,8 +77,8 @@ loc_min = 70
 loc_expected = 170
 loc_max = 360
 files = [
-    "src/prml_vslam/pipeline/sinks/rerun.py",
-    "src/prml_vslam/pipeline/sinks/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
     "src/prml_vslam/visualization/rerun.py",
     "src/prml_vslam/visualization/README.md",
     "src/prml_vslam/visualization/REQUIREMENTS.md",
@@ -94,8 +94,8 @@ acceptance = [
     "The final fix keeps camera-local pointmaps camera-local until composed through the intended transform hierarchy and does not rely on viewer-only basis flips that contradict the chosen repo policy.",
 ]
 sources = [
-    "src/prml_vslam/pipeline/sinks/rerun.py",
-    "src/prml_vslam/pipeline/sinks/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
     "src/prml_vslam/visualization/rerun.py",
     "src/prml_vslam/visualization/REQUIREMENTS.md",
     ".agents/AGENTS_INTERNAL_DB.md",
@@ -106,183 +106,142 @@ sources = [
 ]
 
 [[todos]]
-id = "TODO-0063"
-title = "Complete WP-09C live events and handle cutover after the mid-flight DTO move"
-status = "in_progress"
-priority = "high"
-issue_ids = [
-    "ISSUE-0063",
-]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 180
-loc_expected = 420
-loc_max = 850
-files = [
-    "src/prml_vslam/methods/contracts.py",
-    "src/prml_vslam/pipeline/contracts/events.py",
-    "src/prml_vslam/pipeline/ray_runtime/common.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-    "src/prml_vslam/pipeline/ray_runtime/stage_actors.py",
-    "src/prml_vslam/pipeline/backend.py",
-    "src/prml_vslam/pipeline/backend_ray.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "Production imports remain green after the durable telemetry event removal.",
-    "Coordinator packet handling accepts `FramePacket` plus `TransientPayloadRef` metadata and projects live source/SLAM state only through `StageRuntimeUpdate`.",
-    "Durable `RunEvent` remains lifecycle/provenance-only and JSONL no longer filters on `EventTier`.",
-    "`ArrayHandle`, `PreviewHandle`, `translate_slam_update()`, and `LegacySlamUpdate` are removed from production and tests.",
-    "Current-facing docs and tests no longer describe backend-event translation as the live-observer path.",
-    "Rerun and app payload reads use `read_payload()` with `TransientPayloadRef` only.",
-]
-sources = [
-    "docs/architecture/pipeline-refactor-work-packages/WP-09C-live-events-handles-cutover.md",
-    "src/prml_vslam/pipeline/contracts/events.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-]
-
-[[todos]]
-id = "TODO-0064"
-title = "Complete WP-09A RunConfig launch cutover and retire RunRequest compatibility"
+id = "TODO-0070"
+title = "WP-C — Implement real remote stage runtime support via RayStageRuntimeHandle"
 status = "open"
 priority = "high"
 issue_ids = [
-    "ISSUE-0063",
+    "ISSUE-0066",
 ]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 260
-loc_expected = 700
-loc_max = 1400
+loc_min = 90
+loc_expected = 180
+loc_max = 400
 files = [
-    "src/prml_vslam/pipeline/config.py",
-    "src/prml_vslam/pipeline/contracts/request.py",
-    "src/prml_vslam/pipeline/contracts/plan.py",
-    "src/prml_vslam/pipeline/stage_registry.py",
-    "src/prml_vslam/pipeline/source_resolver.py",
-    "src/prml_vslam/pipeline/backend.py",
-    "src/prml_vslam/pipeline/backend_ray.py",
-    "src/prml_vslam/pipeline/run_service.py",
-    "src/prml_vslam/main.py",
-    "src/prml_vslam/app/pipeline_controls.py",
-    "tests/test_pipeline_config.py",
-    "tests/test_main.py",
-    "tests/test_app.py",
+    "src/prml_vslam/pipeline/stages/base/proxy.py",
+    "src/prml_vslam/pipeline/runtime_manager.py",
 ]
 acceptance = [
-    "App, CLI, `RunService`, and `PipelineBackend` submit `RunConfig` or compiled `RunPlan`, never `RunRequest`.",
-    "`StageRegistry`, `OfflineSourceResolver`, request source variants, request SLAM config, placement projection helpers, `from_run_request()`, `to_run_request()`, `build_run_request()`, and `load_run_request_toml()` are removed from production.",
-    "All committed `.configs/pipelines/*.toml` parse as target `RunConfig` and `RunPlan` contains target public stage keys.",
+    "RayStageRuntimeHandle is implemented and supports remote actor invocation.",
+    "RuntimeManager can construct either local or remote runtime handles based on config.",
+    "Smoke test verifies one stage running on a remote Ray actor with status reporting.",
 ]
 sources = [
-    "docs/architecture/pipeline-refactor-work-packages/WP-09A-target-config-launch-cutover.md",
-    "docs/architecture/pipeline-dto-migration-ledger.md",
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
 ]
 
 [[todos]]
-id = "TODO-0065"
-title = "Complete WP-09D snapshot and app preview cleanup"
+id = "TODO-0071"
+title = "WP-D — Shrink RunCoordinatorActor by extracting collaborators"
 status = "open"
 priority = "high"
 issue_ids = [
-    "ISSUE-0063",
+    "ISSUE-0068",
 ]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 120
-loc_expected = 300
-loc_max = 650
+loc_min = 200
+loc_expected = 450
+loc_max = 800
 files = [
-    "src/prml_vslam/pipeline/contracts/runtime.py",
-    "src/prml_vslam/pipeline/snapshot_projector.py",
-    "src/prml_vslam/app/pipeline_controller.py",
-    "src/prml_vslam/app/preview_runtime.py",
-    "src/prml_vslam/app/services.py",
-    "src/prml_vslam/app/pages/datasets.py",
-    "src/prml_vslam/app/pages/record3d.py",
-    "tests/test_app_services.py",
-    "tests/test_app.py",
-    "tests/test_pipeline.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/pipeline/ray_runtime/event_log.py",
+    "src/prml_vslam/pipeline/ray_runtime/payload_store.py",
 ]
 acceptance = [
-    "No app, CLI, or test caller reads `RunSnapshot.stage_status` or `RunSnapshot.stage_progress`.",
-    "Pipeline UI derives status from `stage_outcomes`, `stage_runtime_status`, plan rows, and current-stage context.",
-    "App preview-only stale names such as `latest_packet`, `received_frames`, and `trajectory_positions_xyz` are renamed to preview-specific fields so WP-10 stale greps are unambiguous.",
+    "Coordinator size is reduced by at least 300 LOC.",
+    "EventLog, PayloadStore, and ObserverRouter are extracted into testable collaborators.",
+    "Pipeline execution remains correct across all modes.",
 ]
 sources = [
-    "docs/architecture/pipeline-refactor-work-packages/WP-09D-app-cli-target-snapshot-cutover.md",
-    "src/prml_vslam/pipeline/contracts/runtime.py",
-    "src/prml_vslam/app/preview_runtime.py",
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
 ]
 
 [[todos]]
-id = "TODO-0066"
-title = "Clean up ArtifactRef documentation after ownership migration"
+id = "TODO-0072"
+title = "WP-E — Simplify Rerun policy with structured roles and intent-based dispatch"
 status = "open"
 priority = "medium"
 issue_ids = [
-    "ISSUE-0063",
+    "ISSUE-0067",
 ]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 10
-loc_expected = 35
-loc_max = 90
+loc_min = 120
+loc_expected = 280
+loc_max = 500
 files = [
-    "src/prml_vslam/pipeline/contracts/provenance.py",
-    "src/prml_vslam/interfaces/slam.py",
-    "src/prml_vslam/interfaces/__init__.py",
-    "src/prml_vslam/interfaces/visualization.py",
-    "src/prml_vslam/methods/README.md",
-    "tests/test_package_exports.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/contracts.py",
 ]
 acceptance = [
-    "`ArtifactRef` is owned and exported by `pipeline.contracts.provenance`.",
-    "`interfaces.slam` keeps only `SlamArtifacts` and does not export generic artifact refs or live method DTOs.",
-    "Source and tests import `ArtifactRef` from the provenance owner.",
-    "Current-facing docs no longer point implementers at `interfaces.slam.ArtifactRef` or describe `ArtifactRef` as SLAM-owned.",
+    "VisualizationRole is introduced to replace string constants.",
+    "RerunLoggingPolicy size is reduced and it no longer has stage-specific branches.",
+    "All existing visualization modalities (RGB, Depth, Points, Trajectory) still function correctly.",
 ]
 sources = [
-    "docs/architecture/pipeline-dto-migration-ledger.md",
-    "docs/architecture/pipeline-stage-refactor-target.md",
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
 ]
 
 [[todos]]
-id = "TODO-0067"
-title = "Perform final WP-10 stale-symbol sweep and TargetStageKey to StageKey rename"
+id = "TODO-0073"
+title = "WP-F — Decompose target architecture doc into package-local REQUIREMENTS.md"
 status = "open"
 priority = "high"
 issue_ids = [
-    "ISSUE-0063",
+    "ISSUE-0064",
 ]
-wip_branch = "codex/streaming-execution-architecture"
-wip_worktree = "/home/jandu/repos/prml-vslam"
-loc_min = 150
-loc_expected = 360
-loc_max = 800
+loc_min = 40
+loc_expected = 100
+loc_max = 200
 files = [
-    "src/prml_vslam/pipeline/contracts/stages.py",
-    "src/prml_vslam/pipeline/config.py",
-    "src/prml_vslam/pipeline/README.md",
+    "docs/architecture/pipeline-stage-refactor-target.md",
     "src/prml_vslam/*/REQUIREMENTS.md",
-    "tests/",
 ]
 acceptance = [
-    "`TargetStageKey` is renamed to canonical `StageKey` only after blockers are removed.",
-    "Old current-stage enum values and aliases are removed from production outputs.",
-    "Stale-symbol greps are clean for retired request/config/event/handle/snapshot names outside historical docs and completion notes.",
-    "`make ci` passes before the final cleanup commit.",
+    "Authoritative rules are moved to domain package REQUIREMENTS.md files.",
+    "The target doc is marked as historical.",
+    "Grep check confirms no stale terms (e.g., StageCatalog) in live REQUIREMENTS docs.",
 ]
 sources = [
-    "docs/architecture/pipeline-refactor-work-packages/WP-10-migration-removal.md",
-    "docs/architecture/pipeline-dto-migration-ledger.md",
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    ".agents/work/post-wp10-simplification/032-review-gpt-5.5pro.md",
+]
+
+[[todos]]
+id = "TODO-0074"
+title = "Constrain StageRuntimeUpdate semantic events to a minimal live event contract"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0070",
+]
+loc_min = 20
+loc_expected = 60
+loc_max = 140
+files = [
+    "src/prml_vslam/pipeline/stages/base/contracts.py",
+    "src/prml_vslam/methods/contracts.py",
+    "src/prml_vslam/interfaces/alignment.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "tests/test_pipeline_stage_contracts.py",
+    "tests/test_slam_stage_runtime.py",
+]
+acceptance = [
+    "StageRuntimeUpdate.semantic_events no longer accepts arbitrary BaseData.",
+    "SLAM updates and ground-alignment metadata still cross the live-update boundary with explicit event-kind semantics.",
+    "Rerun policy and sink tests cover the new event contract without adding a pipeline-owned semantic wrapper for every domain payload.",
+]
+sources = [
+    ".agents/work/post-wp10-simplification/031-review-gpt-5.5pro.md",
+    "src/prml_vslam/pipeline/stages/base/contracts.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
 ]
 
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-23"
-source = "Seeded from validated review findings, then expanded with the current-state import of the older PR15 review, the 2026-04-06 merged re-review of the surviving PR15 findings, the 2026-04-15 architecture simplification review, the Pipeline page helper cleanup, the 2026-04-16 streaming execution state review, the 2026-04-16 Rerun integration review, the 2026-04-16 current-worktree Streamlit/Ray test review, the 2026-04-16 validated Streamlit ViSTA request round-trip bug, the 2026-04-17 anti-pattern review covering typed seam erosion, ViSTA integration hygiene, duplicate transform DTOs, and leaf-module ownership drift, the 2026-04-17 repo inspection pass mapping those findings to concrete `prml_vslam` module seams, the 2026-04-17 follow-up pipeline refactor review persisting coordinator restart, stage-failure, terminal-state, placement-policy, and Rerun timeline defects, the 2026-04-18 Rerun point-cloud/world-frame regression audit against the current sink, persisted repo memory, the repo-local ViSTA reference, the 2026-04-23 WP-10 blocker inventory after the partial migration cutover, and the 2026-04-23 stabilization pass narrowing active blockers after import smoke turned green."
+updated_on = "2026-04-25"
+source = "Seeded from validated review findings"
 active_collection = "todos"
 loc_unit = "lines"

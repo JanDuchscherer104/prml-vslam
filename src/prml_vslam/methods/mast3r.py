@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import SlamBackend
-from prml_vslam.methods.stage.config import (
+from prml_vslam.methods.stage.backend_config import (
     Mast3rSlamBackendConfig,
     MethodId,
     SlamBackendConfig,
@@ -51,9 +52,9 @@ class Mast3rSlamBackend(SlamBackend):
         """Fail because MASt3R streaming execution is not implemented."""
         raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
 
-    def run_sequence(
+    def run_observations(
         self,
-        sequence: SequenceManifest,
+        observations: Iterable[Observation],
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
@@ -61,7 +62,7 @@ class Mast3rSlamBackend(SlamBackend):
         artifact_root: Path,
     ) -> SlamArtifacts:
         """Fail because MASt3R offline execution is not implemented."""
-        del sequence, benchmark_inputs, baseline_source, backend_config, output_policy, artifact_root
+        del observations, benchmark_inputs, baseline_source, backend_config, output_policy, artifact_root
         raise RuntimeError("MASt3R-SLAM is not executable in this repository yet.")
 
 

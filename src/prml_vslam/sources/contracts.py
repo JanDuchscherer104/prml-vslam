@@ -207,13 +207,6 @@ class PreparedBenchmarkInputs(BaseData):
         return next(iter(self.observation_sequences), None)
 
 
-class SourceStageOutput(BaseData):
-    """Bundle the normalized source result for downstream stages."""
-
-    sequence_manifest: SequenceManifest
-    benchmark_inputs: PreparedBenchmarkInputs | None = None
-
-
 __all__ = [
     "AdvioManifestAssets",
     "AdvioRawPoseRefs",
@@ -226,5 +219,4 @@ __all__ = [
     "ReferenceTrajectoryRef",
     "Record3DTransportId",
     "SequenceManifest",
-    "SourceStageOutput",
 ]

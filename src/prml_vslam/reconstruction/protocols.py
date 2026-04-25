@@ -8,6 +8,7 @@ reconstruction-native state or log directly to Rerun.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -29,6 +30,7 @@ class OfflineReconstructionBackend(Protocol):
 
     method_id: ReconstructionMethodId
 
+    @abstractmethod
     def run_sequence(
         self,
         observations: Iterable[Observation],
@@ -45,6 +47,7 @@ class OfflineReconstructionBackend(Protocol):
         Returns:
             Durable reconstruction artifacts and side metadata.
         """
+        ...
 
 
 __all__ = ["OfflineReconstructionBackend"]
