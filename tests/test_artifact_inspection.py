@@ -122,8 +122,8 @@ def test_inspect_run_artifacts_projects_events_and_typed_metadata(tmp_path: Path
     assert inspection.stage_manifests == stage_manifests
     assert inspection.reconstruction_metadata == reconstruction_metadata
     assert inspection.event_count == 4
-    assert any(row.name == "trajectory_path" and row.exists for row in inspection.canonical_paths)
-    assert any(row.stage_id == "slam" and row.name == "dense_points_ply" for row in inspection.stage_output_paths)
+    assert any(row["name"] == "trajectory_path" and row["exists"] for row in inspection.canonical_paths)
+    assert any(row["stage_id"] == "slam" and row["name"] == "dense_points_ply" for row in inspection.stage_output_paths)
 
 
 def test_inspect_run_artifacts_reports_input_inventory_and_attempts(tmp_path: Path) -> None:

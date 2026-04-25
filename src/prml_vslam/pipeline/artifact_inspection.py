@@ -36,6 +36,8 @@ SnapshotUpdateValue: TypeAlias = (
     | SlamArtifacts
     | GroundAlignmentMetadata
 )
+ArtifactRowValue: TypeAlias = str | bool | int | Path | None
+ArtifactRow: TypeAlias = dict[str, ArtifactRowValue]
 BaseDataT = TypeVar("BaseDataT", bound=BaseData)
 AdapterT = TypeVar("AdapterT")
 
@@ -71,54 +73,6 @@ class RunArtifactCandidate(BaseData):
 
     label: str
     """Compact label suitable for UI selectors."""
-
-
-class ArtifactFileRow(BaseData):
-    """One file or directory discovered under an artifact root."""
-
-    relative_path: str
-    """Path relative to the selected artifact root."""
-
-    path: Path
-    """Absolute filesystem path."""
-
-    kind: str
-    """Filesystem entry kind."""
-
-    size_bytes: int | None = None
-    """File size in bytes, when applicable."""
-
-    size_label: str = ""
-    """Human-readable file size."""
-
-
-class ArtifactPathRow(BaseData):
-    """Existence and size information for one named artifact path."""
-
-    name: str
-    """Path label."""
-
-    path: Path
-    """Absolute filesystem path."""
-
-    exists: bool
-    """Whether the path exists."""
-
-    kind: str
-    """Existing filesystem kind, or `missing`."""
-
-    size_bytes: int | None = None
-    """File size in bytes, when this is an existing file."""
-
-    size_label: str = ""
-    """Human-readable file size."""
-
-
-class StageOutputPathRow(ArtifactPathRow):
-    """One output path declared by a stage manifest."""
-
-    stage_id: str
-    """Stage that declared this output."""
 
 
 class InputArtifactDiagnostics(BaseData):
@@ -222,13 +176,13 @@ class RunArtifactInspection(BaseData):
     attempts: list[RunAttemptSummary] = Field(default_factory=list)
     """Run attempts projected from the persisted event log."""
 
-    canonical_paths: list[ArtifactPathRow] = Field(default_factory=list)
+    canonical_paths: list[ArtifactRow] = Field(default_factory=list)
     """Canonical paths from :class:`RunArtifactPaths` with existence metadata."""
 
-    stage_output_paths: list[StageOutputPathRow] = Field(default_factory=list)
+    stage_output_paths: list[ArtifactRow] = Field(default_factory=list)
     """Actual output paths declared by persisted stage manifests."""
 
-    file_inventory: list[ArtifactFileRow] = Field(default_factory=list)
+    file_inventory: list[ArtifactRow] = Field(default_factory=list)
     """Shallow filesystem inventory under the selected artifact root."""
 
     load_errors: list[str] = Field(default_factory=list)
@@ -391,66 +345,55 @@ def _derive_slam_artifacts(
     )
 
 
-def _canonical_path_rows(run_paths: RunArtifactPaths) -> list[ArtifactPathRow]:
+def _canonical_path_rows(run_paths: RunArtifactPaths) -> list[ArtifactRow]:
     return [_path_row(name=field_name, path=getattr(run_paths, field_name)) for field_name in _CANONICAL_PATH_FIELDS]
 
 
-def _stage_output_path_rows(stage_manifests: list[StageManifest]) -> list[StageOutputPathRow]:
-    rows: list[StageOutputPathRow] = []
+def _stage_output_path_rows(stage_manifests: list[StageManifest]) -> list[ArtifactRow]:
+    rows: list[ArtifactRow] = []
     for manifest in stage_manifests:
         for name, path in sorted(manifest.output_paths.items()):
-            base_row = _path_row(name=name, path=path)
-            rows.append(
-                StageOutputPathRow(
-                    stage_id=manifest.stage_id.value,
-                    name=base_row.name,
-                    path=base_row.path,
-                    exists=base_row.exists,
-                    kind=base_row.kind,
-                    size_bytes=base_row.size_bytes,
-                    size_label=base_row.size_label,
-                )
-            )
+            rows.append({"stage_id": manifest.stage_id.value, **_path_row(name=name, path=path)})
     return rows
 
 
-def _file_inventory(root: Path) -> list[ArtifactFileRow]:
+def _file_inventory(root: Path) -> list[ArtifactRow]:
     if not root.exists():
         return []
-    rows: list[ArtifactFileRow] = []
+    rows: list[ArtifactRow] = []
     for path in sorted(item for item in root.rglob("*") if len(item.relative_to(root).parts) <= 3):
         relative_path = path.relative_to(root).as_posix()
         if path.is_dir():
-            rows.append(ArtifactFileRow(relative_path=relative_path, path=path.resolve(), kind="dir"))
+            rows.append({"relative_path": relative_path, "path": path.resolve(), "kind": "dir"})
             continue
         size_bytes = path.stat().st_size
         rows.append(
-            ArtifactFileRow(
-                relative_path=relative_path,
-                path=path.resolve(),
-                kind=path.suffix.lstrip(".") or "file",
-                size_bytes=size_bytes,
-                size_label=_format_size(size_bytes),
-            )
+            {
+                "relative_path": relative_path,
+                "path": path.resolve(),
+                "kind": path.suffix.lstrip(".") or "file",
+                "size_bytes": size_bytes,
+                "size_label": _format_size(size_bytes),
+            }
         )
     return rows
 
 
-def _path_row(*, name: str, path: Path) -> ArtifactPathRow:
+def _path_row(*, name: str, path: Path) -> ArtifactRow:
     resolved = path.expanduser().resolve()
     if not resolved.exists():
-        return ArtifactPathRow(name=name, path=resolved, exists=False, kind="missing")
+        return {"name": name, "path": resolved, "exists": False, "kind": "missing"}
     if resolved.is_dir():
-        return ArtifactPathRow(name=name, path=resolved, exists=True, kind="dir")
+        return {"name": name, "path": resolved, "exists": True, "kind": "dir"}
     size_bytes = resolved.stat().st_size
-    return ArtifactPathRow(
-        name=name,
-        path=resolved,
-        exists=True,
-        kind=resolved.suffix.lstrip(".") or "file",
-        size_bytes=size_bytes,
-        size_label=_format_size(size_bytes),
-    )
+    return {
+        "name": name,
+        "path": resolved,
+        "exists": True,
+        "kind": resolved.suffix.lstrip(".") or "file",
+        "size_bytes": size_bytes,
+        "size_label": _format_size(size_bytes),
+    }
 
 
 def _format_size(size_bytes: int) -> str:
@@ -553,13 +496,11 @@ def _summarize_attempt(index: int, events: list[RunEvent]) -> RunAttemptSummary:
 
 
 __all__ = [
-    "ArtifactFileRow",
-    "ArtifactPathRow",
+    "ArtifactRow",
     "InputArtifactDiagnostics",
     "RunArtifactCandidate",
     "RunArtifactInspection",
     "RunAttemptSummary",
-    "StageOutputPathRow",
     "discover_run_artifact_roots",
     "inspect_run_artifacts",
 ]
