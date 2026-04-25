@@ -196,8 +196,6 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `StageAvailability` | `pipeline.contracts.stages` | Collapse target availability into `RunPlanStage.available` and `availability_reason`; keep while current registry uses it. | pipeline migration | Planning diagnostics tests. |
 | `TransportModel` | `pipeline.contracts.transport` | Keep current transport-safe base for events/snapshots until target contracts land. | pipeline migration | Transport serialization tests. |
 | `RuntimeStageDriver` | `pipeline.ray_runtime.stage_program` | Replace with runtime manager/proxy protocol hooks; keep while current streaming SLAM driver hooks remain. | pipeline migration | Runtime skeleton and streaming tests. |
-| `FrameSample` | `pipeline.workspace` | Keep workspace-local helper DTO. | pipeline workspace | Workspace/materialization tests. |
-| `CaptureManifest` | `pipeline.workspace` | Keep workspace-local helper DTO. | pipeline workspace | Workspace/materialization tests. |
 
 ### Additional Kept Shared, Domain, And Protocol Symbols
 
