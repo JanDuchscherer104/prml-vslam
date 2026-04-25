@@ -7,6 +7,7 @@ import logging
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -251,28 +252,24 @@ class RerunLoggingPolicy:
             if reconstruction_id == "slam"
             else f"world/reconstruction/{reconstruction_id}/point_cloud"
         )
-        try:
-            self.log_pointcloud_ply(
-                stream,
-                entity_path=entity_path,
-                path=artifact.path,
-            )
-        except Exception as exc:
-            _LOGGER.warning("Skipping reconstruction point cloud artifact '%s': %s", artifact.path, exc)
+        self._log_pointcloud_ply_artifact(
+            stream,
+            artifact_path=artifact.path,
+            entity_path=entity_path,
+            warning_label="reconstruction point cloud",
+        )
 
     def _log_slam_sim3_aligned_point_cloud_item(self, stream, item: VisualizationItem) -> None:
         artifact = item.artifact_refs.get(POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
         target_frame = _entity_token(str(item.metadata.get("target_frame") or "advio_gt_world"))
-        try:
-            self.log_pointcloud_ply(
-                stream,
-                entity_path=f"world/overlays/{target_frame}/vista/sim3_aligned/point_cloud",
-                path=artifact.path,
-            )
-        except Exception as exc:
-            _LOGGER.warning("Skipping Sim(3)-aligned SLAM point cloud artifact '%s': %s", artifact.path, exc)
+        self._log_pointcloud_ply_artifact(
+            stream,
+            artifact_path=artifact.path,
+            entity_path=f"world/overlays/{target_frame}/vista/sim3_aligned/point_cloud",
+            warning_label="Sim(3)-aligned SLAM point cloud",
+        )
 
     def _log_source_reference_point_cloud_item(self, stream, item: VisualizationItem) -> None:
         artifact = item.artifact_refs.get(SOURCE_POINT_CLOUD_ARTIFACT)
@@ -289,16 +286,12 @@ class RerunLoggingPolicy:
             if point_count is not None and skipped_payloads is not None
             else ""
         )
-        try:
-            self.log_pointcloud_ply(
-                stream,
-                entity_path=(
-                    f"world/reference/{target_frame}/{reference_source}/{coordinate_status}{stats_segment}/point_cloud"
-                ),
-                path=artifact.path,
-            )
-        except Exception as exc:
-            _LOGGER.warning("Skipping source reference point cloud artifact '%s': %s", artifact.path, exc)
+        self._log_pointcloud_ply_artifact(
+            stream,
+            artifact_path=artifact.path,
+            entity_path=f"world/reference/{target_frame}/{reference_source}/{coordinate_status}{stats_segment}/point_cloud",
+            warning_label="source reference point cloud",
+        )
 
     def _log_reconstruction_mesh_item(self, stream, item: VisualizationItem) -> None:
         if item.role != ROLE_RECONSTRUCTION_MESH:
@@ -307,14 +300,12 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         reconstruction_id = str(item.metadata.get("reconstruction_id") or "reference")
-        try:
-            self.log_mesh_ply(
-                stream,
-                entity_path=f"world/reconstruction/{reconstruction_id}/mesh",
-                path=artifact.path,
-            )
-        except Exception as exc:
-            _LOGGER.warning("Skipping reconstruction mesh artifact '%s': %s", artifact.path, exc)
+        self._log_mesh_ply_artifact(
+            stream,
+            artifact_path=artifact.path,
+            entity_path=f"world/reconstruction/{reconstruction_id}/mesh",
+            warning_label="reconstruction mesh",
+        )
 
     def _log_trajectory_item(self, stream, item: VisualizationItem) -> None:
         if item.role == ROLE_SOURCE_REFERENCE_TRAJECTORY:
@@ -335,16 +326,12 @@ class RerunLoggingPolicy:
         reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
         coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "source_native"))
         target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
-        try:
-            trajectory = load_tum_trajectory(artifact.path)
-            self.log_line_strip3d(
-                stream,
-                entity_path=f"world/reference/{target_frame}/{reference_source}/{coordinate_status}/trajectory",
-                positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float32),
-                static=True,
-            )
-        except Exception as exc:
-            _LOGGER.warning("Skipping source reference trajectory artifact '%s': %s", artifact.path, exc)
+        self._log_tum_trajectory_artifact(
+            stream,
+            artifact_path=artifact.path,
+            entity_path=f"world/reference/{target_frame}/{reference_source}/{coordinate_status}/trajectory",
+            warning_label="source reference trajectory",
+        )
 
     def _log_slam_trajectory_artifact_item(self, stream, item: VisualizationItem) -> None:
         artifact = item.artifact_refs.get(TRAJECTORY_ARTIFACT)
@@ -356,8 +343,49 @@ class RerunLoggingPolicy:
             if item.role == ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT
             else f"world/overlays/{target_frame}/vista/sim3_aligned/trajectory"
         )
+        self._log_tum_trajectory_artifact(
+            stream,
+            artifact_path=artifact.path,
+            entity_path=entity_path,
+            warning_label="SLAM trajectory",
+        )
+
+    def _log_pointcloud_ply_artifact(
+        self,
+        stream,
+        *,
+        artifact_path: Path,
+        entity_path: str,
+        warning_label: str,
+    ) -> None:
         try:
-            trajectory = load_tum_trajectory(artifact.path)
+            self.log_pointcloud_ply(stream, entity_path=entity_path, path=artifact_path)
+        except Exception as exc:
+            _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
+
+    def _log_mesh_ply_artifact(
+        self,
+        stream,
+        *,
+        artifact_path: Path,
+        entity_path: str,
+        warning_label: str,
+    ) -> None:
+        try:
+            self.log_mesh_ply(stream, entity_path=entity_path, path=artifact_path)
+        except Exception as exc:
+            _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
+
+    def _log_tum_trajectory_artifact(
+        self,
+        stream,
+        *,
+        artifact_path: Path,
+        entity_path: str,
+        warning_label: str,
+    ) -> None:
+        try:
+            trajectory = load_tum_trajectory(artifact_path)
             self.log_line_strip3d(
                 stream,
                 entity_path=entity_path,
@@ -365,7 +393,7 @@ class RerunLoggingPolicy:
                 static=True,
             )
         except Exception as exc:
-            _LOGGER.warning("Skipping SLAM trajectory artifact '%s': %s", artifact.path, exc)
+            _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
 
     def _load_source_reference_metadata(self, item: VisualizationItem) -> dict[str, object]:
         artifact = item.artifact_refs.get(SOURCE_METADATA_ARTIFACT)
@@ -547,11 +575,3 @@ def _metadata_int(metadata: Mapping[str, object], key: str) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return None
-
-
-__all__ = [
-    "ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT",
-    "ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD",
-    "ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY",
-    "RerunLoggingPolicy",
-]

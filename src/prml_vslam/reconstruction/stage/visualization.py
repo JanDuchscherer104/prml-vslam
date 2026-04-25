@@ -70,12 +70,3 @@ class ReconstructionVisualizationAdapter:
                 )
             )
         return items
-
-
-__all__ = [
-    "MESH_ARTIFACT",
-    "POINT_CLOUD_ARTIFACT",
-    "ROLE_RECONSTRUCTION_MESH",
-    "ROLE_RECONSTRUCTION_POINT_CLOUD",
-    "ReconstructionVisualizationAdapter",
-]
