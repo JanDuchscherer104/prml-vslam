@@ -39,11 +39,11 @@ def actor_options_for_stage(
         )
     )
     resources = dict(backend_resources) if inherit_backend_defaults else {}
-    resources.update(stage_config.execution.resources.custom_resources)
-    if stage_config.execution.resources.num_cpus is not None:
-        resources["CPU"] = stage_config.execution.resources.num_cpus
-    if stage_config.execution.resources.num_gpus is not None:
-        resources["GPU"] = stage_config.execution.resources.num_gpus
+    resources.update(stage_config.resources.custom_resources)
+    if stage_config.resources.num_cpus is not None:
+        resources["CPU"] = stage_config.resources.num_cpus
+    if stage_config.resources.num_gpus is not None:
+        resources["GPU"] = stage_config.resources.num_gpus
     return {
         "num_cpus": float(resources.pop("CPU", default_num_cpus)),
         "num_gpus": float(resources.pop("GPU", default_num_gpus)),

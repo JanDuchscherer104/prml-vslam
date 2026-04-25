@@ -60,7 +60,6 @@ from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.pipeline.stages.base.config import (
     ResourceSpec,
-    StageExecutionConfig,
 )
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
@@ -2057,11 +2056,9 @@ def _placement_run_config(*, placement: dict[str, dict[str, dict[str, float]]] |
         resources = stage_placement.get("resources", {})
         updates[stage_name] = getattr(stages, stage_name).model_copy(
             update={
-                "execution": StageExecutionConfig(
-                    resources=ResourceSpec(
-                        num_cpus=resources.get("CPU"),
-                        num_gpus=resources.get("GPU"),
-                    )
+                "resources": ResourceSpec(
+                    num_cpus=resources.get("CPU"),
+                    num_gpus=resources.get("GPU"),
                 )
             }
         )
