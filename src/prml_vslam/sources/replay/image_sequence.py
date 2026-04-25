@@ -18,7 +18,14 @@ DepthLoader = Callable[[Path], NDArray[np.float32]]
 
 
 class ImageSequenceObservationSource:
-    """Replay timestamped RGB/depth image rows through the source-observation seam."""
+    """Replay pre-indexed timestamped image frames as a live observation stream.
+
+    This source acts as an adapter for disk-backed multimodal datasets. It iterates
+    over an index of frames, waits for an emulated clock to reach each frame's
+    timestamp, and yields :class:`~prml_vslam.interfaces.Observation` objects with
+    aligned intrinsic and extrinsic metadata. Use this abstraction to test SLAM algorithms
+    against stable file-based benchmarks as if they were live hardware.
+    """
 
     def __init__(
         self,
@@ -31,6 +38,18 @@ class ImageSequenceObservationSource:
         include_depth: bool = True,
         depth_loader: DepthLoader | None = None,
     ) -> None:
+        """Initialize the sequence playback state.
+
+        Args:
+            sequence_dir: The base directory containing sequence image payloads.
+            rows: Ordered metadata entries defining the frame schedule.
+            stride: The frame sampling step size. Must be >= 1.
+            loop: Whether to wrap around seamlessly when the sequence ends.
+            replay_mode: The time-sync strategy used to pace the replay clock.
+            include_depth: Whether to eagerly decode depth payloads when available.
+            depth_loader: A callable that decodes depth paths into ``(H, W)`` arrays
+                in meters. Required if ``include_depth=True`` and any row defines a depth path.
+        """
         if stride < 1:
             raise ValueError("stride must be >= 1.")
         self.sequence_dir = sequence_dir
@@ -45,7 +64,17 @@ class ImageSequenceObservationSource:
         self._loop_index = 0
 
     def connect(self) -> Path:
-        """Validate the sequence directory and reset replay state."""
+        """Validate the sequence directory and prepare the replay clock.
+
+        This method resets the read cursor and initializes the emulated clock before
+        the first frame is requested. Call this explicitly prior to pulling observations.
+
+        Returns:
+            The validated ``sequence_dir`` payload root.
+
+        Raises:
+            FileNotFoundError: If the directory is missing.
+        """
         if not self.sequence_dir.is_dir():
             raise FileNotFoundError(f"Image sequence directory is missing: {self.sequence_dir}")
         self._frame_index = 0
@@ -55,11 +84,29 @@ class ImageSequenceObservationSource:
         return self.sequence_dir
 
     def disconnect(self) -> None:
-        """Release sequence resources."""
+        """Release sequence resources and halt playback.
+
+        For this source, this is a no-op as payloads are loaded lazily.
+        """
         return None
 
     def wait_for_observation(self, timeout_seconds: float | None = None) -> Observation:
-        """Load and return the next sampled image-sequence observation."""
+        """Load and return the next sampled observation aligned to the replay clock.
+
+        This method blocks until the emulated clock reaches the scheduled dataset
+        timestamp of the next requested frame. When ``stride > 1``, intermediate
+        frames are skipped transparently.
+
+        Args:
+            timeout_seconds: An optional wait maximum. Unused and ignored
+                by this implementation.
+
+        Returns:
+            The next valid, time-aligned observation.
+
+        Raises:
+            EOFError: When the sequence is exhausted and ``loop=False``.
+        """
         del timeout_seconds
         while True:
             if self._frame_index >= len(self.rows):
