@@ -100,7 +100,7 @@ class AdvioPreviewFormData(BaseData):
 
     sequence_id: int
     pose_source: AdvioPoseSource
-    respect_video_rotation: bool = False
+    normalize_video_orientation: bool = True
     start_requested: bool = False
     stop_requested: bool = False
 
@@ -139,8 +139,8 @@ class AdvioPageState(BaseData):
     preview_pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected camera-pose source for the loop-preview stream."""
 
-    preview_respect_video_rotation: bool = False
-    """Whether the preview should honor video rotation metadata when available."""
+    preview_normalize_video_orientation: bool = True
+    """Whether the preview should normalize video display orientation when available."""
 
     preview_is_running: bool = False
     """Whether the current browser session expects an ADVIO preview stream to be active."""
@@ -455,8 +455,8 @@ class PipelinePageState(BaseData):
     pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD
     """Selected ADVIO pose-frame mode injected into the pipeline request."""
 
-    respect_video_rotation: bool = False
-    """Whether the replay should honor video rotation metadata when available."""
+    normalize_video_orientation: bool = True
+    """Whether the replay should normalize video display orientation when available."""
 
     telemetry_visible: bool = True
     """Whether stage telemetry should be rendered in the run console."""

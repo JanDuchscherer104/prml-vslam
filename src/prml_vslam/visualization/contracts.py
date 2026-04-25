@@ -48,6 +48,9 @@ class VisualizationConfig(BaseConfig):
     show_tracking_trajectory: bool = True
     """Whether the repo-owned sink should log the full tracking trajectory polyline."""
 
+    trajectory_pose_axis_length: float = Field(default=0.0, ge=0.0)
+    """Axis length for per-pose trajectory transforms; ``0.0`` keeps axes hidden."""
+
     log_source_rgb: bool = False
     """Whether the repo-owned sink should log original source RGB frames."""
 

@@ -245,17 +245,20 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
         case AdvioSourceConfig(
             sequence_id=sequence_id,
             dataset_serving=dataset_serving,
-            respect_video_rotation=respect_video_rotation,
+            replay_mode=replay_mode,
+            normalize_video_orientation=normalize_video_orientation,
         ):
             payload["sequence_id"] = sequence_id
-            payload["respect_video_rotation"] = respect_video_rotation
+            payload["replay_mode"] = replay_mode.value
+            payload["normalize_video_orientation"] = normalize_video_orientation
             payload["metadata"] = {
                 "dataset_id": DatasetId.ADVIO.value,
                 "pose_source": dataset_serving.pose_source.value,
                 "pose_frame_mode": dataset_serving.pose_frame_mode.value,
             }
-        case TumRgbdSourceConfig(sequence_id=sequence_id):
+        case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode):
             payload["sequence_id"] = sequence_id
+            payload["replay_mode"] = replay_mode.value
             payload["metadata"] = {"dataset_id": DatasetId.TUM_RGBD.value}
         case Record3DSourceConfig(transport=transport, device_index=device_index, device_address=device_address):
             payload["transport"] = transport.value
@@ -368,6 +371,7 @@ def build_run_config(
     frusta_history_window_streaming: int = 20,
     frusta_history_window_offline: int | None = None,
     show_tracking_trajectory: bool = True,
+    trajectory_pose_axis_length: float = 0.0,
     log_source_rgb: bool = False,
     log_diagnostic_preview: bool = False,
     log_camera_image_rgb: bool = False,
@@ -409,6 +413,7 @@ def build_run_config(
             frusta_history_window_streaming=frusta_history_window_streaming,
             frusta_history_window_offline=frusta_history_window_offline,
             show_tracking_trajectory=show_tracking_trajectory,
+            trajectory_pose_axis_length=trajectory_pose_axis_length,
             log_source_rgb=log_source_rgb,
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,

@@ -205,7 +205,7 @@ stream = sequence.open_stream(
         pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
     ),
     replay_mode=ReplayMode.REALTIME,
-    respect_video_rotation=True,
+    normalize_video_orientation=True,
 )
 
 stream.connect()

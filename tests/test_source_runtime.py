@@ -37,6 +37,7 @@ from prml_vslam.sources.contracts import (
     SourceStageOutput,
 )
 from prml_vslam.sources.materialization import materialize_manifest
+from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.runtime import SourceRuntime, SourceStageInput
 from prml_vslam.sources.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
@@ -418,16 +419,25 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     monkeypatch.setattr("prml_vslam.sources.config.TumRgbdDatasetService", FakeDatasetService)
 
     path_config = PathConfig(root=tmp_path)
-    tum_source = TumRgbdSourceConfig(sequence_id="freiburg1_room", target_fps=15.0).setup_target(
-        path_config=path_config
-    )
-    advio_source = AdvioSourceConfig(sequence_id="advio-20", frame_stride=3).setup_target(path_config=path_config)
+    tum_source = TumRgbdSourceConfig(
+        sequence_id="freiburg1_room",
+        target_fps=15.0,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+    ).setup_target(path_config=path_config)
+    advio_source = AdvioSourceConfig(
+        sequence_id="advio-20",
+        frame_stride=3,
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+    ).setup_target(path_config=path_config)
 
     assert tum_source.label == "manifest-only"
     assert advio_source.label == "manifest-only"
     assert calls[0][1]["sequence_id"] == "resolved-freiburg1_room"
     assert calls[0][1]["frame_selection"].target_fps == 15.0
+    assert calls[0][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
     assert calls[1][1]["sequence_id"] == "resolved-advio-20"
+    assert calls[1][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
+    assert calls[1][1]["normalize_video_orientation"] is True
     assert calls[1][1]["frame_selection"].frame_stride == 3
 
 

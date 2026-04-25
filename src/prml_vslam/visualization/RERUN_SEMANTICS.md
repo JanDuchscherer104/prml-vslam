@@ -40,7 +40,8 @@ Treat the integration as four separate concerns:
 | `rr.Image` | Actual RGB or explicit diagnostic previews. |
 | `rr.DepthImage` | Metric depth rasters back-projected through `Pinhole`. |
 | `rr.Points3D` | Camera-local pointmaps or world-space clouds. |
-| `rr.LineStrips3D` | Tracking trajectory polyline. |
+| `rr.LineStrips3D` | Trajectory polylines. |
+| `rr.Transform3D` under `.../trajectory/.../poses/<id>` | Per-pose SE3 trajectory samples. |
 | `rr.Clear` | Sliding-window frusta cleanup without clearing keyed point history. |
 | `rr.blueprint.Spatial3DView`, `rr.blueprint.Spatial2DView` | Stable 3D + 2D default layout. |
 
@@ -112,7 +113,9 @@ world/keyframes/cameras/000000/diag/preview  Image(debug_preview_keyframe)
 world/keyframes/points/000000           Transform3D(T_world_camera_keyframe, axis_length=0)
 world/keyframes/points/000000/points    Points3D(pointmap_xyz_camera_keyframe)
 
-world/trajectory/tracking               LineStrips3D(world positions)
+world/slam/vista_slam_world/trajectory/raw
+world/slam/vista_slam_world/trajectory/raw/poses/000000
+                                         Transform3D(T_world_camera_pose, axis_length=configured)
 world/global_dense_points               Points3D(world-space fused cloud)
 ```
 
@@ -131,7 +134,8 @@ Important consequences:
   surface and should be the default 3D geometry in the viewer.
 - `world/keyframes/cameras/<id>` is a frustum/history surface that may be
   cleared once it falls outside the configured sliding window.
-- `world/trajectory/tracking` must never be cleared by frusta eviction.
+- `world/slam/vista_slam_world/trajectory/raw` and its pose children must never
+  be cleared by frusta eviction.
 - The root `world` entity declares the explicit viewer world basis and keeps the
   only intentionally visible axes marker at the origin.
 
@@ -169,7 +173,7 @@ Current repo-owned export surfaces:
 - metric `DepthImage` payloads
 - keyed pointmaps as `Points3D`
 - diagnostic preview images
-- one tracking trajectory line
+- trajectory polylines plus per-pose `Transform3D` children
 - live gRPC streaming and repo-owned `.rrd` export for streaming runs
 - preserved native upstream `.rrd` files when present
 

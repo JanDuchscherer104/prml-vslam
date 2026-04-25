@@ -283,7 +283,7 @@ class AdvioSequence(BaseData):
         stride: int = 1,
         loop: bool = True,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
-        respect_video_rotation: bool = False,
+        normalize_video_orientation: bool = True,
     ) -> ObservationStream:
         scene = self.scene
         paths = self._resolve_paths(require_arcore=False)
@@ -322,7 +322,7 @@ class AdvioSequence(BaseData):
                 sequence_name=scene.sequence_slug,
                 pose_source=effective_serving.pose_source.value,
             ),
-            apply_video_rotation=respect_video_rotation,
+            normalize_video_orientation=normalize_video_orientation,
         )
 
 

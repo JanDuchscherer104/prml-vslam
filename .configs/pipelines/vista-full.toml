@@ -4,9 +4,9 @@
 # backend overrides, stage-local evaluation/reconstruction policy, and
 # visualization settings.
 
-experiment_name = "vista-full-tuning"
-mode            = "streaming"
-output_dir      = ".artifacts"
+experiment_name          = "vista-full-tuning"
+mode                     = "streaming"
+output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
 
 [stages.source]
@@ -16,6 +16,8 @@ enabled = true
     source_id    = "advio"
     sequence_id  = "advio-20"
     frame_stride = 5
+    replay_mode = "realtime"
+    normalize_video_orientation = true
 
 [stages.slam]
 enabled = true
@@ -79,8 +81,8 @@ enabled = false
 enabled = true
 
     [stages.reconstruction.backend]
-    method_id = "open3d_tsdf"
-    extract_mesh      = true
+    method_id    = "open3d_tsdf"
+    extract_mesh = true
 
 [stages.evaluate_cloud]
 enabled = false

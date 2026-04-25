@@ -44,7 +44,7 @@ def render_request_editor(
             record3d_frame_timeout_seconds,
             pose_source,
             pose_frame_mode,
-            respect_video_rotation,
+            normalize_video_orientation,
             source_input_error,
         ) = _render_source_settings(
             context=context,
@@ -118,7 +118,7 @@ def render_request_editor(
                 "record3d_frame_timeout_seconds": record3d_frame_timeout_seconds,
                 "pose_source": pose_source,
                 "pose_frame_mode": pose_frame_mode,
-                "respect_video_rotation": respect_video_rotation,
+                "normalize_video_orientation": normalize_video_orientation,
             }
         ),
         slam_input_error or visualization_input_error,
@@ -190,7 +190,7 @@ def _render_source_settings(
     record3d_frame_timeout_seconds = page_state.record3d_frame_timeout_seconds
     pose_source = page_state.pose_source
     pose_frame_mode = page_state.pose_frame_mode
-    respect_video_rotation = page_state.respect_video_rotation
+    normalize_video_orientation = page_state.normalize_video_orientation
     dataset_frame_stride = page_state.dataset_frame_stride
     dataset_target_fps = page_state.dataset_target_fps
     source_input_error = None
@@ -199,7 +199,7 @@ def _render_source_settings(
             advio_sequence_id,
             pose_source,
             pose_frame_mode,
-            respect_video_rotation,
+            normalize_video_orientation,
             dataset_frame_stride,
             dataset_target_fps,
             source_input_error,
@@ -228,7 +228,7 @@ def _render_source_settings(
         record3d_frame_timeout_seconds,
         pose_source,
         pose_frame_mode,
-        respect_video_rotation,
+        normalize_video_orientation,
         source_input_error,
     )
 
@@ -272,9 +272,9 @@ def _render_advio_source_settings(
         index=list(AdvioPoseFrameMode).index(page_state.pose_frame_mode),
         format_func=lambda item: item.label,
     )
-    respect_video_rotation = st.toggle(
-        "Respect video rotation metadata",
-        value=page_state.respect_video_rotation,
+    normalize_video_orientation = st.toggle(
+        "Normalize video display orientation",
+        value=page_state.normalize_video_orientation,
     )
     dataset_frame_stride = int(
         st.number_input("Dataset Frame Stride", min_value=1, max_value=120, value=page_state.dataset_frame_stride)
@@ -297,7 +297,7 @@ def _render_advio_source_settings(
         advio_sequence_id,
         pose_source,
         pose_frame_mode,
-        respect_video_rotation,
+        normalize_video_orientation,
         dataset_frame_stride,
         dataset_target_fps,
         sampling_error,

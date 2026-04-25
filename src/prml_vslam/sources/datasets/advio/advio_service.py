@@ -32,7 +32,8 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
     dataset_root: Path
     sequence_id: int
     dataset_serving: DatasetServingConfig
-    respect_video_rotation: bool = False
+    replay_mode: ReplayMode = ReplayMode.REALTIME
+    normalize_video_orientation: bool = True
     tango_reference_point_stride: int = Field(default=1, ge=1)
 
     def setup_target(self) -> DatasetSequenceSource:
@@ -55,7 +56,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
                 loop=loop,
                 replay_mode=replay_mode,
                 dataset_serving=self.dataset_serving,
-                respect_video_rotation=self.respect_video_rotation,
+                normalize_video_orientation=self.normalize_video_orientation,
             )
 
         return DatasetSequenceSource(
@@ -72,6 +73,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
                 tango_reference_point_stride=self.tango_reference_point_stride,
             ),
             stream=stream,
+            replay_mode=self.replay_mode,
         )
 
 
@@ -126,7 +128,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         sequence_id: int,
         frame_selection: FrameSelectionConfig | None = None,
         dataset_serving: DatasetServingConfig,
-        respect_video_rotation: bool = False,
+        replay_mode: ReplayMode = ReplayMode.REALTIME,
+        normalize_video_orientation: bool = True,
         tango_reference_point_stride: int = 1,
     ) -> DatasetSequenceSource:
         """Build the ADVIO-backed streaming source adapter for one sequence."""
@@ -135,7 +138,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             dataset_root=self.dataset_root,
             sequence_id=sequence_id,
             dataset_serving=dataset_serving,
-            respect_video_rotation=respect_video_rotation,
+            replay_mode=replay_mode,
+            normalize_video_orientation=normalize_video_orientation,
             tango_reference_point_stride=tango_reference_point_stride,
             frame_stride=selection.frame_stride,
             target_fps=selection.target_fps,
@@ -149,7 +153,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         dataset_serving: DatasetServingConfig,
         loop: bool = True,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
-        respect_video_rotation: bool = False,
+        normalize_video_orientation: bool = True,
     ):
         """Open the canonical ADVIO preview replay stream for one sequence."""
         sequence = self._sequence(sequence_id)
@@ -160,5 +164,5 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             loop=loop,
             replay_mode=replay_mode,
             dataset_serving=dataset_serving,
-            respect_video_rotation=respect_video_rotation,
+            normalize_video_orientation=normalize_video_orientation,
         )

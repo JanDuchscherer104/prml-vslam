@@ -35,6 +35,7 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
         manifest: Callable[[SequenceKey, Path, FrameSelectionConfig], SequenceManifest],
         benchmark: Callable[[SequenceKey, Path], PreparedBenchmarkInputs],
         stream: Callable[[SequenceKey, bool, ReplayMode, FrameSelectionConfig], ObservationStream] | None = None,
+        replay_mode: ReplayMode = ReplayMode.REALTIME,
     ) -> None:
         self._sequence_id = sequence_id
         self._frame_selection = frame_selection
@@ -42,6 +43,7 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
         self._manifest = manifest
         self._benchmark = benchmark
         self._stream = stream
+        self._replay_mode = replay_mode
 
     @property
     def label(self) -> str:
@@ -60,7 +62,7 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
         """Open the replay stream for the selected dataset sequence."""
         if self._stream is None:
             raise RuntimeError("This dataset sequence source does not expose a replay stream.")
-        return self._stream(self._sequence_id, loop, ReplayMode.REALTIME, self._frame_selection)
+        return self._stream(self._sequence_id, loop, self._replay_mode, self._frame_selection)
 
 
 def open_dataset_sequence_stream(
@@ -187,6 +189,7 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
         stream: Callable[[SequenceKey, bool, ReplayMode, FrameSelectionConfig], ObservationStream] | None = None,
+        replay_mode: ReplayMode = ReplayMode.REALTIME,
     ) -> DatasetSequenceSource:
         return DatasetSequenceSource(
             sequence_id=sequence_id,
@@ -199,6 +202,7 @@ class DatasetServiceBase:
             ),
             benchmark=lambda value, output_dir: self.build_benchmark_inputs(sequence_id=value, output_dir=output_dir),
             stream=stream,
+            replay_mode=replay_mode,
         )
 
     def _build_streaming_source(
@@ -206,11 +210,13 @@ class DatasetServiceBase:
         *,
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
+        replay_mode: ReplayMode = ReplayMode.REALTIME,
         **stream_kwargs: Any,
     ) -> DatasetSequenceSource:
         return self._build_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
+            replay_mode=replay_mode,
             stream=lambda value, loop, replay_mode, selection: self.open_preview_stream(
                 sequence_id=value,
                 frame_selection=selection,

@@ -12,7 +12,7 @@ This document is the concise source of truth for `prml_vslam.visualization`.
   - aligned reference clouds
   - original source RGB under `world/live/source/rgb`
   - live tracking and model transforms plus keyed historical transforms
-  - one tracking trajectory polyline
+  - trajectory polylines plus per-pose SE3 transforms
   - `rr.Pinhole` camera models
   - model-raster RGB camera images
   - metric `rr.DepthImage` payloads
@@ -21,7 +21,8 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - source RGB and model-raster payloads are intentionally separate surfaces and
   are not expected to share a raster
 - the default 3D scene should render keyed-history point clouds from `world/keyframes/points/<id>/points` and treat `world/live/model/points` as latest/debug-only geometry
-- the default 3D scene should also include keyed camera/frusta entities plus the tracking trajectory line
+- the default 3D scene should also include keyed camera/frusta entities plus
+  trajectory lines and optional per-pose axes
 - keyed-history persistence in the viewer should come from stable entity paths rather than requiring a dedicated keyframe timeline
 - the streaming repo-owned sink should keep only the newest configured window of keyed camera/frusta entities visible
 - the current repo-owned stream does not yet log a world-space fused dense cloud separate from per-keyframe pointmaps
@@ -40,7 +41,8 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - export repo-owned `.rrd` files from repo-owned contracts when enabled
 - stay separate from Streamlit widgets, runner orchestration, and method math
 - keep the repo-owned live sink on a fixed minimal output surface rather than a growing per-modality configuration API
-- accept visualization policy knobs for streaming frusta windowing and trajectory visibility
+- accept visualization policy knobs for streaming frusta windowing, trajectory
+  visibility, and trajectory pose axis length
 
 ## Required Frame Conventions
 
@@ -84,6 +86,8 @@ This document is the concise source of truth for `prml_vslam.visualization`.
   be relabeled as the ViSTA model raster
 - camera-local pointmaps must not be mislabeled as world coordinates
 - frusta eviction must never clear `world/keyframes/points/<id>` or the tracking trajectory branch
+- per-pose trajectory transforms default to `axis_length=0` so SE3 poses are
+  recorded without visual axis clutter unless explicitly enabled
 - missing keyed pointmaps are non-fatal observability events and must emit explicit warnings with `source_seq` and `keyframe_index`
 - exported world-space dense clouds such as native `pointcloud.ply` must not be
   treated as interchangeable with live camera-local pointmap payloads
@@ -94,7 +98,8 @@ This document is the concise source of truth for `prml_vslam.visualization`.
   scene tree
 - per-keyframe points align with the corresponding camera frustum and image
   plane
-- the trajectory polyline grows across pose updates without truncating keyed point history
+- the trajectory polyline and per-pose transform branch grow across pose updates
+  without truncating keyed point history
 - after `N + 1` keyed camera logs, only the oldest keyed camera subtree is cleared while all keyed point subtrees remain
 - aligned reference clouds only are logged under `world/reference/...`
 - docs and code stay aligned with the pinned `rerun-sdk==0.24.1`

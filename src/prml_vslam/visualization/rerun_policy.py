@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
+from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.stage.visualization import (
     COLORS_REF,
@@ -130,6 +130,7 @@ class RerunLoggingPolicy:
     log_transform: Callable[..., None]
     frusta_history_window_streaming: int | None = 20
     show_tracking_trajectory: bool = True
+    trajectory_pose_axis_length: float = 0.0
     log_source_rgb: bool = False
     log_diagnostic_preview: bool = False
     log_camera_image_rgb: bool = False
@@ -333,6 +334,7 @@ class RerunLoggingPolicy:
             artifact_path=artifact.path,
             entity_path=f"world/reference/{target_frame}/{reference_source}/{coordinate_status}/trajectory",
             warning_label="source reference trajectory",
+            target_frame=str(item.metadata.get("target_frame") or item.space or "world"),
         )
 
     def _log_slam_trajectory_artifact_item(self, stream, item: VisualizationItem) -> None:
@@ -350,6 +352,7 @@ class RerunLoggingPolicy:
             artifact_path=artifact.path,
             entity_path=entity_path,
             warning_label="SLAM trajectory",
+            target_frame=str(item.metadata.get("target_frame") or item.space or "world"),
         )
 
     def _log_pointcloud_ply_artifact(
@@ -385,6 +388,7 @@ class RerunLoggingPolicy:
         artifact_path: Path,
         entity_path: str,
         warning_label: str,
+        target_frame: str,
     ) -> None:
         try:
             trajectory = load_tum_trajectory(artifact_path)
@@ -392,6 +396,12 @@ class RerunLoggingPolicy:
                 stream,
                 entity_path=entity_path,
                 positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float32),
+                static=True,
+            )
+            self._log_trajectory_pose_transforms(
+                stream,
+                entity_path=entity_path,
+                poses=_trajectory_pose_transforms(trajectory, target_frame=target_frame),
                 static=True,
             )
         except Exception as exc:
@@ -470,6 +480,31 @@ class RerunLoggingPolicy:
             entity_path="world/slam/vista_slam_world/trajectory/raw",
             positions_xyz=np.asarray(self._tracking_trajectory_xyz, dtype=np.float32),
         )
+        self._log_trajectory_pose_transforms(
+            stream,
+            entity_path="world/slam/vista_slam_world/trajectory/raw",
+            poses=[pose],
+            start_index=len(self._tracking_trajectory_xyz) - 1,
+        )
+
+    def _log_trajectory_pose_transforms(
+        self,
+        stream,
+        *,
+        entity_path: str,
+        poses: list[FrameTransform],
+        start_index: int = 0,
+        static: bool = False,
+    ) -> None:
+        """Log one transform child per trajectory pose."""
+        for offset, pose in enumerate(poses):
+            self.log_transform(
+                stream,
+                entity_path=f"{entity_path}/poses/{start_index + offset:06d}",
+                transform=pose,
+                axis_length=self.trajectory_pose_axis_length,
+                static=static,
+            )
 
     def _evict_stale_keyframe_cameras(self, stream, *, keyframe_index: int) -> None:
         """Keep only the newest configured keyed-camera subtrees latest-visible."""
@@ -577,3 +612,21 @@ def _metadata_int(metadata: Mapping[str, object], key: str) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return None
+
+
+def _trajectory_pose_transforms(trajectory, *, target_frame: str) -> list[FrameTransform]:
+    positions = np.asarray(trajectory.positions_xyz, dtype=np.float64)
+    quaternions_wxyz = np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64)
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError(f"Expected trajectory positions with shape (N, 3), got {positions.shape}.")
+    if quaternions_wxyz.shape != (len(positions), 4):
+        raise ValueError(f"Expected one WXYZ quaternion per trajectory pose, got shape {quaternions_wxyz.shape}.")
+    return [
+        FrameTransform.from_quaternion_translation(
+            quaternion_wxyz[[1, 2, 3, 0]],
+            position_xyz,
+            target_frame=target_frame,
+            source_frame=CAMERA_RDF_FRAME,
+        )
+        for position_xyz, quaternion_wxyz in zip(positions, quaternions_wxyz, strict=True)
+    ]

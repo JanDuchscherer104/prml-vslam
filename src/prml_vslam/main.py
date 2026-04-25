@@ -85,9 +85,10 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.source.backend.sequence_id", "Dataset sequence id for ADVIO or TUM RGB-D."),
             ("--stages.source.backend.frame_stride", "Frame sampling stride."),
             ("--stages.source.backend.target_fps", "Frame sampling target FPS."),
+            ("--stages.source.backend.replay_mode", "Replay pacing: realtime or fast_as_possible."),
             ("--stages.source.backend.dataset_serving.pose_source", "ADVIO pose provider."),
             ("--stages.source.backend.dataset_serving.pose_frame_mode", "ADVIO replay pose frame mode."),
-            ("--stages.source.backend.respect_video_rotation", "Honor ADVIO rotation metadata."),
+            ("--stages.source.backend.normalize_video_orientation", "Normalize video display orientation."),
             ("--stages.source.backend.transport", "Record3D transport: usb or wifi."),
             ("--stages.source.backend.device_index", "Record3D USB device index."),
             ("--stages.source.backend.device_address", "Record3D Wi-Fi device address."),
@@ -143,6 +144,7 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--visualization.viewer_blueprint_path", "Rerun viewer blueprint path."),
             ("--visualization.frusta_history_window_streaming", "Streaming frusta history window."),
             ("--visualization.show_tracking_trajectory", "Show the tracking trajectory."),
+            ("--visualization.trajectory_pose_axis_length", "Axis length for trajectory pose transforms."),
             ("--visualization.log_source_rgb", "Log source RGB frames."),
             ("--visualization.log_diagnostic_preview", "Log backend diagnostic previews."),
         ),
@@ -839,13 +841,13 @@ def pipeline_demo(
             case_sensitive=False,
         ),
     ] = AdvioPoseFrameMode.PROVIDER_WORLD,
-    respect_video_rotation: Annotated[
+    normalize_video_orientation: Annotated[
         bool,
         typer.Option(
-            "--respect-video-rotation/--ignore-video-rotation",
-            help="Whether to honor ADVIO video rotation metadata during replay.",
+            "--normalize-video-orientation/--raw-video-orientation",
+            help="Whether to normalize video display orientation during replay.",
         ),
-    ] = False,
+    ] = True,
     dataset_frame_stride: Annotated[
         int,
         typer.Option("--dataset-frame-stride", min=1, help="Frame stride used for ADVIO replay packets."),
@@ -875,7 +877,7 @@ def pipeline_demo(
         method=method,
         pose_source=pose_source,
         pose_frame_mode=pose_frame_mode,
-        respect_video_rotation=respect_video_rotation,
+        normalize_video_orientation=normalize_video_orientation,
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
