@@ -20,12 +20,10 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, JsonScalar
 
 from .camera import CameraIntrinsics
 from .transforms import FrameTransform
-
-JsonScalar = str | int | float | bool | None
 
 # TODO: Do we really need these geometry DTOs?
 

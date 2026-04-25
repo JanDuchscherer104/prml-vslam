@@ -6,7 +6,7 @@ pipeline run. It is a companion to
 [pipeline-stage-refactor-pruning.md](./pipeline-stage-refactor-pruning.md).
 
 The policy is target architecture only. Current legacy `RunConfig` TOML files
-must not add executable cleanup tables until `StageConfig.cleanup` exists in
+must not add executable cleanup tables until `StageConfig cleanup_* fields` exists in
 the active config models.
 
 ## Target Contract
@@ -29,7 +29,7 @@ class ArtifactCleanupPolicy(BaseConfig):
 Target TOML shape:
 
 ```toml
-[stages.slam.cleanup]
+[stages.slam]
 artifact_keys = ["native_output_dir", "native_rerun_rrd", "extra:*"]
 on_completed = true
 on_failed = false
@@ -126,15 +126,15 @@ recorded as cleanup metadata and surfaced as a warning/status detail.
 ## Migration Note For `vista-full.toml`
 
 [vista-full.toml](../../.configs/pipelines/vista-full.toml) currently uses the
-legacy `RunConfig` shape. Until `StageConfig.cleanup` exists, do not add a
-real `[slam.cleanup]` table or `[stages.slam.cleanup]` table to that file.
+legacy `RunConfig` shape. Until `StageConfig cleanup_* fields` exists, do not add a
+real `[slam]` table or `[stages.slam]` table to that file.
 
 When the config migration is active, replace the inline TODO with a commented
 target example:
 
 ```toml
 # Target StageConfig cleanup policy:
-# [stages.slam.cleanup]
+# [stages.slam]
 # artifact_keys = ["native_output_dir", "native_rerun_rrd", "extra:*"]
 # on_completed = true
 # on_failed = false
@@ -142,7 +142,7 @@ target example:
 ```
 
 The executable cleanup table should be added only after the active config model
-supports `StageConfig.cleanup`.
+supports `StageConfig cleanup_* fields`.
 
 ## Tests To Add With Implementation
 

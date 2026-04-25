@@ -15,28 +15,16 @@ import numpy as np
 import open3d as o3d
 
 from prml_vslam.interfaces import CameraIntrinsicsSeries, FrameTransform
-from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.methods.stage.config import SlamOutputPolicy
 from prml_vslam.methods.vista.artifact_io import load_vista_intrinsics_matrices, load_vista_view_names
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.utils import RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
 _VISTA_MODEL_RASTER_SIZE_PX = 224
-
-
-# TODO:
-def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
-    """Build one stable artifact reference for a normalized ViSTA output."""
-    resolved_path = path.resolve()
-    return ArtifactRef(
-        path=resolved_path,
-        kind=kind,
-        fingerprint=stable_hash({"path": str(resolved_path), "kind": kind}),
-    )
 
 
 def build_vista_artifacts(
@@ -74,7 +62,7 @@ def build_vista_artifacts(
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
         colors_rgb = np.asarray(point_cloud.colors, dtype=np.float64) if point_cloud.has_colors() else None
         point_cloud_path = write_point_cloud_ply(run_paths.point_cloud_path, points_xyz, colors_rgb=colors_rgb)
-        canonical_ref = _artifact_ref(point_cloud_path, kind="ply")
+        canonical_ref = artifact_ref(point_cloud_path, kind="ply")
         if output_policy.emit_sparse_points:
             sparse_points_ref = canonical_ref
         if output_policy.emit_dense_points:
@@ -90,17 +78,17 @@ def build_vista_artifacts(
         )
         run_paths.estimated_intrinsics_path.parent.mkdir(parents=True, exist_ok=True)
         run_paths.estimated_intrinsics_path.write_text(estimated_intrinsics.model_dump_json(indent=2), encoding="utf-8")
-        estimated_intrinsics_ref = _artifact_ref(run_paths.estimated_intrinsics_path, kind="json")
+        estimated_intrinsics_ref = artifact_ref(run_paths.estimated_intrinsics_path, kind="json")
 
     extras = {
-        path.name: _artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
+        path.name: artifact_ref(path, kind=path.suffix.lstrip(".") or "file")
         for path in sorted(native_output_dir.glob("*"))
         if path.is_file() and path.name not in {"trajectory.npy", "pointcloud.ply", "rerun_recording.rrd"}
     }
     if estimated_intrinsics_ref is not None:
         extras[run_paths.estimated_intrinsics_path.name] = estimated_intrinsics_ref
     return SlamArtifacts(
-        trajectory_tum=_artifact_ref(trajectory_path, kind="tum"),
+        trajectory_tum=artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=sparse_points_ref,
         dense_points_ply=dense_points_ref,
         extras=extras,

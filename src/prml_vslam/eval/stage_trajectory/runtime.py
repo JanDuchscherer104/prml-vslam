@@ -2,21 +2,36 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from prml_vslam.eval.contracts import DiscoveredRun, EvaluationArtifact, SelectionSnapshot
 from prml_vslam.eval.services import TrajectoryEvaluationService
-from prml_vslam.eval.stage_trajectory.contracts import TrajectoryEvaluationRuntimeInput
-from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
+from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.pipeline.ray_runtime.common import artifact_ref
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
-from prml_vslam.utils import PathConfig
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
+from prml_vslam.utils import BaseData, PathConfig
+from prml_vslam.utils.serialization import stable_hash
 
 
-class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationRuntimeInput]):
+class TrajectoryEvaluationStageInput(BaseData):
+    """Inputs required to compute repository trajectory metrics."""
+
+    artifact_root: Path
+    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
+    method_id: MethodId | None = None
+    method_label: str = "unknown"
+    sequence_manifest: SequenceManifest
+    benchmark_inputs: PreparedBenchmarkInputs | None = None
+    slam: SlamArtifacts
+
+
+class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationStageInput]):
     """Adapt eval-owned trajectory metric computation to the bounded runtime API.
 
     The runtime builds pipeline outcomes and status, while
@@ -35,7 +50,7 @@ class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationRuntim
         """Mark the bounded runtime as stopped."""
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
-    def run_offline(self, input_payload: TrajectoryEvaluationRuntimeInput) -> StageResult:
+    def run_offline(self, input_payload: TrajectoryEvaluationStageInput) -> StageResult:
         """Compute trajectory metrics and return a canonical stage result.
 
         The result payload is an eval-owned artifact. The durable stage outcome
@@ -61,7 +76,7 @@ class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationRuntim
         self._status = result.final_runtime_status
         return result
 
-    def _run(self, input_payload: TrajectoryEvaluationRuntimeInput) -> StageResult:
+    def _run(self, input_payload: TrajectoryEvaluationStageInput) -> StageResult:
         artifact = _compute_pipeline_evaluation(input_payload)
         artifacts = _artifact_map(artifact)
         outcome = StageOutcome(
@@ -109,7 +124,7 @@ def _artifact_map(artifact: EvaluationArtifact | None) -> dict[str, ArtifactRef]
     return artifacts
 
 
-def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationRuntimeInput) -> EvaluationArtifact | None:
+def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) -> EvaluationArtifact | None:
     """Compute trajectory evaluation from the narrow runtime input."""
     if input_payload.sequence_manifest is None or input_payload.benchmark_inputs is None or input_payload.slam is None:
         raise RuntimeError("Trajectory evaluation requires a sequence manifest, benchmark inputs, and SLAM artifacts.")
@@ -138,8 +153,8 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationRuntimeInput
     )
 
 
-def _path_config_for(input_payload: TrajectoryEvaluationRuntimeInput) -> PathConfig:
+def _path_config_for(input_payload: TrajectoryEvaluationStageInput) -> PathConfig:
     return PathConfig(artifacts_dir=input_payload.artifact_root.parent)
 
 
-__all__ = ["TrajectoryEvaluationRuntime", "TrajectoryEvaluationRuntimeInput"]
+__all__ = ["TrajectoryEvaluationRuntime", "TrajectoryEvaluationStageInput"]

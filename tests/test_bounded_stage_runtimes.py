@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
+from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
 from prml_vslam.eval.contracts import (
     EvaluationArtifact,
     MetricStats,
@@ -14,7 +14,7 @@ from prml_vslam.eval.contracts import (
 )
 from prml_vslam.eval.stage_trajectory import (
     TrajectoryEvaluationRuntime,
-    TrajectoryEvaluationRuntimeInput,
+    TrajectoryEvaluationStageInput,
 )
 from prml_vslam.interfaces import ObservationSequenceRef
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
@@ -28,10 +28,10 @@ from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanSt
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
-from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryRuntimeInput
+from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryStageInput
 from prml_vslam.reconstruction import ReconstructionArtifacts
 from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
-from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionRuntimeInput
+from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionStageInput
 from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
@@ -68,7 +68,7 @@ def test_ground_alignment_runtime_returns_stage_result(
     )
 
     result = GroundAlignmentRuntime().run_offline(
-        GroundAlignmentRuntimeInput(config=run_config.stages.align_ground.ground, run_paths=run_paths, slam=slam)
+        GroundAlignmentStageInput(config=run_config.stages.align_ground.ground, run_paths=run_paths, slam=slam)
     )
 
     assert result.stage_key is StageKey.GRAVITY_ALIGNMENT
@@ -101,7 +101,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     )
 
     result = TrajectoryEvaluationRuntime().run_offline(
-        TrajectoryEvaluationRuntimeInput(
+        TrajectoryEvaluationStageInput(
             artifact_root=plan.artifact_root,
             baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
             method_id=run_config.stages.slam.backend.method_id,
@@ -161,7 +161,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
 
     runtime = ReconstructionRuntime()
     result = runtime.run_offline(
-        ReconstructionRuntimeInput(
+        ReconstructionStageInput(
             backend=FakeBackendConfig(),
             run_paths=run_paths,
             benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
@@ -229,7 +229,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
 
     runtime = ReconstructionRuntime()
     result = runtime.run_offline(
-        ReconstructionRuntimeInput(
+        ReconstructionStageInput(
             backend=FakeBackendConfig(),
             run_paths=run_paths,
             benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
@@ -256,7 +256,7 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
 
     runtime = SummaryRuntime()
     result = runtime.run_offline(
-        SummaryRuntimeInput(
+        SummaryStageInput(
             experiment_name=run_config.experiment_name,
             mode=run_config.mode,
             plan=plan,

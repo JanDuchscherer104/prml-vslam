@@ -62,10 +62,10 @@ class TrajectoryEvaluationStageConfig(StageConfig):
         return TrajectoryEvaluationRuntime
 
     def build_offline_input(self, context: StageInputContext):
-        from prml_vslam.eval.stage_trajectory.contracts import TrajectoryEvaluationRuntimeInput
+        from prml_vslam.eval.stage_trajectory.runtime import TrajectoryEvaluationStageInput
 
         slam_backend = context.run_config.stages.slam.backend
-        return TrajectoryEvaluationRuntimeInput(
+        return TrajectoryEvaluationStageInput(
             artifact_root=context.plan.artifact_root,
             baseline_source=self.evaluation.baseline_source,
             method_id=None if slam_backend is None else slam_backend.method_id,

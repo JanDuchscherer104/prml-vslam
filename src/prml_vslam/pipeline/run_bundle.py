@@ -10,17 +10,13 @@ import uuid
 from enum import StrEnum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PurePosixPath
-from typing import Any, TypeAlias
 
 from pydantic import Field, TypeAdapter
 
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest
-from prml_vslam.pipeline.finalization import write_json
-from prml_vslam.pipeline.stage_cache import ContentFingerprinter
-from prml_vslam.utils import BaseData
-
-JsonValue: TypeAlias = dict[str, Any] | list[Any] | str | int | float | bool | None
+from prml_vslam.utils import BaseData, JsonValue
+from prml_vslam.utils.serialization import hash_path, write_json
 
 _BUNDLE_SCHEMA_VERSION = 1
 _MANIFEST_MEMBER = "manifest.json"
@@ -172,7 +168,6 @@ def _build_manifest(artifact_root: Path, *, output_path: Path) -> RunBundleManif
 
 
 def _inventory_files(artifact_root: Path, *, output_path: Path) -> list[RunBundleFile]:
-    fingerprinter = ContentFingerprinter()
     rows: list[RunBundleFile] = []
     for path in sorted(item for item in artifact_root.rglob("*") if item.is_file()):
         resolved = path.resolve()
@@ -185,7 +180,7 @@ def _inventory_files(artifact_root: Path, *, output_path: Path) -> list[RunBundl
             RunBundleFile(
                 relative_path=relative_path,
                 size_bytes=path.stat().st_size,
-                sha256=fingerprinter.hash_path(path),
+                sha256=hash_path(path),
             )
         )
     return rows
@@ -289,7 +284,6 @@ def _extract_artifacts(*, archive: tarfile.TarFile, members: list[tarfile.TarInf
 
 
 def _validate_extracted_files(*, manifest: RunBundleManifest, temp_root: Path) -> None:
-    fingerprinter = ContentFingerprinter()
     expected = {file.relative_path.as_posix(): file for file in manifest.files}
     actual = {path.relative_to(temp_root).as_posix() for path in temp_root.rglob("*") if path.is_file()}
     if actual != set(expected):
@@ -303,7 +297,7 @@ def _validate_extracted_files(*, manifest: RunBundleManifest, temp_root: Path) -
             raise RuntimeError(f"Imported bundle is missing file '{relative_path}'.")
         if path.stat().st_size != file.size_bytes:
             raise RuntimeError(f"Imported bundle file '{relative_path}' has the wrong size.")
-        if fingerprinter.hash_path(path) != file.sha256:
+        if hash_path(path) != file.sha256:
             raise RuntimeError(f"Imported bundle file '{relative_path}' failed SHA-256 validation.")
 
 

@@ -35,9 +35,9 @@ class SummaryStageConfig(StageConfig):
         return SummaryRuntime
 
     def build_offline_input(self, context: StageInputContext):
-        from prml_vslam.pipeline.stages.summary.contracts import SummaryRuntimeInput
+        from prml_vslam.pipeline.stages.summary.runtime import SummaryStageInput
 
-        return SummaryRuntimeInput(
+        return SummaryStageInput(
             experiment_name=context.run_config.experiment_name,
             mode=context.run_config.mode,
             plan=context.plan,

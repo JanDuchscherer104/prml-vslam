@@ -4,21 +4,30 @@ from __future__ import annotations
 
 import time
 
-from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.pipeline.ray_runtime.common import artifact_ref
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.protocols import LiveUpdateStageRuntime, OfflineStageRuntime
 from prml_vslam.reconstruction import ReconstructionArtifacts
-from prml_vslam.reconstruction.stage.contracts import ReconstructionRuntimeInput
+from prml_vslam.reconstruction.stage.config import ReconstructionBackend
 from prml_vslam.reconstruction.stage.visualization import ReconstructionVisualizationAdapter
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.sources.observation_sequence import FileObservationSequenceLoader
+from prml_vslam.utils import BaseData, RunArtifactPaths
+from prml_vslam.utils.serialization import stable_hash
 
 
-class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], LiveUpdateStageRuntime):
+class ReconstructionStageInput(BaseData):
+    """Inputs required to build one offline reference reconstruction."""
+
+    backend: ReconstructionBackend
+    run_paths: RunArtifactPaths
+    benchmark_inputs: PreparedBenchmarkInputs | None = None
+
+
+class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveUpdateStageRuntime):
     """Adapt reconstruction-owned Open3D TSDF execution to the bounded runtime API.
 
     The runtime turns prepared RGB-D observation references into a
@@ -52,7 +61,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
         self._pending_updates = self._pending_updates[max_items:]
         return updates
 
-    def run_offline(self, input_payload: ReconstructionRuntimeInput) -> StageResult:
+    def run_offline(self, input_payload: ReconstructionStageInput) -> StageResult:
         """Build the reference reconstruction and return a canonical stage result.
 
         The method expects exactly one prepared RGB-D sequence. Future
@@ -78,7 +87,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionRuntimeInput], Liv
         self._status = result.final_runtime_status
         return result
 
-    def _run(self, input_payload: ReconstructionRuntimeInput) -> StageResult:
+    def _run(self, input_payload: ReconstructionStageInput) -> StageResult:
         if input_payload.benchmark_inputs is None:
             raise RuntimeError("Reference reconstruction requires prepared benchmark inputs.")
         if len(input_payload.benchmark_inputs.observation_sequences) != 1:
@@ -150,4 +159,4 @@ def _artifact_map(artifacts: ReconstructionArtifacts) -> dict[str, ArtifactRef]:
     return artifact_map
 
 
-__all__ = ["ReconstructionRuntime", "ReconstructionRuntimeInput"]
+__all__ = ["ReconstructionRuntime", "ReconstructionStageInput"]

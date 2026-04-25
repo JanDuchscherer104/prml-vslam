@@ -10,7 +10,7 @@ import cv2
 from pydantic import Field, TypeAdapter
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.artifacts import artifact_ref
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.pipeline.contracts.events import (
     RunCompleted,
@@ -25,10 +25,8 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
 from prml_vslam.reconstruction.contracts import ReconstructionMetadata
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
-from prml_vslam.utils import BaseData, PathConfig, RunArtifactPaths
+from prml_vslam.utils import BaseData, JsonValue, PathConfig, RunArtifactPaths
 
-JsonPrimitive: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
 SnapshotUpdateValue: TypeAlias = (
     JsonValue
     | RunSummary
@@ -384,18 +382,13 @@ def _derive_slam_artifacts(
         return None
     dense_path = output_paths.get("dense_points_ply", run_paths.point_cloud_path)
     sparse_path = output_paths.get("sparse_points_ply", run_paths.sparse_points_path)
-    dense_ref = _artifact_ref(dense_path, kind="ply") if dense_path.exists() else None
-    sparse_ref = _artifact_ref(sparse_path, kind="ply") if sparse_path.exists() else None
+    dense_ref = artifact_ref(dense_path, kind="ply") if dense_path.exists() else None
+    sparse_ref = artifact_ref(sparse_path, kind="ply") if sparse_path.exists() else None
     return SlamArtifacts(
-        trajectory_tum=_artifact_ref(trajectory_path, kind="tum"),
+        trajectory_tum=artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=sparse_ref,
         dense_points_ply=dense_ref,
     )
-
-
-def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
-    resolved = path.resolve()
-    return ArtifactRef(path=resolved, kind=kind, fingerprint=f"persisted:{resolved.name}")
 
 
 def _canonical_path_rows(run_paths: RunArtifactPaths) -> list[ArtifactPathRow]:

@@ -14,7 +14,6 @@ from typing import Annotated, Any, Literal, TypeAlias
 from pydantic import ConfigDict, Field
 
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.stages.base.config import (
     FailureFingerprint,
     StageConfig,
@@ -32,10 +31,11 @@ from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
 from prml_vslam.sources.runtime import (
     SampledStreamingSource,
     SourceRuntime,
-    SourceRuntimeInput,
+    SourceStageInput,
     VideoOfflineSequenceSource,
 )
 from prml_vslam.utils import FactoryConfig, PathConfig
+from prml_vslam.utils.serialization import stable_hash
 
 
 class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSource]):
@@ -208,11 +208,11 @@ class SourceStageConfig(StageConfig):
 
         return _factory
 
-    def build_offline_input(self, context: StageInputContext) -> SourceRuntimeInput:
+    def build_offline_input(self, context: StageInputContext) -> SourceStageInput:
         """Build the narrow source runtime input."""
         source_backend = self.backend
         slam_backend = context.run_config.stages.slam.backend
-        return SourceRuntimeInput(
+        return SourceStageInput(
             artifact_root=context.plan.artifact_root,
             mode=context.run_config.mode,
             frame_stride=1 if source_backend is None else source_backend.frame_stride,

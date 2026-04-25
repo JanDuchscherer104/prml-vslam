@@ -51,9 +51,9 @@ class ReconstructionStageConfig(StageConfig):
         return ReconstructionRuntime
 
     def build_offline_input(self, context: StageInputContext):
-        from prml_vslam.reconstruction.stage.contracts import ReconstructionRuntimeInput
+        from prml_vslam.reconstruction.stage.runtime import ReconstructionStageInput
 
-        return ReconstructionRuntimeInput(
+        return ReconstructionStageInput(
             backend=self.backend,
             run_paths=context.run_paths,
             benchmark_inputs=context.results.require_benchmark_inputs(),

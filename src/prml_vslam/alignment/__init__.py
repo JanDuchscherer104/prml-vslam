@@ -1,17 +1,7 @@
 """Derived alignment contracts and services."""
 
-from typing import Any
-
 from .contracts import GroundAlignmentConfig
-
-
-def __getattr__(name: str) -> Any:
-    if name == "GroundAlignmentService":
-        from .services import GroundAlignmentService
-
-        return GroundAlignmentService
-    raise AttributeError(name)
-
+from .services import GroundAlignmentService
 
 __all__ = [
     "GroundAlignmentConfig",

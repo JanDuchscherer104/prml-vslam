@@ -11,12 +11,10 @@ import ray
 
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
-    FPS_WINDOW,
     put_transient_payload,
-    rolling_fps,
 )
 from prml_vslam.protocols.source import StreamingSequenceSource
-from prml_vslam.utils import Console
+from prml_vslam.utils import FPS_WINDOW, Console, rolling_fps
 
 
 @ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0)

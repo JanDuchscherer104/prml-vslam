@@ -11,10 +11,9 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, JsonScalar
 
 RuntimeFactory = Callable[[], BaseStageRuntime]
-JsonScalar = str | int | float | bool | None
 
 
 class RuntimePreflightResult(BaseData):

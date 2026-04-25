@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentRuntimeInput
+from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
@@ -125,7 +125,7 @@ def test_run_ground_alignment_stage_writes_metadata_and_returns_skipped(
     del monkeypatch, plan
 
     result = GroundAlignmentRuntime(service_type=FakeGroundAlignmentService).run_offline(
-        GroundAlignmentRuntimeInput(config=run_config.stages.align_ground.ground, run_paths=run_paths, slam=slam)
+        GroundAlignmentStageInput(config=run_config.stages.align_ground.ground, run_paths=run_paths, slam=slam)
     )
 
     assert result.outcome.stage_key is StageKey.GRAVITY_ALIGNMENT
@@ -171,7 +171,7 @@ def test_run_ground_alignment_stage_writes_applied_metadata_when_export_enabled(
     del monkeypatch, plan
 
     result = GroundAlignmentRuntime(service_type=FakeGroundAlignmentService).run_offline(
-        GroundAlignmentRuntimeInput(config=run_config.stages.align_ground.ground, run_paths=run_paths, slam=slam)
+        GroundAlignmentStageInput(config=run_config.stages.align_ground.ground, run_paths=run_paths, slam=slam)
     )
 
     assert result.outcome.status.value == "completed"

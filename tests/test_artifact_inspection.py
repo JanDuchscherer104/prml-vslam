@@ -21,11 +21,11 @@ from prml_vslam.pipeline.contracts.events import (
 )
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.pipeline.sinks.jsonl import JsonlEventSink
 from prml_vslam.reconstruction.contracts import ReconstructionMetadata, ReconstructionMethodId
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.utils import PathConfig
+from prml_vslam.utils.serialization import write_json
 
 
 def test_discover_run_artifact_roots_finds_method_level_roots(tmp_path: Path) -> None:

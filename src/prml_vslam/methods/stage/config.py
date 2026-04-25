@@ -310,11 +310,11 @@ class SlamStageConfig(StageConfig):
 
     def build_offline_input(self, context: StageInputContext):
         """Build the narrow offline SLAM input DTO."""
-        from prml_vslam.methods.stage.contracts import SlamOfflineInput
+        from prml_vslam.methods.stage.contracts import SlamOfflineStageInput
 
         if self.backend is None:
             raise RuntimeError("SLAM runtime requires `[stages.slam.backend]`.")
-        return SlamOfflineInput(
+        return SlamOfflineStageInput(
             backend=self.backend,
             outputs=self.outputs,
             artifact_root=context.plan.artifact_root,
@@ -327,11 +327,11 @@ class SlamStageConfig(StageConfig):
 
     def build_streaming_start_input(self, context: StageInputContext):
         """Build the narrow streaming-start SLAM input DTO."""
-        from prml_vslam.methods.stage.contracts import SlamStreamingStartInput
+        from prml_vslam.methods.stage.contracts import SlamStreamingStartStageInput
 
         if self.backend is None:
             raise RuntimeError("SLAM runtime requires `[stages.slam.backend]`.")
-        return SlamStreamingStartInput(
+        return SlamStreamingStartStageInput(
             backend=self.backend,
             outputs=self.outputs,
             artifact_root=context.plan.artifact_root,

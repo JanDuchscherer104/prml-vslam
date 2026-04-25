@@ -11,8 +11,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from prml_vslam.pipeline.contracts.transport import TransportModel
-
-JsonScalar = str | int | float | bool | None
+from prml_vslam.utils import JsonScalar
 
 
 class TransientPayloadRef(TransportModel):

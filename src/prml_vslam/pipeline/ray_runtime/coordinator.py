@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import threading
 from collections import deque
-from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import ray
@@ -43,11 +41,9 @@ from prml_vslam.pipeline.contracts.events import (
 )
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import StageCacheInfo
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.execution_context import StageExecutionContext
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     EVENT_RING_LIMIT,
@@ -62,13 +58,7 @@ from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
-from prml_vslam.pipeline.stage_cache import ContentFingerprinter, StageCacheKey, StageCacheStore
-from prml_vslam.pipeline.stages.base.config import (
-    StageCacheMode,
-    StageConfig,
-    StageInputContext,
-    StageRuntimeBuildContext,
-)
+from prml_vslam.pipeline.stages.base.config import StageInputContext, StageRuntimeBuildContext
 from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
@@ -88,6 +78,7 @@ from prml_vslam.reconstruction.stage.visualization import (
 from prml_vslam.sources.contracts import SourceStageOutput
 from prml_vslam.sources.visualization import SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils.serialization import stable_hash
 from prml_vslam.visualization.rerun_policy import (
     ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT,
     ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
@@ -95,16 +86,6 @@ from prml_vslam.visualization.rerun_policy import (
 )
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
-
-
-@dataclass(frozen=True, slots=True)
-class _StageCacheRuntimeContext:
-    """Resolved cache state for one stage execution attempt."""
-
-    store: StageCacheStore
-    key: StageCacheKey
-    can_read: bool
-    can_write: bool
 
 
 def _artifact_visualizations(artifacts: dict[str, ArtifactRef]) -> list[VisualizationItem]:
@@ -581,14 +562,6 @@ class RunCoordinatorActor:
             stage_config = runtime_manager.stage_config(stage_key)
             input_payload = self._build_offline_stage_input(stage_key=stage_key, context=context)
             config_hash, input_fingerprint = self._failure_hash_inputs(stage_key=stage_key, context=context)
-            stage_cache = self._stage_cache_context(stage_key=stage_key, stage_config=stage_config, context=context)
-            if stage_cache is not None and stage_cache.can_read:
-                cached_result = stage_cache.store.read(stage_cache.key, artifact_root=plan.artifact_root)
-                if cached_result is not None:
-                    self._emit_stage_started(stage_key)
-                    self._result_store.put(cached_result)
-                    self._record_stage_result(stage_key, cached_result)
-                    continue
             self._stage_runner.run_offline_stage(
                 stage_key=stage_key,
                 runtime=runtime_proxy,
@@ -601,15 +574,6 @@ class RunCoordinatorActor:
                     completed_stage_key, result
                 ),
                 on_stage_failed=self._record_stage_failure,
-                transform_result=(
-                    None
-                    if stage_cache is None
-                    else lambda result, cache=stage_cache: self._apply_stage_cache_result(
-                        cache=cache,
-                        result=result,
-                        artifact_root=plan.artifact_root,
-                    )
-                ),
             )
             self._publish_runtime_updates_from_proxy(runtime_proxy)
         terminal_state = "stopped" if self._stop_requested else "completed"
@@ -654,81 +618,6 @@ class RunCoordinatorActor:
         config_payload = fingerprint.config_payload
         input_payload = fingerprint.input_payload
         return stable_hash(config_payload), stable_hash(input_payload)
-
-    def _content_hash_inputs(self, *, stage_key: StageKey, context: StageExecutionContext) -> tuple[str, str]:
-        fingerprint = context.run_config.stages.section(stage_key).failure_fingerprint(
-            self._stage_input_context(context)
-        )
-        fingerprinter = ContentFingerprinter()
-        return fingerprinter.hash_value(fingerprint.config_payload), fingerprinter.hash_value(fingerprint.input_payload)
-
-    def _stage_cache_context(
-        self,
-        *,
-        stage_key: StageKey,
-        stage_config: StageConfig,
-        context: StageExecutionContext,
-    ) -> _StageCacheRuntimeContext | None:
-        if stage_key is StageKey.SUMMARY or not stage_config.cache.enabled:
-            return None
-        config_hash, input_fingerprint = self._content_hash_inputs(stage_key=stage_key, context=context)
-        cache_root = (
-            stage_config.cache.cache_root
-            if stage_config.cache.cache_root is not None
-            else context.path_config.artifacts_dir / "_stage_cache"
-        )
-        mode = stage_config.cache.mode
-        return _StageCacheRuntimeContext(
-            store=StageCacheStore(cache_root),
-            key=StageCacheKey.build(
-                stage_key=stage_key,
-                config_hash=config_hash,
-                input_fingerprint=input_fingerprint,
-            ),
-            can_read=mode in {StageCacheMode.READ_WRITE, StageCacheMode.READ_ONLY},
-            can_write=mode in {StageCacheMode.READ_WRITE, StageCacheMode.WRITE_ONLY},
-        )
-
-    def _apply_stage_cache_result(
-        self,
-        *,
-        cache: _StageCacheRuntimeContext,
-        result: StageResult,
-        artifact_root: Path,
-    ) -> StageResult:
-        cache_info = StageCacheInfo(cache_key=cache.key.cache_key, cache_root=cache.store.cache_root, hit=False)
-        updated = result.model_copy(
-            update={
-                "outcome": result.outcome.model_copy(
-                    update={
-                        "config_hash": cache.key.config_hash,
-                        "input_fingerprint": cache.key.input_fingerprint,
-                        "cache": cache_info,
-                    }
-                )
-            }
-        )
-        if not cache.can_write:
-            return updated
-        try:
-            entry_path = cache.store.write(cache.key, result=updated, artifact_root=artifact_root)
-        except Exception as exc:
-            self._console.warning(
-                "Failed to write stage cache entry for '%s' in run '%s': %s",
-                cache.key.stage_key.value,
-                self._run_id,
-                exc,
-            )
-            return updated
-        if entry_path is None:
-            return updated
-        return updated.model_copy(
-            update={
-                "outcome": updated.outcome.model_copy(
-                    update={"cache": cache_info.model_copy(update={"entry_path": entry_path})}
-                )
-            }
-        )
 
     def _record_stage_result(self, stage_key: StageKey, result: StageResult) -> None:
         payload = result.payload

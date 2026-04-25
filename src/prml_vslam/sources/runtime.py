@@ -13,12 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from prml_vslam.interfaces import Observation
-from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash, write_json
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
 from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
@@ -35,12 +34,13 @@ from prml_vslam.sources.visualization import (
     reference_trajectory_artifact_key,
 )
 from prml_vslam.utils import BaseData, Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils.serialization import write_json
 from prml_vslam.utils.video_frames import extract_video_frames
 
 _CONSOLE = Console(__name__).child("SourceRuntime")
 
 
-class SourceRuntimeInput(BaseData):
+class SourceStageInput(BaseData):
     """Run-scoped input required to prepare one normalized source stage.
 
     The input carries the source launch policy plus the small amount of run
@@ -57,7 +57,7 @@ class SourceRuntimeInput(BaseData):
     input_fingerprint: str = ""
 
 
-class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
+class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
     """Prepare the normalized source output for offline or streaming runs.
 
     The runtime is method-agnostic: it materializes a
@@ -84,7 +84,7 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
         """
         self._status = self._status.model_copy(update={"lifecycle_state": StageStatus.STOPPED})
 
-    def run_offline(self, input_payload: SourceRuntimeInput) -> StageResult:
+    def run_offline(self, input_payload: SourceStageInput) -> StageResult:
         """Prepare and persist the canonical source-stage output.
 
         The result payload is :class:`prml_vslam.sources.contracts.SourceStageOutput`.
@@ -110,7 +110,7 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
         self._status = result.final_runtime_status
         return result
 
-    def _prepare_source(self, input_payload: SourceRuntimeInput) -> StageResult:
+    def _prepare_source(self, input_payload: SourceStageInput) -> StageResult:
         run_paths = RunArtifactPaths.build(input_payload.artifact_root)
         prepared_manifest = self._source.prepare_sequence_manifest(run_paths.sequence_manifest_path.parent)
         benchmark_inputs = None
@@ -150,59 +150,50 @@ class SourceRuntime(OfflineStageRuntime[SourceRuntimeInput]):
 def _source_artifacts(*, run_paths: RunArtifactPaths, output: SourceStageOutput) -> dict[str, ArtifactRef]:
     sequence_manifest = output.sequence_manifest
     artifacts = {
-        "sequence_manifest": _artifact_ref(run_paths.sequence_manifest_path, kind="json"),
+        "sequence_manifest": artifact_ref(run_paths.sequence_manifest_path, kind="json"),
     }
     if sequence_manifest.rgb_dir is not None:
-        artifacts["rgb_dir"] = _artifact_ref(sequence_manifest.rgb_dir, kind="dir")
+        artifacts["rgb_dir"] = artifact_ref(sequence_manifest.rgb_dir, kind="dir")
     if sequence_manifest.timestamps_path is not None:
-        artifacts["timestamps"] = _artifact_ref(sequence_manifest.timestamps_path, kind="json")
+        artifacts["timestamps"] = artifact_ref(sequence_manifest.timestamps_path, kind="json")
     if sequence_manifest.intrinsics_path is not None:
-        artifacts["intrinsics"] = _artifact_ref(sequence_manifest.intrinsics_path, kind="yaml")
+        artifacts["intrinsics"] = artifact_ref(sequence_manifest.intrinsics_path, kind="yaml")
     if sequence_manifest.rotation_metadata_path is not None:
-        artifacts["rotation_metadata"] = _artifact_ref(sequence_manifest.rotation_metadata_path, kind="json")
+        artifacts["rotation_metadata"] = artifact_ref(sequence_manifest.rotation_metadata_path, kind="json")
     if output.benchmark_inputs is not None:
-        artifacts["benchmark_inputs"] = _artifact_ref(run_paths.benchmark_inputs_path, kind="json")
+        artifacts["benchmark_inputs"] = artifact_ref(run_paths.benchmark_inputs_path, kind="json")
         for reference in output.benchmark_inputs.reference_trajectories:
-            artifacts[reference_trajectory_artifact_key(reference)] = _artifact_ref(reference.path, kind="tum")
+            artifacts[reference_trajectory_artifact_key(reference)] = artifact_ref(reference.path, kind="tum")
         for reference in output.benchmark_inputs.reference_clouds:
-            artifacts[reference_cloud_artifact_key(reference)] = _artifact_ref(reference.path, kind="ply")
-            artifacts[reference_cloud_metadata_artifact_key(reference)] = _artifact_ref(
+            artifacts[reference_cloud_artifact_key(reference)] = artifact_ref(reference.path, kind="ply")
+            artifacts[reference_cloud_metadata_artifact_key(reference)] = artifact_ref(
                 reference.metadata_path,
                 kind="json",
             )
         for reference in output.benchmark_inputs.reference_point_cloud_sequences:
-            artifacts[reference_point_cloud_sequence_index_artifact_key(reference)] = _artifact_ref(
+            artifacts[reference_point_cloud_sequence_index_artifact_key(reference)] = artifact_ref(
                 reference.index_path,
                 kind="csv",
             )
-            artifacts[reference_point_cloud_sequence_trajectory_artifact_key(reference)] = _artifact_ref(
+            artifacts[reference_point_cloud_sequence_trajectory_artifact_key(reference)] = artifact_ref(
                 reference.trajectory_path,
                 kind="tum",
             )
-            artifacts[reference_point_cloud_sequence_payload_artifact_key(reference)] = _artifact_ref(
+            artifacts[reference_point_cloud_sequence_payload_artifact_key(reference)] = artifact_ref(
                 reference.payload_root,
                 kind="dir",
             )
         for reference in output.benchmark_inputs.observation_sequences:
-            artifacts[observation_sequence_artifact_key(reference)] = _artifact_ref(
+            artifacts[observation_sequence_artifact_key(reference)] = artifact_ref(
                 reference.index_path,
                 kind="observation_sequence",
             )
     return artifacts
 
 
-def _artifact_ref(path: Path, *, kind: str) -> ArtifactRef:
-    resolved_path = path.resolve()
-    return ArtifactRef(
-        path=resolved_path,
-        kind=kind,
-        fingerprint=stable_hash({"path": str(resolved_path), "kind": kind}),
-    )
-
-
 def _materialize_manifest(
     *,
-    input_payload: SourceRuntimeInput,
+    input_payload: SourceStageInput,
     prepared_manifest: SequenceManifest,
     run_paths: RunArtifactPaths,
 ) -> SequenceManifest:
@@ -295,13 +286,13 @@ def _materialize_manifest(
     )
 
 
-def _frame_stride_for_source(input_payload: SourceRuntimeInput, *, prepared_manifest: SequenceManifest) -> int:
+def _frame_stride_for_source(input_payload: SourceStageInput, *, prepared_manifest: SequenceManifest) -> int:
     if prepared_manifest.video_path is None:
         return 1
     return input_payload.frame_stride
 
 
-def _max_frames_for_input(input_payload: SourceRuntimeInput) -> int | None:
+def _max_frames_for_input(input_payload: SourceStageInput) -> int | None:
     if input_payload.mode is not PipelineMode.STREAMING:
         return None
     return input_payload.streaming_max_frames
@@ -373,8 +364,7 @@ def _preferred_timestamps_source(
 
 
 def _write_json_payload(path: Path, payload: Any) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    write_json(path, payload)
     return path.resolve()
 
 
@@ -467,6 +457,6 @@ __all__ = [
     "SampledObservationStream",
     "SampledStreamingSource",
     "SourceRuntime",
-    "SourceRuntimeInput",
+    "SourceStageInput",
     "VideoOfflineSequenceSource",
 ]

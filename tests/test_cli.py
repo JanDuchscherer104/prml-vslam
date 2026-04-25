@@ -13,8 +13,8 @@ from prml_vslam.methods.stage.config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import write_json
 from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.utils.serialization import write_json
 
 runner = CliRunner()
 

@@ -38,7 +38,7 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.sources.runtime import (
     SourceRuntime,
-    SourceRuntimeInput,
+    SourceStageInput,
     _materialize_manifest,
 )
 from prml_vslam.sources.visualization import (
@@ -141,7 +141,7 @@ def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path
     runtime = SourceRuntime(source=_ManifestOnlySource(rgb_dir=rgb_dir))
     artifact_root = tmp_path / "run"
 
-    result = runtime.run_offline(SourceRuntimeInput(**_config_input(), artifact_root=artifact_root))
+    result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=artifact_root))
 
     assert result.stage_key is StageKey.SOURCE
     assert result.outcome.status is StageStatus.COMPLETED
@@ -164,7 +164,7 @@ def test_source_runtime_preserves_benchmark_inputs_and_artifacts(tmp_path: Path)
     runtime = SourceRuntime(source=_BenchmarkSource(rgb_dir=rgb_dir, reference_path=reference_path))
     artifact_root = tmp_path / "run"
 
-    result = runtime.run_offline(SourceRuntimeInput(**_config_input(), artifact_root=artifact_root))
+    result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=artifact_root))
 
     assert isinstance(result.payload, SourceStageOutput)
     assert result.payload.benchmark_inputs is not None
@@ -196,7 +196,7 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
         )
     )
 
-    result = runtime.run_offline(SourceRuntimeInput(**_config_input(), artifact_root=tmp_path / "run"))
+    result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=tmp_path / "run"))
 
     assert isinstance(result.payload, SourceStageOutput)
     assert "reference_cloud:tango_area_learning:aligned" in result.outcome.artifacts
@@ -270,7 +270,7 @@ def test_source_runtime_materialization_reuses_extraction_cache(tmp_path: Path) 
         encoding="utf-8",
     )
     manifest = _materialize_manifest(
-        input_payload=SourceRuntimeInput(**_config_input(frame_stride=1), artifact_root=run_paths.artifact_root),
+        input_payload=SourceStageInput(**_config_input(frame_stride=1), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(sequence_id="ingest-cache", video_path=video_path),
         run_paths=run_paths,
     )
@@ -296,7 +296,7 @@ def test_source_runtime_materialization_normalizes_tum_rgbd_timestamps(tmp_path:
         encoding="utf-8",
     )
     manifest = _materialize_manifest(
-        input_payload=SourceRuntimeInput(**_config_input(), artifact_root=run_paths.artifact_root),
+        input_payload=SourceStageInput(**_config_input(), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",
             rgb_dir=rgb_dir,
@@ -317,7 +317,7 @@ def test_source_runtime_materialization_normalizes_advio_csv_timestamps(tmp_path
     timestamps_path = tmp_path / "frames.csv"
     timestamps_path.write_text("0.000000000,1\n0.100000000,2\n", encoding="utf-8")
     manifest = _materialize_manifest(
-        input_payload=SourceRuntimeInput(**_config_input(), artifact_root=run_paths.artifact_root),
+        input_payload=SourceStageInput(**_config_input(), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
             rgb_dir=rgb_dir,
@@ -357,7 +357,7 @@ def test_source_runtime_materialization_applies_advio_video_frame_stride(
     monkeypatch.setattr("prml_vslam.sources.runtime.extract_video_frames", fake_extract_video_frames)
 
     manifest = _materialize_manifest(
-        input_payload=SourceRuntimeInput(**_config_input(frame_stride=3), artifact_root=run_paths.artifact_root),
+        input_payload=SourceStageInput(**_config_input(frame_stride=3), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
             video_path=video_path,
@@ -379,7 +379,7 @@ def test_source_runtime_materialization_does_not_double_sample_dataset_timestamp
     timestamps_path = tmp_path / "sampled-rgb.txt"
     timestamps_path.write_text("0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n", encoding="utf-8")
     manifest = _materialize_manifest(
-        input_payload=SourceRuntimeInput(**_config_input(frame_stride=2), artifact_root=run_paths.artifact_root),
+        input_payload=SourceStageInput(**_config_input(frame_stride=2), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",
             rgb_dir=rgb_dir,

@@ -20,7 +20,7 @@ from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import StreamingSlamBackend
 from prml_vslam.methods.stage.config import BackendConfig, SlamOutputPolicy
-from prml_vslam.methods.stage.contracts import SlamOfflineInput, SlamStreamingStartInput
+from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStreamingStartStageInput
 from prml_vslam.methods.stage.visualization import (
     DEPTH_REF,
     IMAGE_REF,
@@ -31,7 +31,6 @@ from prml_vslam.methods.stage.visualization import (
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.finalization import stable_hash
 from prml_vslam.pipeline.ray_runtime.common import (
     slam_artifacts_map,
     visualization_artifact_map,
@@ -44,10 +43,9 @@ from prml_vslam.pipeline.stages.base.protocols import (
     StreamingStageRuntime,
 )
 from prml_vslam.sources.contracts import SequenceManifest
-from prml_vslam.utils import Console, RunArtifactPaths
+from prml_vslam.utils import FPS_WINDOW, Console, RunArtifactPaths, rolling_fps
+from prml_vslam.utils.serialization import stable_hash
 from prml_vslam.visualization.rerun import collect_native_visualization_artifacts
-
-_FPS_WINDOW = 20
 
 
 class _TransientPayloadStore:
@@ -91,9 +89,9 @@ class _TransientPayloadStore:
 
 
 class SlamStageRuntime(
-    OfflineStageRuntime[SlamOfflineInput],
+    OfflineStageRuntime[SlamOfflineStageInput],
     LiveUpdateStageRuntime,
-    StreamingStageRuntime[SlamStreamingStartInput, Observation],
+    StreamingStageRuntime[SlamStreamingStartStageInput, Observation],
 ):
     """Pipeline-facing runtime for offline and streaming SLAM execution."""
 
@@ -108,7 +106,7 @@ class SlamStageRuntime(
         self._console = Console(__name__).child(self.__class__.__name__)
         self._payload_store = _TransientPayloadStore()
         self._streaming_backend: StreamingSlamBackend | None = None
-        self._streaming_input: SlamStreamingStartInput | None = None
+        self._streaming_input: SlamStreamingStartStageInput | None = None
         self._pending_updates: list[StageRuntimeUpdate] = []
         self._last_visualization_artifacts: VisualizationArtifacts | None = None
         self._lifecycle_state = StageStatus.QUEUED
@@ -117,7 +115,7 @@ class SlamStageRuntime(
         self._failed_frames = 0
         self._last_warning: str | None = None
         self._last_error: str | None = None
-        self._frame_timestamps = deque(maxlen=_FPS_WINDOW)
+        self._frame_timestamps = deque(maxlen=FPS_WINDOW)
         self._stopped = False
 
     def status(self) -> StageRuntimeStatus:
@@ -130,7 +128,7 @@ class SlamStageRuntime(
             progress_unit="frames",
             failed_count=self._failed_frames,
             processed_items=self._processed_frames,
-            fps=_rolling_fps(self._frame_timestamps),
+            fps=rolling_fps(self._frame_timestamps),
             last_warning=self._last_warning,
             last_error=self._last_error,
             updated_at_ns=time.time_ns(),
@@ -142,7 +140,7 @@ class SlamStageRuntime(
         if self._lifecycle_state is StageStatus.RUNNING:
             self._lifecycle_state = StageStatus.STOPPED
 
-    def run_offline(self, input_payload: SlamOfflineInput) -> StageResult:
+    def run_offline(self, input_payload: SlamOfflineStageInput) -> StageResult:
         """Run the selected backend over one bounded normalized sequence."""
         self._lifecycle_state = StageStatus.RUNNING
         try:
@@ -172,7 +170,7 @@ class SlamStageRuntime(
             self._lifecycle_state = StageStatus.FAILED
             raise
 
-    def start_streaming(self, input_payload: SlamStreamingStartInput) -> None:
+    def start_streaming(self, input_payload: SlamStreamingStartStageInput) -> None:
         """Start one incremental SLAM backend session."""
         backend_config = input_payload.backend
         backend = backend_config.setup_target(path_config=input_payload.path_config)
@@ -342,13 +340,6 @@ def _semantic_update(update: SlamUpdate) -> SlamUpdate:
             "pointmap": None,
         }
     )
-
-
-def _rolling_fps(timestamps: deque[float]) -> float:
-    if len(timestamps) < 2:
-        return 0.0
-    elapsed = timestamps[-1] - timestamps[0]
-    return 0.0 if elapsed <= 0.0 else (len(timestamps) - 1) / elapsed
 
 
 __all__ = [

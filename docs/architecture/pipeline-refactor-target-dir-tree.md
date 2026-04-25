@@ -431,11 +431,11 @@ src/prml_vslam/
 │   │   │   ├── __init__.py
 │   │   │   ├── config.py
 │   │   │   │   ├── StageConfig
-│   │   │   │   ├── StageExecutionConfig
-│   │   │   │   ├── ResourceSpec
-│   │   │   │   ├── PlacementConstraint
-│   │   │   │   ├── StageTelemetryConfig
-│   │   │   │   └── StageCleanupPolicy
+│   │   │   │   ├── runtime policy fields
+│   │   │   │   ├── resource fields
+│   │   │   │   ├── placement fields
+│   │   │   │   ├── telemetry fields
+│   │   │   │   └── cleanup fields
 │   │   │   ├── contracts.py
 │   │   │   │   ├── StageResult
 │   │   │   │   ├── StageRuntimeStatus
