@@ -588,13 +588,13 @@ def test_rerun_sink_logs_reconstruction_artifacts(tmp_path: Path, monkeypatch) -
                 VisualizationItem(
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_RECONSTRUCTION_POINT_CLOUD,
-                    artifact_refs={POINT_CLOUD_ARTIFACT: artifact_ref(cloud)},
+                    artifact_refs={POINT_CLOUD_ARTIFACT: artifact_ref(cloud, kind="ply")},
                     metadata={"reconstruction_id": "reference"},
                 ),
                 VisualizationItem(
                     intent=VisualizationIntent.MESH,
                     role=ROLE_RECONSTRUCTION_MESH,
-                    artifact_refs={MESH_ARTIFACT: artifact_ref(mesh)},
+                    artifact_refs={MESH_ARTIFACT: artifact_ref(mesh, kind="ply")},
                     metadata={"reconstruction_id": "reference"},
                 ),
             ],
@@ -651,7 +651,7 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
                     artifact_refs={
-                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud),
+                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud, kind="ply"),
                         SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
@@ -664,7 +664,7 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
                     artifact_refs={
-                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud),
+                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud, kind="ply"),
                         SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
@@ -720,7 +720,7 @@ def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tm
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
                     artifact_refs={
-                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud),
+                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud, kind="ply"),
                         SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
@@ -870,7 +870,7 @@ def test_rerun_policy_skips_invalid_reconstruction_artifact(caplog, monkeypatch)
                     VisualizationItem(
                         intent=VisualizationIntent.POINT_CLOUD,
                         role=ROLE_RECONSTRUCTION_POINT_CLOUD,
-                        artifact_refs={POINT_CLOUD_ARTIFACT: artifact_ref(Path("missing.ply"))},
+                        artifact_refs={POINT_CLOUD_ARTIFACT: artifact_ref(Path("missing.ply"), kind="ply")},
                     )
                 ],
             ),
