@@ -1,17 +1,17 @@
 flowchart TD
-    request["RunConfig"]
-    validate["RunPlannerService.validate_request()"]
-    paths["PathConfig.plan_run_paths()"]
-    stages["Select enabled RunPlanStageId values"]
-    outputs["Assign canonical stage outputs"]
+    config["RunConfig"]
+    compile["RunConfig.compile_plan()"]
+    stages["Select enabled StageConfig sections"]
+    availability["Check stage availability()"]
+    outputs["Assign declared_outputs()"]
     plan["RunPlan"]
     preview["Preview in app or CLI"]
-    runtime["Executable runtime slice"]
+    runtime["RunService preflight"]
 
-    request -->|"typed config input"| validate
-    validate -->|"compatible request"| paths
-    paths --> stages
-    stages --> outputs
+    config -->|"persisted TOML"| compile
+    compile --> stages
+    stages --> availability
+    availability --> outputs
     outputs --> plan
-    plan -->|"preview before execution"| preview
-    plan -->|"hand off to RunService"| runtime
+    plan -->|"preview"| preview
+    plan -->|"start_run()"| runtime

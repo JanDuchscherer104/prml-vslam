@@ -15,41 +15,51 @@ sequenceDiagram
 
     box rgb(232, 241, 255) Planning and launch surfaces
         participant Surface as app.pages.pipeline<br/>or prml_vslam.main
-        participant Demo as pipeline.demo
-        participant Planner as pipeline.services<br/>RunPlannerService
+        participant RunConfig as pipeline.config<br/>RunConfig
     end
 
     box rgb(255, 244, 229) Pipeline runtime
         participant Runtime as pipeline.run_service<br/>RunService
         participant Backend as pipeline.backend_ray<br/>RayPipelineBackend
         participant Coord as pipeline.ray_runtime.coordinator<br/>RunCoordinatorActor
-        participant Source as pipeline.ray_runtime.stage_actors<br/>PacketSourceActor
-        participant Slam as pipeline.ray_runtime.stage_actors<br/>StreamingSlamStageActor
+        participant RuntimeMgr as pipeline.runtime_manager<br/>RuntimeManager
+        participant Proxy as pipeline.stages.base.proxy<br/>StageRuntimeHandle
+        participant SlamRuntime as methods.stage.runtime<br/>SlamStageRuntime
     end
 
     User->>Surface: choose request
-    Surface->>Demo: load_run_request_toml(config_path)
-    Demo-->>Surface: request: RunConfig
-    Surface->>Planner: build_run_plan(request)
-    Planner-->>Surface: plan: RunPlan
+    Surface->>RunConfig: compile_plan()
+    RunConfig-->>Surface: plan: RunPlan
 
     alt preview only
         Surface-->>User: show RunPlan
     else bounded execution
-        Surface->>Runtime: start_run(request, source)
-        Runtime->>Planner: build_run_plan(request)
-        Planner-->>Runtime: plan: RunPlan
-        Runtime->>Backend: submit_run(request, source)
-        Backend->>Coord: start(request, plan, source)
-        Coord->>Source: start_stream(source, credits)
-        Coord->>Slam: start_stage(request, plan)
-        loop each packet
-            Source-->>Coord: packet observed
-            Coord->>Slam: push_frame(...)
-            Slam-->>Coord: backend notices
+        Surface->>Runtime: start_run(request)
+        Runtime->>RunConfig: compile_plan()
+        RunConfig-->>Runtime: plan: RunPlan
+        Runtime->>Backend: submit_run(request)
+        Backend->>Coord: start(request, plan)
+        Coord->>RuntimeMgr: preflight + build slam runtime proxy
+        RuntimeMgr-->>Coord: Proxy: StageRuntimeHandle
+
+        alt streaming mode
+            Coord->>Proxy: start_streaming(...)
+            Proxy->>SlamRuntime: start_streaming(...)
+            loop each Observation
+                Coord->>Proxy: submit_stream_item(item)
+                Proxy->>SlamRuntime: submit_stream_item(item)
+                Coord->>Proxy: drain_runtime_updates()
+                Proxy-->>Coord: updates: StageRuntimeUpdate[]
+            end
+            Coord->>Proxy: finish_streaming()
+            Proxy-->>Coord: result: StageResult
+        else offline mode
+            Coord->>Proxy: run_offline(...)
+            Proxy->>SlamRuntime: run_offline(...)
+            SlamRuntime-->>Proxy: StageResult
+            Proxy-->>Coord: StageResult
         end
-        Coord->>Slam: close_stage()
-        Slam-->>Coord: slam: SlamArtifacts
-        Runtime-->>Surface: summary: RunSummary + StageManifest[]
+
+        Runtime-->>Surface: snapshot: RunSnapshot
         Surface-->>User: inspect artifacts and summary
     end

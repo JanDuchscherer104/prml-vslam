@@ -1,28 +1,28 @@
 stateDiagram-v2
     [*] --> Idle
 
-    Idle: No active worker
-    Idle: Last terminal snapshot stays visible until the next run replaces it
+    Idle: No active execution
+    Idle: Last terminal RunSnapshot remains visible
 
-    Connecting: Plan is attached to the snapshot
-    Connecting: Manifest creation and stream or session setup are in progress
+    Initializing: RunCoordinatorActor and RuntimeManager starting
+    Initializing: Runtime preflight and backend allocation
 
-    Running: Live Observation to SlamUpdate flow is active
-    Running: Metrics and preview state refresh in memory
+    Running: Active stage execution
+    Running: StageRuntimeStatus and StageRuntimeUpdate fresh
 
-    Completed: Bounded replay reached EOF
-    Completed: SlamArtifacts, StageManifest, and RunSummary are persisted
+    Completed: Linear stage plan finished successfully
+    Completed: StageOutcome, artifacts, and RunSummary persisted
 
-    Stopped: User or caller requested stop
-    Stopped: The terminal snapshot is preserved
+    Stopped: Run explicitly stopped by user or driver
+    Stopped: Final snapshot captures partial results
 
-    Failed: Pre-launch or runtime error occurred
-    Failed: The terminal snapshot is preserved with an error message
+    Failed: Runtime exception or preflight error
+    Failed: Final snapshot captures error_message and traceback
 
-    Idle --> Connecting: start(request, plan, source, slam_backend)
-    Connecting --> Running: manifest written and session opened
-    Connecting --> Failed: pre-launch or setup error
+    Idle --> Initializing: RunService.start_run()
+    Initializing --> Running: RuntimeProxy ready
+    Initializing --> Failed: Initialization error
 
-    Running --> Completed: eof on bounded replay
-    Running --> Stopped: explicit stop_run()
-    Running --> Failed: runtime exception
+    Running --> Completed: summary stage finished
+    Running --> Stopped: stop_run()
+    Running --> Failed: stage failure
