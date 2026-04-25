@@ -36,11 +36,8 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
     SourceStageOutput,
 )
-from prml_vslam.sources.runtime import (
-    SourceRuntime,
-    SourceStageInput,
-    _materialize_manifest,
-)
+from prml_vslam.sources.materialization import materialize_manifest
+from prml_vslam.sources.runtime import SourceRuntime, SourceStageInput
 from prml_vslam.sources.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
     ROLE_SOURCE_CAMERA_RGB,
@@ -269,7 +266,7 @@ def test_source_runtime_materialization_reuses_extraction_cache(tmp_path: Path) 
         f'{{"video_path": "{video_path.resolve()}", "frame_stride": 1, "max_frames": null}}',
         encoding="utf-8",
     )
-    manifest = _materialize_manifest(
+    manifest = materialize_manifest(
         input_payload=SourceStageInput(**_config_input(frame_stride=1), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(sequence_id="ingest-cache", video_path=video_path),
         run_paths=run_paths,
@@ -295,7 +292,7 @@ def test_source_runtime_materialization_normalizes_tum_rgbd_timestamps(tmp_path:
         + "\n",
         encoding="utf-8",
     )
-    manifest = _materialize_manifest(
+    manifest = materialize_manifest(
         input_payload=SourceStageInput(**_config_input(), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",
@@ -316,7 +313,7 @@ def test_source_runtime_materialization_normalizes_advio_csv_timestamps(tmp_path
     rgb_dir.mkdir(parents=True)
     timestamps_path = tmp_path / "frames.csv"
     timestamps_path.write_text("0.000000000,1\n0.100000000,2\n", encoding="utf-8")
-    manifest = _materialize_manifest(
+    manifest = materialize_manifest(
         input_payload=SourceStageInput(**_config_input(), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
@@ -354,9 +351,9 @@ def test_source_runtime_materialization_applies_advio_video_frame_stride(
         (output_dir / "000001.png").write_bytes(b"png")
         return SimpleNamespace(rgb_dir=output_dir.resolve(), timestamps_ns=[0, 300_000_000])
 
-    monkeypatch.setattr("prml_vslam.sources.runtime.extract_video_frames", fake_extract_video_frames)
+    monkeypatch.setattr("prml_vslam.sources.materialization.extract_video_frames", fake_extract_video_frames)
 
-    manifest = _materialize_manifest(
+    manifest = materialize_manifest(
         input_payload=SourceStageInput(**_config_input(frame_stride=3), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="advio-15",
@@ -378,7 +375,7 @@ def test_source_runtime_materialization_does_not_double_sample_dataset_timestamp
     rgb_dir.mkdir(parents=True)
     timestamps_path = tmp_path / "sampled-rgb.txt"
     timestamps_path.write_text("0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n", encoding="utf-8")
-    manifest = _materialize_manifest(
+    manifest = materialize_manifest(
         input_payload=SourceStageInput(**_config_input(frame_stride=2), artifact_root=run_paths.artifact_root),
         prepared_manifest=SequenceManifest(
             sequence_id="freiburg1_room",

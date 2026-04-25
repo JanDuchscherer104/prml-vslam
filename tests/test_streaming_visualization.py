@@ -11,7 +11,7 @@ import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
-from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.artifacts import artifact_ref
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage.visualization import (
     COLORS_REF,
@@ -121,10 +121,6 @@ def _payload_ref(
     dtype: str,
 ) -> TransientPayloadRef:
     return TransientPayloadRef(handle_id=handle_id, payload_kind=payload_kind, shape=shape, dtype=dtype)
-
-
-def _artifact_ref(path: Path, *, kind: str = "ply") -> ArtifactRef:
-    return ArtifactRef(path=path, kind=kind, fingerprint=path.name)
 
 
 def _slam_pose_update(
@@ -592,13 +588,13 @@ def test_rerun_sink_logs_reconstruction_artifacts(tmp_path: Path, monkeypatch) -
                 VisualizationItem(
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_RECONSTRUCTION_POINT_CLOUD,
-                    artifact_refs={POINT_CLOUD_ARTIFACT: _artifact_ref(cloud)},
+                    artifact_refs={POINT_CLOUD_ARTIFACT: artifact_ref(cloud)},
                     metadata={"reconstruction_id": "reference"},
                 ),
                 VisualizationItem(
                     intent=VisualizationIntent.MESH,
                     role=ROLE_RECONSTRUCTION_MESH,
-                    artifact_refs={MESH_ARTIFACT: _artifact_ref(mesh)},
+                    artifact_refs={MESH_ARTIFACT: artifact_ref(mesh)},
                     metadata={"reconstruction_id": "reference"},
                 ),
             ],
@@ -644,7 +640,7 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
                 VisualizationItem(
                     intent=VisualizationIntent.TRAJECTORY,
                     role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
-                    artifact_refs={TRAJECTORY_ARTIFACT: _artifact_ref(trajectory, kind="tum")},
+                    artifact_refs={TRAJECTORY_ARTIFACT: artifact_ref(trajectory, kind="tum")},
                     metadata={
                         "reference_source": "ground_truth",
                         "target_frame": "advio_gt_world",
@@ -655,8 +651,8 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
                     artifact_refs={
-                        SOURCE_POINT_CLOUD_ARTIFACT: _artifact_ref(cloud),
-                        SOURCE_METADATA_ARTIFACT: _artifact_ref(metadata, kind="json"),
+                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud),
+                        SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
                         "reference_source": "tango_raw",
@@ -668,8 +664,8 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
                     artifact_refs={
-                        SOURCE_POINT_CLOUD_ARTIFACT: _artifact_ref(cloud),
-                        SOURCE_METADATA_ARTIFACT: _artifact_ref(metadata, kind="json"),
+                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud),
+                        SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
                         "reference_source": "tango_raw",
@@ -713,7 +709,7 @@ def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tm
                 VisualizationItem(
                     intent=VisualizationIntent.TRAJECTORY,
                     role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
-                    artifact_refs={TRAJECTORY_ARTIFACT: _artifact_ref(trajectory, kind="tum")},
+                    artifact_refs={TRAJECTORY_ARTIFACT: artifact_ref(trajectory, kind="tum")},
                     metadata={
                         "reference_source": "ground_truth",
                         "target_frame": "advio_gt_world",
@@ -724,8 +720,8 @@ def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tm
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
                     artifact_refs={
-                        SOURCE_POINT_CLOUD_ARTIFACT: _artifact_ref(cloud),
-                        SOURCE_METADATA_ARTIFACT: _artifact_ref(metadata, kind="json"),
+                        SOURCE_POINT_CLOUD_ARTIFACT: artifact_ref(cloud),
+                        SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
                         "reference_source": "tango_raw",
@@ -874,7 +870,7 @@ def test_rerun_policy_skips_invalid_reconstruction_artifact(caplog, monkeypatch)
                     VisualizationItem(
                         intent=VisualizationIntent.POINT_CLOUD,
                         role=ROLE_RECONSTRUCTION_POINT_CLOUD,
-                        artifact_refs={POINT_CLOUD_ARTIFACT: _artifact_ref(Path("missing.ply"))},
+                        artifact_refs={POINT_CLOUD_ARTIFACT: artifact_ref(Path("missing.ply"))},
                     )
                 ],
             ),
