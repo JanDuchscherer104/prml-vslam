@@ -139,6 +139,12 @@ Important consequences:
   be cleared by frusta eviction.
 - The root `world` entity declares the explicit viewer world basis and keeps the
   only intentionally visible axes marker at the origin.
+- The default 3D blueprint uses a narrow allow-list for aligned references,
+  reconstruction/alignment/overlay branches, live pose branches, keyed frusta,
+  keyed point clouds, and SLAM branches. It does not broadly include raster
+  parents and then hide image/depth children with negative filters.
+- Source-native references remain logged for provenance, but the default 3D
+  view shows only aligned reference branches.
 
 ## Current Implementation
 

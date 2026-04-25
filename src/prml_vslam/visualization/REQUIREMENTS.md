@@ -20,9 +20,12 @@ This document is the concise source of truth for `prml_vslam.visualization`.
   - one diagnostic preview image per keyframe
 - source RGB and model-raster payloads are intentionally separate surfaces and
   are not expected to share a raster
-- the default 3D scene should render keyed-history point clouds from `world/keyframes/points/<id>/points` and treat `world/live/model/points` as latest/debug-only geometry
-- the default 3D scene should also include keyed camera/frusta entities plus
-  trajectory lines and optional per-pose axes
+- the default 3D scene should render aligned reference geometry,
+  keyed-history point clouds from `world/keyframes/points/<id>/points`, recent
+  keyed camera/frusta entities, trajectory lines, and optional per-pose axes
+- the default 3D scene should use a narrow allow-list and treat
+  `world/live/model/points`, source-native references, and camera image/depth
+  raster branches as non-default debug/2D surfaces
 - keyed-history persistence in the viewer should come from stable entity paths rather than requiring a dedicated keyframe timeline
 - the streaming repo-owned sink should keep only the newest configured window of keyed camera/frusta entities visible
 - the current repo-owned stream does not yet log a world-space fused dense cloud separate from per-keyframe pointmaps
