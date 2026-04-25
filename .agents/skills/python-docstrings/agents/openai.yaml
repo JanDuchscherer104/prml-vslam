@@ -1,0 +1,4 @@
+interface:
+  display_name: "Python Docstrings"
+  short_description: "Improve Python docstrings and API docs"
+  default_prompt: "Use $python-docstrings to write or refactor concise, contract-focused Python docstrings for this code."

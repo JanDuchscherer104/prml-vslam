@@ -10,34 +10,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     import torch
-
-
-# TODO: Can't we simply define "/typings" for Vista in the repo root typings dir??
-class _VistaImageDataset(Protocol):
-    """Subset of the upstream image dataset API used by the wrapper."""
-
-    resolution: tuple[int, int]
-
-    @abstractmethod
-    def _crop_resize_if_necessary_image_only(
-        self,
-        image: np.ndarray,
-        resolution: tuple[int, int],
-        *,
-        h_edge: int = 0,
-        w_edge: int = 0,
-        rng: np.random.Generator | None = None,
-        info: str | None = None,
-    ) -> np.ndarray:
-        """Apply the upstream crop-and-resize pipeline for image-only SLAM inputs."""
-
-    @abstractmethod
-    def ImgGray(self, image: np.ndarray) -> np.ndarray | torch.Tensor:
-        """Return the grayscale tensor expected by upstream ViSTA."""
-
-    @abstractmethod
-    def ImgNorm(self, image: np.ndarray) -> torch.Tensor:
-        """Return the normalized RGB tensor expected by upstream ViSTA."""
+    from vista_slam.datasets.slam_images_only import SLAM_image_only
 
 
 @dataclass(slots=True)
@@ -49,6 +22,7 @@ class PreparedVistaFrame:
     rgb_tensor: torch.Tensor
 
 
+# TODO: remove this protocol!
 class VistaFramePreprocessor(Protocol):
     """Prepare one repo RGB frame for upstream ViSTA ingestion."""
 
@@ -60,7 +34,7 @@ class VistaFramePreprocessor(Protocol):
 class UpstreamVistaFramePreprocessor:
     """Use the exact upstream ViSTA crop-and-resize helper path."""
 
-    def __init__(self, *, image_dataset: _VistaImageDataset) -> None:
+    def __init__(self, *, image_dataset: SLAM_image_only) -> None:
         self._image_dataset = image_dataset
 
     def prepare(self, rgb_image: np.ndarray, *, view_name: str) -> PreparedVistaFrame:

@@ -125,6 +125,11 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src", "$MYPY_CONFIG_FILE_DIR/typin
   ]
   ignore_errors = true
 
+[tool.pyright]
+include = ["src", "tests", "typings"]
+extraPaths = ["src"]
+stubPath = "typings"
+
 [dependency-groups]
 dev = [
   "graphifyy>=0.4.26",
