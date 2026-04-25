@@ -1,4 +1,43 @@
 {
+  "mcpServers": {
+    "MCP_DOCKER": {
+      "command": "/Docker/host/bin/docker.exe",
+      "args": [
+        "mcp",
+        "gateway",
+        "run",
+        "--profile",
+        "codex"
+      ]
+    },
+    "code-index": {
+      "command": "uvx",
+      "args": [
+        "code-index-mcp"
+      ]
+    },
+    "graphify": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--preview-features",
+        "extra-build-dependencies",
+        "--group",
+        "dev",
+        "python",
+        "-m",
+        "graphify.serve",
+        "graphify-out/graph.json"
+      ]
+    },
+    "mempalace": {
+      "command": "bash",
+      "args": [
+        "-lc",
+        "cd \"$(git rev-parse --show-toplevel)\" && exec .venv/bin/python -m mempalace.mcp_server --palace .artifacts/mempalace/palace"
+      ]
+    }
+  },
   "hooks": {
     "BeforeTool": [
       {

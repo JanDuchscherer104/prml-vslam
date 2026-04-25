@@ -11,9 +11,15 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 
     # Bootstrap once with:
     #   docker mcp profile pull docker.io/janduchscherer104/codex:latest
+    # [mcp_servers.MCP_DOCKER]
+    # command = "docker"
+    # args    = ["mcp", "gateway", "run", "--profile", "codex"]
     [mcp_servers.MCP_DOCKER]
-    command = "docker"
-    args    = ["mcp", "gateway", "run", "--profile", "codex"]
+    type                = "stdio"
+    command             = "/Docker/host/bin/docker.exe"
+    args                = ["mcp", "gateway", "run", "--profile", "codex"]
+    startup_timeout_sec = 30
+    tool_timeout_sec    = 120
 
     [mcp_servers.code-index]
     type    = "stdio"
@@ -36,9 +42,9 @@ project_doc_fallback_filenames = ["AGENTS.md"]
     ]
 
     [mcp_servers.mempalace]
-    type    = "stdio"
+    type = "stdio"
     command = "bash"
-    args    = [
+    args = [
         "-lc",
         "cd \"$(git rev-parse --show-toplevel)\" && exec .venv/bin/python -m mempalace.mcp_server --palace .artifacts/mempalace/palace",
     ]
