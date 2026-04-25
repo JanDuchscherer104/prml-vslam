@@ -238,6 +238,33 @@ sources = [
     "src/prml_vslam/visualization/rerun_sink.py",
 ]
 
+[[todos]]
+id = "TODO-0075"
+title = "Simplify artifact cleanup to support filesystem glob patterns"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0065",
+]
+loc_min = 40
+loc_expected = 80
+loc_max = 150
+files = [
+    "docs/architecture/pipeline-stage-artifact-cleanup-policy.md",
+    "src/prml_vslam/pipeline/stages/base/config.py",
+    "tests/test_pipeline_config.py",
+]
+acceptance = [
+    "StageConfig uses cleanup_patterns instead of cleanup_artifact_keys.",
+    "Validation allows valid filesystem globs but strictly rejects absolute paths and directory traversal (..).",
+    "Architecture doc and tests are updated to reflect the new glob-based policy.",
+    "Existing pipeline configs (e.g., vista-full.toml) use cleanup_patterns.",
+]
+sources = [
+    "docs/architecture/pipeline-stage-artifact-cleanup-policy.md",
+    "src/prml_vslam/pipeline/stages/base/config.py",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
