@@ -375,6 +375,9 @@ def build_run_config(
     log_source_rgb: bool = False,
     log_diagnostic_preview: bool = False,
     log_camera_image_rgb: bool = False,
+    point_cloud_decimation_keep_ratio: float = 1.0,
+    mesh_decimation_keep_ratio: float = 1.0,
+    decimation_random_seed: int = 0,
 ) -> RunConfig:
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
@@ -417,6 +420,9 @@ def build_run_config(
             log_source_rgb=log_source_rgb,
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+            decimation_random_seed=decimation_random_seed,
         ),
     )
 

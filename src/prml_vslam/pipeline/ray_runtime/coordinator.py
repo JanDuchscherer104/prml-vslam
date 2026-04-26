@@ -806,6 +806,9 @@ class RunCoordinatorActor:
             log_source_rgb=run_config.visualization.log_source_rgb,
             log_diagnostic_preview=run_config.visualization.log_diagnostic_preview,
             log_camera_image_rgb=run_config.visualization.log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=run_config.visualization.point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=run_config.visualization.mesh_decimation_keep_ratio,
+            decimation_random_seed=run_config.visualization.decimation_random_seed,
         )
 
     def _emit_stage_started(self, stage_key: StageKey) -> None:
