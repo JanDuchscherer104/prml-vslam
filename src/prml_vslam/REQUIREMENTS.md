@@ -53,6 +53,8 @@ Use this file for package-root ownership rules and cross-package contract constr
     preparation
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
+  - may decimate geometry sent to Rerun observer sinks for viewer performance;
+    this must not alter persisted benchmark point-cloud or mesh artifacts
 - `methods`
   - owns backend-specific execution seams and thin method-wrapper integration
   - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend`

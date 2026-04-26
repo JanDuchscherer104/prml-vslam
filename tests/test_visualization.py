@@ -6,36 +6,66 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import open3d as o3d
+import pytest
+from pydantic import ValidationError
 
 # Import pipeline first to keep visualization and curated pipeline exports initialized
 # in the same order used by the app.
 import prml_vslam.pipeline  # noqa: F401
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.methods.stage.visualization import COLORS_REF, POINTMAP_REF, ROLE_MODEL_POINTMAP
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.reconstruction.stage.visualization import (
+    MESH_ARTIFACT,
+    POINT_CLOUD_ARTIFACT,
+    ROLE_RECONSTRUCTION_MESH,
+    ROLE_RECONSTRUCTION_POINT_CLOUD,
+)
 from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, TRAJECTORY_ARTIFACT
 from prml_vslam.utils.geometry import write_tum_trajectory
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.contracts import VisualizationConfig
 from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
+from prml_vslam.visualization.rerun_sink import RerunEventSink
 
 
 def test_visualization_config_serializes_optional_viewer_blueprint_path() -> None:
     config = VisualizationConfig(
         connect_live_viewer=True,
         viewer_blueprint_path=Path(".configs/visualization/vista_blueprint.rbl"),
+        point_cloud_decimation_keep_ratio=0.25,
+        mesh_decimation_keep_ratio=0.5,
+        decimation_random_seed=99,
     )
 
     rendered = config.to_toml()
     reloaded = VisualizationConfig.from_toml(rendered)
 
     assert 'viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"' in rendered
+    assert "point_cloud_decimation_keep_ratio = 0.25" in rendered
+    assert "mesh_decimation_keep_ratio = 0.5" in rendered
+    assert "decimation_random_seed = 99" in rendered
     assert reloaded.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
     assert reloaded.log_source_rgb is False
     assert reloaded.log_diagnostic_preview is False
     assert reloaded.log_camera_image_rgb is False
     assert reloaded.trajectory_pose_axis_length == 0.0
+    assert reloaded.point_cloud_decimation_keep_ratio == 0.25
+    assert reloaded.mesh_decimation_keep_ratio == 0.5
+    assert reloaded.decimation_random_seed == 99
+
+
+def test_visualization_config_rejects_invalid_decimation_values() -> None:
+    with pytest.raises(ValidationError):
+        VisualizationConfig(point_cloud_decimation_keep_ratio=0.0)
+    with pytest.raises(ValidationError):
+        VisualizationConfig(mesh_decimation_keep_ratio=1.1)
+    with pytest.raises(ValidationError):
+        VisualizationConfig(decimation_random_seed=-1)
 
 
 def test_attach_recording_sinks_configures_grpc_and_file_together(
@@ -261,6 +291,99 @@ def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
     assert np.array_equal(payload.strips[0], np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]], dtype=np.float32))
 
 
+def test_log_pointcloud_decimation_is_deterministic_and_keeps_color_alignment(monkeypatch) -> None:
+    logged: list[tuple[np.ndarray, np.ndarray | None]] = []
+
+    class FakePoints3D:
+        def __init__(self, *, positions, colors, radii) -> None:
+            del radii
+            self.positions = np.asarray(positions)
+            self.colors = None if colors is None else np.asarray(colors)
+
+    class FakeRecordingStream:
+        def log(self, entity_path: str, payload: object) -> None:
+            del entity_path
+            logged.append((payload.positions, payload.colors))
+
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(Points3D=FakePoints3D))
+
+    points_xyz = np.array(
+        [
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 0.0, 1.0],
+            [3.0, 0.0, 1.0],
+            [4.0, 0.0, 1.0],
+            [5.0, 0.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+    colors = np.array([[index, index + 10, index + 20] for index in range(len(points_xyz))], dtype=np.uint8)
+
+    for _ in range(2):
+        rerun_helpers.log_pointcloud(
+            FakeRecordingStream(),
+            entity_path="world/live/model/points",
+            pointmap=points_xyz,
+            colors=colors,
+            decimation_keep_ratio=0.5,
+            decimation_seed=1234,
+        )
+
+    first_positions, first_colors = logged[0]
+    second_positions, second_colors = logged[1]
+    assert first_positions.shape == (3, 3)
+    assert np.array_equal(first_positions, second_positions)
+    assert np.array_equal(first_colors, second_colors)
+    for position, color in zip(first_positions, first_colors, strict=True):
+        source_index = int(position[0])
+        assert np.array_equal(color, colors[source_index])
+
+
+def test_log_pointcloud_decimation_ratio_one_keeps_valid_rows_in_order(monkeypatch) -> None:
+    logged: list[np.ndarray] = []
+
+    class FakePoints3D:
+        def __init__(self, *, positions, colors, radii) -> None:
+            del colors, radii
+            self.positions = np.asarray(positions)
+
+    class FakeRecordingStream:
+        def log(self, entity_path: str, payload: object) -> None:
+            del entity_path
+            logged.append(payload.positions)
+
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(Points3D=FakePoints3D))
+
+    rerun_helpers.log_pointcloud(
+        FakeRecordingStream(),
+        entity_path="world/live/model/points",
+        pointmap=np.array(
+            [
+                [0.0, 0.0, 1.0],
+                [9.0, 9.0, -1.0],
+                [1.0, 0.0, 2.0],
+                [8.0, 8.0, np.inf],
+                [2.0, 0.0, 3.0],
+            ],
+            dtype=np.float32,
+        ),
+        decimation_keep_ratio=1.0,
+    )
+
+    assert np.array_equal(
+        logged[0],
+        np.array(
+            [
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 2.0],
+                [2.0, 0.0, 3.0],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+
 def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_path: Path) -> None:
     trajectory_path = write_tum_trajectory(
         tmp_path / "trajectory.tum",
@@ -372,6 +495,128 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
     assert pose_calls == []
 
 
+def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> None:
+    pointcloud_calls: list[tuple[str, float, int]] = []
+    pointcloud_ply_calls: list[tuple[str, Path, float, int]] = []
+    mesh_ply_calls: list[tuple[str, Path, float]] = []
+
+    def capture_pointcloud(
+        stream,
+        *,
+        entity_path,
+        pointmap,
+        colors,
+        decimation_keep_ratio,
+        decimation_seed,
+        **kwargs,
+    ) -> None:
+        del stream, pointmap, colors, kwargs
+        pointcloud_calls.append((entity_path, decimation_keep_ratio, decimation_seed))
+
+    def capture_pointcloud_ply(
+        stream,
+        *,
+        entity_path,
+        path,
+        decimation_keep_ratio,
+        decimation_seed,
+    ) -> None:
+        del stream
+        pointcloud_ply_calls.append((entity_path, path, decimation_keep_ratio, decimation_seed))
+
+    def capture_mesh_ply(stream, *, entity_path, path, decimation_keep_ratio) -> None:
+        del stream
+        mesh_ply_calls.append((entity_path, path, decimation_keep_ratio))
+
+    policy = RerunLoggingPolicy(
+        log_pinhole=lambda *args, **kwargs: None,
+        log_pointcloud=capture_pointcloud,
+        log_pointcloud_ply=capture_pointcloud_ply,
+        log_mesh_ply=capture_mesh_ply,
+        log_line_strip3d=lambda *args, **kwargs: None,
+        log_clear=lambda *args, **kwargs: None,
+        log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
+        log_rgb_image=lambda *args, **kwargs: None,
+        log_transform=lambda *args, **kwargs: None,
+        point_cloud_decimation_keep_ratio=0.25,
+        mesh_decimation_keep_ratio=0.5,
+        decimation_random_seed=123,
+    )
+    cloud_path = tmp_path / "reference_cloud.ply"
+    mesh_path = tmp_path / "reference_mesh.ply"
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.RECONSTRUCTION,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_MODEL_POINTMAP,
+                payload_refs={
+                    POINTMAP_REF: TransientPayloadRef(
+                        handle_id="pointmap",
+                        payload_kind="point_cloud",
+                        shape=(4, 3),
+                        dtype="float32",
+                    ),
+                    COLORS_REF: TransientPayloadRef(
+                        handle_id="colors",
+                        payload_kind="image",
+                        shape=(4, 3),
+                        dtype="uint8",
+                    ),
+                },
+            ),
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_RECONSTRUCTION_POINT_CLOUD,
+                artifact_refs={POINT_CLOUD_ARTIFACT: ArtifactRef(path=cloud_path, kind="ply", fingerprint="cloud")},
+                metadata={"reconstruction_id": "reference"},
+            ),
+            VisualizationItem(
+                intent=VisualizationIntent.MESH,
+                role=ROLE_RECONSTRUCTION_MESH,
+                artifact_refs={MESH_ARTIFACT: ArtifactRef(path=mesh_path, kind="ply", fingerprint="mesh")},
+                metadata={"reconstruction_id": "reference"},
+            ),
+        ],
+    )
+
+    policy.observe_update(
+        object(),
+        update,
+        payloads={
+            "pointmap": np.ones((4, 3), dtype=np.float32),
+            "colors": np.zeros((4, 3), dtype=np.uint8),
+        },
+    )
+
+    assert pointcloud_calls == [("world/live/model/points", 0.25, pointcloud_calls[0][2])]
+    assert isinstance(pointcloud_calls[0][2], int)
+    assert pointcloud_ply_calls == [
+        ("world/reconstruction/reference/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3])
+    ]
+    assert isinstance(pointcloud_ply_calls[0][3], int)
+    assert mesh_ply_calls == [("world/reconstruction/reference/mesh", mesh_path, 0.5)]
+
+
+def test_rerun_event_sink_builds_live_and_export_policies_with_decimation() -> None:
+    sink = RerunEventSink(
+        grpc_url=None,
+        target_path=None,
+        point_cloud_decimation_keep_ratio=0.2,
+        mesh_decimation_keep_ratio=0.4,
+        decimation_random_seed=77,
+    )
+
+    assert sink._live_policy.point_cloud_decimation_keep_ratio == 0.2
+    assert sink._live_policy.mesh_decimation_keep_ratio == 0.4
+    assert sink._live_policy.decimation_random_seed == 77
+    assert sink._export_policy.point_cloud_decimation_keep_ratio == 0.2
+    assert sink._export_policy.mesh_decimation_keep_ratio == 0.4
+    assert sink._export_policy.decimation_random_seed == 77
+
+
 def test_log_mesh3d_logs_one_mesh(monkeypatch) -> None:
     logged: list[tuple[str, object]] = []
 
@@ -403,6 +648,44 @@ def test_log_mesh3d_logs_one_mesh(monkeypatch) -> None:
     assert entity_path == "world/alignment/ground_plane/fill"
     assert payload.vertex_positions.shape == (4, 3)
     assert payload.triangle_indices.shape == (2, 3)
+
+
+def test_log_mesh_ply_simplifies_with_open3d_backend(tmp_path: Path, monkeypatch) -> None:
+    logged: list[tuple[str, object, bool]] = []
+
+    class FakeMesh3D:
+        def __init__(self, *, vertex_positions, triangle_indices, vertex_colors) -> None:
+            self.vertex_positions = np.asarray(vertex_positions)
+            self.triangle_indices = np.asarray(triangle_indices)
+            self.vertex_colors = vertex_colors
+
+    class FakeRecordingStream:
+        def log(self, entity_path: str, payload: object, *, static: bool = False) -> None:
+            logged.append((entity_path, payload, static))
+
+    monkeypatch.setattr(rerun_helpers, "rr", SimpleNamespace(Mesh3D=FakeMesh3D))
+    mesh = o3d.geometry.TriangleMesh.create_sphere(resolution=8)
+    mesh_path = tmp_path / "mesh.ply"
+    assert o3d.io.write_triangle_mesh(str(mesh_path), mesh, write_ascii=True)
+    original_triangle_count = len(mesh.triangles)
+
+    rerun_helpers.log_mesh_ply(
+        FakeRecordingStream(),
+        entity_path="world/reconstruction/reference/mesh",
+        path=mesh_path,
+        decimation_keep_ratio=0.25,
+    )
+
+    assert len(logged) == 1
+    entity_path, payload, static = logged[0]
+    assert entity_path == "world/reconstruction/reference/mesh"
+    assert static is True
+    assert payload.vertex_positions.ndim == 2
+    assert payload.vertex_positions.shape[1] == 3
+    assert payload.triangle_indices.ndim == 2
+    assert payload.triangle_indices.shape[1] == 3
+    assert 0 < len(payload.triangle_indices) < original_triangle_count
+    assert int(np.max(payload.triangle_indices)) < len(payload.vertex_positions)
 
 
 def test_log_ground_plane_patch_logs_fill_and_outline(monkeypatch) -> None:
