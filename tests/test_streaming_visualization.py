@@ -335,7 +335,7 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pointcloud",
-        lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+        lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
     )
@@ -432,7 +432,7 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pointcloud",
-        lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+        lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
     )
@@ -572,12 +572,12 @@ def test_rerun_sink_logs_reconstruction_artifacts(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pointcloud_ply",
-        lambda stream, *, entity_path, path: calls.append(("points", entity_path, path)),
+        lambda stream, *, entity_path, path, **kwargs: calls.append(("points", entity_path, path)),
     )
     monkeypatch.setattr(
         rerun_sink_module,
         "log_mesh_ply",
-        lambda stream, *, entity_path, path: calls.append(("mesh", entity_path, path)),
+        lambda stream, *, entity_path, path, **kwargs: calls.append(("mesh", entity_path, path)),
     )
 
     sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
@@ -629,7 +629,7 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pointcloud_ply",
-        lambda stream, *, entity_path, path: calls.append(("points", entity_path, path)),
+        lambda stream, *, entity_path, path, **kwargs: calls.append(("points", entity_path, path)),
     )
 
     sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
@@ -773,7 +773,7 @@ def test_rerun_sink_logs_source_posed_camera_geometry(tmp_path: Path, monkeypatc
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pointcloud",
-        lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+        lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
     )
@@ -898,7 +898,7 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pointcloud",
-        lambda stream, *, entity_path, pointmap, colors=None: (
+        lambda stream, *, entity_path, pointmap, colors=None, **kwargs: (
             calls.append(("points", entity_path, *_timeline_state(stream))),
             captured_pointmaps.__setitem__(entity_path, np.asarray(pointmap)),
         ),
