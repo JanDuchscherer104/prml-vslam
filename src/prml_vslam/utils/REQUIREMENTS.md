@@ -26,7 +26,12 @@ This document is the concise source of truth for the shared utility package in `
 - Utility interfaces must remain explicit and typed.
 - Utilities must not silently change process-wide behavior.
 - `BaseConfig` must remain the common base for typed config objects and support deterministic TOML serialization and deserialization.
-- Runtime object construction must continue to follow the config-as-factory pattern through `target_type` and `setup_target()`.
+- Runtime object construction may follow the config-as-factory pattern through
+  `target_type` and `setup_target()` for concrete domain, source, or backend
+  variants that own their implementation target.
+- Pipeline stage policy configs are declarative planning contracts. They must
+  not use the utility config-as-factory pattern to construct stage runtimes,
+  proxies, Ray actors, sink sidecars, or payload stores.
 - `BaseConfig` must not own repository-specific path-resolution policy.
 - `PathConfig` remains the single owner of repo-owned path semantics.
 - Path resolution rules must remain deterministic and easy to test.
@@ -40,11 +45,14 @@ This document is the concise source of truth for the shared utility package in `
 - `utils` is not a workspace manager.
 - `utils` is not a persistence layer for experiment metadata beyond generic TOML helpers.
 - `utils` should not introduce global registries or hidden caches unless there is a concrete performance need and correctness is unaffected.
-- `utils` should not absorb feature-specific workflow logic that belongs in `pipeline`, `io`, `datasets`, `methods`, or `eval`.
+- `utils` should not absorb feature-specific workflow logic that belongs in
+  `pipeline`, `sources`, `methods`, `reconstruction`, or `eval`.
 
 ## Validation
 
 - `BaseConfig`, `PathConfig`, and `Console` remain the primary shared surfaces.
+- `FactoryConfig.setup_target()` remains available for concrete variant
+  construction without becoming the stage runtime construction pattern.
 - Path-aware code continues to accept injected `PathConfig` instances instead of capturing path globals at import time.
 - The package stays small and generic instead of absorbing package-specific policy.
 - The file stays aligned with the shared section structure used by the other existing `REQUIREMENTS.md` files.

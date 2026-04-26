@@ -27,7 +27,7 @@ Implemented or functional:
 - ADVIO local dataset readiness checks, selective downloads, and replay tooling
 - TOML-backed run planning and persisted pipeline request loading
 - Separate offline and streaming runner paths
-- ViSTA-SLAM wrapper and mock backend
+- ViSTA-SLAM wrapper
 - Rerun live streaming and `.rrd` file export
 - Explicit trajectory evaluation when benchmark inputs are available
 
@@ -59,6 +59,11 @@ Plan or run a persisted pipeline request:
 uv run prml-vslam plan-run-config .configs/pipelines/advio-15-offline-vista.toml
 uv run prml-vslam run-config .configs/pipelines/advio-15-offline-vista.toml
 ```
+
+Each `run-config` invocation writes a timestamped command log under
+`.logs/runs/<run-id>/`, where `<run-id>` is the filesystem-safe run identifier
+derived from the config's `experiment_name`. Log filenames use
+`YYYY-MM-DD_HH:MM:SS_<run-id>.log`.
 
 See [SETUP.md](SETUP.md) for environment setup and
 [src/prml_vslam/pipeline/README.md](src/prml_vslam/pipeline/README.md) for

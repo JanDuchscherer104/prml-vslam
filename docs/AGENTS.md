@@ -19,6 +19,8 @@ This file applies to work under `docs/` and is docs-only delta guidance on top o
 
 - Preserve the current document architecture instead of introducing a new layout system.
 - Keep factual claims source-backed and consistent with the current repo docs and code-backed package docs.
+- Keep the root `README.md` as the project front door. Put environment and runbook detail in `SETUP.md`, and keep package-specific mechanics in the owning package `README.md` rather than repeating them in root docs.
+- Avoid operational sprawl and low-level command duplication across documentation surfaces; link to the owning doc when detail already exists elsewhere.
 - Mirror the layout, spacing, caption style, and structure of nearby `.typ` files before making stylistic changes.
 
 ## Typst Rules

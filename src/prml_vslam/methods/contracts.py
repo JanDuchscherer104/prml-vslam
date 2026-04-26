@@ -1,50 +1,49 @@
-"""Typed contracts for external VSLAM method adapters."""
+"""Method-owned SLAM semantic DTOs."""
 
 from __future__ import annotations
 
-from enum import StrEnum
+import numpy as np
+from numpy.typing import NDArray
+from pydantic import Field
 
-from pydantic import ConfigDict
-
-from prml_vslam.utils import BaseConfig
-
-
-class MethodId(StrEnum):
-    """Supported external VSLAM backends."""
-
-    VISTA = "vista"
-    MAST3R = "mast3r"
-    MOCK = "mock"
-
-    @property
-    def display_name(self) -> str:
-        """Return the upstream method name shown to users."""
-        match self:
-            case MethodId.VISTA:
-                return "ViSTA-SLAM"
-            case MethodId.MAST3R:
-                return "MASt3R-SLAM"
-            case MethodId.MOCK:
-                return "Mock Preview"
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.camera import CameraIntrinsics
+from prml_vslam.interfaces.transforms import FrameTransform
+from prml_vslam.utils import BaseData
 
 
-class SlamOutputPolicy(BaseConfig):
-    """Method-owned output policy controls."""
+class SlamUpdate(BaseData):
+    """Represent one method-owned incremental SLAM update."""
 
-    emit_dense_points: bool = True
-    """Whether the backend should materialize a dense point cloud artifact."""
+    seq: int
+    timestamp_ns: int
+    source_seq: int | None = None
+    source_timestamp_ns: int | None = None
+    is_keyframe: bool = False
+    keyframe_index: int | None = None
+    pose: FrameTransform | None = None
+    num_sparse_points: int = 0
+    num_dense_points: int = 0
+    pointmap: NDArray[np.float32] | None = None
+    camera_intrinsics: CameraIntrinsics | None = None
+    image_rgb: NDArray[np.uint8] | None = None
+    depth_map: NDArray[np.float32] | None = None
+    preview_rgb: NDArray[np.uint8] | None = None
+    pose_updated: bool = False
+    backend_warnings: list[str] = Field(default_factory=list)
 
-    emit_sparse_points: bool = True
-    """Whether the backend should materialize sparse geometry artifacts."""
+
+class SlamArtifacts(BaseData):
+    """Normalize durable outputs produced by a SLAM backend.
+
+    The bundle is the scientific handoff from method execution into evaluation,
+    alignment, reconstruction, artifact inspection, and reporting.
+    """
+
+    trajectory_tum: ArtifactRef
+    sparse_points_ply: ArtifactRef | None = None
+    dense_points_ply: ArtifactRef | None = None
+    extras: dict[str, ArtifactRef] = Field(default_factory=dict)
 
 
-class SlamBackendConfig(BaseConfig):
-    """Method-owned backend controls."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    max_frames: int | None = None
-    """Optional frame cap used for debugging or short smoke runs."""
-
-
-__all__ = ["MethodId", "SlamBackendConfig", "SlamOutputPolicy"]
+__all__ = ["SlamArtifacts", "SlamUpdate"]

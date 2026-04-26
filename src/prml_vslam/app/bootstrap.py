@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.datasets.advio import AdvioDatasetService
 from prml_vslam.eval import TrajectoryEvaluationService
+from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.pipeline.state import RunState
+from prml_vslam.sources.datasets.advio import AdvioDatasetService
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState
@@ -32,6 +33,7 @@ class AppContext:
 
     path_config: PathConfig
     advio_service: AdvioDatasetService
+    tum_rgbd_service: TumRgbdDatasetService
     evaluation_service: TrajectoryEvaluationService
     record3d_runtime: Record3DStreamRuntimeController
     advio_runtime: AdvioPreviewRuntimeController
@@ -42,8 +44,9 @@ class AppContext:
 
 _PAGE_SPECS = (
     (AppPageId.RECORD3D, ":material/videocam:", "record3d", True),
-    (AppPageId.ADVIO, ":material/download:", "advio", False),
+    (AppPageId.DATASETS, ":material/download:", "datasets", False),
     (AppPageId.PIPELINE, ":material/account_tree:", "pipeline", False),
+    (AppPageId.ARTIFACTS, ":material/folder_open:", "artifacts", False),
     (AppPageId.METRICS, ":material/show_chart:", "metrics", False),
 )
 
@@ -55,6 +58,7 @@ def build_context() -> AppContext:
     return AppContext(
         path_config=path_config,
         advio_service=AdvioDatasetService(path_config),
+        tum_rgbd_service=TumRgbdDatasetService(path_config),
         evaluation_service=TrajectoryEvaluationService(path_config),
         record3d_runtime=store.load_record3d_runtime(),
         advio_runtime=store.load_advio_runtime(),
@@ -116,7 +120,8 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
     state_changed = False
     for active_page_id, runtime, page_state, field_name in (
         (AppPageId.RECORD3D, context.record3d_runtime, context.state.record3d, "is_running"),
-        (AppPageId.ADVIO, context.advio_runtime, context.state.advio, "preview_is_running"),
+        (AppPageId.DATASETS, context.advio_runtime, context.state.advio, "preview_is_running"),
+        (AppPageId.DATASETS, context.advio_runtime, context.state.tum_rgbd, "preview_is_running"),
     ):
         if page_id is active_page_id or not getattr(page_state, field_name):
             continue
@@ -125,7 +130,11 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
         state_changed = True
     if state_changed:
         context.store.save(context.state)
-    if page_id not in {AppPageId.PIPELINE, AppPageId.METRICS} and context.run_service.snapshot().state in {
+    if page_id not in {
+        AppPageId.PIPELINE,
+        AppPageId.ARTIFACTS,
+        AppPageId.METRICS,
+    } and context.run_service.snapshot().state in {
         RunState.PREPARING,
         RunState.RUNNING,
     }:

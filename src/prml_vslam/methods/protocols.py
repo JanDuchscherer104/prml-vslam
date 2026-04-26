@@ -1,88 +1,94 @@
-"""Package-local protocol seams for SLAM backends and sessions."""
+"""Package-local protocol seams for SLAM backends.
+
+These protocols define the method-owned behavior boundary between pipeline
+orchestration and concrete backend wrappers. They explain how a backend consumes
+normalized inputs and returns normalized durable artifacts without exposing
+upstream-private runtime APIs to the rest of the repository.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from abc import abstractmethod
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs, ReferenceSource
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.methods.contracts import MethodId, SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.updates import SlamUpdate
-from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
-
-
-@runtime_checkable
-class SlamSession(Protocol):
-    """Protocol for a live SLAM session that consumes incremental frames."""
-
-    def step(self, frame: FramePacket) -> None:
-        """Consume one frame and prepare an incremental SLAM update."""
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        """Retrieve any pending incremental SLAM updates non-blockingly."""
-
-    def close(self) -> SlamArtifacts:
-        """Finalize the session and return the persisted SLAM artifacts."""
+from prml_vslam.interfaces import Observation
+from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.stage.backend_config import MethodId, SlamBackendConfig, SlamOutputPolicy
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 
 
 @runtime_checkable
 class OfflineSlamBackend(Protocol):
-    """Protocol for SLAM backends that operate on materialized sequences."""
+    """Execute a backend over normalized offline observations.
+
+    Implementations adapt upstream systems such as ViSTA-SLAM or MASt3R-SLAM
+    into repository contracts. Source dematerialization belongs to the stage
+    runtime or source helpers; backends consume observations and return
+    normalized :class:`prml_vslam.interfaces.slam.SlamArtifacts`.
+    """
 
     method_id: MethodId
 
-    def run_sequence(
+    @abstractmethod
+    def run_observations(
         self,
-        sequence: SequenceManifest,
+        observations: Iterable[Observation],
         benchmark_inputs: PreparedBenchmarkInputs | None,
         baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
     ) -> SlamArtifacts:
-        """Run the backend over a materialized sequence and persist artifacts."""
+        """Run the backend over normalized observations and persist artifacts."""
 
 
 @runtime_checkable
 class StreamingSlamBackend(Protocol):
-    """Protocol for SLAM backends that support incremental streaming execution."""
+    """Expose streaming SLAM lifecycle directly on the backend.
+
+    :class:`prml_vslam.methods.stage.runtime.SlamStageRuntime` owns the
+    pipeline lifecycle. Backend implementations own method-private mutable
+    state behind this protocol and do not expose a separate public session
+    object.
+    """
 
     method_id: MethodId
 
-    def start_session(
+    @abstractmethod
+    def start_streaming(
         self,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
         backend_config: SlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
-    ) -> SlamSession:
-        """Prepare a streaming-capable session for incremental frame updates."""
+    ) -> None:
+        """Prepare backend-owned streaming state before frames arrive."""
 
+    @abstractmethod
+    def step_streaming(self, frame: Observation) -> None:
+        """Consume one streaming frame through backend-owned state."""
 
-@runtime_checkable
-class ProcessStreamingSlamBackend(StreamingSlamBackend, Protocol):
-    """Protocol for backends that can provide a picklable streaming-session factory."""
+    @abstractmethod
+    def drain_streaming_updates(self) -> list[SlamUpdate]:
+        """Retrieve pending method-owned live updates without blocking."""
 
-    def streaming_session_factory(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> Callable[[], SlamSession]:
-        """Return a picklable factory that builds one streaming SLAM session."""
+    @abstractmethod
+    def finish_streaming(self) -> SlamArtifacts:
+        """Finalize backend-owned streaming state and persist artifacts."""
 
 
 @runtime_checkable
 class SlamBackend(OfflineSlamBackend, StreamingSlamBackend, Protocol):
-    """Protocol for backends that implement both offline and streaming SLAM."""
+    """Backend that supports both bounded offline runs and streaming sessions."""
 
 
 __all__ = [
     "OfflineSlamBackend",
-    "ProcessStreamingSlamBackend",
     "SlamBackend",
-    "SlamSession",
     "StreamingSlamBackend",
 ]

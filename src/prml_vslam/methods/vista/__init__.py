@@ -1,13 +1,21 @@
-"""Canonical ViSTA backend public surfaces."""
+"""Canonical ViSTA backend public surface.
 
-from importlib import import_module
+This package contains the thin adapter and runtime/bootstrap helpers that adapt
+the upstream ViSTA checkout to the repository's method contract.
+"""
 
-__all__ = ["VistaSlamBackend", "VistaSlamBackendConfig", "VistaSlamConfig", "VistaSlamSession"]
+from typing import Any
+
+__all__ = ["VistaSlamBackend", "VistaSlamRuntime"]
 
 
-def __getattr__(name: str) -> object:
-    if name in {"VistaSlamBackend", "VistaSlamSession"}:
-        return getattr(import_module(".adapter", __name__), name)
-    if name in {"VistaSlamBackendConfig", "VistaSlamConfig"}:
-        return getattr(import_module(".config", __name__), name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+def __getattr__(name: str) -> Any:
+    if name == "VistaSlamBackend":
+        from .adapter import VistaSlamBackend
+
+        return VistaSlamBackend
+    if name == "VistaSlamRuntime":
+        from .session import VistaSlamRuntime
+
+        return VistaSlamRuntime
+    raise AttributeError(name)

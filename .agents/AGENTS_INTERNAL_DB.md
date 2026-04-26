@@ -2,7 +2,7 @@
 
 Purpose: a compact, repository-local alignment database for stable project facts, ownership boundaries, configuration policy, and current technical context. Add highly important facts here that are not discoverable or easily inferred from the current repo state, and that should be included in the canonical agent guidance as per [AGENTS.md](../AGENTS.md) and nested `AGENTS.md` files. This file is for operational memory, not for new policy or detailed implementation notes that should live in package `README.md` or `REQUIREMENTS.md` files.
 
-This file is operational memory, not a replacement for the full repo-wide policy in [../AGENTS.md](../AGENTS.md) or the maintenance workflow in [skills/agents-db-and-simplification/SKILL.md](skills/agents-db-and-simplification/SKILL.md).
+This file is operational memory, not a replacement for the full repo-wide policy in [../AGENTS.md](../AGENTS.md) or the maintenance workflows in [skills/agents-db/SKILL.md](skills/agents-db/SKILL.md) and [skills/simplification/SKILL.md](skills/simplification/SKILL.md).
 
 ## Mission Snapshot
 
@@ -23,14 +23,32 @@ This file is operational memory, not a replacement for the full repo-wide policy
 ## Stable Ownership Snapshot
 
 - `prml_vslam.interfaces.*` owns canonical shared datamodels.
-- `prml_vslam.protocols.*` owns shared protocol seams such as `FramePacketStream`.
+- `prml_vslam.protocols.source` owns shared source-provider seams such as `OfflineSequenceSource` and `StreamingSequenceSource`.
+- `prml_vslam.sources.replay` owns `ObservationStream`; `prml_vslam.interfaces.observation` owns the shared `Observation` DTO.
 - `app` owns Streamlit-only state and rendering concerns.
-- `io` owns transport and packet ingestion, not app session snapshots.
-- `pipeline` owns planning, normalized run contracts, and the bounded streaming session service.
+- `sources` owns source configs, source runtime preparation, replay adapters, Record3D capture adapters, and dataset normalization under `sources.datasets`.
+- `pipeline` owns planning, normalized run contracts, event-projected snapshots, and Ray-backed run coordination.
 
 ## Current Stable Facts
 
 - `BaseConfig` already supports TOML IO in `src/prml_vslam/utils/base_config.py`.
 - `PathConfig.resolve_toml_path()` already exists and should anchor repo relative config resolution.
-- The current bounded pipeline demo runtime lives in `prml_vslam.pipeline.session`, not in `prml_vslam.app`.
-- Packet-stream worker lifecycle is shared through `prml_vslam.utils.packet_session`.
+- The documentation split is intentional: root `README.md` owns project framing and high-level status, `SETUP.md` owns environment and runbook detail, `src/prml_vslam/pipeline/README.md` owns TOML planning mechanics, and `src/prml_vslam/visualization/README.md` owns Rerun usage mechanics.
+- The active pipeline runtime surface is `prml_vslam.pipeline.run_service.RunService` over the repo-owned `PipelineBackend` and current `RayPipelineBackend`, not app-owned orchestration.
+- The current Ray pipeline runtime no longer uses a separate supervisor actor; `RayPipelineBackend` owns named coordinator lifecycle directly, and `RunCoordinatorActor` is the single semantic runtime owner per run.
+- Pipeline launch uses `RunConfig` and fixed target stage sections. Source selection lives on `RunConfig.stages.source.backend`, with ADVIO/TUM/Record3D replay policy owned by `prml_vslam.sources.config` and source/dataset packages.
+- Stage execution is coordinated through `RuntimeManager`, `StageRunner`, and domain-owned stage runtimes such as `SourceRuntime`, `SlamStageRuntime`, `GroundAlignmentRuntime`, `TrajectoryEvaluationRuntime`, `ReconstructionRuntime`, and `SummaryRuntime`; the coordinator should not grow new stage-specific execution helpers.
+- `prml_vslam.app` uses `ObservationStream`-based preview helpers for dataset and Record3D preview/runtime paths, but the pipeline orchestration path is not app-owned.
+- Record3D Wi-Fi is treated in this repository as a stable supported path equivalent to USB. Do not describe it in backlog or docs as preview-only, lower-fidelity, optional fallback, or non-canonical unless a concrete upstream/runtime limitation is being discussed narrowly.
+- The current repo-owned live Rerun path is `src/prml_vslam/visualization/rerun_sink.py` plus `src/prml_vslam/visualization/rerun_policy.py`, fed by neutral `StageRuntimeUpdate.visualizations` from stage/domain visualization adapters. Historical `pipeline/sinks/rerun.py` paths are not the current sink surface.
+- The intended repo-local Rerun architecture is observer-sidecar based: Rerun is a sink surface, not a stage owner and not the place where the coordinator should perform coordinate normalization or hot-path visualization payload resolution.
+- Upstream ViSTA's own Rerun integration in `external/vista-slam/run.py` and `run_live.py` logs raw `Transform3D(translation=pose[:3,3], mat3x3=pose[:3,:3])`, uses `Pinhole(..., camera_xyz=rr.ViewCoordinates.RDF)`, and logs camera-local `Points3D` under the posed camera entity. It does not apply a viewer-only basis flip or a root Y-up world declaration in the Rerun path.
+- The older viewer-only remap `diag([1,-1,-1])` plus a root Y-up world existed in the older `bd39b4c` streaming path, but not in the later `b5731e6` / `55afaeb` behavior that was treated as the "working" post-fix state. Do not confuse those two historical states when debugging Rerun regressions.
+- The stable lessons from the Rerun regression work are:
+  - preserve upstream-style ViSTA frame preprocessing via `SLAM_image_only.process_image()` semantics before sending frames into `OnlineSLAM`
+  - log poses with parent-from-child semantics for repo `T_world_camera`
+  - preserve upstream/native ViSTA world orientation on the repo-owned sink path; use an explicit neutral root `Transform3D()` at `world` when the scene root should be declared, but do not add a viewer-only root `ViewCoordinates` remap
+  - do not enable the live `DepthImage` cloud by default when debugging geometry, because it adds a second auto-backprojected 3D cloud that obscures whether the explicit pointmap branch is correct
+- The current repo-owned Rerun sink no longer exposes per-modality request toggles; when enabled, it emits a fixed minimal live surface of source RGB, camera poses, keyed intrinsics/RGB/depth, pointmaps, and diagnostic previews.
+- The current sink semantics use a split viewer tree of `world/live/source`, `world/live/tracking`, `world/live/model`, and `world/keyframes/{cameras,points}/<id>`. Camera-local pointmaps live at `world/keyframes/points/<id>/points` beneath a posed point-history parent while keyed camera frusta live under `world/keyframes/cameras/<id>`, which is a repo-owned divergence from upstream ViSTA's simpler `world/est/<topic>` layout.
+- The default 3D blueprint should render keyed-history `world/keyframes/points/<id>/points` as the accumulated map and hide `world/live/model/points` by default; the live/model point cloud remains a latest/debug-only surface, while keyed-history persistence comes from stable untimed entity paths rather than a separate keyframe timeline.

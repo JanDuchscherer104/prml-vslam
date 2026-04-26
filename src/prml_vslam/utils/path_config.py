@@ -1,4 +1,10 @@
-"""Centralized filesystem path handling for the PRML VSLAM project."""
+"""Centralized repository-owned path semantics.
+
+This module owns the canonical filesystem layout used across datasets, pipeline
+artifacts, method checkouts, checkpoints, and runtime logs. It is the single
+source of truth for path policy in the repository; higher-level packages should
+inject :class:`PathConfig` instead of re-deriving paths ad hoc.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ from .base_config import BaseConfig
 from .base_data import BaseData
 
 if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+    from prml_vslam.pipeline.contracts.stages import StageKey
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ROOT_DIR_FIELDS = (
@@ -22,7 +28,13 @@ _ROOT_DIR_FIELDS = (
 
 
 class RunArtifactPaths(BaseData):
-    """Typed layout for one planned benchmark run."""
+    """Describe the canonical artifact layout for one planned run.
+
+    The pipeline planner and runtime both rely on this DTO so stage outputs can
+    be named deterministically before execution begins. It bridges the path
+    layer in :mod:`prml_vslam.utils` with the artifact contracts in
+    :mod:`prml_vslam.pipeline`.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -46,6 +58,8 @@ class RunArtifactPaths(BaseData):
     """Path to the exported trajectory."""
     point_cloud_path: Path
     """Path to the canonical exported point cloud."""
+    estimated_intrinsics_path: Path
+    """Path to the canonical estimated camera-intrinsics series."""
     sparse_points_path: Path
     """Path to the exported sparse point cloud."""
     dense_points_path: Path
@@ -54,14 +68,14 @@ class RunArtifactPaths(BaseData):
     """Directory containing preserved native backend outputs."""
     native_rerun_rrd_path: Path
     """Path to a preserved native backend Rerun recording."""
+    ground_alignment_path: Path
+    """Path to the derived ground-alignment metadata artifact."""
     arcore_alignment_path: Path
     """Path to the ARCore alignment artifact."""
     trajectory_metrics_path: Path
     """Path to persisted trajectory evaluation metrics."""
     cloud_metrics_path: Path
     """Path to persisted dense-cloud evaluation metrics."""
-    efficiency_metrics_path: Path
-    """Path to persisted runtime-efficiency metrics."""
     reference_cloud_path: Path
     """Path to the reference reconstruction artifact."""
     summary_path: Path
@@ -71,7 +85,12 @@ class RunArtifactPaths(BaseData):
 
     @classmethod
     def build(cls, artifact_root: Path) -> RunArtifactPaths:
-        """Build the canonical artifact layout from an explicit root."""
+        """Build the canonical artifact layout from an explicit root.
+
+        The returned paths are deterministic and stage-addressable. Callers may
+        create directories as needed, but construction itself is side-effect
+        free so planning can preview outputs before execution starts.
+        """
         resolved_root = artifact_root.expanduser().resolve()
         return cls(
             artifact_root=resolved_root,
@@ -84,14 +103,15 @@ class RunArtifactPaths(BaseData):
             benchmark_inputs_path=(resolved_root / "benchmark" / "inputs.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
             point_cloud_path=(resolved_root / "slam" / "point_cloud.ply").resolve(),
+            estimated_intrinsics_path=(resolved_root / "slam" / "estimated_intrinsics.json").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),
             native_rerun_rrd_path=(resolved_root / "native" / "rerun_recording.rrd").resolve(),
+            ground_alignment_path=(resolved_root / "alignment" / "ground_alignment.json").resolve(),
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
             trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
-            efficiency_metrics_path=(resolved_root / "evaluation" / "efficiency_metrics.json").resolve(),
             reference_cloud_path=(resolved_root / "reference" / "reference_cloud.ply").resolve(),
             summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),
             stage_manifests_path=(resolved_root / "summary" / "stage_manifests.json").resolve(),
@@ -111,16 +131,22 @@ class RunArtifactPaths(BaseData):
         """Return the path to the repo-owned viewer recording."""
         return (self.artifact_root / "visualization" / "viewer_recording.rrd").resolve()
 
-    def stage_manifest_path(self, stage_id: str | RunPlanStageId) -> Path:
+    def stage_manifest_path(self, stage_id: str | StageKey) -> Path:
         """Return the canonical path to one stage manifest."""
-        from prml_vslam.pipeline.contracts.plan import RunPlanStageId
+        from prml_vslam.pipeline.contracts.stages import StageKey
 
-        stage_slug = stage_id.value if isinstance(stage_id, RunPlanStageId) else str(stage_id)
+        stage_slug = stage_id.value if isinstance(stage_id, StageKey) else str(stage_id)
         return (self.artifact_root / stage_slug / "stage_manifest.json").resolve()
 
 
 class PathConfig(BaseConfig):
-    """Centralize all repository-owned path semantics."""
+    """Centralize all repository-owned path semantics and directory defaults.
+
+    Inject this config into services or runtime owners that need path policy.
+    It knows where datasets, captures, configs, method repos, checkpoints, and
+    planned run artifacts live, while leaving package-specific behavior to the
+    higher-level owners that consume those paths.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -172,7 +198,7 @@ class PathConfig(BaseConfig):
         return resolved
 
     def resolve_repo_path(self, path: str | Path, *, base_dir: Path | None = None) -> Path:
-        """Resolve a path relative to the repository root or a provided base directory."""
+        """Resolve a path relative to the repository root or an explicit base directory."""
         base_path = self.root if base_dir is None else self._resolve_path(base_dir, root=self.root)
         return self._resolve_path(path, root=base_path)
 
@@ -200,6 +226,10 @@ class PathConfig(BaseConfig):
     def resolve_logs_dir(self, *, create: bool = False) -> Path:
         """Resolve the shared runtime logs directory."""
         return self._resolve_dir(self.logs_dir, create=create)
+
+    def resolve_run_logs_dir(self, run_id: str, *, create: bool = False) -> Path:
+        """Resolve the durable command-log directory for one pipeline run."""
+        return self._resolve_dir(self.logs_dir, "runs", run_id, create=create)
 
     def resolve_configs_dir(self, *, create: bool = False) -> Path:
         """Resolve the shared repo-owned config directory."""
@@ -229,7 +259,12 @@ class PathConfig(BaseConfig):
         must_exist: bool = False,
         create_parent: bool = False,
     ) -> Path:
-        """Resolve a TOML file path relative to the repository root."""
+        """Resolve a TOML file path relative to the repository root.
+
+        Use this for repo-owned persisted configs such as pipeline requests and
+        target run configs. It enforces the ``.toml`` suffix and can optionally
+        create the parent directory without creating the config file itself.
+        """
         resolved = self.resolve_repo_path(path, base_dir=base_dir)
         if resolved.suffix != ".toml":
             raise ValueError(f"Config path must be a .toml file, got {resolved}")
@@ -270,7 +305,12 @@ class PathConfig(BaseConfig):
     def plan_run_paths(
         self, *, experiment_name: str, method_slug: str, output_dir: str | Path | None = None
     ) -> RunArtifactPaths:
-        """Build the canonical artifact layout for one benchmark run."""
+        """Build the canonical artifact layout used by the pipeline for one run.
+
+        The run root is ``output_dir / slugified_experiment_name / method_slug``.
+        This convention keeps method outputs grouped while leaving stage-level
+        artifact filenames centralized in :class:`RunArtifactPaths`.
+        """
         return RunArtifactPaths.build(
             self.resolve_output_dir(output_dir) / self.slugify_experiment_name(experiment_name) / method_slug
         )
@@ -278,7 +318,7 @@ class PathConfig(BaseConfig):
 
 @lru_cache(maxsize=1)
 def get_path_config() -> PathConfig:
-    """Return the process-wide default path configuration."""
+    """Return the cached default :class:`PathConfig` for the current process."""
     return PathConfig()
 
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AGENTS DB"
+  short_description: "Repo agent memory and backlog workflow"
+  default_prompt: "Use $agents-db to inspect or update the repo internal agent memory and backlog with make agents-db."

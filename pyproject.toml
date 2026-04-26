@@ -7,6 +7,7 @@ requires-python = ">=3.11,<3.12"
 authors = [{ name = "Jan Duchscherer", email = "j.duchscherer@gmail.com" }]
 dependencies = [
   "numpy>=1.26,<3",
+  "av>=16,<17",
   "scipy>=1.13,<2",
   "opencv-python>=4.10,<5",
   "open3d>=0.19.0,<0.20",
@@ -15,6 +16,8 @@ dependencies = [
   "plotly>=6.6.0,<7",
   "evo>=1.31,<2",
   "pydantic>=2.11,<3",
+  "pydantic-settings>=2.14,<3",
+  "ray>=2.40,<3",
   "rich>=13.7,<15",
   "seaborn>=0.13,<1",
   "streamlit>=1.35,<2",
@@ -31,12 +34,13 @@ dependencies = [
     "bibtex-updater>=0.8.0",
     "mypy>=1.11,<2",
     "pre-commit>=4.2,<5",
+    "pybind11-stubgen>=2.5,<3",
     "pytest>=8.3,<9",
     "pytest-xdist>=3.6,<4",
     "rebiber>=1.1.3",
     "ruff>=0.11,<1",
   ]
-  replay = ["av>=16,<17"]
+  replay = []
   streaming = ["aiortc>=1.9,<2", "record3d>=1.4.1,<2"]
   vista = [
     "torch==2.5.1",
@@ -54,6 +58,7 @@ dependencies = [
 
   [project.scripts]
   prml-vslam = "prml_vslam.main:main"
+  prml_vslam = "prml_vslam.main:main"
 
 [build-system]
 requires      = ["hatchling"]
@@ -65,7 +70,7 @@ packages = ["src/prml_vslam"]
 [tool.ruff]
 target-version = "py311"
 line-length    = 120
-extend-exclude = ["external"]
+extend-exclude = ["external", "typings/open3d"]
 
   [tool.ruff.lint]
   select = ["B", "E", "F", "I", "UP"]
@@ -82,8 +87,6 @@ python_files = ["test_*.py"]
 addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 
 [tool.uv]
-no-build-isolation-package = ["dbow3py"]
-
   [tool.uv.extra-build-dependencies]
   xformers = ["torch==2.5.1"]
 
@@ -95,10 +98,12 @@ python_version      = "3.11"
 strict              = false
 warn_unused_configs = true
 packages            = ["prml_vslam"]
-mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
+mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src", "$MYPY_CONFIG_FILE_DIR/typings"]
 
   [[tool.mypy.overrides]]
   module = [
+    "cv2",
+    "cv2.*",
     "numpy",
     "numpy.*",
     "pydantic",
@@ -109,10 +114,25 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src"]
     "streamlit.*",
     "tomli_w",
     "tomli_w.*",
+    "torch",
+    "torch.*",
   ]
   ignore_missing_imports = true
 
+  [[tool.mypy.overrides]]
+  module = [
+    "open3d",
+    "open3d.*",
+  ]
+  ignore_errors = true
+
+[tool.pyright]
+include = ["src", "tests", "typings"]
+extraPaths = ["src"]
+stubPath = "typings"
+
 [dependency-groups]
 dev = [
-  "graphifyy>=0.4.18",
+  "graphifyy>=0.4.26",
+  "mcp>=1.27.0",
 ]

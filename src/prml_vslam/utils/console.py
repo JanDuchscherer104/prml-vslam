@@ -7,8 +7,10 @@ import logging
 from typing import Any, ClassVar
 
 from rich.console import Console as RichConsole
+from rich.highlighter import ReprHighlighter
 from rich.logging import RichHandler
 from rich.pretty import Pretty
+from rich.text import Text
 from rich.theme import Theme
 
 DEFAULT_THEME = Theme(
@@ -18,6 +20,7 @@ DEFAULT_THEME = Theme(
         "config.value": "white",
         "config.type": "dim",
         "config.doc": "italic dim",
+        "log.namespace_prefix": "dim cyan",
     }
 )
 
@@ -86,13 +89,14 @@ class Console:
         if force or not has_project_handler:
             handler = RichHandler(
                 console=cls._rich_console,
-                markup=True,
+                markup=False,
                 rich_tracebacks=True,
                 show_path=False,
                 show_time=False,
+                highlighter=_ConsoleLogHighlighter(),
             )
             handler._prml_vslam_handler = True  # type: ignore[attr-defined]
-            handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
+            handler.setFormatter(_ConsoleLogFormatter("[%(shortname)s] %(message)s"))
             project_logger.handlers = [handler]
 
         cls._logging_configured = True
@@ -171,3 +175,27 @@ class Console:
 def get_console(*parts: str, stack_offset: int = 0) -> Console:
     """Convenience helper for a callsite-aware console instance."""
     return Console.from_callsite(*parts, stack_offset=stack_offset + 1)
+
+
+class _ConsoleLogFormatter(logging.Formatter):
+    """Formatter that keeps the logger tree rooted at ``prml_vslam`` but shortens display names."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        if not hasattr(record, "shortname"):
+            record.shortname = self._display_name(record.name)
+        return super().format(record)
+
+    @staticmethod
+    def _display_name(name: str) -> str:
+        if name == "prml_vslam":
+            return name
+        prefix = "prml_vslam."
+        return name[len(prefix) :] if name.startswith(prefix) else name
+
+
+class _ConsoleLogHighlighter(ReprHighlighter):
+    """Highlight log payload reprs while preserving the namespace prefix style."""
+
+    def highlight(self, text: Text) -> None:
+        super().highlight(text)
+        text.highlight_regex(r"^(?P<namespace_prefix>\[[^\]]+\])", style_prefix="log.")

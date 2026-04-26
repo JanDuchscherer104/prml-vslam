@@ -44,6 +44,7 @@ def test_path_config_builds_canonical_run_layout(tmp_path: Path) -> None:
     assert run_paths.capture_manifest_path == expected_root / "input" / "capture_manifest.json"
     assert run_paths.sequence_manifest_path == expected_root / "input" / "sequence_manifest.json"
     assert run_paths.trajectory_path == expected_root / "slam" / "trajectory.tum"
+    assert run_paths.estimated_intrinsics_path == expected_root / "slam" / "estimated_intrinsics.json"
     assert run_paths.trajectory_metrics_path == expected_root / "evaluation" / "trajectory_metrics.json"
     assert run_paths.summary_path == expected_root / "summary" / "run_summary.json"
     assert run_paths.stage_manifests_path == expected_root / "summary" / "stage_manifests.json"
@@ -68,6 +69,15 @@ def test_path_config_builds_method_repo_and_checkpoint_paths(tmp_path: Path) -> 
     assert checkpoint_dir == (tmp_path / ".logs" / "ckpts" / "vista").resolve()
 
 
+def test_path_config_builds_run_log_paths_without_creating_by_default(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path)
+
+    run_logs_dir = path_config.resolve_run_logs_dir("vista-full-tuning")
+
+    assert run_logs_dir == (tmp_path / ".logs" / "runs" / "vista-full-tuning").resolve()
+    assert not run_logs_dir.exists()
+
+
 def test_path_config_builds_dataset_paths(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
 
@@ -86,6 +96,7 @@ def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path
         path_config.resolve_pipeline_configs_dir(create=True),
         path_config.resolve_dataset_dir("advio", create=True),
         path_config.resolve_logs_dir(create=True),
+        path_config.resolve_run_logs_dir("vista-full-tuning", create=True),
         path_config.resolve_method_repo_dir("vista-slam", create=True),
         path_config.resolve_method_env_dir("vista", create=True),
         path_config.resolve_checkpoint_dir("vista", create=True),

@@ -7,7 +7,6 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 - `AGENTS.md`: the only full repo-wide agent policy. Nested `AGENTS.md` files should add scope-specific deltas only.
 - `README.md`: repository workflow, setup, developer commands, and high-level deliverables.
 - `docs/Questions.md`: high-quality human-maintained ground truth for challenge intent, clarified requirements, operator-facing scope, and product constraints. Consult it whenever a task touches project scope, assumptions, or evaluation intent.
-- `.github/CODEOWNERS`: ownership hints for code paths, review surfaces, and intent resolution when repo responsibilities are ambiguous.
 - `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary sources relevant to this project.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
 
@@ -24,7 +23,11 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
   - Python/package rules: `src/prml_vslam/AGENTS.md`
   - App-specific Streamlit rules: `src/prml_vslam/app/AGENTS.md`
   - Documentation and Typst rules: `docs/AGENTS.md`
+- Treat inline resolve comments and TODOs as task-local requirements when the user points at them directly. Implement the narrowest change that satisfies the comment, remove the stale comment in the same change, and keep exploration and verification proportional unless the comment explicitly asks for broader work.
 - Stay within the requested task scope. Do not implement adjacent features or speculative improvements without explicit approval.
+- Prefer direct, version-targeted API usage over compatibility shims.
+  - Do not add `getattr`/`hasattr`/similar reflective fallbacks for known attributes when the repository already pins or otherwise targets a concrete external API version.
+  - Before adding any workaround for an external dependency, check the exact version used by the repo and implement against that version directly unless the task explicitly requires multi-version support.
 - Use conventional commits with concise, focused messages. Split larger changes into multiple logical commits when appropriate.
 - Before creating a commit, run `make ci`.
 - Do not use destructive git commands unless explicitly requested. This includes `git restore`, `git reset --hard`, and similar commands.
@@ -32,7 +35,7 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 ## Requirements Guidance
 
 - When drafting requirements or specs, first extract every explicit user requirement before translating it into product or engineering requirements.
-- For requirements work, prioritize `README.md`, `docs/Questions.md`, the nearest `AGENTS.md`, and `.github/CODEOWNERS` when resolving intent.
+- When promoting prompt-derived guidance into scaffold files or skills, persist only reusable rules, boundaries, and stable facts. Keep one-off task wording, temporary branch context, and transient cleanup notes out of canonical guidance.
 - Prefer package `README.md` and `REQUIREMENTS.md` files for ownership and implementation notes rather than restating that material in nested `AGENTS.md` files.
 - Resolve discoverable repo facts locally before asking questions. If ambiguity still materially changes the spec, ask clarifying questions before finalizing it. In Plan Mode, prefer extensive clarification when ambiguity remains.
 
@@ -43,5 +46,27 @@ This project has a graphify knowledge graph at graphify-out/.
 Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- Use `make graphify` for a quick graphify artifact/runtime status check plus the report summary
+- Use `make graphify` for a concise graphify artifact, runtime, hook, and freshness dashboard
+- Use `make graphify-report` when you need the report summary without the full community listing
 - After modifying code files in this session, run `make graphify-rebuild` to keep the graph current
+- Use `make graphify-hook-install` once per clone to enable local post-commit/post-checkout graph refreshes
+
+## MemPalace
+
+This project has a repo-local MemPalace at `.artifacts/mempalace/palace` with
+separate wings for docs and Codex chat histories.
+
+Rules:
+- At Codex session start, the repo-local `SessionStart` hook refreshes
+  MemPalace in the background and emits wake-up context for the agent.
+- Use `.agents/skills/mempalace-repo/scripts/mempalace_repo.py search` before
+  answering questions about prior Codex sessions, user preferences, previous
+  attempts, durable project decisions, or why earlier agents chose an approach.
+- Use `.agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up` when a
+  session needs compact orientation from the repo-local palace.
+- At the end of meaningful tasks, include a concise debrief in the final answer:
+  durable decisions, files changed, validation run, blockers, and follow-up
+  facts. The startup refresh mines those user-visible summaries into
+  MemPalace for later sessions.
+- Treat `.artifacts/mempalace/` as derived state; refresh it instead of editing
+  palace files or staged sources by hand.

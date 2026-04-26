@@ -1,1675 +1,2131 @@
-"""Tests for the runnable pipeline core."""
+"""Focused tests for the Ray-backed pipeline core."""
 
 from __future__ import annotations
 
 import json
+import logging
+import os
+import sys
+import threading
 import time
+import uuid
+from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
-from threading import Event
-from typing import TYPE_CHECKING
+from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
-from pydantic import Field
+import ray
+from pydantic import ValidationError
 
-import prml_vslam.pipeline.streaming_coordinator as streaming_coordinator_module
-from prml_vslam.benchmark import BenchmarkConfig, PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
-from prml_vslam.datasets import DatasetId
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket, FrameTransform
-from prml_vslam.methods import MethodId, MockSlamBackendConfig, VistaSlamBackend
-from prml_vslam.methods.contracts import SlamBackendConfig, SlamOutputPolicy
-from prml_vslam.methods.multiprocess import (
-    MultiprocessSlamSession,
+from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
+from prml_vslam.interfaces import (
+    CAMERA_RDF_FRAME,
+    FrameTransform,
+    Observation,
+    ObservationIndexEntry,
+    ObservationProvenance,
+    ObservationSequenceIndex,
+    ObservationSequenceRef,
 )
-from prml_vslam.methods.protocols import OfflineSlamBackend, SlamSession, StreamingSlamBackend
-from prml_vslam.methods.updates import SlamUpdate
-from prml_vslam.methods.vista.config import VistaSlamBackendConfig
-from prml_vslam.pipeline import PipelineMode, RunRequest, SequenceManifest
-from prml_vslam.pipeline.contracts.artifacts import ArtifactRef, SlamArtifacts
-from prml_vslam.pipeline.contracts.execution import StageExecutionKey, StageExecutionMode, StageResult
-from prml_vslam.pipeline.contracts.plan import RunPlanStageId
-from prml_vslam.pipeline.contracts.provenance import StageExecutionStatus
-from prml_vslam.pipeline.contracts.request import (
-    DatasetSourceSpec,
-    SlamStageConfig,
-    VideoSourceSpec,
+from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.methods.contracts import SlamUpdate
+from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.contracts import SlamStageOutput
+from prml_vslam.methods.stage.spec import SLAM_STAGE_SPEC
+from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.backend_ray import RayPipelineBackend
+from prml_vslam.pipeline.config import RunConfig, build_run_config
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
+from prml_vslam.pipeline.contracts.events import (
+    RunStopped,
+    StageCompleted,
+    StageFailed,
+    StageOutcome,
+    StageStatus,
 )
-from prml_vslam.pipeline.finalization import stable_hash
-from prml_vslam.pipeline.offline import OfflineRunner
-from prml_vslam.pipeline.run_service import RunService, _default_slam_backend_factory
-from prml_vslam.pipeline.state import RunSnapshot, RunState, StreamingRunSnapshot
-from prml_vslam.pipeline.streaming import StreamingRunner
-from prml_vslam.protocols.source import BenchmarkInputSource, OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.utils import BaseConfig, BaseData, Console, FactoryConfig, PathConfig
-
-if TYPE_CHECKING:
-    from prml_vslam.pipeline.contracts.runtime import RunSnapshot
-
-
-def test_run_request_builds_expected_stage_sequence_from_direct_config(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config)
-
-    plan = request.build(path_config)
-
-    assert plan.run_id == "advio-offline-demo-vista"
-    assert plan.mode is PipelineMode.OFFLINE
-    assert plan.method is MethodId.VISTA
-    assert [stage.id for stage in plan.stages] == [
-        RunPlanStageId.INGEST,
-        RunPlanStageId.SLAM,
-        RunPlanStageId.SUMMARY,
-    ]
-
-
-def test_run_request_build_keeps_default_stage_selection(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, method=MethodId.MOCK)
-
-    plan = request.build(path_config)
-
-    assert plan.method is MethodId.MOCK
-    assert len(plan.stages) == 3
+from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
+from prml_vslam.pipeline.contracts.provenance import RunSummary
+from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.placement import actor_options_for_stage
+from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
+from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
+from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, observation_metadata_for_transport
+from prml_vslam.pipeline.ray_runtime.substrate import build_runtime_env, prepare_ray_environment
+from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.runner import StageResultStore, StageRunner
+from prml_vslam.pipeline.runtime_manager import RuntimeManager
+from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
+from prml_vslam.pipeline.stages.base.contracts import (
+    StageResult,
+    StageRuntimeStatus,
+    StageRuntimeUpdate,
+    VisualizationIntent,
+    VisualizationItem,
+)
+from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.summary.spec import SUMMARY_STAGE_SPEC
+from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionStageInput
+from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceSource,
+    SequenceManifest,
+)
+from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
+from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils.serialization import stable_hash
+from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
 
 
-def test_run_request_build_respects_disabled_optional_stage_toggles(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, method=MethodId.MOCK)
-    request.benchmark.trajectory.enabled = False
-
-    plan = request.build(path_config)
-
-    assert RunPlanStageId.BENCHMARK not in [stage.id for stage in plan.stages]
+@pytest.fixture(autouse=True)
+def _isolated_ray_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PRML_VSLAM_RAY_NAMESPACE", f"pytest-{uuid.uuid4().hex}")
+    yield
+    if ray.is_initialized():
+        ray.shutdown()
 
 
-def test_run_request_from_toml_parses_nested_vista_backend_config(tmp_path: Path) -> None:
-    config_path = tmp_path / "vista-full.toml"
-    config_path.write_text(
-        """
-experiment_name = "Vista Full"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "vista"
-
-[slam.backend]
-max_frames = 12
-
-[slam.backend.slam]
-flow_thres = 2.5
-max_view_num = 128
-""".strip(),
-        encoding="utf-8",
+def _fake_slam_artifacts(artifact_root: Path, *, emit_sparse_points: bool, emit_dense_points: bool) -> SlamArtifacts:
+    run_paths = RunArtifactPaths.build(artifact_root)
+    run_paths.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    run_paths.trajectory_path.write_text("0.0 0.0 0.0 0.0 0.0 0.0 0.0 1.0\n", encoding="utf-8")
+    point_cloud_ref: ArtifactRef | None = None
+    if emit_sparse_points or emit_dense_points:
+        run_paths.point_cloud_path.parent.mkdir(parents=True, exist_ok=True)
+        run_paths.point_cloud_path.write_text("ply\n", encoding="utf-8")
+        point_cloud_ref = ArtifactRef(path=run_paths.point_cloud_path, kind="ply", fingerprint="cloud")
+    return SlamArtifacts(
+        trajectory_tum=ArtifactRef(path=run_paths.trajectory_path, kind="tum", fingerprint="traj"),
+        sparse_points_ply=point_cloud_ref if emit_sparse_points else None,
+        dense_points_ply=point_cloud_ref if emit_dense_points else None,
     )
 
-    request = RunRequest.from_toml(config_path)
 
-    assert isinstance(request.slam.backend, VistaSlamBackendConfig)
-    assert request.slam.backend.max_frames == 12
-    assert request.slam.backend.slam.flow_thres == 2.5
-    assert request.slam.backend.slam.max_view_num == 128
-
-
-def test_run_request_parses_vista_specific_backend_overrides_from_toml() -> None:
-    request = RunRequest.from_toml(
-        """
-experiment_name = "vista-config"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "vista"
-
-[slam.backend.slam]
-flow_thres = 3.5
-max_view_num = 123
-"""
-    )
-
-    assert isinstance(request.slam.backend, VistaSlamBackendConfig)
-    assert request.slam.backend.slam.flow_thres == 3.5
-    assert request.slam.backend.slam.max_view_num == 123
-
-
-def test_run_request_execution_config_defaults_to_local() -> None:
-    request = RunRequest.from_toml(
-        """
-experiment_name = "execution-defaults"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "mock"
-"""
-    )
-
-    assert request.execution.streaming.ingest is StageExecutionMode.LOCAL
-    assert request.execution.streaming.packet_source is StageExecutionMode.LOCAL
-    assert request.execution.streaming.slam is StageExecutionMode.LOCAL
-    assert request.execution.streaming.trajectory_evaluation is StageExecutionMode.LOCAL
-    assert request.execution.streaming.summary is StageExecutionMode.LOCAL
-
-
-def test_run_request_parses_streaming_execution_modes_from_toml() -> None:
-    request = RunRequest.from_toml(
-        """
-experiment_name = "execution-process"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "mock"
-
-[execution.streaming]
-ingest = "process"
-packet_source = "process"
-slam = "process"
-trajectory_evaluation = "process"
-summary = "process"
-"""
-    )
-
-    assert request.execution.streaming.ingest is StageExecutionMode.PROCESS
-    assert request.execution.streaming.packet_source is StageExecutionMode.PROCESS
-    assert request.execution.streaming.slam is StageExecutionMode.PROCESS
-    assert request.execution.streaming.trajectory_evaluation is StageExecutionMode.PROCESS
-    assert request.execution.streaming.summary is StageExecutionMode.PROCESS
-
-
-def test_run_request_rejects_unknown_vista_backend_fields(tmp_path: Path) -> None:
-    config_path = tmp_path / "vista-invalid.toml"
-    config_path.write_text(
-        """
-experiment_name = "Vista Invalid"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "vista"
-
-[slam.backend]
-max_frames = 12
-unsupported = true
-""".strip(),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="unsupported"):
-        RunRequest.from_toml(config_path)
-
-
-def test_method_id_keeps_mock_and_mast3r_without_mstr_alias() -> None:
-    assert MethodId("mock") is MethodId.MOCK
-    assert MethodId("mast3r") is MethodId.MAST3R
-    assert not hasattr(MethodId, "MSTR")
-
-    with pytest.raises(ValueError, match="mstr"):
-        MethodId("mstr")
-
-
-def test_run_request_from_toml_accepts_mock_method(tmp_path: Path) -> None:
-    config_path = tmp_path / "mock.toml"
-    config_path.write_text(
-        """
-experiment_name = "Mock"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "mock"
-""".strip(),
-        encoding="utf-8",
-    )
-
-    request = RunRequest.from_toml(config_path)
-
-    assert request.slam.method is MethodId.MOCK
-
-
-def test_run_request_from_toml_rejects_mstr_method(tmp_path: Path) -> None:
-    config_path = tmp_path / "mstr.toml"
-    config_path.write_text(
-        """
-experiment_name = "MSTR"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "mstr"
-""".strip(),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="mstr"):
-        RunRequest.from_toml(config_path)
-
-
-def test_slam_stage_config_normalizes_generic_vista_backend_config() -> None:
-    config = SlamStageConfig(method=MethodId.VISTA, backend=SlamBackendConfig(max_frames=7))
-
-    assert isinstance(config.backend, VistaSlamBackendConfig)
-    assert config.backend.max_frames == 7
-
-
-def test_pipeline_protocols_accept_current_structural_implementations(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config)
-    request.build(path_config)
-
-    assert isinstance(OfflineRunner(), OfflineRunner)
-    assert isinstance(StreamingRunner(), StreamingRunner)
-    assert isinstance(MockSlamBackendConfig().setup_target(), OfflineSlamBackend)
-    assert isinstance(MockSlamBackendConfig().setup_target(), StreamingSlamBackend)
-
-
-def test_stage_result_converts_to_stage_manifest() -> None:
-    result = StageResult(
-        stage_id=RunPlanStageId.INGEST,
-        execution_key=StageExecutionKey.INGEST,
-        status=StageExecutionStatus.RAN,
-        config_hash="config",
-        input_fingerprint="input",
-        output_paths={"sequence_manifest": Path("sequence_manifest.json")},
-    )
-
-    manifest = result.to_stage_manifest()
-
-    assert manifest.stage_id is RunPlanStageId.INGEST
-    assert manifest.status is StageExecutionStatus.RAN
-    assert manifest.output_paths["sequence_manifest"] == Path("sequence_manifest.json")
-
-
-def test_materialize_offline_manifest_reuses_cached_frames(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from prml_vslam.pipeline import ingest as ingest_module
-    from prml_vslam.pipeline.ingest import materialize_offline_manifest
-
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    video_path = path_config.captures_dir / "video.mp4"
-    video_path.parent.mkdir(parents=True, exist_ok=True)
-    video_path.write_text("fake video content")
-
-    run_paths = path_config.plan_run_paths(
-        experiment_name="Cached Video Offline",
-        method_slug="vista",
-        output_dir=path_config.artifacts_dir,
-    )
-    run_paths.rgb_dir.mkdir(parents=True, exist_ok=True)
-    run_paths.stage_manifest_path(RunPlanStageId.INGEST).parent.mkdir(parents=True, exist_ok=True)
-    run_paths.stage_manifest_path(RunPlanStageId.INGEST).write_text(
-        '{"status": "ran", "config_hash": "...", "input_fingerprint": "...", "output_paths": {}}'
-    )
-
-    # Pre-populate some metadata to satisfy reuse checks.
-    # The actual implementation check might depend on specific hashing.
-    # For now, we mock the core extraction call.
-    with open(run_paths.rgb_dir / ".ingest_metadata.json", "w") as f:
-        import json
-
-        json.dump({"video_path": str(video_path.resolve()), "frame_stride": 1}, f)
-
-    request = RunRequest(
-        experiment_name="Cached Video Offline",
-        output_dir=path_config.artifacts_dir,
-        source=VideoSourceSpec(video_path=Path("video.mp4"), frame_stride=1),
-        slam=SlamStageConfig(method=MethodId.VISTA),
-        benchmark=BenchmarkConfig(trajectory={"enabled": False}, efficiency={"enabled": False}),
-    )
-
-    def _unexpected_extract(**_: object) -> dict[str, object]:
-        raise AssertionError("Frame extraction should not run when cached frames match the request.")
-
-    monkeypatch.setattr(ingest_module, "_extract_video_frames", _unexpected_extract)
-
-    # Add a dummy frame to satisfy the "any(output_dir.glob('*.png'))" check.
-    (run_paths.rgb_dir / "000000.png").write_text("fake frame")
-
-    manifest = materialize_offline_manifest(
-        request=request,
-        prepared_manifest=SequenceManifest(sequence_id="video", video_path=video_path),
-        run_paths=run_paths,
-    )
-    assert manifest is not None
-    assert manifest.rgb_dir == run_paths.rgb_dir.resolve()
-
-
-def test_materialize_offline_manifest_reuses_cached_timestamps(tmp_path: Path) -> None:
-    from prml_vslam.pipeline.ingest import materialize_offline_manifest
-
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    video_path = path_config.captures_dir / "video.mp4"
-    video_path.parent.mkdir(parents=True, exist_ok=True)
-    video_path.write_text("fake video content")
-
-    run_paths = path_config.plan_run_paths(
-        experiment_name="Cached Video Offline",
-        method_slug="vista",
-        output_dir=path_config.artifacts_dir,
-    )
-    run_paths.rgb_dir.mkdir(parents=True, exist_ok=True)
-    (run_paths.rgb_dir / "000000.png").write_text("fake frame", encoding="utf-8")
-    (run_paths.rgb_dir / ".ingest_metadata.json").write_text(
-        json.dumps({"video_path": str(video_path.resolve()), "frame_stride": 1}),
-        encoding="utf-8",
-    )
-    run_paths.input_timestamps_path.parent.mkdir(parents=True, exist_ok=True)
-    run_paths.input_timestamps_path.write_text(
-        json.dumps({"timestamps_ns": [10, 20, 30], "frame_stride": 1}),
-        encoding="utf-8",
-    )
-
-    request = RunRequest(
-        experiment_name="Cached Video Offline",
-        output_dir=path_config.artifacts_dir,
-        source=VideoSourceSpec(video_path=Path("video.mp4"), frame_stride=1),
-        slam=SlamStageConfig(method=MethodId.VISTA),
-        benchmark=BenchmarkConfig(trajectory={"enabled": False}, efficiency={"enabled": False}),
-    )
-
-    manifest = materialize_offline_manifest(
-        request=request,
-        prepared_manifest=SequenceManifest(sequence_id="video", video_path=video_path),
-        run_paths=run_paths,
-    )
-
-    assert manifest.timestamps_path == run_paths.input_timestamps_path.resolve()
-    payload = json.loads(run_paths.input_timestamps_path.read_text(encoding="utf-8"))
-    assert payload["timestamps_ns"] == [10, 20, 30]
-
-
-def test_offline_runner_completes_and_persists_outputs(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.OFFLINE)
-    plan = request.build(path_config)
-    sequence_manifest = _prepared_offline_manifest(tmp_path)
-    source = FakeOfflineSource(sequence_manifest=sequence_manifest)
-    backend = MockSlamBackendConfig().setup_target()
-    assert backend is not None
-    runner = OfflineRunner()
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=backend)
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.summary is not None
-
-
-def test_streaming_runner_completes_and_persists_outputs(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    sequence_manifest = SequenceManifest(sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov")
-    source = FakeStreamingSource(
-        sequence_manifest=sequence_manifest,
-        stream=FinitePacketStream(
-            [
-                _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
-                _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=1.0),
-            ]
-        ),
-    )
-    backend = MockSlamBackendConfig().setup_target()
-    assert backend is not None
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=backend)
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.received_frames == 2
-    assert snapshot.summary is not None
-
-
-def test_streaming_runner_process_packet_source_and_slam_complete(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    request.execution.streaming.packet_source = StageExecutionMode.PROCESS
-    request.execution.streaming.slam = StageExecutionMode.PROCESS
-    plan = request.build(path_config)
-    source = FakeStreamingSourceConfig(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        packets=[
-            _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
-            _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
-            _make_packet(seq=2, timestamp_ns=3_000_000_000, tx=0.2),
-        ],
-    ).setup_target()
-    assert source is not None
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=10.0)
-
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.received_frames == 3
-    assert snapshot.accepted_keyframes == 2
-    assert snapshot.summary is not None
-    assert snapshot.summary.stage_status[RunPlanStageId.SLAM] is StageExecutionStatus.RAN
-
-
-def test_streaming_runner_process_finite_stages_complete_trajectory_evaluation(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    request.benchmark.trajectory.enabled = True
-    request.execution.streaming.ingest = StageExecutionMode.PROCESS
-    request.execution.streaming.trajectory_evaluation = StageExecutionMode.PROCESS
-    request.execution.streaming.summary = StageExecutionMode.PROCESS
-    plan = request.build(path_config)
-    reference_path = tmp_path / "ground_truth.tum"
-    reference_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-    source = BenchmarkStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-        benchmark_inputs=PreparedBenchmarkInputs(
-            reference_trajectories=[ReferenceTrajectoryRef(path=reference_path, source=ReferenceSource.GROUND_TRUTH)]
-        ),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=10.0)
-
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.summary is not None
-    assert snapshot.summary.stage_status[RunPlanStageId.INGEST] is StageExecutionStatus.RAN
-    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION] is StageExecutionStatus.RAN
-    assert snapshot.summary.stage_status[RunPlanStageId.SUMMARY] is StageExecutionStatus.RAN
-
-
-def test_execute_finite_stage_process_timeout_returns_failed_stage_result() -> None:
-    result = streaming_coordinator_module.execute_finite_stage(
-        stage_id=RunPlanStageId.INGEST,
-        mode=StageExecutionMode.PROCESS,
-        target=_sleeping_stage_result,
-        kwargs={"sleep_seconds": 0.1},
-        timeout_seconds=0.01,
-        config_hash="config",
-        input_fingerprint="input",
-    )
-
-    assert result.status is StageExecutionStatus.FAILED
-    assert "ingest stage exceeded process timeout" in result.error_message
-
-
-def test_streaming_runner_process_ingest_timeout_terminalizes_with_failed_snapshot(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    request.execution.streaming.ingest = StageExecutionMode.PROCESS
-    plan = request.build(path_config)
-    source = FakeStreamingSourceConfig(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        prepare_delay_seconds=0.1,
-        fail_on_open=True,
-    ).setup_target()
-    assert source is not None
+class _FakeVistaBackend:
+    method_id = MethodId.VISTA
+
+    def __init__(self) -> None:
+        self._output_policy = None
+        self._artifact_root: Path | None = None
+        self._pending_updates: list[SlamUpdate] = []
+        self.observations: list[Observation] = []
+
+    def run_observations(
+        self,
+        observations,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
+        backend_config,
+        output_policy,
+        artifact_root: Path,
+    ) -> SlamArtifacts:
+        self.observations = list(observations)
+        del benchmark_inputs, baseline_source, backend_config
+        return _fake_slam_artifacts(
+            artifact_root,
+            emit_sparse_points=output_policy.emit_sparse_points,
+            emit_dense_points=output_policy.emit_dense_points,
+        )
+
+    def start_streaming(
+        self,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
+        backend_config,
+        output_policy,
+        artifact_root: Path,
+    ) -> None:
+        del sequence_manifest, benchmark_inputs, baseline_source, backend_config
+        self._output_policy = output_policy
+        self._artifact_root = artifact_root
+
+    def step_streaming(self, frame: Observation) -> None:
+        pose = frame.T_world_camera or FrameTransform(
+            qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(frame.seq), ty=0.0, tz=0.0
+        )
+        self._pending_updates.append(
+            SlamUpdate(
+                seq=frame.seq,
+                source_seq=frame.seq,
+                timestamp_ns=frame.timestamp_ns,
+                source_timestamp_ns=frame.timestamp_ns,
+                is_keyframe=True,
+                keyframe_index=frame.seq,
+                pose=pose,
+                pose_updated=True,
+                num_sparse_points=1,
+                num_dense_points=1,
+                pointmap=np.ones((2, 2, 3), dtype=np.float32),
+                image_rgb=frame.rgb,
+                preview_rgb=frame.rgb,
+            )
+        )
+
+    def drain_streaming_updates(self) -> list[SlamUpdate]:
+        updates = self._pending_updates
+        self._pending_updates = []
+        return updates
+
+    def finish_streaming(self) -> SlamArtifacts:
+        assert self._artifact_root is not None
+        assert self._output_policy is not None
+        return _fake_slam_artifacts(
+            self._artifact_root,
+            emit_sparse_points=self._output_policy.emit_sparse_points,
+            emit_dense_points=self._output_policy.emit_dense_points,
+        )
+
+
+@pytest.fixture(autouse=True)
+def _fake_vista_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        streaming_coordinator_module,
-        "_stage_process_timeout_seconds",
-        lambda stage_id: 0.01 if stage_id is RunPlanStageId.INGEST else 5.0,
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=5.0)
-
-    assert snapshot.state is RunState.FAILED
-    assert "ingest stage exceeded process timeout" in snapshot.error_message
-
-
-def test_streaming_runner_stop_preserves_last_preview_snapshot(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=LoopingPacketStream(_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=StickyPreviewBackend())
-    _wait_for(lambda: runner.snapshot().latest_preview_update is not None)
-
-    runner.stop()
-    snapshot = runner.snapshot()
-
-    assert snapshot.state is RunState.STOPPED
-    assert snapshot.latest_packet is not None
-    assert snapshot.latest_preview_update is not None
-    assert snapshot.latest_preview_update.preview_rgb is not None
-
-
-def test_streaming_runner_keeps_source_frames_and_keyframes_separate(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    sequence_manifest = SequenceManifest(sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov")
-    source = FakeStreamingSource(
-        sequence_manifest=sequence_manifest,
-        stream=FinitePacketStream(
-            [
-                _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
-                _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
-                _make_packet(seq=2, timestamp_ns=3_000_000_000, tx=0.2),
-            ]
-        ),
-    )
-    backend = KeyframeStreamingBackend()
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=backend)
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.received_frames == 3
-    assert snapshot.accepted_keyframes == 2
-    assert snapshot.latest_packet is not None
-    assert snapshot.latest_packet.seq == 2
-    assert snapshot.latest_slam_update is not None
-    assert snapshot.latest_slam_update.is_keyframe is True
-    assert snapshot.latest_slam_update.keyframe_index == 1
-    assert snapshot.latest_preview_update is not None
-    assert snapshot.latest_preview_update.keyframe_index == 1
-    assert snapshot.trajectory_positions_xyz.shape == (2, 3)
-    np.testing.assert_allclose(snapshot.trajectory_positions_xyz[-1], np.array([0.2, 0.0, 0.0]))
-    assert source.prepare_calls == 1
-    assert source.open_calls == [True]
-
-
-def test_streaming_runner_prepares_benchmark_inputs_for_streaming_sources(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    request.benchmark.trajectory.enabled = True
-    plan = request.build(path_config)
-    reference_path = tmp_path / "ground_truth.tum"
-    reference_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-    source = BenchmarkStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-        benchmark_inputs=PreparedBenchmarkInputs(
-            reference_trajectories=[ReferenceTrajectoryRef(path=reference_path, source=ReferenceSource.GROUND_TRUTH)]
-        ),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
-    run_paths = PathConfig(
-        root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures"
-    ).plan_run_paths(
-        experiment_name=request.experiment_name,
-        method_slug=request.slam.method.value,
-        output_dir=request.output_dir,
+        "prml_vslam.methods.stage.backend_config.VistaSlamBackendConfig.setup_target",
+        lambda self, *, path_config=None, **_kwargs: _FakeVistaBackend(),
     )
 
-    assert snapshot.benchmark_inputs is not None
-    assert run_paths.benchmark_inputs_path.exists()
-    assert run_paths.trajectory_metrics_path.exists()
-    assert snapshot.summary is not None
-    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION].value == "ran"
 
-
-def test_streaming_runner_terminalizes_when_trajectory_evaluation_inputs_are_missing(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    request.benchmark.trajectory.enabled = True
-    plan = request.build(path_config)
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
-    run_paths = path_config.plan_run_paths(
-        experiment_name=request.experiment_name,
-        method_slug=request.slam.method.value,
-        output_dir=request.output_dir,
-    )
-
-    assert snapshot.state is RunState.FAILED
-    assert "Trajectory evaluation requires" in snapshot.error_message
-    assert snapshot.summary is not None
-    assert snapshot.summary.stage_status[RunPlanStageId.SLAM].value == "ran"
-    assert snapshot.summary.stage_status[RunPlanStageId.TRAJECTORY_EVALUATION].value == "failed"
-    assert run_paths.summary_path.exists()
-    assert run_paths.stage_manifests_path.exists()
-
-
-def test_streaming_runner_failed_trajectory_evaluation_uses_real_slam_input_fingerprint(
-    tmp_path: Path,
+@contextmanager
+def _capture_logger(
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    request.benchmark.trajectory.enabled = True
-    plan = request.build(path_config)
-    reference_path = tmp_path / "ground_truth.tum"
-    reference_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-    source = BenchmarkStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-        benchmark_inputs=PreparedBenchmarkInputs(
-            reference_trajectories=[ReferenceTrajectoryRef(path=reference_path, source=ReferenceSource.GROUND_TRUTH)]
-        ),
-    )
-    monkeypatch.setattr(
-        streaming_coordinator_module,
-        "compute_trajectory_evaluation",
-        lambda **_: (_ for _ in ()).throw(RuntimeError("synthetic trajectory evaluation failure")),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
+    logger_name: str,
+):
+    monkeypatch.setattr("prml_vslam.utils.console.Console._logging_configured", True)
+    logger = logging.getLogger(logger_name)
+    old_handlers = list(logger.handlers)
+    old_level = logger.level
+    old_propagate = logger.propagate
+    logger.handlers = [caplog.handler]
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    caplog.clear()
+    try:
+        yield logger
+    finally:
+        logger.handlers = old_handlers
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
 
-    runner.start(request=request, plan=plan, source=source, slam_backend=KeyframeStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
 
-    assert snapshot.state is RunState.FAILED
-    assert snapshot.slam is not None
-    assert snapshot.benchmark_inputs is not None
-    trajectory_manifest = next(
-        manifest for manifest in snapshot.stage_manifests if manifest.stage_id is RunPlanStageId.TRAJECTORY_EVALUATION
-    )
-    assert trajectory_manifest.status is StageExecutionStatus.FAILED
-    assert trajectory_manifest.input_fingerprint == stable_hash(
+def test_run_config_requires_explicit_stage_backend_discriminator() -> None:
+    with pytest.raises(ValidationError):
+        RunConfig.model_validate(
+            {
+                "experiment_name": "demo",
+                "mode": "offline",
+                "output_dir": ".artifacts",
+                "stages": {
+                    "source": {"backend": {"source_id": "video", "video_path": "captures/demo.mp4"}},
+                    "slam": {"backend": {"max_frames": 9}},
+                },
+            }
+        )
+
+
+def test_run_config_accepts_explicit_stage_backend_spec() -> None:
+    run_config = RunConfig.model_validate(
         {
-            "benchmark_inputs": snapshot.benchmark_inputs,
-            "slam_trajectory": snapshot.slam.trajectory_tum,
+            "experiment_name": "demo",
+            "mode": "offline",
+            "output_dir": ".artifacts",
+            "stages": {
+                "source": {"backend": {"source_id": "video", "video_path": "captures/demo.mp4"}},
+                "slam": {"backend": {"method_id": "vista", "max_frames": 9}},
+            },
         }
     )
 
+    assert run_config.stages.slam.backend.method_id is MethodId.VISTA
+    assert run_config.stages.slam.backend.max_frames == 9
 
-def test_multiprocess_frame_packet_serialization_round_trips_contract(tmp_path: Path) -> None:
-    class MetadataPayload(BaseData):
-        value: int
 
-    packet = FramePacket(
-        seq=7,
-        timestamp_ns=123_000,
-        arrival_timestamp_s=4.5,
-        rgb=np.full((2, 3, 3), fill_value=17, dtype=np.uint8),
-        depth=np.full((2, 3), fill_value=2.5, dtype=np.float32),
-        confidence=np.ones((2, 3), dtype=np.float32),
-        intrinsics=CameraIntrinsics(fx=200.0, fy=201.0, cx=1.0, cy=1.5, width_px=3, height_px=2),
-        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
-        metadata={
-            "method": MethodId.VISTA,
-            "source_path": tmp_path,
-            "nested": MetadataPayload(value=7),
-            "frame_key": ("frame", 7),
+def test_run_config_defaults_to_ephemeral_local_head_lifecycle() -> None:
+    run_config = RunConfig.model_validate(
+        {
+            "experiment_name": "demo",
+            "mode": "offline",
+            "output_dir": ".artifacts",
+            "stages": {
+                "source": {"backend": {"source_id": "video", "video_path": "captures/demo.mp4"}},
+                "slam": {"backend": {"method_id": "vista"}},
+            },
+        }
+    )
+
+    assert run_config.ray_local_head_lifecycle == "ephemeral"
+
+
+def test_run_config_from_toml_accepts_inline_ray_policy(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.toml"
+    config_path.write_text(
+        """
+experiment_name = "demo"
+mode = "streaming"
+output_dir = ".artifacts"
+ray_local_head_lifecycle = "reusable"
+
+[stages.source.backend]
+source_id = "advio"
+sequence_id = "advio-01"
+
+[stages.source.backend.dataset_serving]
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
+
+[stages.slam.backend]
+method_id = "vista"
+
+""".strip(),
+        encoding="utf-8",
+    )
+
+    run_config = RunConfig.from_toml(config_path)
+
+    assert run_config.ray_local_head_lifecycle == "reusable"
+
+
+def test_run_config_from_toml_accepts_viewer_blueprint_path(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.toml"
+    config_path.write_text(
+        """
+experiment_name = "demo"
+mode = "streaming"
+output_dir = ".artifacts"
+
+[stages.source.backend]
+source_id = "advio"
+sequence_id = "advio-01"
+
+[stages.source.backend.dataset_serving]
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
+
+[stages.slam.backend]
+method_id = "vista"
+
+[visualization]
+connect_live_viewer = true
+viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    run_config = RunConfig.from_toml(config_path)
+
+    assert run_config.visualization.connect_live_viewer is True
+    assert run_config.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
+
+
+def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="cloud-validation",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        emit_dense_points=False,
+        evaluate_cloud=True,
+    )
+
+    plan = run_config.compile_plan(path_config)
+    cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
+
+    assert cloud_stage.available is False
+    assert cloud_stage.availability_reason == "Dense-cloud evaluation is planned but no runtime is registered yet."
+
+
+def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="request-build",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+    )
+
+    plan = run_config.compile_plan(path_config)
+
+    assert plan.run_id == "request-build"
+    assert (
+        plan.artifact_root
+        == path_config.plan_run_paths(
+            experiment_name=run_config.experiment_name,
+            method_slug=run_config.stages.slam.backend.method_id.value,
+            output_dir=run_config.output_dir,
+        ).artifact_root
+    )
+    assert [stage.key for stage in plan.stages] == [StageKey.SOURCE, StageKey.SLAM, StageKey.SUMMARY]
+
+
+def test_build_run_config_copies_backend_policy_and_visualization_fields(tmp_path: Path) -> None:
+    run_config = build_run_config(
+        experiment_name="builder-demo",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4"), frame_stride=3),
+        method=MethodId.VISTA,
+        max_frames=12,
+        backend_overrides={
+            "vista_slam_dir": Path("external/vista-slam"),
+            "checkpoint_path": Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
+            "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
+        },
+        emit_dense_points=False,
+        emit_sparse_points=True,
+        reference_enabled=True,
+        trajectory_eval_enabled=True,
+        trajectory_baseline=ReferenceSource.ARCORE,
+        evaluate_cloud=False,
+        connect_live_viewer=True,
+        export_viewer_rrd=True,
+    )
+
+    assert run_config.stages.slam.backend.method_id is MethodId.VISTA
+    assert run_config.stages.slam.backend.max_frames == 12
+    assert run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
+    assert run_config.stages.slam.outputs.emit_dense_points is False
+    assert run_config.stages.slam.outputs.emit_sparse_points is True
+    assert run_config.stages.reconstruction.enabled is True
+    assert run_config.stages.evaluate_trajectory.enabled is True
+    assert run_config.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARCORE
+    assert run_config.stages.evaluate_cloud.enabled is False
+    assert run_config.visualization.connect_live_viewer is True
+    assert run_config.visualization.export_viewer_rrd is True
+
+
+def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="placeholder",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=AdvioSourceConfig(
+            sequence_id="advio-01",
+            dataset_serving={
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
+        ),
+        method=MethodId.VISTA,
+        reference_enabled=False,
+        trajectory_eval_enabled=False,
+        evaluate_cloud=True,
+    )
+
+    plan = run_config.compile_plan(path_config=path_config)
+
+    unavailable = [stage for stage in plan.stages if not stage.available]
+    assert len(unavailable) == 1
+    assert unavailable[0].key.value == "evaluate.cloud"
+    assert "no runtime is registered yet" in unavailable[0].availability_reason
+
+
+def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="tum-reference",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
+        method=MethodId.VISTA,
+        reference_enabled=True,
+    )
+
+    plan = run_config.compile_plan(path_config=path_config)
+
+    reference_stage = next(stage for stage in plan.stages if stage.key is StageKey.RECONSTRUCTION)
+    assert reference_stage.available is True
+    assert reference_stage.outputs == [RunArtifactPaths.build(plan.artifact_root).reference_cloud_path]
+
+
+def test_stage_registry_rejects_non_rgbd_reference_reconstruction(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="video-reference",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        reference_enabled=True,
+    )
+
+    plan = run_config.compile_plan(path_config=path_config)
+
+    reference_stage = next(stage for stage in plan.stages if stage.key is StageKey.RECONSTRUCTION)
+    assert reference_stage.available is False
+    assert reference_stage.availability_reason == "Reconstruction currently requires a TUM RGB-D dataset source."
+
+
+def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    run_config = _run_config(
+        experiment_name="reference-stage",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
+        method=MethodId.VISTA,
+        reference_enabled=True,
+    )
+    run_config.stages.reconstruction.backend.extract_mesh = True
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        run_config=run_config,
+        stage_keys=[StageKey.RECONSTRUCTION],
+    )
+    context = PipelineExecutionContext(
+        run_config=run_config,
+        plan=plan,
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
+        run_paths=RunArtifactPaths.build(plan.artifact_root),
+        results=StageResultStore(),
+        slam_backend=run_config.stages.slam.backend,
+    )
+    benchmark_inputs = _rgbd_benchmark_inputs(tmp_path)
+
+    result = ReconstructionRuntime().run_offline(
+        ReconstructionStageInput(
+            backend=run_config.stages.reconstruction.backend,
+            run_paths=context.run_paths,
+            benchmark_inputs=benchmark_inputs,
+        )
+    )
+
+    assert result.outcome.stage_key is StageKey.RECONSTRUCTION
+    assert result.outcome.status is StageStatus.COMPLETED
+    assert result.outcome.artifacts["reference_cloud"].path.exists()
+    assert result.outcome.artifacts["reconstruction_metadata"].path.exists()
+    assert result.outcome.artifacts["reference_mesh"].path.exists()
+    assert result.outcome.metrics["observation_count"] == 1
+
+
+def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
+    projector = SnapshotProjector()
+    snapshot = RunSnapshot(run_id="run-1", state=RunState.STOPPED)
+    ref = TransientPayloadRef(handle_id="frame", payload_kind="image", shape=(4, 4, 3), dtype="uint8")
+
+    updated = projector.apply_runtime_update(
+        snapshot,
+        StageRuntimeUpdate(
+            stage_key=StageKey.SOURCE,
+            timestamp_ns=1,
+            visualizations=[
+                VisualizationItem(
+                    intent=VisualizationIntent.RGB_IMAGE,
+                    role="source_rgb",
+                    payload_refs={"image": ref},
+                    frame_index=1,
+                )
+            ],
+            runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.SOURCE,
+                lifecycle_state=StageStatus.RUNNING,
+                processed_items=1,
+                fps=12.0,
+            ),
+        ),
+    )
+
+    assert updated.state is RunState.STOPPED
+    assert updated.stage_runtime_status[StageKey.SOURCE].processed_items == 1
+    assert updated.stage_runtime_status[StageKey.SOURCE].fps == 12.0
+    assert updated.live_refs[StageKey.SOURCE]["source_rgb:image"] == ref
+
+
+def test_snapshot_projector_preserves_completed_state_on_run_stopped() -> None:
+    projector = SnapshotProjector()
+    snapshot = RunSnapshot(run_id="run-1", state=RunState.COMPLETED)
+
+    updated = projector.apply(
+        snapshot,
+        RunStopped(event_id="2", run_id="run-1", ts_ns=2),
+    )
+
+    assert updated.state is RunState.COMPLETED
+
+
+def test_snapshot_projector_copies_only_mutated_runtime_containers() -> None:
+    projector = SnapshotProjector()
+    snapshot = RunSnapshot(
+        run_id="run-1",
+        state=RunState.RUNNING,
+        stage_runtime_status={
+            StageKey.SOURCE: StageRuntimeStatus(
+                stage_key=StageKey.SOURCE,
+                lifecycle_state=StageStatus.RUNNING,
+                progress_message="streaming",
+            )
+        },
+        artifacts={"before": ArtifactRef(path=Path("/tmp/before"), kind="txt", fingerprint="before")},
+    )
+
+    updated = projector.apply_runtime_update(
+        snapshot,
+        StageRuntimeUpdate(
+            stage_key=StageKey.SLAM,
+            timestamp_ns=2,
+            semantic_events=[
+                SlamUpdate(
+                    seq=1,
+                    source_seq=1,
+                    source_timestamp_ns=2,
+                    timestamp_ns=2,
+                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                    pose_updated=True,
+                )
+            ],
+        ),
+    )
+
+    assert updated.stage_runtime_status == snapshot.stage_runtime_status
+    assert updated.artifacts == snapshot.artifacts
+    assert updated.stage_runtime_status is not snapshot.stage_runtime_status
+    assert updated.artifacts is not snapshot.artifacts
+
+
+def test_snapshot_projector_clears_current_stage_on_stage_failed() -> None:
+    projector = SnapshotProjector()
+    snapshot = RunSnapshot(
+        run_id="run-1",
+        state=RunState.RUNNING,
+        current_stage_key=StageKey.SLAM,
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING)
         },
     )
 
-    restored = FramePacket.from_ipc_bytes(packet.to_ipc_bytes())
+    updated = projector.apply(
+        snapshot,
+        StageFailed(
+            event_id="3",
+            run_id="run-1",
+            ts_ns=3,
+            stage_key=StageKey.SLAM,
+            outcome=StageOutcome(
+                stage_key=StageKey.SLAM,
+                status=StageStatus.FAILED,
+                config_hash="cfg",
+                input_fingerprint="inp",
+                error_message="boom",
+            ),
+        ),
+    )
 
-    assert isinstance(restored, FramePacket)
-    assert restored.seq == packet.seq
-    assert restored.timestamp_ns == packet.timestamp_ns
-    assert restored.arrival_timestamp_s == packet.arrival_timestamp_s
-    assert restored.intrinsics == packet.intrinsics
-    assert restored.pose == packet.pose
-    np.testing.assert_array_equal(restored.rgb, packet.rgb)
-    np.testing.assert_array_equal(restored.depth, packet.depth)
-    np.testing.assert_array_equal(restored.confidence, packet.confidence)
-    assert restored.metadata == {
-        "method": MethodId.VISTA.value,
-        "source_path": str(tmp_path),
-        "nested": {"value": 7},
-        "frame_key": ("frame", 7),
+    assert updated.current_stage_key is None
+    assert StageKey.SLAM not in updated.stage_runtime_status
+    assert updated.error_message == "boom"
+    assert updated.stage_outcomes[StageKey.SLAM].status is StageStatus.FAILED
+
+
+def test_snapshot_projector_projects_stage_completed_into_target_keyed_fields() -> None:
+    projector = SnapshotProjector()
+    outcome = StageOutcome(
+        stage_key=StageKey.SLAM,
+        status=StageStatus.COMPLETED,
+        config_hash="cfg",
+        input_fingerprint="inp",
+        artifacts={"trajectory": ArtifactRef(path=Path("/tmp/traj.tum"), kind="tum", fingerprint="traj")},
+    )
+
+    updated = projector.apply(
+        RunSnapshot(run_id="run-1"),
+        StageCompleted(event_id="4", run_id="run-1", ts_ns=4, stage_key=StageKey.SLAM, outcome=outcome),
+    )
+
+    assert updated.stage_outcomes[StageKey.SLAM] == outcome
+    assert updated.artifacts["trajectory"] == outcome.artifacts["trajectory"]
+
+
+def test_snapshot_projector_applies_runtime_update_to_target_and_compat_fields() -> None:
+    projector = SnapshotProjector()
+    ref = TransientPayloadRef(handle_id="payload-1", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=10,
+        semantic_events=[
+            SlamUpdate(
+                seq=1,
+                timestamp_ns=10,
+                source_seq=1,
+                is_keyframe=True,
+                keyframe_index=2,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                num_sparse_points=4,
+                num_dense_points=5,
+            )
+        ],
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.RGB_IMAGE,
+                role="model_rgb",
+                payload_refs={"image": ref},
+                frame_index=1,
+                keyframe_index=2,
+            )
+        ],
+        runtime_status=StageRuntimeStatus(
+            stage_key=StageKey.SLAM,
+            lifecycle_state=StageStatus.RUNNING,
+            progress_message="running",
+            completed_steps=1,
+            progress_unit="frames",
+        ),
+    )
+
+    updated = projector.apply_runtime_update(RunSnapshot(run_id="run-1"), update)
+
+    assert updated.stage_runtime_status[StageKey.SLAM] == update.runtime_status
+    assert updated.live_refs[StageKey.SLAM]["model_rgb:image"] == ref
+
+
+def test_snapshot_projector_runtime_update_preserves_terminal_states() -> None:
+    projector = SnapshotProjector()
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=10,
+        runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+    )
+
+    completed = projector.apply_runtime_update(RunSnapshot(run_id="run-1", state=RunState.COMPLETED), update)
+    failed = projector.apply_runtime_update(RunSnapshot(run_id="run-1", state=RunState.FAILED), update)
+    stopped = projector.apply_runtime_update(RunSnapshot(run_id="run-1", state=RunState.STOPPED), update)
+
+    assert completed.state is RunState.COMPLETED
+    assert failed.state is RunState.FAILED
+    assert stopped.state is RunState.STOPPED
+
+
+def test_snapshot_projector_runtime_update_replaces_runtime_status() -> None:
+    projector = SnapshotProjector()
+    snapshot = RunSnapshot(
+        run_id="run-1",
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(
+                stage_key=StageKey.SLAM,
+                lifecycle_state=StageStatus.RUNNING,
+                progress_message="old",
+            )
+        },
+    )
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=10,
+        runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+    )
+
+    updated = projector.apply_runtime_update(snapshot, update)
+
+    assert updated.stage_runtime_status[StageKey.SLAM] == update.runtime_status
+    assert snapshot.stage_runtime_status[StageKey.SLAM].progress_message == "old"
+
+
+def test_actor_options_preserve_defaults_without_placement() -> None:
+    run_config = _placement_run_config()
+    backend = _test_backend_config(default_cpu=4.0, default_gpu=1.0)
+
+    source_options = actor_options_for_stage(
+        stage_key=StageKey.SOURCE,
+        run_config=run_config,
+        backend=backend,
+        default_num_cpus=1.0,
+        default_num_gpus=0.0,
+        restartable=True,
+    )
+    slam_options = actor_options_for_stage(
+        stage_key=StageKey.SLAM,
+        run_config=run_config,
+        backend=backend,
+        default_num_cpus=2.0,
+        default_num_gpus=0.0,
+        inherit_backend_defaults=True,
+    )
+
+    assert source_options["num_cpus"] == 1.0
+    assert source_options["num_gpus"] == 0.0
+    assert source_options["max_restarts"] == -1
+    assert slam_options["num_cpus"] == 4.0
+    assert slam_options["num_gpus"] == 1.0
+
+
+def test_actor_options_explicit_slam_placement_overrides_resources() -> None:
+    run_config = _placement_run_config(placement={"slam": {"resources": {"CPU": 4, "GPU": 1}}})
+    backend = _test_backend_config(default_cpu=2.0, default_gpu=0.0)
+
+    options = actor_options_for_stage(
+        stage_key=StageKey.SLAM,
+        run_config=run_config,
+        backend=backend,
+        default_num_cpus=2.0,
+        default_num_gpus=0.0,
+        inherit_backend_defaults=True,
+    )
+
+    assert options["num_cpus"] == 4.0
+    assert options["num_gpus"] == 1.0
+
+
+def test_actor_options_explicit_source_placement_overrides_resources() -> None:
+    run_config = _placement_run_config(placement={"source": {"resources": {"CPU": 3}}})
+    backend = _test_backend_config(default_cpu=8.0, default_gpu=1.0)
+
+    options = actor_options_for_stage(
+        stage_key=StageKey.SOURCE,
+        run_config=run_config,
+        backend=backend,
+        default_num_cpus=1.0,
+        default_num_gpus=0.0,
+        restartable=True,
+    )
+
+    assert options["num_cpus"] == 3.0
+    assert options["num_gpus"] == 0.0
+    assert options["max_restarts"] == -1
+
+
+def test_clean_actor_options_keeps_nonempty_resources_dict() -> None:
+    cleaned = clean_actor_options(
+        {
+            "num_cpus": 1.0,
+            "resources": {"capture": 1.0},
+            "empty_resources": {},
+            "none_value": None,
+        }
+    )
+
+    assert cleaned == {"num_cpus": 1.0, "resources": {"capture": 1.0}}
+
+
+def test_observation_metadata_for_transport_strips_ref_backed_arrays() -> None:
+    rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+    packet = Observation(seq=1, timestamp_ns=10, rgb=rgb, provenance=ObservationProvenance(source_id="test"))
+
+    metadata = observation_metadata_for_transport(packet)
+
+    assert metadata.rgb is None
+    assert metadata.seq == packet.seq
+    assert metadata.timestamp_ns == packet.timestamp_ns
+    assert packet.rgb is rgb
+
+
+def test_run_coordinator_resolves_materialized_handle_payloads_without_ray_get() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    payload = np.zeros((2, 2, 3), dtype=np.uint8)
+
+    coordinator._remember_handle("frame-1", payload)
+
+    resolved = coordinator._resolve_handle_local("frame-1")
+
+    assert resolved is not None
+    assert np.array_equal(resolved, payload)
+
+
+def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    payload = np.zeros((2, 2, 3), dtype=np.uint8)
+
+    coordinator._remember_handle("frame-1", payload)
+
+    resolved = coordinator.read_payload("frame-1")
+
+    assert resolved is not None
+    assert np.array_equal(resolved, payload)
+
+
+def test_run_coordinator_applies_slam_runtime_updates_to_snapshot() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="run-1", namespace="pytest-unit")
+    coordinator._snapshot = RunSnapshot(run_id="run-1")
+    ref = TransientPayloadRef(handle_id="payload-1", payload_kind="image", shape=(2, 2, 3), dtype="uint8")
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.RGB_IMAGE,
+                role="model_rgb",
+                payload_refs={"image": ref},
+                frame_index=1,
+            )
+        ],
+        runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+    )
+
+    coordinator.on_slam_runtime_updates(updates=[update])
+
+    snapshot = coordinator.snapshot()
+    assert snapshot.stage_runtime_status[StageKey.SLAM] == update.runtime_status
+    assert snapshot.live_refs[StageKey.SLAM]["model_rgb:image"] == ref
+
+
+def test_run_coordinator_runtime_updates_do_not_create_durable_backend_events() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="run-1", namespace="pytest-unit")
+    coordinator._snapshot = RunSnapshot(run_id="run-1")
+
+    coordinator.on_slam_runtime_updates(
+        updates=[
+            StageRuntimeUpdate(
+                stage_key=StageKey.SLAM,
+                timestamp_ns=10,
+                semantic_events=[
+                    SlamUpdate(
+                        seq=1,
+                        timestamp_ns=10,
+                        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+                        pose_updated=True,
+                    )
+                ],
+            )
+        ]
+    )
+
+    snapshot = coordinator.snapshot()
+    assert snapshot.stage_runtime_status == {}
+    assert coordinator.events() == []
+
+
+def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_get(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted: list[tuple[StageRuntimeUpdate, object]] = []
+
+    class FakeObserveUpdateRemote:
+        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: object) -> str:
+            submitted.append((update, payload_resolver))
+            return "rerun-call-1"
+
+    coordinator._rerun_sink = SimpleNamespace(observe_update=FakeObserveUpdateRemote())
+    coordinator._run_config = SimpleNamespace(visualization=SimpleNamespace(log_source_rgb=True))
+    monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.coordinator.ray.get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("coordinator hot path must not call ray.get")),
+    )
+
+    coordinator.on_packet(
+        packet=Observation(seq=1, timestamp_ns=1, provenance=ObservationProvenance()),
+        frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_ref=None,
+        confidence_ref=None,
+        pointmap_ref=None,
+        intrinsics=None,
+        pose=None,
+        provenance=ObservationProvenance(),
+        processed_frame_count=1,
+        measured_fps=30.0,
+        frame_payload_ref=TransientPayloadRef(
+            handle_id="frame-1",
+            payload_kind="image",
+            media_type="image/rgb",
+            shape=(2, 2, 3),
+            dtype="uint8",
+        ),
+    )
+
+    assert len(submitted) == 1
+    assert submitted[0][0].stage_key is StageKey.SOURCE
+    assert submitted[0][1] == "resolver"
+    assert coordinator._rerun_sink_last_call == "rerun-call-1"
+
+
+def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted: list[tuple[StageRuntimeUpdate, Any]] = []
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.RECONSTRUCTION,
+        timestamp_ns=1,
+        runtime_status=StageRuntimeStatus(
+            stage_key=StageKey.RECONSTRUCTION,
+            lifecycle_state=StageStatus.COMPLETED,
+        ),
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role="reconstruction_point_cloud",
+            )
+        ],
+    )
+
+    class FakeObserveUpdateRemote:
+        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: Any) -> str:
+            submitted.append((update, payload_resolver))
+            return "rerun-call-1"
+
+    class FakeReconstructionRuntime:
+        def __init__(self) -> None:
+            self.drained = False
+
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.RECONSTRUCTION)
+
+        def stop(self) -> None:
+            return None
+
+        def run_offline(self, input_payload) -> StageResult:
+            del input_payload
+            raise AssertionError("routing test should not run the stage")
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            if self.drained:
+                return []
+            self.drained = True
+            return [update]
+
+    runtime_manager = RuntimeManager()
+    runtime_manager.register(
+        StageKey.RECONSTRUCTION,
+        factory=FakeReconstructionRuntime,
+    )
+    runtime_proxy = runtime_manager.runtime_for(StageKey.RECONSTRUCTION)
+    coordinator._rerun_sink = SimpleNamespace(observe_update=FakeObserveUpdateRemote())
+
+    coordinator._publish_runtime_updates_from_proxy(runtime_proxy)
+
+    assert submitted == [(update, None)]
+    assert coordinator._rerun_sink_last_call == "rerun-call-1"
+    assert coordinator.snapshot().stage_runtime_status[StageKey.RECONSTRUCTION].lifecycle_state is StageStatus.COMPLETED
+    assert runtime_proxy.drain_runtime_updates() == []
+
+
+def test_run_coordinator_runtime_manager_registers_reconstruction_live_updates(tmp_path: Path) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    run_config = _run_config(
+        experiment_name="demo",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        run_config=run_config,
+        stage_keys=[StageKey.RECONSTRUCTION],
+    )
+    coordinator._run_config = run_config
+    coordinator._path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    coordinator._slam_backend = run_config.stages.slam.backend
+    context = coordinator._stage_execution_context(run_config=run_config, plan=plan, source=FakeOfflineSource())
+
+    runtime_manager = coordinator._build_runtime_manager(plan=plan, context=context)
+    runtime_proxy = runtime_manager.runtime_for(StageKey.RECONSTRUCTION)
+
+    assert isinstance(runtime_proxy.runtime, ReconstructionRuntime)
+
+
+def test_run_coordinator_releases_streaming_credit_before_update_observer_routing() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    call_order: list[str] = []
+    credits: list[int] = []
+
+    class _FakeStreamingRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING)
+
+        def stop(self) -> None:
+            return None
+
+        def start_streaming(self, input_payload) -> None:
+            del input_payload
+
+        def submit_stream_item(self, item) -> None:
+            del item
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            return [
+                StageRuntimeUpdate(
+                    stage_key=StageKey.SLAM,
+                    timestamp_ns=1,
+                    runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+                )
+            ]
+
+        def finish_streaming(self) -> StageResult:
+            raise AssertionError("finish_streaming should not be called in this test")
+
+    runtime_manager = RuntimeManager()
+    runtime_manager.register(
+        StageKey.SLAM,
+        factory=_FakeStreamingRuntime,
+    )
+    coordinator._slam_runtime_proxy = runtime_manager.runtime_for(StageKey.SLAM)
+    coordinator._source_actor = SimpleNamespace(
+        grant_credit=SimpleNamespace(remote=lambda count: call_order.append("credit") or credits.append(count)),
+    )
+
+    def _fail_update_routing(*, updates: list[StageRuntimeUpdate]) -> None:
+        del updates
+        call_order.append("updates")
+        raise RuntimeError("observer routing failed")
+
+    coordinator.on_slam_runtime_updates = _fail_update_routing
+
+    coordinator.on_packet(
+        packet=Observation(seq=1, timestamp_ns=1, provenance=ObservationProvenance()),
+        frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_ref=None,
+        confidence_ref=None,
+        pointmap_ref=None,
+        intrinsics=None,
+        pose=None,
+        provenance=ObservationProvenance(),
+        processed_frame_count=1,
+        measured_fps=30.0,
+        frame_payload_ref=TransientPayloadRef(
+            handle_id="frame-1",
+            payload_kind="image",
+            media_type="image/rgb",
+            shape=(2, 2, 3),
+            dtype="uint8",
+        ),
+    )
+
+    assert credits == [1]
+    assert call_order == ["credit", "updates"]
+    assert coordinator._in_flight_frames == 0
+    assert coordinator._streaming_error is None
+
+
+def test_run_coordinator_records_stage_failed_events() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+
+    coordinator._record_stage_failure(
+        stage_key=StageKey.SLAM,
+        outcome=StageOutcome(
+            stage_key=StageKey.SLAM,
+            status=StageStatus.FAILED,
+            config_hash="cfg",
+            input_fingerprint="inp",
+            error_message="backend boom",
+        ),
+    )
+
+    snapshot = coordinator.snapshot()
+
+    assert snapshot.stage_outcomes[StageKey.SLAM].status is StageStatus.FAILED
+    assert snapshot.error_message == "backend boom"
+    assert any(event.kind == "stage.failed" for event in coordinator.events())
+
+
+def test_run_coordinator_emits_source_stage_failure_before_run_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="source-failure",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_eval_enabled=False,
+    )
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id=run_config.experiment_name, namespace="pytest-unit")
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        run_config=run_config,
+        stage_keys=[StageKey.SOURCE, StageKey.SLAM, StageKey.SUMMARY],
+    )
+
+    coordinator._run_config = run_config
+    coordinator._plan = plan
+    coordinator._path_config = path_config
+    coordinator._slam_backend = run_config.stages.slam.backend
+    monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "prml_vslam.sources.stage.runtime.SourceRuntime.run_offline",
+        lambda self, input_payload: (_ for _ in ()).throw(RuntimeError("source boom")),
+    )
+
+    coordinator._run(
+        run_config=run_config,
+        plan=plan,
+        path_config=path_config,
+        runtime_source=FakeOfflineSource(),
+    )
+
+    events = coordinator.events()
+    assert [event.kind for event in events] == [
+        "run.started",
+        "stage.queued",
+        "stage.started",
+        "stage.failed",
+        "run.failed",
+    ]
+    failed_event = next(event for event in events if isinstance(event, StageFailed))
+    assert failed_event.stage_key is StageKey.SOURCE
+    assert failed_event.outcome.config_hash == stable_hash(run_config.stages.source.backend)
+    assert failed_event.outcome.input_fingerprint == stable_hash(run_config.stages.source.backend)
+    assert failed_event.outcome.error_message == "source boom"
+
+
+def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_config = _run_config(
+        experiment_name="missing-runtime-stage",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path / ".artifacts",
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+    )
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id=run_config.experiment_name, namespace="pytest-unit")
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        run_config=run_config,
+        stage_keys=[StageKey.SOURCE, StageKey.CLOUD_EVALUATION, StageKey.SUMMARY],
+    )
+    coordinator._run_config = run_config
+    coordinator._path_config = path_config
+    coordinator._slam_backend = run_config.stages.slam.backend
+    monkeypatch.setattr(coordinator._console, "exception", lambda *args, **kwargs: None)
+
+    coordinator._run(
+        run_config=run_config,
+        plan=plan,
+        path_config=path_config,
+        runtime_source=FakeOfflineSource(),
+    )
+
+    failed_event = next(event for event in coordinator.events() if event.kind == "run.failed")
+    assert "evaluate.cloud" in failed_event.error_message
+
+
+def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="dispatch-demo",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_eval_enabled=False,
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        run_config=run_config,
+        stage_keys=[StageKey.SOURCE, StageKey.SLAM, StageKey.SUMMARY],
+    )
+    coordinator._run_config = run_config
+    coordinator._path_config = path_config
+    coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
+
+    coordinator._run_offline(
+        run_config=run_config,
+        plan=plan,
+        path_config=path_config,
+        runtime_source=FakeOfflineSource(),
+    )
+
+    snapshot = coordinator.snapshot()
+    assert snapshot.stage_outcomes[StageKey.SOURCE].status is StageStatus.COMPLETED
+    assert snapshot.stage_outcomes[StageKey.SLAM].status is StageStatus.COMPLETED
+    assert snapshot.stage_outcomes[StageKey.SUMMARY].status is StageStatus.COMPLETED
+    assert "trajectory_tum" in snapshot.artifacts
+    assert "run_summary" in snapshot.artifacts
+    assert snapshot.state is RunState.COMPLETED
+
+
+def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path: Path) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="streaming-dispatch", namespace="pytest-unit")
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="streaming-dispatch",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_eval_enabled=True,
+    )
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        run_config=run_config,
+        stage_keys=[
+            StageKey.SOURCE,
+            StageKey.SLAM,
+            StageKey.TRAJECTORY_EVALUATION,
+            StageKey.SUMMARY,
+        ],
+    )
+    sequence_manifest = SequenceManifest(sequence_id="stream-sequence")
+    slam_artifacts = SlamArtifacts(
+        trajectory_tum=ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj"),
+    )
+    calls: list[str] = []
+
+    class _FakeSlamRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING)
+
+        def stop(self) -> None:
+            return None
+
+        def start_streaming(self, input_payload) -> None:
+            del input_payload
+
+        def submit_stream_item(self, item) -> None:
+            del item
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            return []
+
+        def finish_streaming(self) -> StageResult:
+            calls.append("slam.finish")
+            return StageResult(
+                stage_key=StageKey.SLAM,
+                payload=SlamStageOutput(artifacts=slam_artifacts),
+                outcome=StageOutcome(
+                    stage_key=StageKey.SLAM,
+                    status=StageStatus.COMPLETED,
+                    config_hash="slam",
+                    input_fingerprint="slam",
+                    artifacts={"trajectory_tum": slam_artifacts.trajectory_tum},
+                ),
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    lifecycle_state=StageStatus.COMPLETED,
+                ),
+            )
+
+    class _FakeTrajectoryRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.TRAJECTORY_EVALUATION, lifecycle_state=StageStatus.RUNNING)
+
+        def stop(self) -> None:
+            return None
+
+        def run_offline(self, input_payload) -> StageResult:
+            assert input_payload.sequence_manifest == sequence_manifest
+            assert input_payload.benchmark_inputs is None
+            assert input_payload.slam == slam_artifacts
+            calls.append("trajectory")
+            return StageResult(
+                stage_key=StageKey.TRAJECTORY_EVALUATION,
+                payload=None,
+                outcome=StageOutcome(
+                    stage_key=StageKey.TRAJECTORY_EVALUATION,
+                    status=StageStatus.COMPLETED,
+                    config_hash="trajectory",
+                    input_fingerprint="trajectory",
+                ),
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.TRAJECTORY_EVALUATION,
+                    lifecycle_state=StageStatus.COMPLETED,
+                ),
+            )
+
+    class _FakeSummaryRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.SUMMARY, lifecycle_state=StageStatus.RUNNING)
+
+        def stop(self) -> None:
+            return None
+
+        def run_offline(self, input_payload) -> StageResult:
+            calls.append("summary")
+            assert [outcome.stage_key for outcome in input_payload.stage_outcomes] == [
+                StageKey.SOURCE,
+                StageKey.SLAM,
+                StageKey.TRAJECTORY_EVALUATION,
+            ]
+            return StageResult(
+                stage_key=StageKey.SUMMARY,
+                payload=RunSummary(
+                    run_id=input_payload.plan.run_id,
+                    artifact_root=input_payload.plan.artifact_root,
+                    stage_status={
+                        StageKey.SOURCE: StageStatus.COMPLETED,
+                        StageKey.SLAM: StageStatus.COMPLETED,
+                        StageKey.TRAJECTORY_EVALUATION: StageStatus.COMPLETED,
+                    },
+                ),
+                outcome=StageOutcome(
+                    stage_key=StageKey.SUMMARY,
+                    status=StageStatus.COMPLETED,
+                    config_hash="summary",
+                    input_fingerprint="summary",
+                ),
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.SUMMARY,
+                    lifecycle_state=StageStatus.COMPLETED,
+                ),
+            )
+
+    runtime_manager = RuntimeManager()
+    slam_runtime = _FakeSlamRuntime()
+    runtime_manager.register(
+        StageKey.SLAM,
+        factory=lambda: slam_runtime,
+        stage_spec=SLAM_STAGE_SPEC,
+    )
+    runtime_manager.register(
+        StageKey.TRAJECTORY_EVALUATION,
+        factory=_FakeTrajectoryRuntime,
+        stage_spec=TRAJECTORY_EVALUATION_STAGE_SPEC,
+    )
+    runtime_manager.register(
+        StageKey.SUMMARY,
+        factory=_FakeSummaryRuntime,
+        stage_spec=SUMMARY_STAGE_SPEC,
+    )
+    coordinator._run_config = run_config
+    coordinator._plan = plan
+    coordinator._path_config = path_config
+    coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
+    coordinator._snapshot = RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
+    coordinator._streaming_runtime_manager = runtime_manager
+    coordinator._slam_runtime_proxy = runtime_manager.runtime_for(StageKey.SLAM)
+    coordinator._result_store.put(
+        StageResult(
+            stage_key=StageKey.SOURCE,
+            payload=SourceStageOutput(sequence_manifest=sequence_manifest, benchmark_inputs=None),
+            outcome=StageOutcome(
+                stage_key=StageKey.SOURCE,
+                status=StageStatus.COMPLETED,
+                config_hash="source",
+                input_fingerprint="source",
+            ),
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.SOURCE,
+                lifecycle_state=StageStatus.COMPLETED,
+            ),
+        )
+    )
+    coordinator._stage_runner = StageRunner(coordinator._result_store)
+
+    coordinator._finalize_streaming()
+
+    assert calls == ["slam.finish", "trajectory", "summary"]
+    snapshot = coordinator.snapshot()
+    assert snapshot.stage_outcomes[StageKey.SLAM].artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
+    assert snapshot.artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
+    assert snapshot.state is RunState.COMPLETED
+
+
+def test_slam_backend_config_uses_stage_owned_method_id_for_vista() -> None:
+    run_config = RunConfig.model_validate(
+        {
+            "experiment_name": "vista",
+            "mode": "offline",
+            "output_dir": ".artifacts",
+            "stages": {
+                "source": {"backend": {"source_id": "video", "video_path": "captures/demo.mp4"}},
+                "slam": {"backend": {"method_id": "vista", "max_frames": 9}},
+            },
+        }
+    )
+
+    assert run_config.stages.slam.backend.method_id is MethodId.VISTA
+    assert run_config.stages.slam.backend.max_frames == 9
+
+
+def test_streaming_source_config_input_caps_video_extraction_by_backend_max_frames() -> None:
+    input_payload = SourceStageInput(
+        artifact_root=Path("/tmp/source"),
+        mode=PipelineMode.STREAMING,
+        frame_stride=1,
+        streaming_max_frames=42,
+    )
+
+    assert input_payload.streaming_max_frames == 42
+
+
+def test_ray_backend_uses_current_python_for_local_runtime_env() -> None:
+    runtime_env = build_runtime_env(address=None)
+
+    assert runtime_env["py_executable"] == sys.executable
+    assert "excludes" in runtime_env
+    assert runtime_env["env_vars"]["OMP_NUM_THREADS"] == "1"
+    assert runtime_env["env_vars"]["MKL_NUM_THREADS"] == "1"
+    assert runtime_env["env_vars"]["OPENBLAS_NUM_THREADS"] == "1"
+    assert runtime_env["env_vars"]["UV_NUM_THREADS"] == "1"
+
+
+def test_ray_backend_does_not_force_local_python_for_remote_address() -> None:
+    runtime_env = build_runtime_env(address="ray://10.0.0.5:10001")
+
+    assert "py_executable" not in runtime_env
+    assert "excludes" in runtime_env
+    assert runtime_env["env_vars"]["OMP_NUM_THREADS"] == "1"
+
+
+def test_ray_backend_disables_uv_runtime_env_replication_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("RAY_ENABLE_UV_RUN_RUNTIME_ENV", raising=False)
+
+    prepare_ray_environment()
+
+    assert os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] == "0"
+
+
+def test_ray_backend_prefers_persistent_local_head_outside_pytest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = RayPipelineBackend(namespace="prml_vslam.local")
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: False)
+    monkeypatch.setattr(backend._local_head, "ensure_address", lambda *, reuse: "127.0.0.1:25001")
+
+    def fake_init(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.init", fake_init)
+
+    backend._ensure_ray()
+
+    assert captured["address"] == "127.0.0.1:25001"
+    assert captured["_skip_env_hook"] is True
+
+
+def test_ray_backend_keeps_inprocess_init_for_pytest_namespaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = RayPipelineBackend(namespace="pytest-unit")
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: False)
+    monkeypatch.setattr(
+        backend._local_head,
+        "ensure_address",
+        lambda *, reuse: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+
+    def fake_init(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.init", fake_init)
+
+    backend._ensure_ray()
+
+    assert "address" not in captured
+    assert captured["_skip_env_hook"] is True
+
+
+def test_ray_backend_create_coordinator_applies_actor_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(namespace="pytest-unit")
+    captured: dict[str, Any] = {}
+
+    class FakeCoordinatorOptions:
+        def remote(self, *, run_id: str, namespace: str) -> object:
+            return SimpleNamespace(run_id=run_id, namespace=namespace)
+
+    def fake_options(**options: Any) -> FakeCoordinatorOptions:
+        captured.update(options)
+        return FakeCoordinatorOptions()
+
+    monkeypatch.setattr(backend, "_shutdown_run", lambda run_id: None)
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.RunCoordinatorActor.options", fake_options)
+
+    backend._create_coordinator(
+        "coordinator-placement",
+        actor_options={"num_cpus": 2.0, "num_gpus": 1.0, "max_restarts": 0, "max_task_retries": 0},
+    )
+
+    assert captured == {
+        "name": "prml-vslam-run-coordinator-placement",
+        "namespace": "pytest-unit",
+        "num_cpus": 2.0,
+        "num_gpus": 1.0,
+        "max_restarts": 0,
+        "max_task_retries": 0,
     }
 
 
-def test_streaming_runner_applies_update_emitted_during_session_close(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
+def test_ray_backend_logs_pytest_init_path(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backend = RayPipelineBackend(namespace="pytest-unit")
+    captured: dict[str, Any] = {}
 
-    runner.start(request=request, plan=plan, source=source, slam_backend=CloseUpdateStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.accepted_keyframes == 1
-    assert snapshot.latest_slam_update is not None
-    assert snapshot.latest_slam_update.keyframe_index == 0
-    assert snapshot.latest_preview_update is not None
-    np.testing.assert_allclose(snapshot.trajectory_positions_xyz[-1], np.array([0.4, 0.0, 0.0]))
-
-
-def test_streaming_runner_retains_last_renderable_preview_update(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    sequence_manifest = SequenceManifest(sequence_id="advio-15", video_path=tmp_path / ".data" / "advio" / "frames.mov")
-    source = FakeStreamingSource(
-        sequence_manifest=sequence_manifest,
-        stream=FinitePacketStream(
-            [
-                _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
-                _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
-            ]
-        ),
-    )
-    backend = PreviewRetentionStreamingBackend()
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=backend)
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.latest_slam_update is not None
-    assert snapshot.latest_slam_update.is_keyframe is False
-    assert snapshot.latest_preview_update is not None
-    assert snapshot.latest_preview_update.is_keyframe is True
-    assert snapshot.latest_preview_update.keyframe_index == 0
-    assert snapshot.latest_preview_update.preview_rgb is not None
-
-
-def test_streaming_runner_stop_preserves_last_preview_and_trajectory_via_run_service(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    service = RunService(
-        path_config=path_config,
-        slam_backend_factory=lambda _method: PreviewRetentionStreamingBackend(),
-    )
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=BlockingPacketStream(first_packet=_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)),
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: False)
+    monkeypatch.setattr(
+        backend._local_head,
+        "ensure_address",
+        lambda *, reuse: (_ for _ in ()).throw(AssertionError("should not be called")),
     )
 
-    service.start_run(request=request, runtime_source=source)
-    _wait_for(
-        lambda: isinstance(service.snapshot(), StreamingRunSnapshot) and service.snapshot().received_frames >= 1,
-        timeout_seconds=5.0,
-    )
-    service.stop_run()
-    snapshot = service.snapshot()
-
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.state is RunState.STOPPED
-    assert snapshot.latest_preview_update is not None
-    assert snapshot.latest_preview_update.preview_rgb is not None
-    assert snapshot.trajectory_positions_xyz.shape[0] == 1
-
-
-def test_streaming_runner_attributes_delayed_updates_by_update_timestamp(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream(
-            [
-                _make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0),
-                _make_packet(seq=1, timestamp_ns=2_000_000_000, tx=0.1),
-            ]
-        ),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(
-        request=request,
-        plan=plan,
-        source=source,
-        slam_backend=DelayedUpdateStreamingBackend(),
-    )
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.state is RunState.COMPLETED
-    assert snapshot.accepted_keyframes == 1
-    np.testing.assert_allclose(snapshot.trajectory_timestamps_s, np.array([0.0]))
-
-
-def test_streaming_runner_failed_start_surfaces_startup_error_without_unboundlocal(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(
-        request=request,
-        plan=plan,
-        source=source,
-        slam_backend=StartFailureStreamingBackend(),
-    )
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert isinstance(snapshot, StreamingRunSnapshot)
-    assert snapshot.state is RunState.FAILED
-    assert "start session failed" in snapshot.error_message
-
-
-def test_streaming_runner_finalize_runs_registered_cleanup_on_completion_and_failure(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-
-    completion_stream = DisconnectSpyPacketStream(packets=[_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)])
-    completion_runner = StreamingRunner(frame_timeout_seconds=0.01)
-    completion_runner.start(
-        request=request,
-        plan=plan,
-        source=FakeStreamingSource(
-            sequence_manifest=SequenceManifest(sequence_id="advio-15"), stream=completion_stream
-        ),
-        slam_backend=PreviewRetentionStreamingBackend(),
-    )
-    completion_snapshot = _wait_for_terminal_snapshot(completion_runner)
-
-    failure_stream = DisconnectSpyPacketStream(packets=[_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)])
-    failure_runner = StreamingRunner(frame_timeout_seconds=0.01)
-    failure_runner.start(
-        request=request,
-        plan=plan,
-        source=FakeStreamingSource(sequence_manifest=SequenceManifest(sequence_id="advio-15"), stream=failure_stream),
-        slam_backend=FailingStepStreamingBackend(),
-    )
-    failure_snapshot = _wait_for_terminal_snapshot(failure_runner)
-
-    assert completion_snapshot.state is RunState.COMPLETED
-    assert failure_snapshot.state is RunState.FAILED
-    assert completion_stream.disconnect_calls >= 1
-    assert failure_stream.disconnect_calls >= 1
-
-
-def test_streaming_runner_preserves_native_rerun_without_repo_export(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    request.visualization.preserve_native_rerun = True
-    request.visualization.export_viewer_rrd = False
-    plan = request.build(path_config)
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=NativeRerunStreamingBackend())
-    snapshot = _wait_for_terminal_snapshot(runner)
-
-    assert snapshot.visualization is not None
-    assert snapshot.visualization.native_rerun_rrd is not None
-    assert snapshot.visualization.native_rerun_rrd.path.exists()
-
-
-def test_streaming_runner_fails_when_multiprocess_worker_raises(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    plan = request.build(path_config)
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=1_000_000_000, tx=0.0)]),
-    )
-    runner = StreamingRunner(frame_timeout_seconds=0.01)
-
-    runner.start(request=request, plan=plan, source=source, slam_backend=FailingWorkerBackend())
-    snapshot = _wait_for_terminal_snapshot(runner, timeout_seconds=10.0)
-
-    assert snapshot.state is RunState.FAILED
-    assert "synthetic worker failure" in snapshot.error_message
-
-
-class KeyframeStreamingBackend:
-    """Small streaming backend double that emits explicit keyframe metadata."""
-
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy
-        return KeyframeStreamingSession(artifact_root=artifact_root)
-
-
-class KeyframeStreamingSession:
-    """Streaming session double with one skipped frame between two keyframes."""
-
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-        self._updates = iter(
-            [
-                SlamUpdate(
-                    seq=0,
-                    timestamp_ns=1_000_000_000,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                    is_keyframe=True,
-                    keyframe_index=0,
-                    num_sparse_points=5,
-                    num_dense_points=3,
-                    preview_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
-                    pointmap=np.zeros((2, 2, 3), dtype=np.float32),
-                ),
-                SlamUpdate(
-                    seq=1,
-                    timestamp_ns=2_000_000_000,
-                    is_keyframe=False,
-                    keyframe_index=None,
-                    num_sparse_points=5,
-                    num_dense_points=3,
-                ),
-                SlamUpdate(
-                    seq=2,
-                    timestamp_ns=3_000_000_000,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.2, ty=0.0, tz=0.0),
-                    is_keyframe=True,
-                    keyframe_index=1,
-                    num_sparse_points=8,
-                    num_dense_points=6,
-                    preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
-                    pointmap=np.zeros((2, 2, 3), dtype=np.float32),
-                ),
-            ]
-        )
-        self.steps = 0
-        self._pending: list[SlamUpdate] = []
-
-    def step(self, frame: FramePacket) -> None:
-        del frame
-        self.steps += 1
-        self._pending.append(next(self._updates))
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        updates = self._pending
-        self._pending = []
-        return updates
-
-    def close(self) -> SlamArtifacts:
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(
-            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="keyframe-streaming"),
-        )
-
-
-class PreviewRetentionStreamingBackend:
-    """Streaming backend double that stops emitting preview payloads after the first keyframe."""
-
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy
-        return PreviewRetentionStreamingSession(artifact_root=artifact_root)
-
-
-class PreviewRetentionStreamingSession:
-    """Streaming session double that keeps a prior preview valid across non-keyframe updates."""
-
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-        self._updates = iter(
-            [
-                SlamUpdate(
-                    seq=0,
-                    timestamp_ns=1_000_000_000,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                    is_keyframe=True,
-                    keyframe_index=0,
-                    preview_rgb=np.full((2, 2, 3), fill_value=9, dtype=np.uint8),
-                    pointmap=np.zeros((2, 2, 3), dtype=np.float32),
-                ),
-                SlamUpdate(
-                    seq=1,
-                    timestamp_ns=2_000_000_000,
-                    is_keyframe=False,
-                    keyframe_index=None,
-                ),
-            ]
-        )
-        self._pending: list[SlamUpdate] = []
-
-    def step(self, frame: FramePacket) -> None:
-        del frame
-        self._pending.append(next(self._updates))
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        updates = self._pending
-        self._pending = []
-        return updates
-
-    def close(self) -> SlamArtifacts:
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(
-            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="preview-retention-streaming"),
-        )
-
-
-class DelayedUpdateStreamingBackend:
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy
-        return DelayedUpdateStreamingSession(artifact_root=artifact_root)
-
-
-class DelayedUpdateStreamingSession:
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-        self._pending: list[SlamUpdate] = []
-        self._frames: list[FramePacket] = []
-
-    def step(self, frame: FramePacket) -> None:
-        self._frames.append(frame)
-        if len(self._frames) == 2:
-            self._pending.append(
-                SlamUpdate(
-                    seq=self._frames[0].seq,
-                    timestamp_ns=self._frames[0].timestamp_ns,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                    is_keyframe=True,
-                    keyframe_index=0,
-                )
-            )
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        updates = self._pending
-        self._pending = []
-        return updates
-
-    def close(self) -> SlamArtifacts:
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="delayed"))
-
-
-class StartFailureStreamingBackend:
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy, artifact_root
-        raise RuntimeError("start session failed")
-
-
-class FailingStepStreamingBackend:
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy
-        return FailingStepStreamingSession(artifact_root=artifact_root)
-
-
-class FailingStepStreamingSession:
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-
-    def step(self, frame: FramePacket) -> None:
-        del frame
-        raise RuntimeError("frame step failed")
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        return []
-
-    def close(self) -> SlamArtifacts:
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="failing-step"))
-
-
-class StickyPreviewBackend:
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy
-        return StickyPreviewSession(artifact_root=artifact_root)
-
-
-class StickyPreviewSession:
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-        self._emitted_preview = False
-        self._pending: list[SlamUpdate] = []
-
-    def step(self, frame: FramePacket) -> None:
-        if self._emitted_preview:
-            return
-        self._pending.append(
-            SlamUpdate(
-                seq=frame.seq,
-                timestamp_ns=frame.timestamp_ns,
-                source_seq=frame.seq,
-                source_timestamp_ns=frame.timestamp_ns,
-                is_keyframe=True,
-                keyframe_index=0,
-                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
-            )
-        )
-        self._emitted_preview = True
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        updates = self._pending
-        self._pending = []
-        return updates
-
-    def close(self) -> SlamArtifacts:
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(
-            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="sticky-preview-streaming"),
-        )
-
-
-class BenchmarkStreamingSource(StreamingSequenceSource, BenchmarkInputSource):
-    def __init__(
-        self,
-        *,
-        sequence_manifest: SequenceManifest,
-        stream: object,
-        benchmark_inputs: PreparedBenchmarkInputs,
-    ) -> None:
-        self.sequence_manifest = sequence_manifest
-        self.stream = stream
-        self.prepare_calls = 0
-        self.open_calls: list[bool] = []
-        self._benchmark_inputs = benchmark_inputs
-
-    @property
-    def label(self) -> str:
-        return "benchmark-streaming"
-
-    def prepare_sequence_manifest(self, _output_dir: Path) -> SequenceManifest:
-        self.prepare_calls += 1
-        return self.sequence_manifest
-
-    def open_stream(self, *, loop: bool = False) -> object:
-        self.open_calls.append(loop)
-        return self.stream
-
-    def prepare_benchmark_inputs(self, _output_dir: Path) -> PreparedBenchmarkInputs:
-        return self._benchmark_inputs
-
-
-class NativeRerunStreamingBackend:
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy
-        return NativeRerunStreamingSession(artifact_root=artifact_root)
-
-
-class NativeRerunStreamingSession:
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-
-    def step(self, frame: FramePacket) -> None:
-        del frame
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        return []
-
-    def close(self) -> SlamArtifacts:
-        native_dir = self._artifact_root / "native"
-        native_dir.mkdir(parents=True, exist_ok=True)
-        (native_dir / "rerun_recording.rrd").write_bytes(b"native-rerun")
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(
-            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="native-rerun-streaming"),
-        )
-
-
-class CloseUpdateStreamingBackend:
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy
-        return CloseUpdateStreamingSession(artifact_root=artifact_root)
-
-
-class CloseUpdateStreamingSession:
-    def __init__(self, *, artifact_root: Path) -> None:
-        self._artifact_root = artifact_root
-        self._pending: list[SlamUpdate] = []
-        self._last_frame: FramePacket | None = None
-
-    def step(self, frame: FramePacket) -> None:
-        self._last_frame = frame
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        updates = self._pending
-        self._pending = []
-        return updates
-
-    def close(self) -> SlamArtifacts:
-        if self._last_frame is not None:
-            self._pending.append(
-                SlamUpdate(
-                    seq=self._last_frame.seq,
-                    timestamp_ns=self._last_frame.timestamp_ns,
-                    source_seq=self._last_frame.seq,
-                    source_timestamp_ns=self._last_frame.timestamp_ns,
-                    is_keyframe=True,
-                    keyframe_index=0,
-                    pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.4, ty=0.0, tz=0.0),
-                    preview_rgb=np.ones((2, 2, 3), dtype=np.uint8),
-                )
-            )
-        trajectory_path = self._artifact_root / "slam" / "trajectory.tum"
-        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-        return SlamArtifacts(
-            trajectory_tum=ArtifactRef(path=trajectory_path, kind="tum", fingerprint="close-update-streaming"),
-        )
-
-
-class FailingWorkerBackend:
-    method_id = MethodId.VISTA
-
-    def start_session(
-        self,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamSession:
-        del backend_config, output_policy, artifact_root
-        return MultiprocessSlamSession(session_factory=FailingWorkerSessionFactory(), console=Console(__name__))
-
-
-class FailingWorkerSessionFactory:
-    def __call__(self) -> SlamSession:
-        return FailingWorkerSession()
-
-
-class FailingWorkerSession:
-    def step(self, frame: FramePacket) -> None:
-        del frame
-        raise RuntimeError("synthetic worker failure")
-
-    def try_get_updates(self) -> list[SlamUpdate]:
-        return []
-
-    def close(self) -> SlamArtifacts:
-        raise RuntimeError("close should not be called after a worker failure")
-
-
-def test_run_service_dispatches_offline_without_runtime_source(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.OFFLINE)
-    offline_runner = OfflineRunnerSpy()
-    streaming_runner = StreamingRunnerSpy()
-    service = RunService(
-        path_config=path_config,
-        offline_runner=offline_runner,
-        streaming_runner=streaming_runner,
-        slam_backend_factory=lambda _method: MockSlamBackendConfig().setup_target(),
+    def fake_init(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.init", fake_init)
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.backend_ray.RayPipelineBackend.pytest-unit",
+    ):
+        backend._ensure_ray()
+
+    assert "address" not in captured
+    assert any(
+        "Initializing in-process Ray runtime for pytest namespace 'pytest-unit'." in r.message for r in caplog.records
     )
 
-    service.start_run(request=request)
 
-    assert offline_runner.start_calls == 1
-    assert streaming_runner.start_calls == 0
-
-
-def test_run_service_dispatches_streaming_with_runtime_source(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.STREAMING)
-    offline_runner = OfflineRunnerSpy()
-    streaming_runner = StreamingRunnerSpy()
-    service = RunService(
-        path_config=path_config,
-        offline_runner=offline_runner,
-        streaming_runner=streaming_runner,
-        slam_backend_factory=lambda _method: MockSlamBackendConfig().setup_target(),
+def test_ray_backend_reuses_healthy_local_head_metadata(tmp_path: Path) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
     )
-    source = FakeStreamingSource(
-        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
-        stream=FinitePacketStream([_make_packet(seq=0, timestamp_ns=0, tx=0.0)]),
+    backend._reuse_local_head = True
+    metadata_path = backend._local_head._metadata_path()
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
+    backend._local_head._can_connect = lambda address: address == "127.0.0.1:25001"  # type: ignore[method-assign]
+
+    assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25001"
+
+
+def test_ray_backend_replaces_stale_local_head_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
     )
-
-    service.start_run(request=request, runtime_source=source)
-
-    assert offline_runner.start_calls == 0
-    assert streaming_runner.start_calls == 1
-
-
-def test_run_service_rejects_non_executable_optional_stages(tmp_path: Path) -> None:
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts", captures_dir=tmp_path / "captures")
-    request = _build_request(path_config, mode=PipelineMode.OFFLINE)
-    request.benchmark.reference.enabled = True
-    service = RunService(
-        path_config=path_config,
-        slam_backend_factory=lambda _method: MockSlamBackendConfig().setup_target(),
+    backend._reuse_local_head = True
+    metadata_path = backend._local_head._metadata_path()
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
+    backend._local_head._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
+    monkeypatch.setattr(backend._local_head, "_pick_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(
+        backend._local_head,
+        "_wait_until_connectable",
+        lambda address: address == "127.0.0.1:25002",
     )
 
-    with pytest.raises(RuntimeError, match="Unsupported stages"):
-        service.start_run(request=request)
+    class FakePopen:
+        pid = 456
 
-    assert service.snapshot().state is RunState.FAILED
+        def poll(self) -> None:
+            return None
 
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.substrate.subprocess.Popen", lambda *args, **kwargs: FakePopen()
+    )
 
-def test_default_slam_backend_factory_maps_vista_to_real_backend(tmp_path: Path) -> None:
-    # _default_slam_backend_factory no longer takes path_config in main.
-    backend = _default_slam_backend_factory(MethodId.VISTA)
-    assert isinstance(backend, VistaSlamBackend)
-
-
-def test_default_slam_backend_factory_maps_mock_to_mock_backend(tmp_path: Path) -> None:
-    backend = _default_slam_backend_factory(MethodId.MOCK)
-    assert isinstance(backend, MockSlamBackendConfig().target_type)
+    assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25002"
+    assert backend._local_head._read_metadata() == {"address": "127.0.0.1:25002", "pid": 456}
 
 
-def test_default_slam_backend_factory_rejects_mast3r_until_backend_exists(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="mast3r.*support execution"):
-        _default_slam_backend_factory(MethodId.MAST3R)
+def test_ray_backend_logs_stale_local_head_metadata_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
+    )
+    backend._reuse_local_head = True
+    metadata_path = backend._local_head._metadata_path()
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text('{"address": "127.0.0.1:25001", "pid": 123}', encoding="utf-8")
+    backend._local_head._can_connect = lambda address: address == "127.0.0.1:25002"  # type: ignore[method-assign]
+    monkeypatch.setattr(backend._local_head, "_pick_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(
+        backend._local_head,
+        "_wait_until_connectable",
+        lambda address: address == "127.0.0.1:25002",
+    )
+
+    class FakePopen:
+        pid = 456
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.substrate.subprocess.Popen", lambda *args, **kwargs: FakePopen()
+    )
+
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.backend_ray.RayPipelineBackend.prml_vslam.local",
+    ):
+        assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25002"
+
+    assert any("Discarding stale local Ray head metadata." in r.message for r in caplog.records)
+    assert any("Starting local Ray head on '127.0.0.1:25002'." in r.message for r in caplog.records)
 
 
-def _build_request(
-    path_config: PathConfig,
-    *,
-    mode: PipelineMode = PipelineMode.OFFLINE,
-    method: MethodId = MethodId.VISTA,
-) -> RunRequest:
-    return RunRequest(
-        experiment_name="advio-offline-demo-vista",
-        mode=mode,
+def test_ray_backend_closes_parent_log_handle_after_spawn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(
+        path_config=PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", logs_dir=tmp_path / ".logs"),
+        namespace="prml_vslam.local",
+    )
+    backend._reuse_local_head = True
+    monkeypatch.setattr(backend._local_head, "_pick_address", lambda: "127.0.0.1:25002")
+    monkeypatch.setattr(
+        backend._local_head,
+        "_wait_until_connectable",
+        lambda address: address == "127.0.0.1:25002",
+    )
+
+    captured: dict[str, Any] = {}
+
+    class FakeLogHandle:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class FakePopen:
+        pid = 789
+
+        def poll(self) -> None:
+            return None
+
+    fake_log_handle = FakeLogHandle()
+    original_open = Path.open
+
+    def fake_open(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if path.name == "ray-local-head.log":
+            return fake_log_handle
+        return original_open(path, *args, **kwargs)
+
+    def fake_popen(*args: Any, **kwargs: Any) -> FakePopen:
+        captured["stdout"] = kwargs["stdout"]
+        return FakePopen()
+
+    monkeypatch.setattr(Path, "open", fake_open)
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.substrate.subprocess.Popen", fake_popen)
+
+    assert backend._local_head.ensure_address(reuse=True) == "127.0.0.1:25002"
+    assert captured["stdout"] is fake_log_handle
+    assert fake_log_handle.closed
+    assert backend._local_head._read_metadata() == {"address": "127.0.0.1:25002", "pid": 789}
+
+
+def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(namespace="prml_vslam.local")
+    backend._coordinators = {"run-1": object()}  # type: ignore[assignment]
+    shutdowns: list[str] = []
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.is_initialized", lambda: True)
+    monkeypatch.setattr(backend, "_shutdown_run", lambda run_id: shutdowns.append(run_id))
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.shutdown", lambda: shutdowns.append("ray"))
+    monkeypatch.setattr(backend._local_head, "shutdown", lambda: shutdowns.append("head"))
+
+    backend.shutdown(preserve_local_head=True)
+
+    assert shutdowns == ["run-1", "ray"]
+
+
+def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    backend = RayPipelineBackend(path_config=path_config, namespace="pytest-unit")
+    run_config = _run_config(
+        experiment_name="backend-unit",
+        mode=PipelineMode.OFFLINE,
         output_dir=path_config.artifacts_dir,
-        source=DatasetSourceSpec(dataset_id=DatasetId.ADVIO, sequence_id="advio-15"),
-        slam=SlamStageConfig(method=method),
+        source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
+        method=MethodId.VISTA,
+    )
+    snapshot = RunSnapshot(run_id="backend-unit", state=RunState.COMPLETED)
+    submitted: list[tuple[str, str | None]] = []
+    coordinator_options: dict[str, Any] = {}
+    stopped: list[str] = []
+
+    class _Remote:
+        def __init__(self, fn):
+            self.remote = fn
+
+    fake_coordinator = type(
+        "Coordinator",
+        (),
+        {
+            "start": _Remote(
+                lambda **kwargs: submitted.append((kwargs["plan"].run_id, kwargs.get("runtime_source"))) or None
+            ),
+            "stop": _Remote(lambda: stopped.append("backend-unit")),
+            "snapshot": _Remote(lambda: snapshot),
+            "events": _Remote(lambda after_event_id, limit: []),
+            "read_payload": _Remote(lambda handle_id: np.full((2, 2, 3), 2, dtype=np.uint8)),
+            "shutdown": _Remote(lambda: None),
+        },
+    )()
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get", lambda value: value)
+    monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
+
+    def fake_create_coordinator(run_id: str, *, actor_options: dict[str, Any]):
+        coordinator_options.update(actor_options)
+        return fake_coordinator
+
+    monkeypatch.setattr(backend, "_create_coordinator", fake_create_coordinator)
+    monkeypatch.setattr(backend, "_coordinator_for", lambda run_id: fake_coordinator)
+
+    run_id = backend.submit_run(run_config=run_config, runtime_source="runtime")
+
+    assert run_id == "backend-unit"
+    assert submitted == [("backend-unit", "runtime")]
+    assert coordinator_options["num_cpus"] == 2.0
+    assert coordinator_options["num_gpus"] == 1.0
+    assert backend.get_snapshot(run_id).state is RunState.COMPLETED
+    assert backend.get_events(run_id) == []
+    assert backend.read_payload(run_id, TransientPayloadRef(handle_id="payload", payload_kind="image")) is not None
+    backend.stop_run(run_id)
+    assert stopped == ["backend-unit"]
+
+
+def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    backend = RayPipelineBackend(path_config=path_config, namespace="pytest-unit")
+    run_config = _run_config(
+        experiment_name="placeholder",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=AdvioSourceConfig(
+            sequence_id="advio-01",
+            dataset_serving={
+                "pose_source": "ground_truth",
+                "pose_frame_mode": "provider_world",
+            },
+        ),
+        method=MethodId.VISTA,
+        emit_dense_points=True,
+        evaluate_cloud=True,
+    )
+    created_runs: list[str] = []
+
+    monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
+    monkeypatch.setattr(
+        backend,
+        "_create_coordinator",
+        lambda run_id, *, actor_options: created_runs.append(run_id),
     )
 
+    with pytest.raises(RuntimeError, match="no runtime is registered yet"):
+        backend.submit_run(run_config=run_config)
 
-def _prepared_offline_manifest(root: Path) -> SequenceManifest:
-    rgb_dir = root / "frames"
-    rgb_dir.mkdir(parents=True, exist_ok=True)
-    timestamps_path = root / "timestamps.json"
-    timestamps_path.write_text("[]")
-    return SequenceManifest(
-        sequence_id="advio-15",
-        rgb_dir=rgb_dir,
-        timestamps_path=timestamps_path,
-    )
+    assert created_runs == []
 
 
-def _wait_for(predicate, *, timeout_seconds: float = 1.0) -> None:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        if predicate():
-            return
-        time.sleep(0.02)
-    raise AssertionError("Timed out waiting for the expected runtime state.")
+def test_source_backend_config_delegates_video_resolution(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    video_path = tmp_path / "resolver-demo.mp4"
+    video_path.write_bytes(b"")
+
+    resolved = VideoSourceConfig(video_path=video_path).setup_target(path_config=path_config)
+
+    assert resolved.label == "Video 'resolver-demo.mp4'"
 
 
-def _wait_for_terminal_snapshot(
-    runner: OfflineRunner | StreamingRunner, *, timeout_seconds: float = 6.0
-) -> RunSnapshot:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        snapshot = runner.snapshot()
-        if snapshot.state in (RunState.COMPLETED, RunState.FAILED, RunState.STOPPED):
-            return snapshot
-        time.sleep(0.05)
-    raise TimeoutError("Pipeline runner did not reach a terminal state.")
-
-
-def _sleeping_stage_result(sleep_seconds: float) -> StageResult:
-    time.sleep(sleep_seconds)
-    return StageResult(
-        stage_id=RunPlanStageId.INGEST,
-        execution_key=StageExecutionKey.INGEST,
-        status=StageExecutionStatus.RAN,
-        config_hash="config",
+def test_run_coordinator_logs_stage_start_and_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    outcome = StageOutcome(
+        stage_key=StageKey.SLAM,
+        status=StageStatus.COMPLETED,
+        config_hash="cfg",
         input_fingerprint="input",
+        artifacts={},
     )
 
-
-def _make_packet(*, seq: int, timestamp_ns: int, tx: float) -> FramePacket:
-    return FramePacket(
-        seq=seq,
-        timestamp_ns=timestamp_ns,
-        rgb=np.zeros((4, 4, 3), dtype=np.uint8),
-        intrinsics=CameraIntrinsics(fx=200.0, fy=200.0, cx=1.5, cy=1.5, width_px=4, height_px=4),
-        pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=tx, ty=0.0, tz=0.0),
-    )
-
-
-class FakeOfflineSource(OfflineSequenceSource):
-    def __init__(self, sequence_manifest: SequenceManifest) -> None:
-        self.sequence_manifest = sequence_manifest
-
-    @property
-    def label(self) -> str:
-        return "fake-offline"
-
-    def prepare_sequence_manifest(self, _output_dir: Path) -> SequenceManifest:
-        return self.sequence_manifest
-
-    def load_sequence(self) -> object:
-        return None
-
-
-class FakeStreamingSource(StreamingSequenceSource):
-    def __init__(self, sequence_manifest: SequenceManifest, stream: object) -> None:
-        self.sequence_manifest = sequence_manifest
-        self.stream = stream
-        self.prepare_calls = 0
-        self.open_calls: list[bool] = []
-
-    @property
-    def label(self) -> str:
-        return "fake-streaming"
-
-    def prepare_sequence_manifest(self, _output_dir: Path) -> SequenceManifest:
-        self.prepare_calls += 1
-        return self.sequence_manifest
-
-    def open_stream(self, *, loop: bool = False) -> object:
-        self.open_calls.append(loop)
-        return self.stream
-
-
-class FakeStreamingSourceConfig(BaseConfig, FactoryConfig["ConfigBackedFakeStreamingSource"]):
-    sequence_manifest: SequenceManifest
-    packets: list[FramePacket] = Field(default_factory=list)
-    prepare_delay_seconds: float = 0.0
-    fail_on_open: bool = False
-
-    @property
-    def target_type(self) -> type[ConfigBackedFakeStreamingSource]:
-        return ConfigBackedFakeStreamingSource
-
-
-class ConfigBackedFakeStreamingSource(FakeStreamingSource):
-    def __init__(self, config: FakeStreamingSourceConfig) -> None:
-        self.config = config
-        self._prepare_delay_seconds = config.prepare_delay_seconds
-        self._fail_on_open = config.fail_on_open
-        super().__init__(
-            sequence_manifest=config.sequence_manifest,
-            stream=FinitePacketStream(list(config.packets)),
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.ray_runtime.coordinator.RunCoordinatorActor.demo",
+    ):
+        coordinator._emit_stage_started(StageKey.SLAM)
+        coordinator._record_stage_result(
+            StageKey.SLAM,
+            StageResult(
+                stage_key=StageKey.SLAM,
+                payload=None,
+                outcome=outcome,
+                final_runtime_status=StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    lifecycle_state=StageStatus.COMPLETED,
+                ),
+            ),
         )
 
-    def prepare_sequence_manifest(self, _output_dir: Path) -> SequenceManifest:
-        time.sleep(self._prepare_delay_seconds)
-        return self.sequence_manifest
-
-    def open_stream(self, *, loop: bool = False) -> object:
-        if self._fail_on_open:
-            del loop
-            raise AssertionError("stream should not open when ingest times out")
-        return super().open_stream(loop=loop)
+    assert any("Stage 'slam' started for run 'demo'." in r.message for r in caplog.records)
+    assert any(
+        "Stage 'slam' finished for run 'demo' with status 'completed' and 0 artifacts." in r.message
+        for r in caplog.records
+    )
 
 
-class FinitePacketStream:
-    def __init__(self, packets: list[FramePacket]) -> None:
-        self.packets = iter(packets)
+def test_packet_source_actor_logs_start_and_eof(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    events: list[str] = []
 
-    def connect(self) -> None:
-        return None
+    class _Remote:
+        def __init__(self, fn):
+            self.remote = fn
 
-    def wait_for_packet(self, timeout_seconds: float) -> FramePacket:
-        del timeout_seconds
-        try:
-            return next(self.packets)
-        except StopIteration:
-            raise EOFError from None
+    fake_coordinator = SimpleNamespace(
+        on_packet=_Remote(lambda **kwargs: events.append("packet")),
+        on_source_eof=_Remote(lambda: events.append("eof")),
+        on_source_error=_Remote(lambda message: events.append(f"error:{message}")),
+    )
 
-    def disconnect(self) -> None:
-        pass
+    actor_cls = PacketSourceActor.__ray_metadata__.modified_class
+    actor = object.__new__(actor_cls)
+    actor._console = Console("prml_vslam.pipeline.ray_runtime.stage_actors").child("PacketSourceActor").child("demo")
+    actor._coordinator = fake_coordinator
+    actor._frame_timeout_seconds = 5.0
+    actor._thread = None
+    actor._stop_event = threading.Event()
+    actor._credits = 0
+    actor._credits_cv = threading.Condition()
+    actor._processed_frame_count = 0
+    actor._packet_timestamps = deque(maxlen=20)
+    monkeypatch.setattr(
+        "prml_vslam.pipeline.ray_runtime.stage_actors.put_transient_payload",
+        lambda array, **kwargs: (
+            TransientPayloadRef(handle_id="frame", payload_kind=kwargs["payload_kind"], shape=np.asarray(array).shape),
+            np.asarray(array),
+        ),
+    )
 
+    with _capture_logger(
+        caplog,
+        monkeypatch,
+        "prml_vslam.pipeline.ray_runtime.stage_actors.PacketSourceActor.demo",
+    ):
+        actor.start_stream(source=FakeStreamingSource(), initial_credits=4, loop=False)
+        actor._thread.join(timeout=5.0)
 
-class DisconnectSpyPacketStream(FinitePacketStream):
-    def __init__(self, packets: list[FramePacket]) -> None:
-        super().__init__(packets)
-        self.disconnect_calls = 0
-
-    def disconnect(self) -> None:
-        self.disconnect_calls += 1
-
-
-class BlockingPacketStream:
-    def __init__(self, *, first_packet: FramePacket) -> None:
-        self._first_packet = first_packet
-        self._served = False
-        self._unblock = Event()
-
-    def connect(self) -> None:
-        return None
-
-    def wait_for_packet(self, timeout_seconds: float) -> FramePacket:
-        if not self._served:
-            self._served = True
-            return self._first_packet
-        if not self._unblock.wait(timeout_seconds):
-            raise TimeoutError("waiting for stop")
-        raise EOFError
-
-    def disconnect(self) -> None:
-        self._unblock.set()
-
-
-class LoopingPacketStream:
-    def __init__(self, packet: FramePacket) -> None:
-        self.packet = packet
-        self.disconnected = False
-
-    def connect(self) -> None:
-        return None
-
-    def wait_for_packet(self, timeout_seconds: float) -> FramePacket:
-        del timeout_seconds
-        if self.disconnected:
-            raise EOFError
-        time.sleep(0.01)
-        return self.packet
-
-    def disconnect(self) -> None:
-        self.disconnected = True
+    assert events[-1] == "eof"
+    assert any("Starting packet stream for source 'fake-stream'" in r.message for r in caplog.records)
+    assert any("Streaming source reached EOF." in r.message for r in caplog.records)
 
 
-class OfflineRunnerSpy:
-    def __init__(self) -> None:
-        self.start_calls = 0
+@pytest.mark.skipif(
+    os.getenv("PRML_VSLAM_RUN_RAY_SMOKE") != "1",
+    reason="Ray end-to-end smoke tests remain opt-in while the real cluster startup path is environment-sensitive.",
+)
+def test_run_service_offline_vista_smoke(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    service = RunService(path_config=path_config)
+    run_config = _run_config(
+        experiment_name="offline-smoke",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
+        method=MethodId.VISTA,
+    )
 
-    def start(self, **kwargs: object) -> None:
-        self.start_calls += 1
+    service.start_run(run_config=run_config, runtime_source=FakeOfflineSource())
+    snapshot = _wait_for_terminal_snapshot(service)
 
-    def stop(self) -> None:
-        pass
-
-    def snapshot(self) -> RunSnapshot:
-        from prml_vslam.pipeline.state import RunState
-
-        return StreamingRunSnapshot(state=RunState.IDLE, plan=None)  # type: ignore
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.stage_outcomes[StageKey.SOURCE].status is StageStatus.COMPLETED
+    assert snapshot.stage_outcomes[StageKey.SLAM].status is StageStatus.COMPLETED
+    assert "trajectory_tum" in snapshot.artifacts
+    service.shutdown()
 
 
-class StreamingRunnerSpy:
-    def __init__(self) -> None:
-        self.start_calls = 0
+@pytest.mark.skipif(
+    os.getenv("PRML_VSLAM_RUN_RAY_SMOKE") != "1",
+    reason="Ray end-to-end smoke tests remain opt-in while the real cluster startup path is environment-sensitive.",
+)
+def test_run_service_streaming_vista_smoke(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    service = RunService(path_config=path_config)
+    run_config = _run_config(
+        experiment_name="streaming-smoke",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
+        method=MethodId.VISTA,
+    )
 
-    def start(self, **kwargs: object) -> None:
-        self.start_calls += 1
+    service.start_run(run_config=run_config, runtime_source=FakeStreamingSource())
+    snapshot = _wait_for_terminal_snapshot(service)
 
-    def stop(self) -> None:
-        pass
+    assert snapshot.state is RunState.COMPLETED
+    assert snapshot.stage_runtime_status[StageKey.SLAM].processed_items >= 3
+    source_ref = snapshot.live_refs[StageKey.SOURCE]["source_rgb:image"]
+    assert service.read_payload(source_ref) is not None
+    service.shutdown()
 
-    def snapshot(self) -> RunSnapshot:
-        from prml_vslam.pipeline.state import RunState
 
-        return StreamingRunSnapshot(state=RunState.IDLE, plan=None)  # type: ignore
+def _wait_for_terminal_snapshot(service: RunService, *, timeout_seconds: float = 20.0) -> RunSnapshot:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        snapshot = service.snapshot()
+        if snapshot.state not in {RunState.IDLE, RunState.PREPARING, RunState.RUNNING}:
+            return snapshot
+        time.sleep(0.2)
+    raise AssertionError("Pipeline run did not reach a terminal state.")
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _run_config(
+    *,
+    experiment_name: str,
+    mode: PipelineMode = PipelineMode.OFFLINE,
+    output_dir: Path,
+    source_backend,
+    method: MethodId = MethodId.VISTA,
+    max_frames: int | None = None,
+    emit_dense_points: bool = True,
+    emit_sparse_points: bool = True,
+    reference_enabled: bool = False,
+    trajectory_eval_enabled: bool = False,
+    trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    evaluate_cloud: bool = False,
+) -> RunConfig:
+    return build_run_config(
+        experiment_name=experiment_name,
+        mode=mode,
+        output_dir=output_dir,
+        source_backend=source_backend,
+        method=method,
+        max_frames=max_frames,
+        emit_dense_points=emit_dense_points,
+        emit_sparse_points=emit_sparse_points,
+        reference_enabled=reference_enabled,
+        trajectory_eval_enabled=trajectory_eval_enabled,
+        trajectory_baseline=trajectory_baseline,
+        evaluate_cloud=evaluate_cloud,
+    )
+
+
+def _plan_with_stages(
+    *,
+    tmp_path: Path,
+    run_config: RunConfig,
+    stage_keys: list[StageKey],
+) -> RunPlan:
+    return RunPlan(
+        run_id=run_config.experiment_name,
+        mode=run_config.mode,
+        artifact_root=tmp_path / run_config.experiment_name,
+        source=PlannedSource(source_id="video", video_path=Path("captures/demo.mp4")),
+        stages=[
+            RunPlanStage(
+                key=stage_key,
+            )
+            for stage_key in stage_keys
+        ],
+    )
+
+
+def _rgbd_benchmark_inputs(tmp_path: Path) -> PreparedBenchmarkInputs:
+    payload_root = tmp_path / "rgbd-payload"
+    payload_root.mkdir(parents=True, exist_ok=True)
+    np.save(payload_root / "rgb.npy", np.full((32, 32, 3), 127, dtype=np.uint8))
+    np.save(payload_root / "depth.npy", np.ones((32, 32), dtype=np.float32))
+    index = ObservationSequenceIndex(
+        source_id="test",
+        sequence_id="test-sequence",
+        observation_count=1,
+        rows=[
+            ObservationIndexEntry(
+                seq=0,
+                timestamp_ns=0,
+                rgb_path=Path("rgb.npy"),
+                depth_path=Path("depth.npy"),
+                T_world_camera=FrameTransform(
+                    qx=0.0,
+                    qy=0.0,
+                    qz=0.0,
+                    qw=1.0,
+                    tx=0.0,
+                    ty=0.0,
+                    tz=0.0,
+                    source_frame=CAMERA_RDF_FRAME,
+                ),
+                intrinsics={
+                    "fx": 32.0,
+                    "fy": 32.0,
+                    "cx": 15.5,
+                    "cy": 15.5,
+                    "width_px": 32,
+                    "height_px": 32,
+                },
+                provenance=ObservationProvenance(source_id="test", sequence_id="test-sequence"),
+            )
+        ],
+    )
+    index_path = payload_root / "observations.json"
+    index_path.write_text(json.dumps(index.model_dump(mode="json"), indent=2), encoding="utf-8")
+    return PreparedBenchmarkInputs(
+        observation_sequences=[
+            ObservationSequenceRef(
+                source_id="test",
+                sequence_id="test-sequence",
+                index_path=index_path,
+                payload_root=payload_root,
+                observation_count=1,
+            )
+        ]
+    )
+
+
+def _placement_run_config(*, placement: dict[str, dict[str, dict[str, float]]] | None = None) -> RunConfig:
+    run_config = _run_config(
+        experiment_name="placement-demo",
+        mode=PipelineMode.OFFLINE,
+        output_dir=Path(".artifacts"),
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+    )
+    if placement is None:
+        return run_config
+    stages = run_config.stages
+    updates = {}
+    for stage_name, stage_placement in placement.items():
+        resources = stage_placement.get("resources", {})
+        updates[stage_name] = getattr(stages, stage_name).model_copy(
+            update={
+                "num_cpus": resources.get("CPU"),
+                "num_gpus": resources.get("GPU"),
+            }
+        )
+    return run_config.model_copy(update={"stages": stages.model_copy(update=updates)})
+
+
+def _test_backend_config(*, default_cpu: float, default_gpu: float) -> VistaSlamBackendConfig:
+    class TestVistaBackendConfig(VistaSlamBackendConfig):
+        @property
+        def default_resources(self) -> dict[str, float]:
+            return {"CPU": default_cpu, "GPU": default_gpu}
+
+    return TestVistaBackendConfig()

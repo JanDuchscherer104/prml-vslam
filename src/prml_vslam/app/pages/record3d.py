@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.interfaces import FramePacket
-from prml_vslam.io.record3d import build_record3d_frame_details
+from prml_vslam.interfaces import Observation
+from prml_vslam.sources.record3d.record3d import build_record3d_frame_details
 from prml_vslam.utils.image_utils import normalize_grayscale_image
 
 from ..live_session import (
@@ -34,9 +34,8 @@ def render(context: AppContext) -> None:
         eyebrow="Live Capture",
         title="Record3D Stream",
         body=(
-            "Capture from the official USB bindings or use the optional Wi-Fi preview fallback, inspect RGBD "
-            "frames, and monitor a live session without leaving the workbench. USB remains the canonical "
-            "programmatic path, while the preview panel refreshes independently."
+            "Capture from the official USB bindings or the Wi-Fi transport, inspect RGBD frames, and monitor a "
+            "live session without leaving the workbench."
         ),
     )
     action = _render_sidebar_controls(context)
@@ -50,7 +49,7 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
     page_state = context.state.record3d
     with st.sidebar:
         st.subheader("Stream Controls")
-        st.caption("Choose a source, then start or restart the active stream. USB is the recommended capture path.")
+        st.caption("Choose a source, then start or restart the active stream.")
         selection = render_record3d_transport_controls(
             transport=page_state.transport,
             usb_device_index=page_state.usb_device_index,
@@ -87,14 +86,14 @@ def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
         metrics=_snapshot_metrics(snapshot),
         caption=None if not snapshot.source_label else f"Source: {snapshot.source_label}",
         body_renderer=lambda: render_live_packet_tabs(
-            packet=snapshot.latest_packet,
+            packet=snapshot.preview_packet,
             preview_renderer=_render_frame_preview,
-            positions_xyz=snapshot.trajectory_positions_xyz,
-            timestamps_s=snapshot.trajectory_timestamps_s if len(snapshot.trajectory_timestamps_s) else None,
+            positions_xyz=snapshot.preview_trajectory_xyz,
+            timestamps_s=snapshot.preview_trajectory_time_s if len(snapshot.preview_trajectory_time_s) else None,
             trajectory_empty_message="Live ego trajectory is not available for the current transport yet.",
             details_payload={}
-            if snapshot.latest_packet is None
-            else build_record3d_frame_details(snapshot.latest_packet, source_label=snapshot.source_label),
+            if snapshot.preview_packet is None
+            else build_record3d_frame_details(snapshot.preview_packet, source_label=snapshot.source_label),
             intrinsics_missing_message="Camera intrinsics are not available for the current packet.",
         ),
     )
@@ -103,20 +102,23 @@ def _render_snapshot(snapshot: Record3DStreamSnapshot) -> None:
 def _snapshot_metrics(snapshot: Record3DStreamSnapshot) -> tuple[LiveMetric, ...]:
     return (
         ("Status", snapshot.state.value.upper()),
-        ("Received Frames", str(snapshot.received_frames)),
+        ("Received Frames", str(snapshot.preview_frame_count)),
         ("Frame Rate", f"{snapshot.measured_fps:.2f} fps"),
         ("Transport", snapshot.transport.label if snapshot.transport is not None else "Idle"),
     )
 
 
-def _render_frame_preview(packet: FramePacket) -> None:
+def _render_frame_preview(packet: Observation) -> None:
     frame_columns = st.columns(2, gap="large")
     with frame_columns[0]:
         st.markdown("**RGB Frame**")
         st.image(packet.rgb, channels="RGB", clamp=True)
     with frame_columns[1]:
         st.markdown("**Depth Frame**")
-        st.image(normalize_grayscale_image(packet.depth), clamp=True)
+        if packet.depth_m is None:
+            st.info("Depth is not available for this transport.")
+        else:
+            st.image(normalize_grayscale_image(packet.depth_m), clamp=True)
     st.markdown("**Depth Confidence**")
     if packet.confidence is None:
         st.info("Depth confidence is not available for this transport.")

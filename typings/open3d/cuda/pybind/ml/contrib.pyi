@@ -1,0 +1,27 @@
+from __future__ import annotations
+import numpy
+import typing
+
+__all__: list[str] = ["iou_3d_cpu", "iou_3d_cuda", "iou_bev_cpu", "iou_bev_cuda", "subsample", "subsample_batch"]
+
+def iou_3d_cpu(boxes_a: numpy.ndarray, boxes_b: numpy.ndarray) -> numpy.ndarray: ...
+def iou_3d_cuda(boxes_a: numpy.ndarray, boxes_b: numpy.ndarray) -> numpy.ndarray: ...
+def iou_bev_cpu(boxes_a: numpy.ndarray, boxes_b: numpy.ndarray) -> numpy.ndarray: ...
+def iou_bev_cuda(boxes_a: numpy.ndarray, boxes_b: numpy.ndarray) -> numpy.ndarray: ...
+def subsample(
+    points: numpy.ndarray,
+    features: numpy.ndarray | None = None,
+    classes: numpy.ndarray | None = None,
+    sampleDl: float = 0.1,
+    verbose: int = 0,
+) -> typing.Any: ...
+def subsample_batch(
+    points: numpy.ndarray,
+    batches: numpy.ndarray,
+    features: numpy.ndarray | None = None,
+    classes: numpy.ndarray | None = None,
+    sampleDl: float = 0.1,
+    method: str = "barycenters",
+    max_p: int = 0,
+    verbose: int = 0,
+) -> tuple: ...

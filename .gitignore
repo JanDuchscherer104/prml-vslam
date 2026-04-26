@@ -222,6 +222,7 @@ docs/slides/**/*.svgz
 # Codex workspace state
 .codex/*
 !.codex/config.toml
+!.codex/hooks.json
 
 # Agent scratch space
 .agents/tmp/
@@ -254,3 +255,12 @@ docs/literature/tex-src/*
 !/graphify-out/graph.html
 /graphify-out/cache/
 /graphify-out/.graphify*
+
+docs/architecture/pipeline-refactor-work-packages/
+!docs/architecture/pipeline-refactor-work-packages/
+docs/architecture/pipeline-refactor-work-packages/*
+!docs/architecture/pipeline-refactor-work-packages/WP-09A-target-config-launch-cutover.md
+!docs/architecture/pipeline-refactor-work-packages/WP-09B-runtime-coordinator-cutover.md
+!docs/architecture/pipeline-refactor-work-packages/WP-09C-live-events-handles-cutover.md
+!docs/architecture/pipeline-refactor-work-packages/WP-09D-app-cli-target-snapshot-cutover.md
+!docs/architecture/pipeline-refactor-work-packages/WP-10-migration-removal.md

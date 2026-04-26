@@ -1,0 +1,20 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "17px",
+    "primaryColor": "#ECECFF",
+    "primaryBorderColor": "#9370DB",
+    "lineColor": "#555555",
+    "tertiaryColor": "#FFF4DD"
+  }
+}}%%
+flowchart LR
+    UI["App / CLI<br/>Streamlit page or CLI command"] --> Service["RunService"]
+    Service --> Backend["RayPipelineBackend"]
+    Backend --> Planner["RunConfig.build()"]
+    Backend --> Coord["RunCoordinatorActor"]
+    Coord --> Program["RuntimeStageProgram"]
+    Program --> Batch["stage_execution.py<br/>ingest / trajectory / summary"]
+    Coord --> Actors["stage_actors.py<br/>offline SLAM / packet source / streaming SLAM"]
+    Coord --> Projector["SnapshotProjector"]
+    Coord --> Sinks["JsonlEventSink<br/>RerunSinkActor"]

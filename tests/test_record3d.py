@@ -7,9 +7,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from prml_vslam.io import record3d as record3d_module
-from prml_vslam.io import record3d_source as record3d_source_module
-from prml_vslam.io.record3d import (
+import prml_vslam.sources.record3d.record3d as record3d_module
+import prml_vslam.sources.record3d.source as record3d_source_module
+from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.record3d.record3d import (
     Record3DDeviceType,
     Record3DStreamConfig,
     Record3DTransportId,
@@ -17,8 +18,7 @@ from prml_vslam.io.record3d import (
     list_record3d_usb_devices,
     open_record3d_usb_packet_stream,
 )
-from prml_vslam.io.record3d_source import Record3DStreamingSourceConfig
-from prml_vslam.protocols.source import OfflineSequenceSource, StreamingSequenceSource
+from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
 
 
 class FakeRecord3DStream:
@@ -108,7 +108,7 @@ def test_record3d_stream_lists_connected_devices(monkeypatch: pytest.MonkeyPatch
     assert [device.udid for device in helper_devices] == ["device-101", "device-202"]
 
 
-def test_record3d_stream_wait_for_packet_returns_shared_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_record3d_stream_wait_for_observation_returns_shared_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
     monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
 
@@ -116,23 +116,24 @@ def test_record3d_stream_wait_for_packet_returns_shared_contract(monkeypatch: py
 
     assert stream is not None
     connected = stream.connect()
-    packet = stream.wait_for_packet()
+    packet = stream.wait_for_observation()
 
     assert connected.product_id == 202
-    assert packet.metadata["transport"] == Record3DTransportId.USB.value
-    assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
+    assert packet.provenance.transport == Record3DTransportId.USB.value
+    assert packet.provenance.device_type == Record3DDeviceType.LIDAR.name.lower()
     assert packet.rgb.shape == (2, 2, 3)
-    assert packet.depth.shape == (2, 2)
+    assert packet.depth_m is not None
+    assert packet.depth_m.shape == (2, 2)
     assert packet.intrinsics is not None
     assert packet.intrinsics.fx == 100.0
-    assert packet.pose is not None
-    assert packet.pose.tx == 1.0
-    assert packet.pose.tz == 3.0
+    assert packet.T_world_camera is not None
+    assert packet.T_world_camera.tx == 1.0
+    assert packet.T_world_camera.tz == 3.0
     assert packet.confidence is not None
     np.testing.assert_array_equal(packet.confidence, np.array([[0, 1], [2, 3]], dtype=np.float32))
 
 
-def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_usb_packet_stream_wait_for_observation_returns_shared_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_module = SimpleNamespace(Record3DStream=FakeRecord3DStream)
     monkeypatch.setattr(record3d_module, "_import_record3d_module", lambda: fake_module)
 
@@ -140,14 +141,15 @@ def test_usb_packet_stream_wait_for_packet_returns_shared_contract(monkeypatch: 
 
     assert stream is not None
     device = stream.connect()
-    packet = stream.wait_for_packet()
+    packet = stream.wait_for_observation()
 
     assert device.udid == "device-202"
-    assert packet.metadata["transport"] == Record3DTransportId.USB.value
+    assert packet.provenance.transport == Record3DTransportId.USB.value
     assert packet.rgb.shape == (2, 2, 3)
-    assert packet.depth.shape == (2, 2)
+    assert packet.depth_m is not None
+    assert packet.depth_m.shape == (2, 2)
     assert packet.intrinsics is not None
-    assert packet.metadata["device_type"] == Record3DDeviceType.LIDAR.value
+    assert packet.provenance.device_type == Record3DDeviceType.LIDAR.name.lower()
 
 
 def test_usb_packet_stream_disconnect_stops_active_stream(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,16 +190,16 @@ def test_record3d_usb_streaming_source_satisfies_shared_source_protocol(monkeypa
 
 
 def test_build_record3d_frame_details_falls_back_to_packet_timestamp() -> None:
-    packet = record3d_module.FramePacket(
+    packet = record3d_module.Observation(
         seq=0,
         timestamp_ns=2_000_000_000,
         arrival_timestamp_s=None,
-        metadata={"original_size": [960, 720]},
+        provenance=record3d_module.ObservationProvenance(original_width=960, original_height=720),
     )
 
     assert build_record3d_frame_details(packet, source_label="USB device #1") == {
         "arrival_timestamp_s": 2.0,
         "source": "USB device #1",
         "original_size": [960, 720],
-        "metadata": {"original_size": [960, 720]},
+        "provenance": {"original_width": 960, "original_height": 720},
     }

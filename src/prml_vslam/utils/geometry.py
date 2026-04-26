@@ -4,53 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
 
 import numpy as np
-from evo.core.trajectory import PoseTrajectory3D
-from evo.tools import file_interface
-from pydantic import ConfigDict
+import open3d as o3d
+from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
+from evo.tools import file_interface  # type: ignore[import-untyped]
 from pytransform3d.transformations import transform, vectors_to_points
 
-from .base_data import BaseData
+from prml_vslam.utils.console import get_console
 
 if TYPE_CHECKING:
     from prml_vslam.interfaces.camera import CameraIntrinsics
     from prml_vslam.interfaces.transforms import FrameTransform
-
-
-class ImageSize(BaseData):
-    """Integer image resolution in pixels."""
-
-    model_config = ConfigDict(frozen=True)
-
-    width: int
-    """Image width in pixels."""
-
-    height: int
-    """Image height in pixels."""
-
-    @classmethod
-    def from_payload(cls, payload: object) -> Self:
-        """Normalize a width/height payload into an image-size model.
-
-        Args:
-            payload: Upstream payload encoded as either a mapping with
-                ``width``/``height`` keys or a 2-value sequence.
-
-        Returns:
-            Normalized image size.
-        """
-        if isinstance(payload, dict):
-            width = payload.get("width")
-            height = payload.get("height")
-            if isinstance(width, int) and isinstance(height, int):
-                return cls(width=width, height=height)
-
-        if isinstance(payload, list | tuple) and len(payload) == 2 and all(isinstance(value, int) for value in payload):
-            return cls(width=int(payload[0]), height=int(payload[1]))
-
-        raise TypeError("Image size must be encoded as {'width': int, 'height': int} or [width, height].")
 
 
 def write_tum_trajectory(
@@ -90,30 +56,41 @@ def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
         raise ValueError(f"TUM trajectory file '{path}' is empty.")
 
     trajectory = file_interface.read_tum_trajectory_file(path)
+    trajectory = _normalize_trajectory_quaternions(trajectory)
     valid, details = trajectory.check()
     if not valid:
         raise ValueError(f"Invalid TUM trajectory '{path}': {details}")
     return trajectory
 
 
-def _import_open3d() -> object:
-    try:
-        import open3d as o3d
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("Point-cloud PLY I/O requires the repository Open3D dependency.") from exc
-    return o3d
+def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
+    quaternions = np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64)
+    norms = np.linalg.norm(quaternions, axis=1, keepdims=True)
+
+    if np.any(np.isclose(norms, 0.0, atol=1e-6)):
+        get_console("geometry").warn("Found zero-norm quaternion in trajectory.")
+        return trajectory
+
+    return PoseTrajectory3D(
+        positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
+        orientations_quat_wxyz=quaternions / norms,
+        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+    )
 
 
-def write_point_cloud_ply(path: Path, points_xyz: np.ndarray) -> Path:
+def write_point_cloud_ply(path: Path, points_xyz: np.ndarray, colors_rgb: np.ndarray | None = None) -> Path:
     """Write an XYZ point cloud to PLY using the repository's Open3D dependency."""
     positions = np.asarray(points_xyz, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 3:
         raise ValueError(f"Expected point cloud shape (N, 3), got {positions.shape}.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    o3d = _import_open3d()
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(positions)
-    if not o3d.io.write_point_cloud(str(path), point_cloud, write_ascii=True):
+    if colors_rgb is not None:
+        point_cloud.colors = o3d.utility.Vector3dVector(
+            _normalize_point_colors(colors_rgb, expected_length=len(positions))
+        )
+    if not o3d.io.write_point_cloud(path, point_cloud, write_ascii=True):
         raise RuntimeError(f"Failed to write point cloud to '{path}'.")
     return path.resolve()
 
@@ -122,14 +99,41 @@ def load_point_cloud_ply(path: Path) -> np.ndarray:
     """Load an XYZ point cloud from PLY using the repository's Open3D dependency."""
     if not path.exists():
         raise FileNotFoundError(f"Point cloud '{path}' does not exist.")
-    o3d = _import_open3d()
-    point_cloud = o3d.io.read_point_cloud(str(path))
+    point_cloud = o3d.io.read_point_cloud(path)
     points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
     if points_xyz.ndim != 2 or (points_xyz.size > 0 and points_xyz.shape[1] != 3):
         raise ValueError(f"Expected Open3D to return shape (N, 3) for '{path}', got {points_xyz.shape}.")
     if points_xyz.size == 0:
         return np.empty((0, 3), dtype=np.float64)
     return points_xyz
+
+
+def load_point_cloud_ply_with_colors(path: Path) -> tuple[np.ndarray, np.ndarray | None]:
+    """Load XYZ points and optional RGB colors from PLY using Open3D."""
+    if not path.exists():
+        raise FileNotFoundError(f"Point cloud '{path}' does not exist.")
+    point_cloud = o3d.io.read_point_cloud(path)
+    points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
+    if points_xyz.ndim != 2 or (points_xyz.size > 0 and points_xyz.shape[1] != 3):
+        raise ValueError(f"Expected Open3D to return shape (N, 3) for '{path}', got {points_xyz.shape}.")
+    colors_rgb = np.asarray(point_cloud.colors, dtype=np.float64) if point_cloud.has_colors() else None
+    if colors_rgb is not None and colors_rgb.shape != points_xyz.shape:
+        raise ValueError(f"Expected point colors to match point shape {points_xyz.shape}, got {colors_rgb.shape}.")
+    if points_xyz.size == 0:
+        return np.empty((0, 3), dtype=np.float64), None if colors_rgb is None else np.empty((0, 3), dtype=np.float64)
+    return points_xyz, colors_rgb
+
+
+def _normalize_point_colors(colors_rgb: np.ndarray, *, expected_length: int) -> np.ndarray:
+    colors = np.asarray(colors_rgb)
+    if colors.ndim != 2 or colors.shape != (expected_length, 3):
+        raise ValueError(f"Expected point colors shape ({expected_length}, 3), got {colors.shape}.")
+    normalized = colors.astype(np.float64)
+    if np.issubdtype(colors.dtype, np.integer):
+        normalized = normalized / 255.0
+    if np.any(normalized < 0.0) or np.any(normalized > 1.0):
+        raise ValueError("Point colors must be in [0, 1] for floats or [0, 255] for integers.")
+    return normalized
 
 
 def transform_points_world_camera(
@@ -164,22 +168,19 @@ def pointmap_from_depth(
     if not np.all(np.isfinite(sampled_depth)):
         raise ValueError("Depth map must contain only finite values.")
 
-    rows_px = np.arange(0, depth.shape[0], stride_px, dtype=np.float32)
-    cols_px = np.arange(0, depth.shape[1], stride_px, dtype=np.float32)
-    grid_y_px, grid_x_px = np.meshgrid(rows_px, cols_px, indexing="ij")
-    return np.stack(
-        [
-            (grid_x_px - intrinsics.cx) / intrinsics.fx * sampled_depth,
-            (grid_y_px - intrinsics.cy) / intrinsics.fy * sampled_depth,
-            sampled_depth,
-        ],
-        axis=-1,
-    ).astype(np.float32)
+    u_px = np.arange(0, depth.shape[1], stride_px, dtype=np.float32)
+    v_px = np.arange(0, depth.shape[0], stride_px, dtype=np.float32)
+    u_grid, v_grid = np.meshgrid(u_px, v_px)
+    points_xyz_camera = np.empty((*sampled_depth.shape, 3), dtype=np.float32)
+    points_xyz_camera[..., 0] = (u_grid - np.float32(intrinsics.cx)) * sampled_depth / np.float32(intrinsics.fx)
+    points_xyz_camera[..., 1] = (v_grid - np.float32(intrinsics.cy)) * sampled_depth / np.float32(intrinsics.fy)
+    points_xyz_camera[..., 2] = sampled_depth
+    return points_xyz_camera
 
 
 __all__ = [
-    "ImageSize",
     "load_point_cloud_ply",
+    "load_point_cloud_ply_with_colors",
     "load_tum_trajectory",
     "pointmap_from_depth",
     "transform_points_world_camera",
