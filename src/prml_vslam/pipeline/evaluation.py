@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prml_vslam.benchmark import PreparedBenchmarkInputs
 from prml_vslam.eval.contracts import DiscoveredRun, EvaluationArtifact, SelectionSnapshot
 from prml_vslam.eval.services import TrajectoryEvaluationService
-from prml_vslam.pipeline.contracts.artifacts import SlamArtifacts
-from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStageId
-from prml_vslam.pipeline.contracts.request import RunRequest
-from prml_vslam.pipeline.contracts.sequence import SequenceManifest
+from prml_vslam.methods.contracts import SlamArtifacts
+from prml_vslam.pipeline.config import RunConfig
+from prml_vslam.pipeline.contracts.plan import RunPlan
+from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.utils import BaseData, PathConfig
 
 
@@ -35,15 +35,15 @@ class TrajectoryEvaluationExecution(BaseData):
 
 def execute_trajectory_evaluation(
     *,
-    request: RunRequest,
+    request: RunConfig,
     plan: RunPlan,
     sequence_manifest: SequenceManifest | None,
     benchmark_inputs: PreparedBenchmarkInputs | None,
     slam: SlamArtifacts | None,
 ) -> TrajectoryEvaluationExecution:
     """Execute one explicit trajectory-evaluation stage for the planned run."""
-    planned_stage_ids = {stage.id for stage in plan.stages}
-    if not request.benchmark.trajectory.enabled or RunPlanStageId.TRAJECTORY_EVALUATION not in planned_stage_ids:
+    planned_stage_keys = {stage.key for stage in plan.stages}
+    if not request.stages.evaluate_trajectory.enabled or StageKey.TRAJECTORY_EVALUATION not in planned_stage_keys:
         return TrajectoryEvaluationExecution()
 
     execution = TrajectoryEvaluationExecution(started=True)
@@ -64,12 +64,10 @@ def execute_trajectory_evaluation(
         execution.error_message = "Trajectory evaluation requires prepared benchmark reference trajectories."
         return execution
 
-    reference = benchmark_inputs.trajectory_for_source(request.benchmark.trajectory.baseline_source)
+    baseline_source = request.stages.evaluate_trajectory.baseline_source
+    reference = benchmark_inputs.trajectory_for_source(baseline_source)
     if reference is None:
-        execution.error_message = (
-            "Missing reference trajectory for selected baseline "
-            f"'{request.benchmark.trajectory.baseline_source.value}'."
-        )
+        execution.error_message = f"Missing reference trajectory for selected baseline '{baseline_source.value}'."
         return execution
 
     execution.reference_path = reference.path
@@ -77,14 +75,16 @@ def execute_trajectory_evaluation(
         execution.error_message = f"Reference trajectory is missing: '{reference.path}'."
         return execution
 
+    backend = request.stages.slam.backend
+    method_id = backend.method_id if backend is not None else None
     selection = SelectionSnapshot(
         sequence_slug=sequence_manifest.sequence_id,
         reference_path=reference.path,
         run=DiscoveredRun(
             artifact_root=plan.artifact_root,
             estimate_path=estimate_path,
-            method=plan.method,
-            label=plan.method.display_name,
+            method=method_id,
+            label=method_id.display_name if method_id is not None else plan.artifact_root.name,
         ),
     )
     try:
