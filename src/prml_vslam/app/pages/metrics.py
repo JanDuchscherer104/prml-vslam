@@ -69,12 +69,12 @@ def render(context: AppContext) -> None:
         st.caption(
             "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted `evo` result."
         )
-    selection = context.evaluation_service.resolve_selection(
+    resolved = context.evaluation_service.resolve_selection(
         dataset=dataset,
         preferred_sequence_slug=sequence_slug,
         preferred_run_root=run.artifact_root,
     )
-    selection = selection.selection
+    selection = resolved.selection
     if selection is None:
         st.error("Could not resolve the selected benchmark slice.")
         return
