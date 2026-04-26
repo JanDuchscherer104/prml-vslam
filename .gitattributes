@@ -1,2 +1,30 @@
 graphify-out/graph.json filter=lfs diff=lfs merge=lfs -text
 graphify-out/graph.html filter=lfs diff=lfs merge=lfs -text
+
+# Normalize all text files to LF in the repo (fixes Windows CRLF / WSL divergence)
+* text=auto eol=lf
+
+# Explicitly text
+*.py        text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.json      text eol=lf
+*.jsonl     text eol=lf
+*.typ       text eol=lf
+*.bib       text eol=lf
+*.qmd       text eol=lf
+*.mmd       text eol=lf
+*.svg       text eol=lf
+Makefile    text eol=lf
+*.gitignore text eol=lf
+CODEOWNERS  text eol=lf
+LICENSE     text eol=lf
+
+# Binary — never touch line endings
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+*.pptx binary
+*.lock binary
