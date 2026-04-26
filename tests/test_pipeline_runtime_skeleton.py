@@ -8,7 +8,11 @@ import pytest
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.methods.stage.backend_config import MethodId
+from prml_vslam.methods.stage.contracts import SlamStageOutput
 from prml_vslam.pipeline import PipelineMode
+from prml_vslam.pipeline.config import build_run_config
+from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -17,9 +21,14 @@ from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
+from prml_vslam.pipeline.stages.base.spec import StageRuntimeSpec
+from prml_vslam.pipeline.stages.specs import STAGE_RUNTIME_SPECS, stage_runtime_spec_for
+from prml_vslam.reconstruction.stage.contracts import ReconstructionInputSelection, ReconstructionInputSourceKind
+from prml_vslam.reconstruction.stage.spec import RECONSTRUCTION_STAGE_SPEC
+from prml_vslam.sources.config import VideoSourceConfig
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.sources.stage.contracts import SourceStageOutput
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, PathConfig, RunArtifactPaths
 
 
 class _RuntimeInput(BaseData):
@@ -134,7 +143,7 @@ def test_result_store_reads_target_source_and_slam_payloads() -> None:
     )
     slam_result = StageResult(
         stage_key=StageKey.SLAM,
-        payload=slam_artifacts,
+        payload=SlamStageOutput(artifacts=slam_artifacts),
         outcome=_completed_outcome(StageKey.SLAM),
         final_runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.COMPLETED),
     )
@@ -146,6 +155,7 @@ def test_result_store_reads_target_source_and_slam_payloads() -> None:
     assert store.require_sequence_manifest() == manifest
     assert store.require_benchmark_inputs() == benchmark_inputs
     assert store.require_slam_artifacts() == slam_artifacts
+    assert store.require_slam_output() == SlamStageOutput(artifacts=slam_artifacts)
     assert [outcome.stage_key for outcome in store.ordered_outcomes()] == [StageKey.SOURCE, StageKey.SLAM]
 
 
@@ -216,6 +226,43 @@ def test_stage_runner_records_success_and_failure_callbacks() -> None:
     assert failed == [StageKey.SLAM]
 
 
+def test_stage_runner_uses_stage_runtime_spec_input_builder() -> None:
+    store = StageResultStore()
+    runner = StageRunner(store)
+    plan = _plan()
+    run_config = build_run_config(
+        experiment_name="runtime-skeleton",
+        output_dir=Path(".artifacts"),
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+    )
+    context = PipelineExecutionContext(
+        run_config=run_config,
+        path_config=PathConfig(),
+        run_paths=RunArtifactPaths.build(plan.artifact_root),
+        plan=plan,
+        results=store,
+    )
+    called: list[str] = []
+    spec = StageRuntimeSpec(
+        stage_key=StageKey.SOURCE,
+        runtime_factory=lambda _context: _FakeOfflineRuntime,
+        build_offline_input=lambda builder_context: called.append(builder_context.plan.run_id)
+        or _RuntimeInput(label="seq-1"),
+    )
+
+    runner.run_configured_offline_stage(
+        stage_key=StageKey.SOURCE,
+        runtime=_FakeOfflineRuntime(),
+        stage_config=StageConfig(stage_key=StageKey.SOURCE),
+        stage_spec=spec,
+        context=context,
+    )
+
+    assert called == ["runtime-skeleton"]
+    assert store.require_sequence_manifest().sequence_id == "seq-1"
+
+
 def test_runtime_manager_preflight_is_lazy_and_reports_missing_runtimes() -> None:
     allocations: list[StageKey] = []
     manager = RuntimeManager()
@@ -234,6 +281,8 @@ def test_runtime_manager_preflight_is_lazy_and_reports_missing_runtimes() -> Non
     assert result.missing_runtime_keys == []
     with pytest.raises(RuntimeError, match="No runtime registered"):
         manager.runtime_for(StageKey.SUMMARY)
+    with pytest.raises(RuntimeError, match="No runtime spec registered"):
+        manager.stage_spec(StageKey.SOURCE)
 
 
 def test_runtime_manager_accepts_streaming_slam_with_live_updates() -> None:
@@ -250,6 +299,74 @@ def test_runtime_manager_accepts_streaming_slam_with_live_updates() -> None:
     result = manager.preflight(_plan(mode=PipelineMode.STREAMING))
 
     assert result.ok
+
+
+def test_runtime_spec_registry_covers_stage_vocabulary() -> None:
+    assert set(STAGE_RUNTIME_SPECS) == set(StageKey)
+    assert stage_runtime_spec_for(StageKey.SLAM).stage_key is StageKey.SLAM
+
+
+def test_reconstruction_spec_builds_input_from_slam_dense_point_cloud() -> None:
+    store = StageResultStore()
+    plan = _plan()
+    run_config = build_run_config(
+        experiment_name="runtime-skeleton",
+        output_dir=Path(".artifacts"),
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        reference_enabled=True,
+    )
+    reconstruction_config = run_config.stages.reconstruction.model_copy(
+        update={
+            "input_selection": ReconstructionInputSelection(
+                source_kind=ReconstructionInputSourceKind.SLAM_DENSE_POINT_CLOUD,
+            )
+        }
+    )
+    run_config = run_config.model_copy(
+        update={"stages": run_config.stages.model_copy(update={"reconstruction": reconstruction_config})}
+    )
+    manifest = SequenceManifest(sequence_id="seq-1")
+    dense_ref = ArtifactRef(path=Path("slam/dense.ply"), kind="ply", fingerprint="dense")
+    slam_artifacts = SlamArtifacts(
+        trajectory_tum=ArtifactRef(path=Path("slam/trajectory.tum"), kind="tum", fingerprint="traj"),
+        dense_points_ply=dense_ref,
+    )
+    store.put(
+        StageResult(
+            stage_key=StageKey.SOURCE,
+            payload=SourceStageOutput(sequence_manifest=manifest, benchmark_inputs=None),
+            outcome=_completed_outcome(StageKey.SOURCE),
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.SOURCE,
+                lifecycle_state=StageStatus.COMPLETED,
+            ),
+        )
+    )
+    store.put(
+        StageResult(
+            stage_key=StageKey.SLAM,
+            payload=SlamStageOutput(artifacts=slam_artifacts),
+            outcome=_completed_outcome(StageKey.SLAM),
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.SLAM,
+                lifecycle_state=StageStatus.COMPLETED,
+            ),
+        )
+    )
+    context = PipelineExecutionContext(
+        run_config=run_config,
+        path_config=PathConfig(),
+        run_paths=RunArtifactPaths.build(plan.artifact_root),
+        plan=plan,
+        results=store,
+    )
+
+    input_payload = RECONSTRUCTION_STAGE_SPEC.build_offline_input(context)
+
+    assert input_payload.input_source is ReconstructionInputSourceKind.SLAM_DENSE_POINT_CLOUD
+    assert input_payload.slam == SlamStageOutput(artifacts=slam_artifacts)
+    assert input_payload.point_cloud == dense_ref
 
 
 def test_runtime_manager_constructs_proxy_lazily() -> None:

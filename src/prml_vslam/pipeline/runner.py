@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TypeVar
 
 from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
+from prml_vslam.methods.stage.contracts import SlamStageOutput
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import StageConfig
+from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
 from prml_vslam.pipeline.stages.base.contracts import StageResult
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime, StreamingStageRuntime
+from prml_vslam.pipeline.stages.base.spec import StageRuntimeSpec
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.utils import BaseData
@@ -23,6 +26,7 @@ StageStartedCallback = Callable[[StageKey], None]
 StageCompletedCallback = Callable[[StageKey, StageResult], None]
 StageFailedCallback = Callable[[StageKey, StageOutcome], None]
 StageResultTransform = Callable[[StageResult], StageResult]
+TPayload = TypeVar("TPayload", bound=BaseData)
 
 
 class StageDependencyError(RuntimeError):
@@ -56,6 +60,20 @@ class StageResultStore:
         except KeyError as exc:
             raise StageDependencyError(f"Missing result for stage '{stage_key.value}'.") from exc
 
+    def require_payload(self, stage_key: StageKey, payload_type: type[TPayload]) -> TPayload:
+        """Return a completed stage payload of the requested type."""
+        payload = self.require_result(stage_key).payload
+        if isinstance(payload, payload_type):
+            return payload
+        payload_name = "None" if payload is None else type(payload).__name__
+        raise StageDependencyError(
+            f"Stage '{stage_key.value}' did not produce payload type '{payload_type.__name__}'; got '{payload_name}'."
+        )
+
+    def require_source_output(self) -> SourceStageOutput:
+        """Return the typed source-stage output bundle."""
+        return self.require_payload(StageKey.SOURCE, SourceStageOutput)
+
     def require_sequence_manifest(self) -> SequenceManifest:
         """Return the normalized source manifest from completed stage results."""
         result = self._results.get(StageKey.SOURCE)
@@ -76,10 +94,11 @@ class StageResultStore:
 
     def require_slam_artifacts(self) -> SlamArtifacts:
         """Return normalized SLAM artifacts from completed stage results."""
-        result = self._results.get(StageKey.SLAM)
-        if result is not None and isinstance(result.payload, SlamArtifacts):
-            return result.payload
-        raise StageDependencyError("Missing SlamArtifacts from SLAM stage result.")
+        return self.require_slam_output().artifacts
+
+    def require_slam_output(self) -> SlamStageOutput:
+        """Return the typed SLAM-stage output bundle."""
+        return self.require_payload(StageKey.SLAM, SlamStageOutput)
 
     def ordered_outcomes(self) -> list[StageOutcome]:
         """Return terminal outcomes in first-completion order."""
@@ -104,10 +123,14 @@ class StageRunner:
         self,
         *,
         stage_config: StageConfig,
+        stage_spec: StageRuntimeSpec,
         context: PipelineExecutionContext,
     ) -> tuple[str, str]:
         """Return stable failure-provenance hashes for one configured stage."""
-        fingerprint = stage_config.failure_fingerprint(context)
+        if stage_spec.failure_fingerprint is None:
+            fingerprint = _default_failure_fingerprint(stage_config=stage_config, context=context)
+        else:
+            fingerprint = stage_spec.failure_fingerprint(context)
         return stable_hash(fingerprint.config_payload), stable_hash(fingerprint.input_payload)
 
     def run_configured_offline_stage(
@@ -116,6 +139,7 @@ class StageRunner:
         stage_key: StageKey,
         runtime: OfflineStageRuntime[RuntimeInput],
         stage_config: StageConfig,
+        stage_spec: StageRuntimeSpec,
         context: PipelineExecutionContext,
         on_stage_started: StageStartedCallback | None = None,
         on_stage_completed: StageCompletedCallback | None = None,
@@ -123,11 +147,17 @@ class StageRunner:
         transform_result: StageResultTransform | None = None,
     ) -> StageResult:
         """Build input, invoke one configured bounded stage, and store its result."""
-        config_hash, input_fingerprint = self.failure_hash_inputs(stage_config=stage_config, context=context)
+        if stage_spec.build_offline_input is None:
+            raise RuntimeError(f"Stage '{stage_key.value}' has no offline input builder.")
+        config_hash, input_fingerprint = self.failure_hash_inputs(
+            stage_config=stage_config,
+            stage_spec=stage_spec,
+            context=context,
+        )
         return self.run_offline_stage(
             stage_key=stage_key,
             runtime=runtime,
-            input_payload=stage_config.build_offline_input(context),
+            input_payload=stage_spec.build_offline_input(context),
             stage_config=stage_config,
             config_hash=config_hash,
             input_fingerprint=input_fingerprint,
@@ -178,17 +208,24 @@ class StageRunner:
         stage_key: StageKey,
         runtime: StreamingStageRuntime[RuntimeInput, StreamItem],
         stage_config: StageConfig,
+        stage_spec: StageRuntimeSpec,
         context: PipelineExecutionContext,
         on_stage_started: StageStartedCallback | None = None,
         on_stage_failed: StageFailedCallback | None = None,
     ) -> None:
         """Build start input and start one configured streaming stage."""
-        config_hash, input_fingerprint = self.failure_hash_inputs(stage_config=stage_config, context=context)
+        if stage_spec.build_streaming_start_input is None:
+            raise RuntimeError(f"Stage '{stage_key.value}' has no streaming-start input builder.")
+        config_hash, input_fingerprint = self.failure_hash_inputs(
+            stage_config=stage_config,
+            stage_spec=stage_spec,
+            context=context,
+        )
         try:
             self.start_streaming_stage(
                 stage_key=stage_key,
                 runtime=runtime,
-                input_payload=stage_config.build_streaming_start_input(context),
+                input_payload=stage_spec.build_streaming_start_input(context),
                 on_stage_started=on_stage_started,
             )
         except Exception as exc:
@@ -238,6 +275,18 @@ class StageRunner:
         if on_stage_completed is not None:
             on_stage_completed(stage_key, result)
         return result
+
+
+def _default_failure_fingerprint(
+    *,
+    stage_config: StageConfig,
+    context: PipelineExecutionContext,
+) -> FailureFingerprint:
+    stage_key = stage_config.stage_key.value if stage_config.stage_key is not None else "unknown"
+    return FailureFingerprint(
+        config_payload={"stage_key": stage_key},
+        input_payload={"run_id": context.plan.run_id, "stage_key": stage_key},
+    )
 
 
 __all__ = [

@@ -121,19 +121,81 @@ path when a second reconstruction backend appears later.
 - Config: [`stage/config.py`](./stage/config.py) defines
   `ReconstructionStageConfig` for the `reconstruction` stage. It reuses the
   package-owned reconstruction backend config union, declares the reference
-  cloud output, and currently enables execution for TUM RGB-D sources.
+  cloud output, records input-selection policy, and currently enables RGB-D
+  execution for TUM RGB-D sources.
 - Input DTO: [`stage/contracts.py`](./stage/contracts.py) defines
-  `ReconstructionStageInput` with the selected backend, run paths, and prepared
-  benchmark inputs.
+  `ReconstructionStageInput` with the selected backend, run paths, source
+  output, optional SLAM output, input source kind, prepared benchmark inputs,
+  and optional selected SLAM point cloud.
+- Runtime spec: [`stage/spec.py`](./stage/spec.py) owns reconstruction input
+  construction from the shared pipeline execution context.
 - Runtime: [`stage/runtime.py`](./stage/runtime.py) adapts
   `OfflineReconstructionBackend` into the pipeline `OfflineStageRuntime`
-  contract and returns `ReconstructionArtifacts` inside `StageResult`.
+  contract and returns `ReconstructionArtifacts` as the reconstruction stage
+  output inside `StageResult`.
 - Visualization: [`stage/visualization.py`](./stage/visualization.py) turns
   reconstruction artifacts into neutral visualization items; Rerun SDK calls
   stay in the sink layer.
 - I/O: reconstruction consumes prepared `ObservationSequenceRef` values through
   source-owned observation loading and produces a world-space
   `reference_cloud.ply` plus metadata.
+
+### Stage Input Handoff
+
+```mermaid
+classDiagram
+    class SourceStageOutput {
+        SequenceManifest sequence_manifest
+        PreparedBenchmarkInputs? benchmark_inputs
+    }
+
+    class SlamStageOutput {
+        SlamArtifacts artifacts
+        VisualizationArtifacts? visualization
+    }
+
+    class ReconstructionStageInput {
+        ReconstructionBackend backend
+        RunArtifactPaths run_paths
+        SourceStageOutput? source
+        SlamStageOutput? slam
+        ReconstructionInputSourceKind input_source
+        PreparedBenchmarkInputs? benchmark_inputs
+        ArtifactRef? point_cloud
+    }
+
+    class ReconstructionInputSourceKind {
+        RGBD_OBSERVATION_SEQUENCE
+        SLAM_DENSE_POINT_CLOUD
+        SLAM_SPARSE_POINT_CLOUD
+        SLAM_PREDICTED_GEOMETRY_SEQUENCE
+    }
+
+    ReconstructionStageInput --> SourceStageOutput
+    ReconstructionStageInput --> SlamStageOutput
+    ReconstructionStageInput --> ReconstructionInputSourceKind
+    SlamStageOutput --> SlamArtifacts
+```
+
+The current executable path is RGB-D reconstruction. SLAM dense/sparse point
+cloud and predicted-geometry selections are declared at the input boundary so
+the pipeline can fail clearly until those reconstruction modes are implemented.
+
+```mermaid
+sequenceDiagram
+    participant Source
+    participant SLAM
+    participant Store as StageResultStore
+    participant Spec as Reconstruction Spec
+    participant Recon as ReconstructionRuntime
+
+    Source-->>Store: StageResult[SourceStageOutput]
+    SLAM-->>Store: StageResult[SlamStageOutput]
+    Spec->>Store: require_source_output()
+    Spec->>Store: require_slam_output()
+    Spec-->>Recon: ReconstructionStageInput
+    Recon->>Recon: run RGB-D reconstruction
+```
 
 ## DTO Design For Easy Rerun Integration
 

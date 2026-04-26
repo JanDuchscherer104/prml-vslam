@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from prml_vslam.interfaces.visualization import VisualizationArtifacts
+from prml_vslam.methods.contracts import SlamArtifacts
 from prml_vslam.methods.stage.backend_config import BackendConfig, SlamOutputPolicy
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.utils import BaseData, PathConfig
@@ -73,4 +75,14 @@ class SlamStreamingStartStageInput(BaseData):
     """Whether native Rerun outputs should be retained as durable artifacts."""
 
 
-__all__ = ["SlamOfflineStageInput", "SlamStreamingStartStageInput"]
+class SlamStageOutput(BaseData):
+    """Terminal SLAM output consumed by downstream stage input builders."""
+
+    artifacts: SlamArtifacts
+    """Normalized durable artifacts produced by the SLAM backend."""
+
+    visualization: VisualizationArtifacts | None = None
+    """Optional native visualization artifacts collected during finalization."""
+
+
+__all__ = ["SlamOfflineStageInput", "SlamStageOutput", "SlamStreamingStartStageInput"]

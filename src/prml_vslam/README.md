@@ -43,14 +43,16 @@ stage should expose this shape when it participates in a pipeline run:
 
 - `stage/config.py`: one persisted `*StageConfig` subclass of
   `pipeline.stages.base.config.StageConfig`. It declares stage key, planned
-  outputs, availability, lazy runtime factory, input building, and failure
-  fingerprint policy.
+  outputs, availability, resource policy, and failure-outcome policy.
 - `stage/contracts.py`: narrow runtime-boundary DTOs such as
-  `SourceStageInput`, `SlamOfflineStageInput`, or
+  `SourceStageInput`, `SlamStageOutput`, `SlamOfflineStageInput`, or
   `ReconstructionStageInput`. Keep these small and do not duplicate broad
   `RunConfig`, `RunPlan`, or `StageResultStore` state.
 - `stage/runtime.py`: a runtime adapter implementing the relevant protocol
   from `pipeline.stages.base.protocols`.
+- `stage/spec.py`: one `StageRuntimeSpec` that builds the stage runtime,
+  constructs narrow stage inputs from `PipelineExecutionContext`, and defines
+  failure fingerprints.
 - `stage/visualization.py`: optional adapter that turns domain payloads into
   neutral `VisualizationItem` values. It must not call the Rerun SDK.
 
@@ -92,9 +94,15 @@ classDiagram
         +resource fields
         +telemetry fields
         +cleanup fields
+        +failure_outcome(...)
+    }
+
+    class StageRuntimeSpec {
+        +stage_key
         +runtime_factory(context)
         +build_offline_input(context)
-        +failure_outcome(...)
+        +build_streaming_start_input(context)
+        +failure_fingerprint(context)
     }
 
     class SourceStageConfig {
@@ -130,6 +138,7 @@ classDiagram
 
     RunConfig --> StageBundle
     StageBundle --> StageConfig
+    StageRuntimeSpec --> StageConfig
     StageConfig <|-- SourceStageConfig
     StageConfig <|-- SlamStageConfig
     StageConfig <|-- ReconstructionStageConfig
@@ -151,5 +160,5 @@ The runtime result is always pipeline-owned `StageResult`; the payload inside it
 is domain-owned or shared. Cross-stage handoff happens through
 `StageResultStore`, not through ad hoc mutable state. Generic lifecycle,
 failure projection, and result storage are handled by `StageRunner`; stage
-configs and runtimes remain responsible for domain-specific input and output
+specs and runtimes remain responsible for domain-specific input and output
 semantics.

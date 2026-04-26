@@ -29,11 +29,14 @@ remains here.
 - Config: [`stage_trajectory/config.py`](./stage_trajectory/config.py) defines
   `TrajectoryEvaluationStageConfig` for `evaluate.trajectory`. It declares the
   trajectory metrics artifact, verifies backend support, selects the reference
-  source, and builds the runtime input.
+  source, and stores evaluation policy.
 - Input DTO: [`stage_trajectory/contracts.py`](./stage_trajectory/contracts.py)
   defines `TrajectoryEvaluationStageInput` with the artifact root, selected
   baseline, source manifest, prepared benchmark inputs, and normalized
   `SlamArtifacts`.
+- Runtime spec: [`stage_trajectory/spec.py`](./stage_trajectory/spec.py) owns
+  runtime construction, input building from completed source/SLAM results, and
+  failure fingerprints.
 - Runtime: [`stage_trajectory/runtime.py`](./stage_trajectory/runtime.py)
   adapts `TrajectoryEvaluationService` into `OfflineStageRuntime` and returns
   an `EvaluationArtifact` inside `StageResult`.

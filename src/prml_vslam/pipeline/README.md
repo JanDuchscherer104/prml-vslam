@@ -71,8 +71,77 @@ coordinator boundaries.
 `StageResultStore` is the ordered completed-result handoff for downstream input
 builders. It stores results by `StageKey`, preserves first-completion order, and
 exposes only common typed accessors such as `require_sequence_manifest()`,
-`require_benchmark_inputs()`, and `require_slam_artifacts()`. Individual stage
-configs still build their own narrow runtime input DTOs.
+`require_benchmark_inputs()`, `require_slam_output()`, and
+`require_slam_artifacts()`. Individual stage packages expose
+`StageRuntimeSpec` values that build their own narrow runtime input DTOs from
+the shared execution context.
+
+```mermaid
+classDiagram
+    class PipelineExecutionContext {
+        RunConfig run_config
+        RunPlan plan
+        RunArtifactPaths run_paths
+        StageResultStore results
+    }
+
+    class StageRuntimeSpec {
+        StageKey stage_key
+        runtime_factory(context)
+        build_offline_input(context)
+        build_streaming_start_input(context)
+        failure_fingerprint(context)
+    }
+
+    class RuntimeManager {
+        register(stage_key, factory, stage_spec)
+        runtime_for(stage_key)
+        stage_spec(stage_key)
+    }
+
+    class StageRunner {
+        run_configured_offline_stage(...)
+        start_configured_streaming_stage(...)
+        failure_hash_inputs(...)
+    }
+
+    class StageConfig {
+        planned_outputs()
+        availability()
+        failure_outcome()
+    }
+
+    PipelineExecutionContext --> StageResultStore
+    RuntimeManager --> StageRuntimeSpec
+    StageRunner --> StageRuntimeSpec
+    StageRunner --> StageConfig
+    StageRuntimeSpec --> PipelineExecutionContext
+```
+
+At execution time the generic runner asks the stage-owned spec to derive the
+narrow input from the shared context; the runtime never receives the whole
+context.
+
+```mermaid
+sequenceDiagram
+    participant C as Coordinator
+    participant M as RuntimeManager
+    participant S as StageRuntimeSpec
+    participant R as StageRunner
+    participant RT as StageRuntime
+    participant Store as StageResultStore
+
+    C->>M: runtime_for(stage)
+    C->>M: stage_spec(stage)
+    C->>R: run_configured_offline_stage(...)
+    R->>S: failure_fingerprint(context)
+    R->>S: build_offline_input(context)
+    S->>Store: require typed upstream payloads
+    S-->>R: typed StageInput
+    R->>RT: run_offline(StageInput)
+    RT-->>R: StageResult[StageOutput]
+    R->>Store: put(result)
+```
 
 ## Generic DTO And Payload Flow
 
@@ -82,6 +151,7 @@ flowchart LR
         RunConfig["RunConfig"]
         StageConfigs["domain StageConfig sections"]
         RunPlan["RunPlan"]
+        Specs["stage RuntimeSpecs"]
     end
 
     subgraph Runtime
@@ -96,7 +166,7 @@ flowchart LR
 
     subgraph Payloads["domain/shared payloads"]
         SourcePayload["SequenceManifest + PreparedBenchmarkInputs"]
-        SlamPayload["SlamArtifacts"]
+        SlamPayload["SlamStageOutput + SlamArtifacts"]
         GroundPayload["GroundAlignmentMetadata"]
         EvalPayload["EvaluationArtifact"]
         ReconstructionPayload["ReconstructionArtifacts"]
@@ -105,6 +175,7 @@ flowchart LR
     end
 
     RunConfig --> StageConfigs --> RunPlan --> RuntimeManager
+    Specs --> RuntimeManager
     RuntimeManager --> StageRunner
     StageRunner --> Result --> Store
     Result --> Outcome
@@ -129,6 +200,7 @@ remain lifecycle and provenance records.
 sequenceDiagram
     autonumber
     participant Config as StageConfig
+    participant Spec as StageRuntimeSpec
     participant Coord as RunCoordinatorActor
     participant RuntimeMgr as RuntimeManager
     participant Runner as StageRunner
@@ -142,7 +214,7 @@ sequenceDiagram
     Coord->>RuntimeMgr: runtime_for(stage_key)
     RuntimeMgr-->>Coord: StageRuntimeHandle
     Coord->>Runner: run_configured_offline_stage(...)
-    Runner->>Config: build_offline_input(context)
+    Runner->>Spec: build_offline_input(context)
     Runner->>Events: StageStarted
     Runner->>Runtime: run_offline(stage_input)
     Runtime->>Domain: execute normalized domain boundary

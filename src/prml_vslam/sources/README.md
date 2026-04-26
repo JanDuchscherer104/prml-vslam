@@ -20,6 +20,8 @@ details live in [`record3d/README.md`](./record3d/README.md).
   `SourceStageOutput`.
 - [`stage/runtime.py`](./stage/runtime.py): `SourceRuntime`, which prepares the
   normalized `SequenceManifest` and optional `PreparedBenchmarkInputs`.
+- [`stage/spec.py`](./stage/spec.py): `SOURCE_STAGE_SPEC`, which binds source
+  runtime construction, source-stage input building, and failure fingerprints.
 - [`stage/visualization.py`](./stage/visualization.py): source-stage adapter
   from observations and prepared references to neutral `VisualizationItem`s.
 - [`materialization.py`](./materialization.py): source-domain manifest
@@ -36,6 +38,9 @@ classDiagram
         +stage_key = "source"
         +backend: SourceBackendConfig
         +planned_outputs(context)
+    }
+
+    class SourceStageSpec {
         +runtime_factory(context)
         +build_offline_input(context)
     }
@@ -75,6 +80,7 @@ classDiagram
     }
 
     SourceStageConfig --> SourceBackendConfig
+    SourceStageSpec --> SourceStageConfig
     SourceBackendConfig <|-- VideoSourceConfig
     SourceBackendConfig <|-- TumRgbdSourceConfig
     SourceBackendConfig <|-- AdvioSourceConfig

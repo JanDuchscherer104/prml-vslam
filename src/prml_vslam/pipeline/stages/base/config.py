@@ -11,21 +11,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict, Field, field_validator
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
-from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
+from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.utils import BaseConfig, BaseData, JsonScalar
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,28 +126,6 @@ class StageConfig(BaseConfig):
         """Return whether the configured stage can run."""
         del context
         return True, None
-
-    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime] | None:
-        """Return a lazy runtime factory for this stage, or ``None`` for diagnostics."""
-        del context
-        return None
-
-    def build_offline_input(self, context: PipelineExecutionContext) -> BaseData:
-        """Build the narrow DTO consumed by this stage runtime."""
-        raise RuntimeError(f"No offline input builder for stage '{self.stage_key}'.")
-
-    def build_streaming_start_input(self, context: PipelineExecutionContext) -> BaseData:
-        """Build the narrow DTO used to start a streaming runtime."""
-        del context
-        raise RuntimeError(f"No streaming input builder for stage '{self.stage_key}'.")
-
-    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
-        """Return stable config and input payloads for failure provenance."""
-        stage_key = self.stage_key.value if self.stage_key is not None else "unknown"
-        return FailureFingerprint(
-            config_payload={"stage_key": stage_key},
-            input_payload={"run_id": context.plan.run_id, "stage_key": stage_key},
-        )
 
     def failure_outcome(
         self,

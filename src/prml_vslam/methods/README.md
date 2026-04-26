@@ -13,12 +13,14 @@ wrappers and native artifact interpretation remain in the method package.
   discriminator `method_id`, concrete backend configs, and `SlamOutputPolicy`.
   Concrete backend configs construct wrappers through `setup_target(...)`.
 - [`stage/config.py`](./stage/config.py): `SlamStageConfig`, which declares
-  planned SLAM outputs, availability, runtime construction, input building, and
-  failure fingerprints.
+  planned SLAM outputs, availability, and output materialization policy.
 - [`stage/contracts.py`](./stage/contracts.py): `SlamOfflineStageInput` and
-  `SlamStreamingStartStageInput`.
+  `SlamStreamingStartStageInput`, plus `SlamStageOutput` for terminal
+  downstream handoff.
 - [`stage/runtime.py`](./stage/runtime.py): `SlamStageRuntime`, the runtime
   adapter implementing offline, streaming, and live-update capability surfaces.
+- [`stage/spec.py`](./stage/spec.py): `SLAM_STAGE_SPEC`, which binds runtime
+  construction, offline/streaming input building, and failure fingerprints.
 - [`stage/visualization.py`](./stage/visualization.py): neutral
   visualization-item adapter for SLAM artifacts and live updates.
 
@@ -32,8 +34,47 @@ wrappers and native artifact interpretation remain in the method package.
   `StreamingSlamBackend`, and `StreamingSlamSession`.
 - [`contracts.py`](./contracts.py) owns `SlamUpdate` and backend notice/event
   payloads emitted by method wrappers.
-- SLAM completion returns normalized [`SlamArtifacts`](../interfaces/slam.py)
-  inside a pipeline `StageResult`.
+- SLAM completion returns `SlamStageOutput` inside a pipeline `StageResult`;
+  its `artifacts` field contains normalized
+  [`SlamArtifacts`](../interfaces/slam.py).
+
+```mermaid
+classDiagram
+    class SlamOfflineStageInput {
+        BackendConfig backend
+        SlamOutputPolicy outputs
+        Path artifact_root
+        PathConfig path_config
+        SequenceManifest sequence_manifest
+        PreparedBenchmarkInputs? benchmark_inputs
+    }
+
+    class SlamStreamingStartStageInput {
+        BackendConfig backend
+        SlamOutputPolicy outputs
+        Path artifact_root
+        PathConfig path_config
+        SequenceManifest sequence_manifest
+        PreparedBenchmarkInputs? benchmark_inputs
+    }
+
+    class SlamStageOutput {
+        SlamArtifacts artifacts
+        VisualizationArtifacts? visualization
+    }
+
+    class SlamStageRuntime {
+        run_offline(SlamOfflineStageInput)
+        start_streaming(SlamStreamingStartStageInput)
+        submit_stream_item(Observation)
+        finish_streaming()
+    }
+
+    SlamStageRuntime --> SlamOfflineStageInput
+    SlamStageRuntime --> SlamStreamingStartStageInput
+    SlamStageRuntime --> SlamStageOutput
+    SlamStageOutput --> SlamArtifacts
+```
 
 Source manifest dematerialization belongs to source-owned helpers and the SLAM
 stage runtime. Method wrappers own backend-specific preprocessing, upstream
