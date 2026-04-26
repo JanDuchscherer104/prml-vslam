@@ -1,5 +1,5 @@
-model                          = "gpt-5.4"
-model_auto_compact_token_limit = 800000
+model                          = "gpt-5.5"
+model_auto_compact_token_limit = 400000
 model_context_window           = 1050000
 model_reasoning_effort         = "xhigh"
 personality                    = 'pragmatic'

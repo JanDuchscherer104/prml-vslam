@@ -12,6 +12,8 @@ from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
 from evo.tools import file_interface  # type: ignore[import-untyped]
 from pytransform3d.transformations import transform, vectors_to_points
 
+from prml_vslam.utils.console import get_console
+
 if TYPE_CHECKING:
     from prml_vslam.interfaces.camera import CameraIntrinsics
     from prml_vslam.interfaces.transforms import FrameTransform
@@ -64,8 +66,11 @@ def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
 def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
     quaternions = np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64)
     norms = np.linalg.norm(quaternions, axis=1, keepdims=True)
-    if np.any(norms == 0.0):
+
+    if np.any(np.isclose(norms, 0.0, atol=1e-6)):
+        get_console("geometry").warn("Found zero-norm quaternion in trajectory.")
         return trajectory
+
     return PoseTrajectory3D(
         positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
         orientations_quat_wxyz=quaternions / norms,

@@ -17,7 +17,6 @@ enabled = true
     sequence_id                 = "freiburg1_room"
     frame_stride                = 5
     replay_mode                 = "realtime"
-    normalize_video_orientation = true
 
 [stages.slam]
 enabled = true
