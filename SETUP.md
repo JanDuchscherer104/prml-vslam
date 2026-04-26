@@ -6,7 +6,7 @@ and optional ViSTA-SLAM GPU execution.
 ## Requirements
 
 - `git` with submodule support
-- [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) or `mamba`
+- [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `mamba`
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [typst](https://typst.app/open-source/#download) for report and slide builds
 
@@ -92,18 +92,18 @@ ordinary Python wheels do not provide:
 Important:
 
 - When using anything under the `vista` extra, work inside the `prml-vslam`
-  conda environment.
+  mamba environment.
 - This applies to `uv sync --all-extras`, `uv sync --extra vista`, ViSTA smoke
   runs, and the Streamlit workbench when launched with `--extra vista`.
-- If the active shell is not inside the `prml-vslam` conda env, expect native
+- If the active shell is not inside the `prml-vslam` mamba env, expect native
   build or runtime failures such as missing `cmake`, missing OpenCV CMake
   config, or missing CUDA toolchain components.
 
 Primary fresh-environment flow:
 
 ```bash
-conda env create -f environment.yml
-conda activate prml-vslam
+mamba env create -f environment.yml
+mamba activate prml-vslam
 
 unset VIRTUAL_ENV
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
@@ -115,23 +115,23 @@ uv sync --all-extras
 Quick sanity check before installing or running ViSTA surfaces:
 
 ```bash
-conda activate prml-vslam
+mamba activate prml-vslam
 echo "$CONDA_PREFIX"
 which python
 which cmake
 ```
 
-`$CONDA_PREFIX` and `python` should point at the `prml-vslam` conda env before
+`$CONDA_PREFIX` and `python` should point at the `prml-vslam` mamba env before
 you use any `vista` extra commands.
 
-Build the optional CUDA RoPE2D extension after activating the conda environment; do not install it manually from the submodule:
+Build the optional CUDA RoPE2D extension after activating the mamba environment; do not install it manually from the submodule:
 
 ```bash
 uv run python scripts/build_vista_curope.py
 ```
 
-This helper sets `CUDA_HOME` from the active conda environment when `nvcc` is
-available there. If it cannot find `nvcc`, update or recreate the conda
+This helper sets `CUDA_HOME` from the active mamba environment when `nvcc` is
+available there. If it cannot find `nvcc`, update or recreate the mamba
 environment from `environment.yml`.
 
 ## ViSTA Pretrained Files
@@ -189,6 +189,6 @@ For the Streamlit app with ViSTA and Rerun support, complete the ViSTA/CUDA setu
 above, then run:
 
 ```bash
-conda activate prml-vslam
+mamba activate prml-vslam
 uv run --extra vista --extra streaming streamlit run streamlit_app.py
 ```
