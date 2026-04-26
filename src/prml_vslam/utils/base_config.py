@@ -1,8 +1,17 @@
-"""Shared Pydantic model helpers for the PRML VSLAM project."""
+"""Shared config and config-as-factory helpers for the repository.
+
+This module owns :class:`BaseConfig` and :class:`FactoryConfig`, the utility
+layer that packages use when a validated config must also serialize to TOML and
+materialize a runtime target. Repo-specific orchestration policy does not live
+here; package owners such as :mod:`prml_vslam.pipeline` and
+:mod:`prml_vslam.methods` build their own config models on top of these shared
+primitives.
+"""
 
 from __future__ import annotations
 
 import tomllib
+from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
 from typing import Any, Generic, Literal, Protocol, Self, TypeVar, cast
@@ -17,6 +26,7 @@ TTarget = TypeVar("TTarget", covariant=True)
 
 
 class _ConfigFactory(Protocol[TTarget]):
+    @abstractmethod
     def __call__(self, config: object, **kwargs: Any) -> TTarget: ...
 
 
@@ -47,32 +57,38 @@ def _normalize_value(value: Any, *, mode: Literal["json", "toml"]) -> Any:
 
 
 class BaseConfig(BaseData):
-    """Validated config model with TOML IO and inspection helpers."""
+    """Augment :class:`BaseData` with deterministic TOML IO and config inspection.
+
+    Use this base for durable repo-owned configuration surfaces such as
+    :class:`prml_vslam.pipeline.config.RunConfig`,
+    :class:`prml_vslam.methods.stage.backend_config.SlamBackendConfig`, and
+    :class:`prml_vslam.visualization.contracts.VisualizationConfig`.
+    """
 
     def model_dump_jsonable(self, **kwargs: Any) -> dict[str, Any]:
-        """Return a JSON-serializable view of the config."""
+        """Return a JSON-serializable view suitable for UI payloads and debugging."""
         return _normalize_value(self.model_dump(**kwargs), mode="json")
 
     @classmethod
     def to_jsonable(cls, value: Any) -> Any:
-        """Convert nested values into JSON-friendly primitives."""
+        """Normalize nested config values into JSON-friendly primitives."""
         return _normalize_value(value, mode="json")
 
     def to_toml(self, path: Path | str | None = None) -> str:
-        """Serialize the config to TOML and optionally persist it."""
+        """Serialize the config to deterministic TOML and optionally persist it."""
         rendered = tomli_w.dumps(_normalize_value(self.model_dump(exclude_none=True), mode="toml"))
         if path is not None:
             Path(path).write_text(rendered, encoding="utf-8")
         return rendered
 
     def save_toml(self, path: Path | str) -> Path:
-        """Persist the config to a TOML file and return the resolved path."""
+        """Persist the config to TOML and return the resulting file path."""
         self.to_toml(path)
         return Path(path)
 
     @classmethod
     def from_toml(cls: type[Self], source: str | Path | bytes) -> Self:
-        """Load a config from TOML text, bytes, or a file path."""
+        """Load the validated config from TOML text, bytes, or a file path."""
         if isinstance(source, Path):
             data = tomllib.loads(source.read_text(encoding="utf-8"))
         elif isinstance(source, bytes):
@@ -89,7 +105,7 @@ class BaseConfig(BaseData):
         return cls.model_validate(data)
 
     def inspect(self, *, show_docs: bool = False) -> None:
-        """Render the config structure as a Rich tree."""
+        """Render the config as a Rich tree for quick human inspection."""
         Console.from_callsite(stack_offset=1).print(
             self._build_tree(show_docs=show_docs),
             soft_wrap=False,
@@ -100,11 +116,19 @@ class BaseConfig(BaseData):
 
 
 class FactoryConfig(Generic[TTarget]):
-    """Generic mixin for configs that can materialize a runtime target."""
+    """Mixin for configs that construct one runtime owner or adapter.
+
+    This pattern keeps construction policy close to the typed config while
+    avoiding ad hoc dict-based factories. It is appropriate for concrete
+    domain/source/backend variants such as method backends, Record3D sources,
+    and reconstruction backends. It should not be used for pipeline stage
+    policy configs, because target stage runtime construction belongs to
+    :class:`prml_vslam.pipeline.runtime_manager.RuntimeManager`.
+    """
 
     @property
     def target_type(self) -> type[TTarget]:
-        """Runtime type used by :meth:`setup_target`."""
+        """Return the runtime type or owner constructed by :meth:`setup_target`."""
         raise NotImplementedError
 
     def setup_target(self, **kwargs: Any) -> TTarget:

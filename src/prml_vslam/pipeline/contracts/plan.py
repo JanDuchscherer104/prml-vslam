@@ -1,50 +1,65 @@
-"""Pipeline planning contracts."""
+"""Deterministic planning contracts for the pipeline.
+
+This module owns the side-effect-free plan representation returned from
+:meth:`prml_vslam.pipeline.config.RunConfig.compile_plan`. It captures what the
+pipeline intends to execute before any runtime actor, backend wrapper, or
+source stream is started.
+"""
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.methods.contracts import MethodId
 from prml_vslam.utils import BaseData
 
-from .request import PipelineMode, SourceSpec
+from .mode import PipelineMode
+from .stages import StageKey
+
+SourceMetadataValue = str | int | float | bool | None
 
 
-class RunPlanStageId(StrEnum):
-    """Canonical stage identifiers in the benchmark planner."""
+class PlannedSource(BaseData):
+    """Compact source selection snapshot captured in the deterministic plan."""
 
-    INGEST = "ingest"
-    SLAM = "slam"
-    BENCHMARK = "benchmark"
-    """Alias for trajectory_evaluation used in early scaffold versions."""
-    REFERENCE_RECONSTRUCTION = "reference_reconstruction"
-    TRAJECTORY_EVALUATION = "trajectory_evaluation"
-    CLOUD_EVALUATION = "cloud_evaluation"
-    EFFICIENCY_EVALUATION = "efficiency_evaluation"
-    SUMMARY = "summary"
+    source_id: str
+    frame_stride: int = 1
+    target_fps: float | None = None
+    expected_fps: float | None = None
+    replay_mode: str | None = None
+    sequence_id: str | None = None
+    video_path: Path | None = None
+    transport: str | None = None
+    device_index: int | None = None
+    device_address: str = ""
+    normalize_video_orientation: bool = True
+    metadata: dict[str, SourceMetadataValue] = Field(default_factory=dict)
 
 
 class RunPlanStage(BaseData):
-    """One typed stage in a benchmark run plan."""
+    """Describe one planned stage in the deterministic execution order."""
 
-    id: RunPlanStageId
+    key: StageKey
     """Stable identifier for the stage."""
-
-    title: str
-    """Short human-readable stage title."""
-
-    summary: str
-    """Short description of the stage intent."""
 
     outputs: list[Path] = Field(default_factory=list)
     """Expected artifact paths for the stage."""
 
+    available: bool = True
+    """Whether the selected backend can execute the stage."""
+
+    availability_reason: str | None = None
+    """Why the stage is unavailable, when it is merely a placeholder."""
+
 
 class RunPlan(BaseData):
-    """Planner output returned to the CLI or UI layer."""
+    """Represent the deterministic plan compiled from one launch config.
+
+    The plan is the bridge between request-time policy and runtime execution.
+    UI code, CLI code, and the backend layer all consume this DTO instead of
+    re-deriving stage order or output ownership on their own.
+    """
 
     run_id: str
     """Stable filesystem-safe run identifier."""
@@ -52,28 +67,29 @@ class RunPlan(BaseData):
     mode: PipelineMode
     """Selected pipeline mode."""
 
-    method: MethodId
-    """External backend chosen for the run."""
-
     artifact_root: Path
     """Root directory for all run artifacts."""
 
-    source: SourceSpec
-    """Source definition that the run plan was built from."""
+    source: PlannedSource
+    """Target source selection snapshot that the run plan was built from."""
 
     stages: list[RunPlanStage] = Field(default_factory=list)
     """Ordered execution stages for the benchmark run."""
 
+    config_warnings: list[str] = Field(default_factory=list)
+    """Lenient config diagnostics collected while loading TOML."""
+
     def stage_rows(self) -> list[dict[str, str]]:
-        """Return compact tabular rows for plan summaries."""
+        """Return compact rows suitable for CLI or UI plan previews."""
         return [
             {
-                "Stage": stage.title,
-                "Id": stage.id.value,
+                "Stage": stage.key.label,
+                "Id": stage.key.value,
+                "Available": "yes" if stage.available else "no",
                 "Outputs": ", ".join(path.name for path in stage.outputs),
             }
             for stage in self.stages
         ]
 
 
-__all__ = ["RunPlan", "RunPlanStage", "RunPlanStageId"]
+__all__ = ["PlannedSource", "RunPlan", "RunPlanStage"]

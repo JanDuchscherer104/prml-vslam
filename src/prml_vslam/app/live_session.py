@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import streamlit as st
 
-from prml_vslam.interfaces import CameraIntrinsics, FramePacket
+from prml_vslam.interfaces import CameraIntrinsics, Observation
 
 LiveMetric: TypeAlias = tuple[str, str]
 ImageWidth: TypeAlias = int | Literal["content", "stretch"]
@@ -209,8 +209,8 @@ def render_camera_intrinsics(
 
 def render_live_packet_tabs(
     *,
-    packet: FramePacket | None,
-    preview_renderer: Callable[[FramePacket], None],
+    packet: Observation | None,
+    preview_renderer: Callable[[Observation], None],
     positions_xyz: np.ndarray,
     timestamps_s: np.ndarray | None,
     trajectory_empty_message: str,

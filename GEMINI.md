@@ -5,7 +5,10 @@ This project has a graphify knowledge graph at graphify-out/.
 Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current
+- Use `make graphify` for a concise graphify artifact, runtime, hook, and freshness dashboard
+- Use `make graphify-report` when you need the report summary without the full community listing
+- After modifying code files in this session, run `make graphify-rebuild` to keep the graph current
+- Use `make graphify-hook-install` once per clone to enable local post-commit/post-checkout graph refreshes
 
 ## Library Documentation
 
@@ -36,10 +39,13 @@ Call the `activate_skill` tool when your task falls into any of these domains:
 - **Pydantic** (`activate_skill("pydantic")`)
   Activate when writing or reviewing Pydantic models or settings.
 
-- **Agents DB and simplification** (`activate_skill("agents-db-and-simplification")`)
+- **Agents DB** (`activate_skill("agents-db")`)
   Activate when interacting with `.agents/issues.toml`, `.agents/todos.toml`,
-  `.agents/resolved.toml`, `make agents-db`, or when doing simplification,
-  pruning, or LOC-reduction work.
+  `.agents/resolved.toml`, or `make agents-db`.
+
+- **Simplification** (`activate_skill("simplification")`)
+  Activate when doing simplification, pruning, redundancy reduction, or
+  LOC-reduction work. Pair it with **Agents DB** when the task is backlog-guided.
 
 - **Streamlit architecture** (`activate_skill("understanding-streamlit-architecture")`)
   Activate when debugging cross-layer Streamlit issues or planning architectural

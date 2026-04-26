@@ -1,0 +1,55 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "actorFontSize": "16px",
+    "messageFontSize": "15px",
+    "noteFontSize": "14px",
+    "sequenceNumberFontSize": "13px"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    participant Caller as App / CLI
+    participant Service as RunService
+    participant Backend as RayPipelineBackend
+    participant Coord as RunCoordinatorActor
+    participant RtmMgr as RuntimeManager
+    participant Source as SourceRuntime
+    participant Proxy as StageRuntimeHandle
+    participant Slam as SlamStageRuntime
+    participant Eval as TrajectoryEvaluationRuntime
+    participant Summary as SummaryRuntime
+
+    Caller->>Service: start_run(request)
+    Service->>Backend: submit_run(request)
+    Backend->>Backend: request.build(path_config)
+    Backend->>Coord: start(request, plan)
+    Coord->>RtmMgr: preflight(request, plan)
+    Coord->>Coord: record run.submitted and run.started
+
+    Coord->>RtmMgr: runtime_for(source)
+    RtmMgr-->>Coord: SourceRuntime
+    Coord->>Source: run_offline(...)
+    Source-->>Coord: StageResult (SequenceManifest)
+
+    Coord->>RtmMgr: runtime_for(slam)
+    RtmMgr-->>Coord: Proxy (Slam)
+    Coord->>Proxy: run_offline(...)
+    Proxy->>Slam: run_offline(...)
+    Slam-->>Proxy: StageResult
+    Proxy-->>Coord: StageResult
+
+    opt trajectory evaluation enabled
+        Coord->>RtmMgr: runtime_for(evaluate.trajectory)
+        RtmMgr-->>Coord: TrajectoryEvaluationRuntime
+        Coord->>Eval: run_offline(...)
+        Eval-->>Coord: StageResult
+    end
+
+    Coord->>RtmMgr: runtime_for(summary)
+    RtmMgr-->>Coord: SummaryRuntime
+    Coord->>Summary: run_offline(stage_outcomes)
+    Summary-->>Coord: StageResult
+    Coord->>Coord: persist durable events and artifacts

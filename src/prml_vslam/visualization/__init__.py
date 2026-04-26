@@ -1,5 +1,3 @@
-"""Visualization contracts and Rerun helpers."""
+"""Visualization package for repo-owned contracts, helpers, and validation."""
 
-from .contracts import VisualizationArtifacts, VisualizationConfig
-
-__all__ = ["VisualizationArtifacts", "VisualizationConfig"]
+__all__: list[str] = []

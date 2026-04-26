@@ -1,0 +1,40 @@
+experiment_name = "advio-offline-advio-15-vista"
+mode            = "offline"
+output_dir      = ".artifacts"
+
+[stages.source]
+enabled = true
+
+[stages.source.backend]
+source_id = "advio"
+sequence_id = "advio-15"
+frame_stride = 1
+
+[stages.source.backend.dataset_serving]
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
+
+[stages.slam]
+enabled = true
+
+[stages.slam.outputs]
+emit_dense_points  = true
+emit_sparse_points = true
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_ground]
+enabled = false
+
+[stages.evaluate_trajectory]
+enabled = false
+
+[stages.reconstruction]
+enabled = false
+
+[stages.evaluate_cloud]
+enabled = false
+
+[stages.summary]
+enabled = true

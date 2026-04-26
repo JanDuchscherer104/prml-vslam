@@ -1,4 +1,11 @@
-"""Shared Pydantic base model for validated data containers."""
+"""Shared validated payload base class for repo-owned DTOs.
+
+This module provides :class:`BaseData`, the canonical low-level base model for
+typed contracts across the repository. Higher-level packages such as
+:mod:`prml_vslam.interfaces`, :mod:`prml_vslam.pipeline`, and
+:mod:`prml_vslam.sources.datasets` build their public DTOs on top of it so validation,
+inspection, and IPC serialization stay consistent.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +21,13 @@ from rich.tree import Tree
 
 
 class BaseData(BaseModel):
-    """Plain validated payload shared by data contracts, state, and results."""
+    """Provide a consistent base for typed repo-owned data containers.
+
+    Use :class:`BaseData` for semantic DTOs, persisted result payloads, and
+    app/runtime state that should validate on assignment and serialize cleanly
+    across process boundaries. Configuration objects that need TOML IO and
+    factory behavior should instead inherit from :class:`prml_vslam.utils.BaseConfig`.
+    """
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -24,17 +37,17 @@ class BaseData(BaseModel):
     )
 
     def to_ipc_payload(self) -> Any:
-        """Return a pickle-ready Python payload for IPC transport."""
+        """Return a pickle-ready Python payload for lightweight IPC transport."""
         payload = self.model_dump(mode="python", round_trip=True)
         return self._normalize_ipc_value(payload)
 
     def to_ipc_bytes(self) -> bytes:
-        """Serialize this model into Python-mode IPC bytes."""
+        """Serialize this model into IPC bytes without widening its public JSON shape."""
         return pickle.dumps(self.to_ipc_payload(), protocol=pickle.HIGHEST_PROTOCOL)
 
     @classmethod
     def from_ipc_bytes(cls, payload: bytes) -> Self:
-        """Deserialize one Python-mode IPC payload into the target model type."""
+        """Deserialize one IPC payload back into the target validated model type."""
         return cls.model_validate(pickle.loads(payload))
 
     def _build_tree(self, *, show_docs: bool = False) -> Tree:

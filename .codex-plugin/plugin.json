@@ -1,0 +1,50 @@
+{
+  "name": "mempalace",
+  "version": "3.3.0",
+  "description": "Repo-local MemPalace MCP server for PRML VSLAM docs and Codex chat histories.",
+  "author": {
+    "name": "milla-jovovich"
+  },
+  "homepage": "https://github.com/MemPalace/mempalace",
+  "repository": "https://github.com/MemPalace/mempalace",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "ai",
+    "rag",
+    "mcp",
+    "chromadb",
+    "palace",
+    "search"
+  ],
+  "mcpServers": {
+    "mempalace": {
+      "command": "bash",
+      "args": [
+        "-lc",
+        "\"${CODEX_PLUGIN_ROOT}/../.venv/bin/python\" -m mempalace.mcp_server --palace \"${CODEX_PLUGIN_ROOT}/../.artifacts/mempalace/palace\""
+      ]
+    }
+  },
+  "interface": {
+    "displayName": "MemPalace",
+    "shortDescription": "Repo-local AI memory for Codex",
+    "longDescription": "Expose a repo-local MemPalace MCP server for PRML VSLAM so Codex can search mined docs and Codex chat histories without relying on a global palace.",
+    "developerName": "milla-jovovich",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/MemPalace/mempalace",
+    "privacyPolicyURL": "https://github.com/MemPalace/mempalace",
+    "termsOfServiceURL": "https://github.com/MemPalace/mempalace",
+    "defaultPrompt": [
+      "Search the repo-local MemPalace for recent decisions",
+      "Refresh docs and chat histories into the repo-local palace",
+      "Show the repo-local palace status and drawer counts"
+    ],
+    "brandColor": "#7C3AED"
+  }
+}

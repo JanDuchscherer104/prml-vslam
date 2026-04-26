@@ -1,24 +1,21 @@
-"""Mock and real method surfaces used to satisfy shared repository interfaces."""
+"""Public method-wrapper entry surface for PRML VSLAM backends."""
 
-from importlib import import_module
+from __future__ import annotations
 
-from .contracts import MethodId
+from typing import Any
 
-
-def __getattr__(name: str) -> object:
-    """Lazily expose heavier backend helpers without eager import cycles."""
-    if name == "MockSlamBackendConfig":
-        from .mock_vslam import MockSlamBackendConfig
-
-        return MockSlamBackendConfig
-    if name in {"VistaSlamBackend", "VistaSlamBackendConfig"}:
-        return getattr(import_module(".vista", __name__), name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
+from .contracts import SlamUpdate
 
 __all__ = [
-    "MethodId",
-    "MockSlamBackendConfig",
+    "SlamUpdate",
     "VistaSlamBackend",
-    "VistaSlamBackendConfig",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Provide lazy access to concrete backend wrappers."""
+    if name == "VistaSlamBackend":
+        from .vista.adapter import VistaSlamBackend
+
+        return VistaSlamBackend
+    raise AttributeError(name)

@@ -38,7 +38,7 @@ Assignee(s): Florian Beck, Jan Duchscherer
 ### WP 3.1: General Method Setup
 Assignee: Jan Duchscherer
 - define input / output interface and protocols for VSLAM algorithms
-- setup real-time and offline capable VSLAM mock
+- setup real-time and offline capable VSLAM method harness
 
 ### WP 3.2: ViSTA-SLAM
 Assignees: Lukas Röß, Jan Duchscherer

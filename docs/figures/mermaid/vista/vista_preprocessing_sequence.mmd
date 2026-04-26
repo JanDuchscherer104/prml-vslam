@@ -1,0 +1,65 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "24px",
+    "actorFontSize": "24px",
+    "messageFontSize": "20px",
+    "noteFontSize": "18px",
+    "sequenceNumberFontSize": "18px"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    box rgb(232, 241, 255) Repo wrapper
+        participant Caller as VistaSlamBackend.run_sequence<br/>or VistaSlamRuntime.step
+        participant Pre as UpstreamVistaFramePreprocessor
+    end
+
+    box rgb(255, 244, 229) Upstream ViSTA ingest
+        participant Dataset as SLAM_image_only
+        participant Crop as BaseViewGraphDataset<br/>_crop_resize_if_necessary_image_only
+        participant Flow as FlowTracker
+        participant Slam as OnlineSLAM
+        participant STA as STA frontend
+        participant LoopDet as LoopDetector
+        participant Graph as PoseGraph nodes<br/>and edges
+    end
+
+    Caller->>Pre: prepare(rgb_image, view_name)
+    Pre->>Dataset: _crop_resize_if_necessary_image_only(...)
+    Dataset->>Crop: crop around image center + margins
+    Crop-->>Dataset: portrait-aware 224x224 RGB
+    Pre->>Dataset: ImgGray(processed_image)
+    Pre->>Dataset: ImgNorm(processed_image)
+    Pre-->>Caller: PreparedVistaFrame(image_rgb, gray_u8, rgb_tensor)
+
+    Caller->>Flow: compute_disparity(gray_u8)
+    alt non-keyframe
+        Flow-->>Caller: False
+        Caller-->>Caller: skip frame or emit non-keyframe update
+    else accepted keyframe
+        Flow-->>Caller: True
+        Caller->>Slam: step(payload)
+        Slam->>Slam: add_view()
+        Slam->>STA: _encode_image(image, shape)
+        loop neighbor window
+            Slam->>STA: _decode_stereo(enc_i, enc_j)
+            STA-->>Slam: decoder features
+            Slam->>STA: head_pose_s(...) + head_pts(...)
+            STA-->>Slam: relative pose, conf, local depths, intrinsics
+            Slam->>Graph: add_node() + add_edge() for pose/scale edges
+        end
+        Slam->>LoopDet: detect_loop(gray, farthest_neighbor)
+        opt loop candidates accepted
+            loop top loop matches
+                Slam->>STA: decode loop candidate pair
+                Slam->>Graph: add loop-closure nodes and edges
+            end
+        end
+        opt pgo gate reached
+            Slam->>Graph: pose_graph_optimize()
+            Graph-->>Slam: optimized Sim(3) node poses
+        end
+        Slam-->>Caller: is_optimized: bool
+    end

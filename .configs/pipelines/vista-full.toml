@@ -1,84 +1,111 @@
 # Canonical ViSTA-SLAM Pipeline Configuration
 # -------------------------------------------
-# This file defines a complete pipeline request, including the source, SLAM backend
-# overrides, benchmarking, and visualization settings. It will appear in the
-# Streamlit UI under the "Pipeline Config" selector.
+# This file defines a complete pipeline run config, including the source, SLAM
+# backend overrides, stage-local evaluation/reconstruction policy, and
+# visualization settings.
 
-experiment_name = "vista-full-tuning"
-mode            = "streaming"
-output_dir      = ".artifacts"
+experiment_name          = "vista-full-tuning"
+mode                     = "streaming"
+output_dir               = ".artifacts"
+ray_local_head_lifecycle = "ephemeral"
 
-[source]
-dataset_id  = "advio"
-sequence_id = "advio-01"
+[stages.source]
+enabled = true
 
-[slam]
-method = "vista"
+    [stages.source.backend]
+    source_id                   = "tum_rgbd"
+    sequence_id                 = "freiburg1_room"
+    frame_stride                = 5
+    replay_mode                 = "realtime"
 
-    [slam.outputs]
+[stages.slam]
+enabled = true
+
+# --- Resource & Placement Policy ---
+# num_cpus = 1.0
+num_gpus = 1.0
+affinity = "gpu-node"
+# memory_bytes = 4294967296  # 4GB
+
+# --- Telemetry Policy ---
+emit_progress           = true
+emit_queue_metrics      = true
+emit_latency_metrics    = true
+emit_throughput_metrics = true
+sampling_interval_ms    = 1000
+
+    [stages.slam.outputs]
+
+    # ViSTA only emits dense pointmaps
     emit_dense_points  = true
-    emit_sparse_points = true
+    emit_sparse_points = false
 
-    [slam.backend]
+    [stages.slam.backend]
+    method_id = "vista"
     # Frame cap to stop the backend after N frames.
-    max_frames = 1000
+    max_frames = 1500
 
-    # Torch device string used for model inference.
-    # device = "cuda"
+    # Maximum number of keyframes the pose graph may hold.
+    max_view_num = 400
 
-        [slam.backend.slam]
-        # Maximum number of keyframes the pose graph may hold.
-        max_view_num = 400
+    # Optical-flow magnitude threshold that triggers a new keyframe.
+    # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
+    # and test true backpressure.
+    flow_thres = 20
 
-        # Keyframe stride fallback used by upstream keyframe selection.
-        stride = 25
+    # Number of temporal-neighbor edges per keyframe in the pose graph.
+    neighbor_edge_num = 3
 
-        # Optical-flow magnitude threshold that triggers a new keyframe.
-        # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
-        # and test true backpressure.
-        flow_thres = 5.0
+    # Maximum number of loop-closure edges added per keyframe.
+    loop_edge_num = 3
 
-        # Keyframe-selection strategy passed to the upstream frontend.
-        keyframe_detection = "flow_stride"
+    # Minimum frame distance for a valid loop-closure candidate.
+    loop_dist_min = 40
 
-        # Number of temporal-neighbor edges per keyframe in the pose graph.
-        neighbor_edge_num = 3
+    # Non-maximum suppression window for loop-closure candidates.
+    loop_nms = 40
 
-        # Maximum number of loop-closure edges added per keyframe.
-        loop_edge_num = 3
+    # Loop candidate must share more neighbours than this threshold.
+    loop_cand_thresh_neighbor = 5
 
-        # Minimum frame distance for a valid loop-closure candidate.
-        loop_dist_min = 40
+    # Minimum point-confidence score retained in the reconstruction.
+    point_conf_thres = 4.2
 
-        # Non-maximum suppression window for loop-closure candidates.
-        loop_nms = 40
+    # Maximum relative-pose uncertainty accepted for an edge.
+    rel_pose_thres = 0.75
 
-        # Loop candidate must share more neighbours than this threshold.
-        loop_cand_thresh_neighbor = 5
+    # Pose-graph optimisation interval in keyframes.
+    pgo_every = 500
 
-        # Minimum point-confidence score retained in the reconstruction.
-        point_conf_thres = 4.2
+    # Random seed set before model initialisation for reproducibility.
+    random_seed = 43
 
-        # Maximum relative-pose uncertainty accepted for an edge.
-        rel_pose_thres = 0.75
+[stages.align_ground]
+enabled = true
 
-        # Pose-graph optimisation interval in keyframes.
-        pgo_every = 500
+    [stages.align_ground.ground]
+    strategy       = "ransac_point_cloud"
+    min_confidence = 0.6
 
-        # Random seed set before model initialisation for reproducibility.
-        random_seed = 43
-
-[benchmark.reference]
+[stages.evaluate_trajectory]
 enabled = false
 
-[benchmark.trajectory]
+[stages.reconstruction]
+enabled = true
+
+# --- Resource & Placement Policy ---
+# num_cpus = 1.0
+# memory_bytes = 2147483648  # 2GB
+
+    [stages.reconstruction.backend]
+    method_id    = "open3d_tsdf"
+    extract_mesh = true
+
+[stages.evaluate_cloud]
 enabled = false
 
-[benchmark.cloud]
-enabled = false
-
-[benchmark.efficiency]
-enabled = false
+[stages.summary]
+enabled = true
 
 # ------------------------------------------
 # Visualization Configuration
@@ -92,3 +119,27 @@ export_viewer_rrd = true
 
 # Rerun gRPC endpoint used when `connect_live_viewer` is enabled.
 grpc_url = "rerun+http://127.0.0.1:9876/proxy"
+
+# Optional Rerun blueprint loaded by the auto-launched web viewer.
+viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
+
+# Whether native upstream `.rrd` recordings should be preserved.
+preserve_native_rerun = true
+
+# Whether to log original source RGB frames.
+log_source_rgb = false
+
+# Whether to log method-specific diagnostic/preview images.
+log_diagnostic_preview = false
+
+# Whether to project the RGB image onto the 3D camera frustum.
+log_camera_image_rgb = false
+
+# Keep only a few recent frusta visible in the streaming viewer.
+frusta_history_window_streaming = 5
+
+# Keep the full tracking trajectory visible.
+show_tracking_trajectory = true
+
+# Keep dense reference trajectories compact.
+trajectory_pose_axis_length = 0.005

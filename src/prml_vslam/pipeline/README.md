@@ -1,268 +1,255 @@
 # PRML VSLAM Pipeline Guide
 
-This package owns the typed run request, planning, artifact, provenance, and
-execution coordination surfaces for the repository pipeline. Shared source
-protocols live in [`prml_vslam.protocols.source`](../protocols/source.py) and
-[`prml_vslam.protocols.runtime`](../protocols/runtime.py). SLAM backend and
-session protocols live in [`prml_vslam.methods.protocols`](../methods/protocols.py).
+This package owns planning, run orchestration, event truth, live snapshots,
+artifact layout, runtime DTOs, and summary projection for repository pipeline
+runs. Domain stages live in their owning packages and adapt domain computation
+into the generic pipeline runtime contracts.
 
-## Current Implementation
+Package constraints live in [`REQUIREMENTS.md`](./REQUIREMENTS.md). Cross-package
+stage-authoring guidance lives in [`../README.md`](../README.md).
 
-The current pipeline is an artifact-first benchmark runtime with two execution
-modes:
-
-- `OfflineRunner` runs a bounded sequence through a materialized
-  `SequenceManifest`.
-- `StreamingRunner` runs a streaming coordinator that can consume live or
-  replayed `FramePacket` values and coordinate source, SLAM, evaluation, and
-  summary work.
-
-The executable stage slice is:
+The pipeline is a linear benchmark runtime, not a generic workflow engine:
 
 ```text
-ingest -> slam -> [trajectory_evaluation] -> summary
+source -> slam -> [gravity.align] -> [evaluate.trajectory] -> [reconstruction] -> [evaluate.cloud] -> summary
 ```
 
-Reference reconstruction, cloud evaluation, and efficiency evaluation remain
-plannable target-state stages, but the current runners reject them until explicit
-runtime support exists.
+`evaluate.cloud` is a diagnostic planning binding without a runtime. Efficiency
+evaluation is intentionally out of the current public pipeline surface.
 
-The main package surfaces are:
+## Current Entry Points
 
-- `contracts/request.py`
-  - `PipelineMode`, source specs, `SlamStageConfig`, `RunRequest`, and
-    execution placement config
-- `contracts/plan.py`
-  - `RunPlanStageId`, `RunPlanStage`, and `RunPlan`
-- `contracts/sequence.py`
-  - `SequenceManifest`
-- `contracts/artifacts.py`
-  - `ArtifactRef` and `SlamArtifacts`
-- `contracts/provenance.py`
-  - `StageExecutionStatus`, `StageManifest`, and `RunSummary`
-- `contracts/execution.py`
-  - `StageExecutionKey`, `StageResult`, and streaming worker events
-- `run_service.py`
-  - the façade used by CLI and app surfaces
-- `offline.py` and `streaming.py`
-  - the two runner entrypoints
-- `streaming_coordinator.py`
-  - streaming worker orchestration, including optional process-backed execution
-- `finalization.py`
-  - manifest and summary persistence
+- [`RunConfig`](./config.py): persisted TOML launch and planning root.
+- [`RunPlan`](./contracts/plan.py): side-effect-free ordered plan.
+- [`RunService`](./run_service.py): app/CLI facade over the active backend.
+- [`RayPipelineBackend`](./backend_ray.py): Ray lifecycle, coordinator
+  attachment, and local Ray bootstrap.
+- [`RunCoordinatorActor`](./ray_runtime/coordinator.py): run event log, live
+  snapshot projection, stage sequencing, sink fanout, and streaming credit loop.
+- [`RuntimeManager`](./runtime_manager.py): lazy local runtime-handle
+  construction from stage config factories.
+- [`StageRunner`](./runner.py): generic lifecycle executor for bounded and
+  streaming stage protocol calls.
 
-## Design Rationale
+Source-provider seams live in [`sources.protocols`](../sources/protocols.py),
+source replay streams in
+[`sources.replay.protocols`](../sources/replay/protocols.py), shared
+observations in [`interfaces.observation`](../interfaces/observation.py), and
+SLAM backend seams in [`methods.protocols`](../methods/protocols.py).
 
-The center of this package is not a generic workflow engine. It is a typed,
-linear, artifact-first benchmark pipeline. Sources, transports, and methods are
-allowed to vary at the edges; the center stays deliberately boring:
-`RunRequest`, `RunPlan`, `SequenceManifest`, `SlamArtifacts`, `StageManifest`,
-and `RunSummary`.
+## Runtime Protocols
 
-`SequenceManifest` is the key normalization boundary. A raw video, ADVIO replay,
-TUM RGB-D replay, or Record3D stream may need different source-specific setup,
-but downstream benchmark stages should consume normalized manifests and durable
-artifacts instead of source-specific state.
+Stage runtimes implement only the capability protocols they need from
+[`stages/base/protocols.py`](./stages/base/protocols.py):
 
-The Streamlit app is only a launch, monitoring, and inspection surface. App
-controller helpers can build requests and sources for the UI, but pipeline
-semantics live here.
+- `BaseStageRuntime`: every runtime exposes `status()` and `stop()`.
+- `OfflineStageRuntime`: bounded work over one narrow input DTO that returns a
+  terminal `StageResult`.
+- `LiveUpdateStageRuntime`: active runtimes can non-blockingly drain
+  `StageRuntimeUpdate` observer payloads.
+- `StreamingStageRuntime`: active hot-path runtimes start a session, accept one
+  stream item at a time, and finalize into one `StageResult`.
+
+Capability and deployment are separate. The current `RuntimeManager` lazily
+wraps local runtime objects in `StageRuntimeHandle`; the run as a whole is
+Ray-backed through `RayPipelineBackend` and `RunCoordinatorActor`, but
+independent per-stage Ray-hosted runtime execution is not a current contract.
+Ray refs, actor mailboxes, and placement mechanics stay behind backend and
+coordinator boundaries.
+
+## StageRunner And StageResultStore
+
+`StageRunner` owns generic lifecycle around runtime protocol calls:
+
+- record stage-start callbacks;
+- call `run_offline`, `start_streaming`, `submit_stream_item`, or
+  `finish_streaming`;
+- convert failures through `StageConfig.failure_outcome(...)`;
+- invoke completion/failure callbacks used by the coordinator;
+- store successful `StageResult` values.
+
+`StageResultStore` is the ordered completed-result handoff for downstream input
+builders. It stores results by `StageKey`, preserves first-completion order, and
+exposes only common typed accessors such as `require_sequence_manifest()`,
+`require_benchmark_inputs()`, `require_slam_output()`, and
+`require_slam_artifacts()`. Individual stage packages expose
+`StageRuntimeSpec` values that build their own narrow runtime input DTOs from
+the shared execution context.
 
 ```mermaid
-flowchart LR
-    app["App / CLI launch surface"] --> request["RunRequest"]
-    request --> planner["RunPlannerService"]
-    planner --> plan["RunPlan"]
-    plan --> runner{"mode"}
-    runner -->|offline| offline["OfflineRunner"]
-    runner -->|streaming| streaming["StreamingRunner + StreamingCoordinator"]
-    offline --> artifacts["SlamArtifacts + StageManifest + RunSummary"]
-    streaming --> artifacts
+classDiagram
+    class PipelineExecutionContext {
+        RunConfig run_config
+        RunPlan plan
+        RunArtifactPaths run_paths
+        StageResultStore results
+    }
+
+    class StageRuntimeSpec {
+        StageKey stage_key
+        runtime_factory(context)
+        build_offline_input(context)
+        build_streaming_start_input(context)
+        failure_fingerprint(context)
+    }
+
+    class RuntimeManager {
+        register(stage_key, factory, stage_spec)
+        runtime_for(stage_key)
+        stage_spec(stage_key)
+    }
+
+    class StageRunner {
+        run_configured_offline_stage(...)
+        start_configured_streaming_stage(...)
+        failure_hash_inputs(...)
+    }
+
+    class StageConfig {
+        planned_outputs()
+        availability()
+        failure_outcome()
+    }
+
+    PipelineExecutionContext --> StageResultStore
+    RuntimeManager --> StageRuntimeSpec
+    StageRunner --> StageRuntimeSpec
+    StageRunner --> StageConfig
+    StageRuntimeSpec --> PipelineExecutionContext
 ```
 
-## Execution Modes
-
-### Offline
-
-Use `PipelineMode.OFFLINE` when the input is already bounded and replayable:
-
-- raw video files
-- dataset sequences
-- previously materialized captures
-
-Offline execution resolves or materializes a `SequenceManifest`, runs one
-offline-capable SLAM backend over the manifest, optionally evaluates the
-trajectory, and persists stage manifests plus a run summary.
-
-### Streaming
-
-Use `PipelineMode.STREAMING` when the source is incremental:
-
-- live Record3D capture
-- live-like dataset replay
-- any `StreamingSequenceSource` that emits `FramePacket` values
-
-Streaming mode still uses the same stage vocabulary, but its hot path is
-packet-driven. The coordinator prepares ingest outputs first, then runs packet
-source and SLAM workers concurrently, then runs ordered artifact stages.
+At execution time the generic runner asks the stage-owned spec to derive the
+narrow input from the shared context; the runtime never receives the whole
+context.
 
 ```mermaid
 sequenceDiagram
-    participant Runner as StreamingRunner
-    participant Coord as StreamingCoordinator
-    participant Ingest as ingest stage
-    participant Source as packet_source worker
-    participant Slam as slam worker
-    participant Eval as trajectory_evaluation stage
-    participant Summary as summary stage
+    participant C as Coordinator
+    participant M as RuntimeManager
+    participant S as StageRuntimeSpec
+    participant R as StageRunner
+    participant RT as StageRuntime
+    participant Store as StageResultStore
 
-    Runner->>Coord: run(request, plan, source, backend)
-    Coord->>Ingest: prepare manifest and benchmark inputs
-    Ingest-->>Coord: StageResult(ingest)
-    par streaming hot path
-        Coord->>Source: start worker
-        Source-->>Coord: packet events
-        Source-->>Slam: bounded packet queue
-    and backend processing
-        Coord->>Slam: start worker
-        Slam-->>Coord: SlamUpdate events
-        Slam-->>Coord: StageResult(slam)
+    C->>M: runtime_for(stage)
+    C->>M: stage_spec(stage)
+    C->>R: run_configured_offline_stage(...)
+    R->>S: failure_fingerprint(context)
+    R->>S: build_offline_input(context)
+    S->>Store: require typed upstream payloads
+    S-->>R: typed StageInput
+    R->>RT: run_offline(StageInput)
+    RT-->>R: StageResult[StageOutput]
+    R->>Store: put(result)
+```
+
+## Generic DTO And Payload Flow
+
+```mermaid
+flowchart LR
+    subgraph Planning
+        RunConfig["RunConfig"]
+        StageConfigs["domain StageConfig sections"]
+        RunPlan["RunPlan"]
+        Specs["stage RuntimeSpecs"]
     end
-    Coord->>Eval: run if planned
-    Eval-->>Coord: StageResult(trajectory_evaluation)
-    Coord->>Summary: persist summary from StageResult list
-    Summary-->>Coord: StageResult(summary)
+
+    subgraph Runtime
+        RuntimeManager["RuntimeManager"]
+        StageRunner["StageRunner"]
+        Store["StageResultStore"]
+        Status["StageRuntimeStatus"]
+        Result["StageResult"]
+        Update["StageRuntimeUpdate"]
+        Outcome["StageOutcome"]
+    end
+
+    subgraph Payloads["domain/shared payloads"]
+        SourcePayload["SequenceManifest + PreparedBenchmarkInputs"]
+        SlamPayload["SlamStageOutput + SlamArtifacts"]
+        GroundPayload["GroundAlignmentMetadata"]
+        EvalPayload["EvaluationArtifact"]
+        ReconstructionPayload["ReconstructionArtifacts"]
+        SummaryPayload["RunSummary + StageManifest[]"]
+        VizItems["VisualizationItem[]"]
+    end
+
+    RunConfig --> StageConfigs --> RunPlan --> RuntimeManager
+    Specs --> RuntimeManager
+    RuntimeManager --> StageRunner
+    StageRunner --> Result --> Store
+    Result --> Outcome
+    Result --> SourcePayload
+    Result --> SlamPayload
+    Result --> GroundPayload
+    Result --> EvalPayload
+    Result --> ReconstructionPayload
+    Result --> SummaryPayload
+    Update --> VizItems
+    Status --> Update
 ```
 
-## Process-Backed Streaming
+`StageResult` is the canonical cross-stage completion target. `StageOutcome` is
+the durable/provenance subset. Semantic outputs remain domain-owned payloads.
+Live telemetry and previews stay in `StageRuntimeUpdate`; durable run events
+remain lifecycle and provenance records.
 
-Streaming execution defaults to `local` for every component, preserving the
-existing behavior. A request may opt individual streaming components into
-subprocess execution:
+## Generic Stage Lifecycle
 
-```toml
-[execution.streaming]
-ingest = "local"
-packet_source = "process"
-slam = "process"
-trajectory_evaluation = "local"
-summary = "local"
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Config as StageConfig
+    participant Spec as StageRuntimeSpec
+    participant Coord as RunCoordinatorActor
+    participant RuntimeMgr as RuntimeManager
+    participant Runner as StageRunner
+    participant Runtime as StageRuntime
+    participant Domain as Domain backend/service
+    participant Store as StageResultStore
+    participant Events as RunEvent stream
+    participant Sinks as Observer sinks
+
+    Coord->>RuntimeMgr: preflight(run_plan)
+    Coord->>RuntimeMgr: runtime_for(stage_key)
+    RuntimeMgr-->>Coord: StageRuntimeHandle
+    Coord->>Runner: run_configured_offline_stage(...)
+    Runner->>Spec: build_offline_input(context)
+    Runner->>Events: StageStarted
+    Runner->>Runtime: run_offline(stage_input)
+    Runtime->>Domain: execute normalized domain boundary
+    Domain-->>Runtime: domain/shared payload
+    Runtime-->>Runner: StageResult(payload, outcome, status)
+    Runner->>Store: put(StageResult)
+    Runner->>Events: StageCompleted
+    Coord->>Sinks: forward neutral visualization/status updates
 ```
 
-Supported execution keys are:
+Streaming follows the same owner split: the coordinator owns stream sequencing
+and credit flow, `StageRunner` owns generic protocol calls, the runtime owns
+session state, and domain backends own algorithm-specific stepping.
 
-- `ingest`
-  - prepares `SequenceManifest` and optional prepared benchmark inputs
-- `packet_source`
-  - owns `FramePacketStream.connect()`, `wait_for_packet()`, and `disconnect()`
-- `slam`
-  - owns the `SlamSession` lifecycle and emits `SlamUpdate` events
-- `trajectory_evaluation`
-  - computes persisted trajectory metrics when planned
-- `summary`
-  - persists `StageManifest` records and the final `RunSummary`
+## Artifact Ownership
 
-Packet source and SLAM workers run concurrently when streaming starts. They are
-connected by a bounded packet queue, while the coordinator remains the only code
-that mutates `RunnerRuntime` snapshots. Finite stages can also run in a spawned
-process, but they still execute in dependency order.
+Durable run outputs are artifacts, manifests, and summaries:
 
-Process mode requires process-safe inputs. Config-backed sources such as
-Record3D and ADVIO can be rehydrated inside worker processes. Non-picklable
-runtime objects fail early with a clear process-safety error and should stay in
-local mode.
+- source preparation writes the normalized sequence manifest and prepared
+  benchmark inputs;
+- SLAM writes normalized trajectory, point-cloud, and viewer artifacts;
+- derived stages write their own domain artifacts;
+- summary writes `run_summary.json`, `stage_manifests.json`, and durable event
+  logs.
 
-## Core Contracts
+Downstream app or CLI code should inspect artifacts through explicit artifact
+inspection helpers instead of treating transient live payloads as durable
+scientific outputs.
 
-`RunRequest` is the persisted entry contract. It owns mode, source, SLAM config,
-benchmark policy, visualization policy, and execution placement.
+## Extension Rules
 
-`RunPlan` is the deterministic preview of the stages and canonical output paths.
-Planning does not open a source or start a backend.
-
-`SequenceManifest` is the normalized source boundary. It carries stable paths to
-source video, RGB frames, timestamps, intrinsics, and side metadata when known.
-
-`SlamArtifacts` is the normalized SLAM-stage output bundle. The trajectory TUM
-artifact is mandatory; geometry artifacts are optional.
-
-`StageResult` is the in-memory execution result used by streaming finalization.
-`StageManifest` is the persisted provenance record derived from executed stage
-results. `RunSummary` is the run-level terminal status map.
-
-## TOML-First Run Planning
-
-Durable pipeline requests should live under `.configs/pipelines/` and hydrate
-through `RunRequest.from_toml()` or `pipeline.demo.load_run_request_toml()`.
-
-```toml
-experiment_name = "vista-full-tuning"
-mode = "streaming"
-output_dir = ".artifacts"
-
-[source]
-dataset_id = "advio"
-sequence_id = "advio-15"
-
-[slam]
-method = "vista"
-
-    [slam.outputs]
-    emit_dense_points = true
-    emit_sparse_points = true
-
-    [slam.backend]
-    max_frames = 1000
-
-        [slam.backend.slam]
-        flow_thres = 5.0
-        max_view_num = 400
-
-[benchmark.trajectory]
-enabled = false
-
-[visualization]
-connect_live_viewer = true
-export_viewer_rrd = true
-
-[execution.streaming]
-packet_source = "local"
-slam = "local"
-```
-
-Use the committed examples as starting points:
-
-```bash
-uv run prml-vslam plan-run-config .configs/pipelines/advio-15-offline-vista.toml
-uv run prml-vslam run-config .configs/pipelines/advio-15-offline-vista.toml
-```
-
-## Adding A Runnable Stage
-
-Add planning support and runtime support together:
-
-1. Add or reuse the typed stage id in `RunPlanStageId`.
-2. Add request config only if the stage is user-configurable.
-3. Add canonical output paths through `RunArtifactPaths`.
-4. Extend `RunPlannerService` so the stage appears deterministically.
-5. Add a stage executor or worker path in the true owning package.
-6. Return a `StageResult` and persist a `StageManifest`.
-7. Add tests for planning, TOML hydration, execution, failure, and summary
-   provenance.
-
-Do not add a generic graph runtime. The current pipeline is intentionally
-linear, with process placement as an execution detail rather than a new workflow
-language.
-
-## Boundary Rules
-
-- `SequenceManifest` remains the normalized offline ingest boundary.
-- Benchmark-owned prepared inputs stay separate from the sequence manifest.
-- `FramePacket` belongs to the streaming hot path, not downstream artifact
-  stages.
-- Method wrappers stay thin and normalize native outputs into pipeline-owned
-  artifacts.
-- Evaluation remains explicit and owned by `prml_vslam.eval`.
-- The app does not own pipeline semantics.
-- `pipeline/contracts/` is an implementation namespace, not a broad public
-  compatibility import hub.
+- Add new domain stage behavior under the domain package's `stage/` module.
+- Keep generic lifecycle, status, updates, results, and snapshots in pipeline.
+- Keep domain computation in the domain package; stage runtimes adapt it into
+  `StageResult`, `StageRuntimeStatus`, and `StageRuntimeUpdate`.
+- Keep Rerun SDK calls inside sink/policy modules, not in DTOs or stage
+  runtimes.
+- Keep launch/config additions in `RunConfig` and stage-owned config modules.

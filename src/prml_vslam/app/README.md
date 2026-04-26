@@ -2,7 +2,7 @@
 
 This package contains the packaged Streamlit workbench for PRML VSLAM.
 
-The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.io`, `prml_vslam.datasets`, `prml_vslam.eval`, `prml_vslam.pipeline`, `prml_vslam.benchmark`, `prml_vslam.visualization`, and `prml_vslam.utils`.
+The app is intentionally small and typed. It is not the owner of capture, benchmark execution, or artifact formats. Instead, it is a thin interactive surface over repo-owned services in `prml_vslam.sources.replay`, `prml_vslam.sources.datasets`, `prml_vslam.eval`, `prml_vslam.pipeline`, `prml_vslam.sources`, `prml_vslam.visualization`, and `prml_vslam.utils`.
 
 Use this document together with the other app-specific and repo-wide guidance:
 
@@ -50,7 +50,7 @@ sequenceDiagram
     participant Page as pages/*.py
     participant Service as prml_vslam.eval/services.py
     participant Runtime as Record3DStreamRuntimeController
-    participant IO as prml_vslam.io
+    participant Source as prml_vslam.sources
 
     User->>Browser: Open app or interact with a widget
     Browser->>Bootstrap: Trigger script rerun
@@ -67,11 +67,11 @@ sequenceDiagram
         Page->>Browser: Render sidebar controls
         User->>Page: Submit Start/Restart form
         Page->>Runtime: start_usb(...) or start_wifi_preview(...)
-        Runtime->>IO: Create Record3D packet stream
-        IO-->>Runtime: Blocking packet stream
+        Runtime->>Source: Create Record3D observation stream
+        Source-->>Runtime: Blocking observation stream
         loop Background worker thread
-            Runtime->>IO: wait_for_packet(...)
-            IO-->>Runtime: FramePacket
+            Runtime->>Source: wait_for_observation(...)
+            Source-->>Runtime: Observation
             Runtime->>Runtime: Update Record3DStreamSnapshot
         end
         loop Fragment rerun
@@ -92,9 +92,9 @@ sequenceDiagram
             Service-->>Page: EvaluationArtifact
         end
         Page-->>Browser: Render metrics, figures, provenance
-    else ADVIO page
+    else Datasets page
         Page->>Service: summarize() / scene_rows()
-        Service->>Service: Read committed ADVIO catalog and local dataset root
+        Service->>Service: Read committed dataset catalogs and local dataset roots
         Page-->>Browser: Render dataset summary metrics and scene table
         User->>Page: Submit explicit download form
         Page->>Service: download(...)
@@ -132,6 +132,14 @@ sequenceDiagram
   - Record3D-only app glue.
   - `Record3DStreamRuntimeController` owns the live stream worker thread and maintains the latest `Record3DStreamSnapshot`.
 
+- [pipeline_controls.py](pipeline_controls.py)
+  - Pipeline-page request editing, template syncing, validation, and run-launch helpers.
+  - Keeps request construction and action handling out of the render-only page module.
+
+- [pipeline_controller.py](pipeline_controller.py)
+  - Pipeline snapshot presentation and app-facing render-model shaping.
+  - Re-exports the Pipeline page control helpers for a stable app-local import surface.
+
 - [ui.py](ui.py)
   - Shared app UI helpers only.
   - Currently provides lightweight page-header rendering and the style hook.
@@ -142,10 +150,15 @@ sequenceDiagram
   - Uses explicit actions for `evo` execution.
   - Delegates data access to `TrajectoryEvaluationService` and figure creation to `plotting.metrics`.
 
-- [pages/advio.py](pages/advio.py)
-  - ADVIO dataset-management page renderer.
+- [pages/artifacts.py](pages/artifacts.py)
+  - Persisted run artifact inspector.
+  - Reads typed summaries, manifests, structured paths, and small raw metadata from a selected method-level run root.
+  - Keeps heavier trajectory and reconstruction views behind explicit buttons.
+
+- [pages/datasets.py](pages/datasets.py)
+  - Dataset-management page renderer for ADVIO and TUM RGB-D tabs.
   - Renders committed upstream metadata, local dataset coverage, and explicit download controls.
-  - Delegates dataset discovery and downloads to `AdvioDatasetService`.
+  - Delegates dataset discovery and downloads to dataset services.
 
 - [pages/record3d.py](pages/record3d.py)
   - Record3D page renderer.
@@ -181,11 +194,16 @@ sequenceDiagram
 
 ## Boundaries To Other Packages
 
-- `prml_vslam.io`
-  - Owns Record3D capture, frame decoding, typed packet/snapshot contracts, and the official USB plus Wi-Fi Preview transport integrations.
-  - The app consumes shared typed IO contracts; it does not implement transport protocols itself.
+- `prml_vslam.sources.replay`
+  - Owns replay clocking and shared observation-stream mechanics.
+  - The app consumes shared typed source contracts; it does not implement
+    transport protocols itself.
 
-- `prml_vslam.datasets`
+- `prml_vslam.sources.record3d`
+  - Owns Record3D capture, frame decoding, and the official USB plus Wi-Fi
+    Preview transport integrations.
+
+- `prml_vslam.sources.datasets`
   - Owns ADVIO metadata, local dataset normalization, and selective download semantics.
   - The app renders dataset summaries and forwards explicit user actions into dataset-owned services.
 
@@ -197,8 +215,8 @@ sequenceDiagram
   - Owns run planning, execution orchestration, manifests, and runtime state.
   - The Streamlit app may expose pipeline-facing controls, but it should not define pipeline semantics itself.
 
-- `prml_vslam.benchmark`
-  - Owns benchmark-policy contracts plus prepared benchmark-side inputs such as available reference trajectories.
+- `prml_vslam.sources`
+  - Owns source-stage preparation and reference identifiers consumed by prepared benchmark-side inputs.
 
 - `prml_vslam.visualization`
   - Owns viewer policy and preserved native Rerun artifacts.
@@ -250,7 +268,7 @@ The Record3D page uses an explicit runtime-controller pattern:
 
 - the UI starts or stops a session through `Record3DStreamRuntimeController`
 - the runtime owns a background worker thread
-- the worker consumes `Record3DPacketStream` objects from the IO layer
+- the worker consumes `ObservationStream` objects from the source layer
 - the worker continuously updates one shared `Record3DStreamSnapshot`
 - the page reads that snapshot during fragment reruns and renders it
 
@@ -286,7 +304,8 @@ When adding features, prefer extending the existing pattern rather than adding n
 - new chart -> `plotting/<name>.py`
 - new app session-state model -> `models.py`
 - new evaluation/discovery contract -> `prml_vslam.eval`
-- new benchmark-policy or prepared benchmark-input contract -> `prml_vslam.benchmark`
+- new benchmark reference identifier -> `prml_vslam.sources.contracts`
+- new prepared benchmark-input contract -> `prml_vslam.sources.contracts`
 - new viewer/export artifact contract -> `prml_vslam.visualization`
 - new app-facing orchestration or runtime behavior -> `services.py`
 - new persisted state slot -> `state.py`
