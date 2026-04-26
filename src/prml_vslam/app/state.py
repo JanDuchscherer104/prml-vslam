@@ -41,7 +41,12 @@ class SessionStateStore:
             return state
         if isinstance(payload, AppState):
             return payload
-        return AppState.model_validate(payload)
+        try:
+            return AppState.model_validate(payload)
+        except Exception:
+            state = AppState()
+            self.save(state)
+            return state
 
     def save(self, state: AppState) -> None:
         """Persist the JSON-friendly app state."""
