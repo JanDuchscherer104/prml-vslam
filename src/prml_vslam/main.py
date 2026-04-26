@@ -722,6 +722,77 @@ def import_run(
     )
 
 
+@app.command("eval-trajectory")
+def eval_trajectory(
+    artifact_root: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to an existing artifact root that contains slam/trajectory.tum and benchmark/<baseline>.tum.",
+        ),
+    ],
+    baseline: Annotated[
+        ReferenceSource,
+        typer.Option(
+            "--baseline",
+            help="Reference source used for evaluation.",
+            case_sensitive=False,
+        ),
+    ] = ReferenceSource.GROUND_TRUTH,
+    sequence_id: Annotated[
+        str | None,
+        typer.Option("--sequence-id", help="Sequence slug (inferred from sequence_manifest.json when omitted)."),
+    ] = None,
+) -> None:
+    """Evaluate trajectory against a reference directly from an existing artifact root."""
+    import json as _json
+
+    from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot
+    from prml_vslam.eval.services import TrajectoryEvaluationService
+    from prml_vslam.methods.contracts import MethodId
+
+    path_config = get_path_config()
+    resolved_root = path_config.resolve_repo_path(artifact_root)
+
+    estimate_path = resolved_root / "slam" / "trajectory.tum"
+    if not estimate_path.exists():
+        console.error(f"Estimated trajectory not found: '{estimate_path}'")
+        raise typer.Exit(code=1)
+
+    reference_path = resolved_root / "benchmark" / f"{baseline.value}.tum"
+    if not reference_path.exists():
+        console.error(f"Reference trajectory not found: '{reference_path}'")
+        raise typer.Exit(code=1)
+
+    if sequence_id is None:
+        manifest_path = resolved_root / "input" / "sequence_manifest.json"
+        if manifest_path.exists():
+            sequence_id = _json.loads(manifest_path.read_text(encoding="utf-8")).get("sequence_id", "unknown")
+        else:
+            sequence_id = "unknown"
+
+    method: MethodId | None = next(
+        (m for part in reversed(resolved_root.parts) for m in MethodId if part == m.value),
+        None,
+    )
+    selection = SelectionSnapshot(
+        sequence_slug=sequence_id,
+        reference_path=reference_path,
+        run=DiscoveredRun(
+            artifact_root=resolved_root,
+            estimate_path=estimate_path,
+            method=method,
+            label=method.display_name if method is not None else resolved_root.name,
+        ),
+    )
+    try:
+        service = TrajectoryEvaluationService(path_config)
+        artifact = service.compute_evaluation(selection=selection)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    console.plog({"result_path": str(artifact.path), "stats": artifact.stats.model_dump(mode="json")})
+
+
 @app.command("write-demo-config")
 def write_demo_config(
     sequence_id: Annotated[
