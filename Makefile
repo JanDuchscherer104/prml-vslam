@@ -90,7 +90,7 @@ mempalace-wake-up: ## Print repo-local MemPalace wake-up context
 loc-py: ## Print Python LOC for src/ and tests/ (example: make loc LOC_ARGS="--todo --fixme")
 	$(UV_RUN) python scripts/loc_stats.py $(LOC_ARGS)
 
-loc: ## Alias for loc-py (pass flags with LOC_ARGS="--todo --fixme")
+loc: ## Alias for loc-py (pass flags with LOC_ARGS="--modules --module-depth 2 --diff")
 	$(MAKE) loc-py
 
 open3d-stubs: ## Regenerate repo-local Open3D .pyi files
