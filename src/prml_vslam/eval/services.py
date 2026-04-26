@@ -235,11 +235,11 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             "stats": preview.stats.model_dump(mode="python"),
             "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
             "error_values": preview.error_series.values.tolist(),
-            "alignment_path": None if alignment_path is None else alignment_path.to_posix(),
-            "aligned_estimate_path": None if aligned_estimate_path is None else aligned_estimate_path.to_posix(),
+            "alignment_path": None if alignment_path is None else alignment_path.as_posix(),
+            "aligned_estimate_path": None if aligned_estimate_path is None else aligned_estimate_path.as_posix(),
             "aligned_point_cloud_path": None
             if aligned_point_cloud_path is None
-            else aligned_point_cloud_path.to_posix(),
+            else aligned_point_cloud_path.as_posix(),
             "semantics": TrajectoryEvaluationSemantics(
                 metric_id=TrajectoryMetricId.APE_TRANSLATION,
                 pose_relation="translation_part",
