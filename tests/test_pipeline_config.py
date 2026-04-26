@@ -59,6 +59,9 @@ def test_stage_config_sections_round_trip_without_runtime_factory() -> None:
     assert reloaded == config
     assert config.model_dump_jsonable()["cleanup_artifact_keys"] == ["native_output_dir", "extra:*"]
     assert not hasattr(config, "setup_target")
+    assert not hasattr(config, "runtime_factory")
+    assert not hasattr(config, "build_offline_input")
+    assert not hasattr(config, "build_streaming_start_input")
 
 
 def test_stage_config_rejects_filesystem_like_cleanup_selectors() -> None:

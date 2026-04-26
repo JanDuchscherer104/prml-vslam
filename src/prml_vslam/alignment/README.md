@@ -32,10 +32,12 @@ backend outputs.
 - Config: [`stage/config.py`](./stage/config.py) defines
   `GroundAlignmentStageConfig` for the `gravity.align` stage. It declares the
   ground-alignment output path, checks that the selected SLAM backend can emit
-  point-cloud artifacts, and builds the runtime input.
+  point-cloud artifacts, and stores alignment policy.
 - Input DTO: [`stage/contracts.py`](./stage/contracts.py) defines
   `GroundAlignmentStageInput` with `GroundAlignmentConfig`, run artifact paths,
   and normalized `SlamArtifacts`.
+- Runtime spec: [`stage/spec.py`](./stage/spec.py) owns runtime construction,
+  input building from completed SLAM results, and failure fingerprints.
 - Runtime: [`stage/runtime.py`](./stage/runtime.py) adapts
   `GroundAlignmentService` into the pipeline `OfflineStageRuntime` contract and
   returns `GroundAlignmentMetadata` inside `StageResult`.

@@ -4,6 +4,7 @@ from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, Pipe
 from prml_vslam.pipeline.stages.base.config import FailureFingerprint
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.runtime import LifecycleStageRuntimeMixin
+from prml_vslam.pipeline.stages.base.spec import StageRuntimeSpec
 
 __all__ = [
     "FailureFingerprint",
@@ -13,4 +14,5 @@ __all__ = [
     "StageResult",
     "StageRuntimeStatus",
     "StageRuntimeUpdate",
+    "StageRuntimeSpec",
 ]

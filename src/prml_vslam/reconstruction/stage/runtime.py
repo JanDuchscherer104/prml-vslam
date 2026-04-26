@@ -11,7 +11,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.protocols import LiveUpdateStageRuntime, OfflineStageRuntime
 from prml_vslam.reconstruction import ReconstructionArtifacts
-from prml_vslam.reconstruction.stage.contracts import ReconstructionStageInput
+from prml_vslam.reconstruction.stage.contracts import ReconstructionInputSourceKind, ReconstructionStageInput
 from prml_vslam.reconstruction.stage.visualization import ReconstructionVisualizationAdapter
 from prml_vslam.sources.observation_sequence import FileObservationSequenceLoader
 from prml_vslam.utils.serialization import stable_hash
@@ -78,6 +78,19 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveU
         return result
 
     def _run(self, input_payload: ReconstructionStageInput) -> StageResult:
+        if input_payload.input_source in {
+            ReconstructionInputSourceKind.SLAM_DENSE_POINT_CLOUD,
+            ReconstructionInputSourceKind.SLAM_SPARSE_POINT_CLOUD,
+        }:
+            if input_payload.point_cloud is None:
+                raise RuntimeError("SLAM point-cloud reconstruction input was selected without a point-cloud artifact.")
+            raise NotImplementedError(
+                "The reconstruction runtime currently supports RGB-D observation sequences only; "
+                "add a point-cloud reconstruction backend path before selecting "
+                f"'{input_payload.input_source.value}'."
+            )
+        if input_payload.input_source is ReconstructionInputSourceKind.SLAM_PREDICTED_GEOMETRY_SEQUENCE:
+            raise NotImplementedError("Predicted-geometry reconstruction input is not implemented yet.")
         if input_payload.benchmark_inputs is None:
             raise RuntimeError("Reference reconstruction requires prepared benchmark inputs.")
         if len(input_payload.benchmark_inputs.observation_sequences) != 1:

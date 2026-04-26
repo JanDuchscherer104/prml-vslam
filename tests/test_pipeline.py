@@ -20,6 +20,7 @@ import pytest
 import ray
 from pydantic import ValidationError
 
+from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
 from prml_vslam.interfaces import (
     CAMERA_RDF_FRAME,
     FrameTransform,
@@ -33,6 +34,8 @@ from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.contracts import SlamStageOutput
+from prml_vslam.methods.stage.spec import SLAM_STAGE_SPEC
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
@@ -65,6 +68,7 @@ from prml_vslam.pipeline.stages.base.contracts import (
     VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.pipeline.stages.summary.spec import SUMMARY_STAGE_SPEC
 from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionStageInput
 from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
 from prml_vslam.sources.contracts import (
@@ -1291,7 +1295,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
             calls.append("slam.finish")
             return StageResult(
                 stage_key=StageKey.SLAM,
-                payload=slam_artifacts,
+                payload=SlamStageOutput(artifacts=slam_artifacts),
                 outcome=StageOutcome(
                     stage_key=StageKey.SLAM,
                     status=StageStatus.COMPLETED,
@@ -1374,14 +1378,17 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     runtime_manager.register(
         StageKey.SLAM,
         factory=lambda: slam_runtime,
+        stage_spec=SLAM_STAGE_SPEC,
     )
     runtime_manager.register(
         StageKey.TRAJECTORY_EVALUATION,
         factory=_FakeTrajectoryRuntime,
+        stage_spec=TRAJECTORY_EVALUATION_STAGE_SPEC,
     )
     runtime_manager.register(
         StageKey.SUMMARY,
         factory=_FakeSummaryRuntime,
+        stage_spec=SUMMARY_STAGE_SPEC,
     )
     coordinator._run_config = run_config
     coordinator._plan = plan

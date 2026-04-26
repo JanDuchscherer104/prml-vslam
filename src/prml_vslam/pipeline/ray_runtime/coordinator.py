@@ -65,6 +65,7 @@ from prml_vslam.pipeline.stages.base.contracts import (
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
+from prml_vslam.pipeline.stages.specs import stage_runtime_spec_for
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.sources.stage.visualization import SourceVisualizationAdapter
@@ -495,13 +496,15 @@ class RunCoordinatorActor:
             if not stage.available:
                 continue
             stage_config = run_config.stages.section(stage.key)
-            factory = stage_config.runtime_factory(context)
+            stage_spec = stage_runtime_spec_for(stage.key)
+            factory = stage_spec.runtime_factory(context)
             if factory is None:
                 continue
             manager.register(
                 stage.key,
                 factory=factory,
                 stage_config=stage_config,
+                stage_spec=stage_spec,
             )
         return manager
 
@@ -517,6 +520,7 @@ class RunCoordinatorActor:
             stage_key=stage_key,
             runtime=runtime_proxy,
             stage_config=context.run_config.stages.section(stage_key),
+            stage_spec=runtime_manager.stage_spec(stage_key),
             context=context,
             on_stage_started=self._emit_stage_started,
             on_stage_completed=self._record_stage_result,
@@ -650,6 +654,7 @@ class RunCoordinatorActor:
             stage_key=stage_key,
             runtime=runtime_proxy,
             stage_config=context.run_config.stages.section(stage_key),
+            stage_spec=runtime_manager.stage_spec(stage_key),
             context=context,
             on_stage_started=self._emit_stage_started,
             on_stage_failed=self._record_stage_failure,
@@ -699,8 +704,10 @@ class RunCoordinatorActor:
             return
         stage_key = StageKey.SLAM
         stage_config = context.run_config.stages.section(stage_key)
+        stage_spec = self._require_streaming_runtime_manager().stage_spec(stage_key)
         config_hash, input_fingerprint = self._stage_runner.failure_hash_inputs(
             stage_config=stage_config,
+            stage_spec=stage_spec,
             context=context,
         )
         try:

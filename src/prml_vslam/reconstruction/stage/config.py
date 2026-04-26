@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, TypeAlias
 
 from pydantic import ConfigDict, Field
 
-from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
+from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
-from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
+from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig, ReconstructionBackendConfig
+from prml_vslam.reconstruction.stage.contracts import (
+    ReconstructionBackend,
+    ReconstructionInputSelection,
+    ReconstructionInputSourceKind,
+)
 from prml_vslam.sources.config import TumRgbdSourceConfig
-
-ReconstructionBackend: TypeAlias = Annotated[
-    Open3dTsdfBackendConfig,
-    Field(discriminator="method_id"),
-]
 
 
 class ReconstructionStageConfig(StageConfig):
@@ -30,35 +27,34 @@ class ReconstructionStageConfig(StageConfig):
     backend: ReconstructionBackend = Field(default_factory=Open3dTsdfBackendConfig)
     """Concrete reconstruction backend config."""
 
+    input_selection: ReconstructionInputSelection = Field(default_factory=ReconstructionInputSelection)
+    """Policy for selecting the upstream payload used by reconstruction."""
+
     def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         return [context.run_paths.reference_cloud_path]
 
     def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
+        if self.input_selection.source_kind in {
+            ReconstructionInputSourceKind.SLAM_DENSE_POINT_CLOUD,
+            ReconstructionInputSourceKind.SLAM_SPARSE_POINT_CLOUD,
+            ReconstructionInputSourceKind.SLAM_PREDICTED_GEOMETRY_SEQUENCE,
+        }:
+            slam_backend = context.run_config.stages.slam.backend
+            if slam_backend is None:
+                return False, "SLAM-derived reconstruction requires `[stages.slam.backend]`."
+            outputs = context.run_config.stages.slam.outputs
+            if self.input_selection.source_kind is ReconstructionInputSourceKind.SLAM_DENSE_POINT_CLOUD:
+                if not outputs.emit_dense_points:
+                    return False, "SLAM dense-point reconstruction requires dense SLAM point-cloud outputs."
+            if self.input_selection.source_kind is ReconstructionInputSourceKind.SLAM_SPARSE_POINT_CLOUD:
+                if not outputs.emit_sparse_points:
+                    return False, "SLAM sparse-point reconstruction requires sparse SLAM point-cloud outputs."
+            return True, None
+
         source_backend = context.run_config.stages.source.backend
         if not isinstance(source_backend, TumRgbdSourceConfig):
             return False, "Reconstruction currently requires a TUM RGB-D dataset source."
         return True, None
-
-    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
-        del context
-        from prml_vslam.reconstruction.stage.runtime import ReconstructionRuntime
-
-        return ReconstructionRuntime
-
-    def build_offline_input(self, context: PipelineExecutionContext):
-        from prml_vslam.reconstruction.stage.contracts import ReconstructionStageInput
-
-        return ReconstructionStageInput(
-            backend=self.backend,
-            run_paths=context.run_paths,
-            benchmark_inputs=context.results.require_benchmark_inputs(),
-        )
-
-    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
-        return FailureFingerprint(
-            config_payload=self.backend,
-            input_payload=context.results.require_benchmark_inputs(),
-        )
 
 
 __all__ = [

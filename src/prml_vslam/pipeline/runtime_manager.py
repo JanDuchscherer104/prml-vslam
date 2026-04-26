@@ -11,6 +11,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
+from prml_vslam.pipeline.stages.base.spec import StageRuntimeSpec
 from prml_vslam.utils import BaseData, JsonScalar
 
 RuntimeFactory = Callable[[], BaseStageRuntime]
@@ -54,11 +55,13 @@ class RuntimeManager:
         executor_ids: Mapping[StageKey, str] | None = None,
         resource_assignments: Mapping[StageKey, dict[str, JsonScalar]] | None = None,
         stage_configs: Mapping[StageKey, StageConfig] | None = None,
+        runtime_specs: Mapping[StageKey, StageRuntimeSpec] | None = None,
     ) -> None:
         self._runtime_factories = {} if runtime_factories is None else dict(runtime_factories)
         self._executor_ids = {} if executor_ids is None else dict(executor_ids)
         self._resource_assignments = {} if resource_assignments is None else dict(resource_assignments)
         self._stage_configs = {} if stage_configs is None else dict(stage_configs)
+        self._runtime_specs = {} if runtime_specs is None else dict(runtime_specs)
         self._runtime_cache: dict[StageKey, StageRuntimeHandle] = {}
 
     def register(
@@ -67,6 +70,7 @@ class RuntimeManager:
         *,
         factory: RuntimeFactory,
         stage_config: StageConfig | None = None,
+        stage_spec: StageRuntimeSpec | None = None,
         executor_id: str | None = None,
         resource_assignment: dict[str, JsonScalar] | None = None,
     ) -> None:
@@ -77,6 +81,8 @@ class RuntimeManager:
         self._resource_assignments[stage_key] = {} if resource_assignment is None else dict(resource_assignment)
         if stage_config is not None:
             self._stage_configs[stage_key] = stage_config
+        if stage_spec is not None:
+            self._runtime_specs[stage_key] = stage_spec
 
     def preflight(self, plan: RunPlan) -> RuntimePreflightResult:
         """Validate runtime availability without constructing runtimes."""
@@ -115,6 +121,13 @@ class RuntimeManager:
         if config is not None:
             return config
         return StageConfig(stage_key=stage_key)
+
+    def stage_spec(self, stage_key: StageKey) -> StageRuntimeSpec:
+        """Return the runtime spec used for input construction."""
+        spec = self._runtime_specs.get(stage_key)
+        if spec is not None:
+            return spec
+        raise RuntimeError(f"No runtime spec registered for stage '{stage_key.value}'.")
 
 
 __all__ = [

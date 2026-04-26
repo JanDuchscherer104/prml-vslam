@@ -20,7 +20,7 @@ from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.protocols import StreamingSlamBackend
 from prml_vslam.methods.stage.backend_config import BackendConfig, SlamOutputPolicy
-from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStreamingStartStageInput
+from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStageOutput, SlamStreamingStartStageInput
 from prml_vslam.methods.stage.visualization import (
     DEPTH_REF,
     IMAGE_REF,
@@ -322,7 +322,7 @@ class SlamStageRuntime(
         )
         return StageResult(
             stage_key=StageKey.SLAM,
-            payload=slam,
+            payload=SlamStageOutput(artifacts=slam, visualization=visualization_artifacts),
             outcome=outcome,
             final_runtime_status=self.status().model_copy(update={"lifecycle_state": status}),
         )

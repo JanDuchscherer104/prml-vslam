@@ -13,7 +13,12 @@ from prml_vslam.interfaces import FrameTransform, Observation, ObservationProven
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.stage import SlamOfflineStageInput, SlamStageRuntime, SlamStreamingStartStageInput
+from prml_vslam.methods.stage import (
+    SlamOfflineStageInput,
+    SlamStageOutput,
+    SlamStageRuntime,
+    SlamStreamingStartStageInput,
+)
 from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.mode import PipelineMode
@@ -173,7 +178,8 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     assert [observation.seq for observation in backend_config._backend.observations] == [0]
     assert result.stage_key is StageKey.SLAM
     assert result.outcome.status is StageStatus.COMPLETED
-    assert isinstance(result.payload, SlamArtifacts)
+    assert isinstance(result.payload, SlamStageOutput)
+    assert isinstance(result.payload.artifacts, SlamArtifacts)
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
 
 
@@ -227,5 +233,6 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
 
     result = runtime.finish_streaming()
     assert result.outcome.status is StageStatus.COMPLETED
-    assert isinstance(result.payload, SlamArtifacts)
+    assert isinstance(result.payload, SlamStageOutput)
+    assert isinstance(result.payload.artifacts, SlamArtifacts)
     assert backend.runtime.closed is True

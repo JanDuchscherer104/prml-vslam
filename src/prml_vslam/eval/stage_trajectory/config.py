@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import ConfigDict, Field
 
-from prml_vslam.pipeline.contracts.context import PipelineExecutionContext, PipelinePlanContext
+from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
-from prml_vslam.pipeline.stages.base.protocols import BaseStageRuntime
+from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.utils import BaseConfig
 
@@ -49,36 +47,6 @@ class TrajectoryEvaluationStageConfig(StageConfig):
         if not backend.supports_trajectory_benchmark:
             return False, f"{backend.display_name} does not support repository trajectory evaluation."
         return True, None
-
-    def runtime_factory(self, context: PipelineExecutionContext) -> Callable[[], BaseStageRuntime]:
-        del context
-        from prml_vslam.eval.stage_trajectory.runtime import TrajectoryEvaluationRuntime
-
-        return TrajectoryEvaluationRuntime
-
-    def build_offline_input(self, context: PipelineExecutionContext):
-        from prml_vslam.eval.stage_trajectory.contracts import TrajectoryEvaluationStageInput
-
-        slam_backend = context.run_config.stages.slam.backend
-        return TrajectoryEvaluationStageInput(
-            artifact_root=context.plan.artifact_root,
-            baseline_source=self.evaluation.baseline_source,
-            method_id=None if slam_backend is None else slam_backend.method_id,
-            method_label="unknown" if slam_backend is None else slam_backend.display_name,
-            sequence_manifest=context.results.require_sequence_manifest(),
-            benchmark_inputs=context.results.require_benchmark_inputs(),
-            slam=context.results.require_slam_artifacts(),
-        )
-
-    def failure_fingerprint(self, context: PipelineExecutionContext) -> FailureFingerprint:
-        slam = context.results.require_slam_artifacts()
-        return FailureFingerprint(
-            config_payload=self.evaluation,
-            input_payload={
-                "benchmark_inputs": context.results.require_benchmark_inputs(),
-                "slam_trajectory": slam.trajectory_tum,
-            },
-        )
 
 
 __all__ = ["TrajectoryEvaluationPolicy", "TrajectoryEvaluationStageConfig"]

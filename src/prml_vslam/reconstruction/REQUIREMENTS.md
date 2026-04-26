@@ -52,6 +52,9 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
   backend based on `ScalableTSDFVolume`
 - the public execution seam must stay minimal and offline-first until a real
   streaming reconstruction use case exists
+- reconstruction stage input construction must stay in the reconstruction-owned
+  runtime spec, using completed source and SLAM `StageResult` payloads rather
+  than coordinator-mutated handoff bags
 
 ## Validation
 
