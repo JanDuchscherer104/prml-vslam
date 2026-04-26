@@ -34,11 +34,17 @@ jobs:
       - name: Verify native ViSTA dependencies
         shell: bash -el {0}
         run: |
+          set -euo pipefail
           echo "CONDA_PREFIX=$CONDA_PREFIX"
-          which python
-          which cmake
-          which nvcc
-          find "$CONDA_PREFIX" -name OpenCVConfig.cmake -o -name opencv-config.cmake
+          command -v python >/dev/null
+          command -v cmake >/dev/null
+          command -v nvcc >/dev/null
+          echo "python=$(command -v python)"
+          echo "cmake=$(command -v cmake)"
+          echo "nvcc=$(command -v nvcc)"
+          opencv_config="$(find "$CONDA_PREFIX" \( -name OpenCVConfig.cmake -o -name opencv-config.cmake \) -print -quit)"
+          [ -n "$opencv_config" ]
+          echo "$opencv_config"
 
       - name: Install project
         shell: bash -el {0}

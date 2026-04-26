@@ -217,7 +217,7 @@ def resolve_record(
     refactors_path: Path = REFACTORS_PATH,
     resolved_path: Path = RESOLVED_PATH,
 ) -> dict[str, Any]:
-    """Move an active issue or todo into the resolved collection."""
+    """Move an active issue, todo, or refactor into the resolved collection."""
     resolved_stamp = resolved_on or date.today().isoformat()
 
     active_path = _active_path(
