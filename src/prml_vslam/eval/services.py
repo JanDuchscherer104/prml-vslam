@@ -178,6 +178,70 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             trajectories=trajectories,
         )
 
+    def compute_trajectory_alignment(
+        self,
+        *,
+        selection: SelectionSnapshot,
+    ) -> tuple[Path, Path, Path | None]:
+        """Compute and persist the Sim(3) alignment without running APE metrics.
+
+        Returns ``(alignment_path, aligned_estimate_path, aligned_point_cloud_path)``
+        where the last element is ``None`` when no point-cloud path is provided.
+        """
+        reference_path = selection.reference_path
+        if reference_path is None:
+            raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
+
+        reference_trajectory = load_tum_trajectory(reference_path)
+        estimate_trajectory = load_tum_trajectory(selection.run.estimate_path)
+        try:
+            associated_reference, associated_estimate = sync.associate_trajectories(
+                reference_trajectory,
+                estimate_trajectory,
+                max_diff=_EVO_ASSOCIATION_MAX_DIFF_S,
+            )
+        except sync.SyncException as exc:
+            raise ValueError(
+                f"No matching trajectory timestamps found for Sim(3) alignment (max_diff={_EVO_ASSOCIATION_MAX_DIFF_S:.3f}s)."
+            ) from exc
+
+        if not _trajectory_supports_sim3(associated_reference, associated_estimate):
+            raise ValueError("Trajectory lacks sufficient geometric spread for Sim(3) alignment.")
+
+        _, alignment = _align_estimate_sim3(
+            reference=associated_reference,
+            estimate=associated_estimate,
+            max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+        )
+
+        run_root = selection.run.artifact_root
+        alignment_path = self.alignment_path(run_root)
+        alignment_path.parent.mkdir(parents=True, exist_ok=True)
+        alignment_path.write_text(
+            json.dumps(alignment.model_dump(mode="json"), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+        aligned_estimate_path = self.aligned_estimate_path(run_root)
+        _write_aligned_estimate_trajectory(
+            reference_path=reference_path,
+            estimate_path=selection.run.estimate_path,
+            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+            max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+            output_path=aligned_estimate_path,
+        )
+
+        aligned_point_cloud_path = None
+        if selection.run.point_cloud_path is not None:
+            aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
+            _write_aligned_point_cloud(
+                source_path=selection.run.point_cloud_path,
+                output_path=aligned_point_cloud_path,
+                alignment=alignment,
+            )
+
+        return alignment_path, aligned_estimate_path, aligned_point_cloud_path
+
     def compute_evaluation(
         self,
         *,
