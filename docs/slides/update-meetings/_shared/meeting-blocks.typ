@@ -3,7 +3,7 @@
 #import "@preview/booktabs:0.0.4": *
 
 #let placeholder_status_rows = (
-  ([...], [], []),
+  ([], [], []),
   ([], [], []),
 )
 
