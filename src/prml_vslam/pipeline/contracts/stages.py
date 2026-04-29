@@ -11,6 +11,7 @@ class StageKey(StrEnum):
     SOURCE = "source"
     SLAM = "slam"
     GRAVITY_ALIGNMENT = "gravity.align"
+    TRAJECTORY_ALIGNMENT = "align.trajectory"
     TRAJECTORY_EVALUATION = "evaluate.trajectory"
     RECONSTRUCTION = "reconstruction"
     CLOUD_EVALUATION = "evaluate.cloud"
@@ -23,6 +24,7 @@ class StageKey(StrEnum):
             StageKey.SOURCE: "Normalize Input Sequence",
             StageKey.SLAM: "Run SLAM Backend",
             StageKey.GRAVITY_ALIGNMENT: "Detect Ground Plane",
+            StageKey.TRAJECTORY_ALIGNMENT: "Align Trajectory (Sim3)",
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
             StageKey.RECONSTRUCTION: "Build Reconstruction",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
