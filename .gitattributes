@@ -1,2 +1,0 @@
-graphify-out/graph.json filter=lfs diff=lfs merge=lfs -text
-graphify-out/graph.html filter=lfs diff=lfs merge=lfs -text

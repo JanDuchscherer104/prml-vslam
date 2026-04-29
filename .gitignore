@@ -264,3 +264,5 @@ docs/architecture/pipeline-refactor-work-packages/*
 !docs/architecture/pipeline-refactor-work-packages/WP-09C-live-events-handles-cutover.md
 !docs/architecture/pipeline-refactor-work-packages/WP-09D-app-cli-target-snapshot-cutover.md
 !docs/architecture/pipeline-refactor-work-packages/WP-10-migration-removal.md
+
+graphify-out/
