@@ -3,17 +3,19 @@
 #let done_table_row = (
   [WP2.2],
   [LR],
-  [ViSTA-SLAM implementation in Streamlit runtime],
+  [ViSTA-SLAM implementation in Streamlit runtime, including Rerun output and preset configs],
 )
+
 #let challenges_table_row = (
   [WP2.{1,2}],
   [LR],
-  [Runtime orchestration and environment setup],
+  [Runtime orchestration, keyframe-only updates, and environment setup],
 )
+
 #let next_steps_table_row = (
   [WP1 / WP2.1],
   [LR, JD],
-  [Async stability and streaming validation],
+  [Async stability, streaming validation, and evaluation artifacts],
 )
 
 #let done_detail_body = items => [
@@ -23,14 +25,18 @@
     - Added rerun-safe state handling so results persist correctly across Streamlit reruns.
     - Wired the CLI `run` command and Streamlit pipeline flow to share the same runtime behavior.
     - Built and linked DBoW3Py for loop-detection support in the integrated pipeline.
+    - Added offline and streaming ViSTA-SLAM backend paths with shared artifact output.
+    - Logged live poses, preview images, pointmaps, and point clouds through Rerun.
+    - Added ViSTA preset configs, smoke-test setup notes, and regression tests for streaming behavior.
   ]
 ]
-
 
 #let challenges_detail_body = items => [
   #meeting_detail_slide(items, title: [Lukas Röß: Challenges])[
     - Main effort was coordinating async task lifecycle with Streamlit rerun semantics.
     - Environment was standardized via Conda to keep builds and runtime behavior consistent.
+    - ViSTA-SLAM only emits useful state on accepted keyframes, so source packets and SLAM updates had to be handled separately.
+    - CUDA-heavy SLAM work required a spawned worker process, queue backpressure, and careful error propagation.
   ]
 ]
 
@@ -38,7 +44,8 @@
   #meeting_detail_slide(items, title: [Lukas Röß: Next Steps])[
     - Harden async + rerun behavior under repeated user interactions.
     - Run full streaming validation on ADVIO sequences and capture regressions.
-    - Finalize reproducible Conda setup notes for smoother team onboarding.
+    - Finalize reproducible Conda setup notes for smoother development envirnoment.
+    - Run the ViSTA presets with real weights on the target CUDA setup.
+    - Use Rerun recordings, TUM trajectories, and point-cloud outputs for evaluation.
   ]
 ]
-
