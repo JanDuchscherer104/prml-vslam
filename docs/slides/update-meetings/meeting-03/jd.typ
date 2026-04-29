@@ -11,7 +11,7 @@
   (
     [WP2],
     [JD],
-    [Unified `StageRuntime` boundaries with cleaner DTOs for stage I/O, runtime status, live updates, payload refs, and artifacts.],
+    [Unified Stage boundaries with cleaner DTOs for stage I/O, runtime status, live updates, payload refs, and artifacts.],
   ),
   ([WP2], [JD], [Implemented the Ray-backed pipeline path plus throughput / latency metrics.]),
   (
@@ -19,34 +19,45 @@
     [JD],
     [Persisted streamlined artifacts, manifests, and stage output data for reproducibility and post-hoc inspection.],
   ),
-  ([WP3], [JD], [Added TUM RGB-D support and real-time streaming adapters for ADVIO and TUM RGB-D.]),
-  ([WP4], [JD], [Added RANSAC ground-plane detection and an offline-only Open3D TSDF reconstruction stage.]),
+  ([WP3], [JD], [Added TUM RGB-D and real-time streaming adapters for offline datasets.]),
+  ([WP4], [JD], [Added RANSAC ground-plane detection and offline-only Open3D TSDF reconstruction stage.]),
   ([WP3], [JD], [Fixed ViSTA pre-/post-processing and transform issues.]),
-  ([WP7], [JD], [Extended Rerun live/output visualization and Streamlit artifact inspection.]),
+  // TODO: here we need to mention the visualization adapter approach.
+  (
+    [WP7],
+    [JD],
+    [Introduced abstraction for Rerun live/output logging and Streamlit artifact inspection.],
+  ),
+  ([X], [JD], [Documented all of the above for easier onboarding and handoff.]),
 )
 
 #let challenges_table_row = (
   [WP2 / WP4 / WP9],
   [JD],
-  [Making a typed multiprocessing pipeline agree with dataset frames, live streaming, Rerun, app state, and artifacts.],
+  [Making a typed multiprocessing pipeline compatible with dataset frames, live streaming, Rerun, app state, and artifacts.],
+  [],
 )
 
 #let next_steps_table_row = (
-  [WP9 / WP10],
-  [JD],
-  [Finish clean stage APIs/configs, merge team changes, fix ADVIO references, and validate the final refactor.],
+  [WP1],
+  [JD #sym.arrow LR],
+  [Fix ARKit frame issues to allow unified trajectory benchmarking.],
+  [WP1],
+  [JD #sym.arrow LR],
+  [Fix ADVIO's Tango point clouds to provide reference PCs.],
 )
 
 #let done_detail_body = items => [
-  #meeting_detail_slide(items, title: [JD: What Was Done?])[
-    - Unified `StageRuntime` boundaries with cleaner DTOs for stage I/O, runtime status, live updates, payload refs, and artifacts.
-    - Implemented the Ray-backed pipeline path plus throughput / latency metrics.
-    - Persisted streamlined artifacts, manifests, and stage output data for reproducibility and post-hoc inspection.
-    - Added TUM RGB-D support and real-time streaming adapters for ADVIO and TUM RGB-D.
-    - Added RANSAC ground-plane detection and an offline-only Open3D TSDF reconstruction stage.
-    - Fixed ViSTA pre-/post-processing and transform issues.
-    - Extended Rerun live/output visualization and Streamlit artifact inspection.
-  ]
+  // #meeting_detail_slide(items, title: [JD: What Was Done?])[
+  //   - Unified `StageRuntime` boundaries with cleaner DTOs for stage I/O, runtime status, live updates, payload refs, and artifacts.
+  //   - Implemented the Ray-backed pipeline path plus throughput / latency metrics.
+  //   - Improved config management throughout different stages.
+  //   - Persisted streamlined artifacts, manifests, and stage output data for reproducibility and post-hoc inspection.
+  //   - Added TUM RGB-D support and real-time streaming adapters for ADVIO and TUM RGB-D.
+  //   - Added RANSAC ground-plane detection and an offline-only Open3D TSDF reconstruction stage.
+  //   - Fixed ViSTA pre-/post-processing and transform issues.
+  //   - Extended Rerun live/output visualization and Streamlit artifact inspection.
+  // ]
 
   #meeting_detail_slide(items, title: [JD: Evidence])[
     #grid(
@@ -98,7 +109,7 @@
         - SLAM/native/alignment: method output plus derived metadata.
         - Reference/visualization/summary: TSDF outputs, Rerun, manifests, events.
 
-        == Why it matters
+        == Rationale
         - Each run is a self-contained bundle for reproducibility and post-hoc inspection.
         - Stage manifests index completed stage outputs with config hashes and input fingerprints.
         - Inspect source inputs, references, SLAM, alignment, reconstruction, Rerun, and validation artifacts without rerunning.
@@ -106,6 +117,7 @@
         == Example: `vista-full-tuning/vista`
         - Total 4.2 GB; input 2.1 GB; visualization 2.0 GB.
         - SLAM 36 MB; native 63 MB; reference 29 MB.
+        - clean up of selected artifacts possible via config.
       ],
     )
   ]
@@ -116,13 +128,6 @@
       pipeline_diagram("../../../figures/mermaid/pipeline/03-run-config-stage-plan.png"),
       caption: [`RunConfig` compiles named stage sections into an ordered `RunPlan` before runtime construction starts.],
     ) <fig:pipeline-run-config-stage-plan>
-  ]
-
-  #meeting_detail_slide(items, title: [JD: Runtime Protocols])[
-    #figure(
-      pipeline_diagram("../../../figures/mermaid/pipeline/04-runtime-protocols.png"),
-      caption: [`BaseStageRuntime`, `OfflineStageRuntime`, `LiveUpdateStageRuntime`, and `StreamingStageRuntime` separate capability from local/Ray deployment.],
-    ) <fig:pipeline-runtime-protocols>
   ]
 
   #meeting_detail_slide(items, title: [JD: Stage Result])[
@@ -144,9 +149,9 @@
 #let challenges_detail_body = items => [
   #meeting_detail_slide(items, title: [JD: Challenges])[
     - Typed multiprocessing across Ray, stages, app state, Rerun, artifacts, and manifests.
-    - Clear ownership for streaming packets, SLAM updates, transient payloads, viewer output, and durable artifacts.
-    - ADVIO frame semantics across GT, ARCore, ARKit, Tango poses, point clouds, and benchmark estimates.
-    - Normalizing TUM RGB-D, ADVIO, and ViSTA timestamps, intrinsics, rasters, and transforms.
+    - Clear ownership for streaming packets, SLAM updates, transient payloads, viewer output, and durable artifacts (it was a mess).
+    - ADVIO frame semantics across GT, ARCore, ARKit, Tango poses, point clouds.
+    - Normalizing TUM RGB-D, ADVIO & method specific timestamps, intrinsics, rasters, and transforms.
   ]
 ]
 
