@@ -116,29 +116,62 @@ class SlamBackendConfig(BaseConfig):
 
 
 class Mast3rSlamBackendConfig(SlamBackendConfig, FactoryConfig["Mast3rSlamBackend"]):
-    """Configure the placeholder MASt3R wrapper used for planning."""
+    """Configure the canonical MASt3R-SLAM backend wrapper.
+
+    Hyperparameters for tracking, retrieval, local optimization, and
+    relocalization are loaded from the upstream YAML config. Override
+    :attr:`yaml_config_path` when a run needs a repo-local variant instead of
+    editing the submodule in place.
+    """
 
     method_id: Literal[MethodId.MAST3R] = MethodId.MAST3R
+    mast3r_slam_dir: Path = Path("external/mast3r-slam")
+    """Path to the MASt3R-SLAM submodule root."""
+
+    checkpoint_path: Path = Path(
+        "external/mast3r-slam/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth"
+    )
+    """Path to the MASt3R backbone weights."""
+
+    retrieval_checkpoint_path: Path = Path(
+        "external/mast3r-slam/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth"
+    )
+    """Path to the retrieval weights used for loop closure."""
+
+    yaml_config_path: Path = Path("external/mast3r-slam/config/base.yaml")
+    """Path to the upstream YAML hyperparameter config."""
+
+    c_conf_threshold: float = Field(default=1.5, ge=0.0)
+    """Confidence threshold applied when exporting the dense point cloud."""
+
+    device: str = "cuda:0"
+    """Torch device used for model inference and CUDA kernels."""
+
+    img_size: int = Field(default=512, gt=0)
+    """Image long-edge size for the MASt3R encoder."""
+
+    use_calib: bool | None = None
+    """Override the upstream ``use_calib`` flag; ``None`` keeps the YAML value."""
 
     @property
     def supports_offline(self) -> bool:
         """Whether the backend supports offline execution."""
-        return False
+        return True
 
     @property
     def supports_streaming(self) -> bool:
         """Whether the backend supports streaming execution."""
-        return False
+        return True
 
     @property
     def supports_dense_points(self) -> bool:
         """Whether the backend can expose point-cloud outputs."""
-        return False
+        return True
 
     @property
     def supports_live_preview(self) -> bool:
         """Whether the backend can emit live preview payloads."""
-        return False
+        return True
 
     @property
     def supports_native_visualization(self) -> bool:
@@ -148,26 +181,33 @@ class Mast3rSlamBackendConfig(SlamBackendConfig, FactoryConfig["Mast3rSlamBacken
     @property
     def supports_trajectory_benchmark(self) -> bool:
         """Whether the backend supports repository trajectory evaluation."""
-        return False
+        return True
+
+    @property
+    def default_resources(self) -> dict[str, float]:
+        """Return backend-owned default resource hints."""
+        return {"CPU": 2.0, "GPU": 1.0}
 
     @property
     def notes(self) -> list[str]:
         """Return backend-specific planning notes."""
-        return ["MASt3R remains a placeholder backend in this repository."]
+        return [
+            "GPU acceleration and the editable upstream MASt3R-SLAM checkout are required for real runs.",
+            "MASt3R exports a dense reconstruction cloud; sparse_points_ply remains empty unless upstream adds one.",
+        ]
 
     @property
     def target_type(self) -> type[Mast3rSlamBackend]:
-        """Return the placeholder backend type."""
+        """Return the backend type instantiated by ``setup_target``."""
         from prml_vslam.methods.mast3r import Mast3rSlamBackend
 
         return Mast3rSlamBackend
 
-    def setup_target(self, **kwargs: Any) -> Mast3rSlamBackend:
-        """Instantiate the placeholder backend in the execution process."""
-        kwargs.pop("path_config", None)
+    def setup_target(self, *, path_config: PathConfig | None = None, **_kwargs: Any) -> Mast3rSlamBackend:
+        """Instantiate the MASt3R backend in the execution process."""
         from prml_vslam.methods.mast3r import Mast3rSlamBackend
 
-        return Mast3rSlamBackend(self)
+        return Mast3rSlamBackend(self, path_config=path_config)
 
 
 class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"]):

@@ -143,7 +143,7 @@ def _render_source_selector(page_state: PipelinePageState) -> PipelineSourceId:
 def _pipeline_method_help(method: MethodId) -> str:
     """Explain the current execution semantics for the selected method."""
     if method is MethodId.MAST3R:
-        return "MASt3R-SLAM is retained as a method id, but this repository has no executable backend yet."
+        return "MASt3R-SLAM backend for offline and streaming runs with external checkout, checkpoints, and CUDA."
     return "Real ViSTA-SLAM backend for offline and streaming runs."
 
 
@@ -371,11 +371,8 @@ def _render_slam_settings(page_state: PipelinePageState) -> tuple[MethodId, int 
         method=method,
         max_frames=slam_max_frames,
     )
-    match method:
-        case MethodId.VISTA:
-            backend_spec = _render_vista_backend_settings(backend_spec, max_frames=slam_max_frames)
-        case MethodId.MAST3R:
-            st.warning("MASt3R-SLAM is not executable in the current pipeline runtime.")
+    if method is MethodId.VISTA:
+        backend_spec = _render_vista_backend_settings(backend_spec, max_frames=slam_max_frames)
     return method, slam_max_frames, backend_spec, slam_max_frames_error
 
 

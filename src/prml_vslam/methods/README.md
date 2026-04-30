@@ -1,8 +1,8 @@
 # Methods
 
 This package owns concrete SLAM wrapper execution: backend config variants,
-method protocols, ViSTA adapter bootstrap, backend-native live updates, and
-normalized `SlamArtifacts` production.
+method protocols, ViSTA and MASt3R adapter bootstrap, backend-native live
+updates, and normalized `SlamArtifacts` production.
 
 Persisted SLAM stage policy lives under `methods/stage/`; reusable method
 wrappers and native artifact interpretation remain in the method package.
@@ -28,10 +28,10 @@ wrappers and native artifact interpretation remain in the method package.
 
 - Offline SLAM backends consume `Iterable[Observation]`, not source manifests
   or backend-private file layouts.
-- Streaming SLAM sessions consume shared `Observation` stream items after
-  `SlamStageRuntime` has started the session.
+- Streaming SLAM backends consume shared `Observation` stream items after
+  `SlamStageRuntime` has started backend-owned streaming state.
 - [`protocols.py`](./protocols.py) owns `OfflineSlamBackend`,
-  `StreamingSlamBackend`, and `StreamingSlamSession`.
+  `StreamingSlamBackend`, and the combined `SlamBackend` protocol.
 - [`contracts.py`](./contracts.py) owns `SlamUpdate` and backend notice/event
   payloads emitted by method wrappers.
 - SLAM completion returns `SlamStageOutput` inside a pipeline `StageResult`;
@@ -86,8 +86,8 @@ repo-owned artifacts.
 - [`vista/`](./vista/README.md): canonical ViSTA-SLAM wrapper, runtime
   bootstrap, frame preprocessing, live session stepping, and native artifact
   import.
-- [`mast3r.py`](./mast3r.py): placeholder MASt3R backend that remains fail-fast
-  until the repository owns a real integration.
+- [`mast3r/`](./mast3r/): canonical MASt3R-SLAM wrapper for normalized
+  `Observation` inputs and dense reconstruction artifacts.
 
 Methods must not own stage order, persisted run config beyond backend variant
 fields, resource placement, pipeline events, app state, viewer orchestration, or

@@ -38,7 +38,7 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
@@ -362,6 +362,22 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
 
     assert error is not None
     assert "no runtime is registered yet" in error
+
+
+def test_request_support_error_does_not_hard_block_mast3r(tmp_path: Path) -> None:
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
+    run_config = build_run_config(
+        experiment_name="mast3r-record3d",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source_backend=Record3DSourceConfig(),
+        method=MethodId.MAST3R,
+    )
+    plan = run_config.compile_plan(path_config)
+
+    error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
+
+    assert error is None
 
 
 def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path) -> None:

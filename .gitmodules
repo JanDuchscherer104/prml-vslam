@@ -1,3 +1,6 @@
 [submodule "external/vista-slam"]
 	path = external/vista-slam
 	url = https://github.com/zhangganlin/vista-slam.git
+[submodule "external/mast3r-slam"]
+	path = external/mast3r-slam
+	url = https://github.com/rmurai0610/MASt3R-SLAM.git

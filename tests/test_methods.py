@@ -12,9 +12,15 @@ import pytest
 from pydantic import ValidationError
 
 from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, Observation, ObservationProvenance
+from prml_vslam.interfaces.artifacts import artifact_ref
 from prml_vslam.methods import VistaSlamBackend
+from prml_vslam.methods.stage.backend_config import (
+    Mast3rSlamBackendConfig,
+    SlamBackendConfig,
+    SlamOutputPolicy,
+    VistaSlamBackendConfig,
+)
 from prml_vslam.methods.stage.backend_config import MethodId as DomainMethodId
-from prml_vslam.methods.stage.backend_config import SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
 from prml_vslam.sources.contracts import (
     ReferenceSource,
     SequenceManifest,
@@ -28,10 +34,24 @@ from prml_vslam.utils.geometry import (
 from prml_vslam.utils.serialization import stable_hash
 
 
-def test_mast3r_placeholder_module_imports_after_refactor() -> None:
+def test_mast3r_backend_module_imports_after_refactor() -> None:
     module = importlib.import_module("prml_vslam.methods.mast3r")
 
     assert module.Mast3rSlamBackend.method_id is DomainMethodId.MAST3R
+    assert module.__all__ == ["Mast3rSlamBackend"]
+
+
+def test_mast3r_backend_config_supports_current_runtime_contracts() -> None:
+    config = Mast3rSlamBackendConfig()
+
+    assert config.supports_offline is True
+    assert config.supports_streaming is True
+    assert config.supports_dense_points is True
+    assert config.supports_live_preview is True
+    assert config.supports_trajectory_benchmark is True
+    assert config.supports_native_visualization is False
+    assert config.default_resources == {"CPU": 2.0, "GPU": 1.0}
+    assert config.setup_target().method_id is DomainMethodId.MAST3R
 
 
 def _install_fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -357,6 +377,407 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
     assert update.pointmap.shape == (224, 224, 3)
     assert np.allclose(update.pointmap[:2, :2, 2], np.array([[1.0, 0.0], [2.0, 3.0]], dtype=np.float32))
     assert update.num_dense_points == 3
+
+
+def test_mast3r_session_starts_backend_after_intrinsics_are_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.mast3r.adapter import _Mast3rSlamSession
+
+    class FakeTensor:
+        def __init__(self, value: np.ndarray) -> None:
+            self._value = np.asarray(value)
+
+        def to(self, *_args, **_kwargs) -> FakeTensor:
+            return self
+
+        def detach(self) -> FakeTensor:
+            return self
+
+        def cpu(self) -> FakeTensor:
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return self._value
+
+    class FakeSharedKeyframes:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.frames = []
+            self.intrinsics: FakeTensor | None = None
+
+        def append(self, frame) -> None:
+            self.frames.append(frame)
+
+        def set_intrinsics(self, intrinsics: FakeTensor) -> None:
+            self.intrinsics = intrinsics
+
+        def __len__(self) -> int:
+            return len(self.frames)
+
+    class FakeSharedStates:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.mode = FakeMode.INIT
+            self.frame = None
+
+        def get_mode(self) -> str:
+            return self.mode
+
+        def queue_global_optimization(self, _index: int) -> None:
+            return
+
+        def set_mode(self, mode: str) -> None:
+            self.mode = mode
+
+        def set_frame(self, frame) -> None:
+            self.frame = frame
+
+    class FakeFrameTracker:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return
+
+    class FakeFrame:
+        def __init__(self, T_WC: str) -> None:
+            self.T_WC = T_WC
+
+        def update_pointmap(self, _X: FakeTensor, _C: FakeTensor) -> None:
+            return
+
+    class FakeMode:
+        INIT = "init"
+        TRACKING = "tracking"
+        RELOC = "reloc"
+
+    class FakeIntrinsics:
+        @staticmethod
+        def from_calib(*_args, **_kwargs) -> SimpleNamespace:
+            return SimpleNamespace(K_frame=np.eye(3, dtype=np.float32))
+
+    session = _Mast3rSlamSession.__new__(_Mast3rSlamSession)
+    session._cfg = SimpleNamespace(c_conf_threshold=1.5)
+    session._output_policy = SlamOutputPolicy()
+    session._artifact_root = Path("/tmp/mast3r-test")
+    session._console = SimpleNamespace(info=lambda *_args, **_kwargs: None)
+    session._device = "cpu"
+    session._img_size = 512
+    session._model = object()
+    session._keyframes = None
+    session._states = None
+    session._tracker = None
+    session._manager = None
+    session._K = None
+    session._torch = SimpleNamespace(float32="float32", from_numpy=lambda value: FakeTensor(np.asarray(value)))
+    session._mast3r_cfg = {"use_calib": True}
+    session._h = 0
+    session._w = 0
+    session._source_frame_count = 0
+    session._accepted_keyframe_count = 0
+    session._num_dense_points = 0
+    session._timestamps_s = []
+    session._pending_updates = []
+    session._backend_error = None
+    session._backend_thread = None
+    session._resize_img = lambda _img, _size: {"img": np.zeros((1, 3, 4, 4), dtype=np.float32)}
+    session._SharedKeyframes = FakeSharedKeyframes
+    session._SharedStates = FakeSharedStates
+    session._FrameTracker = FakeFrameTracker
+    session._Intrinsics = FakeIntrinsics
+    session._Mode = FakeMode
+    session._create_frame = lambda _idx, _img, T_WC, **_kwargs: FakeFrame(T_WC)
+    session._mast3r_inference_mono = lambda _model, _frame: (
+        FakeTensor(np.zeros((4, 3), dtype=np.float32)),
+        FakeTensor(np.ones((4,), dtype=np.float32)),
+    )
+    session._lietorch = SimpleNamespace(Sim3=SimpleNamespace(Identity=lambda *_args, **_kwargs: "identity"))
+    session._emit_update = lambda **_kwargs: None
+    session._raise_if_backend_failed = lambda: None
+
+    observed_k_ready: list[bool] = []
+
+    def _start_backend_thread() -> None:
+        observed_k_ready.append(session._K is not None)
+        session._backend_thread = SimpleNamespace(is_alive=lambda: False)
+
+    session._start_backend_thread = _start_backend_thread
+
+    session.step(
+        Observation(
+            seq=0,
+            timestamp_ns=123,
+            provenance=ObservationProvenance(source_id="test"),
+            rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+            intrinsics=CameraIntrinsics(
+                fx=100.0,
+                fy=100.0,
+                cx=2.0,
+                cy=2.0,
+                width_px=4,
+                height_px=4,
+            ),
+        )
+    )
+
+    assert observed_k_ready == [True]
+    assert session._K is not None
+    assert session._keyframes is not None
+    assert session._keyframes.intrinsics is not None
+
+
+def test_mast3r_session_extracts_camera_local_pointmap() -> None:
+    from prml_vslam.methods.mast3r.adapter import _Mast3rSlamSession
+
+    class FakeTensor:
+        def __init__(self, value: np.ndarray) -> None:
+            self._value = np.asarray(value)
+
+        def detach(self) -> FakeTensor:
+            return self
+
+        def cpu(self) -> FakeTensor:
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return self._value
+
+        def flatten(self) -> FakeTensor:
+            return FakeTensor(self._value.flatten())
+
+        def tolist(self) -> list[int]:
+            return self._value.tolist()
+
+    class FakeTransform:
+        def act(self, value: FakeTensor) -> FakeTensor:
+            return FakeTensor(value.numpy() + np.array([10.0, 20.0, 30.0], dtype=np.float32))
+
+    session = _Mast3rSlamSession.__new__(_Mast3rSlamSession)
+    session._cfg = SimpleNamespace(c_conf_threshold=0.5)
+
+    x_canon = np.array(
+        [
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 2.0],
+            [0.0, 1.0, 3.0],
+            [1.0, 1.0, 4.0],
+        ],
+        dtype=np.float32,
+    )
+    fake_frame = SimpleNamespace(
+        X_canon=FakeTensor(x_canon),
+        get_average_conf=lambda: FakeTensor(np.array([1.0, 0.25, 0.75, 1.0], dtype=np.float32)),
+        img_shape=FakeTensor(np.array([2, 2], dtype=np.int64)),
+        uimg=FakeTensor(np.zeros((2, 2, 3), dtype=np.float32)),
+        T_WC=FakeTransform(),
+    )
+
+    pointmap, _preview_rgb, valid = session._extract_keyframe_visuals(fake_frame)
+
+    assert valid == 3
+    assert pointmap is not None
+    assert pointmap.shape == (2, 2, 3)
+    np.testing.assert_allclose(pointmap.reshape(-1, 3), x_canon)
+
+
+def test_mast3r_preview_normalization_accepts_batched_chw_float() -> None:
+    from prml_vslam.methods.mast3r.adapter import _normalize_preview_rgb
+
+    class FakeTensor:
+        def __init__(self, value: np.ndarray) -> None:
+            self._value = np.asarray(value)
+
+        def detach(self) -> FakeTensor:
+            return self
+
+        def cpu(self) -> FakeTensor:
+            return self
+
+        def numpy(self) -> np.ndarray:
+            return self._value
+
+    payload = FakeTensor(
+        np.array(
+            [
+                [
+                    [[0.0, 0.5], [1.0, 1.0]],
+                    [[0.25, 0.5], [0.75, 1.0]],
+                    [[1.0, 0.0], [0.5, 0.25]],
+                ]
+            ],
+            dtype=np.float32,
+        )
+    )
+
+    preview = _normalize_preview_rgb(payload)
+
+    assert preview.shape == (2, 2, 3)
+    assert preview.dtype == np.uint8
+    assert preview[0, 1].tolist() == [127, 127, 0]
+    assert preview[1, 0].tolist() == [255, 191, 127]
+
+
+def test_mast3r_preview_normalization_rejects_non_rgb_payload() -> None:
+    from prml_vslam.methods.mast3r.adapter import _normalize_preview_rgb
+
+    with pytest.raises(ValueError, match="3 channels"):
+        _normalize_preview_rgb(np.zeros((2, 2, 4), dtype=np.uint8))
+
+
+def test_mast3r_artifact_builder_preserves_ply_colors_and_dense_only(tmp_path: Path) -> None:
+    from prml_vslam.methods.mast3r.adapter import _build_artifacts
+
+    native_output_dir = tmp_path / "native"
+    artifact_root = tmp_path / "run"
+    native_output_dir.mkdir(parents=True)
+    traj_native = native_output_dir / "mast3r.txt"
+    traj_native.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    ply_native = write_point_cloud_ply(
+        native_output_dir / "mast3r.ply",
+        np.asarray([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]], dtype=np.float64),
+        colors_rgb=np.asarray([[255, 0, 0], [0, 255, 128]], dtype=np.uint8),
+    )
+
+    artifacts = _build_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=artifact_root,
+        output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=True),
+        traj_native=traj_native,
+        ply_native=ply_native,
+    )
+
+    assert artifacts.sparse_points_ply is None
+    assert artifacts.dense_points_ply is not None
+    _, colors = load_point_cloud_ply_with_colors(artifacts.dense_points_ply.path)
+    assert colors is not None
+    np.testing.assert_allclose(
+        colors,
+        np.asarray([[1.0, 0.0, 0.0], [0.0, 1.0, 128.0 / 255.0]], dtype=np.float64),
+        atol=1.0 / 255.0,
+    )
+
+
+def test_mast3r_backend_streaming_lifecycle_uses_backend_owned_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import prml_vslam.methods.mast3r.adapter as mast3r_adapter
+    from prml_vslam.methods.contracts import SlamArtifacts, SlamUpdate
+
+    class FakeSession:
+        instances: list[FakeSession] = []
+
+        def __init__(self, *, artifact_root: Path, **_kwargs) -> None:
+            self.artifact_root = artifact_root
+            self.frames: list[Observation] = []
+            self.closed = False
+            FakeSession.instances.append(self)
+
+        def step(self, frame: Observation) -> None:
+            self.frames.append(frame)
+
+        def try_get_updates(self) -> list[SlamUpdate]:
+            return [SlamUpdate(seq=0, timestamp_ns=1, is_keyframe=True)]
+
+        def close(self) -> SlamArtifacts:
+            self.closed = True
+            trajectory_path = self.artifact_root / "trajectory.tum"
+            trajectory_path.parent.mkdir(parents=True)
+            trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+            return SlamArtifacts(trajectory_tum=artifact_ref(trajectory_path, kind="tum"))
+
+    monkeypatch.setattr(mast3r_adapter, "_Mast3rSlamSession", FakeSession)
+    backend = Mast3rSlamBackendConfig().setup_target()
+    observation = Observation(
+        seq=0,
+        timestamp_ns=1,
+        provenance=ObservationProvenance(source_id="test"),
+        rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+
+    backend.start_streaming(
+        sequence_manifest=SequenceManifest(sequence_id="mast3r-stream"),
+        benchmark_inputs=None,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
+        backend_config=SlamBackendConfig(),
+        output_policy=SlamOutputPolicy(),
+        artifact_root=tmp_path / "mast3r-stream",
+    )
+    backend.step_streaming(observation)
+    updates = backend.drain_streaming_updates()
+    artifacts = backend.finish_streaming()
+
+    assert FakeSession.instances[0].frames == [observation]
+    assert updates[0].is_keyframe is True
+    assert FakeSession.instances[0].closed is True
+    assert artifacts.trajectory_tum.path.exists()
+
+
+def test_mast3r_backend_run_observations_aborts_session_on_step_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import prml_vslam.methods.mast3r.adapter as mast3r_adapter
+
+    class FailingSession:
+        instances: list[FailingSession] = []
+
+        def __init__(self, **_kwargs) -> None:
+            self.aborted = False
+            FailingSession.instances.append(self)
+
+        def step(self, _frame: Observation) -> None:
+            raise ValueError("step failed")
+
+        def close(self):
+            raise AssertionError("close should not run after step failure")
+
+        def abort(self) -> None:
+            self.aborted = True
+
+    monkeypatch.setattr(mast3r_adapter, "_Mast3rSlamSession", FailingSession)
+    backend = Mast3rSlamBackendConfig().setup_target()
+    observation = Observation(
+        seq=0,
+        timestamp_ns=1,
+        provenance=ObservationProvenance(source_id="test"),
+        rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+
+    with pytest.raises(ValueError, match="step failed"):
+        backend.run_observations(
+            [observation],
+            benchmark_inputs=None,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            backend_config=SlamBackendConfig(),
+            output_policy=SlamOutputPolicy(),
+            artifact_root=tmp_path / "mast3r-offline",
+        )
+
+    assert FailingSession.instances[0].aborted is True
+
+
+def test_mast3r_session_surfaces_deferred_backend_errors() -> None:
+    from prml_vslam.methods.mast3r.adapter import _Mast3rSlamSession
+
+    session = _Mast3rSlamSession.__new__(_Mast3rSlamSession)
+    session._backend_error = RuntimeError("backend failed")
+
+    with pytest.raises(RuntimeError, match="backend failed"):
+        session.try_get_updates()
+
+
+def test_mast3r_session_rejects_missing_rgb_observations() -> None:
+    from prml_vslam.methods.mast3r.adapter import _Mast3rSlamSession
+
+    session = _Mast3rSlamSession.__new__(_Mast3rSlamSession)
+    session._backend_error = None
+
+    with pytest.raises(RuntimeError, match="requires RGB observations"):
+        session.step(
+            Observation(
+                seq=0,
+                timestamp_ns=1,
+                provenance=ObservationProvenance(source_id="test"),
+                rgb=None,
+            )
+        )
 
 
 def test_vista_session_uses_injected_frame_preprocessor_output(

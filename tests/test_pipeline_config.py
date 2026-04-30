@@ -357,18 +357,23 @@ enabled = true
     assert config.stages.reconstruction.cleanup_artifact_keys == ["reference_cloud", "extra:*"]
 
 
-def test_run_config_fail_on_unavailable_stages_happens_during_planning(tmp_path: Path) -> None:
+def test_run_config_plans_mast3r_backend_in_current_runtime(tmp_path: Path) -> None:
     config = build_run_config(
-        experiment_name="unavailable",
+        experiment_name="mast3r-plan",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
         method=MethodId.MAST3R,
     )
 
-    with pytest.raises(ValueError, match="MASt3R-SLAM does not support offline execution"):
-        config.compile_plan(
-            PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"), fail_on_unavailable=True
-        )
+    plan = config.compile_plan(
+        PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"),
+        fail_on_unavailable=True,
+    )
+
+    assert config.stages.slam.backend.method_id is MethodId.MAST3R
+    assert config.stages.slam.backend.supports_offline is True
+    assert config.stages.slam.backend.supports_streaming is True
+    assert [stage.key for stage in plan.stages] == [StageKey.SOURCE, StageKey.SLAM, StageKey.SUMMARY]
 
 
 def test_run_config_requires_source_backend_during_planning(tmp_path: Path) -> None:
