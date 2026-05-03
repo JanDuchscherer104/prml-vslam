@@ -365,6 +365,7 @@ def build_run_config(
     emit_sparse_points: bool = True,
     reference_enabled: bool = False,
     trajectory_eval_enabled: bool = False,
+    trajectory_alignment_enabled: bool = False,
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
     ground_alignment_enabled: bool = False,
@@ -398,7 +399,7 @@ def build_run_config(
                 ),
             ),
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),
-            align_trajectory=TrajectoryAlignmentStageConfig(enabled=True),
+            align_trajectory=TrajectoryAlignmentStageConfig(enabled=trajectory_alignment_enabled),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=trajectory_eval_enabled,
                 evaluation=trajectory_policy,
