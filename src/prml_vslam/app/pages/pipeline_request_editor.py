@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig, MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, build_backend_spec
 from prml_vslam.sources.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
@@ -143,7 +143,7 @@ def _render_source_selector(page_state: PipelinePageState) -> PipelineSourceId:
 def _pipeline_method_help(method: MethodId) -> str:
     """Explain the current execution semantics for the selected method."""
     if method is MethodId.MAST3R:
-        return "MASt3R-SLAM is retained as a method id, but this repository has no executable backend yet."
+        return "Real MASt3R-SLAM backend for offline and streaming runs (requires CUDA + upstream checkpoints)."
     return "Real ViSTA-SLAM backend for offline and streaming runs."
 
 
@@ -375,7 +375,7 @@ def _render_slam_settings(page_state: PipelinePageState) -> tuple[MethodId, int 
         case MethodId.VISTA:
             backend_spec = _render_vista_backend_settings(backend_spec, max_frames=slam_max_frames)
         case MethodId.MAST3R:
-            st.warning("MASt3R-SLAM is not executable in the current pipeline runtime.")
+            backend_spec = _render_mast3r_backend_settings(backend_spec, max_frames=slam_max_frames)
     return method, slam_max_frames, backend_spec, slam_max_frames_error
 
 
@@ -448,6 +448,89 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
         pgo_every=pgo_every,
         random_seed=random_seed,
         device=device,
+    )
+
+
+def _render_mast3r_backend_settings(
+    backend_spec: BackendSpec, *, max_frames: int | None
+) -> Mast3rSlamBackendConfig:
+    backend = (
+        backend_spec
+        if isinstance(backend_spec, Mast3rSlamBackendConfig)
+        else build_backend_spec(method=MethodId.MAST3R, max_frames=max_frames)
+    )
+    if not isinstance(backend, Mast3rSlamBackendConfig):
+        raise TypeError("Expected a MASt3R backend config.")
+
+    col_a, col_b = st.columns(2, gap="small")
+    with col_a:
+        device = st.text_input("Torch Device", value=backend.device).strip() or backend.device
+        img_size = int(
+            st.number_input(
+                "Encoder Image Size",
+                min_value=224,
+                step=32,
+                value=int(backend.img_size),
+                help="Long-edge size for the MASt3R encoder. 512 is the upstream default; 224 is the small-model setting.",
+            )
+        )
+        c_conf_threshold = float(
+            st.number_input(
+                "Confidence Threshold",
+                min_value=0.0,
+                value=float(backend.c_conf_threshold),
+                help="Confidence threshold applied when exporting the dense point cloud.",
+            )
+        )
+    with col_b:
+        # Tri-state: respect YAML / force True / force False
+        use_calib_options: list[bool | None] = [None, True, False]
+        use_calib_labels = {None: "Use YAML default", True: "Force enabled", False: "Force disabled"}
+        use_calib = st.selectbox(
+            "Use Calibration",
+            options=use_calib_options,
+            index=use_calib_options.index(backend.use_calib),
+            format_func=lambda value: use_calib_labels[value],
+            help="Override the YAML 'use_calib' flag. Forcing enabled requires Observation.intrinsics.",
+        )
+        backend_poll_interval_s = float(
+            st.number_input(
+                "Backend Poll Interval (s)",
+                min_value=0.0,
+                value=float(backend.backend_poll_interval_s),
+                step=0.005,
+                format="%.4f",
+            )
+        )
+        backend_join_timeout_s = float(
+            st.number_input(
+                "Backend Join Timeout (s)",
+                min_value=0.0,
+                value=float(backend.backend_join_timeout_s),
+            )
+        )
+
+    with st.expander("MASt3R Paths", expanded=False):
+        mast3r_slam_dir = _path_input("MASt3R-SLAM Directory", backend.mast3r_slam_dir)
+        checkpoint_path = _path_input("Backbone Checkpoint", backend.checkpoint_path)
+        retrieval_checkpoint_path = _path_input(
+            "Retrieval Checkpoint", backend.retrieval_checkpoint_path
+        )
+        yaml_config_path = _path_input("YAML Hyperparameters", backend.yaml_config_path)
+
+    return Mast3rSlamBackendConfig(
+        method_id=MethodId.MAST3R,
+        max_frames=max_frames,
+        mast3r_slam_dir=mast3r_slam_dir,
+        checkpoint_path=checkpoint_path,
+        retrieval_checkpoint_path=retrieval_checkpoint_path,
+        yaml_config_path=yaml_config_path,
+        c_conf_threshold=c_conf_threshold,
+        device=device,
+        img_size=img_size,
+        use_calib=use_calib,
+        backend_poll_interval_s=backend_poll_interval_s,
+        backend_join_timeout_s=backend_join_timeout_s,
     )
 
 
