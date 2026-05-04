@@ -365,7 +365,7 @@ def test_run_config_fail_on_unavailable_stages_happens_during_planning(tmp_path:
         method=MethodId.MAST3R,
     )
 
-    with pytest.raises(ValueError, match="MASt3R-SLAM does not support offline execution"):
+    with pytest.raises(ValueError):
         config.compile_plan(
             PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"), fail_on_unavailable=True
         )

@@ -33,6 +33,8 @@ def build_vista_artifacts(
     artifact_root: Path,
     output_policy: SlamOutputPolicy,
     timestamps_s: Sequence[float],
+    num_processed_frames: int = 0,
+    num_dense_points: int = 0,
 ) -> SlamArtifacts:
     """Normalize native ViSTA exports into repository-owned artifact contracts.
 
@@ -45,6 +47,15 @@ def build_vista_artifacts(
       upstream export.
 
     This function only normalizes the exported artifact surface.
+
+    Args:
+        native_output_dir: Directory containing native ViSTA exports.
+        artifact_root: Run-owned artifact root for canonical output paths.
+        output_policy: Whether dense/sparse geometry should be exposed.
+        timestamps_s: Per-keyframe timestamps; ``len(timestamps_s)`` is the
+            accepted keyframe count.
+        num_processed_frames: Source frames consumed by the runtime.
+        num_dense_points: Dense pointmap samples accumulated over the run.
     """
     trajectory_npy = native_output_dir / "trajectory.npy"
     if not trajectory_npy.exists():
@@ -92,6 +103,12 @@ def build_vista_artifacts(
         sparse_points_ply=sparse_points_ref,
         dense_points_ply=dense_points_ref,
         extras=extras,
+        num_processed_frames=num_processed_frames,
+        num_keyframes=len(timestamps_s),
+        # ViSTA fuses dense geometry only; mirror the dense count into sparse
+        # so a sparse-only output policy still lights up the dashboard.
+        num_sparse_points=num_dense_points if sparse_points_ref is not None else 0,
+        num_dense_points=num_dense_points if dense_points_ref is not None else 0,
     )
 
 

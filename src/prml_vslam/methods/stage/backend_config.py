@@ -17,7 +17,7 @@ from pydantic import ConfigDict, Field
 from prml_vslam.utils import BaseConfig, FactoryConfig, PathConfig
 
 if TYPE_CHECKING:
-    from prml_vslam.methods.mast3r import Mast3rSlamBackend
+    from prml_vslam.methods.mast3r.adapter import Mast3rSlamBackend
     from prml_vslam.methods.vista.adapter import VistaSlamBackend
 
 
@@ -116,58 +116,111 @@ class SlamBackendConfig(BaseConfig):
 
 
 class Mast3rSlamBackendConfig(SlamBackendConfig, FactoryConfig["Mast3rSlamBackend"]):
-    """Configure the placeholder MASt3R wrapper used for planning."""
+    """Configure the canonical MASt3R-SLAM backend.
+
+    Hyperparameters for tracking / retrieval / local-opt / reloc are loaded
+    from the upstream YAML pointed to by :attr:`yaml_config_path`. To deviate
+    from upstream defaults edit ``config/base.yaml`` in the submodule or point
+    :attr:`yaml_config_path` at a repo-local override.
+    """
 
     method_id: Literal[MethodId.MAST3R] = MethodId.MAST3R
+
+    mast3r_slam_dir: Path = Path("external/mast3r-slam")
+    """Path to the MASt3R-SLAM submodule root."""
+
+    checkpoint_path: Path = Path(
+        "external/mast3r-slam/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth"
+    )
+    """Path to the MASt3R backbone weights."""
+
+    retrieval_checkpoint_path: Path = Path(
+        "external/mast3r-slam/checkpoints/"
+        "MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth"
+    )
+    """Path to the retrieval weights used for loop closure."""
+
+    yaml_config_path: Path = Path("external/mast3r-slam/config/base.yaml")
+    """Upstream YAML hyperparameter config (use ``calib.yaml`` for use_calib=True presets)."""
+
+    c_conf_threshold: float = 1.5
+    """Confidence threshold applied when exporting the dense point cloud."""
+
+    device: str = "cuda:0"
+    """Torch device used for model inference and CUDA kernels."""
+
+    img_size: int = 512
+    """Image long-edge size for the MASt3R encoder (512 upstream default; 224 also supported)."""
+
+    use_calib: bool | None = None
+    """Override the YAML 'use_calib' flag. None = respect YAML; True/False = force it."""
+
+    backend_poll_interval_s: float = 0.01
+    """Sleep between iterations of the backend optimisation thread when idle."""
+
+    backend_join_timeout_s: float = 30.0
+    """Max seconds to wait for the backend thread to exit on close()."""
+
+    keyframe_buffer_size: int = 512
+    """Maximum number of keyframes the upstream SharedKeyframes can hold.
+
+    Upstream default is 512, which preallocates ~3 GB of GPU tensors at
+    img_size=512. Reduce this when GPU memory is tight or when you know the
+    sequence will produce few keyframes.
+    """
 
     @property
     def supports_offline(self) -> bool:
         """Whether the backend supports offline execution."""
-        return False
+        return True
 
     @property
     def supports_streaming(self) -> bool:
         """Whether the backend supports streaming execution."""
-        return False
+        return True
 
     @property
     def supports_dense_points(self) -> bool:
         """Whether the backend can expose point-cloud outputs."""
-        return False
+        return True
 
     @property
     def supports_live_preview(self) -> bool:
         """Whether the backend can emit live preview payloads."""
-        return False
+        return True
 
     @property
     def supports_native_visualization(self) -> bool:
         """Whether the backend may emit native visualization artifacts."""
-        return False
+        return True
 
     @property
     def supports_trajectory_benchmark(self) -> bool:
         """Whether the backend supports repository trajectory evaluation."""
-        return False
+        return True
+
+    @property
+    def default_resources(self) -> dict[str, float]:
+        """Return backend-owned default resource hints."""
+        return {"CPU": 2.0, "GPU": 1.0}
 
     @property
     def notes(self) -> list[str]:
         """Return backend-specific planning notes."""
-        return ["MASt3R remains a placeholder backend in this repository."]
+        return ["GPU acceleration is required for real MASt3R-SLAM runs."]
 
     @property
     def target_type(self) -> type[Mast3rSlamBackend]:
-        """Return the placeholder backend type."""
-        from prml_vslam.methods.mast3r import Mast3rSlamBackend
+        """Return the backend type instantiated by ``setup_target``."""
+        from prml_vslam.methods.mast3r.adapter import Mast3rSlamBackend
 
         return Mast3rSlamBackend
 
-    def setup_target(self, **kwargs: Any) -> Mast3rSlamBackend:
-        """Instantiate the placeholder backend in the execution process."""
-        kwargs.pop("path_config", None)
-        from prml_vslam.methods.mast3r import Mast3rSlamBackend
+    def setup_target(self, *, path_config: PathConfig | None = None, **_kwargs: Any) -> Mast3rSlamBackend:
+        """Instantiate the MASt3R backend in the execution process."""
+        from prml_vslam.methods.mast3r.adapter import Mast3rSlamBackend
 
-        return Mast3rSlamBackend(self)
+        return Mast3rSlamBackend(self, path_config=path_config)
 
 
 class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"]):
