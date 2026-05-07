@@ -83,7 +83,9 @@ class StageBundle(BaseConfig):
     align_ground: GroundAlignmentStageConfig = Field(default_factory=lambda: GroundAlignmentStageConfig(enabled=False))
     """Ground-alignment stage section."""
 
-    align_trajectory: TrajectoryAlignmentStageConfig = Field(default_factory=TrajectoryAlignmentStageConfig)
+    align_trajectory: TrajectoryAlignmentStageConfig = Field(
+        default_factory=lambda: TrajectoryAlignmentStageConfig(enabled=False)
+    )
     """Trajectory Sim(3)-alignment stage section."""
 
     evaluate_trajectory: TrajectoryEvaluationStageConfig = Field(
