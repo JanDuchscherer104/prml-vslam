@@ -88,7 +88,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum"))
             for run_root in [trajectory_path.parent.parent]
             for relative_parts in [run_root.relative_to(self.path_config.artifacts_dir).parts]
-            if any(sequence_slug in part for part in relative_parts)
+            if any(part == sequence_slug for part in relative_parts)
             for method in [
                 next(
                     (method for part in reversed(relative_parts) for method in MethodId if part == method.value),

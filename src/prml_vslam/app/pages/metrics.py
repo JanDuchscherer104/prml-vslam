@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.eval.contracts import BenchmarkReference, EvaluationArtifact
+from prml_vslam.eval.contracts import BenchmarkReference, DiscoveredRun, EvaluationArtifact
 from prml_vslam.plotting import build_error_figure, build_trajectory_figure
 from prml_vslam.sources.datasets.contracts import DatasetId
 
@@ -136,7 +136,7 @@ def render(context: AppContext) -> None:
 def _try_load(
     context: AppContext,
     *,
-    run: object,
+    run: DiscoveredRun,
     reference: BenchmarkReference,
 ) -> EvaluationArtifact | None:
     try:
