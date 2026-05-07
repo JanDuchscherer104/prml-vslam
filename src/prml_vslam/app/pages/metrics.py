@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.eval.contracts import EvaluationArtifact, SelectionSnapshot
+from prml_vslam.eval.contracts import BenchmarkReference, EvaluationArtifact
 from prml_vslam.plotting import build_error_figure, build_trajectory_figure
 from prml_vslam.sources.datasets.contracts import DatasetId
 
@@ -69,6 +69,7 @@ def render(context: AppContext) -> None:
         st.caption(
             "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted `evo` result."
         )
+
     resolved = context.evaluation_service.resolve_selection(
         dataset=dataset,
         preferred_sequence_slug=sequence_slug,
@@ -78,101 +79,111 @@ def render(context: AppContext) -> None:
     if selection is None:
         st.error("Could not resolve the selected benchmark slice.")
         return
-    _save_state(
-        context,
-        dataset=dataset,
-        sequence_slug=sequence_slug,
-        run_root=selection.run.artifact_root,
-        result_path=None,
-    )
-    try:
-        evaluation = context.evaluation_service.load_evaluation(selection=selection)
-    except EVALUATION_ERRORS as exc:
-        st.error(str(exc))
-        return
-    _save_state(
-        context,
-        dataset=dataset,
-        sequence_slug=selection.sequence_slug,
-        run_root=selection.run.artifact_root,
-        result_path=None if evaluation is None else evaluation.path,
-    )
+    _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=selection.run.artifact_root)
 
-    can_compute = selection.reference_path is not None and selection.run.estimate_path.exists()
+    references = context.evaluation_service.discover_benchmark_references(selection.run.artifact_root)
+    if not references:
+        st.info(
+            "No benchmark reference trajectories found in the run's `benchmark/` directory. "
+            "Re-run with a dataset that provides reference trajectories."
+        )
+        return
+
+    evaluations: dict[str, EvaluationArtifact | None] = {
+        ref.source_key: _try_load(context, run=selection.run, reference=ref) for ref in references
+    }
+    missing = [ref for ref in references if evaluations[ref.source_key] is None]
+
     with st.container(border=True):
         action_col, status_col = st.columns((0.9, 1.1), gap="large")
-        compute = action_col.button("Compute evo metrics", type="primary", disabled=not can_compute, width="stretch")
-        if selection.reference_path is None:
-            status_col.warning(
-                "Missing `ground_truth.tum` for the selected sequence. The app only evaluates when a TUM reference trajectory already exists."
-            )
-        elif evaluation is not None:
-            status_col.success(f"Loaded persisted result from `{evaluation.path}`.")
-        else:
-            status_col.info("No persisted result matches the current controls yet.")
-    if compute:
-        with st.spinner("Computing evo trajectory metrics..."):
-            try:
-                evaluation = context.evaluation_service.compute_evaluation(selection=selection)
-            except EVALUATION_ERRORS as exc:
-                st.error(str(exc))
-                return
-        _save_state(
-            context,
-            dataset=dataset,
-            sequence_slug=selection.sequence_slug,
-            run_root=selection.run.artifact_root,
-            result_path=evaluation.path,
+        compute = action_col.button(
+            "Compute missing" if missing else "Recompute all",
+            type="primary",
+            width="stretch",
         )
-        st.success(f"Persisted fresh evo metric result to `{evaluation.path}`.")
-    if evaluation is None:
-        _render_provenance(dataset=dataset, selection=selection, evaluation=None)
-        return
+        if missing:
+            status_col.info(f"{len(missing)} of {len(references)} source(s) not yet evaluated.")
+        else:
+            status_col.success(f"All {len(references)} reference source(s) have persisted results.")
 
-    with st.container(border=True):
-        for column, label, value in zip(
-            st.columns(4, gap="small"),
-            ("RMSE", "Mean", "Median", "Max"),
-            (evaluation.stats.rmse, evaluation.stats.mean, evaluation.stats.median, evaluation.stats.max),
-            strict=True,
-        ):
-            column.metric(label, f"{value:.4f}")
-    figures_tab, provenance_tab = st.tabs(["Figures", "Provenance"])
-    with figures_tab:
-        figure_columns = st.columns((1.3, 1.0), gap="large")
-        if evaluation.trajectories:
-            figure_columns[0].plotly_chart(build_trajectory_figure(evaluation.trajectories), width="stretch")
-        if evaluation.error_series is not None:
-            figure_columns[1].plotly_chart(build_error_figure(evaluation.error_series), width="stretch")
-    with provenance_tab:
-        _render_provenance(dataset=dataset, selection=selection, evaluation=evaluation)
+    if compute:
+        targets = missing if missing else references
+        with st.spinner(f"Computing evo metrics for {len(targets)} reference(s)..."):
+            for ref in targets:
+                try:
+                    evaluations[ref.source_key] = context.evaluation_service.compute_evaluation_for_source(
+                        run=selection.run, reference=ref
+                    )
+                except EVALUATION_ERRORS as exc:
+                    st.error(f"{ref.label}: {exc}")
+        st.success("Evaluation complete.")
+
+    loaded = [ref for ref in references if evaluations[ref.source_key] is not None]
+    if loaded:
+        with st.container(border=True):
+            st.subheader("Comparison")
+            _render_comparison_table(references, evaluations)
+
+    for ref in references:
+        evaluation = evaluations[ref.source_key]
+        with st.expander(ref.label, expanded=evaluation is not None):
+            if evaluation is None:
+                st.info(f"No persisted result for **{ref.label}** yet. Use the compute button above.")
+                continue
+            _render_source_detail(evaluation)
 
 
-def _render_provenance(
+def _try_load(
+    context: AppContext,
     *,
-    dataset: DatasetId,
-    selection: SelectionSnapshot,
-    evaluation: EvaluationArtifact | None,
+    run: object,
+    reference: BenchmarkReference,
+) -> EvaluationArtifact | None:
+    try:
+        return context.evaluation_service.load_evaluation_for_source(run=run, reference=reference)
+    except EVALUATION_ERRORS:
+        return None
+
+
+def _render_comparison_table(
+    references: list[BenchmarkReference],
+    evaluations: dict[str, EvaluationArtifact | None],
 ) -> None:
-    lines = [
-        f"- Dataset: `{dataset.label}`",
-        f"- Sequence: `{selection.sequence_slug}`",
-        f"- Run: `{selection.run.label}`",
-        f"- Estimate path: `{selection.run.estimate_path}`",
-        f"- Reference path: `{selection.reference_path}`",
-    ]
-    if evaluation is not None:
-        lines += [
-            f"- Metric: `{evaluation.semantics.metric_id.value}`",
-            f"- Pose relation: `{evaluation.semantics.pose_relation}`",
-            f"- Alignment: `{evaluation.semantics.alignment_mode.value}`",
-            f"- Sync max diff (s): `{evaluation.semantics.sync_max_diff_s:.3f}`",
-            f"- Matched pairs: `{evaluation.matched_pairs}`",
-            f"- Persisted result: `{evaluation.path}`",
-        ]
-    with st.container(border=True):
-        st.subheader("Provenance")
-        st.markdown("\n".join(lines))
+    import pandas as pd
+
+    rows = []
+    for ref in references:
+        ev = evaluations.get(ref.source_key)
+        rows.append(
+            {
+                "Source": ref.label,
+                "RMSE (m)": round(ev.stats.rmse, 4) if ev else None,
+                "Mean (m)": round(ev.stats.mean, 4) if ev else None,
+                "Median (m)": round(ev.stats.median, 4) if ev else None,
+                "Max (m)": round(ev.stats.max, 4) if ev else None,
+                "Matched Pairs": ev.matched_pairs if ev else None,
+            }
+        )
+    st.dataframe(pd.DataFrame(rows).set_index("Source"), use_container_width=True)
+
+
+def _render_source_detail(evaluation: EvaluationArtifact) -> None:
+    cols = st.columns(5, gap="small")
+    labels = ("RMSE", "Mean", "Median", "Max", "Matched Pairs")
+    values: tuple[float | int, ...] = (
+        evaluation.stats.rmse,
+        evaluation.stats.mean,
+        evaluation.stats.median,
+        evaluation.stats.max,
+        evaluation.matched_pairs,
+    )
+    for col, label, value in zip(cols, labels, values, strict=True):
+        col.metric(label, f"{value:.4f}" if isinstance(value, float) else str(value))
+    figure_columns = st.columns((1.3, 1.0), gap="large")
+    if evaluation.trajectories:
+        figure_columns[0].plotly_chart(build_trajectory_figure(evaluation.trajectories), width="stretch")
+    if evaluation.error_series is not None:
+        figure_columns[1].plotly_chart(build_error_figure(evaluation.error_series), width="stretch")
 
 
 def _save_state(
