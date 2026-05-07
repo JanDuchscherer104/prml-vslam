@@ -16,7 +16,7 @@ class TrajectoryAlignmentStageConfig(StageConfig):
     model_config = ConfigDict(extra="ignore")
 
     stage_key: StageKey | None = StageKey.TRAJECTORY_ALIGNMENT
-    enabled: bool = True
+    enabled: bool = False
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
 
     def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
