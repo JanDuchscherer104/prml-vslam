@@ -748,7 +748,6 @@ def eval_trajectory(
 
     from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot
     from prml_vslam.eval.services import TrajectoryEvaluationService
-    from prml_vslam.methods.contracts import MethodId
 
     path_config = get_path_config()
     resolved_root = path_config.resolve_repo_path(artifact_root)
