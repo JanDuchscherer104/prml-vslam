@@ -365,7 +365,7 @@ def build_run_config(
     emit_sparse_points: bool = True,
     reference_enabled: bool = False,
     trajectory_eval_enabled: bool = False,
-    trajectory_alignment_enabled: bool = False,
+    trajectory_alignment_enabled: bool = True,
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
     ground_alignment_enabled: bool = False,
