@@ -149,22 +149,19 @@ def _render_comparison_table(
     references: list[BenchmarkReference],
     evaluations: dict[str, EvaluationArtifact | None],
 ) -> None:
-    import pandas as pd
-
-    rows = []
-    for ref in references:
-        ev = evaluations.get(ref.source_key)
-        rows.append(
-            {
-                "Source": ref.label,
-                "RMSE (m)": round(ev.stats.rmse, 4) if ev else None,
-                "Mean (m)": round(ev.stats.mean, 4) if ev else None,
-                "Median (m)": round(ev.stats.median, 4) if ev else None,
-                "Max (m)": round(ev.stats.max, 4) if ev else None,
-                "Matched Pairs": ev.matched_pairs if ev else None,
-            }
-        )
-    st.dataframe(pd.DataFrame(rows).set_index("Source"), use_container_width=True)
+    rows = [
+        {
+            "Source": ref.label,
+            "RMSE (m)": round(ev.stats.rmse, 4) if ev else None,
+            "Mean (m)": round(ev.stats.mean, 4) if ev else None,
+            "Median (m)": round(ev.stats.median, 4) if ev else None,
+            "Max (m)": round(ev.stats.max, 4) if ev else None,
+            "Matched Pairs": ev.matched_pairs if ev else None,
+        }
+        for ref in references
+        for ev in (evaluations.get(ref.source_key),)
+    ]
+    st.dataframe(rows, use_container_width=True)
 
 
 def _render_source_detail(evaluation: EvaluationArtifact) -> None:

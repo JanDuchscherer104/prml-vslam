@@ -390,7 +390,7 @@ def test_trajectory_alignment_stage_spec_is_well_formed() -> None:
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.failure_fingerprint is not None
 
 
-def test_stage_bundle_align_trajectory_defaults_enabled(tmp_path: Path) -> None:
+def test_stage_bundle_align_trajectory_defaults_disabled(tmp_path: Path) -> None:
     config = build_run_config(
         experiment_name="align-traj-default",
         output_dir=tmp_path,
