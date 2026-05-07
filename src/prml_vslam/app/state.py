@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 import streamlit as st
+from pydantic import ValidationError
 
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.utils import PathConfig
@@ -43,7 +44,8 @@ class SessionStateStore:
             return payload
         try:
             return AppState.model_validate(payload)
-        except Exception:
+        except ValidationError as exc:
+            st.warning(f"Persisted app state was invalid and has been reset: {exc}")
             state = AppState()
             self.save(state)
             return state

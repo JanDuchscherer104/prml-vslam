@@ -362,12 +362,7 @@ def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> No
             output_dir=run_config.output_dir,
         ).artifact_root
     )
-    assert [stage.key for stage in plan.stages] == [
-        StageKey.SOURCE,
-        StageKey.SLAM,
-        StageKey.TRAJECTORY_ALIGNMENT,
-        StageKey.SUMMARY,
-    ]
+    assert [stage.key for stage in plan.stages] == [StageKey.SOURCE, StageKey.SLAM, StageKey.SUMMARY]
 
 
 def test_build_run_config_copies_backend_policy_and_visualization_fields(tmp_path: Path) -> None:

@@ -398,5 +398,5 @@ def test_stage_bundle_align_trajectory_defaults_enabled(tmp_path: Path) -> None:
         method=MethodId.VISTA,
     )
 
-    assert config.stages.align_trajectory.enabled is True
+    assert config.stages.align_trajectory.enabled is False
     assert config.stages.align_trajectory.stage_key is StageKey.TRAJECTORY_ALIGNMENT

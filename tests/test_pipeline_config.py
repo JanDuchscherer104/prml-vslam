@@ -111,6 +111,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
         method=MethodId.VISTA,
         reference_enabled=True,
         trajectory_eval_enabled=True,
+        trajectory_alignment_enabled=True,
         evaluate_cloud=True,
         ground_alignment_enabled=True,
     )

@@ -54,7 +54,6 @@ def test_stage_registry_places_ground_alignment_between_slam_and_trajectory(tmp_
         StageKey.SOURCE,
         StageKey.SLAM,
         StageKey.GRAVITY_ALIGNMENT,
-        StageKey.TRAJECTORY_ALIGNMENT,
         StageKey.TRAJECTORY_EVALUATION,
         StageKey.SUMMARY,
     ]
