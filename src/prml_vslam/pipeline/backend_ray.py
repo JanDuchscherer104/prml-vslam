@@ -191,9 +191,10 @@ class RayPipelineBackend(PipelineBackend):
             except ValueError:
                 return
         try:
-            coordinator.shutdown.remote()
-        except Exception:
-            pass
+            # Give the coordinator time to gracefully flush heavy Rerun artifacts.
+            ray.get(coordinator.shutdown.remote(), timeout=20.0)
+        except Exception as exc:
+            self._console.warning("Coordinator graceful shutdown failed or timed out for run '%s': %s", run_id, exc)
         try:
             ray.kill(coordinator, no_restart=True)
         except Exception:
