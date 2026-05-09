@@ -1745,6 +1745,35 @@ def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch:
     assert shutdowns == ["run-1", "ray"]
 
 
+def test_ray_backend_shutdown_run_waits_for_coordinator_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(namespace="pytest-unit")
+    calls: list[Any] = []
+    get_calls: list[tuple[Any, float | None]] = []
+
+    class FakeShutdown:
+        def remote(self) -> str:
+            calls.append("shutdown")
+            return "shutdown-ref"
+
+    coordinator = SimpleNamespace(shutdown=FakeShutdown())
+    backend._coordinators = {"run-1": coordinator}  # type: ignore[assignment]
+
+    def fake_get(value: Any, *, timeout: float | None = None) -> None:
+        get_calls.append((value, timeout))
+
+    def fake_get_actor(*args: Any, **kwargs: Any) -> Any:
+        raise ValueError
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get", fake_get)
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.kill", lambda actor, no_restart: calls.append("kill"))
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get_actor", fake_get_actor)
+
+    backend._shutdown_run("run-1")
+
+    assert calls == ["shutdown", "kill"]
+    assert get_calls == [("shutdown-ref", 20.0)]
+
+
 def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
