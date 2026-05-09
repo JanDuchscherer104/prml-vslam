@@ -75,7 +75,7 @@ from prml_vslam.visualization.artifacts import artifact_visualizations
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 
 
-@ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0)
+@ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0, max_concurrency=10)
 class RunCoordinatorActor:
     """Own one run's state, event log, and live execution coordination."""
 
@@ -190,7 +190,8 @@ class RunCoordinatorActor:
 
     def read_payload(self, handle_id: str) -> np.ndarray | None:
         """Resolve one coordinator-owned target transient payload ref locally."""
-        return self._resolve_handle_payload(self._handle_refs.get(handle_id))
+        with self._lock:
+            return self._resolve_handle_payload(self._handle_refs.get(handle_id))
 
     def shutdown(self) -> None:
         """Stop worker-owned activity and close observer sidecars."""
@@ -978,15 +979,17 @@ class RunCoordinatorActor:
             )
 
     def _remember_handle(self, handle_id: str, payload: HandlePayload) -> None:
-        self._handle_refs[handle_id] = payload
-        self._handle_order.append(handle_id)
-        while len(self._handle_order) > HANDLE_LIMIT:
-            stale_id = self._handle_order.popleft()
-            self._console.debug("Evicting stale handle '%s' due to handle limit %d.", stale_id, HANDLE_LIMIT)
-            self._handle_refs.pop(stale_id, None)
+        with self._lock:
+            self._handle_refs[handle_id] = payload
+            self._handle_order.append(handle_id)
+            while len(self._handle_order) > HANDLE_LIMIT:
+                stale_id = self._handle_order.popleft()
+                self._console.debug("Evicting stale handle '%s' due to handle limit %d.", stale_id, HANDLE_LIMIT)
+                self._handle_refs.pop(stale_id, None)
 
     def _resolve_handle_local(self, handle_id: str) -> np.ndarray | None:
-        return self._resolve_handle_payload(self._handle_refs.get(handle_id))
+        with self._lock:
+            return self._resolve_handle_payload(self._handle_refs.get(handle_id))
 
     @staticmethod
     def _resolve_handle_payload(payload: HandlePayload | None) -> np.ndarray | None:
@@ -997,8 +1000,9 @@ class RunCoordinatorActor:
         return np.asarray(ray.get(payload))
 
     def _next_event_id(self) -> str:
-        self._event_counter += 1
-        return str(self._event_counter)
+        with self._lock:
+            self._event_counter += 1
+            return str(self._event_counter)
 
     def _close_rerun_sink(self) -> None:
         if self._rerun_sink is None:
