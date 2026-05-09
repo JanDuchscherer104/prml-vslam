@@ -151,7 +151,10 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
     ),
     (
         "Runtime",
-        (("--ray_local_head_lifecycle", "Ray local-head lifecycle: ephemeral or reusable."),),
+        (
+            ("--ray_local_head_lifecycle", "Ray local-head lifecycle: ephemeral or reusable."),
+            ("--ray_log_to_driver", "Forward Ray worker logs to the driver."),
+        ),
     ),
 )
 

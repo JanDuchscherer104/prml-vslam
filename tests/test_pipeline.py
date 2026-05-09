@@ -259,6 +259,7 @@ def test_run_config_defaults_to_ephemeral_local_head_lifecycle() -> None:
     )
 
     assert run_config.ray_local_head_lifecycle == "ephemeral"
+    assert run_config.ray_log_to_driver is True
 
 
 def test_run_config_from_toml_accepts_inline_ray_policy(tmp_path: Path) -> None:
@@ -269,6 +270,7 @@ experiment_name = "demo"
 mode = "streaming"
 output_dir = ".artifacts"
 ray_local_head_lifecycle = "reusable"
+ray_log_to_driver = false
 
 [stages.source.backend]
 source_id = "advio"
@@ -288,6 +290,7 @@ method_id = "vista"
     run_config = RunConfig.from_toml(config_path)
 
     assert run_config.ray_local_head_lifecycle == "reusable"
+    assert run_config.ray_log_to_driver is False
 
 
 def test_run_config_from_toml_accepts_viewer_blueprint_path(tmp_path: Path) -> None:
@@ -1750,10 +1753,11 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
         method=MethodId.VISTA,
-    )
+    ).model_copy(update={"ray_log_to_driver": False})
     snapshot = RunSnapshot(run_id="backend-unit", state=RunState.COMPLETED)
     submitted: list[tuple[str, str | None]] = []
     coordinator_options: dict[str, Any] = {}
+    ray_log_to_driver: list[bool] = []
     stopped: list[str] = []
 
     class _Remote:
@@ -1776,7 +1780,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     )()
 
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get", lambda value: value)
-    monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
+    monkeypatch.setattr(backend, "_ensure_ray", lambda: ray_log_to_driver.append(backend._ray_log_to_driver))
 
     def fake_create_coordinator(run_id: str, *, actor_options: dict[str, Any]):
         coordinator_options.update(actor_options)
@@ -1788,6 +1792,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     run_id = backend.submit_run(run_config=run_config, runtime_source="runtime")
 
     assert run_id == "backend-unit"
+    assert ray_log_to_driver == [False]
     assert submitted == [("backend-unit", "runtime")]
     assert coordinator_options["num_cpus"] == 2.0
     assert coordinator_options["num_gpus"] == 1.0

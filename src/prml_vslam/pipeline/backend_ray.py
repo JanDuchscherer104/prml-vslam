@@ -79,6 +79,7 @@ class RayPipelineBackend(PipelineBackend):
         self._coordinators: dict[str, ActorHandle] = {}
         self._local_head = LocalRayHead(path_config=self._path_config, console=self._console)
         self._reuse_local_head = False
+        self._ray_log_to_driver = True
 
     def submit_run(
         self,
@@ -88,6 +89,7 @@ class RayPipelineBackend(PipelineBackend):
     ) -> str:
         """Build the plan, ensure Ray is available, and boot one coordinator."""
         self._reuse_local_head = run_config.ray_local_head_lifecycle == "reusable"
+        self._ray_log_to_driver = run_config.ray_log_to_driver
         self._ensure_ray()
         plan = run_config.compile_plan(self._path_config)
         unavailable = [stage for stage in plan.stages if not stage.available]
@@ -213,7 +215,7 @@ class RayPipelineBackend(PipelineBackend):
         init_kwargs = {
             "namespace": self._namespace,
             "ignore_reinit_error": True,
-            "log_to_driver": True,  # TODO: must be exposed via RunConfig!
+            "log_to_driver": self._ray_log_to_driver,
             "include_dashboard": False,
             "_skip_env_hook": True,
         }
