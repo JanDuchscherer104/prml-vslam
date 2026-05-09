@@ -1142,7 +1142,7 @@ def _wait_for_pipeline_terminal_snapshot(
                 else f"{slam_runtime_status.throughput:.2f}",
             )
             previous_processed_items = processed_items
-        if snapshot.state not in {RunState.PREPARING, RunState.RUNNING}:
+        if snapshot.state not in {RunState.IDLE, RunState.PREPARING, RunState.RUNNING}:
             return snapshot
         time.sleep(poll_interval_seconds)
 
