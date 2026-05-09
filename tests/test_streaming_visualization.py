@@ -1100,6 +1100,10 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
     assert "world" not in [path for path, _, _ in paths]
 
 
+def test_rerun_sink_actor_reserves_full_cpu() -> None:
+    assert RerunSinkActor._default_options["num_cpus"] == 1.0
+
+
 def test_rerun_sink_actor_forwards_stage_runtime_updates_without_payload_resolver(tmp_path: Path, monkeypatch) -> None:
     observed: dict[str, object] = {}
 

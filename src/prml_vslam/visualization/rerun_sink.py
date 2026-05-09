@@ -202,7 +202,7 @@ class RerunEventSink:
         return resolved
 
 
-@ray.remote(num_cpus=0.25, max_restarts=0, max_task_retries=0)
+@ray.remote(num_cpus=1.0, max_restarts=0, max_task_retries=0)
 class RerunSinkActor:
     """Best-effort Ray sidecar that owns one Rerun recording stream."""
 
