@@ -76,6 +76,8 @@ from prml_vslam.visualization.artifacts import artifact_visualizations
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 _RerunSinkKind = Literal["live", "export"]
+_RERUN_ALL_DESTINATIONS: frozenset[_RerunSinkKind] = frozenset(("live", "export"))
+_RERUN_EXPORT_DESTINATION: frozenset[_RerunSinkKind] = frozenset(("export",))
 
 
 @dataclass
@@ -592,6 +594,7 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=stage_key, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
+            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _run_streaming(
@@ -956,16 +959,19 @@ class RunCoordinatorActor:
         )
         with self._lock:
             self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        self._submit_rerun_update(update=update, payload_resolver=None)
+        self._submit_rerun_update(update=update, payload_resolver=None, destinations=_RERUN_EXPORT_DESTINATION)
 
     def _submit_rerun_update(
         self,
         *,
         update: StageRuntimeUpdate,
         payload_resolver: ActorHandle | None,
+        destinations: frozenset[_RerunSinkKind] = _RERUN_ALL_DESTINATIONS,
     ) -> None:
         if self._rerun_sinks:
             for sidecar in self._rerun_sinks:
+                if sidecar.kind not in destinations:
+                    continue
                 try:
                     self._log_rerun_update_backlog(update, sidecar=sidecar)
                     sidecar.last_call = sidecar.actor.observe_update.remote(
@@ -1130,6 +1136,7 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=StageKey.SUMMARY, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
+            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _require_run_config(self) -> RunConfig:
