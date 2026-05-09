@@ -830,6 +830,10 @@ def test_run_coordinator_resolves_materialized_handle_payloads_without_ray_get()
     assert np.array_equal(resolved, payload)
 
 
+def test_run_coordinator_actor_allows_concurrent_reader_methods() -> None:
+    assert RunCoordinatorActor._default_options["max_concurrency"] == 10
+
+
 def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
