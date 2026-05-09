@@ -145,6 +145,7 @@ class RerunEventSink:
         if self._live_stream is not None:
             try:
                 self._live_policy.observe_update(self._live_stream, update, payloads=resolved_payloads)
+                self._live_stream.flush(blocking=False)
             except Exception as exc:  # pragma: no cover - live viewer is best effort
                 _LOGGER.warning("Skipping live Rerun update for stage '%s': %s", update.stage_key.value, exc)
         if self._cache_ground_alignment_update(update):

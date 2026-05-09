@@ -56,6 +56,7 @@ from prml_vslam.visualization.validation import load_recording_summary
 class _FakeRecordingStream:
     def __init__(self) -> None:
         self.timelines: dict[str, int] = {}
+        self.flush_calls: list[bool] = []
 
     def log(self, entity_path: str, payload: object, *, static: bool = False) -> None:
         del static
@@ -68,7 +69,7 @@ class _FakeRecordingStream:
         self.timelines.clear()
 
     def flush(self, blocking: bool = True) -> None:
-        assert blocking is True
+        self.flush_calls.append(blocking)
 
     def disconnect(self) -> None:
         return None
@@ -1102,6 +1103,19 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
 
 def test_rerun_sink_actor_reserves_full_cpu() -> None:
     assert RerunSinkActor._default_options["num_cpus"] == 1.0
+
+
+def test_rerun_event_sink_flushes_live_stream_after_update(monkeypatch) -> None:
+    live_stream = _FakeRecordingStream()
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: live_stream)
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+
+    sink = RerunEventSink(grpc_url="rerun+http://127.0.0.1:9876/proxy", target_path=None)
+
+    sink.observe_update(StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1))
+
+    assert live_stream.flush_calls == [False]
+    sink.close()
 
 
 def test_rerun_sink_actor_forwards_stage_runtime_updates_without_payload_resolver(tmp_path: Path, monkeypatch) -> None:

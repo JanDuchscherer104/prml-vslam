@@ -36,12 +36,14 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import (
     build_advio_demo_run_config,
     build_runtime_source_from_run_config,
     load_run_config_toml,
 )
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
@@ -225,6 +227,74 @@ def test_wait_for_pipeline_terminal_snapshot_waits_through_idle(monkeypatch: pyt
 
     assert result is completed
     assert sleeps == [0.25]
+
+
+def test_wait_for_pipeline_terminal_snapshot_logs_slam_progress_without_throughput(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from prml_vslam.main import _wait_for_pipeline_terminal_snapshot
+
+    snapshots = [
+        RunSnapshot(
+            run_id="demo",
+            state=RunState.RUNNING,
+            stage_runtime_status={
+                StageKey.SLAM: StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    processed_items=267,
+                    fps=19.7,
+                    throughput=99.0,
+                    latency_ms=12.34,
+                )
+            },
+        ),
+        RunSnapshot(run_id="demo", state=RunState.COMPLETED),
+    ]
+
+    class FakeRunService:
+        def snapshot(self) -> RunSnapshot:
+            return snapshots.pop(0)
+
+    monkeypatch.setattr("prml_vslam.main.time.sleep", lambda _interval: None)
+
+    with _capture_logger(caplog, monkeypatch, pipeline_demo_console.logger.name):
+        _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.01)
+
+    progress_messages = [record.message for record in caplog.records if record.message.startswith("SLAM processed=")]
+    assert progress_messages == ["SLAM processed=267 fps=19.70 latency=12.3ms"]
+    assert "throughput" not in progress_messages[0]
+
+
+def test_wait_for_pipeline_terminal_snapshot_omits_unavailable_slam_latency(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from prml_vslam.main import _wait_for_pipeline_terminal_snapshot
+
+    snapshot = RunSnapshot(
+        run_id="demo",
+        state=RunState.COMPLETED,
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(
+                stage_key=StageKey.SLAM,
+                processed_items=3,
+                fps=None,
+                latency_ms=None,
+            )
+        },
+    )
+
+    class FakeRunService:
+        def snapshot(self) -> RunSnapshot:
+            return snapshot
+
+    with _capture_logger(caplog, monkeypatch, pipeline_demo_console.logger.name):
+        _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.01)
+
+    progress_messages = [record.message for record in caplog.records if record.message.startswith("SLAM processed=")]
+    assert progress_messages == ["SLAM processed=3 fps=n/a"]
+    assert "latency" not in progress_messages[0]
 
 
 def test_build_advio_demo_run_config_enables_live_viewer_by_default(tmp_path: Path) -> None:

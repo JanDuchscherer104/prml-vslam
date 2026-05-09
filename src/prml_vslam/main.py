@@ -1131,15 +1131,21 @@ def _wait_for_pipeline_terminal_snapshot(
         slam_runtime_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
         processed_items = 0 if slam_runtime_status is None else slam_runtime_status.processed_items
         if processed_items != previous_processed_items and processed_items > 0:
-            pipeline_demo_console.info(
-                "SLAM processed=%d fps=%s throughput=%s",
-                processed_items,
+            fps_text = (
                 "n/a"
                 if slam_runtime_status is None or slam_runtime_status.fps is None
-                else f"{slam_runtime_status.fps:.2f}",
-                "n/a"
-                if slam_runtime_status is None or slam_runtime_status.throughput is None
-                else f"{slam_runtime_status.throughput:.2f}",
+                else f"{slam_runtime_status.fps:.2f}"
+            )
+            latency_text = (
+                None
+                if slam_runtime_status is None or slam_runtime_status.latency_ms is None
+                else f" latency={slam_runtime_status.latency_ms:.1f}ms"
+            )
+            pipeline_demo_console.info(
+                "SLAM processed=%d fps=%s%s",
+                processed_items,
+                fps_text,
+                "" if latency_text is None else latency_text,
             )
             previous_processed_items = processed_items
         if snapshot.state not in {RunState.IDLE, RunState.PREPARING, RunState.RUNNING}:
