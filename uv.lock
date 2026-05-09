@@ -1488,6 +1488,9 @@ streaming = [
     { name = "aiortc" },
     { name = "record3d" },
 ]
+visualization = [
+    { name = "rerun-sdk" },
+]
 vista = [
     { name = "dbow3py" },
     { name = "einops" },
@@ -1539,6 +1542,7 @@ requires-dist = [
     { name = "rebiber", marker = "extra == 'dev'", specifier = ">=1.1.3" },
     { name = "record3d", marker = "extra == 'streaming'", specifier = ">=1.4.1,<2" },
     { name = "rerun-sdk", marker = "extra == 'vista'", specifier = "==0.24.1" },
+    { name = "rerun-sdk", marker = "extra == 'visualization'", specifier = "==0.24.1" },
     { name = "rich", specifier = ">=13.7,<15" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11,<1" },
     { name = "scipy", specifier = ">=1.13,<2" },
@@ -1553,7 +1557,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12,<1" },
     { name = "xformers", marker = "extra == 'vista'" },
 ]
-provides-extras = ["dev", "replay", "streaming", "vista"]
+provides-extras = ["dev", "replay", "streaming", "visualization", "vista"]
 
 [package.metadata.requires-dev]
 dev = [
