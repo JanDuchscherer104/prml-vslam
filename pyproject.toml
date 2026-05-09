@@ -42,6 +42,7 @@ dependencies = [
   ]
   replay = []
   streaming = ["aiortc>=1.9,<2", "record3d>=1.4.1,<2"]
+  visualization = ["rerun-sdk==0.24.1"]
   vista = [
     "torch==2.5.1",
     "torchvision==0.20.1",

@@ -34,13 +34,13 @@ and stage summaries remain the scientific and provenance source of truth.
 Install the optional Rerun dependency set:
 
 ```bash
-uv sync --extra vista
+uv sync --extra visualization
 ```
 
 Start the committed blueprint in a web viewer:
 
 ```bash
-uv run --extra vista rerun \
+uv run --extra visualization rerun \
   .configs/visualization/vista_blueprint.rbl \
   --serve-web
 ```
@@ -69,7 +69,7 @@ instead of emitting one `Transform3D` entity per TUM pose.
 Inspect a persisted repo-owned recording:
 
 ```bash
-uv run --extra vista rerun \
+uv run --extra visualization rerun \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
   .configs/visualization/vista_blueprint.rbl
 ```
