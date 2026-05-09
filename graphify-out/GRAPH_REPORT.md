@@ -1,12 +1,12 @@
 # Graph Report - prml-vslam  (2026-05-09)
 
 ## Corpus Check
-- 258 files · ~602,413 words
+- 258 files · ~602,841 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3904 nodes · 18399 edges · 39 communities detected
-- Extraction: 29% EXTRACTED · 71% INFERRED · 0% AMBIGUOUS · INFERRED: 12982 edges (avg confidence: 0.57)
+- 3921 nodes · 18813 edges · 38 communities detected
+- Extraction: 29% EXTRACTED · 71% INFERRED · 0% AMBIGUOUS · INFERRED: 13383 edges (avg confidence: 0.57)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -27,7 +27,6 @@
 - [[_COMMUNITY_Community 14|Community 14]]
 - [[_COMMUNITY_Community 15|Community 15]]
 - [[_COMMUNITY_Community 16|Community 16]]
-- [[_COMMUNITY_Community 17|Community 17]]
 - [[_COMMUNITY_Community 18|Community 18]]
 - [[_COMMUNITY_Community 19|Community 19]]
 - [[_COMMUNITY_Community 20|Community 20]]
@@ -51,26 +50,26 @@
 - [[_COMMUNITY_Community 38|Community 38]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `StageKey` - 511 edges
-2. `SequenceManifest` - 263 edges
+1. `StageKey` - 521 edges
+2. `SequenceManifest` - 265 edges
 3. `MethodId` - 257 edges
-4. `StageRuntimeStatus` - 242 edges
-5. `RunConfig` - 236 edges
-6. `ArtifactRef` - 235 edges
-7. `RunSnapshot` - 227 edges
-8. `PathConfig` - 223 edges
-9. `TransientPayloadRef` - 215 edges
-10. `StageRuntimeUpdate` - 214 edges
+4. `StageRuntimeStatus` - 254 edges
+5. `ArtifactRef` - 250 edges
+6. `RunConfig` - 246 edges
+7. `RunSnapshot` - 239 edges
+8. `StageRuntimeUpdate` - 226 edges
+9. `TransientPayloadRef` - 225 edges
+10. `PathConfig` - 223 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `_forward_rerun_viewer_stdout()` --calls--> `test_forward_rerun_viewer_stdout_prefixes_child_output()`  [INFERRED]
-  src/prml_vslam/main.py → tests/test_main.py
-- `_forward_rerun_viewer_stdout()` --calls--> `test_forward_rerun_viewer_stdout_uses_current_stdout_by_default()`  [INFERRED]
-  src/prml_vslam/main.py → tests/test_main.py
 - `plan_run()` --calls--> `test_plan_run_defaults_to_live_viewer()`  [INFERRED]
   src/prml_vslam/main.py → tests/test_main.py
 - `GroundAlignmentMetadata` --uses--> `Focused tests for derived ground-plane alignment.`  [INFERRED]
   src/prml_vslam/interfaces/alignment.py → tests/test_ground_alignment.py
+- `SequenceManifest` --uses--> `Small runtime sources used by focused pipeline smoke tests.`  [INFERRED]
+  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
+- `SequenceManifest` --uses--> `Minimal offline source for pipeline smoke tests.`  [INFERRED]
+  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
 - `SequenceManifest` --uses--> `Finite in-memory packet stream for streaming smoke tests.`  [INFERRED]
   src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
 
@@ -78,75 +77,71 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (381): resolve(), _apply_snapshot_fallbacks(), _candidate_from_root(), _canonical_path_rows(), _derive_slam_artifacts(), discover_run_artifact_roots(), _file_inventory(), _format_size() (+373 more)
+Nodes (403): AdvioDownloadManager, _ensure_directory_parent(), Return the cache directory used for downloaded scene archives., Return one catalog scene by id., Return local availability status for every catalog scene., Download selected ADVIO scenes and extract the requested modalities., advio_basis_metadata(), advio_basis_provenance() (+395 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.03
-Nodes (328): MethodId, PipelineBackend, Execute, monitor, and tear down pipeline runs.      Implementations own the conc, _coordinator_actor_options(), Ray-backed backend for plan execution and run attachment.  This module owns subs, Forward a stop request to the named coordinator actor., Forward a stop request to the named coordinator actor., Fetch the latest projected snapshot from the coordinator actor. (+320 more)
+Cohesion: 0.02
+Nodes (318): Canonical ViSTA-SLAM backend adapter (offline + streaming)., ViSTA-SLAM backend implementing offline and streaming contracts., Load upstream OnlineSLAM and retain backend-owned streaming state., Consume one streaming frame through the active ViSTA runtime., Retrieve pending ViSTA live updates without exposing runtime state., Finalize the active ViSTA streaming runtime and clear it., Run ViSTA-SLAM over normalized offline observations and persist artifacts., VistaSlamBackend (+310 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.01
-Nodes (317): build_advio_comparison_trajectories(), build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), build_advio_page_data(), handle_advio_preview_action(), load_advio_explorer_sample() (+309 more)
+Nodes (367): GroundPlaneModel, GroundPlaneVisualizationHint, Alignment result DTOs shared outside the alignment package.  These datamodels de, Dominant ground-plane hypothesis expressed in native ``world`` coordinates., Finite plane-patch geometry ready for visualization consumers., _coerce_view_graph(), _coerce_view_graph_node(), load_vista_confidences() (+359 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.03
-Nodes (227): FailureFingerprint, Reject negative custom resource quantities., Allow only exact artifact keys or safe ``prefix:*`` selectors., Return the declared output paths for a generic stage section., Return deterministic output paths declared by this stage., Return whether the configured stage can run., Build a failed :class:`StageOutcome` using this stage's identity., Base declarative policy shared by target stage config sections. (+219 more)
+Cohesion: 0.01
+Nodes (347): build_advio_comparison_trajectories(), build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), build_advio_page_data(), handle_advio_preview_action(), load_advio_explorer_sample() (+339 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.01
-Nodes (295): GroundPlaneModel, GroundPlaneVisualizationHint, Alignment result DTOs shared outside the alignment package.  These datamodels de, Dominant ground-plane hypothesis expressed in native ``world`` coordinates., Finite plane-patch geometry ready for visualization consumers., artifact_ref(), ArtifactRef, _build_estimated_intrinsics_series() (+287 more)
+Cohesion: 0.03
+Nodes (298): GroundAlignmentMetadata, Result of one derived ground-plane alignment attempt.      When :attr:`applied`, InputArtifactDiagnostics, Inspection helpers for persisted pipeline run artifact roots., One submitted run attempt found in a persisted event log., Structured inspection result for one persisted pipeline run., Discover method-level run roots under the configured artifact directory., Load typed metadata and path inventory for one persisted run root. (+290 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.02
-Nodes (217): AdvioDownloadManager, _ensure_directory_parent(), Return the cache directory used for downloaded scene archives., Return one catalog scene by id., Return local availability status for every catalog scene., Download selected ADVIO scenes and extract the requested modalities., archive_member_matches(), list_local_sequence_ids() (+209 more)
+Cohesion: 0.01
+Nodes (308): resolve(), _apply_snapshot_fallbacks(), _candidate_from_root(), _canonical_path_rows(), _derive_slam_artifacts(), discover_run_artifact_roots(), _file_inventory(), _format_size() (+300 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.03
-Nodes (204): GroundAlignmentMetadata, Result of one derived ground-plane alignment attempt.      When :attr:`applied`, InputArtifactDiagnostics, Inspection helpers for persisted pipeline run artifact roots., One submitted run attempt found in a persisted event log., Structured inspection result for one persisted pipeline run., Discover method-level run roots under the configured artifact directory., Load typed metadata and path inventory for one persisted run root. (+196 more)
+Cohesion: 0.04
+Nodes (270): MethodId, PipelineBackend, Execute, monitor, and tear down pipeline runs.      Implementations own the conc, _coordinator_actor_options(), Ray-backed backend for plan execution and run attachment.  This module owns subs, Forward a stop request to the named coordinator actor., Forward a stop request to the named coordinator actor., Fetch the latest projected snapshot from the coordinator actor. (+262 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.03
-Nodes (205): Controller helpers for the ADVIO Streamlit page., Persist the current ADVIO download-form state., Persist the current explorer selection and load its offline sample., Keep persisted preview state aligned with the runtime snapshot., Apply one preview-form action and return an error message when it fails., BaseData, build_context(), _build_pages() (+197 more)
+Cohesion: 0.02
+Nodes (183): Controller helpers for the ADVIO Streamlit page., Persist the current ADVIO download-form state., Persist the current explorer selection and load its offline sample., Keep persisted preview state aligned with the runtime snapshot., Apply one preview-form action and return an error message when it fails., build_context(), _build_pages(), _enter_page() (+175 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.02
-Nodes (155): Backend boundary between launch surfaces and execution substrates.  This module, Build the normalized ADVIO source adapter., Configure one raw-video source adapter.      Raw video sources only provide the, Build the normalized raw-video source adapter., Configure one TUM RGB-D dataset source adapter.      TUM RGB-D sources can provi, Build the normalized TUM RGB-D source adapter., Configure one ADVIO dataset source adapter.      ADVIO adds dataset-serving poli, FrameSelectionConfig (+147 more)
+Cohesion: 0.04
+Nodes (117): BaseConfig, build_run_config(), CloudEvaluationStageConfig, CloudMetricId, _compile_run_plan(), DenseCloudSelectionConfig, GroundAlignmentStageConfig, Open3dTsdfBackendConfig (+109 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.02
-Nodes (173): Canonical ViSTA-SLAM backend adapter (offline + streaming)., ViSTA-SLAM backend implementing offline and streaming contracts., Load upstream OnlineSLAM and retain backend-owned streaming state., Consume one streaming frame through the active ViSTA runtime., Retrieve pending ViSTA live updates without exposing runtime state., Finalize the active ViSTA streaming runtime and clear it., Run ViSTA-SLAM over normalized offline observations and persist artifacts., VistaSlamBackend (+165 more)
+Cohesion: 0.03
+Nodes (87): Return a child console with additional namespace parts., _render_preview_frame(), IntEnum, Observation, ObservationProvenance, validate_observation_contract(), FakeStreamingSource, Small runtime sources used by focused pipeline smoke tests. (+79 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.03
-Nodes (145): advio_basis_metadata(), advio_basis_provenance(), AdvioBasisMetadata, AdvioRawCoordinateBasis, basis_for_pose_source(), _flatten_matrix(), _pose_matrix(), ADVIO coordinate-basis normalization helpers.  ADVIO stores Apple-family traject (+137 more)
+Cohesion: 0.04
+Nodes (89): attach_recording_sinks(), augment_viewer_recording_with_ground_plane(), build_default_blueprint(), create_recording_stream(), _decimate_rows(), log_clear(), log_depth_image(), log_ground_plane_patch() (+81 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.05
-Nodes (113): BaseConfig, build_run_config(), CloudEvaluationStageConfig, CloudMetricId, _compile_run_plan(), DenseCloudSelectionConfig, GroundAlignmentStageConfig, Open3dTsdfBackendConfig (+105 more)
-
-### Community 12 - "Community 12"
 Cohesion: 0.07
 Nodes (34): Replay clock used by dataset and video source streams., Select whether replay follows source timing or returns observations immediately., Apply source-timestamp pacing for real-time replay., Reset the clock baseline for a new replay loop or connection., Sleep until the replay timestamp should be emitted., ReplayClock, ReplayMode, ImageSequenceObservationSource (+26 more)
 
+### Community 12 - "Community 12"
+Cohesion: 0.13
+Nodes (35): test_load_recording_summary_reports_live_keyed_and_tracking_surfaces(), test_write_validation_bundle_emits_report_and_projection_images(), test_write_validation_bundle_respects_explicit_keyed_cloud_limit(), _write_synthetic_recording(), _ancestor_entity_paths(), _component_columns(), _keyed_point_cloud_snapshots(), _latest_live_model_snapshot() (+27 more)
+
 ### Community 13 - "Community 13"
-Cohesion: 0.09
-Nodes (46): _ancestor_entity_paths(), _build_repo_owned_recording(), _build_vista_style_reference_recording(), _component_columns(), _latest_transform_matrix_before_or_at_log_tick(), _normalize_entity_path(), _points_array(), _row_for_points_entity() (+38 more)
+Cohesion: 0.11
+Nodes (35): build_pipeline_snapshot_render_model(), _coerce_int_metric(), _compute_evo_preview(), _format_latency(), _format_optional_rate(), _format_queue(), _format_resources(), _format_tasks() (+27 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.09
-Nodes (48): _coerce_view_graph(), _coerce_view_graph_node(), load_vista_confidences(), load_vista_estimated_intrinsics_series(), load_vista_intrinsics_matrices(), load_vista_native_trajectory(), load_vista_vector(), load_vista_view_graph() (+40 more)
+Nodes (22): caller_namespace(), configure_logging(), _ConsoleLogFormatter, _ConsoleLogHighlighter, _display_name(), from_callsite(), get_console(), _qualify_namespace() (+14 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.15
-Nodes (31): _ancestor_entity_paths(), _component_columns(), _keyed_point_cloud_snapshots(), _latest_live_model_snapshot(), _latest_transform_matrix_before_or_at_log_tick(), load_recording_summary(), _point_cloud_snapshot(), _points_array() (+23 more)
+Cohesion: 0.13
+Nodes (27): _add_point_cloud_trace(), _add_trajectory_trace(), _apply_comparison_layout(), _build_figure(), build_reference_reconstruction_figure(), build_slam_reference_comparison_figure(), _combined_bounds(), _decimate_mesh() (+19 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.17
 Nodes (2): Tests for package-root public export surfaces., test_source_materialization_does_not_import_stage_package()
-
-### Community 17 - "Community 17"
-Cohesion: 0.36
-Nodes (4): test_resolve_issue_moves_record_to_resolved_collection(), test_resolve_refactor_moves_record_to_resolved_collection(), test_resolve_todo_moves_record_to_resolved_collection(), _write_toml()
 
 ### Community 18 - "Community 18"
 Cohesion: 0.67
@@ -283,17 +278,17 @@ Nodes (1): Print LOC statistics for src/ and tests/.
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Test package helpers and suites for PRML VSLAM.` connect `Community 5` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`?**
-  _High betweenness centrality (0.139) - this node is a cross-community bridge._
-- **Why does `StageKey` connect `Community 1` to `Community 0`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 11`, `Community 13`?**
-  _High betweenness centrality (0.089) - this node is a cross-community bridge._
-- **Why does `FrameTransform` connect `Community 4` to `Community 1`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 13`, `Community 14`?**
-  _High betweenness centrality (0.053) - this node is a cross-community bridge._
-- **Are the 508 inferred relationships involving `StageKey` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
-  _`StageKey` has 508 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 260 inferred relationships involving `SequenceManifest` (e.g. with `OfflineSlamBackend` and `StreamingSlamBackend`) actually correct?**
-  _`SequenceManifest` has 260 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `Test package helpers and suites for PRML VSLAM.` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`, `Community 15`?**
+  _High betweenness centrality (0.123) - this node is a cross-community bridge._
+- **Why does `StageKey` connect `Community 6` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 13`?**
+  _High betweenness centrality (0.093) - this node is a cross-community bridge._
+- **Why does `SequenceManifest` connect `Community 1` to `Community 0`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`?**
+  _High betweenness centrality (0.056) - this node is a cross-community bridge._
+- **Are the 518 inferred relationships involving `StageKey` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
+  _`StageKey` has 518 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 262 inferred relationships involving `SequenceManifest` (e.g. with `OfflineSlamBackend` and `StreamingSlamBackend`) actually correct?**
+  _`SequenceManifest` has 262 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 254 inferred relationships involving `MethodId` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
   _`MethodId` has 254 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 239 inferred relationships involving `StageRuntimeStatus` (e.g. with `_TransientPayloadStore` and `SlamStageRuntime`) actually correct?**
-  _`StageRuntimeStatus` has 239 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 251 inferred relationships involving `StageRuntimeStatus` (e.g. with `_TransientPayloadStore` and `SlamStageRuntime`) actually correct?**
+  _`StageRuntimeStatus` has 251 INFERRED edges - model-reasoned connections that need verification._

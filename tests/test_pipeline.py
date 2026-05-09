@@ -74,8 +74,10 @@ from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, Vi
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceSource,
+    ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash
@@ -977,6 +979,34 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
     assert coordinator._rerun_sink_last_call == "rerun-call-1"
 
 
+def _attach_fake_rerun_sidecars(
+    coordinator: Any,
+    *,
+    kinds: tuple[str, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, StageRuntimeUpdate, Any]]:
+    submitted: list[tuple[str, StageRuntimeUpdate, Any]] = []
+
+    class _FakeObserveUpdateRemote:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
+        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: Any) -> str:
+            submitted.append((self._label, update, payload_resolver))
+            return f"{self._label}-call-{len(submitted)}"
+
+    class _FakeActor:
+        def __init__(self, label: str) -> None:
+            self.observe_update = _FakeObserveUpdateRemote(label)
+
+    coordinator._rerun_sinks = [
+        SimpleNamespace(kind=kind, actor=_FakeActor(kind), last_call=None, submission_count=0, pending_count=0)
+        for kind in kinds
+    ]
+    monkeypatch.setattr(coordinator, "_log_rerun_update_backlog", lambda update, sidecar: None)
+    return submitted
+
+
 def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidecars(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1029,6 +1059,145 @@ def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidec
     assert submitted == [("live", update, None), ("export", update, None)]
     assert coordinator._rerun_sinks[0].last_call == "live-call"
     assert coordinator._rerun_sinks[1].last_call == "export-call"
+
+
+def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=1,
+        runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+    )
+
+    coordinator.on_slam_runtime_updates(updates=[update])
+
+    assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
+
+
+def test_run_coordinator_routes_source_reference_visualizations_to_export_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    reference = ReferenceTrajectoryRef(
+        source=ReferenceSource.GROUND_TRUTH,
+        path=tmp_path / "ground_truth.tum",
+        target_frame="world",
+    )
+    artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
+    output = SourceStageOutput(
+        sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+        benchmark_inputs=PreparedBenchmarkInputs(reference_trajectories=[reference]),
+    )
+
+    coordinator._submit_source_reference_visualization_update(
+        output=output,
+        artifacts={reference_trajectory_artifact_key(reference): artifact},
+    )
+
+    assert [label for label, _, _ in submitted] == ["export"]
+    assert submitted[0][1].stage_key is StageKey.SOURCE
+
+
+def test_run_coordinator_routes_artifact_visualizations_to_export_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    artifact = ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")
+
+    coordinator._submit_artifact_visualization_update(
+        stage_key=StageKey.SLAM,
+        outcome=StageOutcome(
+            stage_key=StageKey.SLAM,
+            status=StageStatus.COMPLETED,
+            config_hash="cfg",
+            input_fingerprint="input",
+            artifacts={"trajectory_tum": artifact},
+        ),
+    )
+
+    assert [label for label, _, _ in submitted] == ["export"]
+    assert submitted[0][1].stage_key is StageKey.SLAM
+
+
+def test_run_coordinator_routes_final_artifacts_to_export_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    coordinator._snapshot = RunSnapshot(
+        run_id="demo",
+        artifacts={"trajectory_tum": ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")},
+    )
+
+    coordinator._submit_final_artifact_rerun_update()
+
+    assert [label for label, _, _ in submitted] == ["export"]
+    assert submitted[0][1].stage_key is StageKey.SUMMARY
+
+
+def test_run_coordinator_drops_export_only_updates_when_only_live_sidecar_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live",), monkeypatch=monkeypatch)
+    coordinator._snapshot = RunSnapshot(
+        run_id="demo",
+        artifacts={"trajectory_tum": ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")},
+    )
+
+    coordinator._submit_final_artifact_rerun_update()
+
+    assert submitted == []
+    assert coordinator._rerun_sinks[0].last_call is None
+
+
+def test_run_coordinator_keeps_source_reference_updates_out_of_live_sidecar_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
+    reference = ReferenceTrajectoryRef(
+        source=ReferenceSource.GROUND_TRUTH,
+        path=tmp_path / "ground_truth.tum",
+        target_frame="world",
+    )
+    source_artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
+    source_output = SourceStageOutput(
+        sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+        benchmark_inputs=PreparedBenchmarkInputs(reference_trajectories=[reference]),
+    )
+    slam_update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=2,
+        runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+    )
+
+    coordinator._submit_source_reference_visualization_update(
+        output=source_output,
+        artifacts={reference_trajectory_artifact_key(reference): source_artifact},
+    )
+    coordinator.on_slam_runtime_updates(updates=[slam_update])
+
+    live_stages = [update.stage_key for label, update, _ in submitted if label == "live"]
+    assert live_stages == [StageKey.SLAM]
 
 
 def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver() -> None:
