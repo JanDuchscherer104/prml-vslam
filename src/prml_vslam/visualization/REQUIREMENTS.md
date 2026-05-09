@@ -22,10 +22,12 @@ This document is the concise source of truth for `prml_vslam.visualization`.
   are not expected to share a raster
 - the default 3D scene should render aligned reference geometry,
   keyed-history point clouds from `world/keyframes/points/<id>/points`, recent
-  keyed camera/frusta entities, trajectory lines, and optional per-pose axes
+  keyed camera/frusta entities, the live model camera frustum, trajectory lines,
+  and optional per-pose axes
 - the default 3D scene should use a narrow allow-list and treat
   `world/live/model/points`, source-native references, and camera image/depth
-  raster branches as non-default debug/2D surfaces
+  raster subtrees as non-default debug/2D surfaces while allowing the
+  non-recursive live camera-image entity for frustum rendering
 - keyed-history persistence in the viewer should come from stable entity paths rather than requiring a dedicated keyframe timeline
 - the streaming repo-owned sink should keep only the newest configured window of keyed camera/frusta entities visible
 - the current repo-owned stream does not yet log a world-space fused dense cloud separate from per-keyframe pointmaps

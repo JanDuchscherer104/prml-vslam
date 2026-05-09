@@ -47,6 +47,7 @@ DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/live/tracking/**",
     "+ world/live/source/camera",
     "+ world/live/model",
+    "+ world/live/model/camera/image",
     "+ world/keyframes/cameras/*",
     "+ world/keyframes/points/**",
 )
