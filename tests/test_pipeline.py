@@ -847,6 +847,37 @@ def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
     assert np.array_equal(resolved, payload)
 
 
+def test_run_coordinator_forwards_packet_arrival_timestamp_to_slam_runtime() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted: list[Observation] = []
+
+    class FakeSlamRuntimeProxy:
+        def submit_stream_item(self, item: Observation) -> None:
+            submitted.append(item)
+
+    coordinator._slam_runtime_proxy = FakeSlamRuntimeProxy()
+
+    coordinator._submit_frame_to_slam_runtime(
+        packet=Observation(
+            seq=7,
+            timestamp_ns=700,
+            arrival_timestamp_s=123.45,
+            provenance=ObservationProvenance(source_id="source"),
+        ),
+        frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_ref=None,
+        confidence_ref=None,
+        pointmap_ref=None,
+        intrinsics=None,
+        pose=None,
+        provenance=ObservationProvenance(source_id="source"),
+    )
+
+    assert len(submitted) == 1
+    assert submitted[0].arrival_timestamp_s == 123.45
+
+
 def test_run_coordinator_applies_slam_runtime_updates_to_snapshot() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="run-1", namespace="pytest-unit")
@@ -944,6 +975,60 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
     assert submitted[0][0].stage_key is StageKey.SOURCE
     assert submitted[0][1] == "resolver"
     assert coordinator._rerun_sink_last_call == "rerun-call-1"
+
+
+def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidecars(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    created: list[dict[str, Any]] = []
+    submitted: list[tuple[str, StageRuntimeUpdate, Any]] = []
+
+    class FakeObserveUpdateRemote:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
+        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: Any) -> str:
+            submitted.append((self._label, update, payload_resolver))
+            return f"{self._label}-call"
+
+    class FakeActor:
+        def __init__(self, label: str) -> None:
+            self.observe_update = FakeObserveUpdateRemote(label)
+
+    class FakeRerunSinkActor:
+        @staticmethod
+        def remote(**kwargs: Any) -> FakeActor:
+            created.append(kwargs)
+            return FakeActor("live" if kwargs["grpc_url"] is not None else "export")
+
+    monkeypatch.setattr("prml_vslam.visualization.rerun_sink.RerunSinkActor", FakeRerunSinkActor)
+    run_config = build_run_config(
+        experiment_name="demo",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        connect_live_viewer=True,
+        export_viewer_rrd=True,
+        grpc_url="rerun+http://127.0.0.1:9876/proxy",
+    )
+    run_paths = RunArtifactPaths.build(tmp_path / "demo")
+    update = StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1)
+
+    coordinator._rerun_sinks = coordinator._build_rerun_sinks(run_config=run_config, run_paths=run_paths)
+    coordinator._submit_rerun_update(update=update, payload_resolver=None)
+
+    assert len(coordinator._rerun_sinks) == 2
+    assert created[0]["grpc_url"] == "rerun+http://127.0.0.1:9876/proxy"
+    assert created[0]["target_path"] is None
+    assert created[1]["grpc_url"] is None
+    assert created[1]["target_path"] == run_paths.viewer_rrd_path
+    assert submitted == [("live", update, None), ("export", update, None)]
+    assert coordinator._rerun_sinks[0].last_call == "live-call"
+    assert coordinator._rerun_sinks[1].last_call == "export-call"
 
 
 def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver() -> None:
