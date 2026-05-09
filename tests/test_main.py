@@ -208,6 +208,25 @@ def test_wait_for_pipeline_terminal_snapshot_uses_pipeline_demo_namespace(
     assert "Pipeline demo state: completed" in caplog.records[0].message
 
 
+def test_wait_for_pipeline_terminal_snapshot_waits_through_idle(monkeypatch: pytest.MonkeyPatch) -> None:
+    from prml_vslam.main import _wait_for_pipeline_terminal_snapshot
+
+    completed = RunSnapshot(run_id="demo", state=RunState.COMPLETED)
+    snapshots = [RunSnapshot(run_id="demo", state=RunState.IDLE), completed]
+    sleeps: list[float] = []
+
+    class FakeRunService:
+        def snapshot(self) -> RunSnapshot:
+            return snapshots.pop(0)
+
+    monkeypatch.setattr("prml_vslam.main.time.sleep", lambda interval: sleeps.append(interval))
+
+    result = _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.25)
+
+    assert result is completed
+    assert sleeps == [0.25]
+
+
 def test_build_advio_demo_run_config_enables_live_viewer_by_default(tmp_path: Path) -> None:
     request = build_advio_demo_run_config(
         path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
