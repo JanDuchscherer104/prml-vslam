@@ -578,6 +578,12 @@ class RunCoordinatorActor:
             )
         )
         if stage_key is StageKey.TRAJECTORY_EVALUATION and isinstance(payload, TrajectoryAlignmentArtifact):
+            self._console.info(
+                "Applying post-run Sim(3) visual alignment: scale=%.6f matched_pairs=%d rms_error_m=%.6f",
+                payload.scale,
+                payload.matched_pairs,
+                payload.rms_error_m,
+            )
             self._submit_rerun_update(
                 update=StageRuntimeUpdate(
                     stage_key=StageKey.TRAJECTORY_EVALUATION,
@@ -1047,7 +1053,14 @@ class RunCoordinatorActor:
 
             rotation_matrix = mfq(rotation)
 
+            self._console.info(
+                "Applying initial SE(3) visual alignment: translation=%s scale=%.3f",
+                translation.tolist(),
+                float(self._run_config.visualization.initial_scale) if self._run_config else 1.0,
+            )
+
             self._submit_rerun_update(
+
                 update=StageRuntimeUpdate(
                     stage_key=StageKey.SOURCE,
                     timestamp_ns=ts_ns(),

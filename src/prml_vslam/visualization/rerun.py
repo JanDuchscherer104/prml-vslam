@@ -306,6 +306,29 @@ def log_pointcloud(
     )
 
 
+def log_arrows3d(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    origins_xyz: np.ndarray,
+    vectors_xyz: np.ndarray,
+    colors_rgba: np.ndarray | None = None,
+    radii: float = 0.01,
+    static: bool = False,
+) -> None:
+    """Log one or more 3D arrows."""
+    recording_stream.log(
+        entity_path,
+        rr.Arrows3D(
+            origins=np.asarray(origins_xyz, dtype=np.float32).reshape(-1, 3),
+            vectors=np.asarray(vectors_xyz, dtype=np.float32).reshape(-1, 3),
+            colors=None if colors_rgba is None else np.asarray(colors_rgba, dtype=np.uint8),
+            radii=[radii],
+        ),
+        static=static,
+    )
+
+
 def log_line_strip3d(
     recording_stream: rr.RecordingStream,
     *,
@@ -384,6 +407,16 @@ def log_ground_plane_patch(
             radii=[GROUND_PLANE_OUTLINE_RADII],
             colors=GROUND_PLANE_OUTLINE_RGBA,
         ),
+        static=static,
+    )
+    # Log the normal vector as an arrow from the center of the patch.
+    center_xyz_world = np.mean(corners_xyz_world, axis=0)
+    log_arrows3d(
+        recording_stream,
+        entity_path=f"{GROUND_PLANE_ENTITY_PATH}/normal",
+        origins_xyz=center_xyz_world,
+        vectors_xyz=normal_xyz_world * 0.5,
+        colors_rgba=np.array([[255, 255, 0, 255]], dtype=np.uint8),
         static=static,
     )
 
@@ -589,6 +622,7 @@ __all__ = [
     "GROUND_PLANE_ENTITY_PATH",
     "log_depth_image",
     "log_clear",
+    "log_arrows3d",
     "log_line_strip3d",
     "log_ground_plane_patch",
     "log_mesh3d",
