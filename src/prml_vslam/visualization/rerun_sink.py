@@ -53,6 +53,9 @@ class RerunEventSink:
         log_source_rgb: bool = False,
         log_diagnostic_preview: bool = False,
         log_camera_image_rgb: bool = False,
+        point_cloud_decimation_keep_ratio: float = 1.0,
+        mesh_decimation_keep_ratio: float = 1.0,
+        decimation_random_seed: int = 0,
     ) -> None:
         self._console = Console(__name__).child(self.__class__.__name__)
         self._live_stream = None
@@ -75,6 +78,9 @@ class RerunEventSink:
             log_source_rgb=log_source_rgb,
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+            decimation_random_seed=decimation_random_seed,
         )
         self._export_policy = RerunLoggingPolicy(
             log_pinhole=log_pinhole,
@@ -94,17 +100,23 @@ class RerunEventSink:
             log_source_rgb=log_source_rgb,
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+            decimation_random_seed=decimation_random_seed,
         )
         self._recording_id = recording_id
         self._target_path = target_path
         self._latest_ground_alignment: GroundAlignmentMetadata | None = None
         self._console.info(
-            "Rerun sink policy: source_rgb=%s diagnostic_preview=%s camera_image_rgb=%s trajectory=%s frusta_window=%s.",
+            "Rerun sink policy: source_rgb=%s diagnostic_preview=%s camera_image_rgb=%s trajectory=%s "
+            "frusta_window=%s point_cloud_keep_ratio=%s mesh_keep_ratio=%s.",
             log_source_rgb,
             log_diagnostic_preview,
             log_camera_image_rgb,
             show_tracking_trajectory,
             frusta_history_window_streaming,
+            point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio,
         )
 
         if grpc_url is not None:
@@ -136,6 +148,7 @@ class RerunEventSink:
         if self._live_stream is not None:
             try:
                 self._live_policy.observe_update(self._live_stream, update, payloads=resolved_payloads)
+                self._live_stream.flush(blocking=False)
             except Exception as exc:  # pragma: no cover - live viewer is best effort
                 _LOGGER.warning("Skipping live Rerun update for stage '%s': %s", update.stage_key.value, exc)
         if self._cache_ground_alignment_update(update):
@@ -193,7 +206,7 @@ class RerunEventSink:
         return resolved
 
 
-@ray.remote(num_cpus=0.25, max_restarts=0, max_task_retries=0)
+@ray.remote(num_cpus=1.0, max_restarts=0, max_task_retries=0)
 class RerunSinkActor:
     """Best-effort Ray sidecar that owns one Rerun recording stream."""
 
@@ -209,6 +222,9 @@ class RerunSinkActor:
         log_source_rgb: bool = False,
         log_diagnostic_preview: bool = False,
         log_camera_image_rgb: bool = False,
+        point_cloud_decimation_keep_ratio: float = 1.0,
+        mesh_decimation_keep_ratio: float = 1.0,
+        decimation_random_seed: int = 0,
     ) -> None:
         self._sink = RerunEventSink(
             grpc_url=grpc_url,
@@ -220,6 +236,9 @@ class RerunSinkActor:
             log_source_rgb=log_source_rgb,
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+            decimation_random_seed=decimation_random_seed,
         )
 
     def observe_update(

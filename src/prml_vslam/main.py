@@ -163,7 +163,10 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
     ),
     (
         "Runtime",
-        (("--ray_local_head_lifecycle", "Ray local-head lifecycle: ephemeral or reusable."),),
+        (
+            ("--ray_local_head_lifecycle", "Ray local-head lifecycle: ephemeral or reusable."),
+            ("--ray_log_to_driver", "Forward Ray worker logs to the driver."),
+        ),
     ),
 )
 
@@ -284,7 +287,7 @@ def _capture_run_config_logs(*, path_config: PathConfig, run_id: str) -> Iterato
 
 def _build_rerun_viewer_command(*, run_config: RunConfig, path_config: PathConfig) -> list[str]:
     """Build the authoritative `uv run ... rerun --serve-web` command."""
-    command = ["uv", "run", "--extra", "vista", "rerun"]
+    command = ["uv", "run", "--extra", "visualization", "rerun"]
     blueprint_path = run_config.visualization.viewer_blueprint_path
     if blueprint_path is not None:
         command.append(path_config.resolve_repo_path(blueprint_path).as_posix())
@@ -1278,18 +1281,24 @@ def _wait_for_pipeline_terminal_snapshot(
         slam_runtime_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
         processed_items = 0 if slam_runtime_status is None else slam_runtime_status.processed_items
         if processed_items != previous_processed_items and processed_items > 0:
-            pipeline_demo_console.info(
-                "SLAM processed=%d fps=%s throughput=%s",
-                processed_items,
+            fps_text = (
                 "n/a"
                 if slam_runtime_status is None or slam_runtime_status.fps is None
-                else f"{slam_runtime_status.fps:.2f}",
-                "n/a"
-                if slam_runtime_status is None or slam_runtime_status.throughput is None
-                else f"{slam_runtime_status.throughput:.2f}",
+                else f"{slam_runtime_status.fps:.2f}"
+            )
+            latency_text = (
+                None
+                if slam_runtime_status is None or slam_runtime_status.latency_ms is None
+                else f" latency={slam_runtime_status.latency_ms:.1f}ms"
+            )
+            pipeline_demo_console.info(
+                "SLAM processed=%d fps=%s%s",
+                processed_items,
+                fps_text,
+                "" if latency_text is None else latency_text,
             )
             previous_processed_items = processed_items
-        if snapshot.state not in {RunState.PREPARING, RunState.RUNNING}:
+        if snapshot.state not in {RunState.IDLE, RunState.PREPARING, RunState.RUNNING}:
             return snapshot
         time.sleep(poll_interval_seconds)
 

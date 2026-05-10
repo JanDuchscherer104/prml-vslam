@@ -48,6 +48,7 @@ DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/live/tracking/**",
     "+ world/live/source/camera",
     "+ world/live/model",
+    "+ world/live/model/camera/image",
     "+ world/keyframes/cameras/*",
     "+ world/keyframes/points/**",
 )
@@ -258,6 +259,8 @@ def log_pointcloud(
     pointmap: np.ndarray,
     colors: np.ndarray | None = None,
     point_cloud_radii: float = POINT_CLOUD_RADII,
+    decimation_keep_ratio: float = 1.0,
+    decimation_seed: int = 0,
 ) -> None:
     """Log one point cloud payload without reinterpreting its frame semantics.
 
@@ -279,6 +282,13 @@ def log_pointcloud(
         c = np.asarray(colors).reshape(-1, 3)
         if len(c) == len(positions):
             valid_colors = c[valid_mask]
+
+    valid_positions, valid_colors = _decimate_rows(
+        valid_positions,
+        valid_colors,
+        keep_ratio=decimation_keep_ratio,
+        seed=decimation_seed,
+    )
 
     recording_stream.log(
         entity_path,
@@ -381,28 +391,63 @@ def log_points3d(
     colors: np.ndarray | None = None,
     radii: float = POINT_CLOUD_RADII,
     static: bool = False,
+    decimation_keep_ratio: float = 1.0,
+    decimation_seed: int = 0,
 ) -> None:
     """Log explicit XYZ rows to the viewer."""
     positions = np.asarray(points_xyz, dtype=np.float32).reshape(-1, 3)
     if len(positions) == 0:
         return
     color_payload = None if colors is None else np.asarray(colors)
+    positions, color_payload = _decimate_rows(
+        positions,
+        color_payload,
+        keep_ratio=decimation_keep_ratio,
+        seed=decimation_seed,
+    )
     recording_stream.log(
         entity_path, rr.Points3D(positions=positions, colors=color_payload, radii=radii), static=static
     )
 
 
-def log_pointcloud_ply(recording_stream: rr.RecordingStream, *, entity_path: str, path: Path) -> None:
+def log_pointcloud_ply(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    path: Path,
+    decimation_keep_ratio: float = 1.0,
+    decimation_seed: int = 0,
+) -> None:
     """Load and log one world-space PLY point cloud artifact."""
     points_xyz, colors = load_point_cloud_ply_with_colors(path)
-    log_points3d(recording_stream, entity_path=entity_path, points_xyz=points_xyz, colors=colors, static=True)
+    log_points3d(
+        recording_stream,
+        entity_path=entity_path,
+        points_xyz=points_xyz,
+        colors=colors,
+        static=True,
+        decimation_keep_ratio=decimation_keep_ratio,
+        decimation_seed=decimation_seed,
+    )
 
 
-def log_mesh_ply(recording_stream: rr.RecordingStream, *, entity_path: str, path: Path) -> None:
+def log_mesh_ply(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    path: Path,
+    decimation_keep_ratio: float = 1.0,
+) -> None:
     """Load and log one world-space PLY triangle mesh artifact."""
+    _validate_decimation_keep_ratio(decimation_keep_ratio)
     if not path.exists():
         raise FileNotFoundError(f"Mesh artifact '{path}' does not exist.")
     mesh = o3d.io.read_triangle_mesh(str(path))
+    triangle_count = len(mesh.triangles)
+    if decimation_keep_ratio < 1.0 and triangle_count > 0:
+        target_triangle_count = max(1, int(np.floor(triangle_count * decimation_keep_ratio)))
+        if target_triangle_count < triangle_count:
+            mesh = mesh.simplify_quadric_decimation(target_number_of_triangles=target_triangle_count)
     vertices_xyz = np.asarray(mesh.vertices, dtype=np.float32)
     triangles = np.asarray(mesh.triangles, dtype=np.uint32)
     if vertices_xyz.ndim != 2 or vertices_xyz.shape[1] != 3:
@@ -423,6 +468,30 @@ def log_mesh_ply(recording_stream: rr.RecordingStream, *, entity_path: str, path
         vertex_colors_rgba=vertex_colors,
         static=True,
     )
+
+
+def _decimate_rows(
+    positions: np.ndarray,
+    colors: np.ndarray | None,
+    *,
+    keep_ratio: float,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    _validate_decimation_keep_ratio(keep_ratio)
+    if keep_ratio >= 1.0 or len(positions) == 0:
+        return positions, colors
+    keep_count = max(1, int(np.floor(len(positions) * keep_ratio)))
+    if keep_count >= len(positions):
+        return positions, colors
+    rng = np.random.default_rng(seed)
+    indices = np.sort(rng.choice(len(positions), size=keep_count, replace=False))
+    sampled_colors = None if colors is None else np.asarray(colors)[indices]
+    return positions[indices], sampled_colors
+
+
+def _validate_decimation_keep_ratio(keep_ratio: float) -> None:
+    if not 0.0 < keep_ratio <= 1.0:
+        raise ValueError(f"Expected decimation keep ratio in (0, 1], got {keep_ratio}.")
 
 
 def collect_native_visualization_artifacts(

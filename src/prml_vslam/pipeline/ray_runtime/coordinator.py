@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import threading
 from collections import deque
+from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import ray
@@ -78,9 +80,21 @@ from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.visualization.artifacts import artifact_visualizations
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
+_RerunSinkKind = Literal["live", "export"]
+_RERUN_ALL_DESTINATIONS: frozenset[_RerunSinkKind] = frozenset(("live", "export"))
+_RERUN_EXPORT_DESTINATION: frozenset[_RerunSinkKind] = frozenset(("export",))
 
 
-@ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0)
+@dataclass
+class _RerunSinkSidecar:
+    kind: _RerunSinkKind
+    actor: ActorHandle
+    last_call: ray.ObjectRef[None] | None = None
+    submission_count: int = 0
+    pending_count: int = 0
+
+
+@ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0, max_concurrency=10)
 class RunCoordinatorActor:
     """Own one run's state, event log, and live execution coordination."""
 
@@ -101,6 +115,7 @@ class RunCoordinatorActor:
         self._in_flight_frames = 0
         self._streaming_done = threading.Event()
         self._jsonl_sink: JsonlEventSink | None = None
+        self._rerun_sinks: list[_RerunSinkSidecar] = []
         self._rerun_sink: ActorHandle | None = None
         self._rerun_sink_last_call: ray.ObjectRef[None] | None = None
         self._rerun_sink_submission_count = 0
@@ -149,7 +164,7 @@ class RunCoordinatorActor:
         run_paths = RunArtifactPaths.build(plan.artifact_root)
         self._jsonl_sink = JsonlEventSink(run_paths.summary_path.parent / "run-events.jsonl")
         self._console.info("Writing durable run events to '%s'.", self._jsonl_sink.path)
-        self._rerun_sink = self._build_rerun_sink(run_config=run_config, run_paths=run_paths)
+        self._rerun_sinks = self._build_rerun_sinks(run_config=run_config, run_paths=run_paths)
         self._record_event(RunSubmitted(event_id=self._next_event_id(), run_id=plan.run_id, ts_ns=ts_ns()))
         self._worker = threading.Thread(
             target=self._run,
@@ -195,7 +210,8 @@ class RunCoordinatorActor:
 
     def read_payload(self, handle_id: str) -> np.ndarray | None:
         """Resolve one coordinator-owned target transient payload ref locally."""
-        return self._resolve_handle_payload(self._handle_refs.get(handle_id))
+        with self._lock:
+            return self._resolve_handle_payload(self._handle_refs.get(handle_id))
 
     def shutdown(self) -> None:
         """Stop worker-owned activity and close observer sidecars."""
@@ -319,7 +335,7 @@ class RunCoordinatorActor:
         with self._lock:
             for update in updates:
                 self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        if self._rerun_sink is None:
+        if not self._has_rerun_sinks():
             return
         payload_resolver = self._self_actor_handle()
         for update in updates:
@@ -352,6 +368,7 @@ class RunCoordinatorActor:
                 point_cloud_rgb=packet.point_cloud_rgb if pose is not None else None,
                 intrinsics=intrinsics,
                 T_world_camera=pose,
+                arrival_timestamp_s=packet.arrival_timestamp_s,
                 provenance=provenance,
             ),
         )
@@ -591,6 +608,7 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=stage_key, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
+            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _run_streaming(
@@ -806,24 +824,49 @@ class RunCoordinatorActor:
             )
             self._publish_runtime_updates_from_proxy(runtime_proxy)
 
-    def _build_rerun_sink(self, *, run_config: RunConfig, run_paths: RunArtifactPaths) -> ActorHandle | None:
+    def _build_rerun_sinks(self, *, run_config: RunConfig, run_paths: RunArtifactPaths) -> list[_RerunSinkSidecar]:
         if not (run_config.visualization.connect_live_viewer or run_config.visualization.export_viewer_rrd):
             self._console.info("Rerun sink disabled for run '%s'.", self._run_id)
-            return None
+            return []
         from prml_vslam.visualization.rerun_sink import RerunSinkActor
 
         self._console.info("Rerun sink enabled for run '%s'.", self._run_id)
-        return RerunSinkActor.remote(
-            grpc_url=run_config.visualization.grpc_url if run_config.visualization.connect_live_viewer else None,
-            target_path=run_paths.viewer_rrd_path if run_config.visualization.export_viewer_rrd else None,
-            recording_id=self._run_id,
-            frusta_history_window_streaming=run_config.visualization.frusta_history_window_streaming,
-            show_tracking_trajectory=run_config.visualization.show_tracking_trajectory,
-            trajectory_pose_axis_length=run_config.visualization.trajectory_pose_axis_length,
-            log_source_rgb=run_config.visualization.log_source_rgb,
-            log_diagnostic_preview=run_config.visualization.log_diagnostic_preview,
-            log_camera_image_rgb=run_config.visualization.log_camera_image_rgb,
-        )
+        common_options = {
+            "recording_id": self._run_id,
+            "frusta_history_window_streaming": run_config.visualization.frusta_history_window_streaming,
+            "show_tracking_trajectory": run_config.visualization.show_tracking_trajectory,
+            "trajectory_pose_axis_length": run_config.visualization.trajectory_pose_axis_length,
+            "log_source_rgb": run_config.visualization.log_source_rgb,
+            "log_diagnostic_preview": run_config.visualization.log_diagnostic_preview,
+            "log_camera_image_rgb": run_config.visualization.log_camera_image_rgb,
+            "point_cloud_decimation_keep_ratio": run_config.visualization.point_cloud_decimation_keep_ratio,
+            "mesh_decimation_keep_ratio": run_config.visualization.mesh_decimation_keep_ratio,
+            "decimation_random_seed": run_config.visualization.decimation_random_seed,
+        }
+        sidecars: list[_RerunSinkSidecar] = []
+        if run_config.visualization.connect_live_viewer:
+            sidecars.append(
+                _RerunSinkSidecar(
+                    kind="live",
+                    actor=RerunSinkActor.remote(
+                        grpc_url=run_config.visualization.grpc_url,
+                        target_path=None,
+                        **common_options,
+                    ),
+                )
+            )
+        if run_config.visualization.export_viewer_rrd:
+            sidecars.append(
+                _RerunSinkSidecar(
+                    kind="export",
+                    actor=RerunSinkActor.remote(
+                        grpc_url=None,
+                        target_path=run_paths.viewer_rrd_path,
+                        **common_options,
+                    ),
+                )
+            )
+        return sidecars
 
     def _emit_stage_started(self, stage_key: StageKey) -> None:
         self._console.info("Stage '%s' started for run '%s'.", stage_key.value, self._run_id)
@@ -933,18 +976,38 @@ class RunCoordinatorActor:
         )
         with self._lock:
             self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        self._submit_rerun_update(update=update, payload_resolver=None)
+        self._submit_rerun_update(update=update, payload_resolver=None, destinations=_RERUN_EXPORT_DESTINATION)
 
     def _submit_rerun_update(
         self,
         *,
         update: StageRuntimeUpdate,
         payload_resolver: ActorHandle | None,
+        destinations: frozenset[_RerunSinkKind] = _RERUN_ALL_DESTINATIONS,
     ) -> None:
+        if self._rerun_sinks:
+            for sidecar in self._rerun_sinks:
+                if sidecar.kind not in destinations:
+                    continue
+                try:
+                    self._log_rerun_update_backlog(update, sidecar=sidecar)
+                    sidecar.last_call = sidecar.actor.observe_update.remote(
+                        update=update,
+                        payload_resolver=payload_resolver,
+                    )
+                    self._rerun_sink_last_call = sidecar.last_call
+                except Exception as exc:  # pragma: no cover - best-effort sidecar submission
+                    self._console.warning(
+                        "Failed to submit Rerun %s sink runtime update for stage '%s': %s",
+                        sidecar.kind,
+                        update.stage_key.value,
+                        exc,
+                    )
+            return
         if self._rerun_sink is None:
             return
         try:
-            self._log_rerun_update_backlog(update)
+            self._log_legacy_rerun_update_backlog(update)
             self._rerun_sink_last_call = self._rerun_sink.observe_update.remote(
                 update=update,
                 payload_resolver=payload_resolver,
@@ -1011,7 +1074,41 @@ class RunCoordinatorActor:
     def _self_actor_handle(self) -> ActorHandle:
         return ray.get_actor(coordinator_actor_name(self._run_id), namespace=self._namespace)
 
-    def _log_rerun_update_backlog(self, update: StageRuntimeUpdate) -> None:
+    def _has_rerun_sinks(self) -> bool:
+        return bool(self._rerun_sinks) or self._rerun_sink is not None
+
+    def _log_rerun_update_backlog(self, update: StageRuntimeUpdate, *, sidecar: _RerunSinkSidecar) -> None:
+        sidecar.submission_count += 1
+        if sidecar.last_call is None:
+            return
+        ready, _ = ray.wait([sidecar.last_call], timeout=0.0)
+        if ready:
+            sidecar.pending_count = 0
+            return
+        sidecar.pending_count += 1
+        if sidecar.pending_count == 1 or sidecar.pending_count % 100 == 0:
+            payload_refs = [
+                (item.role, slot, ref.payload_kind, ref.shape, ref.dtype)
+                for item in update.visualizations
+                for slot, ref in item.payload_refs.items()
+            ]
+            lag_detail = (
+                "Live viewer may lag behind runtime updates."
+                if sidecar.kind == "live"
+                else "Exported RRD may lag behind runtime updates."
+            )
+            self._console.warning(
+                "Rerun %s sidecar is lagging: previous runtime update still pending for stage '%s' "
+                "(submitted=%d, consecutive_pending=%d, refs=%s). %s",
+                sidecar.kind,
+                update.stage_key.value,
+                sidecar.submission_count,
+                sidecar.pending_count,
+                payload_refs,
+                lag_detail,
+            )
+
+    def _log_legacy_rerun_update_backlog(self, update: StageRuntimeUpdate) -> None:
         self._rerun_sink_submission_count += 1
         if self._rerun_sink_last_call is None:
             return
@@ -1036,15 +1133,17 @@ class RunCoordinatorActor:
             )
 
     def _remember_handle(self, handle_id: str, payload: HandlePayload) -> None:
-        self._handle_refs[handle_id] = payload
-        self._handle_order.append(handle_id)
-        while len(self._handle_order) > HANDLE_LIMIT:
-            stale_id = self._handle_order.popleft()
-            self._console.debug("Evicting stale handle '%s' due to handle limit %d.", stale_id, HANDLE_LIMIT)
-            self._handle_refs.pop(stale_id, None)
+        with self._lock:
+            self._handle_refs[handle_id] = payload
+            self._handle_order.append(handle_id)
+            while len(self._handle_order) > HANDLE_LIMIT:
+                stale_id = self._handle_order.popleft()
+                self._console.debug("Evicting stale handle '%s' due to handle limit %d.", stale_id, HANDLE_LIMIT)
+                self._handle_refs.pop(stale_id, None)
 
     def _resolve_handle_local(self, handle_id: str) -> np.ndarray | None:
-        return self._resolve_handle_payload(self._handle_refs.get(handle_id))
+        with self._lock:
+            return self._resolve_handle_payload(self._handle_refs.get(handle_id))
 
     @staticmethod
     def _resolve_handle_payload(payload: HandlePayload | None) -> np.ndarray | None:
@@ -1055,25 +1154,39 @@ class RunCoordinatorActor:
         return np.asarray(ray.get(payload))
 
     def _next_event_id(self) -> str:
-        self._event_counter += 1
-        return str(self._event_counter)
+        with self._lock:
+            self._event_counter += 1
+            return str(self._event_counter)
 
     def _close_rerun_sink(self) -> None:
-        if self._rerun_sink is None:
+        if not self._has_rerun_sinks():
             return
+        actors = [sidecar.actor for sidecar in self._rerun_sinks]
+        if self._rerun_sink is not None:
+            actors.append(self._rerun_sink)
         try:
             self._submit_final_artifact_rerun_update()
-            if self._rerun_sink_last_call is not None:
+            if self._rerun_sinks:
+                for sidecar in self._rerun_sinks:
+                    if sidecar.last_call is not None:
+                        ray.get(sidecar.last_call)
+                    sidecar.last_call = sidecar.actor.close.remote()
+                    ray.get(sidecar.last_call)
+                    self._rerun_sink_last_call = sidecar.last_call
+            elif self._rerun_sink is not None:
+                if self._rerun_sink_last_call is not None:
+                    ray.get(self._rerun_sink_last_call)
+                self._rerun_sink_last_call = self._rerun_sink.close.remote()
                 ray.get(self._rerun_sink_last_call)
-            self._rerun_sink_last_call = self._rerun_sink.close.remote()
-            ray.get(self._rerun_sink_last_call)
         except Exception as exc:  # pragma: no cover - best-effort sidecar cleanup
             self._console.warning("Failed to close Rerun sink actor for run '%s': %s", self._run_id, exc)
         finally:
-            try:
-                ray.kill(self._rerun_sink, no_restart=True)
-            except Exception:
-                pass
+            for actor in actors:
+                try:
+                    ray.kill(actor, no_restart=True)
+                except Exception:
+                    pass
+            self._rerun_sinks = []
             self._rerun_sink = None
             self._rerun_sink_last_call = None
 
@@ -1084,6 +1197,7 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=StageKey.SUMMARY, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
+            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _require_run_config(self) -> RunConfig:

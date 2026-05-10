@@ -251,6 +251,8 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert "+ world/keyframes/cameras/*" in layout.views[0].contents
     assert "+ world/keyframes/points/**" in layout.views[0].contents
     assert "+ world/live/model" in layout.views[0].contents
+    assert "+ world/live/model/camera/image" in layout.views[0].contents
+    assert "+ world/live/model/camera/image/**" not in layout.views[0].contents
     assert "- world/live/model/camera/image/**" not in layout.views[0].contents
     assert "- world/reference/**/source_native/**" not in layout.views[0].contents
     assert [view.origin for view in layout.views[1].views] == [

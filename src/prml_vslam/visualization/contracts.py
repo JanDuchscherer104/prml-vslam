@@ -60,5 +60,14 @@ class VisualizationConfig(BaseConfig):
     log_camera_image_rgb: bool = False
     """Whether the 3D camera branch should also log RGB image planes."""
 
+    point_cloud_decimation_keep_ratio: float = Field(default=1.0, gt=0.0, le=1.0)
+    """Fraction of point-cloud rows retained when logging geometry to Rerun."""
+
+    mesh_decimation_keep_ratio: float = Field(default=1.0, gt=0.0, le=1.0)
+    """Fraction of mesh triangles targeted when logging mesh artifacts to Rerun."""
+
+    decimation_random_seed: int = Field(default=0, ge=0)
+    """Base seed used for deterministic visualization-only point-cloud sampling."""
+
 
 __all__ = ["VisualizationConfig"]

@@ -74,8 +74,10 @@ from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, Vi
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceSource,
+    ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash
@@ -259,6 +261,7 @@ def test_run_config_defaults_to_ephemeral_local_head_lifecycle() -> None:
     )
 
     assert run_config.ray_local_head_lifecycle == "ephemeral"
+    assert run_config.ray_log_to_driver is True
 
 
 def test_run_config_from_toml_accepts_inline_ray_policy(tmp_path: Path) -> None:
@@ -269,6 +272,7 @@ experiment_name = "demo"
 mode = "streaming"
 output_dir = ".artifacts"
 ray_local_head_lifecycle = "reusable"
+ray_log_to_driver = false
 
 [stages.source.backend]
 source_id = "advio"
@@ -288,6 +292,7 @@ method_id = "vista"
     run_config = RunConfig.from_toml(config_path)
 
     assert run_config.ray_local_head_lifecycle == "reusable"
+    assert run_config.ray_log_to_driver is False
 
 
 def test_run_config_from_toml_accepts_viewer_blueprint_path(tmp_path: Path) -> None:
@@ -827,6 +832,10 @@ def test_run_coordinator_resolves_materialized_handle_payloads_without_ray_get()
     assert np.array_equal(resolved, payload)
 
 
+def test_run_coordinator_actor_allows_concurrent_reader_methods() -> None:
+    assert RunCoordinatorActor._default_options["max_concurrency"] == 10
+
+
 def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
@@ -838,6 +847,37 @@ def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
 
     assert resolved is not None
     assert np.array_equal(resolved, payload)
+
+
+def test_run_coordinator_forwards_packet_arrival_timestamp_to_slam_runtime() -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted: list[Observation] = []
+
+    class FakeSlamRuntimeProxy:
+        def submit_stream_item(self, item: Observation) -> None:
+            submitted.append(item)
+
+    coordinator._slam_runtime_proxy = FakeSlamRuntimeProxy()
+
+    coordinator._submit_frame_to_slam_runtime(
+        packet=Observation(
+            seq=7,
+            timestamp_ns=700,
+            arrival_timestamp_s=123.45,
+            provenance=ObservationProvenance(source_id="source"),
+        ),
+        frame_ref=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_ref=None,
+        confidence_ref=None,
+        pointmap_ref=None,
+        intrinsics=None,
+        pose=None,
+        provenance=ObservationProvenance(source_id="source"),
+    )
+
+    assert len(submitted) == 1
+    assert submitted[0].arrival_timestamp_s == 123.45
 
 
 def test_run_coordinator_applies_slam_runtime_updates_to_snapshot() -> None:
@@ -937,6 +977,227 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
     assert submitted[0][0].stage_key is StageKey.SOURCE
     assert submitted[0][1] == "resolver"
     assert coordinator._rerun_sink_last_call == "rerun-call-1"
+
+
+def _attach_fake_rerun_sidecars(
+    coordinator: Any,
+    *,
+    kinds: tuple[str, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, StageRuntimeUpdate, Any]]:
+    submitted: list[tuple[str, StageRuntimeUpdate, Any]] = []
+
+    class _FakeObserveUpdateRemote:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
+        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: Any) -> str:
+            submitted.append((self._label, update, payload_resolver))
+            return f"{self._label}-call-{len(submitted)}"
+
+    class _FakeActor:
+        def __init__(self, label: str) -> None:
+            self.observe_update = _FakeObserveUpdateRemote(label)
+
+    coordinator._rerun_sinks = [
+        SimpleNamespace(kind=kind, actor=_FakeActor(kind), last_call=None, submission_count=0, pending_count=0)
+        for kind in kinds
+    ]
+    monkeypatch.setattr(coordinator, "_log_rerun_update_backlog", lambda update, sidecar: None)
+    return submitted
+
+
+def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidecars(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    created: list[dict[str, Any]] = []
+    submitted: list[tuple[str, StageRuntimeUpdate, Any]] = []
+
+    class FakeObserveUpdateRemote:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
+        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: Any) -> str:
+            submitted.append((self._label, update, payload_resolver))
+            return f"{self._label}-call"
+
+    class FakeActor:
+        def __init__(self, label: str) -> None:
+            self.observe_update = FakeObserveUpdateRemote(label)
+
+    class FakeRerunSinkActor:
+        @staticmethod
+        def remote(**kwargs: Any) -> FakeActor:
+            created.append(kwargs)
+            return FakeActor("live" if kwargs["grpc_url"] is not None else "export")
+
+    monkeypatch.setattr("prml_vslam.visualization.rerun_sink.RerunSinkActor", FakeRerunSinkActor)
+    run_config = build_run_config(
+        experiment_name="demo",
+        mode=PipelineMode.STREAMING,
+        output_dir=tmp_path / ".artifacts",
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        connect_live_viewer=True,
+        export_viewer_rrd=True,
+        grpc_url="rerun+http://127.0.0.1:9876/proxy",
+    )
+    run_paths = RunArtifactPaths.build(tmp_path / "demo")
+    update = StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1)
+
+    coordinator._rerun_sinks = coordinator._build_rerun_sinks(run_config=run_config, run_paths=run_paths)
+    coordinator._submit_rerun_update(update=update, payload_resolver=None)
+
+    assert len(coordinator._rerun_sinks) == 2
+    assert created[0]["grpc_url"] == "rerun+http://127.0.0.1:9876/proxy"
+    assert created[0]["target_path"] is None
+    assert created[1]["grpc_url"] is None
+    assert created[1]["target_path"] == run_paths.viewer_rrd_path
+    assert submitted == [("live", update, None), ("export", update, None)]
+    assert coordinator._rerun_sinks[0].last_call == "live-call"
+    assert coordinator._rerun_sinks[1].last_call == "export-call"
+
+
+def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=1,
+        runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+    )
+
+    coordinator.on_slam_runtime_updates(updates=[update])
+
+    assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
+
+
+def test_run_coordinator_routes_source_reference_visualizations_to_export_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    reference = ReferenceTrajectoryRef(
+        source=ReferenceSource.GROUND_TRUTH,
+        path=tmp_path / "ground_truth.tum",
+        target_frame="world",
+    )
+    artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
+    output = SourceStageOutput(
+        sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+        benchmark_inputs=PreparedBenchmarkInputs(reference_trajectories=[reference]),
+    )
+
+    coordinator._submit_source_reference_visualization_update(
+        output=output,
+        artifacts={reference_trajectory_artifact_key(reference): artifact},
+    )
+
+    assert [label for label, _, _ in submitted] == ["export"]
+    assert submitted[0][1].stage_key is StageKey.SOURCE
+
+
+def test_run_coordinator_routes_artifact_visualizations_to_export_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    artifact = ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")
+
+    coordinator._submit_artifact_visualization_update(
+        stage_key=StageKey.SLAM,
+        outcome=StageOutcome(
+            stage_key=StageKey.SLAM,
+            status=StageStatus.COMPLETED,
+            config_hash="cfg",
+            input_fingerprint="input",
+            artifacts={"trajectory_tum": artifact},
+        ),
+    )
+
+    assert [label for label, _, _ in submitted] == ["export"]
+    assert submitted[0][1].stage_key is StageKey.SLAM
+
+
+def test_run_coordinator_routes_final_artifacts_to_export_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    coordinator._snapshot = RunSnapshot(
+        run_id="demo",
+        artifacts={"trajectory_tum": ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")},
+    )
+
+    coordinator._submit_final_artifact_rerun_update()
+
+    assert [label for label, _, _ in submitted] == ["export"]
+    assert submitted[0][1].stage_key is StageKey.SUMMARY
+
+
+def test_run_coordinator_drops_export_only_updates_when_only_live_sidecar_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live",), monkeypatch=monkeypatch)
+    coordinator._snapshot = RunSnapshot(
+        run_id="demo",
+        artifacts={"trajectory_tum": ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")},
+    )
+
+    coordinator._submit_final_artifact_rerun_update()
+
+    assert submitted == []
+    assert coordinator._rerun_sinks[0].last_call is None
+
+
+def test_run_coordinator_keeps_source_reference_updates_out_of_live_sidecar_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
+    reference = ReferenceTrajectoryRef(
+        source=ReferenceSource.GROUND_TRUTH,
+        path=tmp_path / "ground_truth.tum",
+        target_frame="world",
+    )
+    source_artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
+    source_output = SourceStageOutput(
+        sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+        benchmark_inputs=PreparedBenchmarkInputs(reference_trajectories=[reference]),
+    )
+    slam_update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=2,
+        runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.RUNNING),
+    )
+
+    coordinator._submit_source_reference_visualization_update(
+        output=source_output,
+        artifacts={reference_trajectory_artifact_key(reference): source_artifact},
+    )
+    coordinator.on_slam_runtime_updates(updates=[slam_update])
+
+    live_stages = [update.stage_key for label, update, _ in submitted if label == "live"]
+    assert live_stages == [StageKey.SLAM]
 
 
 def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver() -> None:
@@ -1801,6 +2062,35 @@ def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch:
     assert shutdowns == ["run-1", "ray"]
 
 
+def test_ray_backend_shutdown_run_waits_for_coordinator_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = RayPipelineBackend(namespace="pytest-unit")
+    calls: list[Any] = []
+    get_calls: list[tuple[Any, float | None]] = []
+
+    class FakeShutdown:
+        def remote(self) -> str:
+            calls.append("shutdown")
+            return "shutdown-ref"
+
+    coordinator = SimpleNamespace(shutdown=FakeShutdown())
+    backend._coordinators = {"run-1": coordinator}  # type: ignore[assignment]
+
+    def fake_get(value: Any, *, timeout: float | None = None) -> None:
+        get_calls.append((value, timeout))
+
+    def fake_get_actor(*args: Any, **kwargs: Any) -> Any:
+        raise ValueError
+
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get", fake_get)
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.kill", lambda actor, no_restart: calls.append("kill"))
+    monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get_actor", fake_get_actor)
+
+    backend._shutdown_run("run-1")
+
+    assert calls == ["shutdown", "kill"]
+    assert get_calls == [("shutdown-ref", 20.0)]
+
+
 def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1813,10 +2103,11 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
         output_dir=path_config.artifacts_dir,
         source_backend=VideoSourceConfig(video_path=Path("captures/dummy.mp4")),
         method=MethodId.VISTA,
-    )
+    ).model_copy(update={"ray_log_to_driver": False})
     snapshot = RunSnapshot(run_id="backend-unit", state=RunState.COMPLETED)
     submitted: list[tuple[str, str | None]] = []
     coordinator_options: dict[str, Any] = {}
+    ray_log_to_driver: list[bool] = []
     stopped: list[str] = []
 
     class _Remote:
@@ -1839,7 +2130,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     )()
 
     monkeypatch.setattr("prml_vslam.pipeline.backend_ray.ray.get", lambda value: value)
-    monkeypatch.setattr(backend, "_ensure_ray", lambda: None)
+    monkeypatch.setattr(backend, "_ensure_ray", lambda: ray_log_to_driver.append(backend._ray_log_to_driver))
 
     def fake_create_coordinator(run_id: str, *, actor_options: dict[str, Any]):
         coordinator_options.update(actor_options)
@@ -1851,6 +2142,7 @@ def test_ray_backend_submits_via_coordinator_and_reads_via_backend(
     run_id = backend.submit_run(run_config=run_config, runtime_source="runtime")
 
     assert run_id == "backend-unit"
+    assert ray_log_to_driver == [False]
     assert submitted == [("backend-unit", "runtime")]
     assert coordinator_options["num_cpus"] == 2.0
     assert coordinator_options["num_gpus"] == 1.0
