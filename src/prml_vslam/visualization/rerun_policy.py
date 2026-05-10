@@ -76,34 +76,34 @@ _RGB_ENTITY_PATHS = {
     ROLE_SOURCE_RGB: "world/live/source/rgb",
     ROLE_SOURCE_CAMERA_RGB: "world/live/source/camera/image",
     ROLE_MODEL_RGB: MODEL_RGB_2D_ENTITY_PATH,
-    ROLE_MODEL_CAMERA_RGB: "world/live/model/camera/image",
-    ROLE_MODEL_PREVIEW: "world/live/model/diag/preview",
-    ROLE_KEYFRAME_RGB: "world/keyframes/cameras/{keyframe_index:06d}/image",
-    ROLE_KEYFRAME_PREVIEW: "world/keyframes/cameras/{keyframe_index:06d}/diag/preview",
+    ROLE_MODEL_CAMERA_RGB: "world/slam/vista_slam_world/live/model/camera/image",
+    ROLE_MODEL_PREVIEW: "world/slam/vista_slam_world/live/model/diag/preview",
+    ROLE_KEYFRAME_RGB: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image",
+    ROLE_KEYFRAME_PREVIEW: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/diag/preview",
 }
 _SOURCE_RGB_ROLES = {ROLE_SOURCE_RGB, ROLE_SOURCE_CAMERA_RGB}
 _DIAGNOSTIC_PREVIEW_ROLES = {ROLE_MODEL_PREVIEW, ROLE_KEYFRAME_PREVIEW}
 _DEPTH_ENTITY_PATHS = {
-    ROLE_MODEL_DEPTH: "world/live/model/camera/image/depth",
+    ROLE_MODEL_DEPTH: "world/slam/vista_slam_world/live/model/camera/image/depth",
     ROLE_SOURCE_DEPTH: "world/live/source/camera/image/depth",
-    ROLE_KEYFRAME_DEPTH: "world/keyframes/cameras/{keyframe_index:06d}/image/depth",
+    ROLE_KEYFRAME_DEPTH: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image/depth",
 }
 _POINTMAP_ENTITY_PATHS = {
-    ROLE_MODEL_POINTMAP: "world/live/model/points",
+    ROLE_MODEL_POINTMAP: "world/slam/vista_slam_world/live/model/points",
     ROLE_SOURCE_POINTMAP: "world/live/source/camera/points",
-    ROLE_KEYFRAME_POINTMAP: "world/keyframes/points/{keyframe_index:06d}/points",
+    ROLE_KEYFRAME_POINTMAP: "world/slam/vista_slam_world/keyframes/points/{keyframe_index:06d}/points",
 }
 _POSE_ENTITY_PATHS = {
-    ROLE_TRACKING_POSE: "world/live/tracking/camera",
+    ROLE_TRACKING_POSE: "world/slam/vista_slam_world/live/tracking/camera",
     ROLE_SOURCE_CAMERA_POSE: "world/live/source/camera",
-    ROLE_LIVE_MODEL_POSE: "world/live/model",
-    ROLE_KEYFRAME_CAMERA_POSE: "world/keyframes/cameras/{keyframe_index:06d}",
-    ROLE_KEYFRAME_POINTS_POSE: "world/keyframes/points/{keyframe_index:06d}",
+    ROLE_LIVE_MODEL_POSE: "world/slam/vista_slam_world/live/model",
+    ROLE_KEYFRAME_CAMERA_POSE: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}",
+    ROLE_KEYFRAME_POINTS_POSE: "world/slam/vista_slam_world/keyframes/points/{keyframe_index:06d}",
 }
 _PINHOLE_ENTITY_PATHS = {
-    ROLE_MODEL_PINHOLE: "world/live/model/camera/image",
+    ROLE_MODEL_PINHOLE: "world/slam/vista_slam_world/live/model/camera/image",
     ROLE_SOURCE_PINHOLE: "world/live/source/camera/image",
-    ROLE_KEYFRAME_PINHOLE: "world/keyframes/cameras/{keyframe_index:06d}/image",
+    ROLE_KEYFRAME_PINHOLE: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image",
 }
 
 
@@ -282,7 +282,7 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
-        target_frame = _entity_token(str(item.metadata.get("target_frame") or "advio_gt_world"))
+        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
         entity_path = f"world/overlays/{target_frame}/vista/sim3_aligned/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
@@ -359,7 +359,7 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(TRAJECTORY_ARTIFACT)
         if artifact is None:
             return
-        target_frame = _entity_token(str(item.metadata.get("target_frame") or "advio_gt_world"))
+        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
         entity_path = (
             "world/slam/vista_slam_world/trajectory/raw"
             if item.role == ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT

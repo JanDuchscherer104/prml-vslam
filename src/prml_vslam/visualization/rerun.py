@@ -45,12 +45,7 @@ DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/reconstruction/**",
     "+ world/slam/vista_slam_world/**",
     "+ world/overlays/**",
-    "+ world/live/tracking/**",
     "+ world/live/source/camera",
-    "+ world/live/model",
-    "+ world/live/model/camera/image",
-    "+ world/keyframes/cameras/*",
-    "+ world/keyframes/points/**",
 )
 """Default 3D view query: spatial map/history only, without 2D raster branches."""
 
@@ -68,8 +63,8 @@ def build_default_blueprint(
             name="Model RGB",
         ),
         rrb.Spatial2DView(
-            origin="world/live/model/camera/image",
-            contents="world/live/model/camera/image/depth",
+            origin="world/slam/vista_slam_world/live/model/camera/image",
+            contents="world/slam/vista_slam_world/live/model/camera/image/depth",
             name="Model Depth",
         ),
     ]
@@ -93,8 +88,8 @@ def build_default_blueprint(
     if show_diagnostic_preview:
         views.append(
             rrb.Spatial2DView(
-                origin="world/live/model/diag/preview",
-                contents="world/live/model/diag/preview",
+                origin="world/slam/vista_slam_world/live/model/diag/preview",
+                contents="world/slam/vista_slam_world/live/model/diag/preview",
                 name="Preview",
             )
         )

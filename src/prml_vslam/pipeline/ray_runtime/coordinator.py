@@ -495,7 +495,7 @@ class RunCoordinatorActor:
             stage_key = stage.key
             if stage_key is StageKey.TRAJECTORY_EVALUATION and self._stop_requested:
                 continue
-            runtime_proxy = self._run_bounded_stage(
+            runtime_proxy, _ = self._run_bounded_stage(
                 stage_key=stage_key,
                 runtime_manager=runtime_manager,
                 context=context,
@@ -534,9 +534,9 @@ class RunCoordinatorActor:
         stage_key: StageKey,
         runtime_manager: RuntimeManager,
         context: PipelineExecutionContext,
-    ) -> StageRuntimeHandle:
+    ) -> tuple[StageRuntimeHandle, StageResult]:
         runtime_proxy = runtime_manager.runtime_for(stage_key)
-        self._stage_runner.run_configured_offline_stage(
+        result = self._stage_runner.run_configured_offline_stage(
             stage_key=stage_key,
             runtime=runtime_proxy,
             stage_config=context.run_config.stages.section(stage_key),
@@ -546,7 +546,7 @@ class RunCoordinatorActor:
             on_stage_completed=self._record_stage_result,
             on_stage_failed=self._record_stage_failure,
         )
-        return runtime_proxy
+        return runtime_proxy, result
 
     def _record_stage_result(self, stage_key: StageKey, result: StageResult) -> None:
         payload = result.payload
@@ -661,7 +661,7 @@ class RunCoordinatorActor:
                 continue
             stage_key = stage.key
             if stage_key is StageKey.SOURCE:
-                source_result = self._run_bounded_stage(
+                _, source_result = self._run_bounded_stage(
                     stage_key=stage_key,
                     runtime_manager=runtime_manager,
                     context=context,
@@ -815,7 +815,7 @@ class RunCoordinatorActor:
                 self._streaming_error is not None or self._stop_requested
             ):
                 continue
-            runtime_proxy = self._run_bounded_stage(
+            runtime_proxy, _ = self._run_bounded_stage(
                 stage_key=stage_key,
                 runtime_manager=runtime_manager,
                 context=context,
@@ -974,7 +974,7 @@ class RunCoordinatorActor:
         )
         with self._lock:
             self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        self._submit_rerun_update(update=update, payload_resolver=None, destinations=_RERUN_EXPORT_DESTINATION)
+        self._submit_rerun_update(update=update, payload_resolver=None)
 
     def _submit_rerun_update(
         self,

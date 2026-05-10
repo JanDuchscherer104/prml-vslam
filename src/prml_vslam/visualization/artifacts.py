@@ -67,7 +67,7 @@ def artifact_visualizations(artifacts: Mapping[str, ArtifactRef]) -> list[Visual
         )
 
     # Resolve dynamic target frame from alignment metadata if available.
-    target_frame = "advio_gt_world"
+    target_frame = "world"
     alignment_ref = artifacts.get("trajectory_alignment")
     if alignment_ref is not None and alignment_ref.path.exists():
         try:
