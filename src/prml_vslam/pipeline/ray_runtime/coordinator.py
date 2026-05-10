@@ -840,6 +840,7 @@ class RunCoordinatorActor:
             "point_cloud_decimation_keep_ratio": run_config.visualization.point_cloud_decimation_keep_ratio,
             "mesh_decimation_keep_ratio": run_config.visualization.mesh_decimation_keep_ratio,
             "decimation_random_seed": run_config.visualization.decimation_random_seed,
+            "view_coordinates": run_config.visualization.view_coordinates,
         }
         sidecars: list[_RerunSinkSidecar] = []
         if run_config.visualization.connect_live_viewer:
