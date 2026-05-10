@@ -65,6 +65,19 @@ def artifact_visualizations(artifacts: Mapping[str, ArtifactRef]) -> list[Visual
                 metadata={"reconstruction_id": "reference"},
             )
         )
+
+    # Resolve dynamic target frame from alignment metadata if available.
+    target_frame = "advio_gt_world"
+    alignment_ref = artifacts.get("trajectory_alignment")
+    if alignment_ref is not None and alignment_ref.path.exists():
+        try:
+            import json  # noqa: PLC0415
+
+            alignment = json.loads(alignment_ref.path.read_text(encoding="utf-8"))
+            target_frame = str(alignment.get("target_frame", target_frame))
+        except (json.JSONDecodeError, OSError):
+            pass
+
     aligned_trajectory = artifacts.get("aligned_estimate_tum")
     if aligned_trajectory is not None:
         visualizations.append(
@@ -72,8 +85,8 @@ def artifact_visualizations(artifacts: Mapping[str, ArtifactRef]) -> list[Visual
                 intent=VisualizationIntent.TRAJECTORY,
                 role=ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
                 artifact_refs={"trajectory": aligned_trajectory},
-                space="advio_gt_world",
-                metadata={"target_frame": "advio_gt_world", "coordinate_status": "sim3_aligned"},
+                space=target_frame,
+                metadata={"target_frame": target_frame, "coordinate_status": "sim3_aligned"},
             )
         )
     aligned_point_cloud = artifacts.get("aligned_point_cloud_ply")
@@ -83,8 +96,8 @@ def artifact_visualizations(artifacts: Mapping[str, ArtifactRef]) -> list[Visual
                 intent=VisualizationIntent.POINT_CLOUD,
                 role=ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
                 artifact_refs={POINT_CLOUD_ARTIFACT: aligned_point_cloud},
-                space="advio_gt_world",
-                metadata={"target_frame": "advio_gt_world", "coordinate_status": "sim3_aligned"},
+                space=target_frame,
+                metadata={"target_frame": target_frame, "coordinate_status": "sim3_aligned"},
             )
         )
     return visualizations

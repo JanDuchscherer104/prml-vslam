@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from prml_vslam.eval.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.stage.visualization import (
@@ -128,6 +129,7 @@ class RerunLoggingPolicy:
     log_ground_plane_patch: Callable[..., None]
     log_rgb_image: Callable[..., None]
     log_transform: Callable[..., None]
+    log_sim3_transform: Callable[..., None]
     frusta_history_window_streaming: int | None = 20
     show_tracking_trajectory: bool = True
     trajectory_pose_axis_length: float = 0.0
@@ -152,6 +154,8 @@ class RerunLoggingPolicy:
         for semantic_event in update.semantic_events:
             if isinstance(semantic_event, GroundAlignmentMetadata):
                 self._log_ground_alignment(stream, metadata=semantic_event)
+            if isinstance(semantic_event, TrajectoryAlignmentArtifact):
+                self._log_trajectory_alignment(stream, alignment=semantic_event)
         for item in update.visualizations:
             self._log_visualization_item(stream, item, payloads=resolved_payloads)
 
@@ -467,6 +471,21 @@ class RerunLoggingPolicy:
         if metadata is None or not metadata.applied:
             return
         self.log_ground_plane_patch(stream, metadata=metadata)
+
+    def _log_trajectory_alignment(self, stream, *, alignment: TrajectoryAlignmentArtifact) -> None:
+        """Log the Sim(3) alignment transform to the SLAM world branch root."""
+        # The alignment artifact contains target <- source transform where
+        # source_frame is 'vista_slam_world'.
+        # We log this at 'world/slam/vista_slam_world' so everything underneath it
+        # (tracking trajectory, keyframes, pointmaps) snaps to the target frame.
+        self.log_sim3_transform(
+            stream,
+            entity_path="world/slam/vista_slam_world",
+            rotation_matrix=np.asarray(alignment.rotation, dtype=np.float64),
+            translation_xyz=np.asarray(alignment.translation, dtype=np.float64),
+            scale=alignment.scale,
+            static=True,
+        )
 
     def _log_tracking_trajectory(self, stream, *, pose: FrameTransform) -> None:
         """Log one growing trajectory polyline from all observed pose estimates."""

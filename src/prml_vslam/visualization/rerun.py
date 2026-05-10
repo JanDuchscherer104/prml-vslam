@@ -12,6 +12,7 @@ import numpy as np
 import open3d as o3d
 import rerun as rr  # type: ignore[import-not-found]
 import rerun.blueprint as rrb  # type: ignore[import-not-found]
+from pytransform3d.rotations import quaternion_from_matrix
 
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
@@ -162,6 +163,30 @@ def attach_recording_sinks(
     if not sinks:
         return
     recording_stream.set_sinks(*sinks)
+
+
+def log_sim3_transform(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    rotation_matrix: np.ndarray,
+    translation_xyz: np.ndarray,
+    scale: float = 1.0,
+    axis_length: float | None = None,
+    static: bool = False,
+) -> None:
+    """Log one explicit Sim(3) transform (rotation, translation, and scale)."""
+    recording_stream.log(
+        entity_path,
+        rr.Transform3D(
+            translation=np.asarray(translation_xyz, dtype=np.float32).tolist(),
+            rotation=rr.Quaternion(xyzw=quaternion_from_matrix(rotation_matrix)[[1, 2, 3, 0]].tolist()),
+            scale=scale,
+            relation=rr.TransformRelation.ParentFromChild,
+            axis_length=axis_length,
+        ),
+        static=static,
+    )
 
 
 def log_transform(

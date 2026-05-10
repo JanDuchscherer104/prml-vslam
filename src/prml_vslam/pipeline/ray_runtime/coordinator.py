@@ -16,6 +16,7 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
+from prml_vslam.eval.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
@@ -66,10 +67,14 @@ from prml_vslam.pipeline.stages.base.contracts import (
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
 from prml_vslam.pipeline.stages.specs import stage_runtime_spec_for
+from prml_vslam.sources.contracts import (
+    ReferenceSource,
+    SourceStageOutput,
+)
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
-from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.sources.stage.visualization import SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.visualization.artifacts import artifact_visualizations
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
@@ -557,6 +562,15 @@ class RunCoordinatorActor:
                 outcome=result.outcome,
             )
         )
+        if stage_key is StageKey.TRAJECTORY_EVALUATION and isinstance(payload, TrajectoryAlignmentArtifact):
+            self._submit_rerun_update(
+                update=StageRuntimeUpdate(
+                    stage_key=StageKey.TRAJECTORY_EVALUATION,
+                    timestamp_ns=ts_ns(),
+                    semantic_events=[payload],
+                ),
+                payload_resolver=None,
+            )
         if stage_key is StageKey.GRAVITY_ALIGNMENT and isinstance(payload, GroundAlignmentMetadata):
             self._submit_rerun_update(
                 update=StageRuntimeUpdate(
@@ -631,11 +645,14 @@ class RunCoordinatorActor:
                 continue
             stage_key = stage.key
             if stage_key is StageKey.SOURCE:
-                self._run_bounded_stage(
+                source_result = self._run_bounded_stage(
                     stage_key=stage_key,
                     runtime_manager=runtime_manager,
                     context=context,
                 )
+                # WP-XX: Implement initial SE(3) alignment for monocular SLAM visuals.
+                if isinstance(source_result.payload, SourceStageOutput):
+                    self._log_initial_visual_alignment(source_result.payload)
                 continue
             if stage_key is StageKey.SLAM:
                 self._start_streaming_slam_runtime(context=context, runtime_manager=runtime_manager)
@@ -946,6 +963,50 @@ class RunCoordinatorActor:
                 self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
         for update in updates:
             self._submit_rerun_update(update=update, payload_resolver=None)
+
+    def _log_initial_visual_alignment(self, output: SourceStageOutput) -> None:
+        """Log a static SE(3) transform to snap the SLAM origin to the GT start pose."""
+        if output.benchmark_inputs is None:
+            return
+        reference = output.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
+        if reference is None or not reference.path.exists():
+            return
+        try:
+            trajectory = load_tum_trajectory(reference.path)
+            if len(trajectory.positions_xyz) == 0:
+                return
+            # We use the very first GT pose as the initial visual alignment.
+            # ViSTA SLAM starts at identity, so we align vista_slam_world to match
+            # the GT world frame at the first frame.
+            rotation = np.asarray(trajectory.orientations_quat_wxyz[0], dtype=np.float64)
+            translation = np.asarray(trajectory.positions_xyz[0], dtype=np.float64)
+            # Convert EVO WXYZ to rotation matrix
+            from pytransform3d.rotations import matrix_from_quaternion as mfq  # noqa: PLC0415
+
+            rotation_matrix = mfq(rotation)
+
+            self._submit_rerun_update(
+                update=StageRuntimeUpdate(
+                    stage_key=StageKey.SOURCE,
+                    timestamp_ns=ts_ns(),
+                    semantic_events=[
+                        TrajectoryAlignmentArtifact(
+                            source_frame="vista_slam_world",
+                            target_frame=reference.target_frame or "world",
+                            scale=1.0,  # Initial SE(3) only
+                            rotation=rotation_matrix.tolist(),
+                            translation=translation.tolist(),
+                            matched_pairs=1,
+                            rms_error_m=0.0,
+                            reference_source="ground_truth",
+                            sync_max_diff_s=0.01,
+                        )
+                    ],
+                ),
+                payload_resolver=None,
+            )
+        except Exception as exc:
+            self._console.warning("Failed to log initial visual alignment: %s", exc)
 
     def _self_actor_handle(self) -> ActorHandle:
         return ray.get_actor(coordinator_actor_name(self._run_id), namespace=self._namespace)

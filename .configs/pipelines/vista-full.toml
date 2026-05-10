@@ -14,7 +14,7 @@ enabled = true
 
     [stages.source.backend]
     source_id                   = "tum_rgbd"
-    sequence_id                 = "freiburg1_room"
+    sequence_id                 = "freiburg3_large_cabinet"
     frame_stride                = 5
     replay_mode                 = "realtime"
 

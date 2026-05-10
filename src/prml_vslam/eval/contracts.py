@@ -281,6 +281,12 @@ class SelectionSnapshot(BaseData):
     reference_path: Path | None = None
     """Reference TUM trajectory path when available."""
 
+    target_frame: str | None = None
+    """Target coordinate frame for alignment and metrics."""
+
+    coordinate_status: str | None = None
+    """Native coordinate status of the reference trajectory."""
+
     run: DiscoveredRun
     """Selected artifact run."""
 
