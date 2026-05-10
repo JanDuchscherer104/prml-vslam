@@ -1055,7 +1055,9 @@ class RunCoordinatorActor:
                         TrajectoryAlignmentArtifact(
                             source_frame="vista_slam_world",
                             target_frame=reference.target_frame or "world",
-                            scale=1.0,  # Initial SE(3) only
+                            scale=float(self._run_config.visualization.initial_scale)
+                            if self._run_config
+                            else 1.0,
                             rotation=rotation_matrix.tolist(),
                             translation=translation.tolist(),
                             matched_pairs=1,
