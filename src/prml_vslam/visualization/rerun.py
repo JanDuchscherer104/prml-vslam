@@ -143,9 +143,17 @@ def log_root_world_transform(
         rr.Transform3D(axis_length=ROOT_WORLD_AXIS_LENGTH),
         static=True,
     )
-    # Parse the view coordinates string into a Rerun ViewCoordinates component.
-    # If the string is invalid, Rerun will raise a ValueError.
-    recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.ViewCoordinates.from_string(view_coordinates), static=True)
+    # Resolve the view coordinates shorthand (e.g., 'RFU') from the rr.ViewCoordinates constants.
+    try:
+        coordinates = getattr(rr.ViewCoordinates, view_coordinates)
+    except AttributeError:
+        _LOGGER.warning(
+            "Invalid view_coordinates '%s'; falling back to RFU. Supported: RFU, RDF, RUB, etc.",
+            view_coordinates,
+        )
+        coordinates = rr.ViewCoordinates.RFU
+
+    recording_stream.log(ROOT_WORLD_ENTITY_PATH, coordinates, static=True)
 
 
 def attach_recording_sinks(
