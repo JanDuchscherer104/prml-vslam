@@ -171,6 +171,9 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     assert run_config.stages.reconstruction.enabled is True
     assert run_config.stages.reconstruction.backend.extract_mesh is True
     assert run_config.stages.evaluate_trajectory.enabled is False
+    assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.10
+    assert run_config.visualization.mesh_decimation_keep_ratio == 0.25
+    assert run_config.visualization.decimation_random_seed == 0
 
 
 def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) -> None:

@@ -140,7 +140,7 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         log_pinhole=lambda stream, *, entity_path, intrinsics: calls.append(
             ("pinhole", entity_path, *_timeline_state(stream))
         ),
-        log_pointcloud=lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+        log_pointcloud=lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
         log_pointcloud_ply=lambda *args, **kwargs: None,

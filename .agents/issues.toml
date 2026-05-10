@@ -283,6 +283,58 @@ sources = [
     "src/prml_vslam/visualization/rerun_sink.py",
 ]
 
+[[issues]]
+id = "ISSUE-0071"
+title = "ADVIO streaming SLAM can fail on invalid live ViSTA pose and mask the root cause during finalization"
+status = "open"
+priority = "high"
+category = "runtime"
+summary = "A streaming ViSTA run on `advio-20` failed after 1093 processed frames because live pose conversion rejected an upstream rotation with Frobenius error 0.030585, then coordinator finalization still tried alignment and raised `StageDependencyError` because SLAM had no `SlamStageOutput`."
+files = [
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+notes = [
+    "Validated from `.logs/runs/vista-full-tuning/2026-05-09_17:37:08_vista-full-tuning.log`: the run used `advio-20`, started streaming at 17:38:27, logged `SLAM processed=1092`, then failed during frame submission with `Rotation matrix is too far from SO(3) to normalize safely. Frobenius error: 0.030585.`",
+    "The root exception is raised by `project_rotation_to_so3()` through `_frame_transform_from_vista_pose()` while `VistaSlamRuntime._build_live_update()` converts an upstream live pose for telemetry; this live update path should not make observer-facing data fatal without an explicit policy decision.",
+    "The log records `Stage 'slam' failed` with the rotation error before the later `PacketSourceActor` traceback; that traceback comes from `_finalize_streaming()` calling `_run_streaming_finalize_stages()` even after `_streaming_error` is set, so alignment requests `SlamStageOutput` and masks the original failure with `StageDependencyError`.",
+    "The current worktree's `.configs/pipelines/vista-full.toml` points `vista-full-tuning` at `advio-20`; the failure may be sequence-sensitive and was not reproduced from the original TUM RGB-D config.",
+]
+sources = [
+    ".logs/runs/vista-full-tuning/2026-05-09_17:37:08_vista-full-tuning.log",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+
+[[issues]]
+id = "ISSUE-0072"
+title = "Live Rerun reference trajectories are blocked by coarse source-reference routing"
+status = "open"
+priority = "high"
+category = "visualization"
+summary = "The live Rerun starvation fix routes source reference visualizations export-only so heavy static artifacts do not block SLAM runtime updates. That also removes lightweight reference trajectory overlays from the live viewer, while a broad config-gated re-enable attempt regressed live update delivery again."
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+]
+notes = [
+    "The exported Rerun recording still contains reference trajectory entities, so the reference data is produced and export logging works; the missing live overlay is in live routing or sink policy.",
+    "Commit 14789f1 intentionally made source reference and final artifact updates export-only to prevent heavy static source/reference artifacts from starving live SLAM updates.",
+    "Source reference visualization updates currently bundle lightweight `ROLE_SOURCE_REFERENCE_TRAJECTORY` items with heavier `ROLE_SOURCE_REFERENCE_POINT_CLOUD` items, making coarse coordinator-level export-only routing too broad.",
+    "A future fix must restore live reference trajectory overlays without sending heavy reference point clouds or terminal artifacts to the live sidecar and without disrupting live SLAM runtime updates.",
+]
+sources = [
+    ".logs/runs/vista-full-tuning/2026-05-09_18:07:57_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"

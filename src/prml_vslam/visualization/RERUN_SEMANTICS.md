@@ -129,6 +129,9 @@ Important consequences:
 - `world/live/model/camera/image` is the 3D camera-image entity and should only
   receive image/depth payloads when a coherent `Pinhole` is also available.
 - `Pinhole` and the image it describes live on the same camera-image entity.
+- The default 3D blueprint includes `world/live/model/camera/image`
+  non-recursively so the live model `Pinhole` is visible as a frustum without
+  broad-including image or depth children.
 - `DepthImage` lives under that same camera-image entity so Rerun can
   back-project it through the camera model.
 - Camera-local pointmaps stay camera-local and inherit world placement from the
@@ -143,9 +146,10 @@ Important consequences:
 - The root `world` entity declares the explicit viewer world basis and keeps the
   only intentionally visible axes marker at the origin.
 - The default 3D blueprint uses a narrow allow-list for aligned references,
-  reconstruction/alignment/overlay branches, live pose branches, keyed frusta,
-  keyed point clouds, and SLAM branches. It does not broadly include raster
-  parents and then hide image/depth children with negative filters.
+  reconstruction/alignment/overlay branches, live pose branches, the live model
+  camera entity, keyed frusta, keyed point clouds, and SLAM branches. It does
+  not broadly include raster parents and then hide image/depth children with
+  negative filters.
 - Source-native references remain logged for provenance, but the default 3D
   view shows only aligned reference branches.
 

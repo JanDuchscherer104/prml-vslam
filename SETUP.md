@@ -112,6 +112,8 @@ Important:
   mamba environment.
 - This applies to `uv sync --all-extras`, `uv sync --extra vista`, ViSTA smoke
   runs, and the Streamlit workbench when launched with `--extra vista`.
+- Rerun-only viewer commands should use `--extra visualization`; they do not
+  need the ViSTA native dependency set.
 - If the active shell is not inside the `prml-vslam` mamba env, expect native
   build or runtime failures such as missing `cmake`, missing OpenCV CMake
   config, or missing CUDA toolchain components.

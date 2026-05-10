@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections import deque
@@ -136,6 +137,9 @@ class RerunLoggingPolicy:
     log_source_rgb: bool = False
     log_diagnostic_preview: bool = False
     log_camera_image_rgb: bool = False
+    point_cloud_decimation_keep_ratio: float = 1.0
+    mesh_decimation_keep_ratio: float = 1.0
+    decimation_random_seed: int = 0
     _warned_fallback_intrinsics: bool = field(default=False, init=False, repr=False)
     _visible_keyframe_camera_indices: deque[int] = field(default_factory=deque, init=False, repr=False)
     _tracking_trajectory_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
@@ -247,7 +251,14 @@ class RerunLoggingPolicy:
         if entity_path is None:
             return
         self._set_item_frame_time(stream, item)
-        self.log_pointcloud(stream, entity_path=entity_path, pointmap=pointmap, colors=colors)
+        self.log_pointcloud(
+            stream,
+            entity_path=entity_path,
+            pointmap=pointmap,
+            colors=colors,
+            decimation_keep_ratio=self.point_cloud_decimation_keep_ratio,
+            decimation_seed=self._decimation_seed("point_cloud", entity_path, item.frame_index, item.keyframe_index),
+        )
 
     def _log_reconstruction_point_cloud_item(self, stream, item: VisualizationItem) -> None:
         artifact = item.artifact_refs.get(POINT_CLOUD_ARTIFACT)
@@ -264,6 +275,7 @@ class RerunLoggingPolicy:
             artifact_path=artifact.path,
             entity_path=entity_path,
             warning_label="reconstruction point cloud",
+            decimation_seed=self._decimation_seed("point_cloud_ply", entity_path, artifact.path),
         )
 
     def _log_slam_sim3_aligned_point_cloud_item(self, stream, item: VisualizationItem) -> None:
@@ -271,11 +283,13 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         target_frame = _entity_token(str(item.metadata.get("target_frame") or "advio_gt_world"))
+        entity_path = f"world/overlays/{target_frame}/vista/sim3_aligned/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
-            entity_path=f"world/overlays/{target_frame}/vista/sim3_aligned/point_cloud",
+            entity_path=entity_path,
             warning_label="Sim(3)-aligned SLAM point cloud",
+            decimation_seed=self._decimation_seed("point_cloud_ply", entity_path, artifact.path),
         )
 
     def _log_source_reference_point_cloud_item(self, stream, item: VisualizationItem) -> None:
@@ -292,11 +306,13 @@ class RerunLoggingPolicy:
             if point_count is not None and skipped_payloads is not None
             else ""
         )
+        entity_path = f"world/reference/points/{reference_source}/{coordinate_status}{stats_segment}/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
-            entity_path=f"world/reference/points/{reference_source}/{coordinate_status}{stats_segment}/point_cloud",
+            entity_path=entity_path,
             warning_label="source reference point cloud",
+            decimation_seed=self._decimation_seed("point_cloud_ply", entity_path, artifact.path),
         )
 
     def _log_reconstruction_mesh_item(self, stream, item: VisualizationItem) -> None:
@@ -364,9 +380,16 @@ class RerunLoggingPolicy:
         artifact_path: Path,
         entity_path: str,
         warning_label: str,
+        decimation_seed: int,
     ) -> None:
         try:
-            self.log_pointcloud_ply(stream, entity_path=entity_path, path=artifact_path)
+            self.log_pointcloud_ply(
+                stream,
+                entity_path=entity_path,
+                path=artifact_path,
+                decimation_keep_ratio=self.point_cloud_decimation_keep_ratio,
+                decimation_seed=decimation_seed,
+            )
         except Exception as exc:
             _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
 
@@ -379,7 +402,12 @@ class RerunLoggingPolicy:
         warning_label: str,
     ) -> None:
         try:
-            self.log_mesh_ply(stream, entity_path=entity_path, path=artifact_path)
+            self.log_mesh_ply(
+                stream,
+                entity_path=entity_path,
+                path=artifact_path,
+                decimation_keep_ratio=self.mesh_decimation_keep_ratio,
+            )
         except Exception as exc:
             _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
 
@@ -614,6 +642,14 @@ class RerunLoggingPolicy:
             return None
         payload = payloads.get(ref.handle_id)
         return None if payload is None else np.asarray(payload)
+
+    def _decimation_seed(self, *parts: str | int | Path | None) -> int:
+        digest = hashlib.blake2b(digest_size=8)
+        digest.update(str(self.decimation_random_seed).encode("utf-8"))
+        for part in parts:
+            digest.update(b"\0")
+            digest.update(b"" if part is None else str(part).encode("utf-8"))
+        return int.from_bytes(digest.digest(), byteorder="little", signed=False)
 
 
 def _entity_token(value: str) -> str:

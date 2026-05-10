@@ -7,6 +7,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 from pydantic import PrivateAttr
 
 from prml_vslam.interfaces import FrameTransform, Observation, ObservationProvenance
@@ -223,6 +224,7 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
     assert semantic_update.pointmap is None
     assert update.runtime_status is not None
     assert update.runtime_status.processed_items == 1
+    assert update.runtime_status.latency_ms is None
     assert update.runtime_status.last_warning == "first warning"
     assert any(item.intent is VisualizationIntent.POINT_CLOUD for item in update.visualizations)
 
@@ -236,3 +238,44 @@ def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path)
     assert isinstance(result.payload, SlamStageOutput)
     assert isinstance(result.payload.artifacts, SlamArtifacts)
     assert backend.runtime.closed is True
+
+
+def test_slam_runtime_streaming_reports_latency_from_arrival_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_config = _run_config(tmp_path)
+    plan = _plan(tmp_path, run_config)
+    backend = _FakeBackend(plan.artifact_root)
+    backend_config = _FakeBackendConfig(backend)
+    runtime = SlamStageRuntime()
+
+    runtime.start_streaming(
+        SlamStreamingStartStageInput(
+            backend=backend_config,
+            outputs=run_config.stages.slam.outputs,
+            artifact_root=plan.artifact_root,
+            path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
+            sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+            benchmark_inputs=None,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+        )
+    )
+    monkeypatch.setattr("prml_vslam.methods.stage.runtime.time.time", lambda: 100.05)
+    monkeypatch.setattr("prml_vslam.methods.stage.runtime.time.monotonic", lambda: 10.0)
+
+    runtime.submit_stream_item(
+        Observation(
+            seq=1,
+            timestamp_ns=10,
+            rgb=np.zeros((2, 3, 3)),
+            arrival_timestamp_s=100.0,
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
+    updates = runtime.drain_runtime_updates()
+
+    assert len(updates) == 1
+    assert updates[0].runtime_status is not None
+    assert updates[0].runtime_status.latency_ms == pytest.approx(50.0)
+    assert runtime.status().latency_ms == pytest.approx(50.0)
