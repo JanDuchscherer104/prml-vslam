@@ -11,13 +11,9 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 
     # Bootstrap once with:
     #   docker mcp profile pull docker.io/janduchscherer104/codex:latest
-    # [mcp_servers.MCP_DOCKER]
-    # command = "docker"
-    # args    = ["mcp", "gateway", "run", "--profile", "codex"]
     [mcp_servers.MCP_DOCKER]
-    type                = "stdio"
-    command             = "/Docker/host/bin/docker.exe"
-    args                = ["mcp", "gateway", "run", "--profile", "codex"]
+    command = "docker"
+    args    = ["mcp", "gateway", "run", "--profile", "default"]
     startup_timeout_sec = 30
     tool_timeout_sec    = 120
 
