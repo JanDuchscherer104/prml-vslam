@@ -1,6 +1,7 @@
 # Challenge 5: Uncalibrated Monocular VSLAM
 
-This repository addresses an off-device monocular VSLAM pipeline for smartphone video streams with unknown intrinsics. The goal is to recover a high-precision ego-trajectory and a dense 3D point cloud from raw video, and to benchmark the result against ARCore and other state-of-the-art methods.
+This repository addresses an off-device monocular VSLAM pipeline for smartphone video streams with unknown intrinsics.
+ The goal is to recover a high-precision ego-trajectory and a dense 3D point cloud from raw video, and to benchmark the result against ARCore and other state-of-the-art methods.
 
 The rendered [final report](docs/report/main.typ) and [update-meeting slides](docs/slides/update-meetings/) are available on the [GitHub Pages](https://janduchscherer104.github.io/prml-vslam/).
 
@@ -23,22 +24,12 @@ The rendered [final report](docs/report/main.typ) and [update-meeting slides](do
 
 Implemented or functional:
 
-- Streamlit workbench pages for Record3D capture, ADVIO datasets, pipeline runs, and metrics review
-- ADVIO local dataset readiness checks, selective downloads, and replay tooling
-- TOML-backed run planning and persisted pipeline request loading
-- Separate offline and streaming runner paths
-- ViSTA-SLAM wrapper
-- Rerun live streaming and `.rrd` file export
-- Explicit trajectory evaluation when benchmark inputs are available
+...
+- Measure efficiency in terms of latency and memory consumption
 
-Not yet implemented or limited:
+## Quick Start
 
-- real MASt3R backend
-- reference reconstruction stage
-- cloud and efficiency evaluation execution
-- full custom dataset
-
-## Quick Entry
+See **[SETUP.md](SETUP.md)** for detailed environment setup, mamba/conda instructions, and the full runbook.
 
 ```bash
 uv sync --extra dev

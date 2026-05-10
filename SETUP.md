@@ -6,7 +6,7 @@ and optional ViSTA-SLAM GPU execution.
 ## Requirements
 
 - `git` with submodule support
-- [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `mamba`
+- [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `conda`
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [typst](https://typst.app/open-source/#download) for report and slide builds
 
@@ -20,6 +20,23 @@ uv sync --extra dev
 uv run pre-commit install
 make ci
 ```
+
+### Install Mamba on Unix
+
+If you are on Unix and already have `conda` or Miniforge installed, you can add `mamba` with conda-forge:
+
+```bash
+conda install -n base -c conda-forge mamba
+```
+
+If you do not have `conda` installed, the easiest way to get both `conda` and `mamba` is to install [Miniforge](https://github.com/conda-forge/miniforge):
+
+```bash
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3-$(uname)-$(uname -m).sh
+```
+
+For the ViSTA environment setup that uses `environment.yml`, see the ViSTA/CUDA section below.
 
 Optional parallel test runs are available with `pytest-xdist`:
 
@@ -174,6 +191,67 @@ Optionally run the ViSTA smoke pipeline:
 
 ```bash
 uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
+```
+
+### Pipeline with Rerun
+
+To run the pipeline with live Rerun visualization:
+
+```bash
+# Attach a live Rerun viewer
+uv run --extra vista prml-vslam run-config \
+  .configs/pipelines/vista-smoke-test.toml \
+  --visualization.connect_live_viewer true
+
+# Log source RGB, diagnostic previews and evaluate trajectory
+uv run --extra vista prml-vslam run-config \
+  .configs/pipelines/vista-smoke-test.toml \
+  --visualization.connect_live_viewer true \
+  --visualization.log_source_rgb true \
+  --visualization.log_diagnostic_preview true \
+  --stages.evaluate_trajectory.enabled true
+```
+
+## Datasets
+
+The repository supports ADVIO and TUM RGB-D datasets. If a sequence is missing (e.g., `freiburg1_room` not found), use the CLI to download it.
+
+See [src/prml_vslam/sources/datasets/README.md](src/prml_vslam/sources/datasets/README.md) for the full dataset guide.
+
+### ADVIO
+
+Summarize local ADVIO coverage:
+
+```bash
+uv run prml-vslam advio summary
+```
+
+Download selected ADVIO sequences:
+
+```bash
+# Download everything (offline bundle: video + poses + calibration)
+uv run prml-vslam advio download
+
+# Download specific sequences
+uv run prml-vslam advio download --sequence 15 --sequence 16
+```
+
+### TUM RGB-D
+
+Summarize local TUM RGB-D coverage:
+
+```bash
+uv run prml-vslam tum-rgbd summary
+```
+
+Download selected TUM RGB-D archives:
+
+```bash
+# Download everything (offline bundle: RGB + Depth + Ground Truth)
+uv run prml-vslam tum-rgbd download
+
+# Download specific sequences (e.g., freiburg1_room)
+uv run prml-vslam tum-rgbd download --sequence freiburg1_room
 ```
 
 ## Streamlit Workbench

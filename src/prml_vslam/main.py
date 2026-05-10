@@ -48,6 +48,12 @@ from prml_vslam.sources.datasets.advio import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
+from prml_vslam.sources.datasets.tum_rgbd import (
+    TumRgbdDatasetService,
+    TumRgbdDownloadPreset,
+    TumRgbdDownloadRequest,
+    TumRgbdModality,
+)
 from prml_vslam.sources.record3d import Record3DStreamConfig
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import PathConfig, get_path_config
@@ -62,10 +68,16 @@ advio_app = typer.Typer(
     no_args_is_help=True,
     help="ADVIO dataset inspection and download helpers.",
 )
+tum_rgbd_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="TUM RGB-D dataset inspection and download helpers.",
+)
 console = Console(__name__)
 pipeline_demo_console = Console("pipeline.demo")
 
 app.add_typer(advio_app, name="advio")
+app.add_typer(tum_rgbd_app, name="tum-rgbd")
 
 RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
@@ -1056,6 +1068,74 @@ def advio_download(
     try:
         result = service.download(
             AdvioDownloadRequest(
+                sequence_ids=[] if sequence_ids is None else sequence_ids,
+                preset=preset,
+                modalities=[] if modalities is None else modalities,
+                overwrite=overwrite,
+            )
+        )
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload = {
+        "result": result.model_dump(mode="json"),
+        "summary": service.summarize().model_dump(mode="json"),
+    }
+    console.plog(payload)
+
+
+@tum_rgbd_app.command("summary")
+def tum_rgbd_summary() -> None:
+    """Print committed and local TUM RGB-D dataset coverage."""
+    service = TumRgbdDatasetService(get_path_config())
+    summary = service.summarize()
+    payload = {
+        "dataset_root": str(service.dataset_root),
+        "upstream": service.catalog.upstream,
+        "summary": summary.model_dump(mode="json"),
+        "local_sequence_ids": [
+            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
+        ],
+    }
+    console.plog(payload)
+
+
+@tum_rgbd_app.command("download")
+def tum_rgbd_download(
+    sequence_ids: Annotated[
+        list[str] | None,
+        typer.Option("--sequence", help="Repeat to select one or more TUM sequence ids. Omit to target all scenes."),
+    ] = None,
+    preset: Annotated[
+        TumRgbdDownloadPreset,
+        typer.Option(
+            "--preset",
+            help="Curated modality bundle used when no explicit modality override is provided.",
+            case_sensitive=False,
+        ),
+    ] = TumRgbdDownloadPreset.OFFLINE,
+    modalities: Annotated[
+        list[TumRgbdModality] | None,
+        typer.Option(
+            "--modality",
+            help="Repeat to override the preset with explicit modality groups.",
+            case_sensitive=False,
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite/--reuse",
+            help="Whether to re-download cached TGZs and replace extracted files.",
+        ),
+    ] = False,
+) -> None:
+    """Download selected TUM RGB-D archives and extract only requested modality bundles."""
+    service = TumRgbdDatasetService(get_path_config())
+    try:
+        result = service.download(
+            TumRgbdDownloadRequest(
                 sequence_ids=[] if sequence_ids is None else sequence_ids,
                 preset=preset,
                 modalities=[] if modalities is None else modalities,
