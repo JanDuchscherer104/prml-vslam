@@ -111,34 +111,41 @@ def create_recording_stream(
     recording_id: str | None = None,
     show_source_rgb: bool = False,
     show_diagnostic_preview: bool = False,
+    view_coordinates: str = "RFU",
 ) -> rr.RecordingStream:
     """Create one explicit Rerun recording stream."""
-    stream = rr.RecordingStream(application_id=app_id, recording_id=recording_id)
+    stream = rr.new_recording(application_id=app_id, recording_id=recording_id)
     blueprint = build_default_blueprint(
         show_source_rgb=show_source_rgb,
         show_diagnostic_preview=show_diagnostic_preview,
     )
     stream.send_blueprint(blueprint)
-    log_root_world_transform(stream)
+    log_root_world_transform(stream, view_coordinates=view_coordinates)
     return stream
 
 
-def log_root_world_transform(recording_stream: rr.RecordingStream) -> None:
+
+def log_root_world_transform(
+    recording_stream: rr.RecordingStream,
+    *,
+    view_coordinates: str = "RFU",
+) -> None:
     """Declare one explicit ViSTA-aligned world root for repo-owned recordings.
 
     The root stays geometrically neutral via an identity ``Transform3D`` while
     using ``axis_length`` to keep one visible world-frame marker at the origin.
-    It also declares ``world`` as ``ViewCoordinates.RDF`` so the 3D viewer/grid
-    uses the same right/down/forward semantics as the logged ViSTA-native
-    scene. This does not rotate or normalize the data; it only makes the
-    existing world basis explicit to the viewer.
+    It also declares ``world`` with the requested ``view_coordinates`` (e.g.,
+    ``RFU`` for MoCap/Up=Z, or ``RDF`` for Computer Vision/Down=Y) so the 3D
+    viewer/grid matches the logged scene semantics.
     """
     recording_stream.log(
         ROOT_WORLD_ENTITY_PATH,
         rr.Transform3D(axis_length=ROOT_WORLD_AXIS_LENGTH),
         static=True,
     )
-    recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.ViewCoordinates.RDF, static=True)
+    # Parse the view coordinates string into a Rerun ViewCoordinates component.
+    # If the string is invalid, Rerun will raise a ValueError.
+    recording_stream.log(ROOT_WORLD_ENTITY_PATH, rr.ViewCoordinates.from_string(view_coordinates), static=True)
 
 
 def attach_recording_sinks(

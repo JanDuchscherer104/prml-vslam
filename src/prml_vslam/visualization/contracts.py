@@ -69,5 +69,8 @@ class VisualizationConfig(BaseConfig):
     decimation_random_seed: int = Field(default=0, ge=0)
     """Base seed used for deterministic visualization-only point-cloud sampling."""
 
+    view_coordinates: str = "RFU"
+    """Target world-root view coordinates for the Rerun 3D viewer (e.g., 'RFU', 'RDF', 'RUB')."""
+
 
 __all__ = ["VisualizationConfig"]

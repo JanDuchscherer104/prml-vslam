@@ -56,6 +56,7 @@ class RerunEventSink:
         point_cloud_decimation_keep_ratio: float = 1.0,
         mesh_decimation_keep_ratio: float = 1.0,
         decimation_random_seed: int = 0,
+        view_coordinates: str = "RFU",
     ) -> None:
         self._console = Console(__name__).child(self.__class__.__name__)
         self._live_stream = None
@@ -109,7 +110,7 @@ class RerunEventSink:
         self._latest_ground_alignment: GroundAlignmentMetadata | None = None
         self._console.info(
             "Rerun sink policy: source_rgb=%s diagnostic_preview=%s camera_image_rgb=%s trajectory=%s "
-            "frusta_window=%s point_cloud_keep_ratio=%s mesh_keep_ratio=%s.",
+            "frusta_window=%s point_cloud_keep_ratio=%s mesh_keep_ratio=%s view_coordinates=%s.",
             log_source_rgb,
             log_diagnostic_preview,
             log_camera_image_rgb,
@@ -117,6 +118,7 @@ class RerunEventSink:
             frusta_history_window_streaming,
             point_cloud_decimation_keep_ratio,
             mesh_decimation_keep_ratio,
+            view_coordinates,
         )
 
         if grpc_url is not None:
@@ -125,6 +127,7 @@ class RerunEventSink:
                 recording_id=recording_id,
                 show_source_rgb=log_source_rgb,
                 show_diagnostic_preview=log_diagnostic_preview,
+                view_coordinates=view_coordinates,
             )
             attach_recording_sinks(self._live_stream, grpc_url=grpc_url, target_path=None)
         if target_path is not None:
@@ -133,6 +136,7 @@ class RerunEventSink:
                 recording_id=recording_id,
                 show_source_rgb=log_source_rgb,
                 show_diagnostic_preview=log_diagnostic_preview,
+                view_coordinates=view_coordinates,
             )
             attach_recording_sinks(self._export_stream, grpc_url=None, target_path=target_path)
 
@@ -225,6 +229,7 @@ class RerunSinkActor:
         point_cloud_decimation_keep_ratio: float = 1.0,
         mesh_decimation_keep_ratio: float = 1.0,
         decimation_random_seed: int = 0,
+        view_coordinates: str = "RFU",
     ) -> None:
         self._sink = RerunEventSink(
             grpc_url=grpc_url,
@@ -239,6 +244,7 @@ class RerunSinkActor:
             point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
             mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
             decimation_random_seed=decimation_random_seed,
+            view_coordinates=view_coordinates,
         )
 
     def observe_update(
