@@ -141,6 +141,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             )
 
         run = next((candidate for candidate in runs if candidate.artifact_root == preferred_run_root), runs[0])
+        reference_path = resolve_reference_path(dataset, dataset_root, sequence_slug)
         return EvaluationSelection(
             dataset=dataset,
             dataset_root=dataset_root,
@@ -150,7 +151,9 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             runs=runs,
             selection=SelectionSnapshot(
                 sequence_slug=sequence_slug,
-                reference_path=resolve_reference_path(dataset, dataset_root, sequence_slug),
+                reference_path=reference_path,
+                target_frame=_infer_target_frame(dataset, reference_path),
+                coordinate_status=_infer_coordinate_status(dataset, reference_path),
                 run=run,
             ),
         )
@@ -215,6 +218,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             reference=associated_reference,
             estimate=associated_estimate,
             max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+            target_frame=selection.target_frame or "world",
         )
 
         run_root = selection.run.artifact_root
@@ -264,6 +268,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             reference_path=reference_path,
             estimate_path=selection.run.estimate_path,
             alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+            target_frame=selection.target_frame or "world",
         )
         result_path = self.result_path(selection.run.artifact_root)
         result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,6 +288,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
                 max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
                 output_path=aligned_estimate_path,
+                target_frame=selection.target_frame or "world",
             )
             if selection.run.point_cloud_path is not None:
                 aligned_point_cloud_path = self.aligned_point_cloud_path(selection.run.artifact_root)
@@ -355,6 +361,11 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             selection=SelectionSnapshot(
                 sequence_slug=sequence_manifest.sequence_id,
                 reference_path=reference.path,
+                target_frame=reference.target_frame
+                or _infer_target_frame(sequence_manifest.dataset_id, reference.path),
+                coordinate_status=reference.coordinate_status.value
+                if reference.coordinate_status
+                else _infer_coordinate_status(sequence_manifest.dataset_id, reference.path),
                 run=DiscoveredRun(
                     artifact_root=plan.artifact_root,
                     estimate_path=slam.trajectory_tum.path,
@@ -408,10 +419,14 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         reference: BenchmarkReference,
     ) -> EvaluationArtifact:
         """Compute and persist trajectory APE against one specific benchmark reference."""
+        target_frame = _infer_target_frame(
+            DatasetId.ADVIO, reference.path
+        )  # BenchmarkReferences are ADVIO-only for now
         preview = compute_trajectory_ape_preview(
             reference_path=reference.path,
             estimate_path=run.estimate_path,
             alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+            target_frame=target_frame,
         )
         result_path = self.result_path_for_source(run.artifact_root, reference.source_key)
         result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -493,6 +508,7 @@ def compute_trajectory_ape_preview(
     estimate_path: Path,
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
     alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
+    target_frame: str = "world",
 ) -> TrajectoryEvaluationPreview:
     """Compute in-memory translation APE for two normalized TUM trajectory artifacts.
 
@@ -521,6 +537,7 @@ def compute_trajectory_ape_preview(
                 reference=associated_reference,
                 estimate=associated_estimate,
                 max_diff_s=max_diff_s,
+                target_frame=target_frame,
             )
     elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
         raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
@@ -555,6 +572,7 @@ def _align_estimate_sim3(
     reference: PoseTrajectory3D,
     estimate: PoseTrajectory3D,
     max_diff_s: float,
+    target_frame: str = "world",
 ) -> tuple[PoseTrajectory3D, TrajectoryAlignmentArtifact]:
     aligned_estimate = copy.deepcopy(estimate)
     rotation, translation, scale = aligned_estimate.align(reference, correct_scale=True)
@@ -565,7 +583,7 @@ def _align_estimate_sim3(
     rms_error_m = float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
     return aligned_estimate, TrajectoryAlignmentArtifact(
         source_frame="vista_slam_world",
-        target_frame="advio_gt_world",
+        target_frame=target_frame,
         scale=float(scale),
         rotation=np.asarray(rotation, dtype=np.float64).tolist(),
         translation=np.asarray(translation, dtype=np.float64).reshape(3).tolist(),
@@ -594,6 +612,7 @@ def _write_aligned_estimate_trajectory(
     alignment_mode: TrajectoryAlignmentMode,
     max_diff_s: float,
     output_path: Path,
+    target_frame: str = "world",
 ) -> None:
     if alignment_mode is not TrajectoryAlignmentMode.SIM3_UMEYAMA:
         raise ValueError(f"Unsupported aligned trajectory materialization mode: {alignment_mode.value}.")
@@ -608,9 +627,26 @@ def _write_aligned_estimate_trajectory(
         reference=associated_reference,
         estimate=associated_estimate,
         max_diff_s=max_diff_s,
+        target_frame=target_frame,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     file_interface.write_tum_trajectory_file(output_path, aligned_estimate)
+
+
+def _infer_target_frame(dataset: DatasetId, reference_path: Path | None) -> str:
+    """Inferred target frame name for UI selections without benchmark input metadata."""
+    if dataset is DatasetId.ADVIO:
+        return "advio_gt_world"
+    if dataset is DatasetId.TUM_RGBD:
+        return "tum_rgbd_mocap_world"
+    return "world"
+
+
+def _infer_coordinate_status(dataset: DatasetId, reference_path: Path | None) -> str:
+    """Inferred coordinate status for UI selections without benchmark input metadata."""
+    if dataset is DatasetId.ADVIO:
+        return "aligned"
+    return "source_native"
 
 
 def _write_aligned_point_cloud(

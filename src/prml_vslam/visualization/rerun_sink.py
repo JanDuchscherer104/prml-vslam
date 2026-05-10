@@ -28,6 +28,7 @@ from prml_vslam.visualization.rerun import (
     log_pointcloud,
     log_pointcloud_ply,
     log_rgb_image,
+    log_sim3_transform,
     log_transform,
 )
 
@@ -67,6 +68,7 @@ class RerunEventSink:
             log_rgb_image=log_rgb_image,
             log_pointcloud_ply=log_pointcloud_ply,
             log_transform=log_transform,
+            log_sim3_transform=log_sim3_transform,
             frusta_history_window_streaming=frusta_history_window_streaming,
             show_tracking_trajectory=show_tracking_trajectory,
             trajectory_pose_axis_length=trajectory_pose_axis_length,
@@ -85,6 +87,7 @@ class RerunEventSink:
             log_rgb_image=log_rgb_image,
             log_pointcloud_ply=log_pointcloud_ply,
             log_transform=log_transform,
+            log_sim3_transform=log_sim3_transform,
             frusta_history_window_streaming=frusta_history_window_streaming,
             show_tracking_trajectory=show_tracking_trajectory,
             trajectory_pose_axis_length=trajectory_pose_axis_length,
