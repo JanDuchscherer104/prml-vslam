@@ -27,7 +27,7 @@ ROOT_WORLD_AXIS_LENGTH = 1.0
 """Visible axis length for the static root-world transform marker."""
 MODEL_RGB_2D_ENTITY_PATH = "world/live/model/diag/rgb"
 """Dedicated 2D-only live model RGB entity, separate from the 3D camera branch."""
-GROUND_PLANE_ENTITY_PATH = "world/alignment/ground_plane"
+GROUND_PLANE_ENTITY_PATH = "world/slam/vista_slam_world/alignment/ground_plane"
 """Root entity path for the derived dominant ground-plane visualization."""
 POINT_CLOUD_RADII = 0.02
 """Default point cloud radii for repo-owned Rerun recordings."""

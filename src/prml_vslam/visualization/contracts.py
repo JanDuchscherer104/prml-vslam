@@ -72,5 +72,8 @@ class VisualizationConfig(BaseConfig):
     view_coordinates: str = "RFU"
     """Target world-root view coordinates for the Rerun 3D viewer (e.g., 'RFU', 'RDF', 'RUB')."""
 
+    initial_scale: float = Field(default=1.0, gt=0.0)
+    """Initial scale factor applied to the SLAM world branch before evaluation alignment."""
+
 
 __all__ = ["VisualizationConfig"]

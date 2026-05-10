@@ -562,7 +562,7 @@ class RerunLoggingPolicy:
             stale_keyframe_index = self._visible_keyframe_camera_indices.popleft()
             self.log_clear(
                 stream,
-                entity_path=f"world/keyframes/cameras/{stale_keyframe_index:06d}",
+                entity_path=f"world/slam/vista_slam_world/keyframes/cameras/{stale_keyframe_index:06d}",
                 recursive=True,
             )
 
