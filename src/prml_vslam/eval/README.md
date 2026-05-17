@@ -8,8 +8,9 @@ artifacts.
 - discover normalized run artifacts
 - resolve reference and estimate trajectories
 - run explicit `evo` trajectory evaluation, currently centered on translation APE
+- compare metric-frame dense point clouds with Open3D nearest-neighbor distances
 - persist and reload evaluation results
-- provide the repository-owned trajectory-evaluation stage execution seam used by the pipeline
+- provide repository-owned trajectory and dense-cloud stage execution seams used by the pipeline
 
 Persisted trajectory results now carry explicit metric semantics such as metric
 id, pose relation, alignment mode, and sync tolerance. The current evaluator
@@ -40,9 +41,12 @@ remains here.
 - Runtime: [`stage_trajectory/runtime.py`](./stage_trajectory/runtime.py)
   adapts `TrajectoryEvaluationService` into `OfflineStageRuntime` and returns
   an `EvaluationArtifact` inside `StageResult`.
-- Diagnostic config: [`stage_cloud/config.py`](./stage_cloud/config.py) defines
-  `CloudEvaluationStageConfig` for `evaluate.cloud`. It records planned dense
-  cloud metrics and artifact selection, but no runtime is registered yet.
+- Dense-cloud config: [`stage_cloud/config.py`](./stage_cloud/config.py)
+  defines `CloudEvaluationStageConfig` for `evaluate.cloud`. The first
+  executable path compares the reference reconstruction cloud against the
+  Sim(3)-aligned SLAM cloud from trajectory evaluation using Open3D
+  `compute_point_cloud_distance`, then persists Chamfer-style distance,
+  directional distances, precision, recall, and F-score metrics.
 
 Evaluation consumes prepared references and normalized method outputs. It does
 not prepare sources, execute SLAM backends, own Rerun logging, or compute

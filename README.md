@@ -30,12 +30,12 @@ Implemented or functional:
 - ViSTA-SLAM wrapper
 - Rerun live streaming and `.rrd` file export
 - Explicit trajectory evaluation when benchmark inputs are available
+- Open3D-backed point-cloud evaluation when aligned SLAM and reference clouds are available
 
 Not yet implemented or limited:
 
 - real MASt3R backend
-- reference reconstruction stage
-- cloud and efficiency evaluation execution
+- efficiency evaluation execution
 - full custom dataset
 
 ## Quick Entry
