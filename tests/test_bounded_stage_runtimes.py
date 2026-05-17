@@ -8,10 +8,13 @@ import pytest
 
 from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
 from prml_vslam.eval.contracts import (
+    DenseCloudEvaluationArtifact,
+    DenseCloudEvaluationSelection,
     EvaluationArtifact,
     MetricStats,
     TrajectoryEvaluationSemantics,
 )
+from prml_vslam.eval.stage_cloud import CloudEvaluationRuntime, CloudEvaluationStageInput
 from prml_vslam.eval.stage_trajectory import (
     TrajectoryEvaluationRuntime,
     TrajectoryEvaluationStageInput,
@@ -118,6 +121,46 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     assert result.outcome.status is StageStatus.COMPLETED
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert set(result.outcome.artifacts) == {"trajectory_metrics", "reference_tum", "estimate_tum"}
+
+
+def test_cloud_evaluation_runtime_returns_eval_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = DenseCloudEvaluationArtifact(
+        path=tmp_path / "cloud_metrics.json",
+        title="Dense Cloud Distance (Open3D)",
+        reference_cloud_path=tmp_path / "reference_cloud.ply",
+        estimate_cloud_path=tmp_path / "estimate_cloud.ply",
+        reference_point_count=2,
+        estimate_point_count=2,
+        metrics={"chamfer.distance": 0.0, "f_score": 1.0},
+    )
+    calls: list[DenseCloudEvaluationSelection] = []
+
+    class FakeDenseCloudEvaluationService:
+        def compute_dense_evaluation(self, *, selection: DenseCloudEvaluationSelection) -> DenseCloudEvaluationArtifact:
+            calls.append(selection)
+            return artifact
+
+    monkeypatch.setattr(
+        "prml_vslam.eval.stage_cloud.runtime.DenseCloudEvaluationService",
+        FakeDenseCloudEvaluationService,
+    )
+
+    selection = DenseCloudEvaluationSelection(
+        artifact_root=tmp_path,
+        reference_cloud_path=artifact.reference_cloud_path,
+        estimate_cloud_path=artifact.estimate_cloud_path,
+    )
+    result = CloudEvaluationRuntime().run_offline(CloudEvaluationStageInput(selection=selection))
+
+    assert calls == [selection]
+    assert result.stage_key is StageKey.CLOUD_EVALUATION
+    assert result.payload == artifact
+    assert result.outcome.status is StageStatus.COMPLETED
+    assert result.outcome.metrics["f_score"] == 1.0
+    assert set(result.outcome.artifacts) == {"cloud_metrics", "reference_cloud", "estimate_cloud"}
 
 
 def test_reconstruction_runtime_returns_reconstruction_artifacts(

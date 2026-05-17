@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from prml_vslam.eval.contracts import (
+    DenseCloudEvaluationSelection,
     EvaluationArtifact,
     MetricStats,
     TrajectoryAlignmentMode,
@@ -15,7 +16,11 @@ from prml_vslam.eval.contracts import (
     TrajectoryMetricId,
     TrajectorySeries,
 )
-from prml_vslam.eval.services import TrajectoryEvaluationService, compute_trajectory_ape_preview
+from prml_vslam.eval.services import (
+    DenseCloudEvaluationService,
+    TrajectoryEvaluationService,
+    compute_trajectory_ape_preview,
+)
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
@@ -31,7 +36,7 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
 )
 from prml_vslam.utils import PathConfig
-from prml_vslam.utils.geometry import write_tum_trajectory
+from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
 
 def test_evaluation_artifact_round_trips_explicit_semantics(tmp_path: Path) -> None:
@@ -181,3 +186,54 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     assert artifact.reference_path == reference_path
     assert artifact.estimate_path == estimate_path
     assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
+
+
+def test_dense_cloud_evaluation_service_computes_open3d_distances(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    reference_path = write_point_cloud_ply(
+        tmp_path / "reference.ply",
+        np.asarray(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+            ],
+            dtype=np.float64,
+        ),
+    )
+    estimate_path = write_point_cloud_ply(
+        tmp_path / "estimate.ply",
+        np.asarray(
+            [
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+            ],
+            dtype=np.float64,
+        ),
+    )
+
+    artifact = DenseCloudEvaluationService().compute_dense_evaluation(
+        selection=DenseCloudEvaluationSelection(
+            artifact_root=tmp_path / "run",
+            reference_cloud_path=reference_path,
+            estimate_cloud_path=estimate_path,
+            f_score_threshold_m=0.1,
+        )
+    )
+
+    assert artifact.path == tmp_path / "run" / "evaluation" / "cloud_metrics.json"
+    assert artifact.path.exists()
+    assert artifact.metrics["reference_to_estimate.mean_m"] == pytest.approx(0.5)
+    assert artifact.metrics["estimate_to_reference.mean_m"] == pytest.approx(0.5)
+    assert artifact.metrics["chamfer.distance"] == pytest.approx(0.5)
+    assert artifact.metrics["precision"] == pytest.approx(0.5)
+    assert artifact.metrics["recall"] == pytest.approx(0.5)
+    assert artifact.metrics["f_score"] == pytest.approx(0.5)
+
+    loaded = DenseCloudEvaluationService().load_dense_evaluation(
+        selection=DenseCloudEvaluationSelection(
+            artifact_root=tmp_path / "run",
+            reference_cloud_path=reference_path,
+            estimate_cloud_path=estimate_path,
+        )
+    )
+    assert loaded == artifact

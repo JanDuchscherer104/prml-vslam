@@ -361,7 +361,7 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
     error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
 
     assert error is not None
-    assert "no runtime is registered yet" in error
+    assert "requires trajectory evaluation" in error
 
 
 def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path) -> None:

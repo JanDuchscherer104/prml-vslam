@@ -322,7 +322,7 @@ viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
     assert run_config.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
 
 
-def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> None:
+def test_run_config_marks_cloud_eval_unavailable_without_dense_slam_output(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     run_config = _run_config(
         experiment_name="cloud-validation",
@@ -338,7 +338,28 @@ def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> 
     cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
 
     assert cloud_stage.available is False
-    assert cloud_stage.availability_reason == "Dense-cloud evaluation is planned but no runtime is registered yet."
+    assert cloud_stage.availability_reason == "Cloud evaluation requires dense SLAM point-cloud outputs."
+
+
+def test_run_config_marks_cloud_eval_available_with_reconstruction_and_alignment(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="cloud-validation",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
+        method=MethodId.VISTA,
+        emit_dense_points=True,
+        reference_enabled=True,
+        trajectory_eval_enabled=True,
+        evaluate_cloud=True,
+    )
+
+    plan = run_config.compile_plan(path_config)
+    cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
+
+    assert cloud_stage.available is True
+    assert cloud_stage.outputs == [RunArtifactPaths.build(plan.artifact_root).cloud_metrics_path]
 
 
 def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> None:
@@ -401,7 +422,7 @@ def test_build_run_config_copies_backend_policy_and_visualization_fields(tmp_pat
     assert run_config.visualization.export_viewer_rrd is True
 
 
-def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> None:
+def test_stage_registry_marks_cloud_eval_unavailable_without_alignment(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     run_config = _run_config(
         experiment_name="placeholder",
@@ -425,7 +446,7 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
     unavailable = [stage for stage in plan.stages if not stage.available]
     assert len(unavailable) == 1
     assert unavailable[0].key.value == "evaluate.cloud"
-    assert "no runtime is registered yet" in unavailable[0].availability_reason
+    assert "requires trajectory evaluation" in unavailable[0].availability_reason
 
 
 def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path) -> None:
@@ -1175,7 +1196,7 @@ def test_run_coordinator_emits_source_stage_failure_before_run_failed(
     assert failed_event.outcome.error_message == "source boom"
 
 
-def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
+def test_run_coordinator_records_missing_cloud_dependency_as_run_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run_config = _run_config(
@@ -1206,7 +1227,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
     )
 
     failed_event = next(event for event in coordinator.events() if event.kind == "run.failed")
-    assert "evaluate.cloud" in failed_event.error_message
+    assert "evaluate.trajectory" in failed_event.error_message
 
 
 def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path) -> None:
@@ -1828,7 +1849,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
         lambda run_id, *, actor_options: created_runs.append(run_id),
     )
 
-    with pytest.raises(RuntimeError, match="no runtime is registered yet"):
+    with pytest.raises(RuntimeError, match="requires trajectory evaluation"):
         backend.submit_run(run_config=run_config)
 
     assert created_runs == []
