@@ -63,9 +63,8 @@ class TrajectoryEvaluator(Protocol):
 class DenseCloudEvaluator(Protocol):
     """Load or compute dense-cloud evaluation over normalized run artifacts.
 
-    The protocol is a future-stage seam. Concrete implementations should use
-    normalized PLY artifacts and typed coordinate-status metadata rather than
-    inferring frame semantics from filenames.
+    Implementations use normalized PLY artifacts and typed coordinate-status
+    metadata rather than inferring frame semantics from filenames.
     """
 
     @abstractmethod

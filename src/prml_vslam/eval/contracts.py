@@ -145,15 +145,13 @@ class TrajectoryEvaluationSemantics(BaseData):
     )
 
 
-# TODO(pipeline-refactor/future-eval): Rename or specialize once cloud
-# evaluation artifacts become first-class stage outputs.
 class EvaluationArtifact(BaseData):
     """Represent one loaded or freshly computed trajectory-evaluation artifact.
 
-    This is currently trajectory-specific even though the class name is generic;
-    future dense-cloud stages should specialize rather than overloading this
-    payload. The artifact is app/plotting friendly but still
-    preserves reference and estimate paths plus metric semantics for review.
+    This payload is trajectory-specific even though the class name is generic.
+    Dense-cloud stages use :class:`DenseCloudEvaluationArtifact` instead. The
+    artifact is app/plotting friendly but still preserves reference and estimate
+    paths plus metric semantics for review.
     """
 
     path: Path
@@ -220,6 +218,9 @@ class DenseCloudEvaluationSelection(BaseData):
     estimate_cloud_path: Path
     """Estimated dense geometry path."""
 
+    f_score_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Nearest-neighbor threshold, in meters, used for precision/recall F-score."""
+
 
 class DenseCloudEvaluationArtifact(BaseData):
     """Persist one dense-cloud evaluation result for later review."""
@@ -235,6 +236,15 @@ class DenseCloudEvaluationArtifact(BaseData):
 
     estimate_cloud_path: Path
     """Estimated dense geometry path."""
+
+    reference_point_count: int = 0
+    """Number of points loaded from the reference cloud."""
+
+    estimate_point_count: int = 0
+    """Number of points loaded from the estimated cloud."""
+
+    f_score_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Nearest-neighbor threshold, in meters, used for precision/recall F-score."""
 
     metrics: dict[str, float] = Field(default_factory=dict)
     """Scalar dense-cloud metrics keyed by metric name."""
