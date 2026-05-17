@@ -10,7 +10,6 @@ dependencies = [
   "av>=16,<17",
   "scipy>=1.13,<2",
   "opencv-python>=4.10,<5",
-  "open3d>=0.19.0,<0.20",
   "matplotlib>=3.8,<4",
   "pooch>=1.8,<2",
   "plotly>=6.6.0,<7",
@@ -27,6 +26,8 @@ dependencies = [
   "jaxtyping>=0.3.9",
   "pytransform3d>=3.14.4",
   "PyYAML>=6,<7",
+  "open3d-cpu>=0.19.0",
+  "rerun-sdk>=0.24.1",
 ]
 
   [project.optional-dependencies]
