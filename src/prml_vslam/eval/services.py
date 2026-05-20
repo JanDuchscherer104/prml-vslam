@@ -19,6 +19,7 @@ from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 
 from prml_vslam.eval.contracts import (
+    BenchmarkReference,
     DiscoveredRun,
     ErrorSeries,
     EvaluationArtifact,
@@ -44,6 +45,12 @@ from prml_vslam.utils.path_config import PathConfig
 __all__ = ["TrajectoryEvaluationService", "compute_trajectory_ape_preview"]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
+
+_BENCHMARK_REFERENCE_FILES: list[tuple[str, str, str]] = [
+    ("Ground Truth", "ground_truth", "ground_truth.tum"),
+    ("ARCore", "arcore", "arcore_aligned_to_gt.tum"),
+    ("ARKit", "arkit", "arkit_aligned_to_gt.tum"),
+]
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.config import RunConfig
@@ -79,13 +86,9 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 label=label if not visible_parts else f"{label} · {' / '.join(visible_parts)}",
             )
             for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum"))
-            if sequence_slug
-            in (
-                relative_parts := (run_root := trajectory_path.parent.parent)
-                .relative_to(self.path_config.artifacts_dir)
-                .parts
-            )
-            or sequence_slug in run_root.name
+            for run_root in [trajectory_path.parent.parent]
+            for relative_parts in [run_root.relative_to(self.path_config.artifacts_dir).parts]
+            if any(part == sequence_slug for part in relative_parts)
             for method in [
                 next(
                     (method for part in reversed(relative_parts) for method in MethodId if part == method.value),
@@ -178,6 +181,70 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             trajectories=trajectories,
         )
 
+    def compute_trajectory_alignment(
+        self,
+        *,
+        selection: SelectionSnapshot,
+    ) -> tuple[Path, Path, Path | None]:
+        """Compute and persist the Sim(3) alignment without running APE metrics.
+
+        Returns ``(alignment_path, aligned_estimate_path, aligned_point_cloud_path)``
+        where the last element is ``None`` when no point-cloud path is provided.
+        """
+        reference_path = selection.reference_path
+        if reference_path is None:
+            raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
+
+        reference_trajectory = load_tum_trajectory(reference_path)
+        estimate_trajectory = load_tum_trajectory(selection.run.estimate_path)
+        try:
+            associated_reference, associated_estimate = sync.associate_trajectories(
+                reference_trajectory,
+                estimate_trajectory,
+                max_diff=_EVO_ASSOCIATION_MAX_DIFF_S,
+            )
+        except sync.SyncException as exc:
+            raise ValueError(
+                f"No matching trajectory timestamps found for Sim(3) alignment (max_diff={_EVO_ASSOCIATION_MAX_DIFF_S:.3f}s)."
+            ) from exc
+
+        if not _trajectory_supports_sim3(associated_reference, associated_estimate):
+            raise ValueError("Trajectory lacks sufficient geometric spread for Sim(3) alignment.")
+
+        _, alignment = _align_estimate_sim3(
+            reference=associated_reference,
+            estimate=associated_estimate,
+            max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+        )
+
+        run_root = selection.run.artifact_root
+        alignment_path = self.alignment_path(run_root)
+        alignment_path.parent.mkdir(parents=True, exist_ok=True)
+        alignment_path.write_text(
+            json.dumps(alignment.model_dump(mode="json"), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+        aligned_estimate_path = self.aligned_estimate_path(run_root)
+        _write_aligned_estimate_trajectory(
+            reference_path=reference_path,
+            estimate_path=selection.run.estimate_path,
+            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+            max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+            output_path=aligned_estimate_path,
+        )
+
+        aligned_point_cloud_path = None
+        if selection.run.point_cloud_path is not None:
+            aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
+            _write_aligned_point_cloud(
+                source_path=selection.run.point_cloud_path,
+                output_path=aligned_point_cloud_path,
+                alignment=alignment,
+            )
+
+        return alignment_path, aligned_estimate_path, aligned_point_cloud_path
+
     def compute_evaluation(
         self,
         *,
@@ -235,11 +302,11 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             "stats": preview.stats.model_dump(mode="python"),
             "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
             "error_values": preview.error_series.values.tolist(),
-            "alignment_path": None if alignment_path is None else alignment_path.to_posix(),
-            "aligned_estimate_path": None if aligned_estimate_path is None else aligned_estimate_path.to_posix(),
+            "alignment_path": None if alignment_path is None else alignment_path.as_posix(),
+            "aligned_estimate_path": None if aligned_estimate_path is None else aligned_estimate_path.as_posix(),
             "aligned_point_cloud_path": None
             if aligned_point_cloud_path is None
-            else aligned_point_cloud_path.to_posix(),
+            else aligned_point_cloud_path.as_posix(),
             "semantics": TrajectoryEvaluationSemantics(
                 metric_id=TrajectoryMetricId.APE_TRANSLATION,
                 pose_relation="translation_part",
@@ -303,6 +370,101 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 ),
             )
         )
+
+    def discover_benchmark_references(self, run_root: Path) -> list[BenchmarkReference]:
+        """Return aligned reference trajectories present in the run's ``benchmark/`` directory."""
+        benchmark_dir = run_root / "benchmark"
+        return [
+            BenchmarkReference(label=label, source_key=source_key, path=benchmark_dir / filename)
+            for label, source_key, filename in _BENCHMARK_REFERENCE_FILES
+            if (benchmark_dir / filename).exists()
+        ]
+
+    def load_evaluation_for_source(
+        self,
+        *,
+        run: DiscoveredRun,
+        reference: BenchmarkReference,
+    ) -> EvaluationArtifact | None:
+        """Load a persisted evaluation for one specific benchmark reference source."""
+        result_path = self.result_path_for_source(run.artifact_root, reference.source_key)
+        if not result_path.exists():
+            return None
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        reference_series = _series_from_trajectory(reference.label, load_tum_trajectory(reference.path))
+        estimate_series = _series_from_trajectory("Estimate", load_tum_trajectory(run.estimate_path))
+        return EvaluationArtifact.from_payload(
+            path=result_path,
+            payload=payload,
+            reference_path=reference.path,
+            estimate_path=run.estimate_path,
+            trajectories=(reference_series, estimate_series),
+        )
+
+    def compute_evaluation_for_source(
+        self,
+        *,
+        run: DiscoveredRun,
+        reference: BenchmarkReference,
+    ) -> EvaluationArtifact:
+        """Compute and persist trajectory APE against one specific benchmark reference."""
+        preview = compute_trajectory_ape_preview(
+            reference_path=reference.path,
+            estimate_path=run.estimate_path,
+            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+        )
+        result_path = self.result_path_for_source(run.artifact_root, reference.source_key)
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        alignment_path = None
+        if preview.alignment is not None:
+            alignment_path = self.alignment_path_for_source(run.artifact_root, reference.source_key)
+            alignment_path.write_text(
+                json.dumps(preview.alignment.model_dump(mode="json"), indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        alignment_mode = (
+            TrajectoryAlignmentMode.SIM3_UMEYAMA
+            if preview.alignment is not None
+            else TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
+        )
+        payload = {
+            "title": f"Trajectory APE (evo) — {reference.label}",
+            "matched_pairs": len(preview.error_series.values),
+            "stats": preview.stats.model_dump(mode="python"),
+            "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
+            "error_values": preview.error_series.values.tolist(),
+            "alignment_path": None if alignment_path is None else alignment_path.as_posix(),
+            "aligned_estimate_path": None,
+            "aligned_point_cloud_path": None,
+            "semantics": TrajectoryEvaluationSemantics(
+                metric_id=TrajectoryMetricId.APE_TRANSLATION,
+                pose_relation="translation_part",
+                alignment_mode=alignment_mode,
+                sync_max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
+            ).model_dump(mode="python"),
+        }
+        result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return EvaluationArtifact.from_payload(
+            path=result_path,
+            payload=payload,
+            reference_path=reference.path,
+            estimate_path=run.estimate_path,
+            trajectories=(preview.reference, preview.estimate),
+        )
+
+    @staticmethod
+    def result_path_for_source(run_root: Path, source_key: str) -> Path:
+        """Return the persisted metrics path for one benchmark reference source."""
+        if source_key == "ground_truth":
+            return run_root / "evaluation" / "trajectory_metrics.json"
+        return run_root / "evaluation" / f"trajectory_metrics_{source_key}.json"
+
+    @staticmethod
+    def alignment_path_for_source(run_root: Path, source_key: str) -> Path:
+        """Return the persisted alignment path for one benchmark reference source."""
+        if source_key == "ground_truth":
+            return run_root / "evaluation" / "trajectory_alignment.json"
+        return run_root / "evaluation" / f"trajectory_alignment_{source_key}.json"
 
     @staticmethod
     def result_path(run_root: Path) -> Path:

@@ -240,6 +240,19 @@ class DenseCloudEvaluationArtifact(BaseData):
     """Scalar dense-cloud metrics keyed by metric name."""
 
 
+class BenchmarkReference(BaseData):
+    """Describe one reference trajectory available for benchmark comparison."""
+
+    label: str
+    """Human-readable label shown in the UI, e.g. ``"Ground Truth"`` or ``"ARCore"``."""
+
+    source_key: str
+    """Machine key used to derive result-file names, e.g. ``"ground_truth"`` or ``"arcore"``."""
+
+    path: Path
+    """Absolute path to the aligned TUM reference trajectory."""
+
+
 class DiscoveredRun(BaseData):
     """Describe one normalized run discovered under the configured artifacts root."""
 
@@ -298,6 +311,7 @@ class EvaluationSelection(BaseData):
 
 
 __all__ = [
+    "BenchmarkReference",
     "DenseCloudEvaluationArtifact",
     "DenseCloudEvaluationSelection",
     "DiscoveredRun",

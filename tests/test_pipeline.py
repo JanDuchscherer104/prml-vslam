@@ -1246,6 +1246,69 @@ def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path
     assert snapshot.state is RunState.COMPLETED
 
 
+def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="trajectory-offline",
+        mode=PipelineMode.OFFLINE,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_eval_enabled=True,
+    )
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id=run_config.experiment_name, namespace="pytest-unit")
+    plan = _plan_with_stages(
+        tmp_path=tmp_path,
+        run_config=run_config,
+        stage_keys=[StageKey.SOURCE, StageKey.SLAM, StageKey.TRAJECTORY_EVALUATION, StageKey.SUMMARY],
+    )
+    coordinator._run_config = run_config
+    coordinator._path_config = path_config
+    coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
+
+    metrics_path = plan.artifact_root / "evaluation" / "trajectory_metrics.json"
+
+    def _fake_trajectory_run_offline(self, input_payload):
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_path.write_text('{"title": "fake"}', encoding="utf-8")
+        return StageResult(
+            stage_key=StageKey.TRAJECTORY_EVALUATION,
+            payload=None,
+            outcome=StageOutcome(
+                stage_key=StageKey.TRAJECTORY_EVALUATION,
+                status=StageStatus.COMPLETED,
+                config_hash="traj-cfg",
+                input_fingerprint="traj-inp",
+                artifacts={"trajectory_metrics": ArtifactRef(path=metrics_path, kind="json", fingerprint="metrics")},
+            ),
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.TRAJECTORY_EVALUATION,
+                lifecycle_state=StageStatus.COMPLETED,
+            ),
+        )
+
+    monkeypatch.setattr(
+        "prml_vslam.eval.stage_trajectory.runtime.TrajectoryEvaluationRuntime.run_offline",
+        _fake_trajectory_run_offline,
+    )
+
+    coordinator._run_offline(
+        run_config=run_config,
+        plan=plan,
+        path_config=path_config,
+        runtime_source=FakeOfflineSource(),
+    )
+
+    snapshot = coordinator.snapshot()
+    assert snapshot.stage_outcomes[StageKey.TRAJECTORY_EVALUATION].status is StageStatus.COMPLETED
+    assert metrics_path.exists()
+    assert "trajectory_metrics" in snapshot.artifacts
+    assert snapshot.state is RunState.COMPLETED
+
+
 def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path: Path) -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="streaming-dispatch", namespace="pytest-unit")
