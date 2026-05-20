@@ -1,7 +1,7 @@
 # Graph Report - prml-vslam  (2026-05-20)
 
 ## Corpus Check
-- 263 files · ~606,239 words
+- 263 files · ~606,268 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -296,11 +296,11 @@ Nodes (1): Print LOC statistics for src/ and tests/.
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Test package helpers and suites for PRML VSLAM.` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`?**
-  _High betweenness centrality (0.137) - this node is a cross-community bridge._
-- **Why does `StageKey` connect `Community 5` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 12`?**
-  _High betweenness centrality (0.092) - this node is a cross-community bridge._
+  _High betweenness centrality (0.100) - this node is a cross-community bridge._
 - **Why does `FrameTransform` connect `Community 3` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 12`, `Community 13`, `Community 15`?**
-  _High betweenness centrality (0.067) - this node is a cross-community bridge._
+  _High betweenness centrality (0.076) - this node is a cross-community bridge._
+- **Why does `StageKey` connect `Community 5` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 12`?**
+  _High betweenness centrality (0.072) - this node is a cross-community bridge._
 - **Are the 626 inferred relationships involving `StageKey` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
   _`StageKey` has 626 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 383 inferred relationships involving `ArtifactRef` (e.g. with `SlamUpdate` and `SlamArtifacts`) actually correct?**
