@@ -269,7 +269,9 @@ def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(
 
     recording = rdf.load_recording(viewer_path)
     fill_view = recording.view(index="log_tick", contents="/world/slam/vista_slam_world/alignment/ground_plane/fill")
-    outline_view = recording.view(index="log_tick", contents="/world/slam/vista_slam_world/alignment/ground_plane/outline")
+    outline_view = recording.view(
+        index="log_tick", contents="/world/slam/vista_slam_world/alignment/ground_plane/outline"
+    )
 
     fill_static_rows = [batch.to_pydict() for batch in fill_view.select_static()]
     outline_static_rows = [batch.to_pydict() for batch in outline_view.select_static()]
@@ -279,25 +281,19 @@ def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(
 
     np.testing.assert_allclose(
         np.asarray(
-            fill_static_rows[0][
-                "/world/slam/vista_slam_world/alignment/ground_plane/fill:Mesh3D:vertex_positions"
-            ]
+            fill_static_rows[0]["/world/slam/vista_slam_world/alignment/ground_plane/fill:Mesh3D:vertex_positions"]
         ).reshape(-1, 3),
         np.asarray(_ground_alignment_metadata().visualization.corners_xyz_world, dtype=np.float32),
     )
     np.testing.assert_array_equal(
         np.asarray(
-            fill_static_rows[0][
-                "/world/slam/vista_slam_world/alignment/ground_plane/fill:Mesh3D:triangle_indices"
-            ]
+            fill_static_rows[0]["/world/slam/vista_slam_world/alignment/ground_plane/fill:Mesh3D:triangle_indices"]
         ).reshape(-1, 3),
         np.asarray([[0, 1, 2], [0, 2, 3]], dtype=np.uint32),
     )
     np.testing.assert_allclose(
         np.asarray(
-            outline_static_rows[0][
-                "/world/slam/vista_slam_world/alignment/ground_plane/outline:LineStrips3D:strips"
-            ]
+            outline_static_rows[0]["/world/slam/vista_slam_world/alignment/ground_plane/outline:LineStrips3D:strips"]
         ).reshape(-1, 3),
         np.asarray(
             [

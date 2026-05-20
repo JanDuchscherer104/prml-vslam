@@ -160,11 +160,11 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     run_config_plan = run_config.compile_plan(path_config)
 
     assert isinstance(run_config.stages.source.backend, TumRgbdSourceConfig)
-    assert run_config.stages.source.backend.sequence_id == "freiburg1_room"
+    assert run_config.stages.source.backend.sequence_id == "freiburg3_large_cabinet"
     assert run_config.stages.source.backend.frame_stride == 5
     assert run_config.stages.source.backend.replay_mode is ReplayMode.REALTIME
     assert run_config_plan.source.source_id == DatasetId.TUM_RGBD.value
-    assert run_config_plan.source.sequence_id == "freiburg1_room"
+    assert run_config_plan.source.sequence_id == "freiburg3_large_cabinet"
     assert run_config_plan.source.replay_mode == "realtime"
     assert run_config_plan.source.metadata["dataset_id"] == DatasetId.TUM_RGBD.value
     assert run_config.stages.align_ground.enabled is True

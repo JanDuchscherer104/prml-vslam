@@ -981,7 +981,11 @@ class RunCoordinatorActor:
         )
         with self._lock:
             self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        self._submit_rerun_update(update=update, payload_resolver=None)
+        self._submit_rerun_update(
+            update=update,
+            payload_resolver=None,
+            destinations=frozenset(("export",)),
+        )
 
     def _submit_rerun_update(
         self,
