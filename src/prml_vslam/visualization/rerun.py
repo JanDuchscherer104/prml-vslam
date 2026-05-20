@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,8 @@ from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
+
+_LOGGER = logging.getLogger(__name__)
 
 ROOT_WORLD_ENTITY_PATH = "world"
 """Canonical root entity path for repo-owned Rerun recordings."""
@@ -122,7 +125,6 @@ def create_recording_stream(
     stream.send_blueprint(blueprint)
     log_root_world_transform(stream, view_coordinates=view_coordinates)
     return stream
-
 
 
 def log_root_world_transform(

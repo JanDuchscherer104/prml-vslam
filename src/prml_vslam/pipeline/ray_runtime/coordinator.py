@@ -1060,7 +1060,6 @@ class RunCoordinatorActor:
             )
 
             self._submit_rerun_update(
-
                 update=StageRuntimeUpdate(
                     stage_key=StageKey.SOURCE,
                     timestamp_ns=ts_ns(),
@@ -1068,9 +1067,7 @@ class RunCoordinatorActor:
                         TrajectoryAlignmentArtifact(
                             source_frame="vista_slam_world",
                             target_frame=reference.target_frame or "world",
-                            scale=float(self._run_config.visualization.initial_scale)
-                            if self._run_config
-                            else 1.0,
+                            scale=float(self._run_config.visualization.initial_scale) if self._run_config else 1.0,
                             rotation=rotation_matrix.tolist(),
                             translation=translation.tolist(),
                             matched_pairs=1,
