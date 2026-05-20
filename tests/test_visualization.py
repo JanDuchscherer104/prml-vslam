@@ -169,6 +169,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
 
     class FakeViewCoordinates:
         RDF = "rdf"
+        RFU = "rfu"
 
     monkeypatch.setattr(
         rerun_helpers,
@@ -177,6 +178,9 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
             RecordingStream=FakeRecordingStream,
             Transform3D=FakeTransform3D,
             ViewCoordinates=FakeViewCoordinates,
+            new_recording=lambda application_id, recording_id: FakeRecordingStream(
+                application_id=application_id, recording_id=recording_id
+            ),
         ),
     )
     monkeypatch.setattr(
@@ -200,15 +204,12 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert all(not query.startswith("- ") for query in layout.views[0].contents)
     assert "+ world/reference/**" in layout.views[0].contents
-    assert "+ world/keyframes/cameras/*" in layout.views[0].contents
-    assert "+ world/live/model/camera/image" in layout.views[0].contents
-    assert "+ world/live/model/camera/image/**" not in layout.views[0].contents
-    assert "- world/live/model/camera/image/**" not in layout.views[0].contents
-    assert "- world/reference/**/source_native/**" not in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world/**" in layout.views[0].contents
+    assert "+ world/live/source/camera" in layout.views[0].contents
     assert layout.views[1].name == "2D Views"
     assert [view.origin for view in layout.views[1].views] == [
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
-        "world/live/model/camera/image",
+        "world/slam/vista_slam_world/live/model/camera/image",
     ]
     assert len(logged_entities) == 2
     entity_path, payload, static = logged_entities[0]
@@ -218,7 +219,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert static is True
     entity_path, payload, static = logged_entities[1]
     assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
-    assert payload == FakeViewCoordinates.RDF
+    assert payload == FakeViewCoordinates.RFU
     assert static is True
 
 
@@ -412,6 +413,7 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_p
         log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(
             (entity_path, axis_length, static, transform)
         ),
+        log_sim3_transform=lambda *args, **kwargs: None,
         trajectory_pose_axis_length=0.25,
     )
     update = StageRuntimeUpdate(
@@ -471,6 +473,7 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
         log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(
             entity_path
         ),
+        log_sim3_transform=lambda *args, **kwargs: None,
     )
     update = StageRuntimeUpdate(
         stage_key=StageKey.SOURCE,
@@ -541,6 +544,7 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> N
         log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda *args, **kwargs: None,
         log_transform=lambda *args, **kwargs: None,
+        log_sim3_transform=lambda *args, **kwargs: None,
         point_cloud_decimation_keep_ratio=0.25,
         mesh_decimation_keep_ratio=0.5,
         decimation_random_seed=123,
@@ -593,7 +597,7 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> N
         },
     )
 
-    assert pointcloud_calls == [("world/live/model/points", 0.25, pointcloud_calls[0][2])]
+    assert pointcloud_calls == [("world/slam/vista_slam_world/live/model/points", 0.25, pointcloud_calls[0][2])]
     assert isinstance(pointcloud_calls[0][2], int)
     assert pointcloud_ply_calls == [
         ("world/reconstruction/reference/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3])
@@ -710,12 +714,20 @@ def test_log_ground_plane_patch_logs_fill_and_outline(monkeypatch) -> None:
             del static
             logged.append((entity_path, payload))
 
+    class FakeArrows3D:
+        def __init__(self, *, origins, vectors, colors, radii) -> None:
+            self.origins = origins
+            self.vectors = vectors
+            self.colors = colors
+            self.radii = radii
+
     monkeypatch.setattr(
         rerun_helpers,
         "rr",
         SimpleNamespace(
             Mesh3D=FakeMesh3D,
             LineStrips3D=FakeLineStrips3D,
+            Arrows3D=FakeArrows3D,
         ),
     )
 
@@ -735,8 +747,9 @@ def test_log_ground_plane_patch_logs_fill_and_outline(monkeypatch) -> None:
     )
 
     assert [entity for entity, _ in logged] == [
-        "world/alignment/ground_plane/fill",
-        "world/alignment/ground_plane/outline",
+        "world/slam/vista_slam_world/alignment/ground_plane/fill",
+        "world/slam/vista_slam_world/alignment/ground_plane/outline",
+        "world/slam/vista_slam_world/alignment/ground_plane/normal",
     ]
 
 
