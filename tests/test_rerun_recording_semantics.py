@@ -238,6 +238,7 @@ def _build_repo_owned_recording(*, tmp_path: Path, payloads: Sequence[_Synthetic
         log_ground_plane_patch=rerun_helpers.log_ground_plane_patch,
         log_rgb_image=rerun_helpers.log_rgb_image,
         log_transform=rerun_helpers.log_transform,
+        log_sim3_transform=rerun_helpers.log_sim3_transform,
     )
     adapter = SlamVisualizationAdapter()
     for payload in payloads:
@@ -367,17 +368,17 @@ def test_repo_owned_recording_matches_vista_style_world_point_placement_across_k
             repo_recording,
             index_name="frame",
             index_value=payload.frame_index,
-            points_entity="world/live/model/points",
+            points_entity="world/slam/vista_slam_world/live/model/points",
         )
         repo_keyframe_row = _row_for_points_entity_any_frame(
             repo_recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         repo_keyframe_world_points = _world_points_for(
             repo_recording,
             index_name="frame",
             index_value=repo_keyframe_row["frame"],
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         vista_frame_world_points = _world_points_for(
             vista_recording,
@@ -426,16 +427,18 @@ def test_repo_owned_recording_points_always_have_matching_parent_transform(tmp_p
             recording,
             index_name="frame",
             index_value=payload.frame_index,
-            points_entity="world/live/model/points",
+            points_entity="world/slam/vista_slam_world/live/model/points",
         )
         keyframe_row = _row_for_points_entity_any_frame(
             recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
 
-        assert _transform_matrix_from_row(live_row, entity_path="world/live/model") is not None
+        assert _transform_matrix_from_row(live_row, entity_path="world/slam/vista_slam_world/live/model") is not None
         assert (
-            _transform_matrix_from_row(keyframe_row, entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}")
+            _transform_matrix_from_row(
+                keyframe_row, entity_path=f"world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}"
+            )
             is not None
         )
 
@@ -449,20 +452,25 @@ def test_repo_owned_recording_keeps_transform_and_points_on_the_same_index(tmp_p
             recording,
             index_name="frame",
             index_value=payload.frame_index,
-            points_entity="world/live/model/points",
+            points_entity="world/slam/vista_slam_world/live/model/points",
         )
         keyframe_row = _row_for_points_entity_any_frame(
             recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
 
         assert live_row["frame"] == payload.frame_index
-        assert "/world/live/model:Transform3D:translation" in live_row
-        assert "/world/live/model/points:Points3D:positions" in live_row
+        assert "/world/slam/vista_slam_world/live/model:Transform3D:translation" in live_row
+        assert "/world/slam/vista_slam_world/live/model/points:Points3D:positions" in live_row
         assert keyframe_row["frame"] == payload.frame_index
-        assert f"/world/keyframes/points/{payload.keyframe_index:06d}/points:Points3D:positions" in keyframe_row
         assert (
-            _transform_matrix_from_row(keyframe_row, entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}")
+            f"/world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}/points:Points3D:positions"
+            in keyframe_row
+        )
+        assert (
+            _transform_matrix_from_row(
+                keyframe_row, entity_path=f"world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}"
+            )
             is not None
         )
 
@@ -474,15 +482,15 @@ def test_repo_owned_recording_keeps_keyed_history_while_reusing_live_model_point
     live_rows = [
         row
         for row in _rows_for_index(recording, index_name="frame")
-        if "/world/live/model/points:Points3D:positions" in row
-        and _points_array(row["/world/live/model/points:Points3D:positions"]).size > 0
+        if "/world/slam/vista_slam_world/live/model/points:Points3D:positions" in row
+        and _points_array(row["/world/slam/vista_slam_world/live/model/points:Points3D:positions"]).size > 0
     ]
 
     assert [row["frame"] for row in live_rows] == [payload.frame_index for payload in payloads]
     for payload in payloads:
         keyframe_row = _row_for_points_entity_any_frame(
             recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/vista_slam_world/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         assert keyframe_row["frame"] == payload.frame_index
 
@@ -492,5 +500,5 @@ def test_repo_owned_recording_separates_keyframe_camera_and_point_subtrees(tmp_p
     recording = _build_repo_owned_recording(tmp_path=tmp_path, payloads=payloads)
 
     columns = _component_columns(recording)
-    assert any(column.entity_path == "/world/keyframes/cameras/000003" for column in columns)
-    assert any(column.entity_path == "/world/keyframes/points/000003" for column in columns)
+    assert any(column.entity_path == "/world/slam/vista_slam_world/keyframes/cameras/000003" for column in columns)
+    assert any(column.entity_path == "/world/slam/vista_slam_world/keyframes/points/000003" for column in columns)
