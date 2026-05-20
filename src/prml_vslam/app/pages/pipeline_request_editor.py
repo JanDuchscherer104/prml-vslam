@@ -63,6 +63,7 @@ def render_request_editor(
             ground_alignment_enabled,
             reconstruction_enabled,
             trajectory_eval_enabled,
+            trajectory_alignment_enabled,
             evaluate_cloud,
         ) = _render_stage_settings(page_state)
     with visualization_tab:
@@ -100,6 +101,7 @@ def render_request_editor(
                 "ground_alignment_enabled": ground_alignment_enabled,
                 "reconstruction_enabled": reconstruction_enabled,
                 "trajectory_eval_enabled": trajectory_eval_enabled,
+                "trajectory_alignment_enabled": trajectory_alignment_enabled,
                 "evaluate_cloud": evaluate_cloud,
                 "connect_live_viewer": connect_live_viewer,
                 "export_viewer_rrd": export_viewer_rrd,
@@ -451,7 +453,7 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
     )
 
 
-def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool]:
+def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool, bool]:
     left, right = st.columns(2, gap="large")
     with left:
         st.markdown("**SLAM Outputs**")
@@ -463,6 +465,7 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
     with right:
         st.markdown("**Evaluation**")
         trajectory_eval_enabled = st.toggle("Trajectory Evaluation", value=page_state.trajectory_eval_enabled)
+        trajectory_alignment_enabled = st.toggle("Trajectory Alignment", value=page_state.trajectory_alignment_enabled)
         evaluate_cloud = st.toggle("Dense-Cloud Evaluation", value=page_state.evaluate_cloud)
         st.caption("Dense-cloud evaluation remains a planned diagnostic stage without a registered runtime.")
         st.markdown("**Summary**")
@@ -473,6 +476,7 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
         ground_alignment_enabled,
         reconstruction_enabled,
         trajectory_eval_enabled,
+        trajectory_alignment_enabled,
         evaluate_cloud,
     )
 

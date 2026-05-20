@@ -12,6 +12,7 @@ from typing import Annotated, Any, Literal, Self, TypeAlias, Union, get_args, ge
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
+from prml_vslam.eval.stage_alignment.config import TrajectoryAlignmentStageConfig
 from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
 from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
@@ -60,6 +61,7 @@ STAGE_SECTION_ORDER: tuple[tuple[StageKey, str], ...] = (
     (StageKey.SOURCE, "source"),
     (StageKey.SLAM, "slam"),
     (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
+    (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
     (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
     (StageKey.RECONSTRUCTION, "reconstruction"),
     (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
@@ -80,6 +82,11 @@ class StageBundle(BaseConfig):
 
     align_ground: GroundAlignmentStageConfig = Field(default_factory=lambda: GroundAlignmentStageConfig(enabled=False))
     """Ground-alignment stage section."""
+
+    align_trajectory: TrajectoryAlignmentStageConfig = Field(
+        default_factory=lambda: TrajectoryAlignmentStageConfig(enabled=False)
+    )
+    """Trajectory Sim(3)-alignment stage section."""
 
     evaluate_trajectory: TrajectoryEvaluationStageConfig = Field(
         default_factory=lambda: TrajectoryEvaluationStageConfig(enabled=False)
@@ -360,6 +367,7 @@ def build_run_config(
     emit_sparse_points: bool = True,
     reference_enabled: bool = False,
     trajectory_eval_enabled: bool = False,
+    trajectory_alignment_enabled: bool = False,
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
     ground_alignment_enabled: bool = False,
@@ -393,6 +401,7 @@ def build_run_config(
                 ),
             ),
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),
+            align_trajectory=TrajectoryAlignmentStageConfig(enabled=trajectory_alignment_enabled),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=trajectory_eval_enabled,
                 evaluation=trajectory_policy,
