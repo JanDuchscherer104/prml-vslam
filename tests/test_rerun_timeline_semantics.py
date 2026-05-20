@@ -119,6 +119,7 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -
         log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
             ("pose", entity_path, *_timeline_state(stream))
         ),
+        log_sim3_transform=lambda *args, **kwargs: None,
         log_source_rgb=True,
     )
 
@@ -128,7 +129,7 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -
 
     assert calls == [
         ("rgb", "world/live/source/rgb", 5, None),
-        ("pose", "world/live/tracking/camera", 7, None),
+        ("pose", "world/slam/vista_slam_world/live/tracking/camera", 7, None),
         ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
     ]
 
@@ -159,6 +160,7 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
             ("pose", entity_path, *_timeline_state(stream))
         ),
+        log_sim3_transform=lambda *args, **kwargs: None,
     )
 
     policy.observe_update(
@@ -171,8 +173,8 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         },
     )
 
-    live_calls = [call for call in calls if call[1].startswith("world/live/model")]
-    history_calls = [call for call in calls if call[1].startswith("world/keyframes/")]
+    live_calls = [call for call in calls if call[1].startswith("world/slam/vista_slam_world/live/model")]
+    history_calls = [call for call in calls if call[1].startswith("world/slam/vista_slam_world/keyframes/")]
 
     assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in live_calls)
     assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in history_calls)

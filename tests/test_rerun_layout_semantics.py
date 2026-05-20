@@ -71,6 +71,7 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
         log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda stream, *, entity_path, image_rgb: rgb_calls.append(entity_path),
         log_transform=lambda *args, **kwargs: None,
+        log_sim3_transform=lambda *args, **kwargs: None,
         log_diagnostic_preview=True,
         log_camera_image_rgb=True,
     )
@@ -93,11 +94,11 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
         )
 
     assert [path for path, _ in pinhole_calls] == [
-        "world/live/model/camera/image",
-        "world/keyframes/cameras/000007/image",
+        "world/slam/vista_slam_world/live/model/camera/image",
+        "world/slam/vista_slam_world/keyframes/cameras/000007/image",
     ]
-    assert "world/live/model/camera/image" in rgb_calls
-    assert "world/live/model/diag/preview" in rgb_calls
+    assert "world/slam/vista_slam_world/live/model/camera/image" in rgb_calls
+    assert "world/slam/vista_slam_world/live/model/diag/preview" in rgb_calls
     live_intrinsics = pinhole_calls[0][1]
     assert live_intrinsics.fx == 2.0
     assert live_intrinsics.fy == 1.5
@@ -121,6 +122,7 @@ def test_policy_does_not_log_diagnostic_preview_by_default() -> None:
         log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda stream, *, entity_path, image_rgb: rgb_calls.append(entity_path),
         log_transform=lambda *args, **kwargs: None,
+        log_sim3_transform=lambda *args, **kwargs: None,
     )
 
     policy.observe_update(
@@ -137,8 +139,8 @@ def test_policy_does_not_log_diagnostic_preview_by_default() -> None:
         },
     )
 
-    assert "world/live/model/diag/preview" not in rgb_calls
-    assert "world/keyframes/cameras/000007/diag/preview" not in rgb_calls
+    assert "world/slam/vista_slam_world/live/model/diag/preview" not in rgb_calls
+    assert "world/slam/vista_slam_world/keyframes/cameras/000007/diag/preview" not in rgb_calls
 
 
 def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
@@ -154,6 +156,7 @@ def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
         log_ground_plane_patch=lambda *args, **kwargs: None,
         log_rgb_image=lambda *args, **kwargs: None,
         log_transform=lambda *args, **kwargs: None,
+        log_sim3_transform=lambda *args, **kwargs: None,
     )
 
     with pytest.raises(ValueError, match="must share the same raster shape"):
@@ -220,6 +223,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
 
     class FakeViewCoordinates:
         RDF = "rdf"
+        RFU = "rfu"
 
     monkeypatch.setattr(
         rerun_helpers,
@@ -228,6 +232,9 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
             RecordingStream=FakeRecordingStream,
             Transform3D=FakeTransform3D,
             ViewCoordinates=FakeViewCoordinates,
+            new_recording=lambda application_id, recording_id: FakeRecordingStream(
+                application_id=application_id, recording_id=recording_id
+            ),
         ),
     )
     monkeypatch.setattr(
@@ -248,16 +255,11 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert all(not query.startswith("- ") for query in layout.views[0].contents)
     assert "+ world/reference/**" in layout.views[0].contents
-    assert "+ world/keyframes/cameras/*" in layout.views[0].contents
-    assert "+ world/keyframes/points/**" in layout.views[0].contents
-    assert "+ world/live/model" in layout.views[0].contents
-    assert "+ world/live/model/camera/image" in layout.views[0].contents
-    assert "+ world/live/model/camera/image/**" not in layout.views[0].contents
-    assert "- world/live/model/camera/image/**" not in layout.views[0].contents
-    assert "- world/reference/**/source_native/**" not in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world/**" in layout.views[0].contents
+    assert "+ world/live/source/camera" in layout.views[0].contents
     assert [view.origin for view in layout.views[1].views] == [
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
-        "world/live/model/camera/image",
+        "world/slam/vista_slam_world/live/model/camera/image",
     ]
     assert len(logged_entities) == 2
     assert logged_entities[0][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
@@ -265,7 +267,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert logged_entities[0][1].axis_length == rerun_helpers.ROOT_WORLD_AXIS_LENGTH
     assert logged_entities[0][2] is True
     assert logged_entities[1][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
-    assert logged_entities[1][1] == FakeViewCoordinates.RDF
+    assert logged_entities[1][1] == FakeViewCoordinates.RFU
     assert logged_entities[1][2] is True
 
 
@@ -289,6 +291,7 @@ def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_update() -> 
         log_ground_plane_patch=lambda stream, *, metadata: ground_calls.append(metadata),
         log_rgb_image=lambda *args, **kwargs: None,
         log_transform=lambda *args, **kwargs: None,
+        log_sim3_transform=lambda *args, **kwargs: None,
     )
 
     policy.observe_update(

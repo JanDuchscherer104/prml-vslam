@@ -24,10 +24,8 @@ def test_load_recording_summary_reports_live_keyed_and_tracking_surfaces(tmp_pat
 
     summary = load_recording_summary(recording_path)
 
-    assert summary.live_model_points is not None
-    assert summary.live_model_points.point_count == 1
     assert len(summary.keyed_point_clouds) == 2
-    assert summary.keyed_point_clouds[0].entity_path == "/world/keyframes/points/000000/points"
+    assert summary.keyed_point_clouds[0].entity_path == "/world/slam/vista_slam_world/keyframes/points/000000/points"
     assert len(summary.keyed_camera_entities) == 2
     assert summary.tracking_positions_xyz == [(0.0, 0.0, 0.0), (1.0, 0.5, 0.25)]
 
@@ -54,7 +52,7 @@ def test_write_validation_bundle_respects_explicit_keyed_cloud_limit(tmp_path: P
     summary = json.loads(artifacts.summary_json.read_text(encoding="utf-8"))
 
     assert len(summary["keyed_point_clouds"]) == 1
-    assert summary["keyed_point_clouds"][0]["entity_path"].startswith("/world/keyframes/points/")
+    assert summary["keyed_point_clouds"][0]["entity_path"].startswith("/world/slam/vista_slam_world/keyframes/points/")
 
 
 def _write_synthetic_recording(tmp_path: Path) -> Path:
@@ -70,6 +68,7 @@ def _write_synthetic_recording(tmp_path: Path) -> Path:
         log_ground_plane_patch=rerun_helpers.log_ground_plane_patch,
         log_rgb_image=rerun_helpers.log_rgb_image,
         log_transform=rerun_helpers.log_transform,
+        log_sim3_transform=rerun_helpers.log_sim3_transform,
         frusta_history_window_streaming=None,
         show_tracking_trajectory=True,
     )

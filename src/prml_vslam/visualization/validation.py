@@ -18,10 +18,10 @@ from prml_vslam.utils import BaseData
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-_LIVE_MODEL_POINTS_ENTITY = "/world/live/model/points"
-_TRACKING_CAMERA_ENTITY = "/world/live/tracking/camera"
-_KEYED_POINTS_PREFIX = "/world/keyframes/points/"
-_KEYED_CAMERAS_PREFIX = "/world/keyframes/cameras/"
+_LIVE_MODEL_POINTS_ENTITY = "/world/slam/vista_slam_world/live/model/points"
+_TRACKING_CAMERA_ENTITY = "/world/slam/vista_slam_world/live/tracking/camera"
+_KEYED_POINTS_PREFIX = "/world/slam/vista_slam_world/keyframes/points/"
+_KEYED_CAMERAS_PREFIX = "/world/slam/vista_slam_world/keyframes/cameras/"
 _RECONSTRUCTION_PREFIX = "/world/reconstruction/"
 _REFERENCE_PREFIX = "/world/reference/"
 
