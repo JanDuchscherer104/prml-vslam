@@ -68,7 +68,7 @@ from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
 from prml_vslam.pipeline.stages.specs import stage_runtime_spec_for
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.stage.contracts import SourceStageOutput
-from prml_vslam.sources.stage.visualization import SourceVisualizationAdapter
+from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_POINT_CLOUD, SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.artifacts import artifact_visualizations
 
@@ -907,6 +907,8 @@ class RunCoordinatorActor:
             output=output,
             artifact_refs=artifacts,
         )
+        if self._plan is not None and self._plan.mode is PipelineMode.STREAMING:
+            visualizations = [item for item in visualizations if item.role != ROLE_SOURCE_REFERENCE_POINT_CLOUD]
         if not visualizations:
             return
         update = StageRuntimeUpdate(

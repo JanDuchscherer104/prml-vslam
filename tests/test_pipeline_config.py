@@ -26,7 +26,7 @@ from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
-from prml_vslam.utils import PathConfig
+from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 
 def _repo_root() -> Path:
@@ -167,6 +167,30 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     assert run_config.stages.reconstruction.enabled is True
     assert run_config.stages.reconstruction.backend.extract_mesh is True
     assert run_config.stages.evaluate_trajectory.enabled is False
+
+
+def test_advio_streaming_vista_toml_uses_generated_slam_cloud(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    config_path = repo_root / ".configs/pipelines/advio-15-streaming-vista.toml"
+    path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts")
+
+    run_config = RunConfig.from_toml(config_path)
+    plan = run_config.compile_plan(path_config)
+
+    assert run_config.mode.value == "streaming"
+    assert isinstance(run_config.stages.source.backend, AdvioSourceConfig)
+    assert run_config.stages.source.backend.sequence_id == "advio-15"
+    assert run_config.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
+    assert run_config.stages.slam.outputs.emit_dense_points is True
+    assert run_config.stages.slam.outputs.emit_sparse_points is False
+    assert run_config.stages.slam.backend is not None
+    assert run_config.stages.slam.backend.method_id is MethodId.VISTA
+    assert run_config.stages.slam.backend.max_frames == 150
+    assert run_config.stages.reconstruction.enabled is False
+    assert run_config.stages.evaluate_cloud.enabled is False
+    assert [stage.key for stage in plan.stages] == [StageKey.SOURCE, StageKey.SLAM, StageKey.SUMMARY]
+    assert all(stage.available for stage in plan.stages)
+    assert RunArtifactPaths.build(plan.artifact_root).point_cloud_path in plan.stages[1].outputs
 
 
 def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) -> None:

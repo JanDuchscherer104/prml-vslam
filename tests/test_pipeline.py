@@ -73,10 +73,23 @@ from prml_vslam.reconstruction.stage import ReconstructionRuntime, Reconstructio
 from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
+    ReferenceCloudSource,
     ReferenceSource,
+    ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.stage.artifacts import (
+    reference_cloud_artifact_key,
+    reference_cloud_metadata_artifact_key,
+    reference_trajectory_artifact_key,
+)
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
+from prml_vslam.sources.stage.visualization import (
+    ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    ROLE_SOURCE_REFERENCE_TRAJECTORY,
+)
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
@@ -1443,6 +1456,77 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     assert snapshot.stage_outcomes[StageKey.SLAM].artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
     assert snapshot.artifacts["trajectory_tum"] == slam_artifacts.trajectory_tum
     assert snapshot.state is RunState.COMPLETED
+
+
+def test_run_coordinator_filters_source_reference_clouds_from_streaming_updates(tmp_path: Path) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    trajectory_ref = ReferenceTrajectoryRef(
+        source=ReferenceSource.GROUND_TRUTH,
+        path=tmp_path / "ground_truth.tum",
+        target_frame="advio_gt_world",
+        native_frame="advio_gt_world",
+        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+    )
+    cloud_ref = ReferenceCloudRef(
+        source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+        path=tmp_path / "reference_cloud.ply",
+        metadata_path=tmp_path / "reference_cloud.metadata.json",
+        target_frame="advio_gt_world",
+        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+    )
+    output = SourceStageOutput(
+        sequence_manifest=SequenceManifest(sequence_id="advio-15"),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_trajectories=[trajectory_ref],
+            reference_clouds=[cloud_ref],
+        ),
+    )
+    artifacts = {
+        reference_trajectory_artifact_key(trajectory_ref): ArtifactRef(
+            path=trajectory_ref.path,
+            kind="tum",
+            fingerprint="trajectory",
+        ),
+        reference_cloud_artifact_key(cloud_ref): ArtifactRef(
+            path=cloud_ref.path,
+            kind="ply",
+            fingerprint="cloud",
+        ),
+        reference_cloud_metadata_artifact_key(cloud_ref): ArtifactRef(
+            path=cloud_ref.metadata_path,
+            kind="json",
+            fingerprint="metadata",
+        ),
+    }
+
+    def _submitted_roles(mode: PipelineMode) -> list[str]:
+        run_config = _run_config(
+            experiment_name=f"source-reference-{mode.value}",
+            mode=mode,
+            output_dir=tmp_path / ".artifacts",
+            source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        )
+        plan = _plan_with_stages(tmp_path=tmp_path, run_config=run_config, stage_keys=[StageKey.SOURCE])
+        coordinator = coordinator_cls(run_id=plan.run_id, namespace="pytest-unit")
+        coordinator._plan = plan
+        coordinator._snapshot = RunSnapshot(run_id=plan.run_id, plan=plan, active_executor="ray")
+        updates: list[StageRuntimeUpdate] = []
+
+        def _capture_update(*, update: StageRuntimeUpdate, payload_resolver) -> None:
+            del payload_resolver
+            updates.append(update)
+
+        coordinator._submit_rerun_update = _capture_update
+        coordinator._submit_source_reference_visualization_update(output=output, artifacts=artifacts)
+
+        assert len(updates) == 1
+        return [item.role for item in updates[0].visualizations]
+
+    assert _submitted_roles(PipelineMode.OFFLINE) == [
+        ROLE_SOURCE_REFERENCE_TRAJECTORY,
+        ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    ]
+    assert _submitted_roles(PipelineMode.STREAMING) == [ROLE_SOURCE_REFERENCE_TRAJECTORY]
 
 
 def test_slam_backend_config_uses_stage_owned_method_id_for_vista() -> None:
