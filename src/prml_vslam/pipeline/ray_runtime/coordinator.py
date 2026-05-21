@@ -612,7 +612,6 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=stage_key, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
-            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _run_streaming(
@@ -981,11 +980,7 @@ class RunCoordinatorActor:
         )
         with self._lock:
             self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        self._submit_rerun_update(
-            update=update,
-            payload_resolver=None,
-            destinations=frozenset(("export",)),
-        )
+        self._submit_rerun_update(update=update, payload_resolver=None)
 
     def _submit_rerun_update(
         self,
@@ -1212,7 +1207,6 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=StageKey.SUMMARY, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
-            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _require_run_config(self) -> RunConfig:
