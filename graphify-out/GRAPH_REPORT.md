@@ -1,7 +1,7 @@
-# Graph Report - prml-vslam  (2026-05-20)
+# Graph Report - prml-vslam  (2026-05-21)
 
 ## Corpus Check
-- 263 files · ~606,288 words
+- 263 files · ~700,250 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -57,16 +57,16 @@
 10. `ReferenceSource` - 176 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `path()` --calls--> `test_source_materialization_does_not_import_stage_package()`  [INFERRED]
-  src/prml_vslam/pipeline/sinks/jsonl.py → tests/test_package_exports.py
-- `path()` --calls--> `report_path()`  [INFERRED]
-  src/prml_vslam/pipeline/sinks/jsonl.py → scripts/loc_stats.py
-- `SequenceManifest` --uses--> `Small runtime sources used by focused pipeline smoke tests.`  [INFERRED]
-  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
-- `SequenceManifest` --uses--> `Minimal offline source for pipeline smoke tests.`  [INFERRED]
-  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
-- `SequenceManifest` --uses--> `Finite in-memory packet stream for streaming smoke tests.`  [INFERRED]
-  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
+- `test_source_materialization_does_not_import_stage_package()` --calls--> `path()`  [INFERRED]
+  tests/test_package_exports.py → src/prml_vslam/pipeline/sinks/jsonl.py
+- `report_path()` --calls--> `path()`  [INFERRED]
+  scripts/loc_stats.py → src/prml_vslam/pipeline/sinks/jsonl.py
+- `Small runtime sources used by focused pipeline smoke tests.` --uses--> `SequenceManifest`  [INFERRED]
+  tests/pipeline_testing_support.py → src/prml_vslam/sources/contracts.py
+- `Minimal offline source for pipeline smoke tests.` --uses--> `SequenceManifest`  [INFERRED]
+  tests/pipeline_testing_support.py → src/prml_vslam/sources/contracts.py
+- `Finite in-memory packet stream for streaming smoke tests.` --uses--> `SequenceManifest`  [INFERRED]
+  tests/pipeline_testing_support.py → src/prml_vslam/sources/contracts.py
 
 ## Communities
 
@@ -242,11 +242,11 @@ Nodes (1): Return the path that should own this change in reports.
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Test package helpers and suites for PRML VSLAM.` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 12`, `Community 13`?**
-  _High betweenness centrality (0.120) - this node is a cross-community bridge._
+  _High betweenness centrality (0.135) - this node is a cross-community bridge._
 - **Why does `StageKey` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 8`, `Community 9`, `Community 10`?**
-  _High betweenness centrality (0.076) - this node is a cross-community bridge._
+  _High betweenness centrality (0.090) - this node is a cross-community bridge._
 - **Why does `FrameTransform` connect `Community 4` to `Community 0`, `Community 1`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 12`, `Community 14`?**
-  _High betweenness centrality (0.072) - this node is a cross-community bridge._
+  _High betweenness centrality (0.058) - this node is a cross-community bridge._
 - **Are the 428 inferred relationships involving `StageKey` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
   _`StageKey` has 428 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 252 inferred relationships involving `SequenceManifest` (e.g. with `Mast3rSlamBackend` and `Placeholder MASt3R backend config and runtime stub.`) actually correct?**
