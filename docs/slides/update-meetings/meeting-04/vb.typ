@@ -7,7 +7,6 @@
 
 #let challenges_table_row = (
 )
-)
 
 #let next_steps_table_row = (
   ([WP5], [All], [Benchmarking and Evaluation])
