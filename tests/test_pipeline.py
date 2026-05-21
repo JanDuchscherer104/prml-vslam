@@ -1102,7 +1102,7 @@ def test_run_coordinator_routes_source_reference_visualizations_to_export_only(
         artifacts={reference_trajectory_artifact_key(reference): artifact},
     )
 
-    assert [label for label, _, _ in submitted] == ["export"]
+    assert [label for label, _, _ in submitted] == ["live", "export"]
     assert submitted[0][1].stage_key is StageKey.SOURCE
 
 
@@ -1126,7 +1126,7 @@ def test_run_coordinator_routes_artifact_visualizations_to_export_only(
         ),
     )
 
-    assert [label for label, _, _ in submitted] == ["export"]
+    assert [label for label, _, _ in submitted] == ["live", "export"]
     assert submitted[0][1].stage_key is StageKey.SLAM
 
 
@@ -1144,11 +1144,11 @@ def test_run_coordinator_routes_final_artifacts_to_export_only(
 
     coordinator._submit_final_artifact_rerun_update()
 
-    assert [label for label, _, _ in submitted] == ["export"]
+    assert [label for label, _, _ in submitted] == ["live", "export"]
     assert submitted[0][1].stage_key is StageKey.SUMMARY
 
 
-def test_run_coordinator_drops_export_only_updates_when_only_live_sidecar_exists(
+def test_run_coordinator_routes_final_artifacts_to_live_when_only_live_sidecar_exists(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1162,8 +1162,8 @@ def test_run_coordinator_drops_export_only_updates_when_only_live_sidecar_exists
 
     coordinator._submit_final_artifact_rerun_update()
 
-    assert submitted == []
-    assert coordinator._rerun_sinks[0].last_call is None
+    assert [label for label, _, _ in submitted] == ["live"]
+    assert coordinator._rerun_sinks[0].last_call is not None
 
 
 def test_run_coordinator_keeps_source_reference_updates_out_of_live_sidecar_order(
@@ -1197,7 +1197,7 @@ def test_run_coordinator_keeps_source_reference_updates_out_of_live_sidecar_orde
     coordinator.on_slam_runtime_updates(updates=[slam_update])
 
     live_stages = [update.stage_key for label, update, _ in submitted if label == "live"]
-    assert live_stages == [StageKey.SLAM]
+    assert live_stages == [StageKey.SOURCE, StageKey.SLAM]
 
 
 def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver() -> None:
