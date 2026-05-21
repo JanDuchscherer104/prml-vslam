@@ -35,7 +35,6 @@
   [WP2 / WP4 / WP9],
   [JD],
   [Making a typed multiprocessing pipeline compatible with dataset frames, live streaming, Rerun, app state, and artifacts.],
-  [],
 )
 
 #let next_steps_table_row = (
