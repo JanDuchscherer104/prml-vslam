@@ -29,8 +29,8 @@
     #grid(
       columns: (1fr, 1fr),
       gutter: 0.6cm,
-      [#image("../../../figures/pointcloud/Screenshot-Alignement.png", width: 100%) \ *Alignment Fix*],
-      [#image("../../../figures/pointcloud/Screenshot-Offset.png", width: 100%) \ *Ground Offset*],
+      [#image("../../../figures/Screenshot-Offset.png", width: 100%) \ *Missalignment*],
+      [#image("../../../figures/Screenshot-Alignement.png", width: 100%) \ *Fixed Alignment*],
     )
   ]
 ]
