@@ -86,8 +86,10 @@ repo-owned artifacts.
 - [`vista/`](./vista/README.md): canonical ViSTA-SLAM wrapper, runtime
   bootstrap, frame preprocessing, live session stepping, and native artifact
   import.
-- [`mast3r.py`](./mast3r.py): placeholder MASt3R backend that remains fail-fast
-  until the repository owns a real integration.
+- [`mast3r/`](./mast3r/): optional MASt3R-SLAM wrapper that runs in CUDA-capable
+  environments after installing the `mast3r` extra and upstream checkpoints.
+  The adapter exposes the upstream dense pointmap export as `dense_points_ply`;
+  separate sparse landmark artifacts are not supported.
 
 Methods must not own stage order, persisted run config beyond backend variant
 fields, resource placement, pipeline events, app state, viewer orchestration, or

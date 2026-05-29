@@ -28,12 +28,12 @@ Implemented or functional:
 - TOML-backed run planning and persisted pipeline request loading
 - Separate offline and streaming runner paths
 - ViSTA-SLAM wrapper
+- Optional MASt3R-SLAM wrapper for CUDA-capable environments
 - Rerun live streaming and `.rrd` file export
 - Explicit trajectory evaluation when benchmark inputs are available
 
 Not yet implemented or limited:
 
-- real MASt3R backend
 - reference reconstruction stage
 - cloud and efficiency evaluation execution
 - full custom dataset

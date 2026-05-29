@@ -1,7 +1,7 @@
 # PRML VSLAM Setup
 
 This file owns local environment setup for development, the Streamlit workbench,
-and optional ViSTA-SLAM GPU execution.
+and optional ViSTA-SLAM or MASt3R-SLAM GPU execution.
 
 ## Requirements
 
@@ -93,8 +93,8 @@ Important:
 
 - When using anything under the `vista` extra, work inside the `prml-vslam`
   mamba environment.
-- This applies to `uv sync --all-extras`, `uv sync --extra vista`, ViSTA smoke
-  runs, and the Streamlit workbench when launched with `--extra vista`.
+- This applies to `uv sync --extra vista`, ViSTA smoke runs, and the Streamlit
+  workbench when launched with `--extra vista`.
 - If the active shell is not inside the `prml-vslam` mamba env, expect native
   build or runtime failures such as missing `cmake`, missing OpenCV CMake
   config, or missing CUDA toolchain components.
@@ -108,9 +108,12 @@ mamba activate prml-vslam
 unset VIRTUAL_ENV
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 
-uv sync --all-extras
-# uv sync --extra dev --extra vista --extra streaming
+uv sync --extra dev --extra vista --extra streaming
 ```
+
+Do not use `uv sync --all-extras`: the optional `vista` and `mast3r` extras are
+intentionally marked as conflicting because upstream MASt3R-SLAM pins
+`numpy==1.26.4` while the current ViSTA/Rerun stack requires NumPy 2.
 
 Quick sanity check before installing or running ViSTA surfaces:
 
@@ -158,14 +161,12 @@ unset LD_LIBRARY_PATH
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 ```
 
-Install MASt3R-SLAM and its two nested Python packages as editable installs
-into the project environment. They are not listed in `pyproject.toml` because
-they require the submodule to be present at install time:
+Install MASt3R-SLAM and its two nested Python packages through the optional
+`mast3r` extra. Keep this extra opt-in: the upstream package builds a CUDA
+extension and expects the recursive submodule checkout to be present.
 
 ```bash
-uv pip install --no-build-isolation -e external/mast3r-slam/thirdparty/mast3r
-uv pip install --no-build-isolation -e external/mast3r-slam/thirdparty/in3d
-uv pip install --no-build-isolation -e external/mast3r-slam
+uv sync --extra dev --extra streaming --extra mast3r
 ```
 
 Optionally enable faster MP4 decoding:
@@ -188,6 +189,10 @@ wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge
 wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_codebook.pkl \
   -P external/mast3r-slam/checkpoints/
 ```
+
+MASt3R-SLAM is distributed under CC BY-NC-SA 4.0. Confirm that license is
+acceptable for the intended run or report context before using the optional
+backend.
 
 ## Validation
 
