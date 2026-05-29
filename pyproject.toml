@@ -27,6 +27,7 @@ dependencies = [
   "jaxtyping>=0.3.9",
   "pytransform3d>=3.14.4",
   "PyYAML>=6,<7",
+  "rerun-sdk==0.24.1",
 ]
 
   [project.optional-dependencies]
@@ -42,13 +43,11 @@ dependencies = [
   ]
   replay = []
   streaming = ["aiortc>=1.9,<2", "record3d>=1.4.1,<2"]
-  visualization = ["rerun-sdk==0.24.1"]
   vista = [
     "torch==2.5.1",
     "torchvision==0.20.1",
     "torchaudio==2.5.1",
     "xformers",
-    "rerun-sdk==0.24.1",
     "pypose>=0.6",
     "einops>=0.6",
     "munch>=2.5",
