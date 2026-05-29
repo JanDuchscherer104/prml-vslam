@@ -487,9 +487,7 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
     )
 
 
-def _render_mast3r_backend_settings(
-    backend_spec: BackendSpec, *, max_frames: int | None
-) -> Mast3rSlamBackendConfig:
+def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: int | None) -> Mast3rSlamBackendConfig:
     backend = (
         backend_spec
         if isinstance(backend_spec, Mast3rSlamBackendConfig)
@@ -549,9 +547,7 @@ def _render_mast3r_backend_settings(
     with st.expander("MASt3R Paths", expanded=False):
         mast3r_slam_dir = _path_input("MASt3R-SLAM Directory", backend.mast3r_slam_dir)
         checkpoint_path = _path_input("Backbone Checkpoint", backend.checkpoint_path)
-        retrieval_checkpoint_path = _path_input(
-            "Retrieval Checkpoint", backend.retrieval_checkpoint_path
-        )
+        retrieval_checkpoint_path = _path_input("Retrieval Checkpoint", backend.retrieval_checkpoint_path)
         yaml_config_path = _path_input("YAML Hyperparameters", backend.yaml_config_path)
 
     return Mast3rSlamBackendConfig(

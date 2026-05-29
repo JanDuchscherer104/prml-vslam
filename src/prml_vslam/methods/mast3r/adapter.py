@@ -255,9 +255,7 @@ class Mast3rSlamSession:
             prev = self._states.get_frame()
             T_WC = prev.T_WC
 
-        mast3r_frame = self._create_frame(
-            internal_idx, img_f32, T_WC, img_size=self._img_size, device=self._device
-        )
+        mast3r_frame = self._create_frame(internal_idx, img_f32, T_WC, img_size=self._img_size, device=self._device)
 
         mode = self._states.get_mode()
         is_keyframe = False
@@ -406,9 +404,7 @@ class Mast3rSlamSession:
 
         factor_graph = FactorGraph(self._model, self._keyframes, self._K, self._device)
         retriever_path = str(self._resolve_path(self._cfg.retrieval_checkpoint_path))
-        retrieval_database = load_retriever(
-            self._model, retriever_path=retriever_path, device=self._device
-        )
+        retrieval_database = load_retriever(self._model, retriever_path=retriever_path, device=self._device)
 
         use_calib = bool(mast3r_cfg.get("use_calib", False))
         poll = self._cfg.backend_poll_interval_s
@@ -424,9 +420,7 @@ class Mast3rSlamSession:
 
                 if mode == Mode.RELOC:
                     frame = self._states.get_frame()
-                    success = self._relocalization(
-                        frame, factor_graph, retrieval_database, use_calib
-                    )
+                    success = self._relocalization(frame, factor_graph, retrieval_database, use_calib)
                     if success:
                         self._states.set_mode(Mode.TRACKING)
                     self._states.dequeue_reloc()
@@ -460,9 +454,7 @@ class Mast3rSlamSession:
                 kf_idx_list = list(kf_idx_set)
                 frame_idx = [idx] * len(kf_idx_list)
                 if kf_idx_list:
-                    factor_graph.add_factors(
-                        kf_idx_list, frame_idx, mast3r_cfg["local_opt"]["min_match_frac"]
-                    )
+                    factor_graph.add_factors(kf_idx_list, frame_idx, mast3r_cfg["local_opt"]["min_match_frac"])
 
                 with self._states.lock:
                     self._states.edges_ii[:] = factor_graph.ii.cpu().tolist()
@@ -485,9 +477,7 @@ class Mast3rSlamSession:
                 self._backend_stop.set()
                 break
 
-    def _relocalization(
-        self, frame: Any, factor_graph: Any, retrieval_database: Any, use_calib: bool
-    ) -> bool:
+    def _relocalization(self, frame: Any, factor_graph: Any, retrieval_database: Any, use_calib: bool) -> bool:
         """Port of upstream ``relocalization`` — shares SharedKeyframes with frontend."""
         from mast3r_slam.config import config as mast3r_cfg  # noqa: PLC0415
 
@@ -632,9 +622,7 @@ class Mast3rSlamSession:
             )
         )
 
-    def _extract_keyframe_pointmap(
-        self, mast3r_frame: Any
-    ) -> tuple[np.ndarray | None, int]:
+    def _extract_keyframe_pointmap(self, mast3r_frame: Any) -> tuple[np.ndarray | None, int]:
         """Pull the camera-local RDF pointmap and count its valid samples."""
         try:
             x_canon = mast3r_frame.X_canon
@@ -680,9 +668,7 @@ class Mast3rSlamSession:
     def _start_backend_thread(self) -> None:
         """Start the optimization backend after shared state and intrinsics are ready."""
         self._backend_stop.clear()
-        self._backend_thread = threading.Thread(
-            target=self._backend_loop, name="mast3r-backend", daemon=True
-        )
+        self._backend_thread = threading.Thread(target=self._backend_loop, name="mast3r-backend", daemon=True)
         self._backend_thread.start()
 
     def _raise_if_backend_failed(self) -> None:
@@ -710,8 +696,7 @@ class Mast3rSlamSession:
         mast3r_dir = self._resolve_path(self._cfg.mast3r_slam_dir)
         if not (mast3r_dir / "mast3r_slam").exists():
             missing.append(
-                f"mast3r-slam submodule not populated at '{mast3r_dir}'. "
-                "Run: git submodule update --init --recursive"
+                f"mast3r-slam submodule not populated at '{mast3r_dir}'. Run: git submodule update --init --recursive"
             )
         checkpoint = self._resolve_path(self._cfg.checkpoint_path)
         if not checkpoint.exists():
@@ -744,8 +729,7 @@ class Mast3rSlamSession:
 
         if missing:
             raise RuntimeError(
-                "MASt3R-SLAM prerequisites not satisfied:\n"
-                + "\n".join(f"  • {item}" for item in missing)
+                "MASt3R-SLAM prerequisites not satisfied:\n" + "\n".join(f"  • {item}" for item in missing)
             )
 
 
@@ -904,14 +888,8 @@ def _build_artifacts(
         else:
             point_cloud = o3d.io.read_point_cloud(str(ply_native))
             points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
-            colors_rgb = (
-                np.asarray(point_cloud.colors, dtype=np.float64)
-                if point_cloud.has_colors()
-                else None
-            )
-            canonical_ply = write_point_cloud_ply(
-                run_paths.dense_points_path, points_xyz, colors_rgb=colors_rgb
-            )
+            colors_rgb = np.asarray(point_cloud.colors, dtype=np.float64) if point_cloud.has_colors() else None
+            canonical_ply = write_point_cloud_ply(run_paths.dense_points_path, points_xyz, colors_rgb=colors_rgb)
 
         canonical_ref = ArtifactRef(
             path=canonical_ply,

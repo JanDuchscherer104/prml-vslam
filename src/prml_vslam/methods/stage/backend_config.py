@@ -135,8 +135,7 @@ class Mast3rSlamBackendConfig(SlamBackendConfig, FactoryConfig["Mast3rSlamBacken
     """Path to the MASt3R backbone weights."""
 
     retrieval_checkpoint_path: Path = Path(
-        "external/mast3r-slam/checkpoints/"
-        "MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth"
+        "external/mast3r-slam/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth"
     )
     """Path to the retrieval weights used for loop closure."""
 
