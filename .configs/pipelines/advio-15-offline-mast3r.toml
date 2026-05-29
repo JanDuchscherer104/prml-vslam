@@ -1,5 +1,5 @@
-# advio-15-offline-mast3r-smoke.toml
-experiment_name = "advio-15-offline-mast3r-smoke"
+# advio-15-offline-mast3r.toml
+experiment_name = "advio-15-offline-mast3r"
 mode            = "offline"
 output_dir      = ".artifacts"
 
