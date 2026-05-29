@@ -28,56 +28,6 @@ uv run pytest -n auto
 make test PYTEST_ARGS="-n auto"
 ```
 
-## Codex History Utilities
-
-Use the repo-local helper under `.agents/scripts/` to refresh the Codex history
-exports and inspect one session by id:
-
-```bash
-python3 .agents/scripts/codex_history.py update
-python3 .agents/scripts/codex_history.py conversation 019da090-0d2b-72b2-aa63-dc0a4ecfaf44 --speaker both --write-default
-python3 .agents/scripts/codex_history.py overview 019da090-0d2b-72b2-aa63-dc0a4ecfaf44
-```
-
-What each command does:
-
-- `update`
-  - refreshes `codex-messages-prml-vslam.jsonl` and
-    `codex-user-messages-prml-vslam.jsonl` from the raw Codex session store
-- `conversation <session-id>`
-  - fetches the full conversation for one session directly from the raw session
-    file
-  - `--speaker user|agent|both` filters the visible roles
-  - `--format md|jsonl` chooses Markdown or JSONL output
-  - `--write-default` writes the result to the default repo-root file such as
-    `codex-session-<id>-messages.md`
-- `overview <session-id>`
-  - prints a minimal session summary including message counts, patch-touched
-    files, successful verification commands, and the last final-answer summary
-
-## MemPalace
-
-MemPalace is installed into the repo `.venv` and exposed through a repo-local
-Codex plugin plus a repo-local skill wrapper.
-
-Refresh the repo-local palace for docs and Codex chat histories:
-
-```bash
-python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py refresh
-```
-
-Inspect or query the repo-local palace:
-
-```bash
-python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py status
-python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py search "ViewCoordinates.RDF"
-python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
-```
-
-Codex sessions also run a repo-local startup hook that starts a background
-refresh and prints wake-up context. The hook entry lives in `.codex/hooks.json`;
-the script is `.agents/scripts/mempalace_startup_context.sh`.
-
 ## ViSTA/CUDA Setup
 
 The ViSTA integration uses `environment.yml` for native build dependencies that
@@ -137,7 +87,7 @@ This helper sets `CUDA_HOME` from the active mamba environment when `nvcc` is
 available there. If it cannot find `nvcc`, update or recreate the mamba
 environment from `environment.yml`.
 
-## ViSTA Pretrained Files
+### ViSTA Pretrained Files
 
 Download the upstream model weights and ORB vocabulary:
 
@@ -149,52 +99,7 @@ curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?d
   -o external/vista-slam/pretrains/ORBvoc.txt
 ```
 
-
-
-## MASt3R/CUDA Setup
-Activate the same `prml-vslam` conda environment used above (provides
-`cuda-nvcc=12.4`, `gcc_linux-64`, and `libopencv=4.12.0`):
-
-```bash
-conda activate prml-vslam
-unset LD_LIBRARY_PATH
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-```
-
-Install MASt3R-SLAM and its two nested Python packages through the optional
-`mast3r` extra. Keep this extra opt-in: the upstream package builds a CUDA
-extension and expects the recursive submodule checkout to be present.
-
-```bash
-uv sync --extra dev --extra streaming --extra mast3r
-```
-
-Optionally enable faster MP4 decoding:
-
-```bash
-uv pip install torchcodec==0.1
-```
-
-## MASt3R Pretrained Files
-
-Download the upstream NaverLabs checkpoints (weigths) into
-`external/mast3r-slam/checkpoints/`:
-
-```bash
-mkdir -p external/mast3r-slam/checkpoints
-wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth \
-  -P external/mast3r-slam/checkpoints/
-wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth \
-  -P external/mast3r-slam/checkpoints/
-wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_codebook.pkl \
-  -P external/mast3r-slam/checkpoints/
-```
-
-MASt3R-SLAM is distributed under CC BY-NC-SA 4.0. Confirm that license is
-acceptable for the intended run or report context before using the optional
-backend.
-
-## Validation
+### Validation
 
 Before running ViSTA, verify the native and Python dependencies:
 
@@ -224,6 +129,45 @@ Optionally run the ViSTA smoke pipeline:
 uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
 ```
 
+## MASt3R/CUDA Setup
+
+Activate the same `prml-vslam` conda environment used above (provides
+`cuda-nvcc=12.4`, `gcc_linux-64`, and `libopencv=4.12.0`):
+
+```bash
+conda activate prml-vslam
+unset LD_LIBRARY_PATH
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+```
+
+Install MASt3R-SLAM and its two nested Python packages through the optional
+`mast3r` extra. The upstream package builds a CUDA extension and requires the recursive submodule to be present.
+
+```bash
+uv sync --extra dev --extra streaming --extra mast3r
+```
+
+Optionally enable faster MP4 decoding:
+
+```bash
+uv pip install torchcodec==0.1
+```
+
+### MASt3R Pretrained Files
+
+Download the upstream NaverLabs checkpoints (weigths) into
+`external/mast3r-slam/checkpoints/`:
+
+```bash
+mkdir -p external/mast3r-slam/checkpoints
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth \
+  -P external/mast3r-slam/checkpoints/
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth \
+  -P external/mast3r-slam/checkpoints/
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_codebook.pkl \
+  -P external/mast3r-slam/checkpoints/
+```
+
 ## Streamlit Workbench
 
 For the Streamlit app without ViSTA:
@@ -240,3 +184,54 @@ above, then run:
 mamba activate prml-vslam
 uv run --extra vista --extra streaming streamlit run streamlit_app.py
 ```
+
+
+## Codex History Utilities
+
+Use the repo-local helper under `.agents/scripts/` to refresh the Codex history
+exports and inspect one session by id:
+
+```bash
+python3 .agents/scripts/codex_history.py update
+python3 .agents/scripts/codex_history.py conversation 019da090-0d2b-72b2-aa63-dc0a4ecfaf44 --speaker both --write-default
+python3 .agents/scripts/codex_history.py overview 019da090-0d2b-72b2-aa63-dc0a4ecfaf44
+```
+
+What each command does:
+
+- `update`
+  - refreshes `codex-messages-prml-vslam.jsonl` and
+    `codex-user-messages-prml-vslam.jsonl` from the raw Codex session store
+- `conversation <session-id>`
+  - fetches the full conversation for one session directly from the raw session
+    file
+  - `--speaker user|agent|both` filters the visible roles
+  - `--format md|jsonl` chooses Markdown or JSONL output
+  - `--write-default` writes the result to the default repo-root file such as
+    `codex-session-<id>-messages.md`
+- `overview <session-id>`
+  - prints a minimal session summary including message counts, patch-touched
+    files, successful verification commands, and the last final-answer summary
+
+## MemPalace
+
+MemPalace is installed into the repo `.venv` and exposed through a repo-local
+Codex plugin plus a repo-local skill wrapper.
+
+Refresh the repo-local palace for docs and Codex chat histories:
+
+```bash
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py refresh
+```
+
+Inspect or query the repo-local palace:
+
+```bash
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py status
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py search "ViewCoordinates.RDF"
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
+```
+
+Codex sessions also run a repo-local startup hook that starts a background
+refresh and prints wake-up context. The hook entry lives in `.codex/hooks.json`;
+the script is `.agents/scripts/mempalace_startup_context.sh`.
