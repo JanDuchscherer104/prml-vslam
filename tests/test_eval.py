@@ -33,6 +33,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.sources.config import VideoSourceConfig
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
@@ -338,7 +339,14 @@ def test_trajectory_alignment_runtime_produces_aligned_artifacts(tmp_path: Path)
     )
     artifact_root = tmp_path / "run"
     benchmark_inputs = PreparedBenchmarkInputs(
-        reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)]
+        reference_trajectories=[
+            ReferenceTrajectoryRef(
+                source=ReferenceSource.GROUND_TRUTH,
+                path=reference_path,
+                target_frame="custom_reference_world",
+                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+            )
+        ]
     )
     slam = SlamArtifacts(trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="est"))
     input_payload = TrajectoryAlignmentStageInput(
@@ -358,6 +366,7 @@ def test_trajectory_alignment_runtime_produces_aligned_artifacts(tmp_path: Path)
     assert result.outcome.artifacts["aligned_estimate_tum"].path.exists()
     alignment = json.loads(result.outcome.artifacts["trajectory_alignment"].path.read_text())
     assert alignment["scale"] == pytest.approx(scale, rel=1e-6)
+    assert alignment["target_frame"] == "custom_reference_world"
 
 
 def test_trajectory_alignment_runtime_fails_without_benchmark_inputs(tmp_path: Path) -> None:
