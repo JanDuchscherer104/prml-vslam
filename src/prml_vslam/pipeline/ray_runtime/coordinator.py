@@ -671,7 +671,6 @@ class RunCoordinatorActor:
                     runtime_manager=runtime_manager,
                     context=context,
                 )
-                # WP-XX: Implement initial SE(3) alignment for monocular SLAM visuals.
                 if isinstance(source_result.payload, SourceStageOutput):
                     self._log_initial_visual_alignment(source_result.payload)
                 continue
@@ -1042,12 +1041,8 @@ class RunCoordinatorActor:
             trajectory = load_tum_trajectory(reference.path)
             if len(trajectory.positions_xyz) == 0:
                 return
-            # We use the very first GT pose as the initial visual alignment.
-            # ViSTA SLAM starts at identity, so we align vista_slam_world to match
-            # the GT world frame at the first frame.
             rotation = np.asarray(trajectory.orientations_quat_wxyz[0], dtype=np.float64)
             translation = np.asarray(trajectory.positions_xyz[0], dtype=np.float64)
-            # Convert EVO WXYZ to rotation matrix
             from pytransform3d.rotations import matrix_from_quaternion as mfq  # noqa: PLC0415
 
             rotation_matrix = mfq(rotation)
