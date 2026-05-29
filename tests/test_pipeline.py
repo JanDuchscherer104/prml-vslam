@@ -1748,6 +1748,47 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     assert snapshot.state is RunState.COMPLETED
 
 
+@pytest.mark.parametrize(
+    ("streaming_error", "stop_requested"),
+    [("slam boom", False), (None, True)],
+)
+def test_run_coordinator_finalize_streaming_skips_trajectory_alignment_after_terminal_slam(
+    tmp_path: Path,
+    streaming_error: str | None,
+    stop_requested: bool,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="streaming-skip", namespace="pytest-unit")
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = _run_config(
+        experiment_name="streaming-skip",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_eval_enabled=True,
+    )
+    stages = [
+        StageKey.SOURCE,
+        StageKey.SLAM,
+        StageKey.TRAJECTORY_ALIGNMENT,
+        StageKey.TRAJECTORY_EVALUATION,
+    ]
+    plan = _plan_with_stages(tmp_path=tmp_path, run_config=run_config, stage_keys=stages)
+    context = PipelineExecutionContext(
+        run_config=run_config,
+        path_config=path_config,
+        run_paths=RunArtifactPaths.build(plan.artifact_root),
+        plan=plan,
+        results=coordinator._result_store,
+    )
+    coordinator._streaming_runtime_manager = RuntimeManager()
+    coordinator._streaming_error = streaming_error
+    coordinator._stop_requested = stop_requested
+
+    coordinator._run_streaming_finalize_stages(context=context)
+
+
 def test_slam_backend_config_uses_stage_owned_method_id_for_vista() -> None:
     run_config = RunConfig.model_validate(
         {
