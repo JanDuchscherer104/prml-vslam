@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import typer
 from typer.testing import CliRunner
 
 from prml_vslam.main import Record3DStreamConfig, _apply_dotted_overrides_to_run_config, app
+from prml_vslam.eval.contracts import MetricStats
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.provenance import RunSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.utils import PathConfig
 from prml_vslam.utils.serialization import write_json
 
 runner = CliRunner()
@@ -162,6 +165,39 @@ def test_import_run_command_collision_policies(tmp_path: Path) -> None:
     assert (output_dir / "demo-run" / "vista-imported-1").is_dir()
     assert overwrite_result.exit_code == 0
     assert (output_dir / "demo-run" / "vista").is_dir()
+
+
+def test_eval_trajectory_command_uses_aligned_advio_baseline_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_root = tmp_path / "demo-run"
+    estimate_path = artifact_root / "slam" / "trajectory.tum"
+    reference_path = artifact_root / "benchmark" / "arcore_aligned_to_gt.tum"
+    estimate_path.parent.mkdir(parents=True)
+    reference_path.parent.mkdir(parents=True)
+    estimate_path.write_text("", encoding="utf-8")
+    reference_path.write_text("", encoding="utf-8")
+    captured = {}
+
+    class FakeTrajectoryEvaluationService:
+        def __init__(self, path_config: PathConfig) -> None:
+            self.path_config = path_config
+
+        def compute_evaluation(self, *, selection):
+            captured["reference_path"] = selection.reference_path
+            return SimpleNamespace(
+                path=artifact_root / "evaluation" / "trajectory_metrics.json",
+                stats=MetricStats(rmse=0.0, mean=0.0, median=0.0, std=0.0, min=0.0, max=0.0, sse=0.0),
+            )
+
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    monkeypatch.setattr("prml_vslam.eval.services.TrajectoryEvaluationService", FakeTrajectoryEvaluationService)
+
+    result = runner.invoke(app, ["eval-trajectory", str(artifact_root), "--baseline", "arcore", "--sequence-id", "seq"])
+
+    assert result.exit_code == 0
+    assert captured["reference_path"] == reference_path
 
 
 def _write_cli_run(artifact_root: Path) -> Path:
