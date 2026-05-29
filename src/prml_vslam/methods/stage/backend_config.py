@@ -45,7 +45,7 @@ class SlamOutputPolicy(BaseConfig):
     emit_dense_points: bool = True
     """Whether the backend should materialize a dense point cloud artifact."""
 
-    emit_sparse_points: bool = True
+    emit_sparse_points: bool = False
     """Whether the backend should materialize sparse geometry artifacts."""
 
 
