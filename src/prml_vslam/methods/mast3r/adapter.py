@@ -33,7 +33,13 @@ from typing import Any
 
 import numpy as np
 
-from prml_vslam.interfaces import FrameTransform, Observation
+from prml_vslam.interfaces import (
+    CameraIntrinsics,
+    CameraIntrinsicsSample,
+    CameraIntrinsicsSeries,
+    FrameTransform,
+    Observation,
+)
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
@@ -101,6 +107,41 @@ def _ensure_uint8_rgb_from_uimg(uimg: Any) -> np.ndarray | None:
     return np.ascontiguousarray(arr)
 
 
+def _estimate_camera_intrinsics_from_frame(mast3r_frame: Any) -> CameraIntrinsics | None:
+    """Estimate model-raster intrinsics from a MASt3R keyframe pointmap."""
+    import torch  # noqa: PLC0415
+    from dust3r.post_process import estimate_focal_knowing_depth  # noqa: PLC0415
+
+    x_canon = getattr(mast3r_frame, "X_canon", None)
+    img_shape = getattr(mast3r_frame, "img_shape", None)
+    if x_canon is None or img_shape is None:
+        return None
+    height_px, width_px = (int(value) for value in img_shape.flatten().tolist()[:2])
+    if height_px <= 0 or width_px <= 0:
+        return None
+
+    points = x_canon.detach().reshape(height_px, width_px, 3)
+    principal_point = torch.tensor([width_px / 2.0, height_px / 2.0], device=points.device, dtype=points.dtype)
+    focal = estimate_focal_knowing_depth(
+        points[None],
+        principal_point,
+        focal_mode="weiszfeld",
+        min_focal=0.5,
+        max_focal=3.5,
+    ).reshape(-1)[0]
+    focal_value = float(focal.detach().cpu().item())
+    if not np.isfinite(focal_value) or focal_value <= 0.0:
+        return None
+    return CameraIntrinsics(
+        fx=focal_value,
+        fy=focal_value,
+        cx=width_px / 2.0,
+        cy=height_px / 2.0,
+        width_px=width_px,
+        height_px=height_px,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Session: wraps the upstream FrameTracker FSM + background FactorGraph loop.
 # ---------------------------------------------------------------------------
@@ -151,6 +192,7 @@ class Mast3rSlamSession:
         # Indexed by internal frame_id (= step call order).
         self._timestamps_s: list[float] = []
         self._pending_updates: list[SlamUpdate] = []
+        self._estimated_intrinsics_samples: list[CameraIntrinsicsSample] = []
         self._backend_error: Exception | None = None
 
         # Backend thread control.
@@ -184,11 +226,7 @@ class Mast3rSlamSession:
 
         import lietorch  # noqa: PLC0415
         from mast3r_slam.frame import Mode, SharedKeyframes, SharedStates, create_frame  # noqa: PLC0415
-        from mast3r_slam.mast3r_utils import (  # noqa: PLC0415
-            load_mast3r,
-            mast3r_inference_mono,
-            resize_img,
-        )
+        from mast3r_slam.mast3r_utils import load_mast3r, mast3r_inference_mono, resize_img  # noqa: PLC0415
         from mast3r_slam.tracker import FrameTracker  # noqa: PLC0415
 
         checkpoint = str(self._resolve_path(self._cfg.checkpoint_path))
@@ -375,6 +413,7 @@ class Mast3rSlamSession:
             self._accepted_keyframe_count,
             native_output_dir,
         )
+        estimated_intrinsics = self._build_estimated_intrinsics_series()
         return _build_artifacts(
             native_output_dir=native_output_dir,
             artifact_root=self._artifact_root,
@@ -384,6 +423,7 @@ class Mast3rSlamSession:
             n_keyframes=self._accepted_keyframe_count,
             n_processed_frames=self._source_frame_count,
             n_dense_points=self._num_dense_points,
+            estimated_intrinsics=estimated_intrinsics,
         )
 
     def stop_backend_thread(self) -> None:
@@ -597,6 +637,19 @@ class Mast3rSlamSession:
             pointmap, added_points = self._extract_keyframe_pointmap(mast3r_frame)
             self._num_dense_points += added_points
 
+        camera_intrinsics = None
+        if is_keyframe and keyframe_index is not None:
+            camera_intrinsics = _estimate_camera_intrinsics_from_frame(mast3r_frame)
+            if camera_intrinsics is not None:
+                self._estimated_intrinsics_samples.append(
+                    CameraIntrinsicsSample(
+                        index=len(self._estimated_intrinsics_samples),
+                        keyframe_index=keyframe_index,
+                        timestamp_ns=frame.timestamp_ns,
+                        intrinsics=camera_intrinsics,
+                    )
+                )
+
         # MASt3R holds the resized RGB raster for every tracked frame in
         # mast3r_frame.uimg (H × W × 3, float [0,1]). We expose it as
         # SlamUpdate.image_rgb so the visualization stage can use it both as
@@ -619,7 +672,29 @@ class Mast3rSlamSession:
                 num_dense_points=self._num_dense_points,
                 image_rgb=image_rgb,
                 pointmap=pointmap,
+                camera_intrinsics=camera_intrinsics,
             )
+        )
+
+    def _build_estimated_intrinsics_series(self) -> CameraIntrinsicsSeries | None:
+        """Build the terminal keyframe intrinsics series collected during tracking."""
+        if not self._estimated_intrinsics_samples:
+            return None
+        first_intrinsics = self._estimated_intrinsics_samples[0].intrinsics
+        return CameraIntrinsicsSeries(
+            raster_space="mast3r_model",
+            source="mast3r_slam.X_canon:focal_from_depth",
+            method_id="mast3r",
+            width_px=first_intrinsics.width_px,
+            height_px=first_intrinsics.height_px,
+            samples=self._estimated_intrinsics_samples,
+            metadata={
+                "estimator": "dust3r.post_process.estimate_focal_knowing_depth",
+                "focal_mode": "weiszfeld",
+                "min_focal": 0.5,
+                "max_focal": 3.5,
+                "principal_point": "center_assumed",
+            },
         )
 
     def _extract_keyframe_pointmap(self, mast3r_frame: Any) -> tuple[np.ndarray | None, int]:
@@ -853,6 +928,7 @@ def _build_artifacts(
     n_keyframes: int,
     n_processed_frames: int,
     n_dense_points: int,
+    estimated_intrinsics: CameraIntrinsicsSeries | None = None,
 ) -> SlamArtifacts:
     """Normalise native MASt3R outputs into repository-owned artifact contracts."""
     from prml_vslam.utils.geometry import write_point_cloud_ply  # noqa: PLC0415
@@ -915,6 +991,17 @@ def _build_artifacts(
             path=path.resolve(),
             kind=path.suffix.lstrip(".") or "file",
             fingerprint=f"mast3r-extra-{path.name}-{path.stat().st_size}",
+        )
+    if estimated_intrinsics is not None and estimated_intrinsics.samples:
+        run_paths.estimated_intrinsics_path.parent.mkdir(parents=True, exist_ok=True)
+        run_paths.estimated_intrinsics_path.write_text(
+            estimated_intrinsics.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
+        extras[run_paths.estimated_intrinsics_path.name] = ArtifactRef(
+            path=run_paths.estimated_intrinsics_path,
+            kind="json",
+            fingerprint=f"mast3r-intrinsics-{len(estimated_intrinsics.samples)}",
         )
 
     return SlamArtifacts(

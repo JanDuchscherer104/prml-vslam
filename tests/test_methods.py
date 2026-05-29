@@ -11,7 +11,13 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, Observation, ObservationProvenance
+from prml_vslam.interfaces import (
+    CameraIntrinsics,
+    CameraIntrinsicsSample,
+    CameraIntrinsicsSeries,
+    Observation,
+    ObservationProvenance,
+)
 from prml_vslam.methods import VistaSlamBackend
 from prml_vslam.methods.stage.backend_config import MethodId as DomainMethodId
 from prml_vslam.methods.stage.backend_config import SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
@@ -1074,7 +1080,7 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
     artifacts = build_vista_artifacts(
         native_output_dir=native_output_dir,
         artifact_root=tmp_path / "artifacts",
-        output_policy=SlamOutputPolicy(),
+        output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=True),
         timestamps_s=[0.0],
     )
 
@@ -1178,6 +1184,68 @@ def test_mast3r_artifact_builder_writes_dense_cloud_to_dense_path(tmp_path: Path
     assert not run_paths.point_cloud_path.exists()
 
 
+def test_mast3r_estimates_camera_intrinsics_from_keyframe_pointmap(monkeypatch: pytest.MonkeyPatch) -> None:
+    from prml_vslam.methods.mast3r.adapter import _estimate_camera_intrinsics_from_frame
+
+    torch = pytest.importorskip("torch")
+    _install_fake_dust3r_focal_estimator(monkeypatch, focal=123.0)
+    frame = SimpleNamespace(
+        X_canon=torch.ones((4 * 6, 3), dtype=torch.float32),
+        img_shape=torch.tensor([4, 6], dtype=torch.int64),
+    )
+
+    intrinsics = _estimate_camera_intrinsics_from_frame(frame)
+
+    assert intrinsics == CameraIntrinsics(fx=123.0, fy=123.0, cx=3.0, cy=2.0, width_px=6, height_px=4)
+
+
+def test_mast3r_artifact_builder_writes_estimated_intrinsics(tmp_path: Path) -> None:
+    from prml_vslam.methods.mast3r.adapter import _build_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    trajectory_native = native_output_dir / "mast3r.txt"
+    trajectory_native.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    artifact_root = tmp_path / "artifacts"
+    run_paths = RunArtifactPaths.build(artifact_root)
+    estimated_intrinsics = CameraIntrinsicsSeries(
+        raster_space="mast3r_model",
+        source="mast3r_slam.X_canon:focal_from_depth",
+        method_id="mast3r",
+        width_px=6,
+        height_px=4,
+        samples=[
+            CameraIntrinsicsSample(
+                index=0,
+                keyframe_index=0,
+                timestamp_ns=123,
+                intrinsics=CameraIntrinsics(fx=99.0, fy=99.0, cx=3.0, cy=2.0, width_px=6, height_px=4),
+            )
+        ],
+        metadata={"principal_point": "center_assumed"},
+    )
+
+    artifacts = _build_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=artifact_root,
+        output_policy=SlamOutputPolicy(emit_dense_points=False, emit_sparse_points=False),
+        traj_native=trajectory_native,
+        ply_native=None,
+        n_keyframes=1,
+        n_processed_frames=2,
+        n_dense_points=0,
+        estimated_intrinsics=estimated_intrinsics,
+    )
+
+    estimated_ref = artifacts.extras["estimated_intrinsics.json"]
+    assert estimated_ref.path == run_paths.estimated_intrinsics_path
+    series = CameraIntrinsicsSeries.model_validate_json(estimated_ref.path.read_text(encoding="utf-8"))
+    assert series.raster_space == "mast3r_model"
+    assert series.source == "mast3r_slam.X_canon:focal_from_depth"
+    assert series.method_id == "mast3r"
+    assert series.samples[0].intrinsics.fx == 99.0
+
+
 def test_mast3r_artifact_builder_zeroes_dense_count_without_dense_artifact(tmp_path: Path) -> None:
     from prml_vslam.methods.mast3r.adapter import _build_artifacts
 
@@ -1199,6 +1267,21 @@ def test_mast3r_artifact_builder_zeroes_dense_count_without_dense_artifact(tmp_p
 
     assert artifacts.dense_points_ply is None
     assert artifacts.num_dense_points == 0
+    assert "estimated_intrinsics.json" not in artifacts.extras
+
+
+def _install_fake_dust3r_focal_estimator(monkeypatch: pytest.MonkeyPatch, *, focal: float) -> None:
+    dust3r_pkg = ModuleType("dust3r")
+    post_process_mod = ModuleType("dust3r.post_process")
+
+    def estimate_focal_knowing_depth(points: object, *_args: object, **_kwargs: object) -> object:
+        import torch
+
+        return torch.as_tensor([focal], device=points.device, dtype=points.dtype)
+
+    post_process_mod.estimate_focal_knowing_depth = estimate_focal_knowing_depth
+    monkeypatch.setitem(sys.modules, "dust3r", dust3r_pkg)
+    monkeypatch.setitem(sys.modules, "dust3r.post_process", post_process_mod)
 
 
 def test_mast3r_finish_raises_when_requested_dense_export_fails(
