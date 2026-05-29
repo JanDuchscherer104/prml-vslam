@@ -56,6 +56,7 @@ def render_request_editor(
         experiment_name, mode = _render_request_identity_controls(page_state=page_state, source_kind=source_kind)
     with slam_tab:
         method, slam_max_frames, slam_backend_spec, slam_input_error = _render_slam_settings(page_state=page_state)
+    page_state = page_state.model_copy(update={"method": method})
     with stages_tab:
         (
             emit_sparse_points,
@@ -63,6 +64,7 @@ def render_request_editor(
             ground_alignment_enabled,
             reconstruction_enabled,
             trajectory_eval_enabled,
+            trajectory_alignment_enabled,
             evaluate_cloud,
         ) = _render_stage_settings(page_state)
     with visualization_tab:
@@ -100,6 +102,7 @@ def render_request_editor(
                 "ground_alignment_enabled": ground_alignment_enabled,
                 "reconstruction_enabled": reconstruction_enabled,
                 "trajectory_eval_enabled": trajectory_eval_enabled,
+                "trajectory_alignment_enabled": trajectory_alignment_enabled,
                 "evaluate_cloud": evaluate_cloud,
                 "connect_live_viewer": connect_live_viewer,
                 "export_viewer_rrd": export_viewer_rrd,
@@ -451,6 +454,39 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
     )
 
 
+def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool, bool]:
+    left, right = st.columns(2, gap="large")
+    with left:
+        st.markdown("**SLAM Outputs**")
+        emit_sparse_points = st.toggle(
+            "Sparse Geometry",
+            value=False if page_state.method is MethodId.MAST3R else page_state.emit_sparse_points,
+            disabled=page_state.method is MethodId.MAST3R,
+            help="MASt3R-SLAM exports one dense pointmap PLY, not a separate sparse landmark cloud.",
+        )
+        emit_dense_points = st.toggle("Dense Geometry", value=page_state.emit_dense_points)
+        st.markdown("**Derived Stages**")
+        ground_alignment_enabled = st.toggle("Ground Alignment", value=page_state.ground_alignment_enabled)
+        reconstruction_enabled = st.toggle("Reference Reconstruction", value=page_state.reconstruction_enabled)
+    with right:
+        st.markdown("**Evaluation**")
+        trajectory_eval_enabled = st.toggle("Trajectory Evaluation", value=page_state.trajectory_eval_enabled)
+        trajectory_alignment_enabled = st.toggle("Trajectory Alignment", value=page_state.trajectory_alignment_enabled)
+        evaluate_cloud = st.toggle("Dense-Cloud Evaluation", value=page_state.evaluate_cloud)
+        st.caption("Dense-cloud evaluation remains a planned diagnostic stage without a registered runtime.")
+        st.markdown("**Summary**")
+        st.toggle("Run Summary", value=True, disabled=True)
+    return (
+        emit_sparse_points,
+        emit_dense_points,
+        ground_alignment_enabled,
+        reconstruction_enabled,
+        trajectory_eval_enabled,
+        trajectory_alignment_enabled,
+        evaluate_cloud,
+    )
+
+
 def _render_mast3r_backend_settings(
     backend_spec: BackendSpec, *, max_frames: int | None
 ) -> Mast3rSlamBackendConfig:
@@ -531,32 +567,6 @@ def _render_mast3r_backend_settings(
         use_calib=use_calib,
         backend_poll_interval_s=backend_poll_interval_s,
         backend_join_timeout_s=backend_join_timeout_s,
-    )
-
-
-def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool]:
-    left, right = st.columns(2, gap="large")
-    with left:
-        st.markdown("**SLAM Outputs**")
-        emit_sparse_points = st.toggle("Sparse Geometry", value=page_state.emit_sparse_points)
-        emit_dense_points = st.toggle("Dense Geometry", value=page_state.emit_dense_points)
-        st.markdown("**Derived Stages**")
-        ground_alignment_enabled = st.toggle("Ground Alignment", value=page_state.ground_alignment_enabled)
-        reconstruction_enabled = st.toggle("Reference Reconstruction", value=page_state.reconstruction_enabled)
-    with right:
-        st.markdown("**Evaluation**")
-        trajectory_eval_enabled = st.toggle("Trajectory Evaluation", value=page_state.trajectory_eval_enabled)
-        evaluate_cloud = st.toggle("Dense-Cloud Evaluation", value=page_state.evaluate_cloud)
-        st.caption("Dense-cloud evaluation remains a planned diagnostic stage without a registered runtime.")
-        st.markdown("**Summary**")
-        st.toggle("Run Summary", value=True, disabled=True)
-    return (
-        emit_sparse_points,
-        emit_dense_points,
-        ground_alignment_enabled,
-        reconstruction_enabled,
-        trajectory_eval_enabled,
-        evaluate_cloud,
     )
 
 

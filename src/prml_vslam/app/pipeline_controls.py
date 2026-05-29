@@ -163,6 +163,7 @@ def build_run_config_from_action(
             )
         else:
             source_backend = record3d_source_config_from_action(action)
+        emit_sparse_points = False if action.method is MethodId.MAST3R else action.emit_sparse_points
         run_config = build_run_config(
             experiment_name=action.experiment_name.strip() or "pipeline-demo",
             mode=action.mode,
@@ -172,7 +173,7 @@ def build_run_config_from_action(
             max_frames=action.slam_max_frames,
             backend_overrides=backend_payload_from_action(action),
             emit_dense_points=action.emit_dense_points,
-            emit_sparse_points=action.emit_sparse_points,
+            emit_sparse_points=emit_sparse_points,
             reference_enabled=action.reconstruction_enabled,
             trajectory_eval_enabled=action.trajectory_eval_enabled,
             evaluate_cloud=action.evaluate_cloud,

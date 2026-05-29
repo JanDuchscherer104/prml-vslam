@@ -70,6 +70,48 @@ def test_dotted_run_config_overrides_parse_json_and_deep_merge(tmp_path: Path) -
     assert updated.visualization.connect_live_viewer is False
 
 
+def test_plan_run_mast3r_defaults_sparse_output_off(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "plan-run",
+            "mast3r-cli",
+            "captures/demo.mp4",
+            "--method",
+            "mast3r",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "dense_points.ply" in result.stdout
+    assert "'key': 'slam'" in result.stdout
+    assert "'available': True" in result.stdout
+    assert "does not expose a separate sparse point-cloud artifact" not in result.stdout
+
+
+def test_plan_run_mast3r_explicit_sparse_output_stays_unavailable(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "plan-run",
+            "mast3r-cli",
+            "captures/demo.mp4",
+            "--method",
+            "mast3r",
+            "--sparse",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "'key': 'slam'" in result.stdout
+    assert "'available': False" in result.stdout
+    assert "does not expose a separate sparse point-cloud artifact" in result.stdout
+
+
 @pytest.mark.parametrize("command", ["run-config", "plan-run-config"])
 def test_run_config_help_documents_schema_pure_dotted_overrides(command: str) -> None:
     result = runner.invoke(app, [command, "--help"])
