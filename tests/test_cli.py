@@ -85,7 +85,7 @@ def test_plan_run_mast3r_defaults_sparse_output_off(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0
-    assert "dense_points.ply" in result.stdout
+    assert "dense_points.ply" in result.stdout.replace("\n", "")
     assert "'key': 'slam'" in result.stdout
     assert "'available': True" in result.stdout
     assert "does not expose a separate sparse point-cloud artifact" not in result.stdout
