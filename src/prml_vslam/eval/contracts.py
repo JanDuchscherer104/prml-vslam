@@ -145,8 +145,6 @@ class TrajectoryEvaluationSemantics(BaseData):
     )
 
 
-# TODO(pipeline-refactor/future-eval): Rename or specialize once cloud
-# evaluation artifacts become first-class stage outputs.
 class EvaluationArtifact(BaseData):
     """Represent one loaded or freshly computed trajectory-evaluation artifact.
 

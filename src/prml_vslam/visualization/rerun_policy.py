@@ -152,8 +152,6 @@ class RerunLoggingPolicy:
         payloads: Mapping[str, np.ndarray] | None = None,
     ) -> None:
         """Log one live runtime update from neutral visualization items."""
-        # TODO(pipeline-refactor/post-target-alignment): Replace this
-        # materialized payload map with a typed TransientPayloadRef resolver.
         resolved_payloads = {} if payloads is None else payloads
         for semantic_event in update.semantic_events:
             if isinstance(semantic_event, GroundAlignmentMetadata):
