@@ -23,8 +23,6 @@ from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenc
 PipelineRuntimeSource: TypeAlias = OfflineSequenceSource | StreamingSequenceSource | None
 
 
-# TODO(pipeline-refactor/WP-03): Move this behavior seam to pipeline/protocols.py
-# when backend implementations are separated from public protocols.
 class PipelineBackend(Protocol):
     """Execute, monitor, and tear down pipeline runs.
 
@@ -77,8 +75,6 @@ class PipelineBackend(Protocol):
     @abstractmethod
     def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:
         """Resolve one target transient payload ref into a local array."""
-        # TODO(pipeline-refactor/post-target-alignment): Replace the nullable
-        # return with a typed payload-resolution result.
 
     @abstractmethod
     def shutdown(self, *, preserve_local_head: bool = False) -> None:

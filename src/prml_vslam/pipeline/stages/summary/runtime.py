@@ -35,9 +35,6 @@ class SummaryRuntime(OfflineStageRuntime[SummaryStageInput]):
 
     def __init__(self) -> None:
         self._status = StageRuntimeStatus(stage_key=StageKey.SUMMARY)
-        # TODO(pipeline-refactor/post-target-alignment): Remove this side
-        # channel when summary manifests are consumed only through durable
-        # artifacts or a target summary payload.
         self._stage_manifests: list[StageManifest] = []
 
     @property

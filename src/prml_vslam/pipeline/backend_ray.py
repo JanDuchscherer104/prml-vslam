@@ -136,8 +136,6 @@ class RayPipelineBackend(PipelineBackend):
 
     def read_payload(self, run_id: str, ref: TransientPayloadRef | None) -> np.ndarray | None:
         """Resolve one coordinator-owned target transient payload ref."""
-        # TODO(pipeline-refactor/post-target-alignment): Return a typed
-        # not-found result instead of None.
         if ref is None:
             return None
         return ray.get(self._coordinator_for(run_id).read_payload.remote(ref.handle_id))
