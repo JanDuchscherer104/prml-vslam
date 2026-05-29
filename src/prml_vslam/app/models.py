@@ -392,6 +392,9 @@ class PipelinePageState(BaseData):
     trajectory_eval_enabled: bool = False
     """Whether trajectory evaluation should be planned."""
 
+    trajectory_alignment_enabled: bool = False
+    """Whether Sim(3) trajectory alignment should be planned."""
+
     evaluate_cloud: bool = False
     """Whether dense-cloud evaluation should be planned."""
 

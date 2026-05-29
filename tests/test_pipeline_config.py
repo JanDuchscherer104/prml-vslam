@@ -86,6 +86,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         "source",
         "slam",
         "gravity.align",
+        "align.trajectory",
         "evaluate.trajectory",
         "reconstruction",
         "evaluate.cloud",
@@ -95,6 +96,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         (StageKey.SOURCE, "source"),
         (StageKey.SLAM, "slam"),
         (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
+        (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
         (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
         (StageKey.RECONSTRUCTION, "reconstruction"),
         (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
@@ -110,6 +112,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
         method=MethodId.VISTA,
         reference_enabled=True,
         trajectory_eval_enabled=True,
+        trajectory_alignment_enabled=True,
         evaluate_cloud=True,
         ground_alignment_enabled=True,
     )
@@ -117,6 +120,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
     assert isinstance(config.stages.source.backend, VideoSourceConfig)
     assert config.stages.slam.backend.method_id is MethodId.VISTA
     assert config.stages.align_ground.enabled is True
+    assert config.stages.align_trajectory.enabled is True
     assert config.stages.evaluate_trajectory.enabled is True
     assert config.stages.reconstruction.enabled is True
     assert config.stages.evaluate_cloud.enabled is True
