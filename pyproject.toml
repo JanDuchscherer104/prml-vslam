@@ -42,6 +42,19 @@ dependencies = [
   ]
   replay = []
   streaming = ["aiortc>=1.9,<2", "record3d>=1.4.1,<2"]
+  mast3r = [
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "torchaudio==2.5.1",
+    "xformers",
+    "MAST3R-SLAM",
+    "MAST3R",
+    "in3d",
+    # Source anchors for upstream local-path transitive dependencies.
+    "asmk",
+    "curope; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "imgui",
+  ]
   vista = [
     "torch==2.5.1",
     "torchvision==0.20.1",
@@ -87,11 +100,84 @@ python_files = ["test_*.py"]
 addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 
 [tool.uv]
+conflicts = [
+  [
+    { extra = "mast3r" },
+    { extra = "vista" },
+  ],
+]
+constraint-dependencies = [
+  "click==8.3.1",
+  "starlette==1.0.0",
+]
+
   [tool.uv.extra-build-dependencies]
+  MAST3R-SLAM = ["torch==2.5.1"]
+  curope = ["torch==2.5.1"]
   xformers = ["torch==2.5.1"]
 
   [tool.uv.sources]
   DBoW3Py = { path = "external/vista-slam/DBoW3Py", editable = false }
+  MAST3R-SLAM = { path = "external/mast3r-slam", editable = true }
+  MAST3R = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true }
+  in3d = { path = "external/mast3r-slam/thirdparty/in3d", editable = true }
+  asmk = { path = "external/mast3r-slam/thirdparty/mast3r/asmk", editable = true }
+  curope = { path = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope", editable = true, marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+  imgui = { path = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui", editable = true }
+
+  # These metadata overrides replace upstream dynamic local file-URI dependencies
+  # with portable path-source names so uv can lock the optional MASt3R graph.
+  [[tool.uv.dependency-metadata]]
+  name = "MAST3R-SLAM"
+  version = "0.0.1"
+  requires-dist = [
+    "numpy==1.26.4",
+    "einops",
+    "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "evo",
+    "natsort",
+    "lietorch @ git+https://github.com/princeton-vl/lietorch.git@e7df86554156b36846008d8ddbcc4d8521a16554",
+    "plyfile",
+  ]
+
+  [[tool.uv.dependency-metadata]]
+  name = "MAST3R"
+  version = "0.0.1"
+  requires-dist = [
+    "scikit-learn",
+    "roma",
+    "matplotlib",
+    "tqdm",
+    "opencv-python",
+    "scipy",
+    "einops",
+    "trimesh",
+    "tensorboard",
+    "pyglet",
+    "huggingface-hub[torch]>=0.22",
+    "curope; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "asmk",
+  ]
+
+  [[tool.uv.dependency-metadata]]
+  name = "in3d"
+  version = "0.0.1"
+  requires-dist = [
+    "imgui",
+    "moderngl==5.12.0",
+    "moderngl-window==2.4.6",
+    "glfw",
+    "pyglm",
+    "msgpack",
+    "numpy",
+    "matplotlib",
+    "trimesh[easy]",
+  ]
+
+  [[tool.uv.dependency-metadata]]
+  name = "curope"
+  version = "0.0.0"
+  requires-dist = []
 
 [tool.mypy]
 python_version      = "3.11"
