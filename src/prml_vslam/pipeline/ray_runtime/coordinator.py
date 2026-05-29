@@ -815,7 +815,7 @@ class RunCoordinatorActor:
             stage_key = stage.key
             if stage_key in {StageKey.SOURCE, StageKey.SLAM}:
                 continue
-            if stage_key is StageKey.TRAJECTORY_EVALUATION and (
+            if stage_key in {StageKey.TRAJECTORY_ALIGNMENT, StageKey.TRAJECTORY_EVALUATION} and (
                 self._streaming_error is not None or self._stop_requested
             ):
                 continue
