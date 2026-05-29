@@ -11,6 +11,7 @@ from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
+from prml_vslam.sources.contracts import ReferenceTrajectoryRef
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.serialization import stable_hash
 
@@ -50,7 +51,11 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
         alignment_path, aligned_estimate_path, aligned_point_cloud_path = service.compute_trajectory_alignment(
             selection=SelectionSnapshot(
                 sequence_slug=input_payload.sequence_manifest.sequence_id,
-                reference_path=reference,
+                reference_path=reference.path,
+                target_frame=reference.target_frame,
+                coordinate_status=reference.coordinate_status.value
+                if reference.coordinate_status is not None
+                else None,
                 run=DiscoveredRun(
                     artifact_root=input_payload.artifact_root,
                     estimate_path=input_payload.slam.trajectory_tum.path,
@@ -98,7 +103,7 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
         )
 
 
-def _resolve_reference(input_payload: TrajectoryAlignmentStageInput):
+def _resolve_reference(input_payload: TrajectoryAlignmentStageInput) -> ReferenceTrajectoryRef:
     if input_payload.benchmark_inputs is None:
         raise RuntimeError("Trajectory alignment requires prepared benchmark inputs.")
     reference = input_payload.benchmark_inputs.trajectory_for_source(input_payload.baseline_source)
@@ -106,7 +111,7 @@ def _resolve_reference(input_payload: TrajectoryAlignmentStageInput):
         raise RuntimeError(
             f"Benchmark inputs do not include the requested baseline '{input_payload.baseline_source.value}'."
         )
-    return reference.path
+    return reference
 
 
 __all__ = ["TrajectoryAlignmentRuntime"]

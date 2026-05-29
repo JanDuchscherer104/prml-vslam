@@ -122,6 +122,8 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) 
         selection=SelectionSnapshot(
             sequence_slug=input_payload.sequence_manifest.sequence_id,
             reference_path=reference.path,
+            target_frame=reference.target_frame,
+            coordinate_status=reference.coordinate_status.value if reference.coordinate_status is not None else None,
             run=DiscoveredRun(
                 artifact_root=input_payload.artifact_root,
                 estimate_path=input_payload.slam.trajectory_tum.path,

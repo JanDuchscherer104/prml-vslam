@@ -37,7 +37,13 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
 from prml_vslam.sources.config import VideoSourceConfig
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+    SequenceManifest,
+)
 from prml_vslam.utils import RunArtifactPaths
 
 
@@ -118,6 +124,54 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     assert result.outcome.status is StageStatus.COMPLETED
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert set(result.outcome.artifacts) == {"trajectory_metrics", "reference_tum", "estimate_tum"}
+
+
+def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_config, plan, _run_paths = _request_plan_paths(tmp_path, trajectory_eval_enabled=True)
+    reference_path = tmp_path / "reference.tum"
+    captured = {}
+
+    class FakeTrajectoryEvaluationService:
+        def __init__(self, path_config) -> None:
+            self.path_config = path_config
+
+        def compute_evaluation(self, *, selection):
+            captured["selection"] = selection
+            return _evaluation_artifact(tmp_path)
+
+    monkeypatch.setattr(
+        "prml_vslam.eval.stage_trajectory.runtime.TrajectoryEvaluationService",
+        FakeTrajectoryEvaluationService,
+    )
+
+    TrajectoryEvaluationRuntime().run_offline(
+        TrajectoryEvaluationStageInput(
+            artifact_root=plan.artifact_root,
+            baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
+            method_id=run_config.stages.slam.backend.method_id,
+            method_label=run_config.stages.slam.backend.display_name,
+            sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+            benchmark_inputs=PreparedBenchmarkInputs(
+                reference_trajectories=[
+                    ReferenceTrajectoryRef(
+                        source=ReferenceSource.GROUND_TRUTH,
+                        path=reference_path,
+                        target_frame="benchmark_world",
+                        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                    )
+                ]
+            ),
+            slam=_slam_artifacts(tmp_path),
+        )
+    )
+
+    selection = captured["selection"]
+    assert selection.reference_path == reference_path
+    assert selection.target_frame == "benchmark_world"
+    assert selection.coordinate_status == "aligned"
 
 
 def test_reconstruction_runtime_returns_reconstruction_artifacts(
