@@ -47,7 +47,6 @@ from prml_vslam.methods.stage.backend_config import (
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 
-
 # ---------------------------------------------------------------------------
 # In-process manager shim.
 #
@@ -366,9 +365,11 @@ class Mast3rSlamSession:
                 )
                 ply_written = ply_native.exists()
             except Exception as exc:
-                self._console.warn(
-                    "MASt3R-SLAM reconstruction export failed: %s (trajectory still saved).", exc
-                )
+                if self._output_policy.emit_dense_points:
+                    raise RuntimeError("MASt3R-SLAM failed to export the requested dense point cloud.") from exc
+                self._console.warn("MASt3R-SLAM reconstruction export failed: %s (trajectory still saved).", exc)
+            if self._output_policy.emit_dense_points and not ply_written:
+                raise RuntimeError(f"MASt3R-SLAM did not create the requested dense point cloud: '{ply_native}'.")
 
         self._console.info(
             "MASt3R-SLAM session closed after %d frames, %d keyframes. Native outputs in '%s'.",
@@ -779,6 +780,11 @@ class Mast3rSlamBackend(SlamBackend):
     ) -> None:
         """Load upstream MASt3R and retain backend-owned streaming state."""
         del sequence_manifest, benchmark_inputs, baseline_source, backend_config
+        if output_policy.emit_sparse_points:
+            raise ValueError(
+                "MASt3R-SLAM does not expose a separate sparse point-cloud artifact; "
+                "set `emit_sparse_points=false` for MASt3R runs."
+            )
         self._streaming_session = Mast3rSlamSession(
             cfg=self._cfg,
             path_config=self._path_config,
@@ -816,6 +822,11 @@ class Mast3rSlamBackend(SlamBackend):
     ) -> SlamArtifacts:
         """Run MASt3R-SLAM over normalized offline observations and persist artifacts."""
         del benchmark_inputs, baseline_source
+        if output_policy.emit_sparse_points:
+            raise ValueError(
+                "MASt3R-SLAM does not expose a separate sparse point-cloud artifact; "
+                "set `emit_sparse_points=false` for MASt3R runs."
+            )
         session = Mast3rSlamSession(
             cfg=self._cfg,
             path_config=self._path_config,
@@ -887,7 +898,7 @@ def _build_artifacts(
         try:
             import open3d as o3d  # noqa: PLC0415
         except ModuleNotFoundError:
-            canonical_ply = run_paths.point_cloud_path
+            canonical_ply = run_paths.dense_points_path
             canonical_ply.parent.mkdir(parents=True, exist_ok=True)
             canonical_ply.write_bytes(ply_native.read_bytes())
         else:
@@ -899,7 +910,7 @@ def _build_artifacts(
                 else None
             )
             canonical_ply = write_point_cloud_ply(
-                run_paths.point_cloud_path, points_xyz, colors_rgb=colors_rgb
+                run_paths.dense_points_path, points_xyz, colors_rgb=colors_rgb
             )
 
         canonical_ref = ArtifactRef(
@@ -939,7 +950,7 @@ def _build_artifacts(
         # dense pointmap accumulation for both UI counters so the dashboard does
         # not look hollow when only emit_dense_points is set.
         num_sparse_points=0,
-        num_dense_points=n_dense_points,
+        num_dense_points=n_dense_points if dense_ref is not None else 0,
     )
 
 
