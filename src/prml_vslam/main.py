@@ -79,6 +79,11 @@ pipeline_demo_console = Console("pipeline.demo")
 app.add_typer(advio_app, name="advio")
 app.add_typer(tum_rgbd_app, name="tum-rgbd")
 
+
+def _reference_trajectory_filename(source: ReferenceSource) -> str:
+    return "ground_truth.tum" if source is ReferenceSource.GROUND_TRUTH else f"{source.value}_aligned_to_gt.tum"
+
+
 RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "Run",
@@ -772,7 +777,7 @@ def eval_trajectory(
         console.error(f"Estimated trajectory not found: '{estimate_path}'")
         raise typer.Exit(code=1)
 
-    reference_path = resolved_root / "benchmark" / f"{baseline.value}.tum"
+    reference_path = resolved_root / "benchmark" / _reference_trajectory_filename(baseline)
     if not reference_path.exists():
         console.error(f"Reference trajectory not found: '{reference_path}'")
         raise typer.Exit(code=1)
