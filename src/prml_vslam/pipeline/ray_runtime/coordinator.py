@@ -65,6 +65,7 @@ from prml_vslam.pipeline.stages.base.contracts import (
     StageResult,
     StageRuntimeStatus,
     StageRuntimeUpdate,
+    VisualizationIntent,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
@@ -72,7 +73,7 @@ from prml_vslam.pipeline.stages.specs import stage_runtime_spec_for
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.stage.contracts import SourceStageOutput
-from prml_vslam.sources.stage.visualization import SourceVisualizationAdapter
+from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.visualization.artifacts import artifact_visualizations
@@ -81,6 +82,16 @@ _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
 _RerunSinkKind = Literal["live", "export"]
 _RERUN_ALL_DESTINATIONS: frozenset[_RerunSinkKind] = frozenset(("live", "export"))
 _RERUN_EXPORT_DESTINATION: frozenset[_RerunSinkKind] = frozenset(("export",))
+_RERUN_LIVE_DESTINATION: frozenset[_RerunSinkKind] = frozenset(("live",))
+_FAILED_SLAM_DEPENDENT_STREAMING_FINALIZERS = frozenset(
+    {
+        StageKey.GRAVITY_ALIGNMENT,
+        StageKey.TRAJECTORY_ALIGNMENT,
+        StageKey.TRAJECTORY_EVALUATION,
+        StageKey.RECONSTRUCTION,
+        StageKey.CLOUD_EVALUATION,
+    }
+)
 
 
 @dataclass
@@ -612,6 +623,7 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=stage_key, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
+            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _run_streaming(
@@ -815,7 +827,7 @@ class RunCoordinatorActor:
             stage_key = stage.key
             if stage_key in {StageKey.SOURCE, StageKey.SLAM}:
                 continue
-            if stage_key in {StageKey.TRAJECTORY_ALIGNMENT, StageKey.TRAJECTORY_EVALUATION} and (
+            if stage_key in _FAILED_SLAM_DEPENDENT_STREAMING_FINALIZERS and (
                 self._streaming_error is not None or self._stop_requested
             ):
                 continue
@@ -979,7 +991,22 @@ class RunCoordinatorActor:
         )
         with self._lock:
             self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        self._submit_rerun_update(update=update, payload_resolver=None)
+        live_visualizations = [
+            item
+            for item in visualizations
+            if item.intent is VisualizationIntent.TRAJECTORY and item.role == ROLE_SOURCE_REFERENCE_TRAJECTORY
+        ]
+        if self._rerun_sinks and live_visualizations:
+            self._submit_rerun_update(
+                update=update.model_copy(update={"visualizations": live_visualizations}),
+                payload_resolver=None,
+                destinations=_RERUN_LIVE_DESTINATION,
+            )
+        self._submit_rerun_update(
+            update=update,
+            payload_resolver=None,
+            destinations=_RERUN_EXPORT_DESTINATION,
+        )
 
     def _submit_rerun_update(
         self,
@@ -1202,6 +1229,7 @@ class RunCoordinatorActor:
         self._submit_rerun_update(
             update=StageRuntimeUpdate(stage_key=StageKey.SUMMARY, timestamp_ns=ts_ns(), visualizations=visualizations),
             payload_resolver=None,
+            destinations=_RERUN_EXPORT_DESTINATION,
         )
 
     def _require_run_config(self) -> RunConfig:
