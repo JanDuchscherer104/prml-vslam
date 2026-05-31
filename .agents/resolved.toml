@@ -1,7 +1,7 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-04-25"
+updated_on = "2026-05-31"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
 
 [[resolved_issues]]
@@ -2019,6 +2019,144 @@ resolved_on = "2026-04-25"
 resolution_note = "ViSTA no longer reads SequenceManifest RGB/timestamp files directly; offline SLAM backend protocol consumes Iterable[Observation] prepared by the stage/source boundary."
 source_collection = "issues"
 
+[[resolved_issues]]
+id = "ISSUE-0053"
+title = "Repo-owned Rerun point-cloud/world-frame semantics regressed after the policy-extraction cleanup"
+status = "resolved"
+priority = "high"
+category = "visualization"
+summary = "The current sink keeps ViSTA pointmaps camera-local in contracts, but the live viewer path now shows clouds clustered near the origin again and the repo's persisted Rerun guidance is internally inconsistent about root-world convention, entity layout, and what behavior is considered the 'working' reference."
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+files = [
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+    "external/vista-slam/run.py",
+    "external/vista-slam/run_live.py",
+    "tests/test_streaming_visualization.py",
+    "tests/test_rerun_timeline_semantics.py",
+    "tests/test_rerun_layout_semantics.py",
+]
+notes = [
+    "The current ViSTA adapter still emits camera-local pointmaps from `get_pointmap_vis(...)` and canonical repo `T_world_camera` poses, so the regression is not explained by payload generation alone.",
+    "The current sink logs explicit point clouds under `world/slam/vista_slam_world/live/model/points` and `world/slam/vista_slam_world/keyframes/points/<id>/points` beneath shared posed parents, which is structurally closer to upstream ViSTA than the older repo-owned posed-pointmap-branch layout.",
+    "The current persisted guidance has been partially corrected in `.agents/AGENTS_INTERNAL_DB.md`, but visualization README/REQUIREMENTS/semantics docs and tests still need one source of truth for root-world and entity-layout policy.",
+    "Upstream ViSTA logs `/world` as an identity `Transform3D`, logs the pose directly on `world/est/<topic>`, logs `Pinhole(..., camera_xyz=RDF)` on `world/est/<topic>/cam`, and logs camera-local `Points3D` on `world/est/<topic>/points`; it does not log root `ViewCoordinates`, explicit `DepthImage`, source-vs-model branches, or a separate tracking branch.",
+    "The current tests validate helper math and mocked event ordering, but they do not exercise actual Rerun transform inheritance or compare the repo-owned recording against a minimal ViSTA-style recording with the same pose and pointmap payloads.",
+]
+sources = [
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+    "external/vista-slam/run.py",
+    "external/vista-slam/run_live.py",
+    "codex-session-019d9b63-user-messages.md",
+    "codex-session-019d9b63-agent-messages.md",
+]
+previous_status = "in_progress"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by current Rerun recording parity coverage, RDF root ViewCoordinates default, prefixed vista_slam_world live/keyframe paths, and removal of stale contradictory visualization issue notes."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0071"
+title = "ADVIO streaming SLAM can fail on invalid live ViSTA pose and mask the root cause during finalization"
+status = "resolved"
+priority = "high"
+category = "runtime"
+summary = "A streaming ViSTA run on `advio-20` failed after 1093 processed frames because live pose conversion rejected an upstream rotation with Frobenius error 0.030585, then coordinator finalization still tried alignment and raised `StageDependencyError` because SLAM had no `SlamStageOutput`."
+files = [
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+notes = [
+    "Validated from `.logs/runs/vista-full-tuning/2026-05-09_17:37:08_vista-full-tuning.log`: the run used `advio-20`, started streaming at 17:38:27, logged `SLAM processed=1092`, then failed during frame submission with `Rotation matrix is too far from SO(3) to normalize safely. Frobenius error: 0.030585.`",
+    "The root exception is raised by `project_rotation_to_so3()` through `_frame_transform_from_vista_pose()` while `VistaSlamRuntime._build_live_update()` converts an upstream live pose for telemetry; this live update path should not make observer-facing data fatal without an explicit policy decision.",
+    "The log records `Stage 'slam' failed` with the rotation error before the later `PacketSourceActor` traceback; that traceback comes from `_finalize_streaming()` calling `_run_streaming_finalize_stages()` even after `_streaming_error` is set, so alignment requests `SlamStageOutput` and masks the original failure with `StageDependencyError`.",
+    "The current worktree's `.configs/pipelines/vista-full.toml` points `vista-full-tuning` at `advio-20`; the failure may be sequence-sensitive and was not reproduced from the original TUM RGB-D config.",
+]
+sources = [
+    ".logs/runs/vista-full-tuning/2026-05-09_17:37:08_vista-full-tuning.log",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by handling invalid ViSTA live poses as non-fatal runtime warnings and preventing downstream SLAM-output finalizers from masking terminal streaming SLAM errors."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0072"
+title = "Live Rerun reference trajectories are blocked by coarse source-reference routing"
+status = "resolved"
+priority = "high"
+category = "visualization"
+summary = "The live Rerun starvation fix routes source reference visualizations export-only so heavy static artifacts do not block SLAM runtime updates. That also removes lightweight reference trajectory overlays from the live viewer, while a broad config-gated re-enable attempt regressed live update delivery again."
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+]
+notes = [
+    "The exported Rerun recording still contains reference trajectory entities, so the reference data is produced and export logging works; the missing live overlay is in live routing or sink policy.",
+    "Commit 14789f1 intentionally made source reference and final artifact updates export-only to prevent heavy static source/reference artifacts from starving live SLAM updates.",
+    "Source reference visualization updates currently bundle lightweight `ROLE_SOURCE_REFERENCE_TRAJECTORY` items with heavier `ROLE_SOURCE_REFERENCE_POINT_CLOUD` items, making coarse coordinator-level export-only routing too broad.",
+    "A future fix must restore live reference trajectory overlays without sending heavy reference point clouds or terminal artifacts to the live sidecar and without disrupting live SLAM runtime updates.",
+]
+sources = [
+    ".logs/runs/vista-full-tuning/2026-05-09_18:07:57_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by routing lightweight source reference trajectories to the live Rerun sidecar while keeping full source reference artifacts, including heavy point clouds, export-only."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0073"
+title = "ADVIO Tango reference-cloud prep double-transforms pose-aligned payloads"
+status = "resolved"
+priority = "high"
+category = "sources"
+summary = "The [official ADVIO README](https://github.com/AaltoVision/ADVIO#tango) documents Tango point-cloud payloads as aligned to the current Tango device pose, but `load_bounded_tango_point_clouds()` treats each payload as depth-sensor-local geometry and applies an interpolated Tango pose before writing reference clouds. Metadata and sequence refs reinforce the wrong semantics, so prepared Tango clouds can be translated/rotated twice and downstream consumers can misinterpret payload rows as camera-local pointmaps."
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/datasets/advio/README.md",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+notes = [
+    "Validated against the [official ADVIO README](https://github.com/AaltoVision/ADVIO#tango): Tango point clouds are acquired by Tango and aligned to the current device pose, with timestamps in `point-cloud.csv` and payloads in `point-cloud-$index.csv`.",
+    "`advio_geometry.py` currently interpolates Tango trajectory poses at payload timestamps and applies those transforms to every payload after RDF basis conversion.",
+    "The first code fix should load payload XYZ, finite-filter, range-filter by timestamp, basis-convert once, stride/limit, and stack; provider-world-to-GT alignment may still be applied once after assembling the source-native cloud.",
+    "`ReferencePointCloudSequenceRef` should not be deleted in a README/DB-only patch, but a later code patch should clarify payload semantics through metadata or typed fields if the sequence ref remains consumer-facing.",
+]
+sources = [
+    "https://github.com/AaltoVision/ADVIO",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/README.md",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by correcting ADVIO Tango docs/diagrams, recording payload semantics in contracts and metadata, and fixing reference-cloud loading so Tango payload rows are not transformed again by interpolated device poses before the one optional GT alignment."
+source_collection = "issues"
+
 [[resolved_todos]]
 id = "TODO-0035"
 title = "Re-triage partially addressed resolved records against the current code"
@@ -3352,6 +3490,154 @@ sources = [
 previous_status = "open"
 resolved_on = "2026-04-25"
 resolution_note = "Standardized code stage package surfaces: source stage moved under sources/stage, stage input DTOs moved to contracts modules, and SLAM/source backend config surfaces split from stage policy. Documentation/UML drift remains tracked by ISSUE-0064/TODO-0073."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0077"
+title = "Correct ADVIO Tango README semantics and broken diagram links"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0073",
+]
+loc_min = 8
+loc_expected = 25
+loc_max = 60
+files = [
+    "src/prml_vslam/sources/datasets/advio/README.md",
+]
+acceptance = [
+    "ADVIO Tango point-cloud payloads are documented as pose-aligned Tango-native geometry, not unposed depth-sensor-local pointmaps.",
+    "README no longer claims Tango payloads can be projected into the iPhone camera frame from timestamps alone.",
+    "README states that iPhone/Tango projection requires an explicit cross-device extrinsic not exposed as a canonical public repo transform.",
+    "ADVIO modality and transform-tree diagram links resolve from the README location.",
+]
+sources = [
+    "https://github.com/AaltoVision/ADVIO",
+    "src/prml_vslam/sources/datasets/advio/README.md",
+    "docs/figures/mermaid/advio-transform-tree.mmd",
+    "docs/figures/mermaid/advio-modalities-overview.mmd",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by updating the ADVIO README and Mermaid diagrams to describe Tango point-cloud payloads as already pose-aligned Tango-native geometry, fixing README-relative diagram links, and removing the timestamp-only iPhone camera-local pointmap implication."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0054"
+title = "Reproduce the Rerun point-cloud/world-frame regression against a ViSTA-style reference recording"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0053",
+]
+wip_branch = "codex/streaming-execution-architecture"
+wip_worktree = "/home/jandu/repos/prml-vslam"
+loc_min = 70
+loc_expected = 170
+loc_max = 360
+files = [
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/README.md",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+    "tests/test_streaming_visualization.py",
+    "tests/test_rerun_timeline_semantics.py",
+    "tests/test_rerun_layout_semantics.py",
+]
+acceptance = [
+    "The repo has one focused regression harness that compares world placement from the repo-owned sink against a minimal local ViSTA-style recording with the same pose and camera-local pointmap payloads.",
+    "The active Rerun guidance surfaces (`visualization/README.md`, `visualization/REQUIREMENTS.md`, and any stable memory kept in `.agents/AGENTS_INTERNAL_DB.md`) agree on one root-world convention policy and one entity-layout policy.",
+    "A known camera-local test point and a dense pointmap land in the same world-space pose in the repo-owned recording as they do in the ViSTA-style reference recording.",
+    "The final fix keeps camera-local pointmaps camera-local until composed through the intended transform hierarchy and does not rely on viewer-only basis flips that contradict the chosen repo policy.",
+]
+sources = [
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/REQUIREMENTS.md",
+    ".agents/AGENTS_INTERNAL_DB.md",
+    "external/vista-slam/run.py",
+    "external/vista-slam/run_live.py",
+    "tests/test_streaming_visualization.py",
+    "tests/test_rerun_layout_semantics.py",
+]
+previous_status = "in_progress"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by the repo-owned ViSTA-style Rerun parity tests and by collapsing stale visualization issue guidance into the current RDF/root and vista_slam_world entity policy."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0076"
+title = "Harden streaming SLAM against invalid live ViSTA poses and failed-SLAM finalization"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0071",
+]
+loc_min = 70
+loc_expected = 180
+loc_max = 360
+files = [
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "tests/test_vista_slam.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "A ViSTA live pose whose rotation exceeds the current SO(3) projection tolerance is handled deliberately: either the live update is skipped with a backend warning or the run fails with a controlled root-cause error, but observer telemetry conversion does not accidentally crash frame ingestion.",
+    "When streaming SLAM frame submission or SLAM finalization sets `_streaming_error`, coordinator finalization records the SLAM failure and the run failure without starting downstream stages that require `SlamStageOutput`.",
+    "Regression coverage includes the ADVIO-style invalid live pose path and a coordinator finalization case proving alignment is skipped after failed SLAM.",
+    "The Rerun live/export sidecar split remains non-fatal to SLAM execution and still routes intermediate updates when valid poses are available.",
+]
+sources = [
+    ".logs/runs/vista-full-tuning/2026-05-09_17:37:08_vista-full-tuning.log",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by making invalid ViSTA live-pose telemetry non-fatal with backend warnings and by skipping all SLAM-dependent streaming finalizers after failed or stopped SLAM."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0078"
+title = "Fix ADVIO Tango payload loading to avoid per-payload pose application"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0073",
+]
+loc_min = 35
+loc_expected = 90
+loc_max = 180
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/contracts.py",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+acceptance = [
+    "`load_bounded_tango_point_clouds()` no longer interpolates Tango poses or applies a Tango pose matrix to each payload row.",
+    "Prepared source-native Tango clouds are produced by loading payload XYZ, finite-filtering, timestamp range filtering, RDF basis conversion, stride/limit sampling, and stacking only.",
+    "GT-aligned Tango clouds are still produced by applying exactly one provider-world-to-GT alignment after the source-native cloud is assembled.",
+    "Tango cloud metadata records that repo code did not apply per-payload poses and that payload rows are pose-aligned by Tango.",
+    "Regression coverage fails if a payload associated with a large translated Tango pose is shifted by that pose during loading.",
+]
+sources = [
+    "https://github.com/AaltoVision/ADVIO",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "tests/test_advio.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by loading ADVIO Tango payload rows as pose-aligned source-native geometry, applying only raw-basis-to-RDF conversion before stacking, recording no per-payload pose application in metadata, and adding a regression that large Tango pose translations do not shift payload rows."
 source_collection = "todos"
 
 [[resolved_refactors]]
