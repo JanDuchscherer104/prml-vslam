@@ -1,8 +1,29 @@
+---
+config:
+  theme: base
+  htmlLabels: true
+  flowchart:
+    htmlLabels: true
+    nodeSpacing: 22
+    rankSpacing: 36
+    curve: basis
+  layout: elk
+  themeVariables:
+    background: "#ffffff"
+    fontFamily: "Inter, DejaVu Sans, Arial, sans-serif"
+    fontSize: "16px"
+    primaryTextColor: "#1f2937"
+    lineColor: "#64748b"
+  themeCSS: |
+    .nodeLabel { font-size: 16px; }
+    .edgeLabel { font-size: 14px; }
+    .cluster-label { font-size: 16px; font-weight: 700; }
+---
 flowchart TB
   A["ADVIO sequence<br/>advio-XX"]
 
   subgraph REF["Benchmark reference"]
-    direction TB
+    direction LR
     GT["Ground truth"]
     GTP["pose.csv<br/>reference trajectory<br/>6DoF, 100 Hz"]
     GTF["fixpoints.csv<br/>manual metric location fixes"]
@@ -11,10 +32,10 @@ flowchart TB
   end
 
   subgraph DEV["Device-specific modalities"]
-    direction LR
+    direction TB
 
     subgraph IPG["iPhone"]
-      direction TB
+      direction LR
       IP["Primary capture device"]
       IPV["frames.mov + frames.csv<br/>RGB video timestamps<br/>1280x720 portrait, 60 Hz"]
       IPA["arkit.csv<br/>ARKit 6DoF poses<br/>60 Hz"]
@@ -29,19 +50,19 @@ flowchart TB
     end
 
     subgraph PXG["Pixel"]
-      direction TB
+      direction LR
       PX["Secondary baseline device"]
       PXA["arcore.csv<br/>ARCore 6DoF poses<br/>30 Hz"]
       PX --> PXA
     end
 
     subgraph TGG["Tango"]
-      direction TB
+      direction LR
       TG["Legacy multi-sensor device"]
       TGR["raw.csv<br/>raw odometry<br/>60 Hz"]
       TGA["area-learning.csv<br/>loop-closing odometry<br/>60 Hz"]
       TGV["frames.mov + frames.csv<br/>fisheye video"]
-      TGP["point-cloud.csv + point-cloud-*.csv<br/>point-cloud captures"]
+      TGP["point-cloud.csv + point-cloud-*.csv<br/>pose-aligned point-cloud payloads"]
       TG --> TGR
       TG --> TGA
       TG --> TGV
@@ -56,35 +77,27 @@ flowchart TB
     FP["Floor plans / aerial maps<br/>used to place fixpoints"]
   end
 
-  A --> GT
-  A --> IP
-  A --> PX
-  A --> TG
+  A --> REF
+  A --> DEV
+  A --> AUX
 
   CAL -.-> IP
   RV -.-> GTF
   FP -.-> GTF
 
-  style A fill:#0b4f6c,stroke:#083b4c,color:#ffffff,stroke-width:2px
+  classDef input fill:#D5E8D4,stroke:#82B366,stroke-width:1.5px,rx:0,ry:0;
+  classDef output fill:#F8CECC,stroke:#B85450,stroke-width:1.5px,rx:0,ry:0;
+  classDef compute fill:#E1D5E7,stroke:#9673A6,stroke-width:1.5px,rx:8,ry:8;
+  classDef data fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1.2px,rx:0,ry:0;
 
-  style GT fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
-  style IP fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
-  style PX fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
-  style TG fill:#e8f1ff,stroke:#2b6cb0,color:#15314b,stroke-width:1.5px
+  class A input;
+  class GT output;
+  class IP,PX,TG compute;
+  class GTP,GTF,IPV,IPA,IPIMU,IPB,IPL,PXA,TGR,TGA,TGV,TGP,CAL,RV,FP data;
 
-  style GTP fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style GTF fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style IPV fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style IPA fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style IPIMU fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style IPB fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style IPL fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style PXA fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style TGR fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style TGA fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style TGV fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-  style TGP fill:#f8fbff,stroke:#94a3b8,color:#1f2937
-
-  style CAL fill:#fff7e8,stroke:#d97706,color:#7c2d12,stroke-width:1.5px,stroke-dasharray:5 3
-  style RV fill:#fff7e8,stroke:#d97706,color:#7c2d12,stroke-width:1.5px,stroke-dasharray:5 3
-  style FP fill:#fff7e8,stroke:#d97706,color:#7c2d12,stroke-width:1.5px,stroke-dasharray:5 3
+  style REF fill:#f1fff6,stroke:#97ddb5,stroke-width:2px,rx:12,ry:12
+  style DEV fill:#f0fbff,stroke:#8fd0ff,stroke-width:2px,rx:12,ry:12
+  style AUX fill:#ffffff,stroke:#cbd5e1,stroke-width:1.5px,rx:12,ry:12
+  style IPG fill:#ffffff,stroke:#cbd5e1,stroke-width:1.2px,rx:12,ry:12
+  style PXG fill:#ffffff,stroke:#cbd5e1,stroke-width:1.2px,rx:12,ry:12
+  style TGG fill:#ffffff,stroke:#cbd5e1,stroke-width:1.2px,rx:12,ry:12

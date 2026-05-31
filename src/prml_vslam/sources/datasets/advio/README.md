@@ -1,9 +1,8 @@
 # ADVIO Dataset Guide
 
-This package owns the repository-local adapter for the
-[ADVIO dataset](https://github.com/AaltoVision/ADVIO): path resolution,
-typed loading of official files, replay preparation, and app-facing dataset
-services.
+This package owns the repository-local adapter for the ADVIO dataset [1]: path
+resolution, typed loading of official files, replay preparation, and app-facing
+dataset services.
 
 The official dataset combines one benchmark reference track with several
 device-specific modalities. The most important distinction is that the
@@ -13,10 +12,8 @@ be aligned before cross-system comparison.
 
 ## Sources
 
-- Official dataset repository:
-  [AaltoVision/ADVIO](https://github.com/AaltoVision/ADVIO)
-- Official paper:
-  [ADVIO: An authentic dataset for visual-inertial odometry](https://arxiv.org/abs/1807.09828)
+- Official dataset repository: AaltoVision/ADVIO [1]
+- Official paper: ADVIO: An authentic dataset for visual-inertial odometry [2]
 - Repo-owned loader and layout code:
   [`advio_layout.py`](./advio_layout.py),
   [`advio_loading.py`](./advio_loading.py),
@@ -25,10 +22,10 @@ be aligned before cross-system comparison.
 
 ## Modality Overview
 
-![ADVIO modality overview](../../../../docs/figures/mermaid/advio-modalities-overview.svg)
+![ADVIO modality overview](../../../../../docs/figures/mermaid/advio-modalities-overview.svg)
 
 Source diagram:
-[`docs/figures/mermaid/advio-modalities-overview.mmd`](../../../../docs/figures/mermaid/advio-modalities-overview.mmd)
+[`docs/figures/mermaid/advio-modalities-overview.mmd`](../../../../../docs/figures/mermaid/advio-modalities-overview.mmd)
 
 ## File Conventions
 
@@ -92,7 +89,8 @@ Repository loader conventions:
   the other ADVIO pose streams.
 - Tango `point-cloud.csv` rows are `timestamp, point_cloud_index`; each index
   points to a matching `point-cloud-00001.csv`-style payload file whose rows are
-  `x, y, z` metric point coordinates emitted by the Tango depth pipeline.
+  `x, y, z` metric point coordinates emitted by the Tango depth pipeline and
+  already aligned to the current Tango device pose [1].
 - The calibration YAML is parsed as:
   - pinhole intrinsics: `fx, fy, cx, cy`
   - image size
@@ -125,11 +123,14 @@ The Tango modality is an auxiliary Google Tango-device stream, not iPhone RGB-D
 ground truth. It contains:
 
 - `raw.csv`: Tango raw odometry, a frame-to-frame pose stream without long-term
-  map memory.
+  map memory. Treat it as a baseline pose stream, not the default map frame for
+  reference-cloud preparation.
 - `area-learning.csv`: Tango area-learning odometry, a map-building pose stream
-  that can use loop closure to reduce drift.
+  that can use loop closure to reduce drift. It is the preferred Tango-native
+  trajectory for repository-prepared Tango reference clouds.
 - `frames.mov` and `frames.csv`: Tango fisheye grayscale video and its frame
-  timestamps. The paper reports this video as roughly 5 fps at 640x480.
+  timestamps. The dataset README reports this video as roughly 5 fps at
+  640x480 [1].
 - `point-cloud.csv`: timestamps and integer point-cloud indices. Sampling is
   non-uniform and follows Tango depth availability rather than video frame rate.
 - `point-cloud-00001.csv`, `point-cloud-00002.csv`, ...: one XYZ point-cloud
@@ -138,21 +139,26 @@ ground truth. It contains:
 
 Because the Tango capture comes from a separate rigidly mounted device, its
 poses and point clouds live in Tango-local coordinate systems. Treat them as
-source-native auxiliary geometry until an explicit temporal association and
-cross-system alignment into the iPhone or GT world has been performed.
+source-native auxiliary geometry until an explicit cross-system alignment into
+the iPhone or GT world has been performed. Timestamps are valid for association
+and range filtering, but timestamp association alone is not an extrinsic
+calibration and does not justify applying the Tango trajectory pose to payload
+rows a second time.
 
-For repository-owned benchmark prep, `AdvioSequence.to_benchmark_inputs()`
-materializes both bounded static reference clouds and source-native step-wise
-point-cloud sequence references so downstream replay-style consumers can
-associate the nearest Tango payload to an iPhone frame timestamp and project
-that geometry back into a camera-local pointmap.
+For repository-owned benchmark prep, `AdvioSequence.to_benchmark_inputs()` may
+expose materialized static reference clouds and raw Tango payload index
+metadata. Consumers must preserve the payload semantics: ADVIO payload rows are
+pose-aligned Tango-native XYZ, not unposed depth-sensor-local geometry or
+iPhone camera-local pointmaps. Projecting Tango geometry into an iPhone camera
+frame requires an explicit Tango-to-iPhone extrinsic edge, which this repository
+does not expose as a canonical public transform.
 
 ## Frame And Transform Tree
 
-![ADVIO transform tree](../../../../docs/figures/mermaid/advio-transform-tree.svg)
+![ADVIO transform tree](../../../../../docs/figures/mermaid/advio-transform-tree.svg)
 
 Source diagram:
-[`docs/figures/mermaid/advio-transform-tree.mmd`](../../../../docs/figures/mermaid/advio-transform-tree.mmd)
+[`docs/figures/mermaid/advio-transform-tree.mmd`](../../../../../docs/figures/mermaid/advio-transform-tree.mmd)
 
 How to read the tree:
 
@@ -162,8 +168,8 @@ How to read the tree:
 - `T_cam_imu` is the main explicit static SE(3) transform shipped in the
   calibration YAML and consumed by this repository.
 - Cross-device rig extrinsics are described in the paper as part of the capture
-  setup, but they are not surfaced as a canonical repo-owned public transform
-  file here.
+  setup [2], but they are not surfaced as a canonical repo-owned public
+  transform file here.
 - Any edge from a device-local world into `GT world` is a derived comparison
   transform, not an official stored ADVIO pose stream.
 
@@ -171,7 +177,7 @@ How to read the tree:
 
 The official paper describes the ground-truth as a reference trajectory inferred
 from the iPhone IMU, additional calibration, and manually marked fixation
-points from an external reference video and floor plans. In practice, the
+points from an external reference video and floor plans [2]. In practice, the
 repository uses it as the authoritative benchmark trajectory and world frame for
 evaluation and visualization.
 
@@ -194,3 +200,12 @@ For the current Streamlit Sequence Explorer:
 
 Those display transforms are repository-owned visualization choices. They are
 not stored as native ADVIO modalities.
+
+## References
+
+[1] AaltoVision, "ADVIO: An Authentic Dataset for Visual-Inertial Odometry,"
+GitHub repository. Available: https://github.com/AaltoVision/ADVIO
+
+[2] S. Cortes, A. Solin, E. Rahtu, and J. Kannala, "ADVIO: An authentic
+dataset for visual-inertial odometry," arXiv:1807.09828, 2018. Available:
+https://arxiv.org/abs/1807.09828
