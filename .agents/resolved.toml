@@ -3640,6 +3640,40 @@ resolved_on = "2026-05-31"
 resolution_note = "Resolved by loading ADVIO Tango payload rows as pose-aligned source-native geometry, applying only raw-basis-to-RDF conversion before stacking, recording no per-payload pose application in metadata, and adding a regression that large Tango pose translations do not shift payload rows."
 source_collection = "todos"
 
+[[resolved_todos]]
+id = "TODO-0079"
+title = "Regenerate and guard the Rerun viewer blueprint against stale entity paths"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0074",
+]
+loc_min = 20
+loc_expected = 70
+loc_max = 160
+files = [
+    ".configs/visualization/vista_blueprint.rbl",
+    "src/prml_vslam/visualization/rerun.py",
+    "tests/test_rerun_layout_semantics.py",
+    "tests/test_main.py",
+]
+acceptance = [
+    "The checked-in `.rbl` blueprint no longer references stale `world/live/...` paths and matches the current `world/slam/vista_slam_world/...` live/model tree.",
+    "The default 2D views for model diagnostic RGB and camera depth/RGB point at entities that are actually emitted by the current Rerun sink policy.",
+    "A regression test or validation helper detects stale serialized blueprint paths instead of only testing the in-memory generated blueprint.",
+    "The default 3D contents deliberately show the intended accumulated/keyframe point-cloud surface while any hidden live/debug-only pointmap branch is documented by policy or test names.",
+]
+sources = [
+    "src/prml_vslam/visualization/rerun.py",
+    ".configs/visualization/vista_blueprint.rbl",
+    "tests/test_rerun_layout_semantics.py",
+    "tests/test_main.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by regenerating .configs/visualization/vista_blueprint.rbl from build_default_blueprint(), adding a checked-in artifact guard against stale world/live/model paths, and validating the current vista_slam_world live/model 2D paths in tests and the ADVIO smoke RRD."
+source_collection = "todos"
+
 [[resolved_refactors]]
 id = "REFACTOR-0001"
 title = "Collapse the duplicated stage-runtime result and completion seams"

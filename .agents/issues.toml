@@ -242,11 +242,11 @@ sources = [
 
 [[issues]]
 id = "ISSUE-0074"
-title = "Rerun live viewer routing and blueprint regress after the sink-starvation fixes"
+title = "Rerun live viewer routing still needs throughput guardrails after the blueprint fix"
 status = "open"
 priority = "high"
 category = "visualization"
-summary = "A 2026-05-31 `vista-full-tuning` streaming run completed, but the online Rerun viewer only showed reference pose children while live/source/SLAM imagery and point-cloud surfaces were absent or hidden. The current branch preserves parts of the `fix/rerun-pipeline` export-only anti-starvation policy while missing later feature-branch live-visibility behavior, and the checked-in `.rbl` blueprint still references stale `world/live/...` paths instead of the current `world/slam/vista_slam_world/...` tree."
+summary = "A 2026-05-31 `vista-full-tuning` streaming run completed with the online Rerun viewer missing live/source/SLAM imagery and point-cloud surfaces. The branch now regenerates the checked-in blueprint, disables default pose-axis fanout, and restores selective live source-reference trajectories, but the bounded ADVIO smoke still emitted one-deep live/export sidecar lag warnings during high-frequency SLAM updates. The remaining risk is throughput/backpressure rather than stale blueprint paths."
 files = [
     "src/prml_vslam/main.py",
     "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
@@ -259,12 +259,11 @@ files = [
     "tests/test_rerun_layout_semantics.py",
 ]
 notes = [
-    "The sink lag warnings are still real: live/export sidecar calls are submitted asynchronously and the coordinator only reports that the previous Rerun actor call is still pending; there is no coalescing or backpressure for high-frequency live model/keyframe payloads.",
-    "`fix/rerun-pipeline` reduced live starvation by routing heavy source-reference, artifact, and final visualization updates export-only; it did not make live Rerun ingestion unbounded.",
-    "The current branch is missing `origin/feature/pointcloud-evaluation-fix-orientation` commit `8f5c85a`, which restored broader live visibility. Current code still routes artifact visualizations export-only and only sends lightweight source-reference trajectory items live.",
-    "The serialized `.configs/visualization/vista_blueprint.rbl` contains stale `world/live/model/...` paths, while current logging and generated blueprint code use `world/slam/vista_slam_world/live/model/...`; this can leave restarted viewer 2D views empty even when RGB/depth entities were logged.",
-    "The default 3D contents intentionally hide `world/slam/vista_slam_world/live/model/points`, so streaming pointmaps can be present in the recording but invisible in the default scene unless the intended accumulated/keyframe point-cloud path is used.",
-    "`trajectory_pose_axis_length = 0.005` on long reference trajectories expands each trajectory into thousands of `/poses/XXXXXX` child entities; the observed increasing entity-match count after pipeline completion is likely viewer ingestion/indexing of these pose-axis entities rather than continued SLAM execution.",
+    "The stale checked-in blueprint portion is resolved by regenerating `.configs/visualization/vista_blueprint.rbl` from `build_default_blueprint()` and adding a byte-level guard that rejects stale `world/live/model` paths.",
+    "`trajectory_pose_axis_length = 0.0` is now the committed `vista-full.toml` default, so long reference trajectories do not generate default-visible `/poses/XXXXXX` fanout unless explicitly requested.",
+    "Selective routing is intentional: live receives SLAM runtime updates and lightweight source-reference trajectories, while reference point clouds, artifact visualizations, and final artifact fanout remain export-only.",
+    "The bounded ADVIO-20 smoke on 2026-05-31 completed 300 frames and exported current `world/slam/vista_slam_world/live/model/...` paths, 48 keyed camera/point-cloud entities, and reference trajectories, with no stale `/world/live/model` path.",
+    "That smoke still produced intermittent live/export sidecar lag warnings with `max_consecutive_pending=1`; this is acceptable for the current fix but leaves throughput/backpressure or coalescing work open for sustained heavier runs.",
     "`run-config` intentionally keeps the process alive while waiting for the Rerun viewer to close after the pipeline reaches a terminal state, so a still-running CLI parent is not proof that stages are still executing.",
 ]
 sources = [
@@ -274,6 +273,7 @@ sources = [
     ".configs/visualization/vista_blueprint.rbl",
     ".configs/pipelines/vista-full.toml",
     ".logs/runs/vista-full-tuning/2026-05-31_13:49:31_vista-full-tuning.log",
+    ".logs/runs/vista-full-tuning/2026-05-31_15:10:28_vista-full-tuning.log",
     ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
 ]
 
