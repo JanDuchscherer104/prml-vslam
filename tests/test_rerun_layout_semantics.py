@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,6 +18,8 @@ from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class _FakeRecordingStream:
@@ -271,6 +274,15 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert logged_entities[1][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert logged_entities[1][1] == FakeViewCoordinates.RDF
     assert logged_entities[1][2] is True
+
+
+def test_checked_in_vista_blueprint_uses_current_model_entity_tree() -> None:
+    blueprint_bytes = (_REPO_ROOT / ".configs/visualization/vista_blueprint.rbl").read_bytes()
+
+    assert b"world/live/model" not in blueprint_bytes
+    assert b"world/slam/vista_" in blueprint_bytes
+    assert b"live/model/diag/rgb" in blueprint_bytes
+    assert b"live/model/camera/image" in blueprint_bytes
 
 
 def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_update() -> None:
