@@ -240,9 +240,46 @@ sources = [
     "src/prml_vslam/visualization/rerun_sink.py",
 ]
 
+[[issues]]
+id = "ISSUE-0074"
+title = "Rerun live viewer routing and blueprint regress after the sink-starvation fixes"
+status = "open"
+priority = "high"
+category = "visualization"
+summary = "A 2026-05-31 `vista-full-tuning` streaming run completed, but the online Rerun viewer only showed reference pose children while live/source/SLAM imagery and point-cloud surfaces were absent or hidden. The current branch preserves parts of the `fix/rerun-pipeline` export-only anti-starvation policy while missing later feature-branch live-visibility behavior, and the checked-in `.rbl` blueprint still references stale `world/live/...` paths instead of the current `world/slam/vista_slam_world/...` tree."
+files = [
+    "src/prml_vslam/main.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    ".configs/visualization/vista_blueprint.rbl",
+    ".configs/pipelines/vista-full.toml",
+    "tests/test_pipeline.py",
+    "tests/test_rerun_layout_semantics.py",
+]
+notes = [
+    "The sink lag warnings are still real: live/export sidecar calls are submitted asynchronously and the coordinator only reports that the previous Rerun actor call is still pending; there is no coalescing or backpressure for high-frequency live model/keyframe payloads.",
+    "`fix/rerun-pipeline` reduced live starvation by routing heavy source-reference, artifact, and final visualization updates export-only; it did not make live Rerun ingestion unbounded.",
+    "The current branch is missing `origin/feature/pointcloud-evaluation-fix-orientation` commit `8f5c85a`, which restored broader live visibility. Current code still routes artifact visualizations export-only and only sends lightweight source-reference trajectory items live.",
+    "The serialized `.configs/visualization/vista_blueprint.rbl` contains stale `world/live/model/...` paths, while current logging and generated blueprint code use `world/slam/vista_slam_world/live/model/...`; this can leave restarted viewer 2D views empty even when RGB/depth entities were logged.",
+    "The default 3D contents intentionally hide `world/slam/vista_slam_world/live/model/points`, so streaming pointmaps can be present in the recording but invisible in the default scene unless the intended accumulated/keyframe point-cloud path is used.",
+    "`trajectory_pose_axis_length = 0.005` on long reference trajectories expands each trajectory into thousands of `/poses/XXXXXX` child entities; the observed increasing entity-match count after pipeline completion is likely viewer ingestion/indexing of these pose-axis entities rather than continued SLAM execution.",
+    "`run-config` intentionally keeps the process alive while waiting for the Rerun viewer to close after the pipeline reaches a terminal state, so a still-running CLI parent is not proof that stages are still executing.",
+]
+sources = [
+    "src/prml_vslam/main.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/rerun.py",
+    ".configs/visualization/vista_blueprint.rbl",
+    ".configs/pipelines/vista-full.toml",
+    ".logs/runs/vista-full-tuning/2026-05-31_13:49:31_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
 updated_on = "2026-05-31"
-source = "Validated review findings including ADVIO Tango review plus follow-up repository policy notes"
+source = "Validated review findings including ADVIO Tango review plus follow-up repository policy notes and Rerun live viewer regression analysis"
 active_collection = "issues"
