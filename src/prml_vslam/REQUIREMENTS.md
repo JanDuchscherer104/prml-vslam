@@ -90,6 +90,9 @@ Use this file for package-root ownership rules and cross-package contract constr
   are distinct shared geometry contracts. Sparse source clouds such as ADVIO
   Tango payloads must not be represented as pointmaps without an explicit
   projection step.
+- Time-ordered reference-cloud sequence refs must carry payload-frame semantics
+  explicitly; ADVIO Tango payload rows are pose-aligned by the source system and
+  must not be re-posed as unposed sensor-local pointmaps.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - `prml_vslam.sources.replay` owns `ObservationStream`.

@@ -7,7 +7,6 @@ from typing import Literal
 import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
-from pytransform3d.transformations import transform, vectors_to_points
 
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
@@ -47,7 +46,8 @@ class TangoCloudMetadata(BaseData):
     source_world_frame: str
     raw_coordinate_basis: AdvioRawCoordinateBasis
     rdf_basis_transform: list[list[float]]
-    per_payload_pose_applied: bool = True
+    payload_pose_semantics: Literal["pose_aligned_by_tango"] = "pose_aligned_by_tango"
+    per_payload_pose_applied: bool = False
     units: str = "meters"
     point_count: int
     timestamp_min_s: float | None
@@ -102,7 +102,7 @@ def build_advio_tango_reference_clouds(
         if trajectory_path is None or not trajectory_path.exists():
             continue
         native_frame = f"advio_{source.value}_world"
-        payload_frame = f"advio_{source.value}_depth_sensor"
+        payload_frame = native_frame
         try:
             source_trajectory = transform_advio_trajectory_to_rdf(load_advio_trajectory(trajectory_path), source=source)
             points_xyz_source, payloads_used, skipped_out_of_range_payloads = load_bounded_tango_point_clouds(
@@ -110,8 +110,6 @@ def build_advio_tango_reference_clouds(
                 trajectory=source_trajectory,
                 max_reference_points=max_reference_points,
                 point_stride=point_stride,
-                target_frame=native_frame,
-                source_frame=payload_frame,
                 point_source=source,
             )
         except ValueError as exc:
@@ -189,11 +187,9 @@ def load_bounded_tango_point_clouds(
     trajectory: PoseTrajectory3D,
     max_reference_points: int,
     point_stride: int,
-    target_frame: str = "world",
-    source_frame: str = "tango_depth_sensor",
     point_source: ReferenceCloudSource = ReferenceCloudSource.TANGO_AREA_LEARNING,
 ) -> tuple[NDArray[np.float64], int, int]:
-    """Load a deterministic bounded subset of Tango payloads transformed into pose-stream world."""
+    """Load a deterministic bounded subset of pose-aligned Tango payloads."""
     if max_reference_points < 1:
         raise ValueError(f"Expected max_reference_points >= 1, got {max_reference_points}.")
     if point_stride < 1:
@@ -211,22 +207,15 @@ def load_bounded_tango_point_clouds(
     skipped_out_of_range_payloads = int(len(index_rows) - len(filtered_index_rows))
     if filtered_index_rows.size == 0:
         return np.empty((0, 3), dtype=np.float64), 0, skipped_out_of_range_payloads
-    poses_world_payload = interpolate_trajectory_poses(
-        trajectory,
-        filtered_index_rows[:, 0],
-        target_frame=target_frame,
-        source_frame=source_frame,
-    )
     chunks: list[NDArray[np.float64]] = []
     payloads_used = 0
     point_count = 0
-    for (_, cloud_index_float), pose_world_payload in zip(filtered_index_rows, poses_world_payload, strict=True):
+    for _timestamp_s, cloud_index_float in filtered_index_rows:
         payload = load_tango_point_cloud_payload(
             resolve_tango_point_cloud_payload(index_path.parent, cloud_index_float)
         )
-        payload = transform_advio_points_to_rdf(payload, point_source)
-        points_xyz_world = transform(pose_world_payload.as_matrix(), vectors_to_points(payload))[:, :3]
-        sampled = points_xyz_world[::point_stride]
+        points_xyz_source = transform_advio_points_to_rdf(payload, point_source)
+        sampled = points_xyz_source[::point_stride]
         if len(sampled) == 0:
             continue
         remaining = max_reference_points - point_count
@@ -258,7 +247,7 @@ def transform_tango_payloads_to_pose_world(
     trajectory: PoseTrajectory3D,
     point_stride: int = 1,
 ) -> NDArray[np.float64]:
-    """Transform all Tango point-cloud payloads into the selected Tango pose-stream world."""
+    """Load all pose-aligned Tango point-cloud payloads in the source-native RDF basis."""
     points, _payloads_used, _skipped_out_of_range_payloads = load_bounded_tango_point_clouds(
         index_path=index_path,
         trajectory=trajectory,
