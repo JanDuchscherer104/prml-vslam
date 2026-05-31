@@ -56,7 +56,7 @@ class RerunEventSink:
         point_cloud_decimation_keep_ratio: float = 1.0,
         mesh_decimation_keep_ratio: float = 1.0,
         decimation_random_seed: int = 0,
-        view_coordinates: str = "RFU",
+        view_coordinates: str = "RDF",
     ) -> None:
         self._console = Console(__name__).child(self.__class__.__name__)
         self._live_stream = None
@@ -229,7 +229,7 @@ class RerunSinkActor:
         point_cloud_decimation_keep_ratio: float = 1.0,
         mesh_decimation_keep_ratio: float = 1.0,
         decimation_random_seed: int = 0,
-        view_coordinates: str = "RFU",
+        view_coordinates: str = "RDF",
     ) -> None:
         self._sink = RerunEventSink(
             grpc_url=grpc_url,

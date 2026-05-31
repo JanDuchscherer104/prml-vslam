@@ -322,7 +322,7 @@ def _world_points_for_row(
 def _latest_live_model_snapshot(
     recording: rdf.Recording,
 ) -> tuple[RerunPointCloudSnapshot | None, np.ndarray | None]:
-    rows = _rows_for_index(recording, index_name="frame", contents="/world/live/model/**")
+    rows = _rows_for_index(recording, index_name="frame", contents="/world/slam/vista_slam_world/live/model/**")
     latest_snapshot: RerunPointCloudSnapshot | None = None
     latest_world_points: np.ndarray | None = None
     for row in rows:

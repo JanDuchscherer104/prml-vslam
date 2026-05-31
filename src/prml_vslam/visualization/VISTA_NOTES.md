@@ -39,8 +39,10 @@ world semantics instead of remapping ViSTA into a repo-specific viewer basis.
 
 The 3D camera-image entity is only coherent when `Pinhole`, RGB, and depth all
 refer to the same raster. The repo-owned path now keeps a separate
-`world/live/model/diag/rgb` surface for the always-visible 2D model RGB view
-and reserves `world/live/model/camera/image` for coherent 3D camera bundles.
+`world/slam/vista_slam_world/live/model/diag/rgb` surface for the always-visible
+2D model RGB view and reserves
+`world/slam/vista_slam_world/live/model/camera/image` for coherent 3D camera
+bundles.
 
 ### `preview_rgb` Is Diagnostic Preview Only
 
@@ -76,8 +78,8 @@ The current repo-owned path makes that unchanged world explicit by logging
 The live sink keeps these surfaces distinct:
 
 - `world/live/source/rgb`: original source-frame raster from ingress
-- `world/live/model/diag/rgb`: model-raster RGB shown in the dedicated 2D tab
-- `world/live/model/camera/image`, `.../depth`, `.../points`, and
+- `world/slam/vista_slam_world/live/model/diag/rgb`: model-raster RGB shown in the dedicated 2D tab
+- `world/slam/vista_slam_world/live/model/camera/image`, `.../depth`, `.../points`, and
   `.../diag/preview`: coherent 3D camera bundle on the ViSTA model raster
 
 This is an intentional divergence from a naive “one camera image everywhere”
@@ -122,7 +124,7 @@ recording.log("world", rr.Transform3D(axis_length=1.0), static=True)
 recording.log("world", rr.ViewCoordinates.RDF, static=True)
 
 recording.log(
-    f"world/keyframes/cameras/{keyframe_index:06d}",
+    f"world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}",
     rr.Transform3D(
         translation=T_world_camera[:3, 3],
         mat3x3=T_world_camera[:3, :3],
@@ -131,20 +133,20 @@ recording.log(
     ),
 )
 recording.log(
-    f"world/keyframes/cameras/{keyframe_index:06d}/image",
+    f"world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image",
     rr.Pinhole(
         image_from_camera=K,
         resolution=[width, height],
         camera_xyz=rr.ViewCoordinates.RDF,
     ),
 )
-recording.log(f"world/keyframes/cameras/{keyframe_index:06d}/image", rr.Image(rgb))
+recording.log(f"world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image", rr.Image(rgb))
 recording.log(
-    f"world/keyframes/cameras/{keyframe_index:06d}/image/depth",
+    f"world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image/depth",
     rr.DepthImage(depth_m, meter=1.0),
 )
 recording.log(
-    f"world/keyframes/points/{keyframe_index:06d}",
+    f"world/slam/vista_slam_world/keyframes/points/{keyframe_index:06d}",
     rr.Transform3D(
         translation=T_world_camera[:3, 3],
         mat3x3=T_world_camera[:3, :3],
@@ -153,7 +155,7 @@ recording.log(
     ),
 )
 recording.log(
-    f"world/keyframes/points/{keyframe_index:06d}/points",
+    f"world/slam/vista_slam_world/keyframes/points/{keyframe_index:06d}/points",
     rr.Points3D(points_xyz_camera, colors=colors),
 )
 ```
