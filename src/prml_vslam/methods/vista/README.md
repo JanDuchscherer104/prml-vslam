@@ -24,9 +24,9 @@ This package contains the canonical ViSTA-SLAM backend integration used by the p
 ## Current Discrepancies
 
 - `intentional difference`: preprocessing preserves upstream crop/resize behavior, so the current RDF-like world semantics are not caused by wrapper-side preprocessing drift
-- `documentation gap`: `world/live/source/rgb` is the original source-frame raster, while `world/live/model/camera/image`, depth, pointmap, preview, and intrinsics all belong to the ViSTA-preprocessed model raster
+- `documentation gap`: `world/live/source/rgb` is the original source-frame raster, while `world/slam/vista_slam_world/live/model/camera/image`, depth, pointmap, preview, and intrinsics all belong to the ViSTA-preprocessed model raster
 - `documentation gap`: live/session readback exposes scaled camera-local pointmaps, while exported `pointcloud.ply` is a separate fused world-space dense cloud
-- `intentional difference`: the repo-owned Rerun tree uses split branches such as `world/live/model` and `world/keyframes/...` rather than upstream `world/est/cam_n` paths; path parity is not required when composed world placement matches upstream
+- `intentional difference`: the repo-owned Rerun tree uses split branches such as `world/slam/vista_slam_world/live/model` and `world/slam/vista_slam_world/keyframes/...` rather than upstream `world/est/cam_n` paths; path parity is not required when composed world placement matches upstream. See [RERUN_SEMANTICS.md](../../visualization/RERUN_SEMANTICS.md) for the canonical entity tree.
 - `documentation gap`: the repo viewer intentionally preserves ViSTA-native RDF-like world semantics instead of normalizing the scene into an operator/world-up basis
 - `intentional difference`: offline runs preserve upstream-native visualization artifacts and do not yet synthesize a repo-owned offline `.rrd`
 
