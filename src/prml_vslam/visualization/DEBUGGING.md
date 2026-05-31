@@ -50,14 +50,14 @@ Example commands:
 ```bash
 uv run --extra visualization python .agents/skills/rerun-slam-integration/scripts/rrd_entity_inventory.py \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
-  --prefix /world/live
+  --prefix /world/slam/vista_slam_world/live
 ```
 
 ```bash
 uv run --extra visualization python .agents/skills/rerun-slam-integration/scripts/rrd_component_arrivals.py \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
   --index frame \
-  --contents /world/live/model/camera/image \
+  --contents /world/slam/vista_slam_world/live/model/camera/image \
   --component-substring Image \
   --component-substring Pinhole \
   --component-substring DepthImage
@@ -66,7 +66,7 @@ uv run --extra visualization python .agents/skills/rerun-slam-integration/script
 ```bash
 uv run --extra visualization python .agents/skills/rerun-slam-integration/scripts/rrd_chunk_order.py \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
-  --match /world/live/model/camera/image
+  --match /world/slam/vista_slam_world/live/model/camera/image
 ```
 
 ## Companion Artifacts
@@ -109,7 +109,8 @@ Current implementation details that matter during debugging:
 - the repo-owned file sink now replaces an existing `viewer_recording.rrd`
   before writing a new run;
 - the root `world` entity is the only intentionally visible axes marker;
-- the 2D “Model RGB” view uses `world/live/model/diag/rgb`, not the 3D
-  camera-image entity;
+- the 2D “Model RGB” view uses
+  `world/slam/vista_slam_world/live/model/diag/rgb`, not the 3D camera-image
+  entity;
 - the 3D camera-image entity should only receive image/depth payloads when a
   coherent `Pinhole` is also present.

@@ -9,6 +9,7 @@ source of truth.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 
@@ -69,8 +70,8 @@ class VisualizationConfig(BaseConfig):
     decimation_random_seed: int = Field(default=0, ge=0)
     """Base seed used for deterministic visualization-only point-cloud sampling."""
 
-    view_coordinates: str = "RFU"
-    """Target world-root view coordinates for the Rerun 3D viewer (e.g., 'RFU', 'RDF', 'RUB')."""
+    view_coordinates: Literal["RDF", "RFU"] = "RDF"
+    """Target world-root view coordinates for the Rerun 3D viewer."""
 
     initial_scale: float = Field(default=1.0, gt=0.0)
     """Initial scale factor applied to the SLAM world branch before evaluation alignment."""
