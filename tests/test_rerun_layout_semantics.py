@@ -253,9 +253,11 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
 
     layout = sent_blueprints[0].layout
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
-    assert all(not query.startswith("- ") for query in layout.views[0].contents)
-    assert "+ world/reference/**" in layout.views[0].contents
-    assert "+ world/slam/vista_slam_world/**" in layout.views[0].contents
+    assert "+ world/reference/trajectory/**" in layout.views[0].contents
+    assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world/**" not in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world/keyframes/points/**" in layout.views[0].contents
+    assert "- world/slam/vista_slam_world/live/model/points/**" in layout.views[0].contents
     assert "+ world/live/source/camera" in layout.views[0].contents
     assert [view.origin for view in layout.views[1].views] == [
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
@@ -267,7 +269,7 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert logged_entities[0][1].axis_length == rerun_helpers.ROOT_WORLD_AXIS_LENGTH
     assert logged_entities[0][2] is True
     assert logged_entities[1][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
-    assert logged_entities[1][1] == FakeViewCoordinates.RFU
+    assert logged_entities[1][1] == FakeViewCoordinates.RDF
     assert logged_entities[1][2] is True
 
 

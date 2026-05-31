@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import shutil
 import subprocess
 import sys
@@ -22,13 +21,11 @@ from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
 
-_LOGGER = logging.getLogger(__name__)
-
 ROOT_WORLD_ENTITY_PATH = "world"
 """Canonical root entity path for repo-owned Rerun recordings."""
 ROOT_WORLD_AXIS_LENGTH = 1.0
 """Visible axis length for the static root-world transform marker."""
-MODEL_RGB_2D_ENTITY_PATH = "world/live/model/diag/rgb"
+MODEL_RGB_2D_ENTITY_PATH = "world/slam/vista_slam_world/live/model/diag/rgb"
 """Dedicated 2D-only live model RGB entity, separate from the 3D camera branch."""
 GROUND_PLANE_ENTITY_PATH = "world/slam/vista_slam_world/alignment/ground_plane"
 """Root entity path for the derived dominant ground-plane visualization."""
@@ -44,9 +41,19 @@ GROUND_PLANE_OUTLINE_RGBA = np.array([[24, 140, 84, 255]], dtype=np.uint8)
 """Opaque outline color for the ground-plane patch."""
 DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/alignment/**",
-    "+ world/reference/**",
+    "+ world/reference/trajectory/**",
+    "+ world/reference/points/*/aligned/**",
     "+ world/reconstruction/**",
-    "+ world/slam/vista_slam_world/**",
+    "+ world/slam/vista_slam_world/live/tracking/**",
+    "+ world/slam/vista_slam_world/live/model",
+    "+ world/slam/vista_slam_world/live/model/camera/image",
+    "- world/slam/vista_slam_world/live/model/camera/image/depth",
+    "- world/slam/vista_slam_world/live/model/camera/image/depth/**",
+    "- world/slam/vista_slam_world/live/model/points",
+    "- world/slam/vista_slam_world/live/model/points/**",
+    "+ world/slam/vista_slam_world/keyframes/cameras/**",
+    "+ world/slam/vista_slam_world/keyframes/points/**",
+    "+ world/slam/vista_slam_world/trajectory/raw/**",
     "+ world/overlays/**",
     "+ world/live/source/camera",
 )
@@ -114,7 +121,7 @@ def create_recording_stream(
     recording_id: str | None = None,
     show_source_rgb: bool = False,
     show_diagnostic_preview: bool = False,
-    view_coordinates: str = "RFU",
+    view_coordinates: str = "RDF",
 ) -> rr.RecordingStream:
     """Create one explicit Rerun recording stream."""
     stream = rr.new_recording(application_id=app_id, recording_id=recording_id)
@@ -130,14 +137,13 @@ def create_recording_stream(
 def log_root_world_transform(
     recording_stream: rr.RecordingStream,
     *,
-    view_coordinates: str = "RFU",
+    view_coordinates: str = "RDF",
 ) -> None:
     """Declare one explicit ViSTA-aligned world root for repo-owned recordings.
 
     The root stays geometrically neutral via an identity ``Transform3D`` while
     using ``axis_length`` to keep one visible world-frame marker at the origin.
-    It also declares ``world`` with the requested ``view_coordinates`` (e.g.,
-    ``RFU`` for MoCap/Up=Z, or ``RDF`` for Computer Vision/Down=Y) so the 3D
+    It also declares ``world`` with the requested ``view_coordinates`` so the 3D
     viewer/grid matches the logged scene semantics.
     """
     recording_stream.log(
@@ -145,17 +151,17 @@ def log_root_world_transform(
         rr.Transform3D(axis_length=ROOT_WORLD_AXIS_LENGTH),
         static=True,
     )
-    # Resolve the view coordinates shorthand (e.g., 'RFU') from the rr.ViewCoordinates constants.
-    try:
-        coordinates = getattr(rr.ViewCoordinates, view_coordinates)
-    except AttributeError:
-        _LOGGER.warning(
-            "Invalid view_coordinates '%s'; falling back to RFU. Supported: RFU, RDF, RUB, etc.",
-            view_coordinates,
-        )
-        coordinates = rr.ViewCoordinates.RFU
+    recording_stream.log(ROOT_WORLD_ENTITY_PATH, _view_coordinates_from_name(view_coordinates), static=True)
 
-    recording_stream.log(ROOT_WORLD_ENTITY_PATH, coordinates, static=True)
+
+def _view_coordinates_from_name(view_coordinates: str) -> rr.ViewCoordinates:
+    match view_coordinates:
+        case "RDF":
+            return rr.ViewCoordinates.RDF
+        case "RFU":
+            return rr.ViewCoordinates.RFU
+        case _:
+            raise ValueError(f"Unsupported Rerun view_coordinates '{view_coordinates}'. Expected 'RDF' or 'RFU'.")
 
 
 def attach_recording_sinks(
