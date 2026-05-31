@@ -567,6 +567,62 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
     assert update.pose.translation_xyz().tolist() == [1.0, 2.0, 3.0]
 
 
+def test_vista_session_reports_invalid_live_pose_without_crashing_ingest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
+
+    _install_fake_torch(monkeypatch)
+
+    class FakeSlam:
+        def __init__(self) -> None:
+            self.device = "cpu"
+
+        def step(self, value: dict[str, object]) -> None:
+            del value
+
+        def get_view(self, view_index: int, **kwargs: object) -> object:
+            del view_index, kwargs
+            pose = np.eye(4, dtype=np.float64)
+            pose[:3, :3] = np.diag([2.0, 0.5, 0.25])
+            return SimpleNamespace(pose=pose, depth=np.ones((2, 2), dtype=np.float32), intri=np.eye(3))
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, np.ndarray]:
+            del view_index
+            raise AssertionError("invalid live poses must not emit posed pointmap telemetry")
+
+    session = VistaSlamRuntime(
+        slam=FakeSlam(),
+        flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    session.step(
+        Observation(
+            seq=23,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
+    update = session.drain_updates()[0]
+
+    assert update.is_keyframe is True
+    assert update.keyframe_index == 0
+    assert update.pose is None
+    assert update.image_rgb is None
+    assert update.depth_map is None
+    assert update.pointmap is None
+    assert update.camera_intrinsics is None
+    assert update.backend_warnings
+    assert "invalid live pose" in update.backend_warnings[0]
+    assert "source_seq=23" in update.backend_warnings[0]
+
+
 def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
