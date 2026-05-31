@@ -73,12 +73,16 @@ from prml_vslam.reconstruction.stage import ReconstructionRuntime, Reconstructio
 from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
+    ReferenceCloudSource,
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
+from prml_vslam.sources.stage.artifacts import reference_cloud_artifact_key, reference_trajectory_artifact_key
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
+from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_POINT_CLOUD, ROLE_SOURCE_REFERENCE_TRAJECTORY
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import stable_hash
 from tests.pipeline_testing_support import FakeOfflineSource, FakeStreamingSource
@@ -1079,7 +1083,7 @@ def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars
     assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
 
 
-def test_run_coordinator_routes_source_reference_visualizations_to_export_only(
+def test_run_coordinator_routes_source_reference_trajectories_live_without_clouds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1092,18 +1096,38 @@ def test_run_coordinator_routes_source_reference_visualizations_to_export_only(
         target_frame="world",
     )
     artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
+    reference_cloud = ReferenceCloudRef(
+        source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+        path=tmp_path / "reference.ply",
+        metadata_path=tmp_path / "reference.json",
+        target_frame="world",
+        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+    )
+    cloud_artifact = ArtifactRef(path=reference_cloud.path, kind="ply", fingerprint="cloud")
     output = SourceStageOutput(
         sequence_manifest=SequenceManifest(sequence_id="seq-1"),
-        benchmark_inputs=PreparedBenchmarkInputs(reference_trajectories=[reference]),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_trajectories=[reference],
+            reference_clouds=[reference_cloud],
+        ),
     )
 
     coordinator._submit_source_reference_visualization_update(
         output=output,
-        artifacts={reference_trajectory_artifact_key(reference): artifact},
+        artifacts={
+            reference_trajectory_artifact_key(reference): artifact,
+            reference_cloud_artifact_key(reference_cloud): cloud_artifact,
+        },
     )
 
     assert [label for label, _, _ in submitted] == ["live", "export"]
-    assert submitted[0][1].stage_key is StageKey.SOURCE
+    live_update = submitted[0][1]
+    export_update = submitted[1][1]
+    assert [item.role for item in live_update.visualizations] == [ROLE_SOURCE_REFERENCE_TRAJECTORY]
+    assert {item.role for item in export_update.visualizations} == {
+        ROLE_SOURCE_REFERENCE_TRAJECTORY,
+        ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    }
 
 
 def test_run_coordinator_routes_artifact_visualizations_to_export_only(
@@ -1126,7 +1150,7 @@ def test_run_coordinator_routes_artifact_visualizations_to_export_only(
         ),
     )
 
-    assert [label for label, _, _ in submitted] == ["live", "export"]
+    assert [label for label, _, _ in submitted] == ["export"]
     assert submitted[0][1].stage_key is StageKey.SLAM
 
 
@@ -1144,11 +1168,11 @@ def test_run_coordinator_routes_final_artifacts_to_export_only(
 
     coordinator._submit_final_artifact_rerun_update()
 
-    assert [label for label, _, _ in submitted] == ["live", "export"]
+    assert [label for label, _, _ in submitted] == ["export"]
     assert submitted[0][1].stage_key is StageKey.SUMMARY
 
 
-def test_run_coordinator_routes_final_artifacts_to_live_when_only_live_sidecar_exists(
+def test_run_coordinator_drops_export_only_updates_when_only_live_sidecar_exists(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1162,11 +1186,11 @@ def test_run_coordinator_routes_final_artifacts_to_live_when_only_live_sidecar_e
 
     coordinator._submit_final_artifact_rerun_update()
 
-    assert [label for label, _, _ in submitted] == ["live"]
-    assert coordinator._rerun_sinks[0].last_call is not None
+    assert submitted == []
+    assert coordinator._rerun_sinks[0].last_call is None
 
 
-def test_run_coordinator_keeps_source_reference_updates_out_of_live_sidecar_order(
+def test_run_coordinator_keeps_live_source_reference_trajectories_before_slam_updates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1752,7 +1776,7 @@ def test_run_coordinator_finalize_streaming_dispatches_batch_executors(tmp_path:
     ("streaming_error", "stop_requested"),
     [("slam boom", False), (None, True)],
 )
-def test_run_coordinator_finalize_streaming_skips_trajectory_alignment_after_terminal_slam(
+def test_run_coordinator_finalize_streaming_skips_slam_dependent_stages_after_terminal_slam(
     tmp_path: Path,
     streaming_error: str | None,
     stop_requested: bool,
@@ -1771,8 +1795,11 @@ def test_run_coordinator_finalize_streaming_skips_trajectory_alignment_after_ter
     stages = [
         StageKey.SOURCE,
         StageKey.SLAM,
+        StageKey.GRAVITY_ALIGNMENT,
         StageKey.TRAJECTORY_ALIGNMENT,
         StageKey.TRAJECTORY_EVALUATION,
+        StageKey.RECONSTRUCTION,
+        StageKey.CLOUD_EVALUATION,
     ]
     plan = _plan_with_stages(tmp_path=tmp_path, run_config=run_config, stage_keys=stages)
     context = PipelineExecutionContext(
