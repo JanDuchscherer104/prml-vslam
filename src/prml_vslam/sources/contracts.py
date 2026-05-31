@@ -111,6 +111,12 @@ class ReferenceCloudSource(StrEnum):
     TANGO_AREA_LEARNING = "tango_area_learning"
 
 
+class ReferencePointCloudPayloadSemantics(StrEnum):
+    """Describe how point-cloud payload rows are framed before consumption."""
+
+    POSE_ALIGNED_BY_SOURCE = "pose_aligned_by_source"
+
+
 class ReferenceCloudCoordinateStatus(StrEnum):
     """Coordinate status for one prepared reference cloud or trajectory."""
 
@@ -155,8 +161,9 @@ class ReferencePointCloudSequenceRef(BaseData):
 
     ADVIO Tango payloads use this boundary to expose point-cloud samples without
     forcing the runtime packet stream to become dataset-specific. Consumers must
-    preserve :attr:`target_frame`, :attr:`native_frame`, and
-    :attr:`coordinate_status` when comparing against SLAM geometry.
+    preserve :attr:`target_frame`, :attr:`native_frame`,
+    :attr:`coordinate_status`, and :attr:`payload_semantics` when comparing
+    against SLAM geometry.
     """
 
     source: ReferenceCloudSource
@@ -166,6 +173,8 @@ class ReferencePointCloudSequenceRef(BaseData):
     target_frame: str
     native_frame: str
     coordinate_status: ReferenceCloudCoordinateStatus
+    payload_frame: str | None = None
+    payload_semantics: ReferencePointCloudPayloadSemantics = ReferencePointCloudPayloadSemantics.POSE_ALIGNED_BY_SOURCE
 
 
 class PreparedBenchmarkInputs(BaseData):
@@ -214,6 +223,7 @@ __all__ = [
     "ReferenceCloudCoordinateStatus",
     "ReferenceCloudRef",
     "ReferenceCloudSource",
+    "ReferencePointCloudPayloadSemantics",
     "ReferencePointCloudSequenceRef",
     "ReferenceSource",
     "ReferenceTrajectoryRef",

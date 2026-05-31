@@ -42,6 +42,7 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
 )
 from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
+from prml_vslam.utils.geometry import load_point_cloud_ply
 
 
 def _write_video(path: Path, *, num_frames: int = 3) -> None:
@@ -498,8 +499,33 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert benchmark_inputs.reference_clouds[0].path.exists()
     cloud_metadata = benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8")
     assert '"point_count": 9' in cloud_metadata
+    assert '"payload_frame": "advio_tango_area_learning_world"' in cloud_metadata
+    assert '"payload_pose_semantics": "pose_aligned_by_tango"' in cloud_metadata
+    assert '"per_payload_pose_applied": false' in cloud_metadata
     assert '"point_stride": 1' in cloud_metadata
     assert '"skipped_out_of_range_payloads": 0' in cloud_metadata
+
+
+def test_advio_tango_reference_clouds_do_not_apply_payload_poses(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    _write_pose_csv_rows(
+        sequence_dir / "tango" / "area-learning.csv",
+        rows=((0.0, 100.0, 200.0, 300.0), (0.1, 101.0, 201.0, 301.0), (0.2, 102.0, 202.0, 302.0)),
+    )
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    benchmark_inputs = sequence.to_benchmark_inputs()
+
+    area_learning_native = next(
+        reference
+        for reference in benchmark_inputs.reference_clouds
+        if reference.source is ReferenceCloudSource.TANGO_AREA_LEARNING
+        and reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+    )
+    points_xyz_source = load_point_cloud_ply(area_learning_native.path)
+
+    assert np.allclose(points_xyz_source[0], np.array([0.0, -1.0, 0.0]))
+    assert np.max(np.abs(points_xyz_source)) < 3.0
 
 
 def test_advio_tango_reference_clouds_skip_out_of_range_payloads(tmp_path: Path) -> None:

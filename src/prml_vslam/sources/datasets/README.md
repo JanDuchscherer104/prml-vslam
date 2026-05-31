@@ -94,6 +94,9 @@ Datasets normalize local source data into two pipeline-facing outputs:
   - may carry normalized `reference_trajectories`
   - for ADVIO, may also carry `reference_clouds` and
     `reference_point_cloud_sequences`
+  - point-cloud sequence refs must preserve payload semantics; ADVIO Tango
+    payload rows are already pose-aligned by Tango and are not camera-local
+    pointmaps
 
 The current ADVIO-specific manifest payload DTOs are:
 
