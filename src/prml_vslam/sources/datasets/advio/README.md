@@ -25,10 +25,10 @@ be aligned before cross-system comparison.
 
 ## Modality Overview
 
-![ADVIO modality overview](../../../../docs/figures/mermaid/advio-modalities-overview.svg)
+![ADVIO modality overview](../../../../../docs/figures/mermaid/advio-modalities-overview.svg)
 
 Source diagram:
-[`docs/figures/mermaid/advio-modalities-overview.mmd`](../../../../docs/figures/mermaid/advio-modalities-overview.mmd)
+[`docs/figures/mermaid/advio-modalities-overview.mmd`](../../../../../docs/figures/mermaid/advio-modalities-overview.mmd)
 
 ## File Conventions
 
@@ -149,10 +149,10 @@ that geometry back into a camera-local pointmap.
 
 ## Frame And Transform Tree
 
-![ADVIO transform tree](../../../../docs/figures/mermaid/advio-transform-tree.svg)
+![ADVIO transform tree](../../../../../docs/figures/mermaid/advio-transform-tree.svg)
 
 Source diagram:
-[`docs/figures/mermaid/advio-transform-tree.mmd`](../../../../docs/figures/mermaid/advio-transform-tree.mmd)
+[`docs/figures/mermaid/advio-transform-tree.mmd`](../../../../../docs/figures/mermaid/advio-transform-tree.mmd)
 
 How to read the tree:
 
