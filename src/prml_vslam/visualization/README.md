@@ -103,16 +103,18 @@ per-modality toggle matrix.
 
 - `world`: static root world convention for the viewer.
 - `world/live/source/rgb`: original source-frame RGB observations.
-- `world/live/tracking/camera`: live tracking pose.
-- `world/live/model/diag/rgb`: dedicated 2D-only model-raster RGB surface.
-- `world/live/model/camera/image`: 3D camera entity with `Pinhole`, image, and
+- `world/slam/vista_slam_world/live/tracking/camera`: live tracking pose.
+- `world/slam/vista_slam_world/live/model/diag/rgb`: dedicated 2D-only model-raster RGB surface.
+- `world/slam/vista_slam_world/live/model/camera/image`: 3D camera entity with `Pinhole`, image, and
   depth when the camera bundle is coherent; the default 3D blueprint includes
   the entity itself so Rerun can draw the live frustum.
-- `world/live/model/diag/preview`: diagnostic preview surface, logged only
+- `world/slam/vista_slam_world/live/model/diag/preview`: diagnostic preview surface, logged only
   when `log_diagnostic_preview = true`.
-- `world/live/model/points`: latest/debug camera-local pointmap surface.
-- `world/keyframes/cameras/<id>` and `world/keyframes/points/<id>`: stable
-  keyed-history branches.
+- `world/slam/vista_slam_world/live/model/points`: latest/debug camera-local
+  pointmap surface.
+- `world/slam/vista_slam_world/keyframes/cameras/<id>` and
+  `world/slam/vista_slam_world/keyframes/points/<id>`: stable keyed-history
+  branches.
 - `world/reference/trajectory/<source>/<status>`: prepared reference
   trajectories.
 - `world/reference/points/<source>/<status>/...`: prepared reference point
@@ -132,7 +134,7 @@ Current operational constraints:
 - offline runs still preserve upstream-native visualization artifacts rather
   than synthesizing a repo-owned offline `.rrd`;
 - the default 3D scene is keyed-history first and treats
-  `world/live/model/points` as mutable latest/debug geometry;
+  `world/slam/vista_slam_world/live/model/points` as mutable latest/debug geometry;
 - the default 3D scene uses a narrow allow-list for references, trajectories,
   the live model camera entity, keyed point clouds, and the recent frusta window
   instead of broad includes with red exclusion filters;

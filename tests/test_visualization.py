@@ -66,6 +66,8 @@ def test_visualization_config_rejects_invalid_decimation_values() -> None:
         VisualizationConfig(mesh_decimation_keep_ratio=1.1)
     with pytest.raises(ValidationError):
         VisualizationConfig(decimation_random_seed=-1)
+    with pytest.raises(ValidationError):
+        VisualizationConfig(view_coordinates="RUB")
 
 
 def test_attach_recording_sinks_configures_grpc_and_file_together(
@@ -202,9 +204,11 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     layout = sent_blueprints[0].layout
     assert layout.views[0].origin == "world"
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
-    assert all(not query.startswith("- ") for query in layout.views[0].contents)
-    assert "+ world/reference/**" in layout.views[0].contents
-    assert "+ world/slam/vista_slam_world/**" in layout.views[0].contents
+    assert "+ world/reference/trajectory/**" in layout.views[0].contents
+    assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world/**" not in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world/keyframes/points/**" in layout.views[0].contents
+    assert "- world/slam/vista_slam_world/live/model/points/**" in layout.views[0].contents
     assert "+ world/live/source/camera" in layout.views[0].contents
     assert layout.views[1].name == "2D Views"
     assert [view.origin for view in layout.views[1].views] == [
@@ -219,7 +223,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert static is True
     entity_path, payload, static = logged_entities[1]
     assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
-    assert payload == FakeViewCoordinates.RFU
+    assert payload == FakeViewCoordinates.RDF
     assert static is True
 
 
