@@ -450,6 +450,7 @@ def _build_reference_point_cloud_sequences(
                 target_frame=native_frame,
                 native_frame=native_frame,
                 coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+                payload_frame=native_frame,
             )
         )
         try:
@@ -471,6 +472,7 @@ def _build_reference_point_cloud_sequences(
                 target_frame="advio_gt_world",
                 native_frame=native_frame,
                 coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                payload_frame=native_frame,
             )
         )
     return sequences
