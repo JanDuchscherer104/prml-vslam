@@ -268,11 +268,13 @@ notes = [
     "The auto-launched Rerun viewer failed in that smoke because port 9090 was already in use, so the latest evidence comes from the exported RRD inventory and validation bundle rather than an online viewer screenshot.",
     "Throughput/backpressure or coalescing work remains open for sustained heavier runs even though the exported entity semantics now match the intended tree.",
     "`run-config` intentionally keeps the process alive while waiting for the Rerun viewer to close after the pipeline reaches a terminal state, so a still-running CLI parent is not proof that stages are still executing.",
+    "The 2026-06-01 dual-base slop review found that `RunCoordinatorActor._submit_rerun_update()` and `RerunSinkActor.observe_update()` still catch broad exceptions for live and export sidecars alike. Live viewer failures can be best-effort, but export-side failures can hide missing RRD evidence unless the contract is made explicit and tested.",
 ]
 sources = [
     "src/prml_vslam/main.py",
     "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
     "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
     ".configs/visualization/vista_blueprint.rbl",
     ".configs/pipelines/vista-full.toml",
     ".logs/runs/vista-full-tuning/2026-05-31_13:49:31_vista-full-tuning.log",
@@ -315,41 +317,6 @@ sources = [
 ]
 
 [[issues]]
-id = "ISSUE-0080"
-title = "Trajectory alignment and evaluation stages share mutable Sim3 output paths"
-status = "open"
-priority = "medium"
-category = "evaluation"
-summary = "When both `align.trajectory` and `evaluate.trajectory` are enabled, both stages compute and write the same Sim3 alignment files under `evaluation/`. The later evaluation stage can overwrite standalone alignment outputs, and Rerun export sees duplicate aligned trajectory/cloud artifacts."
-files = [
-    ".configs/pipelines/vista-full.toml",
-    "src/prml_vslam/eval/stage_alignment/runtime.py",
-    "src/prml_vslam/eval/stage_trajectory/runtime.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-]
-notes = [
-    "`vista-full.toml` currently enables both trajectory alignment and trajectory evaluation.",
-    "Both stages expose `trajectory_alignment`, `aligned_estimate_tum`, and `aligned_point_cloud_ply` artifacts with the same deterministic paths.",
-    "Current worktree evidence: `TrajectoryEvaluationService.compute_trajectory_alignment()` and `compute_evaluation()` both call the same `alignment_path()`, `aligned_estimate_path()`, and `aligned_point_cloud_path()` helpers.",
-    "The new cloud-alignment stage depends on `StageKey.TRAJECTORY_ALIGNMENT` for the Sim3-aligned cloud, so the intended offline point-cloud-eval path should have a single authoritative trajectory-alignment owner before cloud metrics consume aligned geometry.",
-    "The 2026-05-31 18:42 offline cloud-eval run shows why this matters: `align.cloud` consumes the trajectory Sim3 output as its only estimate input before ICP, so any weak or overwritten trajectory alignment directly controls point-cloud benchmark coordinates.",
-    "The 2026-05-31 stage manifests show both stages claiming the same aligned outputs.",
-    "The actual point-cloud Sim3 transform is performed before Rerun logging by `_write_aligned_point_cloud()`; the overlay path only displays the materialized PLY.",
-]
-sources = [
-    ".configs/pipelines/vista-full.toml",
-    ".artifacts/vista-full-tuning/vista/summary/stage_manifests.json",
-    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
-    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
-    "src/prml_vslam/eval/stage_alignment/runtime.py",
-    "src/prml_vslam/eval/stage_trajectory/runtime.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
-    "src/prml_vslam/eval/services.py",
-]
-
-[[issues]]
 id = "ISSUE-0081"
 title = "ADVIO ARKit source-native references can survive while aligned references are silently dropped"
 status = "open"
@@ -374,42 +341,6 @@ sources = [
     ".artifacts/vista-full-tuning/vista/benchmark/arkit.metadata.json",
     "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
     "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
-]
-
-[[issues]]
-id = "ISSUE-0085"
-title = "Trajectory Sim3 cloud alignment is weak and unconstrained by up-frame semantics"
-status = "open"
-priority = "high"
-category = "evaluation"
-summary = "The offline point-cloud benchmark path applies the trajectory Sim3 directly to the final ViSTA cloud before ICP/cloud metrics. In the 2026-05-31 18:42 ADVIO-20 run, the trajectory Sim3 has scale 5.49 and RMS 27.39 m, and its proper rotation includes large pitch/roll components. The resulting `/world/overlays/advio_gt_world/vista/sim3_aligned/point_cloud` is scene-scale but can look upside down or gravity-inconsistent in the viewer, so dense-cloud evaluation needs an explicit frame/up convention check instead of trusting unconstrained Umeyama output."
-files = [
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/eval/stage_alignment/runtime.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/runtime.py",
-    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
-    "tests/test_eval.py",
-]
-notes = [
-    "The stored trajectory Sim3 rotation has determinant about +1, so the observed inversion is not proven to be a literal reflection; the current evidence points to a weak full-3D alignment and unresolved RDF/RUF/up-frame convention validation.",
-    "A 2026-05-31 follow-up probe found that allowing reflections or pre-applying signed axis permutations to the SLAM trajectory did not improve the 27.39 m Sim3 residual, which argues against a simple one-matrix ADVIO/VISTA basis flip.",
-    "The 18:42 run's Sim3-aligned cloud spans about 163.8 x 27.8 x 176.1 m and its sampled dominant plane is near-horizontal in RDF coordinates, while the trajectory alignment residual remains 27.39 m.",
-    "After fixing Tango reference-cloud materialization, the local ADVIO-20 Tango aligned cloud and ViSTA Sim3 cloud both have near-horizontal sampled dominant planes in the target RDF frame; the old invalid Tango cloud no longer explains the perceived ViSTA inversion by itself.",
-    "A post-fix probe against the newly materialized ADVIO-20 `tango_raw_aligned.ply` still produced ICP fitness 0.0 and dense-cloud f-score 0.0 for the existing `point_cloud_sim3_aligned.ply`; Tango reference prep is no longer the only blocker for point-cloud metrics.",
-    "The raw SLAM and reference trajectories show different apparent turn directions in the viewer before/after alignment; repository evidence does not yet isolate whether this is a source-frame convention issue, an ADVIO reference normalization issue, or poor trajectory association/alignment.",
-    "The post-fix probe used the corrected Tango reference without rerunning ViSTA and still failed ICP, so the next patch should validate or gate the trajectory-Sim3 estimate before changing ViSTA frame conventions.",
-]
-sources = [
-    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
-    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_sim3_aligned.tum",
-    ".artifacts/vista-full-tuning/vista/evaluation/point_cloud_sim3_aligned.ply",
-    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
-    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_alignment.json",
-    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_metrics.json",
-    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
 ]
 
 [[issues]]
@@ -444,9 +375,108 @@ sources = [
     "src/prml_vslam/methods/vista/artifacts.py",
 ]
 
+[[issues]]
+id = "ISSUE-0087"
+title = "`vista-full.toml` no longer behaves like a canonical full-pipeline config"
+status = "open"
+priority = "high"
+category = "configuration"
+summary = "The current dirty worktree repurposes `.configs/pipelines/vista-full.toml` into a local ADVIO-15 offline tuning config while the filename, header, and regression test still present it as the canonical full-pipeline target. ADVIO-specific configs already exist, so this drift makes review and config regression detection ambiguous."
+files = [
+    ".configs/pipelines/vista-full.toml",
+    ".configs/pipelines/vista-full-record3d-wifi.toml",
+    "tests/test_pipeline_config.py",
+]
+notes = [
+    "Current worktree evidence: `.configs/pipelines/vista-full.toml` sets `experiment_name = \"vista-full-advio-15\"`, `mode = \"offline\"`, and source `advio-15` while retaining the canonical ViSTA-SLAM header.",
+    "`tests/test_pipeline_config.py::test_vista_full_target_toml_parses_through_run_config` now asserts the ADVIO source backend, which weakens the test as a canonical full-config regression guard.",
+    "The branch already has ADVIO-named configs such as `.configs/pipelines/advio-15-offline-vista.toml`, so local ADVIO tuning does not need to overload the canonical full-config filename unless that role is intentionally renamed.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".configs/pipelines/advio-15-offline-vista.toml",
+    "tests/test_pipeline_config.py",
+]
+
+[[issues]]
+id = "ISSUE-0093"
+title = "`align.cloud` can plan available before its reference cloud is resolvable"
+status = "open"
+priority = "medium"
+category = "evaluation"
+summary = "`CloudAlignmentStageConfig.availability()` treats ADVIO sources as sufficient after dense-SLAM checks, but the runtime resolver accepts only aligned source reference clouds and otherwise falls back to reconstruction. When the ADVIO high-RMS gate intentionally emits only a source-native Tango cloud, `align.cloud` can look available at plan time and fail at runtime without reconstruction."
+files = [
+    "src/prml_vslam/eval/stage_cloud_alignment/config.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "tests/test_advio.py",
+    "tests/test_pipeline.py",
+]
+notes = [
+    "Current worktree evidence: availability returns true for any `AdvioSourceConfig` once dense outputs and trajectory alignment are enabled.",
+    "`_resolve_reference_cloud()` skips every reference whose `coordinate_status` is not `ALIGNED`, then requires `StageKey.RECONSTRUCTION` if no aligned source cloud is found.",
+    "The ADVIO Tango high-RMS gate can preserve only a `SOURCE_NATIVE` cloud with rejection metadata, so this is a real plan/runtime mismatch rather than a theoretical missing file.",
+]
+sources = [
+    "src/prml_vslam/eval/stage_cloud_alignment/config.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+]
+
+[[issues]]
+id = "ISSUE-0094"
+title = "`align.cloud` and `evaluate.cloud` do not share an explicit app control surface"
+status = "open"
+priority = "medium"
+category = "app"
+summary = "The new cloud-alignment stage is an independent pipeline stage, but the Streamlit app exposes only `evaluate_cloud` and `build_run_config()` silently derives `align_cloud.enabled` from it when no explicit override is provided. TOML, CLI overrides, and the app can therefore drift on whether dense-cloud alignment is a coupled prerequisite or an independently configurable stage."
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pipeline_controls.py",
+    "src/prml_vslam/pipeline/config.py",
+    "tests/test_app.py",
+    "tests/test_pipeline_config.py",
+]
+notes = [
+    "Current worktree evidence: `PipelinePageState` and the request editor expose `evaluate_cloud`, but there is no app-facing `align_cloud` toggle/state.",
+    "`build_run_config()` takes `cloud_alignment_enabled: bool | None = None` and defaults `align_cloud.enabled` to the `evaluate_cloud` value.",
+    "The CLI/TOML surfaces can set `stages.align_cloud.*` directly, so the app should either expose the stage explicitly or document a deliberately coupled app semantic.",
+]
+sources = [
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+]
+
+[[issues]]
+id = "ISSUE-0095"
+title = "Dirty branch includes local review artifacts and user-specific config drift"
+status = "open"
+priority = "medium"
+category = "repo-hygiene"
+summary = "The current review scope includes untracked diff-export files, a full untracked `external/mast3r-slam/` checkout while the main-base gitlink is deleted, and checked-in local connector config with an absolute `/home/jd/...` palace path. These are not source features, but they are present in the current branch/worktree and can make review, indexing, and future commits accidentally absorb local machine state."
+files = [
+    ".codex/config.toml",
+    "external/mast3r-slam/",
+    "generate-unstaged-diff.sh",
+    "unstaged-changes.diff",
+]
+notes = [
+    "Current worktree evidence: `git ls-files --others --exclude-standard` lists `external/mast3r-slam/`, `generate-unstaged-diff.sh`, and `unstaged-changes.diff`.",
+    "Relative to `origin/main`, the tracked `external/mast3r-slam` gitlink is deleted while an untracked nested checkout remains in the worktree.",
+    "`.codex/config.toml` currently contains a hardcoded `/home/jd/repos/prml-vslam/.artifacts/mempalace/palace` path, which is user-local rather than portable repo state.",
+]
+sources = [
+    ".codex/config.toml",
+    "external/mast3r-slam/",
+    "generate-unstaged-diff.sh",
+    "unstaged-changes.diff",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
 updated_on = "2026-06-01"
-source = "Validated and refreshed review findings including ADVIO Tango review, Rerun live viewer regression analysis, 2026-05-31 offline RRD inspection, Tango reference-cloud artifact inspection, current dirty-worktree code/config evidence, the 2026-05-31 18:42 cloud-evaluation run, consolidated GPT-5.5 Pro slop review, focused pytest, and focused mypy evidence"
+source = "Validated and refreshed review findings including ADVIO Tango review, Rerun live viewer regression analysis, 2026-05-31 offline RRD inspection, Tango reference-cloud artifact inspection, current dirty-worktree code/config evidence, the 2026-05-31 18:42 cloud-evaluation run, consolidated GPT-5.5 Pro slop review, focused pytest, focused mypy evidence, and 2026-06-01 dual-base code-review findings"
 active_collection = "issues"

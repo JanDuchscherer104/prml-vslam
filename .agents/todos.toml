@@ -249,6 +249,7 @@ acceptance = [
     "Long reference trajectories do not create tens of thousands of default-visible pose-axis child entities in the online viewer unless explicitly requested.",
     "Sidecar lag warnings remain actionable: high-frequency live updates are either bounded, coalesced, or measured by tests/log assertions so a completed pipeline does not leave the viewer apparently ingesting forever.",
     "A 500-frame ADVIO-20 streaming smoke closes without repeated Rerun gRPC flush timeouts or coordinator graceful-shutdown timeout after terminal stage completion.",
+    "Export-side Rerun update and close failures preserve evidence: either they fail the export path explicitly or produce a tested diagnostic artifact instead of being silently downgraded to best-effort warnings.",
     "Regression coverage proves that source references, live camera frusta, model/keyframe point clouds, and 2D image/depth views arrive at their intended live/export destinations.",
 ]
 sources = [
@@ -298,43 +299,6 @@ sources = [
 ]
 
 [[todos]]
-id = "TODO-0086"
-title = "Make Sim3 alignment artifacts single-owner when alignment and evaluation both run"
-status = "open"
-priority = "medium"
-issue_ids = [
-    "ISSUE-0080",
-]
-loc_min = 30
-loc_expected = 90
-loc_max = 200
-files = [
-    "src/prml_vslam/eval/stage_alignment/runtime.py",
-    "src/prml_vslam/eval/stage_trajectory/runtime.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
-    "src/prml_vslam/eval/services.py",
-    "tests/test_eval.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "A run with both `align.trajectory` and `evaluate.trajectory` enabled has deterministic single-owner semantics for `trajectory_alignment.json`, `trajectory_sim3_aligned.tum`, and `point_cloud_sim3_aligned.ply`.",
-    "Evaluation either reuses existing compatible alignment artifacts or writes stage-scoped outputs that cannot silently overwrite standalone alignment outputs.",
-    "The offline cloud-alignment stage consumes the single authoritative Sim3-aligned point cloud from `align.trajectory` before ICP/cloud metrics run.",
-    "The cloud-alignment path records which trajectory-alignment artifact identity it consumed so weak or overwritten Sim3 outputs can be traced from cloud metrics.",
-    "Rerun artifact visualization receives one intended aligned trajectory/cloud artifact identity per exported recording.",
-]
-sources = [
-    ".configs/pipelines/vista-full.toml",
-    ".artifacts/vista-full-tuning/vista/summary/stage_manifests.json",
-    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
-    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
-    "src/prml_vslam/eval/stage_alignment/runtime.py",
-    "src/prml_vslam/eval/stage_trajectory/runtime.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
-    "src/prml_vslam/eval/services.py",
-]
-
-[[todos]]
 id = "TODO-0087"
 title = "Clarify ADVIO optional provider alignment failure diagnostics"
 status = "open"
@@ -364,43 +328,6 @@ sources = [
     ".artifacts/vista-full-tuning/vista/benchmark/arkit.metadata.json",
     "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
     "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
-]
-
-[[todos]]
-id = "TODO-0091"
-title = "Validate Sim3 point-cloud alignment frame and gravity semantics"
-status = "open"
-priority = "high"
-issue_ids = [
-    "ISSUE-0085",
-]
-loc_min = 45
-loc_expected = 120
-loc_max = 280
-files = [
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/eval/stage_alignment/runtime.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/runtime.py",
-    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
-    "tests/test_eval.py",
-]
-acceptance = [
-    "Trajectory-to-cloud Sim3 alignment records and validates frame/up semantics before the transformed cloud is accepted for dense-cloud benchmarking.",
-    "ADVIO runs either use an alignment mode that preserves gravity/up when required or explicitly flag full-3D Umeyama output as unsuitable for cloud metrics when residuals or orientation diagnostics are poor.",
-    "The 2026-05-31 18:42 case with scale about 5.49, trajectory RMS about 27.39 m, and apparent upside-down cloud orientation is reproduced by a focused diagnostic or regression fixture.",
-    "The diagnostic includes a reflection/signed-axis-permutation control so a true frame-convention bug is distinguished from a weak trajectory fit.",
-    "Cloud ICP/evaluation reports unavailable or low-confidence instead of producing normal benchmark metrics when the Sim3 input fails frame/up or residual gates.",
-]
-sources = [
-    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
-    ".artifacts/vista-full-tuning/vista/evaluation/point_cloud_sim3_aligned.ply",
-    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
-    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_alignment.json",
-    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_metrics.json",
-    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
-    "src/prml_vslam/eval/services.py",
-    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
 ]
 
 [[todos]]
@@ -466,10 +393,101 @@ sources = [
     ".omx/ultragoal/brief.md",
 ]
 
+[[todos]]
+id = "TODO-0099"
+title = "Align `align.cloud` planning availability with reference-cloud resolution"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0093",
+]
+loc_min = 20
+loc_expected = 60
+loc_max = 160
+files = [
+    "src/prml_vslam/eval/stage_cloud_alignment/config.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "tests/test_advio.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "Plan-time availability reflects the same reference options used by `_resolve_reference_cloud()` or records that source-cloud availability is source-preparation dependent.",
+    "ADVIO high-RMS Tango runs that produce only source-native reference clouds do not plan `align.cloud` as available unless reconstruction can supply the reference cloud.",
+    "A regression covers `align.cloud.enabled = true`, ADVIO source, rejected aligned Tango cloud, and reconstruction disabled.",
+    "The user-facing availability reason says whether an aligned source cloud, reconstruction, or a policy choice is missing.",
+]
+sources = [
+    "src/prml_vslam/eval/stage_cloud_alignment/config.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+]
+
+[[todos]]
+id = "TODO-0100"
+title = "Make the app's cloud-alignment control semantics explicit"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0094",
+]
+loc_min = 18
+loc_expected = 45
+loc_max = 120
+files = [
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+    "src/prml_vslam/app/pipeline_controls.py",
+    "src/prml_vslam/pipeline/config.py",
+    "tests/test_app.py",
+    "tests/test_pipeline_config.py",
+]
+acceptance = [
+    "The Streamlit request state either exposes `align_cloud` explicitly or documents that dense-cloud evaluation in the app intentionally enables alignment as a coupled prerequisite.",
+    "App request previews and generated `RunConfig` values round-trip the chosen cloud-alignment/evaluation semantics.",
+    "CLI/TOML dotted overrides remain able to set `stages.align_cloud.*` directly without conflicting with app defaults.",
+    "Tests cover the app path for enabling evaluation with and without explicit cloud-alignment intent.",
+]
+sources = [
+    "src/prml_vslam/pipeline/config.py",
+    "src/prml_vslam/app/models.py",
+    "src/prml_vslam/app/pages/pipeline_request_editor.py",
+]
+
+[[todos]]
+id = "TODO-0101"
+title = "Remove local review artifacts and user-specific config from the reviewable branch"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0095",
+]
+loc_min = 3
+loc_expected = 15
+loc_max = 60
+files = [
+    ".codex/config.toml",
+    "external/mast3r-slam/",
+    "generate-unstaged-diff.sh",
+    "unstaged-changes.diff",
+]
+acceptance = [
+    "The reviewable branch no longer contains untracked `generate-unstaged-diff.sh` or `unstaged-changes.diff` artifacts.",
+    "`external/mast3r-slam` is either intentionally represented as the repo's declared dependency surface or kept out of the branch as local checkout state.",
+    "Checked-in Codex/MemPalace config does not contain a user-specific absolute `/home/jd/...` path unless the file is explicitly documented as user-local and excluded from review scope.",
+    "`git status --short` separates intended source/backlog changes from local runtime or export debris.",
+]
+sources = [
+    ".codex/config.toml",
+    "external/mast3r-slam/",
+    "generate-unstaged-diff.sh",
+    "unstaged-changes.diff",
+]
+
 [meta]
 schema_version = 2
 repo = "prml-vslam"
 updated_on = "2026-06-01"
-source = "Seeded and refreshed from validated review findings including ADVIO Tango review, Rerun live viewer regression analysis, 2026-05-31 offline RRD inspection, Tango reference-cloud artifact inspection, current dirty-worktree code/config evidence, the 2026-05-31 18:42 cloud-evaluation run, consolidated GPT-5.5 Pro slop review, focused pytest, and focused mypy evidence"
+source = "Seeded and refreshed from validated review findings including ADVIO Tango review, Rerun live viewer regression analysis, 2026-05-31 offline RRD inspection, Tango reference-cloud artifact inspection, current dirty-worktree code/config evidence, the 2026-05-31 18:42 cloud-evaluation run, consolidated GPT-5.5 Pro slop review, focused pytest, focused mypy evidence, and 2026-06-01 dual-base code-review findings"
 active_collection = "todos"
 loc_unit = "lines"
