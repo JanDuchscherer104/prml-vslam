@@ -91,8 +91,9 @@ Use this file for package-root ownership rules and cross-package contract constr
   Tango payloads must not be represented as pointmaps without an explicit
   projection step.
 - Time-ordered reference-cloud sequence refs must carry payload-frame semantics
-  explicitly; ADVIO Tango payload rows are pose-aligned by the source system and
-  must not be re-posed as unposed sensor-local pointmaps.
+  explicitly; repository-prepared ADVIO Tango reference clouds are raw-backed
+  materializations that associate timestamped Tango point-cloud payloads with
+  the raw Tango pose stream before static cloud alignment.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - `prml_vslam.sources.replay` owns `ObservationStream`.

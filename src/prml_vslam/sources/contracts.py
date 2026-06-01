@@ -108,13 +108,14 @@ class ReferenceSource(StrEnum):
 class ReferenceCloudSource(StrEnum):
     """Typed source identifier for one prepared reference cloud."""
 
-    TANGO_AREA_LEARNING = "tango_area_learning"
+    TANGO_RAW = "tango_raw"
 
 
 class ReferencePointCloudPayloadSemantics(StrEnum):
     """Describe how point-cloud payload rows are framed before consumption."""
 
     POSE_ALIGNED_BY_SOURCE = "pose_aligned_by_source"
+    DEPTH_SENSOR_LOCAL_FUSED_BY_SOURCE_POSE = "depth_sensor_local_fused_by_source_pose"
 
 
 class ReferenceCloudCoordinateStatus(StrEnum):

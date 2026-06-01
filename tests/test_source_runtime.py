@@ -17,6 +17,7 @@ from prml_vslam.interfaces import (
     Observation,
     ObservationProvenance,
 )
+from prml_vslam.interfaces.artifacts import artifact_ref
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -80,6 +81,8 @@ class _BenchmarkSource(_ManifestOnlySource):
                 ReferenceTrajectoryRef(
                     source=ReferenceSource.GROUND_TRUTH,
                     path=self._reference_path,
+                    target_frame="world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
                 )
             ]
         )
@@ -96,11 +99,16 @@ class _ReferenceGeometrySource(_ManifestOnlySource):
         output_dir.mkdir(parents=True, exist_ok=True)
         return PreparedBenchmarkInputs(
             reference_trajectories=[
-                ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=self._reference_path)
+                ReferenceTrajectoryRef(
+                    source=ReferenceSource.GROUND_TRUTH,
+                    path=self._reference_path,
+                    target_frame="world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                )
             ],
             reference_clouds=[
                 ReferenceCloudRef(
-                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+                    source=ReferenceCloudSource.TANGO_RAW,
                     path=self._cloud_path,
                     metadata_path=self._metadata_path,
                     target_frame="advio_gt_world",
@@ -109,12 +117,12 @@ class _ReferenceGeometrySource(_ManifestOnlySource):
             ],
             reference_point_cloud_sequences=[
                 ReferencePointCloudSequenceRef(
-                    source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+                    source=ReferenceCloudSource.TANGO_RAW,
                     index_path=output_dir / "point-cloud.csv",
                     payload_root=output_dir,
-                    trajectory_path=output_dir / "tango_area_learning.tum",
-                    target_frame="advio_tango_area_learning_world",
-                    native_frame="advio_tango_area_learning_world",
+                    trajectory_path=output_dir / "tango_raw.tum",
+                    target_frame="advio_tango_raw_world",
+                    native_frame="advio_tango_raw_world",
                     coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
                 )
             ],
@@ -272,21 +280,54 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
     result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=tmp_path / "run"))
 
     assert isinstance(result.payload, SourceStageOutput)
-    assert "reference_cloud:tango_area_learning:aligned" in result.outcome.artifacts
-    assert "reference_cloud_metadata:tango_area_learning:aligned" in result.outcome.artifacts
+    assert "reference_cloud:tango_raw:aligned" in result.outcome.artifacts
+    assert "reference_cloud_metadata:tango_raw:aligned" in result.outcome.artifacts
     items = SourceVisualizationAdapter().build_reference_items(
         output=result.payload,
         artifact_refs=result.outcome.artifacts,
     )
     assert [item.role for item in items] == [
         ROLE_SOURCE_REFERENCE_TRAJECTORY,
-        ROLE_SOURCE_REFERENCE_TRAJECTORY,
         ROLE_SOURCE_REFERENCE_POINT_CLOUD,
     ]
     assert items[0].space == "world"
-    assert items[1].space == "advio_tango_area_learning_world"
-    assert items[1].metadata["reference_source"] == "tango_area_learning"
-    assert items[2].space == "advio_gt_world"
+    assert items[1].space == "advio_gt_world"
+
+
+def test_source_visualization_adapter_skips_source_native_reference_trajectories(tmp_path: Path) -> None:
+    native_path = tmp_path / "arkit.tum"
+    aligned_path = tmp_path / "arkit_aligned_to_gt.tum"
+    native_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    aligned_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    native_reference = ReferenceTrajectoryRef(
+        source=ReferenceSource.ARKIT,
+        path=native_path,
+        target_frame="advio_arkit_world",
+        native_frame="advio_arkit_world",
+        coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+    )
+    aligned_reference = ReferenceTrajectoryRef(
+        source=ReferenceSource.ARKIT,
+        path=aligned_path,
+        target_frame="advio_gt_world",
+        native_frame="advio_arkit_world",
+        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+    )
+    output = SourceStageOutput(
+        sequence_manifest=SequenceManifest(sequence_id="advio-20", dataset_id="advio"),
+        benchmark_inputs=PreparedBenchmarkInputs(reference_trajectories=[native_reference, aligned_reference]),
+    )
+    artifact_refs = {
+        reference_trajectory_artifact_key(native_reference): artifact_ref(native_path, kind="tum"),
+        reference_trajectory_artifact_key(aligned_reference): artifact_ref(aligned_path, kind="tum"),
+    }
+
+    items = SourceVisualizationAdapter().build_reference_items(output=output, artifact_refs=artifact_refs)
+
+    assert len(items) == 1
+    assert items[0].role == ROLE_SOURCE_REFERENCE_TRAJECTORY
+    assert items[0].metadata["coordinate_status"] == "aligned"
+    assert items[0].metadata["target_frame"] == "advio_gt_world"
 
 
 def test_source_visualization_adapter_emits_posed_observation_geometry_items() -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -10,7 +11,12 @@ import numpy as np
 import pytest
 
 import prml_vslam.sources.replay.video as replay_video_module
-from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
+from prml_vslam.sources.contracts import (
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudSource,
+    ReferencePointCloudPayloadSemantics,
+    ReferenceSource,
+)
 from prml_vslam.sources.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
@@ -94,7 +100,7 @@ def test_advio_basis_helpers_convert_provider_positions_to_rdf(tmp_path: Path) -
     )
     tango_points = transform_advio_points_to_rdf(
         np.array([[1.0, 2.0, 3.0]], dtype=np.float64),
-        ReferenceCloudSource.TANGO_AREA_LEARNING,
+        ReferenceCloudSource.TANGO_RAW,
     )
 
     assert np.array_equal(APPLE_Y_UP_TO_RDF, np.diag([1.0, -1.0, 1.0]))
@@ -487,48 +493,81 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert benchmark_inputs.reference_trajectories[1].path.exists()
     assert benchmark_inputs.reference_trajectories[2].path.exists()
     assert benchmark_inputs.reference_trajectories[2].coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
-    assert [reference.source.value for reference in benchmark_inputs.reference_point_cloud_sequences] == [
-        "tango_area_learning",
-        "tango_area_learning",
-    ]
-    assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == [
-        "tango_area_learning",
-        "tango_area_learning",
-    ]
-    assert benchmark_inputs.reference_point_cloud_sequences[0].trajectory_path.exists()
-    assert benchmark_inputs.reference_clouds[0].path.exists()
-    cloud_metadata = benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8")
-    assert '"point_count": 9' in cloud_metadata
-    assert '"payload_frame": "advio_tango_area_learning_world"' in cloud_metadata
-    assert '"payload_pose_semantics": "pose_aligned_by_tango"' in cloud_metadata
-    assert '"per_payload_pose_applied": false' in cloud_metadata
-    assert '"point_stride": 1' in cloud_metadata
-    assert '"skipped_out_of_range_payloads": 0' in cloud_metadata
+    assert [sequence.source.value for sequence in benchmark_inputs.reference_point_cloud_sequences] == ["tango_raw"]
+    assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == ["tango_raw", "tango_raw"]
+    point_cloud_sequence = benchmark_inputs.reference_point_cloud_sequences[0]
+    assert point_cloud_sequence.payload_frame == "advio_tango_depth_sensor_rdf"
+    assert point_cloud_sequence.payload_semantics is (
+        ReferencePointCloudPayloadSemantics.DEPTH_SENSOR_LOCAL_FUSED_BY_SOURCE_POSE
+    )
+    reference_cloud = benchmark_inputs.reference_clouds[0]
+    assert reference_cloud.path.exists()
+    metadata = json.loads(reference_cloud.metadata_path.read_text(encoding="utf-8"))
+    assert metadata["point_count"] == 9
+    assert metadata["payload_frame"] == "advio_tango_depth_sensor_rdf"
+    assert metadata["payload_pose_semantics"] == "depth_sensor_local_fused_by_source_pose"
+    assert metadata["per_payload_pose_applied"] is True
+    assert metadata["point_stride"] == 1
+    assert metadata["skipped_out_of_range_payloads"] == 0
 
 
-def test_advio_tango_reference_clouds_do_not_apply_payload_poses(tmp_path: Path) -> None:
+def test_advio_tango_reference_clouds_fuse_payloads_through_raw_poses(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
     _write_pose_csv_rows(
-        sequence_dir / "tango" / "area-learning.csv",
+        sequence_dir / "tango" / "raw.csv",
         rows=((0.0, 100.0, 200.0, 300.0), (0.1, 101.0, 201.0, 301.0), (0.2, 102.0, 202.0, 302.0)),
     )
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
     benchmark_inputs = sequence.to_benchmark_inputs()
 
-    area_learning_native = next(
-        reference
-        for reference in benchmark_inputs.reference_clouds
-        if reference.source is ReferenceCloudSource.TANGO_AREA_LEARNING
-        and reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+    assert [reference.coordinate_status for reference in benchmark_inputs.reference_clouds] == [
+        ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+        ReferenceCloudCoordinateStatus.ALIGNED,
+    ]
+    raw_native_points = load_point_cloud_ply(benchmark_inputs.reference_clouds[0].path)
+
+    assert np.allclose(raw_native_points[0], np.array([100.0, -301.0, 200.0]))
+    assert np.max(np.abs(raw_native_points)) > 300.0
+
+
+def test_advio_tango_reference_clouds_gate_high_rms_gt_alignment(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    rows = (
+        (0.0, 0.0, 0.0, 0.0),
+        (0.1, 1.0, 0.0, 0.0),
+        (0.2, 0.0, 1.0, 0.0),
+        (0.3, 1.0, 1.0, 0.0),
     )
-    points_xyz_source = load_point_cloud_ply(area_learning_native.path)
+    _write_pose_csv_rows(sequence_dir / "tango" / "raw.csv", rows=rows)
+    _write_pose_csv_rows(
+        sequence_dir / "ground-truth" / "poses.csv",
+        rows=(
+            (0.0, 0.0, 0.0, 0.0),
+            (0.1, 1.0, 0.0, 0.0),
+            (0.2, 0.0, 1.0, 0.0),
+            (0.3, 1000.0, 1.0, 0.0),
+        ),
+    )
+    (sequence_dir / "tango" / "point-cloud.csv").write_text("0.0,1\n0.1,2\n0.2,3\n0.3,4\n", encoding="utf-8")
+    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00004.csv", depth_offset=0.3)
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
-    assert np.allclose(points_xyz_source[0], np.array([0.0, -1.0, 0.0]))
-    assert np.max(np.abs(points_xyz_source)) < 3.0
+    benchmark_inputs = sequence.to_benchmark_inputs()
+
+    assert [reference.coordinate_status for reference in benchmark_inputs.reference_clouds] == [
+        ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+    ]
+    assert [sequence.coordinate_status for sequence in benchmark_inputs.reference_point_cloud_sequences] == [
+        ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+    ]
+    metadata = json.loads(benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
+    assert metadata["gt_alignment_rejection"]["reason"] == "sim3_rms_threshold_exceeded"
+    assert metadata["gt_alignment_rejection"]["threshold_m"] == 10.0
+    assert metadata["gt_alignment_rejection"]["rms_error_m"] > 10.0
 
 
-def test_advio_tango_reference_clouds_skip_out_of_range_payloads(tmp_path: Path) -> None:
+def test_advio_tango_reference_clouds_ignore_short_area_learning(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
     _write_pose_csv_rows(
         sequence_dir / "tango" / "area-learning.csv",
@@ -538,23 +577,32 @@ def test_advio_tango_reference_clouds_skip_out_of_range_payloads(tmp_path: Path)
 
     benchmark_inputs = sequence.to_benchmark_inputs()
 
-    area_learning_native = next(
+    raw_native = next(
         reference
         for reference in benchmark_inputs.reference_clouds
-        if reference.source is ReferenceCloudSource.TANGO_AREA_LEARNING
-        and reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+        if reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
     )
-    metadata = area_learning_native.metadata_path.read_text(encoding="utf-8")
-    assert '"point_count": 6' in metadata
-    assert '"payloads_used": 2' in metadata
-    assert '"skipped_out_of_range_payloads": 1' in metadata
+    metadata = json.loads(raw_native.metadata_path.read_text(encoding="utf-8"))
+    assert metadata["point_count"] == 9
+    assert metadata["payloads_used"] == 3
+    assert metadata["skipped_out_of_range_payloads"] == 0
+    assert "fallback_reason" not in metadata
+    assert "trajectory_used_for_cloud" not in metadata
 
 
-def test_advio_benchmark_inputs_skip_invalid_optional_provider_trajectory(tmp_path: Path) -> None:
+def test_advio_benchmark_inputs_sanitize_optional_provider_trajectory(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
-    _write_pose_csv_rows(
-        sequence_dir / "pixel" / "arcore.csv",
-        rows=((0.0, 1.0, 2.0, 3.0), (0.0, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)),
+    (sequence_dir / "pixel" / "arcore.csv").write_text(
+        "\n".join(
+            [
+                "0.2,2.0,3.0,4.0,1.0,0.0,0.0,0.0",
+                "0.0,1.0,2.0,3.0,1.0,0.0,0.0,0.0",
+                "0.0,1.5,2.5,3.5,1.0,0.0,0.0,0.0",
+                "0.1,1.5,2.5,3.5,1.0,0.0,0.0,0.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
 
@@ -562,16 +610,48 @@ def test_advio_benchmark_inputs_skip_invalid_optional_provider_trajectory(tmp_pa
 
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
+        "arcore",
+        "arcore",
         "arkit",
         "arkit",
     ]
-    assert not (sequence_dir / "evaluation" / "arcore.tum").exists()
+    arcore_metadata = json.loads((sequence_dir / "evaluation" / "arcore.metadata.json").read_text(encoding="utf-8"))
+    assert arcore_metadata["sanitization"]["dropped_duplicate_timestamps"] == 1
+    assert arcore_metadata["sanitization"]["reordered_timestamps"] is True
+    assert (sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum").exists()
 
 
-def test_advio_benchmark_inputs_skip_invalid_optional_tango_cloud_trajectory(tmp_path: Path) -> None:
+def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    (sequence_dir / "iphone" / "arkit.csv").write_text(
+        "\n".join(
+            [
+                "0.0,1.0,2.0,3.0,1.01,0.0,0.0,0.0",
+                "0.1,1.5,2.5,3.5,1.01,0.0,0.0,0.0",
+                "0.2,2.0,3.0,4.0,1.01,0.0,0.0,0.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    benchmark_inputs = sequence.to_benchmark_inputs()
+
+    assert any(
+        reference.source is ReferenceSource.ARKIT
+        and reference.coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
+        for reference in benchmark_inputs.reference_trajectories
+    )
+    arkit_metadata = json.loads((sequence_dir / "evaluation" / "arkit_aligned_to_gt.metadata.json").read_text())
+    assert arkit_metadata["sanitization"]["normalized_quaternion_rows"] == 3
+    assert arkit_metadata["sanitization"]["aligned_rotation_projection_max_frobenius_error"] == 0.1
+
+
+def test_advio_benchmark_inputs_skip_invalid_raw_tango_cloud_trajectory(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
     _write_pose_csv_rows(
-        sequence_dir / "tango" / "area-learning.csv",
+        sequence_dir / "tango" / "raw.csv",
         rows=((0.0, 1.0, 2.0, 3.0), (0.0, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)),
     )
     sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
@@ -580,7 +660,18 @@ def test_advio_benchmark_inputs_skip_invalid_optional_tango_cloud_trajectory(tmp
 
     assert not benchmark_inputs.reference_clouds
     assert not benchmark_inputs.reference_point_cloud_sequences
-    assert not (sequence_dir / "evaluation" / "tango_area_learning.tum").exists()
+    assert not (sequence_dir / "evaluation" / "tango_raw.tum").exists()
+
+
+def test_advio_benchmark_inputs_skip_missing_raw_tango_cloud_trajectory(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path)
+    (sequence_dir / "tango" / "raw.csv").unlink()
+    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
+
+    benchmark_inputs = sequence.to_benchmark_inputs()
+
+    assert not benchmark_inputs.reference_clouds
+    assert not benchmark_inputs.reference_point_cloud_sequences
 
 
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
