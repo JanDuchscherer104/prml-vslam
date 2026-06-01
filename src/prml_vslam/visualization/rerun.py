@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import open3d as o3d
@@ -180,7 +181,7 @@ def log_slam_world_transform(recording_stream: rr.RecordingStream) -> None:
     )
 
 
-def _view_coordinates_from_name(view_coordinates: str) -> rr.ViewCoordinates:
+def _view_coordinates_from_name(view_coordinates: str) -> Any:
     match view_coordinates:
         case "RDF":
             return rr.ViewCoordinates.RDF
@@ -197,7 +198,7 @@ def attach_recording_sinks(
     target_path: Path | None = None,
 ) -> None:
     """Configure all requested Rerun sinks on one recording stream."""
-    sinks: list[object] = []
+    sinks: list[rr.GrpcSink | rr.FileSink] = []
     if grpc_url is not None:
         sinks.append(rr.GrpcSink(grpc_url))
     if target_path is not None:
@@ -553,7 +554,7 @@ def log_mesh_ply(
     _validate_decimation_keep_ratio(decimation_keep_ratio)
     if not path.exists():
         raise FileNotFoundError(f"Mesh artifact '{path}' does not exist.")
-    mesh = o3d.io.read_triangle_mesh(str(path))
+    mesh = o3d.io.read_triangle_mesh(path)
     triangle_count = len(mesh.triangles)
     if decimation_keep_ratio < 1.0 and triangle_count > 0:
         target_triangle_count = max(1, int(np.floor(triangle_count * decimation_keep_ratio)))
