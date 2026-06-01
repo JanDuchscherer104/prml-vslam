@@ -14,7 +14,6 @@ import prml_vslam.sources.replay.video as replay_video_module
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
     ReferenceCloudSource,
-    ReferencePointCloudPayloadSemantics,
     ReferenceSource,
 )
 from prml_vslam.sources.datasets.advio import (
@@ -493,15 +492,10 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert benchmark_inputs.reference_trajectories[1].path.exists()
     assert benchmark_inputs.reference_trajectories[2].path.exists()
     assert benchmark_inputs.reference_trajectories[2].coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
-    assert [sequence.source.value for sequence in benchmark_inputs.reference_point_cloud_sequences] == ["tango_raw"]
     assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == ["tango_raw", "tango_raw"]
-    point_cloud_sequence = benchmark_inputs.reference_point_cloud_sequences[0]
-    assert point_cloud_sequence.payload_frame == "advio_tango_depth_sensor_rdf"
-    assert point_cloud_sequence.payload_semantics is (
-        ReferencePointCloudPayloadSemantics.DEPTH_SENSOR_LOCAL_FUSED_BY_SOURCE_POSE
-    )
     reference_cloud = benchmark_inputs.reference_clouds[0]
     assert reference_cloud.path.exists()
+    assert reference_cloud.native_frame == "advio_tango_raw_world"
     metadata = json.loads(reference_cloud.metadata_path.read_text(encoding="utf-8"))
     assert metadata["point_count"] == 9
     assert metadata["payload_frame"] == "advio_tango_depth_sensor_rdf"
@@ -556,9 +550,6 @@ def test_advio_tango_reference_clouds_gate_high_rms_gt_alignment(tmp_path: Path)
     benchmark_inputs = sequence.to_benchmark_inputs()
 
     assert [reference.coordinate_status for reference in benchmark_inputs.reference_clouds] == [
-        ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-    ]
-    assert [sequence.coordinate_status for sequence in benchmark_inputs.reference_point_cloud_sequences] == [
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE
     ]
     metadata = json.loads(benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
@@ -659,7 +650,6 @@ def test_advio_benchmark_inputs_skip_invalid_raw_tango_cloud_trajectory(tmp_path
     benchmark_inputs = sequence.to_benchmark_inputs()
 
     assert not benchmark_inputs.reference_clouds
-    assert not benchmark_inputs.reference_point_cloud_sequences
     assert not (sequence_dir / "evaluation" / "tango_raw.tum").exists()
 
 
@@ -671,7 +661,6 @@ def test_advio_benchmark_inputs_skip_missing_raw_tango_cloud_trajectory(tmp_path
     benchmark_inputs = sequence.to_benchmark_inputs()
 
     assert not benchmark_inputs.reference_clouds
-    assert not benchmark_inputs.reference_point_cloud_sequences
 
 
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:

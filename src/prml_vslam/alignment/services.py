@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,6 +28,9 @@ from .contracts import GroundAlignmentConfig
 
 if TYPE_CHECKING:
     from prml_vslam.interfaces.slam import SlamArtifacts
+
+GroundAlignmentPointCloudSource = Literal["dense_points_ply", "sparse_points_ply", "streaming_pointmaps"]
+_ResolvedPointCloudSource = GroundAlignmentPointCloudSource | Literal["none"]
 
 # TODO: all of these options should be handeled via StageConfig.backend_config!
 _RANSAC_DISTANCE_THRESHOLD_M = 0.03
@@ -108,9 +111,67 @@ class GroundAlignmentService:
             )
 
         trajectory = load_tum_trajectory(slam.trajectory_tum.path)
-        camera_positions_xyz_world = np.asarray(trajectory.positions_xyz, dtype=np.float64)
         poses_world_camera = np.asarray(trajectory.poses_se3, dtype=np.float64)
-        processed_points_xyz_world = self._prepare_points(points_xyz_world)
+        return self.estimate_from_world_points(
+            points_xyz_world=points_xyz_world,
+            poses_world_camera=poses_world_camera,
+            point_cloud_source=point_cloud_source,
+        )
+
+    def estimate_from_world_points(
+        self,
+        *,
+        points_xyz_world: NDArray[np.float64],
+        poses_world_camera: NDArray[np.float64],
+        point_cloud_source: GroundAlignmentPointCloudSource,
+    ) -> GroundAlignmentMetadata:
+        """Estimate one dominant ground plane from in-memory world-space samples.
+
+        Args:
+            points_xyz_world: Candidate map points already expressed in native
+                SLAM ``world`` coordinates.
+            poses_world_camera: Camera poses as ``T_world_camera`` homogeneous
+                matrices used for ground-side and yaw disambiguation.
+            point_cloud_source: Provenance label for the point sample source.
+
+        Returns:
+            Alignment metadata with either an explicit viewer transform or
+            explicit skip diagnostics.
+        """
+        points_array = np.asarray(points_xyz_world, dtype=np.float64)
+        if points_array.ndim != 2 or points_array.shape[1] != 3:
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source=point_cloud_source,
+                skip_reason=f"Expected world point array shape (N, 3), got {points_array.shape}.",
+            )
+        if len(points_array) < _MIN_INPUT_POINTS:
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source=point_cloud_source,
+                skip_reason="Point cloud contains too few points for RANSAC.",
+            )
+        poses_array = np.asarray(poses_world_camera, dtype=np.float64)
+        if poses_array.ndim != 3 or poses_array.shape[1:] != (4, 4):
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source=point_cloud_source,
+                skip_reason=f"Expected camera pose array shape (N, 4, 4), got {poses_array.shape}.",
+            )
+        finite_pose_mask = np.all(np.isfinite(poses_array), axis=(1, 2))
+        poses_array = poses_array[finite_pose_mask]
+        if len(poses_array) == 0:
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source=point_cloud_source,
+                skip_reason="No finite camera poses are available for ground-plane disambiguation.",
+            )
+        camera_positions_xyz_world = poses_array[:, :3, 3]
+        processed_points_xyz_world = self._prepare_points(points_array)
         if len(processed_points_xyz_world) < _MIN_INPUT_POINTS:
             return GroundAlignmentMetadata(
                 applied=False,
@@ -122,7 +183,7 @@ class GroundAlignmentService:
         candidates = self._extract_plane_candidates(
             processed_points_xyz_world=processed_points_xyz_world,
             camera_positions_xyz_world=camera_positions_xyz_world,
-            poses_world_camera=poses_world_camera,
+            poses_world_camera=poses_array,
         )
         if not candidates:
             return GroundAlignmentMetadata(
@@ -181,7 +242,7 @@ class GroundAlignmentService:
         )
 
     @staticmethod
-    def _resolve_point_cloud_path(slam: SlamArtifacts) -> tuple[str, Path | None]:
+    def _resolve_point_cloud_path(slam: SlamArtifacts) -> tuple[_ResolvedPointCloudSource, Path | None]:
         if slam.dense_points_ply is not None:
             return "dense_points_ply", slam.dense_points_ply.path
         if slam.sparse_points_ply is not None:
@@ -378,7 +439,7 @@ class GroundAlignmentService:
         )
 
 
-def _import_open3d() -> object:
+def _import_open3d() -> Any:
     try:
         import open3d as o3d
     except ModuleNotFoundError as exc:  # pragma: no cover - dependency is pinned in the repo
@@ -458,4 +519,4 @@ def _rotation_matrix_aligning_vectors(
     return np.eye(3, dtype=np.float64) + skew + (skew @ skew) * ((1.0 - dot_product) / (cross_norm**2))
 
 
-__all__ = ["GroundAlignmentService"]
+__all__ = ["GroundAlignmentPointCloudSource", "GroundAlignmentService"]

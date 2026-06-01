@@ -667,10 +667,21 @@ def augment_viewer_recording_with_ground_plane(
     recording_id: str,
 ) -> None:
     """Merge a ground-plane overlay into the repo-owned viewer recording."""
-    if metadata.visualization is None or not metadata.visualization.corners_xyz_world:
+    has_transform = metadata.T_viewer_world_world is not None
+    has_patch = metadata.visualization is not None and bool(metadata.visualization.corners_xyz_world)
+    if not has_transform and not has_patch:
         return
     overlay_stream = rr.RecordingStream(application_id="prml-vslam", recording_id=recording_id)
-    log_ground_plane_patch(overlay_stream, metadata=metadata)
+    if metadata.T_viewer_world_world is not None:
+        log_transform(
+            overlay_stream,
+            entity_path=SLAM_WORLD_ENTITY_PATH,
+            transform=metadata.T_viewer_world_world,
+            axis_length=SLAM_WORLD_AXIS_LENGTH,
+            static=True,
+        )
+    if has_patch:
+        log_ground_plane_patch(overlay_stream, metadata=metadata)
     overlay_bytes = overlay_stream.memory_recording().drain_as_bytes()
     with tempfile.NamedTemporaryFile(suffix=".rrd", delete=False, dir=viewer_recording_path.parent) as handle:
         overlay_path = Path(handle.name)

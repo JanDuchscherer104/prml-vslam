@@ -296,7 +296,8 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
-        entity_path = f"world/overlays/{target_frame}/vista/sim3_aligned/point_cloud"
+        method_id = _entity_token(str(item.metadata.get("method_id") or "slam"))
+        entity_path = f"world/overlays/{target_frame}/{method_id}/sim3_aligned/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
@@ -374,10 +375,11 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
+        method_id = _entity_token(str(item.metadata.get("method_id") or "slam"))
         entity_path = (
             "world/slam/vista_slam_world/trajectory/raw"
             if item.role == ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT
-            else f"world/overlays/{target_frame}/vista/sim3_aligned/trajectory"
+            else f"world/overlays/{target_frame}/{method_id}/sim3_aligned/trajectory"
         )
         self._log_tum_trajectory_artifact(
             stream,
@@ -522,17 +524,22 @@ class RerunLoggingPolicy:
         """Log one derived ground-plane overlay when the alignment stage completes."""
         if metadata is None or not metadata.applied:
             return
+        if metadata.T_viewer_world_world is not None:
+            self.log_transform(
+                stream,
+                entity_path=SLAM_WORLD_ENTITY_PATH,
+                transform=metadata.T_viewer_world_world,
+                axis_length=SLAM_WORLD_AXIS_LENGTH,
+                static=True,
+            )
         self.log_ground_plane_patch(stream, metadata=metadata)
 
     def _log_trajectory_alignment(self, stream, *, alignment: TrajectoryAlignmentArtifact) -> None:
         """Log the Sim(3) alignment transform to the SLAM world branch root."""
-        # The alignment artifact contains target <- source transform where
-        # source_frame is 'vista_slam_world'.
-        # We log this at 'world/slam/vista_slam_world' so everything underneath it
-        # (tracking trajectory, keyframes, pointmaps) snaps to the target frame.
+        source_frame = _entity_token(alignment.source_frame)
         self.log_sim3_transform(
             stream,
-            entity_path=SLAM_WORLD_ENTITY_PATH,
+            entity_path=f"world/slam/{source_frame}",
             rotation_matrix=np.asarray(alignment.rotation, dtype=np.float64),
             translation_xyz=np.asarray(alignment.translation, dtype=np.float64),
             scale=alignment.scale,

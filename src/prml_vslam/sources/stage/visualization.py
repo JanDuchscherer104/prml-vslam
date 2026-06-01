@@ -180,6 +180,7 @@ class SourceVisualizationAdapter:
             if artifact is None:
                 continue
             metadata_artifact = artifact_refs.get(reference_cloud_metadata_artifact_key(cloud_reference))
+            native_frame = cloud_reference.native_frame or cloud_reference.target_frame
             item_artifacts = {POINT_CLOUD_ARTIFACT: artifact}
             if metadata_artifact is not None:
                 item_artifacts[METADATA_ARTIFACT] = metadata_artifact
@@ -193,6 +194,7 @@ class SourceVisualizationAdapter:
                         "reference_source": cloud_reference.source.value,
                         "coordinate_status": cloud_reference.coordinate_status.value,
                         "target_frame": cloud_reference.target_frame,
+                        "native_frame": native_frame,
                         "sequence_id": sequence_manifest.sequence_id,
                     },
                 )

@@ -31,12 +31,14 @@ from prml_vslam.interfaces import (
     ObservationSequenceIndex,
     ObservationSequenceRef,
 )
+from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
 from prml_vslam.methods.stage.contracts import SlamStageOutput
 from prml_vslam.methods.stage.spec import SLAM_STAGE_SPEC
+from prml_vslam.methods.stage.visualization import POINTMAP_REF, ROLE_KEYFRAME_POINTMAP
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
@@ -1099,6 +1101,87 @@ def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars
     coordinator.on_slam_runtime_updates(updates=[update])
 
     assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
+
+
+def test_run_coordinator_routes_keyframe_pointmaps_to_streaming_ground_alignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    rerun_submissions = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
+    pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0)
+    pointmap = np.asarray([[[0.0, 0.0, 1.0]]], dtype=np.float32)
+    pointmap_ref = TransientPayloadRef(
+        handle_id="pointmap-1",
+        payload_kind="point_cloud",
+        shape=pointmap.shape,
+        dtype="float32",
+    )
+    coordinator._remember_handle(pointmap_ref.handle_id, pointmap)
+    ground_metadata = GroundAlignmentMetadata(
+        applied=False,
+        confidence=0.0,
+        point_cloud_source="streaming_pointmaps",
+        skip_reason="interval",
+    )
+    ground_update = StageRuntimeUpdate(
+        stage_key=StageKey.GRAVITY_ALIGNMENT,
+        timestamp_ns=2,
+        semantic_events=[ground_metadata],
+    )
+
+    class FakeGroundRuntimeProxy:
+        def __init__(self) -> None:
+            self.submitted_samples: list[Any] = []
+
+        def submit_stream_item(self, item: Any) -> None:
+            self.submitted_samples.append(item)
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            return [ground_update]
+
+    ground_runtime = FakeGroundRuntimeProxy()
+    coordinator._ground_alignment_runtime_proxy = ground_runtime
+    slam_update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=1,
+        semantic_events=[
+            SlamUpdate(
+                seq=8,
+                timestamp_ns=1,
+                is_keyframe=True,
+                keyframe_index=5,
+                pose=pose,
+            )
+        ],
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_KEYFRAME_POINTMAP,
+                payload_refs={POINTMAP_REF: pointmap_ref},
+                pose=pose,
+                keyframe_index=5,
+                space="camera_local",
+            )
+        ],
+    )
+
+    coordinator.on_slam_runtime_updates(updates=[slam_update])
+
+    assert len(ground_runtime.submitted_samples) == 1
+    submitted_sample = ground_runtime.submitted_samples[0]
+    assert submitted_sample.keyframe_index == 5
+    assert submitted_sample.T_world_camera == pose
+    np.testing.assert_array_equal(submitted_sample.pointmap_xyz_camera, pointmap)
+    assert rerun_submissions == [
+        ("live", slam_update, "resolver"),
+        ("export", slam_update, "resolver"),
+        ("live", ground_update, None),
+        ("export", ground_update, None),
+    ]
+    assert coordinator._result_store.ordered_outcomes() == []
 
 
 def test_run_coordinator_routes_source_reference_trajectories_live_without_clouds(

@@ -189,8 +189,8 @@ class RerunEventSink:
 
     def _cache_ground_alignment_update(self, update: StageRuntimeUpdate) -> bool:
         for semantic_event in update.semantic_events:
-            if isinstance(semantic_event, GroundAlignmentMetadata) and semantic_event.applied:
-                self._latest_ground_alignment = semantic_event
+            if isinstance(semantic_event, GroundAlignmentMetadata):
+                self._latest_ground_alignment = semantic_event if semantic_event.applied else None
                 return True
         return False
 

@@ -300,10 +300,22 @@ def test_checked_in_vista_blueprint_uses_current_model_entity_tree() -> None:
 def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_update() -> None:
     stream = _FakeRecordingStream()
     ground_calls: list[GroundAlignmentMetadata] = []
+    transform_calls: list[tuple[str, FrameTransform, float | None, bool]] = []
     metadata = GroundAlignmentMetadata(
         applied=True,
         confidence=0.9,
         point_cloud_source="dense_points_ply",
+        T_viewer_world_world=FrameTransform(
+            target_frame="viewer_world",
+            source_frame="world",
+            qx=0.0,
+            qy=0.0,
+            qz=0.0,
+            qw=1.0,
+            tx=0.0,
+            ty=1.0,
+            tz=0.0,
+        ),
         visualization={"corners_xyz_world": [(0.0, 0.0, 0.0)] * 4},
     )
     policy = RerunLoggingPolicy(
@@ -316,7 +328,9 @@ def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_update() -> 
         log_depth_image=lambda *args, **kwargs: None,
         log_ground_plane_patch=lambda stream, *, metadata: ground_calls.append(metadata),
         log_rgb_image=lambda *args, **kwargs: None,
-        log_transform=lambda *args, **kwargs: None,
+        log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: transform_calls.append(
+            (entity_path, transform, axis_length, static)
+        ),
         log_sim3_transform=lambda *args, **kwargs: None,
     )
 
@@ -330,3 +344,11 @@ def test_policy_logs_ground_plane_overlay_on_ground_alignment_stage_update() -> 
     )
 
     assert ground_calls == [metadata]
+    assert transform_calls == [
+        (
+            rerun_helpers.SLAM_WORLD_ENTITY_PATH,
+            metadata.T_viewer_world_world,
+            rerun_helpers.SLAM_WORLD_AXIS_LENGTH,
+            True,
+        )
+    ]

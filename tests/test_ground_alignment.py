@@ -74,6 +74,16 @@ def _camera_positions(*, count: int) -> np.ndarray:
     )
 
 
+def _pose_matrices_from_positions(camera_positions_xyz_world: np.ndarray) -> np.ndarray:
+    return np.asarray(
+        [
+            _identity_pose(tx=float(position[0]), ty=float(position[1]), tz=float(position[2])).as_matrix()
+            for position in camera_positions_xyz_world
+        ],
+        dtype=np.float64,
+    )
+
+
 def test_ground_alignment_service_selects_floor_plane_for_balanced_scene(tmp_path: Path) -> None:
     slam = _slam_artifacts_from_scene(
         tmp_path,
@@ -88,6 +98,47 @@ def test_ground_alignment_service_selects_floor_plane_for_balanced_scene(tmp_pat
     normal_xyz_world = np.asarray(metadata.ground_plane_world.normal_xyz_world, dtype=np.float64)
     assert np.isclose(abs(normal_xyz_world[1]), 1.0, atol=1e-2)
     assert metadata.yaw_source == "trajectory_pca"
+
+
+def test_ground_alignment_service_reuses_estimator_for_streaming_world_points(tmp_path: Path) -> None:
+    points_xyz_world = _floor_and_wall_scene(floor_points=2500, wall_points=400)
+    camera_positions_xyz_world = _camera_positions(count=12)
+    slam = _slam_artifacts_from_scene(
+        tmp_path,
+        points_xyz_world=points_xyz_world,
+        camera_positions_xyz_world=camera_positions_xyz_world,
+    )
+
+    artifact_metadata = GroundAlignmentService().estimate_from_slam_artifacts(slam=slam)
+    streaming_metadata = GroundAlignmentService().estimate_from_world_points(
+        points_xyz_world=points_xyz_world,
+        poses_world_camera=_pose_matrices_from_positions(camera_positions_xyz_world),
+        point_cloud_source="streaming_pointmaps",
+    )
+
+    assert artifact_metadata.applied is True
+    assert streaming_metadata.applied is True
+    assert streaming_metadata.point_cloud_source == "streaming_pointmaps"
+    assert artifact_metadata.T_viewer_world_world is not None
+    assert streaming_metadata.T_viewer_world_world is not None
+    np.testing.assert_allclose(
+        streaming_metadata.T_viewer_world_world.as_matrix(),
+        artifact_metadata.T_viewer_world_world.as_matrix(),
+        atol=1e-6,
+    )
+
+
+def test_ground_alignment_service_skips_streaming_points_without_ransac_support() -> None:
+    metadata = GroundAlignmentService().estimate_from_world_points(
+        points_xyz_world=np.zeros((16, 3), dtype=np.float64),
+        poses_world_camera=np.repeat(np.eye(4, dtype=np.float64)[None, ...], repeats=2, axis=0),
+        point_cloud_source="streaming_pointmaps",
+    )
+
+    assert metadata.applied is False
+    assert metadata.point_cloud_source == "streaming_pointmaps"
+    assert metadata.skip_reason is not None
+    assert "too few points" in metadata.skip_reason
 
 
 def test_ground_alignment_service_skips_wall_dominant_scene(tmp_path: Path) -> None:

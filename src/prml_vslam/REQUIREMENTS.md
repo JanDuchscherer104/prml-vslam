@@ -83,6 +83,13 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 - One semantic concept must have one owning module.
 - Derived alignment transforms remain explicit repo-owned artifacts; they must not silently replace native SLAM trajectories or point clouds.
+- Source-native worlds are boundary artifacts only. Cross-system transforms are
+  derived artifacts that must record source frame, target frame, alignment type,
+  scale, residuals, and acceptance/rejection diagnostics.
+- Failed, weak, or frame-ambiguous alignments produce diagnostics rather than
+  normal downstream geometry. In-memory Sim(3) evaluation may compute metrics,
+  but persisted reusable alignment products belong to the explicit alignment
+  stage.
 - Runtime camera poses use explicit `T_world_camera` semantics at repo-owned
   boundaries. Inverse transforms belong only at call sites whose external APIs
   require world-to-camera matrices.
@@ -90,10 +97,10 @@ Use this file for package-root ownership rules and cross-package contract constr
   are distinct shared geometry contracts. Sparse source clouds such as ADVIO
   Tango payloads must not be represented as pointmaps without an explicit
   projection step.
-- Time-ordered reference-cloud sequence refs must carry payload-frame semantics
-  explicitly; repository-prepared ADVIO Tango reference clouds are raw-backed
-  materializations that associate timestamped Tango point-cloud payloads with
-  the raw Tango pose stream before static cloud alignment.
+- Repository-prepared ADVIO Tango reference clouds are materialized
+  `ReferenceCloudRef` PLY artifacts. They must preserve source, target,
+  native-frame, coordinate-status, and payload/pose-fusion metadata instead of
+  exporting an unconsumed raw payload-sequence DTO.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - `prml_vslam.sources.replay` owns `ObservationStream`.

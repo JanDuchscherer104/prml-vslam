@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field
 
 from prml_vslam.alignment.contracts import GroundAlignmentConfig
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
+from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 
@@ -32,6 +33,8 @@ class GroundAlignmentStageConfig(StageConfig):
         if not backend.supports_dense_points:
             return False, f"{backend.display_name} does not expose point-cloud outputs for ground alignment."
         outputs = context.run_config.stages.slam.outputs
+        if context.run_config.mode is PipelineMode.STREAMING and not outputs.emit_dense_points:
+            return False, "Streaming ground alignment requires dense keyframe pointmaps from the SLAM stage."
         if not (outputs.emit_dense_points or outputs.emit_sparse_points):
             return False, "Ground alignment requires sparse or dense point-cloud outputs from the SLAM stage."
         return True, None
