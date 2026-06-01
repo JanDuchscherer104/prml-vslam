@@ -56,7 +56,7 @@ def basis_for_pose_source(source: AdvioPoseSource | ReferenceSource | ReferenceC
     match source:
         case AdvioPoseSource.TANGO_RAW | AdvioPoseSource.TANGO_AREA_LEARNING:
             return AdvioRawCoordinateBasis.TANGO_Z_UP
-        case ReferenceCloudSource.TANGO_AREA_LEARNING:
+        case ReferenceCloudSource.TANGO_RAW:
             return AdvioRawCoordinateBasis.TANGO_Z_UP
         case _:
             return AdvioRawCoordinateBasis.APPLE_Y_UP
