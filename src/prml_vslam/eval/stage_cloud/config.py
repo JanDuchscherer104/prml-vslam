@@ -1,4 +1,4 @@
-"""Persisted config for the diagnostic ``evaluate.cloud`` stage."""
+"""Persisted config for the ``evaluate.cloud`` stage."""
 
 from __future__ import annotations
 
@@ -21,20 +21,16 @@ class CloudMetricId(StrEnum):
 
 
 class DenseCloudSelectionConfig(BaseConfig):
-    """Reference and estimate artifact-key selection for cloud diagnostics."""
+    """Metric policy for aligned cloud evaluation."""
 
     model_config = ConfigDict(extra="ignore")
 
-    reference_artifact_key: str = "reference_cloud"
-    estimate_artifact_key: str = "dense_points_ply"
+    f_score_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Nearest-neighbor threshold, in meters, used for precision/recall F-score."""
 
 
 class CloudEvaluationStageConfig(StageConfig):
-    """Diagnostic cloud-evaluation stage skeleton.
-
-    The binding declares planned metrics and inputs, but no runtime is
-    registered until dense-cloud evaluation is implemented.
-    """
+    """Stage-owned dense-cloud evaluation policy."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -48,8 +44,12 @@ class CloudEvaluationStageConfig(StageConfig):
         return [context.run_paths.cloud_metrics_path]
 
     def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
-        del context
-        return False, "Dense-cloud evaluation is planned but no runtime is registered yet."
+        if not context.run_config.stages.align_cloud.enabled:
+            return False, "Cloud evaluation requires `align.cloud`."
+        alignment_available, alignment_reason = context.run_config.stages.align_cloud.availability(context)
+        if not alignment_available:
+            return False, f"Cloud evaluation requires available cloud alignment: {alignment_reason}"
+        return True, None
 
 
 __all__ = ["CloudEvaluationStageConfig", "CloudMetricId", "DenseCloudSelectionConfig"]

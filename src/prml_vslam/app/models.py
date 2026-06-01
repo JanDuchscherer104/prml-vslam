@@ -437,7 +437,7 @@ class PipelinePageState(BaseData):
     log_diagnostic_preview: bool = False
     """Whether method diagnostic previews should be logged to the viewer sink."""
 
-    log_camera_image_rgb: bool = False
+    log_camera_image_rgb: bool = True
     """Whether camera RGB image planes should be logged in the 3D viewer branch."""
 
     record3d_usb_device_index: int = 0

@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from evo.core import metrics, sync
@@ -20,6 +20,10 @@ from evo.tools import file_interface
 
 from prml_vslam.eval.contracts import (
     BenchmarkReference,
+    CloudAlignmentArtifact,
+    CloudAlignmentSelection,
+    DenseCloudEvaluationArtifact,
+    DenseCloudEvaluationSelection,
     DiscoveredRun,
     ErrorSeries,
     EvaluationArtifact,
@@ -33,7 +37,7 @@ from prml_vslam.eval.contracts import (
     TrajectoryMetricId,
     TrajectorySeries,
 )
-from prml_vslam.eval.protocols import TrajectoryEvaluator
+from prml_vslam.eval.protocols import DenseCloudEvaluator, TrajectoryEvaluator
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
@@ -42,7 +46,12 @@ from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_re
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors, load_tum_trajectory, write_point_cloud_ply
 from prml_vslam.utils.path_config import PathConfig
 
-__all__ = ["TrajectoryEvaluationService", "compute_trajectory_ape_preview"]
+__all__ = [
+    "CloudAlignmentService",
+    "DenseCloudEvaluationService",
+    "TrajectoryEvaluationService",
+    "compute_trajectory_ape_preview",
+]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 
@@ -502,6 +511,119 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         return run_root / "evaluation" / "point_cloud_sim3_aligned.ply"
 
 
+class CloudAlignmentService:
+    """Materialize offline point-cloud alignment artifacts before cloud metrics."""
+
+    def compute_cloud_alignment(self, *, selection: CloudAlignmentSelection) -> CloudAlignmentArtifact:
+        """Refine a trajectory-Sim(3)-aligned cloud against a reference cloud with ICP."""
+        reference_pcd = _read_non_empty_point_cloud(selection.reference_cloud_path, label="reference")
+        estimate_pcd = _read_non_empty_point_cloud(selection.sim3_cloud_path, label="estimate")
+        o3d = _import_open3d()
+        registration = o3d.pipelines.registration.registration_icp(
+            estimate_pcd,
+            reference_pcd,
+            selection.max_correspondence_distance_m,
+            np.eye(4, dtype=np.float64),
+            o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        )
+        transformation = np.asarray(registration.transformation, dtype=np.float64)
+        points_xyz, colors_rgb = load_point_cloud_ply_with_colors(selection.sim3_cloud_path)
+        rotation = transformation[:3, :3]
+        translation = transformation[:3, 3]
+        refined_points = points_xyz @ rotation.T + translation
+        icp_cloud_path = self.icp_point_cloud_path(selection.artifact_root)
+        write_point_cloud_ply(icp_cloud_path, refined_points, colors_rgb=colors_rgb)
+        artifact = CloudAlignmentArtifact(
+            path=self.result_path(selection.artifact_root),
+            reference_cloud_path=selection.reference_cloud_path,
+            sim3_point_cloud_path=selection.sim3_cloud_path,
+            icp_point_cloud_path=icp_cloud_path,
+            max_correspondence_distance_m=selection.max_correspondence_distance_m,
+            fitness=float(registration.fitness),
+            inlier_rmse_m=float(registration.inlier_rmse),
+            transformation=transformation.tolist(),
+        )
+        artifact.path.parent.mkdir(parents=True, exist_ok=True)
+        artifact.path.write_text(
+            json.dumps(artifact.model_dump(mode="json"), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return artifact
+
+    @staticmethod
+    def result_path(run_root: Path) -> Path:
+        """Return the deterministic point-cloud alignment metadata path."""
+        return run_root / "evaluation" / "cloud_alignment.json"
+
+    @staticmethod
+    def icp_point_cloud_path(run_root: Path) -> Path:
+        """Return the deterministic ICP-refined point-cloud path."""
+        return run_root / "evaluation" / "point_cloud_sim3_icp_aligned.ply"
+
+
+class DenseCloudEvaluationService(DenseCloudEvaluator):
+    """Compute Open3D nearest-neighbor metrics for aligned dense clouds."""
+
+    def load_dense_evaluation(
+        self,
+        *,
+        selection: DenseCloudEvaluationSelection,
+    ) -> DenseCloudEvaluationArtifact | None:
+        """Load persisted dense-cloud metrics when the run artifact exists."""
+        result_path = self.result_path(selection.artifact_root)
+        if not result_path.exists():
+            return None
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        return DenseCloudEvaluationArtifact.model_validate({"path": result_path, **payload})
+
+    def compute_dense_evaluation(
+        self,
+        *,
+        selection: DenseCloudEvaluationSelection,
+    ) -> DenseCloudEvaluationArtifact:
+        """Compute and persist Open3D point-cloud distance metrics."""
+        reference_pcd = _read_non_empty_point_cloud(selection.reference_cloud_path, label="reference")
+        estimate_pcd = _read_non_empty_point_cloud(selection.estimate_cloud_path, label="estimate")
+        reference_to_estimate_m = np.asarray(reference_pcd.compute_point_cloud_distance(estimate_pcd), dtype=np.float64)
+        estimate_to_reference_m = np.asarray(estimate_pcd.compute_point_cloud_distance(reference_pcd), dtype=np.float64)
+        if reference_to_estimate_m.size == 0 or estimate_to_reference_m.size == 0:
+            raise ValueError("Open3D produced zero dense-cloud distance samples.")
+
+        threshold_m = selection.f_score_threshold_m
+        precision = float(np.mean(estimate_to_reference_m <= threshold_m))
+        recall = float(np.mean(reference_to_estimate_m <= threshold_m))
+        f_score = 0.0 if precision + recall == 0.0 else float(2.0 * precision * recall / (precision + recall))
+        metrics_payload = {
+            "chamfer.distance": float((np.mean(reference_to_estimate_m) + np.mean(estimate_to_reference_m)) / 2.0),
+            "reference_to_estimate.mean_m": float(np.mean(reference_to_estimate_m)),
+            "estimate_to_reference.mean_m": float(np.mean(estimate_to_reference_m)),
+            "precision": precision,
+            "recall": recall,
+            "f_score": f_score,
+        }
+        artifact = DenseCloudEvaluationArtifact(
+            path=self.result_path(selection.artifact_root),
+            title="Dense Cloud Distance (Open3D)",
+            reference_cloud_path=selection.reference_cloud_path,
+            estimate_cloud_path=selection.estimate_cloud_path,
+            reference_point_count=len(reference_pcd.points),
+            estimate_point_count=len(estimate_pcd.points),
+            f_score_threshold_m=threshold_m,
+            metrics=metrics_payload,
+        )
+        artifact.path.parent.mkdir(parents=True, exist_ok=True)
+        artifact.path.write_text(
+            json.dumps(artifact.model_dump(mode="json"), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return artifact
+
+    @staticmethod
+    def result_path(run_root: Path) -> Path:
+        """Return the deterministic persisted dense-cloud metrics path."""
+        return run_root / "evaluation" / "cloud_metrics.json"
+
+
 def compute_trajectory_ape_preview(
     *,
     reference_path: Path,
@@ -633,7 +755,7 @@ def _write_aligned_estimate_trajectory(
     file_interface.write_tum_trajectory_file(output_path, aligned_estimate)
 
 
-def _infer_target_frame(dataset: DatasetId, reference_path: Path | None) -> str:
+def _infer_target_frame(dataset: DatasetId | None, reference_path: Path | None) -> str:
     """Inferred target frame name for UI selections without benchmark input metadata."""
     if dataset is DatasetId.ADVIO:
         return "advio_gt_world"
@@ -642,7 +764,7 @@ def _infer_target_frame(dataset: DatasetId, reference_path: Path | None) -> str:
     return "world"
 
 
-def _infer_coordinate_status(dataset: DatasetId, reference_path: Path | None) -> str:
+def _infer_coordinate_status(dataset: DatasetId | None, reference_path: Path | None) -> str:
     """Inferred coordinate status for UI selections without benchmark input metadata."""
     if dataset is DatasetId.ADVIO:
         return "aligned"
@@ -660,3 +782,26 @@ def _write_aligned_point_cloud(
     translation = np.asarray(alignment.translation, dtype=np.float64)
     aligned_points = alignment.scale * (points_xyz @ rotation.T) + translation
     write_point_cloud_ply(output_path, aligned_points, colors_rgb=colors_rgb)
+
+
+def _read_non_empty_point_cloud(path: Path, *, label: str) -> Any:
+    if not path.exists():
+        raise FileNotFoundError(f"Dense-cloud evaluation {label} cloud does not exist: {path}")
+    o3d = _import_open3d()
+    point_cloud = o3d.io.read_point_cloud(path.as_posix())
+    points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
+    if points_xyz.shape[0] == 0:
+        raise ValueError(f"Dense-cloud evaluation {label} cloud is empty: {path}")
+    if points_xyz.ndim != 2 or points_xyz.shape[1] != 3:
+        raise ValueError(f"Expected {label} point cloud shape (N, 3), got {points_xyz.shape} for '{path}'.")
+    if not np.isfinite(points_xyz).all():
+        raise ValueError(f"Dense-cloud evaluation {label} cloud contains non-finite points: {path}")
+    return point_cloud
+
+
+def _import_open3d() -> Any:
+    try:
+        import open3d as o3d
+    except ImportError as exc:  # pragma: no cover - exercised only when optional runtime is missing
+        raise RuntimeError("Open3D is required for dense-cloud alignment and evaluation.") from exc
+    return o3d

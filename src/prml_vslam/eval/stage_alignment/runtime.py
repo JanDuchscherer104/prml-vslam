@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot
+from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot, TrajectoryAlignmentArtifact
 from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
@@ -74,6 +74,7 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
         }
         if aligned_point_cloud_path is not None:
             artifacts["aligned_point_cloud_ply"] = artifact_ref(aligned_point_cloud_path, kind="ply")
+        alignment = TrajectoryAlignmentArtifact.model_validate_json(alignment_path.read_text(encoding="utf-8"))
 
         outcome = StageOutcome(
             stage_key=StageKey.TRAJECTORY_ALIGNMENT,
@@ -89,7 +90,7 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
         )
         return StageResult(
             stage_key=StageKey.TRAJECTORY_ALIGNMENT,
-            payload=None,
+            payload=alignment,
             outcome=outcome,
             final_runtime_status=StageRuntimeStatus(
                 stage_key=StageKey.TRAJECTORY_ALIGNMENT,

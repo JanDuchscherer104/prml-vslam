@@ -14,6 +14,7 @@ class StageKey(StrEnum):
     TRAJECTORY_ALIGNMENT = "align.trajectory"
     TRAJECTORY_EVALUATION = "evaluate.trajectory"
     RECONSTRUCTION = "reconstruction"
+    CLOUD_ALIGNMENT = "align.cloud"
     CLOUD_EVALUATION = "evaluate.cloud"
     SUMMARY = "summary"
 
@@ -27,6 +28,7 @@ class StageKey(StrEnum):
             StageKey.TRAJECTORY_ALIGNMENT: "Align Trajectory (Sim3)",
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
             StageKey.RECONSTRUCTION: "Build Reconstruction",
+            StageKey.CLOUD_ALIGNMENT: "Align Dense Cloud",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
             StageKey.SUMMARY: "Write Run Summary",
         }[self]

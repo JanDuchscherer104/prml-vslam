@@ -467,7 +467,7 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
         trajectory_eval_enabled = st.toggle("Trajectory Evaluation", value=page_state.trajectory_eval_enabled)
         trajectory_alignment_enabled = st.toggle("Trajectory Alignment", value=page_state.trajectory_alignment_enabled)
         evaluate_cloud = st.toggle("Dense-Cloud Evaluation", value=page_state.evaluate_cloud)
-        st.caption("Dense-cloud evaluation remains a planned diagnostic stage without a registered runtime.")
+        st.caption("Dense-cloud evaluation consumes Sim(3)+ICP aligned clouds from offline benchmark runs.")
         st.markdown("**Summary**")
         st.toggle("Run Summary", value=True, disabled=True)
     return (

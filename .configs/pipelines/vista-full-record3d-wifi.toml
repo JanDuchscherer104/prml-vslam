@@ -133,7 +133,7 @@ log_source_rgb = false
 log_diagnostic_preview = false
 
 # Whether to project the RGB image onto the 3D camera frustum.
-log_camera_image_rgb = false
+log_camera_image_rgb = true
 
 # Keep only a few recent frusta visible in the streaming viewer.
 frusta_history_window_streaming = 5

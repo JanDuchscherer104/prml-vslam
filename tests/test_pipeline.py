@@ -20,6 +20,7 @@ import pytest
 import ray
 from pydantic import ValidationError
 
+from prml_vslam.eval.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
 from prml_vslam.interfaces import (
     CAMERA_RDF_FRAME,
@@ -331,7 +332,7 @@ viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
     assert run_config.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
 
 
-def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> None:
+def test_run_config_marks_cloud_eval_unavailable_without_aligned_cloud_inputs(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     run_config = _run_config(
         experiment_name="cloud-validation",
@@ -340,6 +341,7 @@ def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> 
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
         method=MethodId.VISTA,
         emit_dense_points=False,
+        trajectory_alignment_enabled=True,
         evaluate_cloud=True,
     )
 
@@ -347,7 +349,9 @@ def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> 
     cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
 
     assert cloud_stage.available is False
-    assert cloud_stage.availability_reason == "Dense-cloud evaluation is planned but no runtime is registered yet."
+    assert cloud_stage.availability_reason == (
+        "Cloud evaluation requires available cloud alignment: Cloud alignment requires dense SLAM point-cloud outputs."
+    )
 
 
 def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> None:
@@ -410,7 +414,7 @@ def test_build_run_config_copies_backend_policy_and_visualization_fields(tmp_pat
     assert run_config.visualization.export_viewer_rrd is True
 
 
-def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> None:
+def test_stage_registry_marks_cloud_evaluation_unavailable_without_alignment(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     run_config = _run_config(
         experiment_name="placeholder",
@@ -432,9 +436,11 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
     plan = run_config.compile_plan(path_config=path_config)
 
     unavailable = [stage for stage in plan.stages if not stage.available]
-    assert len(unavailable) == 1
-    assert unavailable[0].key.value == "evaluate.cloud"
-    assert "no runtime is registered yet" in unavailable[0].availability_reason
+    assert [stage.key for stage in unavailable] == [StageKey.CLOUD_ALIGNMENT, StageKey.CLOUD_EVALUATION]
+    assert unavailable[0].availability_reason == "Cloud alignment requires `align.trajectory`."
+    assert unavailable[1].availability_reason == (
+        "Cloud evaluation requires available cloud alignment: Cloud alignment requires `align.trajectory`."
+    )
 
 
 def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path) -> None:
@@ -999,9 +1005,17 @@ def _attach_fake_rerun_sidecars(
             submitted.append((self._label, update, payload_resolver))
             return f"{self._label}-call-{len(submitted)}"
 
+    class _FakeCloseRemote:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
+        def remote(self) -> str:
+            return f"{self._label}-close"
+
     class _FakeActor:
         def __init__(self, label: str) -> None:
             self.observe_update = _FakeObserveUpdateRemote(label)
+            self.close = _FakeCloseRemote(label)
 
     coordinator._rerun_sinks = [
         SimpleNamespace(kind=kind, actor=_FakeActor(kind), last_call=None, submission_count=0, pending_count=0)
@@ -1048,6 +1062,8 @@ def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidec
         connect_live_viewer=True,
         export_viewer_rrd=True,
         grpc_url="rerun+http://127.0.0.1:9876/proxy",
+        point_cloud_decimation_keep_ratio=0.25,
+        reference_point_cloud_decimation_keep_ratio=1.0,
     )
     run_paths = RunArtifactPaths.build(tmp_path / "demo")
     update = StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1)
@@ -1060,6 +1076,8 @@ def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidec
     assert created[0]["target_path"] is None
     assert created[1]["grpc_url"] is None
     assert created[1]["target_path"] == run_paths.viewer_rrd_path
+    assert created[0]["point_cloud_decimation_keep_ratio"] == 0.25
+    assert created[0]["reference_point_cloud_decimation_keep_ratio"] == 1.0
     assert submitted == [("live", update, None), ("export", update, None)]
     assert coordinator._rerun_sinks[0].last_call == "live-call"
     assert coordinator._rerun_sinks[1].last_call == "export-call"
@@ -1094,10 +1112,11 @@ def test_run_coordinator_routes_source_reference_trajectories_live_without_cloud
         source=ReferenceSource.GROUND_TRUTH,
         path=tmp_path / "ground_truth.tum",
         target_frame="world",
+        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
     )
     artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
     reference_cloud = ReferenceCloudRef(
-        source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+        source=ReferenceCloudSource.TANGO_RAW,
         path=tmp_path / "reference.ply",
         metadata_path=tmp_path / "reference.json",
         target_frame="world",
@@ -1154,40 +1173,101 @@ def test_run_coordinator_routes_artifact_visualizations_to_export_only(
     assert submitted[0][1].stage_key is StageKey.SLAM
 
 
-def test_run_coordinator_routes_final_artifacts_to_export_only(
-    tmp_path: Path,
+def test_run_coordinator_routes_real_trajectory_alignment_payload_to_rerun(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
-    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
-    coordinator._snapshot = RunSnapshot(
-        run_id="demo",
-        artifacts={"trajectory_tum": ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")},
+    submitted: list[StageRuntimeUpdate] = []
+    alignment = TrajectoryAlignmentArtifact(
+        source_frame="vista_slam_world",
+        target_frame="advio_gt_world",
+        scale=1.25,
+        rotation=np.eye(3).tolist(),
+        translation=[1.0, 2.0, 3.0],
+        matched_pairs=12,
+        rms_error_m=0.5,
+        reference_source="ground_truth",
+        sync_max_diff_s=0.01,
+    )
+    monkeypatch.setattr(
+        coordinator,
+        "_submit_rerun_update",
+        lambda *, update, payload_resolver=None, destinations=None: submitted.append(update),
     )
 
-    coordinator._submit_final_artifact_rerun_update()
+    coordinator._record_stage_result(
+        StageKey.TRAJECTORY_ALIGNMENT,
+        StageResult(
+            stage_key=StageKey.TRAJECTORY_ALIGNMENT,
+            payload=alignment,
+            outcome=StageOutcome(
+                stage_key=StageKey.TRAJECTORY_ALIGNMENT,
+                status=StageStatus.COMPLETED,
+                config_hash="cfg",
+                input_fingerprint="input",
+                artifacts={},
+            ),
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.TRAJECTORY_ALIGNMENT,
+                lifecycle_state=StageStatus.COMPLETED,
+            ),
+        ),
+    )
 
-    assert [label for label, _, _ in submitted] == ["export"]
-    assert submitted[0][1].stage_key is StageKey.SUMMARY
+    assert len(submitted) == 1
+    assert submitted[0].stage_key is StageKey.TRAJECTORY_ALIGNMENT
+    assert submitted[0].semantic_events == [alignment]
 
 
-def test_run_coordinator_drops_export_only_updates_when_only_live_sidecar_exists(
-    tmp_path: Path,
+def test_run_coordinator_close_does_not_reexport_snapshot_artifacts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
-    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("live",), monkeypatch=monkeypatch)
-    coordinator._snapshot = RunSnapshot(
-        run_id="demo",
-        artifacts={"trajectory_tum": ArtifactRef(path=tmp_path / "trajectory.tum", kind="tum", fingerprint="traj")},
+    _attach_fake_rerun_sidecars(coordinator, kinds=("live", "export"), monkeypatch=monkeypatch)
+    submitted: list[StageRuntimeUpdate] = []
+    monkeypatch.setattr(
+        coordinator,
+        "_submit_rerun_update",
+        lambda *, update, payload_resolver=None, destinations=None: submitted.append(update),
     )
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.get", lambda ref: ref)
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.kill", lambda *args, **kwargs: None)
 
-    coordinator._submit_final_artifact_rerun_update()
+    coordinator._close_rerun_sink()
 
     assert submitted == []
-    assert coordinator._rerun_sinks[0].last_call is None
+    assert coordinator._rerun_sinks == []
+
+
+def test_run_coordinator_close_legacy_sink_does_not_reexport_snapshot_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    close_calls: list[str] = []
+    submitted: list[StageRuntimeUpdate] = []
+
+    class _CloseRemote:
+        def remote(self) -> str:
+            close_calls.append("close")
+            return "legacy-close"
+
+    coordinator._rerun_sink = SimpleNamespace(close=_CloseRemote())
+    monkeypatch.setattr(
+        coordinator,
+        "_submit_rerun_update",
+        lambda *, update, payload_resolver=None, destinations=None: submitted.append(update),
+    )
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.get", lambda ref: ref)
+    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.kill", lambda *args, **kwargs: None)
+
+    coordinator._close_rerun_sink()
+
+    assert submitted == []
+    assert close_calls == ["close"]
+    assert coordinator._rerun_sink is None
 
 
 def test_run_coordinator_keeps_live_source_reference_trajectories_before_slam_updates(
@@ -1202,6 +1282,7 @@ def test_run_coordinator_keeps_live_source_reference_trajectories_before_slam_up
         source=ReferenceSource.GROUND_TRUTH,
         path=tmp_path / "ground_truth.tum",
         target_frame="world",
+        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
     )
     source_artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
     source_output = SourceStageOutput(
@@ -1460,7 +1541,7 @@ def test_run_coordinator_emits_source_stage_failure_before_run_failed(
     assert failed_event.outcome.error_message == "source boom"
 
 
-def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
+def test_run_coordinator_fails_fast_for_cloud_eval_without_alignment_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run_config = _run_config(
@@ -1491,7 +1572,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
     )
 
     failed_event = next(event for event in coordinator.events() if event.kind == "run.failed")
-    assert "evaluate.cloud" in failed_event.error_message
+    assert "Missing result for stage 'align.cloud'." in failed_event.error_message
 
 
 def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path) -> None:
@@ -2251,7 +2332,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
         lambda run_id, *, actor_options: created_runs.append(run_id),
     )
 
-    with pytest.raises(RuntimeError, match="no runtime is registered yet"):
+    with pytest.raises(RuntimeError, match="Cloud alignment requires `align\\.trajectory`"):
         backend.submit_run(run_config=run_config)
 
     assert created_runs == []
@@ -2430,6 +2511,7 @@ def _run_config(
     emit_dense_points: bool = True,
     emit_sparse_points: bool = True,
     reference_enabled: bool = False,
+    trajectory_alignment_enabled: bool = False,
     trajectory_eval_enabled: bool = False,
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
@@ -2444,6 +2526,7 @@ def _run_config(
         emit_dense_points=emit_dense_points,
         emit_sparse_points=emit_sparse_points,
         reference_enabled=reference_enabled,
+        trajectory_alignment_enabled=trajectory_alignment_enabled,
         trajectory_eval_enabled=trajectory_eval_enabled,
         trajectory_baseline=trajectory_baseline,
         evaluate_cloud=evaluate_cloud,
