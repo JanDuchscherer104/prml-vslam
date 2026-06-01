@@ -80,10 +80,42 @@ sources = [
     "src/prml_vslam/main.py",
 ]
 
+[[refactors]]
+id = "REFACTOR-0005"
+title = "Prune the ADVIO reference point-cloud sequence contract if no consumer replays it"
+status = "suggested"
+priority = "medium"
+summary = "The current ADVIO benchmark surface exposes both materialized `ReferenceCloudRef` PLYs and raw `ReferencePointCloudSequenceRef` triples containing `index_path`, `payload_root`, and `trajectory_path`. The consolidated slop review found this sequence surface dangerous and likely overbuilt unless a real downstream consumer replays payload sequences with typed semantics. Prefer materialized source-native and optionally aligned clouds plus metadata."
+loc_min = 40
+loc_expected = 120
+loc_max = 280
+files = [
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/stage/artifacts.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/README.md",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+acceptance = [
+    "If no production consumer replays raw ADVIO Tango payload sequences, remove `ReferencePointCloudSequenceRef`, `ReferencePointCloudPayloadSemantics`, related source-stage artifact keys, and tests that assert the raw sequence contract.",
+    "Materialized `ReferenceCloudRef` artifacts retain the validated payload-fusion metadata needed for benchmark and Rerun use.",
+    "If the sequence contract is retained, a tested consumer and explicit payload/frame semantics justify the surface, and visualization/export metadata cannot accidentally imply an already GT-aligned dense reference.",
+    "The cleanup reduces LOC or contract surface area without removing the corrected source-native Tango reference cloud or the high-RMS aligned-cloud gate.",
+]
+sources = [
+    ".agents/work/worktree-slop-review-gpt55pro.md",
+    ".omx/ultragoal/brief.md",
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "tests/test_advio.py",
+]
+
 [meta]
 schema_version = 3
 repo = "prml-vslam"
-updated_on = "2026-04-25"
-source = "Seeded from the repo-local simplification workflow, current code-index triage, and the validated simplification guidance favoring one canonical owner, deletion of trivial wrappers, and inlining of one-use minimal-logic helpers."
+updated_on = "2026-05-31"
+source = "Seeded from the repo-local simplification workflow, current code-index triage, validated simplification guidance favoring one canonical owner, consolidated GPT-5.5 Pro slop review, and ADVIO/Rerun modality review findings."
 active_collection = "refactors"
 loc_unit = "lines"

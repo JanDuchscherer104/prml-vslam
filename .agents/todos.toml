@@ -248,6 +248,7 @@ acceptance = [
     "Selective live/export routing stays explicit: live receives runtime telemetry, model/keyframe streaming updates, frusta, and source-reference trajectories; export receives those plus heavy reference clouds and terminal artifact visualizations.",
     "Long reference trajectories do not create tens of thousands of default-visible pose-axis child entities in the online viewer unless explicitly requested.",
     "Sidecar lag warnings remain actionable: high-frequency live updates are either bounded, coalesced, or measured by tests/log assertions so a completed pipeline does not leave the viewer apparently ingesting forever.",
+    "A 500-frame ADVIO-20 streaming smoke closes without repeated Rerun gRPC flush timeouts or coordinator graceful-shutdown timeout after terminal stage completion.",
     "Regression coverage proves that source references, live camera frusta, model/keyframe point clouds, and 2D image/depth views arrive at their intended live/export destinations.",
 ]
 sources = [
@@ -257,12 +258,218 @@ sources = [
     ".configs/pipelines/vista-full.toml",
     ".logs/runs/vista-full-tuning/2026-05-31_13:49:31_vista-full-tuning.log",
     ".logs/runs/vista-full-tuning/2026-05-31_15:10:28_vista-full-tuning.log",
+    ".logs/runs/vista-full-tuning/2026-05-31_16:54:44_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/validation/summary.json",
+]
+
+[[todos]]
+id = "TODO-0083"
+title = "Define and implement offline Rerun keyframe export semantics"
+status = "open"
+priority = "high"
+issue_ids = [
+    "ISSUE-0077",
+]
+loc_min = 45
+loc_expected = 120
+loc_max = 260
+files = [
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "tests/test_streaming_visualization.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "Offline ViSTA export behavior is explicit: either persisted RRDs include bounded keyframe frusta/pointmaps/model camera updates, or tests/docs assert terminal-artifact-only export.",
+    "If offline keyframe export is enabled, generated `VistaSlamRuntime` `SlamUpdate` payloads are drained from the offline `run_observations()` path into `StageRuntimeUpdate` visualizations without unbounded live sink fanout.",
+    "A regression test inspects an offline exported RRD or policy-level recording and proves whether `/world/slam/vista_slam_world/keyframes/**` is expected to exist.",
+    "The implementation does not confuse offline replay/export semantics with streaming live sidecar routing; any offline replay of keyframe updates targets export unless explicitly configured otherwise.",
+    "The fix does not reintroduce live sidecar starvation for streaming runs.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".logs/runs/vista-full-tuning/2026-05-31_17:30:35_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+
+[[todos]]
+id = "TODO-0086"
+title = "Make Sim3 alignment artifacts single-owner when alignment and evaluation both run"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0080",
+]
+loc_min = 30
+loc_expected = 90
+loc_max = 200
+files = [
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_eval.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "A run with both `align.trajectory` and `evaluate.trajectory` enabled has deterministic single-owner semantics for `trajectory_alignment.json`, `trajectory_sim3_aligned.tum`, and `point_cloud_sim3_aligned.ply`.",
+    "Evaluation either reuses existing compatible alignment artifacts or writes stage-scoped outputs that cannot silently overwrite standalone alignment outputs.",
+    "The offline cloud-alignment stage consumes the single authoritative Sim3-aligned point cloud from `align.trajectory` before ICP/cloud metrics run.",
+    "The cloud-alignment path records which trajectory-alignment artifact identity it consumed so weak or overwritten Sim3 outputs can be traced from cloud metrics.",
+    "Rerun artifact visualization receives one intended aligned trajectory/cloud artifact identity per exported recording.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/summary/stage_manifests.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+]
+
+[[todos]]
+id = "TODO-0087"
+title = "Clarify ADVIO optional provider alignment failure diagnostics"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0081",
+]
+loc_min = 20
+loc_expected = 60
+loc_max = 140
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/contracts.py",
+    "tests/test_advio.py",
+]
+acceptance = [
+    "If optional provider source-native output succeeds but aligned output fails, diagnostics distinguish partial success from full skip.",
+    "Benchmark inputs and metadata record why `arkit_aligned_to_gt.tum` is absent for ADVIO-20.",
+    "Tests cover source-native-retained/aligned-dropped ARKit behavior without weakening rotation-projection validity policy by accident.",
+    "The warning path in `_append_optional_reference_trajectory()` no longer reports a complete optional-provider skip when a source-native trajectory was successfully retained.",
+    "Docs or README state whether ARKit aligned output is best-effort or required for sequences with ARKit CSV.",
+]
+sources = [
+    ".logs/runs/vista-full-tuning/2026-05-31_17:30:35_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/benchmark/inputs.json",
+    ".artifacts/vista-full-tuning/vista/benchmark/arkit.metadata.json",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+]
+
+[[todos]]
+id = "TODO-0091"
+title = "Validate Sim3 point-cloud alignment frame and gravity semantics"
+status = "open"
+priority = "high"
+issue_ids = [
+    "ISSUE-0085",
+]
+loc_min = 45
+loc_expected = 120
+loc_max = 280
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/runtime.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "tests/test_eval.py",
+]
+acceptance = [
+    "Trajectory-to-cloud Sim3 alignment records and validates frame/up semantics before the transformed cloud is accepted for dense-cloud benchmarking.",
+    "ADVIO runs either use an alignment mode that preserves gravity/up when required or explicitly flag full-3D Umeyama output as unsuitable for cloud metrics when residuals or orientation diagnostics are poor.",
+    "The 2026-05-31 18:42 case with scale about 5.49, trajectory RMS about 27.39 m, and apparent upside-down cloud orientation is reproduced by a focused diagnostic or regression fixture.",
+    "The diagnostic includes a reflection/signed-axis-permutation control so a true frame-convention bug is distinguished from a weak trajectory fit.",
+    "Cloud ICP/evaluation reports unavailable or low-confidence instead of producing normal benchmark metrics when the Sim3 input fails frame/up or residual gates.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/point_cloud_sim3_aligned.ply",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_metrics.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+]
+
+[[todos]]
+id = "TODO-0092"
+title = "Define offline ViSTA dense-cloud coverage semantics relative to streaming pointmaps"
+status = "open"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0086",
+]
+loc_min = 35
+loc_expected = 100
+loc_max = 240
+files = [
+    "external/vista-slam/vista_slam/slam.py",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/methods/stage/visualization.py",
+    "tests/test_methods.py",
+    "tests/test_streaming_visualization.py",
+]
+acceptance = [
+    "Documentation and metadata state whether the offline raw SLAM cloud is the upstream confidence-masked fused PLY or a repo-materialized union of accepted streaming pointmaps.",
+    "Final dense-cloud artifacts expose confidence-mask coverage diagnostics such as input keyframes, raster pixels, retained points, threshold, and retained fraction.",
+    "If benchmark evaluation needs streaming-pointmap coverage, the repo materializes a separate pointmap-derived artifact instead of overloading `/world/slam/vista_slam_world/point_cloud/raw`.",
+    "A regression covers the 18:42 ADVIO-20 case where the native confidence mask retained about 3.0M of 22.8M possible pointmap pixels.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/native/confs.npz",
+    ".artifacts/vista-full-tuning/vista/native/pointcloud.ply",
+    ".artifacts/vista-full-tuning/vista/slam/point_cloud.ply",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "external/vista-slam/vista_slam/slam.py",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+]
+
+[[todos]]
+id = "TODO-0093"
+title = "Reconcile `vista-full.toml` with the canonical full-pipeline modality"
+status = "open"
+priority = "high"
+issue_ids = [
+    "ISSUE-0087",
+]
+loc_min = 12
+loc_expected = 35
+loc_max = 100
+files = [
+    ".configs/pipelines/vista-full.toml",
+    ".configs/pipelines/vista-full-record3d-wifi.toml",
+    "tests/test_pipeline_config.py",
+]
+acceptance = [
+    "`tests/test_pipeline_config.py::test_vista_full_target_toml_parses_through_run_config` passes without weakening its role as the canonical full-config regression.",
+    "If `vista-full.toml` remains the stable TUM-RGBD full-pipeline target, restore its TUM source, realtime/frame-stride, ground-alignment, mesh, trajectory-eval, and decimation expectations.",
+    "If ADVIO-20 is intentionally promoted to the canonical full config, rename or rewrite the test, experiment name, and any local tuning assumptions together so the modality contract is explicit.",
+    "ADVIO-20 tuning remains available through a separately named config when it is not the canonical default.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    "tests/test_pipeline_config.py",
+    ".omx/ultragoal/brief.md",
 ]
 
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-05-31"
-source = "Seeded from validated review findings including ADVIO Tango review and Rerun live viewer regression analysis"
+updated_on = "2026-06-01"
+source = "Seeded and refreshed from validated review findings including ADVIO Tango review, Rerun live viewer regression analysis, 2026-05-31 offline RRD inspection, Tango reference-cloud artifact inspection, current dirty-worktree code/config evidence, the 2026-05-31 18:42 cloud-evaluation run, consolidated GPT-5.5 Pro slop review, focused pytest, and focused mypy evidence"
 active_collection = "todos"
 loc_unit = "lines"
