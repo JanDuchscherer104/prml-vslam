@@ -39,10 +39,10 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 
     [mcp_servers.mempalace]
     type = "stdio"
-    command = "bash"
+    command = "mempalace-mcp"
     args = [
-        "-lc",
-        "cd \"$(git rev-parse --show-toplevel)\" && exec .venv/bin/python -m mempalace.mcp_server --palace .artifacts/mempalace/palace",
+        "--palace",
+        "/home/jd/repos/prml-vslam/.artifacts/mempalace/palace",
     ]
 
 [features]
