@@ -15,9 +15,6 @@ from prml_vslam.sources.contracts import (
     AdvioRawPoseRefs,
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
-    ReferenceCloudSource,
-    ReferencePointCloudPayloadSemantics,
-    ReferencePointCloudSequenceRef,
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
@@ -39,7 +36,6 @@ from .advio_frames import (
     write_advio_rdf_tum,
 )
 from .advio_geometry import (
-    TANGO_DEPTH_PAYLOAD_FRAME,
     build_advio_tango_reference_clouds,
     fit_planar_rigid_alignment,
     transform_trajectory_with_alignment,
@@ -262,11 +258,6 @@ class AdvioSequence(BaseData):
             )
         return PreparedBenchmarkInputs(
             reference_trajectories=references,
-            reference_point_cloud_sequences=_build_reference_point_cloud_sequences(
-                paths=paths,
-                sequence_slug=self.scene.sequence_slug,
-                evaluation_dir=evaluation_dir,
-            ),
             reference_clouds=build_advio_tango_reference_clouds(
                 sequence_slug=self.scene.sequence_slug,
                 ground_truth_csv_path=paths.ground_truth_csv_path,
@@ -419,55 +410,6 @@ def _append_optional_reference_trajectory(
         )
 
 
-def _build_reference_point_cloud_sequences(
-    *,
-    paths: AdvioSequencePaths,
-    sequence_slug: str,
-    evaluation_dir: Path,
-) -> list[ReferencePointCloudSequenceRef]:
-    if paths.tango_point_cloud_index_path is None or paths.tango_dir is None:
-        return []
-
-    sequences: list[ReferencePointCloudSequenceRef] = []
-    for source, trajectory_csv_path, tum_name in (
-        (ReferenceCloudSource.TANGO_RAW, paths.tango_raw_csv_path, "tango_raw.tum"),
-    ):
-        if trajectory_csv_path is None or not trajectory_csv_path.exists():
-            continue
-        try:
-            pose_source = AdvioPoseSource(source.value)
-            native_frame = f"advio_{source.value}_world"
-            trajectory_path = _ensure_advio_tum(
-                trajectory_csv_path,
-                evaluation_dir / tum_name,
-                source=pose_source,
-                target_frame=native_frame,
-                native_frame=native_frame,
-            )
-        except ValueError as exc:
-            _CONSOLE.warning(
-                "Skipping invalid optional ADVIO %s point-cloud trajectory '%s': %s",
-                source.value,
-                trajectory_csv_path,
-                exc,
-            )
-            continue
-        sequences.append(
-            ReferencePointCloudSequenceRef(
-                source=source,
-                index_path=paths.tango_point_cloud_index_path.resolve(),
-                payload_root=paths.tango_dir.resolve(),
-                trajectory_path=trajectory_path,
-                target_frame=native_frame,
-                native_frame=native_frame,
-                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
-                payload_frame=TANGO_DEPTH_PAYLOAD_FRAME,
-                payload_semantics=ReferencePointCloudPayloadSemantics.DEPTH_SENSOR_LOCAL_FUSED_BY_SOURCE_POSE,
-            )
-        )
-    return sequences
-
-
 def _ensure_aligned_advio_tum(
     *,
     source_path: Path,
@@ -552,7 +494,7 @@ def _load_sanitized_optional_advio_trajectory(source_path: Path) -> tuple[PoseTr
     order = np.argsort(rows[:, 0], kind="stable")
     reordered_timestamps = bool(np.any(order != np.arange(len(rows))))
     rows = rows[order]
-    keep_first_timestamp = np.ones(len(rows), dtype=bool)
+    keep_first_timestamp: np.ndarray = np.ones(len(rows), dtype=bool)
     keep_first_timestamp[1:] = rows[1:, 0] != rows[:-1, 0]
     dropped_duplicate_timestamps = int(len(rows) - int(np.count_nonzero(keep_first_timestamp)))
     rows = rows[keep_first_timestamp]

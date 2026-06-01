@@ -29,7 +29,10 @@ def _build_offline_input(context: PipelineExecutionContext) -> CloudAlignmentSta
     trajectory_alignment = context.results.require_result(StageKey.TRAJECTORY_ALIGNMENT)
     sim3_point_cloud = trajectory_alignment.outcome.artifacts.get("aligned_point_cloud_ply")
     if sim3_point_cloud is None:
-        raise StageDependencyError("Cloud alignment requires `align.trajectory` to produce `aligned_point_cloud_ply`.")
+        raise StageDependencyError(
+            "Cloud alignment requires `align.trajectory` to produce an accepted `aligned_point_cloud_ply`; "
+            "check `trajectory_alignment.json` cloud-use diagnostics when the artifact is absent."
+        )
     return CloudAlignmentStageInput(
         artifact_root=context.plan.artifact_root,
         reference_cloud=reference_cloud,

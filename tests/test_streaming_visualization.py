@@ -7,6 +7,7 @@ import warnings
 from pathlib import Path
 
 import numpy as np
+import pytest
 import rerun.dataframe as rdf
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform
@@ -97,6 +98,17 @@ def _ground_alignment_metadata() -> GroundAlignmentMetadata:
             "inlier_count": 16,
             "inlier_ratio": 0.8,
         },
+        T_viewer_world_world=FrameTransform(
+            target_frame="viewer_world",
+            source_frame="world",
+            qx=0.0,
+            qy=0.0,
+            qz=0.0,
+            qw=1.0,
+            tx=0.0,
+            ty=1.0,
+            tz=0.0,
+        ),
         visualization={
             "corners_xyz_world": [
                 (0.0, 0.0, 0.0),
@@ -113,6 +125,21 @@ def _ground_alignment_update() -> StageRuntimeUpdate:
         stage_key=StageKey.GRAVITY_ALIGNMENT,
         timestamp_ns=1,
         semantic_events=[_ground_alignment_metadata()],
+    )
+
+
+def _skipped_ground_alignment_update() -> StageRuntimeUpdate:
+    return StageRuntimeUpdate(
+        stage_key=StageKey.GRAVITY_ALIGNMENT,
+        timestamp_ns=2,
+        semantic_events=[
+            GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source="streaming_pointmaps",
+                skip_reason="no reliable plane",
+            )
+        ],
     )
 
 
@@ -210,6 +237,7 @@ def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_
     viewer_path = tmp_path / "viewer.rrd"
     viewer_path.write_bytes(b"rrd")
     ground_calls: list[str] = []
+    transform_calls: list[tuple[str, str, FrameTransform, float | None, bool]] = []
     augment_calls: list[tuple[GroundAlignmentMetadata, Path, str]] = []
     stream_names = iter(["live", "export"])
 
@@ -221,7 +249,7 @@ def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_
             self.disconnected = False
 
         def flush(self, blocking: bool = True) -> None:
-            assert blocking is True
+            del blocking
             self.flushed = True
 
         def disconnect(self) -> None:
@@ -240,6 +268,13 @@ def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_
     )
     monkeypatch.setattr(
         rerun_sink_module,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None, static=False: transform_calls.append(
+            (stream.name, entity_path, transform, axis_length, static)
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_sink_module,
         "augment_viewer_recording_with_ground_plane",
         lambda *, metadata, viewer_recording_path, recording_id: augment_calls.append(
             (metadata, viewer_recording_path, recording_id)
@@ -255,10 +290,51 @@ def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_
     sink.observe_update(_ground_alignment_update(), payloads={})
 
     assert ground_calls == ["live"]
+    assert transform_calls == [
+        (
+            "live",
+            rerun_helpers.SLAM_WORLD_ENTITY_PATH,
+            _ground_alignment_metadata().T_viewer_world_world,
+            rerun_helpers.SLAM_WORLD_AXIS_LENGTH,
+            True,
+        )
+    ]
 
     sink.close()
 
     assert augment_calls == [(_ground_alignment_metadata(), viewer_path, "demo-run")]
+
+
+def test_rerun_sink_does_not_augment_export_with_stale_ground_alignment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    viewer_path = tmp_path / "viewer.rrd"
+    viewer_path.write_bytes(b"rrd")
+    augment_calls: list[GroundAlignmentMetadata] = []
+
+    class FakeRecordingStream(_FakeRecordingStream):
+        def flush(self, blocking: bool = True) -> None:
+            del blocking
+
+        def disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_sink_module,
+        "augment_viewer_recording_with_ground_plane",
+        lambda *, metadata, viewer_recording_path, recording_id: augment_calls.append(metadata),
+    )
+
+    sink = RerunEventSink(grpc_url=None, target_path=viewer_path, recording_id="demo-run")
+
+    sink.observe_update(_ground_alignment_update(), payloads={})
+    sink.observe_update(_skipped_ground_alignment_update(), payloads={})
+    sink.close()
+
+    assert augment_calls == []
 
 
 def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(tmp_path: Path) -> None:
@@ -273,12 +349,22 @@ def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(
     outline_view = recording.view(
         index="log_tick", contents="/world/slam/vista_slam_world/alignment/ground_plane/outline"
     )
+    transform_view = recording.view(index="log_tick", contents="/world/slam/vista_slam_world")
 
     fill_static_rows = [batch.to_pydict() for batch in fill_view.select_static()]
     outline_static_rows = [batch.to_pydict() for batch in outline_view.select_static()]
+    transform_static_rows = [batch.to_pydict() for batch in transform_view.select_static()]
 
     assert len(fill_static_rows) == 1
     assert len(outline_static_rows) == 1
+    assert any(
+        np.allclose(
+            np.asarray(row["/world/slam/vista_slam_world:Transform3D:translation"], dtype=np.float64).reshape(-1, 3)[0],
+            np.asarray([0.0, 1.0, 0.0], dtype=np.float64),
+        )
+        for row in transform_static_rows
+        if "/world/slam/vista_slam_world:Transform3D:translation" in row
+    )
 
     np.testing.assert_allclose(
         np.asarray(

@@ -34,5 +34,8 @@ class GroundAlignmentConfig(BaseConfig):
     min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
     """Minimum confidence required before the alignment is applied."""
 
+    ransac_interval_keyframes: int = Field(default=10, ge=1)
+    """Accepted-keyframe interval for streaming ground-plane RANSAC updates."""
+
 
 __all__ = ["GroundAlignmentConfig"]

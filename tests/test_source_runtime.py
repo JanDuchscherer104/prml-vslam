@@ -33,7 +33,6 @@ from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
     ReferenceCloudRef,
     ReferenceCloudSource,
-    ReferencePointCloudSequenceRef,
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
@@ -112,18 +111,8 @@ class _ReferenceGeometrySource(_ManifestOnlySource):
                     path=self._cloud_path,
                     metadata_path=self._metadata_path,
                     target_frame="advio_gt_world",
-                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                )
-            ],
-            reference_point_cloud_sequences=[
-                ReferencePointCloudSequenceRef(
-                    source=ReferenceCloudSource.TANGO_RAW,
-                    index_path=output_dir / "point-cloud.csv",
-                    payload_root=output_dir,
-                    trajectory_path=output_dir / "tango_raw.tum",
-                    target_frame="advio_tango_raw_world",
                     native_frame="advio_tango_raw_world",
-                    coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
                 )
             ],
         )
@@ -292,6 +281,7 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
     ]
     assert items[0].space == "world"
     assert items[1].space == "advio_gt_world"
+    assert items[1].metadata["native_frame"] == "advio_tango_raw_world"
 
 
 def test_source_visualization_adapter_skips_source_native_reference_trajectories(tmp_path: Path) -> None:

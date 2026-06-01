@@ -81,6 +81,16 @@ When work is specific to the Streamlit app subtree, also follow [`app/AGENTS.md`
 - Camera-frame metric geometry must document its axis convention.
 - World frames must be named explicitly at boundaries. Do not assume that upstream `world` frames from different systems are interchangeable.
 - Cross-system alignment transforms are derived comparison artifacts, not raw source poses. Do not silently align or relabel upstream trajectories inside loaders or wrappers.
+- Repo-internal geometry boundaries must be RDF/frame-safe: carry source, target,
+  native frame, coordinate status, and alignment provenance through typed
+  fields or typed artifact metadata, not free-form notes.
+- Source-native worlds are boundary artifacts only. They may be exposed for
+  inspection or as inputs to explicit alignment stages, but must not be treated
+  as canonical downstream comparison frames without a derived alignment artifact.
+- Eval-stage Sim(3) trajectory alignment is allowed for metrics, but reusable
+  dense-cloud publication requires explicit acceptance diagnostics. Failed,
+  weak, or frame-ambiguous dense-cloud alignments must produce JSON diagnostics,
+  not normal downstream geometry artifacts.
 - `PoseTrajectory3D` from `evo.core.trajectory` is the canonical in-memory trajectory representation.
 - If a file format cannot encode frame semantics, persist side metadata that records source frame, target frame, units, timestamp basis, and any applied alignment or normalization.
 - Do not hide frame semantics in free-form `metadata` when the value crosses a package boundary; promote them into typed fields or typed artifact metadata.

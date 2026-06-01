@@ -5,9 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
+from prml_vslam.alignment.contracts import GroundAlignmentConfig
+from prml_vslam.alignment.stage import (
+    GroundAlignmentKeyframeSample,
+    GroundAlignmentRuntime,
+    GroundAlignmentStageInput,
+    GroundAlignmentStreamingStartInput,
+)
+from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
@@ -33,6 +41,23 @@ def test_run_config_build_rejects_ground_alignment_without_point_cloud_outputs(t
     )
 
     with pytest.raises(ValueError, match="Ground alignment requires sparse or dense point-cloud outputs"):
+        run_config.compile_plan(path_config, fail_on_unavailable=True)
+
+
+def test_streaming_ground_alignment_requires_dense_keyframe_pointmaps(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = build_run_config(
+        experiment_name="ground-align-streaming-validation",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        emit_dense_points=False,
+        emit_sparse_points=True,
+        ground_alignment_enabled=True,
+    )
+
+    with pytest.raises(ValueError, match="Streaming ground alignment requires dense keyframe pointmaps"):
         run_config.compile_plan(path_config, fail_on_unavailable=True)
 
 
@@ -179,6 +204,80 @@ def test_run_ground_alignment_stage_writes_applied_metadata_when_export_enabled(
     assert result.payload.applied is True
     payload = json.loads(run_paths.ground_alignment_path.read_text(encoding="utf-8"))
     assert payload["applied"] is True
+
+
+def test_streaming_ground_alignment_runtime_runs_ransac_on_configured_keyframe_interval(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "run")
+    calls: list[tuple[int, str]] = []
+
+    class FakeGroundAlignmentService:
+        def __init__(self, *, config: GroundAlignmentConfig) -> None:
+            self.config = config
+
+        def estimate_from_world_points(
+            self,
+            *,
+            points_xyz_world: np.ndarray,
+            poses_world_camera: np.ndarray,
+            point_cloud_source: str,
+        ) -> GroundAlignmentMetadata:
+            calls.append((len(points_xyz_world), point_cloud_source))
+            assert poses_world_camera.shape == (2, 4, 4)
+            return GroundAlignmentMetadata(
+                applied=True,
+                confidence=0.9,
+                point_cloud_source="streaming_pointmaps",
+                T_viewer_world_world=FrameTransform(
+                    target_frame="viewer_world",
+                    source_frame="world",
+                    qx=0.0,
+                    qy=0.0,
+                    qz=0.0,
+                    qw=1.0,
+                    tx=0.0,
+                    ty=0.0,
+                    tz=0.0,
+                ),
+                visualization={"corners_xyz_world": [(0.0, 0.0, 0.0)] * 4},
+            )
+
+    runtime = GroundAlignmentRuntime(service_type=FakeGroundAlignmentService)
+    runtime.start_streaming(
+        GroundAlignmentStreamingStartInput(
+            config=GroundAlignmentConfig(ransac_interval_keyframes=2),
+            run_paths=run_paths,
+        )
+    )
+    sample = GroundAlignmentKeyframeSample(
+        keyframe_index=0,
+        T_world_camera=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+        pointmap_xyz_camera=np.asarray(
+            [
+                [[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]],
+                [[0.0, 0.0, 0.0], [0.0, 1.0, -1.0]],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    runtime.submit_stream_item(sample)
+
+    assert calls == []
+    assert runtime.drain_runtime_updates() == []
+
+    runtime.submit_stream_item(sample.model_copy(update={"keyframe_index": 1}))
+    updates = runtime.drain_runtime_updates()
+
+    assert calls == [(4, "streaming_pointmaps")]
+    assert len(updates) == 1
+    assert updates[0].stage_key is StageKey.GRAVITY_ALIGNMENT
+    assert isinstance(updates[0].semantic_events[0], GroundAlignmentMetadata)
+    assert updates[0].semantic_events[0].point_cloud_source == "streaming_pointmaps"
+
+    result = runtime.finish_streaming()
+
+    assert result.outcome.status.value == "completed"
+    assert run_paths.ground_alignment_path.exists()
 
 
 def _repo_root() -> Path:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +32,7 @@ from prml_vslam.eval.contracts import (
     MetricStats,
     SelectionSnapshot,
     TrajectoryAlignmentArtifact,
+    TrajectoryAlignmentCloudUseStatus,
     TrajectoryAlignmentMode,
     TrajectoryEvaluationPreview,
     TrajectoryEvaluationSemantics,
@@ -54,6 +56,10 @@ __all__ = [
 ]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
+_SIM3_CLOUD_MIN_MATCHED_PAIRS = 20
+_SIM3_CLOUD_MAX_RMS_ERROR_M = 2.0
+_SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG = 15.0
+_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
 _BENCHMARK_REFERENCE_FILES: list[tuple[str, str, str]] = [
     ("Ground Truth", "ground_truth", "ground_truth.tum"),
@@ -201,7 +207,8 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         """Compute and persist the Sim(3) alignment without running APE metrics.
 
         Returns ``(alignment_path, aligned_estimate_path, aligned_point_cloud_path)``
-        where the last element is ``None`` when no point-cloud path is provided.
+        where the last element is ``None`` when no dense-cloud input is provided
+        or the alignment is not accepted for reusable dense-cloud publication.
         """
         reference_path = selection.reference_path
         if reference_path is None:
@@ -223,38 +230,42 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         if not _trajectory_supports_sim3(associated_reference, associated_estimate):
             raise ValueError("Trajectory lacks sufficient geometric spread for Sim(3) alignment.")
 
-        _, alignment = _align_estimate_sim3(
+        aligned_estimate, alignment = _align_estimate_sim3(
             reference=associated_reference,
             estimate=associated_estimate,
             max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
             target_frame=selection.target_frame or "world",
+            source_frame=_method_world_frame(selection.run.method),
+            reference_source=selection.reference_source or "reference",
+            method_id=selection.run.method,
+            method_label=selection.run.label,
         )
 
         run_root = selection.run.artifact_root
+        aligned_estimate_path = self.aligned_estimate_path(run_root)
+        aligned_estimate_path.parent.mkdir(parents=True, exist_ok=True)
+        file_interface.write_tum_trajectory_file(aligned_estimate_path, aligned_estimate)
+
+        aligned_point_cloud_path = None
+        alignment = _apply_sim3_cloud_use_policy(
+            alignment,
+            cloud_input_present=selection.run.point_cloud_path is not None,
+        )
+        if selection.run.point_cloud_path is not None:
+            if alignment.cloud_use_status is TrajectoryAlignmentCloudUseStatus.ACCEPTED:
+                aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
+                _write_aligned_point_cloud(
+                    source_path=selection.run.point_cloud_path,
+                    output_path=aligned_point_cloud_path,
+                    alignment=alignment,
+                )
+
         alignment_path = self.alignment_path(run_root)
         alignment_path.parent.mkdir(parents=True, exist_ok=True)
         alignment_path.write_text(
             json.dumps(alignment.model_dump(mode="json"), indent=2, sort_keys=True),
             encoding="utf-8",
         )
-
-        aligned_estimate_path = self.aligned_estimate_path(run_root)
-        _write_aligned_estimate_trajectory(
-            reference_path=reference_path,
-            estimate_path=selection.run.estimate_path,
-            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
-            max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
-            output_path=aligned_estimate_path,
-        )
-
-        aligned_point_cloud_path = None
-        if selection.run.point_cloud_path is not None:
-            aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
-            _write_aligned_point_cloud(
-                source_path=selection.run.point_cloud_path,
-                output_path=aligned_point_cloud_path,
-                alignment=alignment,
-            )
 
         return alignment_path, aligned_estimate_path, aligned_point_cloud_path
 
@@ -278,34 +289,13 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             estimate_path=selection.run.estimate_path,
             alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
             target_frame=selection.target_frame or "world",
+            source_frame=_method_world_frame(selection.run.method),
+            reference_source=selection.reference_source or "reference",
+            method_id=selection.run.method,
+            method_label=selection.run.label,
         )
         result_path = self.result_path(selection.run.artifact_root)
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        alignment_path = None
-        aligned_estimate_path = None
-        aligned_point_cloud_path = None
-        if preview.alignment is not None:
-            alignment_path = self.alignment_path(selection.run.artifact_root)
-            alignment_path.write_text(
-                json.dumps(preview.alignment.model_dump(mode="json"), indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-            aligned_estimate_path = self.aligned_estimate_path(selection.run.artifact_root)
-            _write_aligned_estimate_trajectory(
-                reference_path=reference_path,
-                estimate_path=selection.run.estimate_path,
-                alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
-                max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
-                output_path=aligned_estimate_path,
-                target_frame=selection.target_frame or "world",
-            )
-            if selection.run.point_cloud_path is not None:
-                aligned_point_cloud_path = self.aligned_point_cloud_path(selection.run.artifact_root)
-                _write_aligned_point_cloud(
-                    source_path=selection.run.point_cloud_path,
-                    output_path=aligned_point_cloud_path,
-                    alignment=preview.alignment,
-                )
         alignment_mode = (
             TrajectoryAlignmentMode.SIM3_UMEYAMA
             if preview.alignment is not None
@@ -317,11 +307,9 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             "stats": preview.stats.model_dump(mode="python"),
             "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
             "error_values": preview.error_series.values.tolist(),
-            "alignment_path": None if alignment_path is None else alignment_path.as_posix(),
-            "aligned_estimate_path": None if aligned_estimate_path is None else aligned_estimate_path.as_posix(),
-            "aligned_point_cloud_path": None
-            if aligned_point_cloud_path is None
-            else aligned_point_cloud_path.as_posix(),
+            "alignment_path": None,
+            "aligned_estimate_path": None,
+            "aligned_point_cloud_path": None,
             "semantics": TrajectoryEvaluationSemantics(
                 metric_id=TrajectoryMetricId.APE_TRANSLATION,
                 pose_relation="translation_part",
@@ -375,11 +363,12 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
                 coordinate_status=reference.coordinate_status.value
                 if reference.coordinate_status
                 else _infer_coordinate_status(sequence_manifest.dataset_id, reference.path),
+                reference_source=trajectory_config.baseline_source.value,
                 run=DiscoveredRun(
                     artifact_root=plan.artifact_root,
                     estimate_path=slam.trajectory_tum.path,
                     point_cloud_path=slam.dense_points_ply.path if slam.dense_points_ply is not None else None,
-                    method=run_config.stages.slam.backend.method_id
+                    method=run_config.stages.slam.backend.method_id.value
                     if run_config.stages.slam.backend is not None
                     else None,
                     label=(
@@ -436,16 +425,13 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             estimate_path=run.estimate_path,
             alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
             target_frame=target_frame,
+            source_frame=_method_world_frame(run.method),
+            reference_source=reference.source_key,
+            method_id=run.method,
+            method_label=run.label,
         )
         result_path = self.result_path_for_source(run.artifact_root, reference.source_key)
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        alignment_path = None
-        if preview.alignment is not None:
-            alignment_path = self.alignment_path_for_source(run.artifact_root, reference.source_key)
-            alignment_path.write_text(
-                json.dumps(preview.alignment.model_dump(mode="json"), indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
         alignment_mode = (
             TrajectoryAlignmentMode.SIM3_UMEYAMA
             if preview.alignment is not None
@@ -457,7 +443,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             "stats": preview.stats.model_dump(mode="python"),
             "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
             "error_values": preview.error_series.values.tolist(),
-            "alignment_path": None if alignment_path is None else alignment_path.as_posix(),
+            "alignment_path": None,
             "aligned_estimate_path": None,
             "aligned_point_cloud_path": None,
             "semantics": TrajectoryEvaluationSemantics(
@@ -482,13 +468,6 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         if source_key == "ground_truth":
             return run_root / "evaluation" / "trajectory_metrics.json"
         return run_root / "evaluation" / f"trajectory_metrics_{source_key}.json"
-
-    @staticmethod
-    def alignment_path_for_source(run_root: Path, source_key: str) -> Path:
-        """Return the persisted alignment path for one benchmark reference source."""
-        if source_key == "ground_truth":
-            return run_root / "evaluation" / "trajectory_alignment.json"
-        return run_root / "evaluation" / f"trajectory_alignment_{source_key}.json"
 
     @staticmethod
     def result_path(run_root: Path) -> Path:
@@ -631,6 +610,10 @@ def compute_trajectory_ape_preview(
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
     alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
     target_frame: str = "world",
+    source_frame: str = "slam_world",
+    reference_source: str = "reference",
+    method_id: str | None = None,
+    method_label: str | None = None,
 ) -> TrajectoryEvaluationPreview:
     """Compute in-memory translation APE for two normalized TUM trajectory artifacts.
 
@@ -660,6 +643,10 @@ def compute_trajectory_ape_preview(
                 estimate=associated_estimate,
                 max_diff_s=max_diff_s,
                 target_frame=target_frame,
+                source_frame=source_frame,
+                reference_source=reference_source,
+                method_id=method_id,
+                method_label=method_label,
             )
     elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
         raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
@@ -695,6 +682,10 @@ def _align_estimate_sim3(
     estimate: PoseTrajectory3D,
     max_diff_s: float,
     target_frame: str = "world",
+    source_frame: str = "slam_world",
+    reference_source: str = "reference",
+    method_id: str | None = None,
+    method_label: str | None = None,
 ) -> tuple[PoseTrajectory3D, TrajectoryAlignmentArtifact]:
     aligned_estimate = copy.deepcopy(estimate)
     rotation, translation, scale = aligned_estimate.align(reference, correct_scale=True)
@@ -704,16 +695,74 @@ def _align_estimate_sim3(
     )
     rms_error_m = float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
     return aligned_estimate, TrajectoryAlignmentArtifact(
-        source_frame="vista_slam_world",
+        source_frame=source_frame,
         target_frame=target_frame,
         scale=float(scale),
         rotation=np.asarray(rotation, dtype=np.float64).tolist(),
         translation=np.asarray(translation, dtype=np.float64).reshape(3).tolist(),
         matched_pairs=int(len(reference.positions_xyz)),
         rms_error_m=rms_error_m,
-        reference_source="ground_truth",
+        reference_source=reference_source,
         sync_max_diff_s=max_diff_s,
+        method_id=method_id,
+        method_label=method_label,
     )
+
+
+def _method_world_frame(method_id: str | None) -> str:
+    token = "slam" if method_id is None else _entity_token(str(method_id))
+    return f"{token}_slam_world"
+
+
+def _entity_token(value: str) -> str:
+    stripped = value.strip().replace(" ", "_")
+    return "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in stripped) or "unknown"
+
+
+def _apply_sim3_cloud_use_policy(
+    alignment: TrajectoryAlignmentArtifact,
+    *,
+    cloud_input_present: bool,
+) -> TrajectoryAlignmentArtifact:
+    up_axis_tilt_deg = _sim3_up_axis_tilt_deg(np.asarray(alignment.rotation, dtype=np.float64))
+    reasons: list[str] = []
+    status = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
+    if cloud_input_present:
+        if alignment.matched_pairs < _SIM3_CLOUD_MIN_MATCHED_PAIRS:
+            reasons.append("insufficient_matched_pairs")
+        if not math.isfinite(alignment.scale) or alignment.scale <= 0.0:
+            reasons.append("invalid_scale")
+        if not math.isfinite(alignment.rms_error_m) or alignment.rms_error_m > _SIM3_CLOUD_MAX_RMS_ERROR_M:
+            reasons.append("rms_error_too_high")
+        if up_axis_tilt_deg is None:
+            reasons.append("unknown_up_axis_tilt")
+        elif up_axis_tilt_deg > _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG:
+            reasons.append("up_axis_tilt_too_high")
+        status = (
+            TrajectoryAlignmentCloudUseStatus.ACCEPTED if not reasons else TrajectoryAlignmentCloudUseStatus.REJECTED
+        )
+    return alignment.model_copy(
+        update={
+            "cloud_input_present": cloud_input_present,
+            "cloud_use_status": status,
+            "cloud_rejection_reasons": reasons,
+            "cloud_gate_min_matched_pairs": _SIM3_CLOUD_MIN_MATCHED_PAIRS,
+            "cloud_gate_max_rms_error_m": _SIM3_CLOUD_MAX_RMS_ERROR_M,
+            "cloud_gate_max_up_axis_tilt_deg": _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG,
+            "up_axis_tilt_deg": up_axis_tilt_deg,
+        }
+    )
+
+
+def _sim3_up_axis_tilt_deg(rotation: np.ndarray) -> float | None:
+    if rotation.shape != (3, 3) or not np.all(np.isfinite(rotation)):
+        return None
+    transformed_down_axis = rotation @ _RDF_DOWN_AXIS
+    norm = float(np.linalg.norm(transformed_down_axis))
+    if norm <= 0.0 or not math.isfinite(norm):
+        return None
+    cos_angle = float(np.clip(np.dot(transformed_down_axis / norm, _RDF_DOWN_AXIS), -1.0, 1.0))
+    return math.degrees(math.acos(cos_angle))
 
 
 def _trajectory_supports_sim3(reference: PoseTrajectory3D, estimate: PoseTrajectory3D) -> bool:
@@ -725,34 +774,6 @@ def _trajectory_supports_sim3(reference: PoseTrajectory3D, estimate: PoseTraject
     )
     estimate_centered = np.asarray(estimate.positions_xyz, dtype=np.float64) - np.mean(estimate.positions_xyz, axis=0)
     return np.linalg.matrix_rank(reference_centered) >= 2 and np.linalg.matrix_rank(estimate_centered) >= 2
-
-
-def _write_aligned_estimate_trajectory(
-    *,
-    reference_path: Path,
-    estimate_path: Path,
-    alignment_mode: TrajectoryAlignmentMode,
-    max_diff_s: float,
-    output_path: Path,
-    target_frame: str = "world",
-) -> None:
-    if alignment_mode is not TrajectoryAlignmentMode.SIM3_UMEYAMA:
-        raise ValueError(f"Unsupported aligned trajectory materialization mode: {alignment_mode.value}.")
-    reference_trajectory = load_tum_trajectory(reference_path)
-    estimate_trajectory = load_tum_trajectory(estimate_path)
-    associated_reference, associated_estimate = sync.associate_trajectories(
-        reference_trajectory,
-        estimate_trajectory,
-        max_diff=max_diff_s,
-    )
-    aligned_estimate, _alignment = _align_estimate_sim3(
-        reference=associated_reference,
-        estimate=associated_estimate,
-        max_diff_s=max_diff_s,
-        target_frame=target_frame,
-    )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    file_interface.write_tum_trajectory_file(output_path, aligned_estimate)
 
 
 def _infer_target_frame(dataset: DatasetId | None, reference_path: Path | None) -> str:

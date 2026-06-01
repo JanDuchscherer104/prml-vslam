@@ -49,7 +49,9 @@ def test_executable_stage_packages_export_canonical_surfaces() -> None:
     assert "ReconstructionStageInput" in reconstruction_stage_package.__all__
     assert "ReconstructionRuntime" in reconstruction_stage_package.__all__
     assert "GroundAlignmentStageConfig" in alignment_stage_package.__all__
+    assert "GroundAlignmentKeyframeSample" in alignment_stage_package.__all__
     assert "GroundAlignmentStageInput" in alignment_stage_package.__all__
+    assert "GroundAlignmentStreamingStartInput" in alignment_stage_package.__all__
     assert "GroundAlignmentRuntime" in alignment_stage_package.__all__
     assert "TrajectoryEvaluationStageConfig" in trajectory_stage_package.__all__
     assert "TrajectoryEvaluationStageInput" in trajectory_stage_package.__all__

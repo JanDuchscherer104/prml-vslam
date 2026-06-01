@@ -199,6 +199,12 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     assert artifact.path == artifact_root / "evaluation" / "trajectory_metrics.json"
     assert artifact.reference_path == reference_path
     assert artifact.estimate_path == estimate_path
+    assert artifact.alignment_path is None
+    assert artifact.aligned_estimate_path is None
+    assert artifact.aligned_point_cloud_path is None
+    assert not (artifact_root / "evaluation" / "trajectory_alignment.json").exists()
+    assert not (artifact_root / "evaluation" / "trajectory_sim3_aligned.tum").exists()
+    assert not (artifact_root / "evaluation" / "point_cloud_sim3_aligned.ply").exists()
     assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
 
 
@@ -241,6 +247,12 @@ _REFERENCE_POSITIONS = [
 _TIMESTAMPS = [0.0, 1.0, 2.0, 3.0]
 
 
+def _cloud_gate_positions(count: int = 24) -> list[np.ndarray]:
+    return [
+        np.array([float(index), float((index * index) % 7) * 0.25, float(index % 5) * 0.1]) for index in range(count)
+    ]
+
+
 def test_compute_trajectory_alignment_writes_files_and_recovers_scale(tmp_path: Path) -> None:
     scale = 4.2
     translation = np.array([1.0, 2.0, 0.5])
@@ -271,28 +283,33 @@ def test_compute_trajectory_alignment_writes_files_and_recovers_scale(tmp_path: 
     assert aligned_cloud_path is None
     alignment = json.loads(alignment_path.read_text())
     assert alignment["scale"] == pytest.approx(scale, rel=1e-6)
+    assert alignment["cloud_input_present"] is False
+    assert alignment["cloud_use_status"] == "not_requested"
+    assert alignment["cloud_rejection_reasons"] == []
 
 
 def test_compute_trajectory_alignment_writes_aligned_point_cloud(tmp_path: Path) -> None:
     scale = 2.0
     translation = np.array([0.0, 0.0, 0.0])
+    reference_positions = _cloud_gate_positions()
+    timestamps = [float(index) for index in range(len(reference_positions))]
     reference_path = write_tum_trajectory(
         tmp_path / "reference.tum",
         poses=[
             FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(p[0]), ty=float(p[1]), tz=float(p[2]))
-            for p in _REFERENCE_POSITIONS
+            for p in reference_positions
         ],
-        timestamps=_TIMESTAMPS,
+        timestamps=timestamps,
     )
     estimate_path = _write_scaled_trajectory(
-        tmp_path / "estimate.tum", _REFERENCE_POSITIONS, _TIMESTAMPS, scale, translation
+        tmp_path / "estimate.tum", reference_positions, timestamps, scale, translation
     )
     cloud_path = tmp_path / "cloud.ply"
-    write_point_cloud_ply(cloud_path, np.array(_REFERENCE_POSITIONS, dtype=np.float64))
+    write_point_cloud_ply(cloud_path, np.array(reference_positions, dtype=np.float64) / scale)
     artifact_root = tmp_path / "run"
     service = TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
 
-    _, _, aligned_cloud_path = service.compute_trajectory_alignment(
+    alignment_path, _, aligned_cloud_path = service.compute_trajectory_alignment(
         selection=SelectionSnapshot(
             sequence_slug="seq",
             reference_path=reference_path,
@@ -307,6 +324,52 @@ def test_compute_trajectory_alignment_writes_aligned_point_cloud(tmp_path: Path)
 
     assert aligned_cloud_path is not None
     assert aligned_cloud_path.exists()
+    alignment = json.loads(alignment_path.read_text())
+    assert alignment["cloud_input_present"] is True
+    assert alignment["cloud_use_status"] == "accepted"
+    assert alignment["cloud_rejection_reasons"] == []
+    assert alignment["matched_pairs"] == len(reference_positions)
+    assert alignment["up_axis_tilt_deg"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_compute_trajectory_alignment_rejects_weak_sim3_point_cloud_artifact(tmp_path: Path) -> None:
+    scale = 2.0
+    translation = np.array([0.0, 0.0, 0.0])
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(p[0]), ty=float(p[1]), tz=float(p[2]))
+            for p in _REFERENCE_POSITIONS
+        ],
+        timestamps=_TIMESTAMPS,
+    )
+    estimate_path = _write_scaled_trajectory(
+        tmp_path / "estimate.tum", _REFERENCE_POSITIONS, _TIMESTAMPS, scale, translation
+    )
+    cloud_path = tmp_path / "cloud.ply"
+    write_point_cloud_ply(cloud_path, np.array(_REFERENCE_POSITIONS, dtype=np.float64) / scale)
+    artifact_root = tmp_path / "run"
+    service = TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    alignment_path, _, aligned_cloud_path = service.compute_trajectory_alignment(
+        selection=SelectionSnapshot(
+            sequence_slug="seq",
+            reference_path=reference_path,
+            run=DiscoveredRun(
+                artifact_root=artifact_root,
+                estimate_path=estimate_path,
+                point_cloud_path=cloud_path,
+                label="test",
+            ),
+        )
+    )
+
+    alignment = json.loads(alignment_path.read_text())
+    assert aligned_cloud_path is None
+    assert not (artifact_root / "evaluation" / "point_cloud_sim3_aligned.ply").exists()
+    assert alignment["cloud_input_present"] is True
+    assert alignment["cloud_use_status"] == "rejected"
+    assert alignment["cloud_rejection_reasons"] == ["insufficient_matched_pairs"]
 
 
 def test_cloud_alignment_service_writes_distinct_icp_refined_cloud(tmp_path: Path) -> None:
@@ -434,6 +497,7 @@ def test_trajectory_alignment_runtime_produces_aligned_artifacts(tmp_path: Path)
     slam = SlamArtifacts(trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="est"))
     input_payload = TrajectoryAlignmentStageInput(
         artifact_root=artifact_root,
+        method_id=MethodId.VISTA,
         sequence_manifest=SequenceManifest(sequence_id="seq"),
         benchmark_inputs=benchmark_inputs,
         slam=slam,
@@ -449,9 +513,55 @@ def test_trajectory_alignment_runtime_produces_aligned_artifacts(tmp_path: Path)
     assert result.outcome.artifacts["aligned_estimate_tum"].path.exists()
     alignment = json.loads(result.outcome.artifacts["trajectory_alignment"].path.read_text())
     assert alignment["scale"] == pytest.approx(scale, rel=1e-6)
+    assert alignment["source_frame"] == "vista_slam_world"
     assert alignment["target_frame"] == "custom_reference_world"
+    assert alignment["reference_source"] == "ground_truth"
+    assert alignment["cloud_use_status"] == "not_requested"
     assert isinstance(result.payload, TrajectoryAlignmentArtifact)
     assert result.payload.scale == pytest.approx(scale, rel=1e-6)
+
+
+def test_trajectory_alignment_runtime_persists_selected_baseline_source(tmp_path: Path) -> None:
+    scale = 2.5
+    translation = np.array([0.25, -0.5, 0.75])
+    reference_path = write_tum_trajectory(
+        tmp_path / "arcore_reference.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(p[0]), ty=float(p[1]), tz=float(p[2]))
+            for p in _REFERENCE_POSITIONS
+        ],
+        timestamps=_TIMESTAMPS,
+    )
+    estimate_path = _write_scaled_trajectory(
+        tmp_path / "estimate.tum", _REFERENCE_POSITIONS, _TIMESTAMPS, scale, translation
+    )
+    artifact_root = tmp_path / "run"
+    benchmark_inputs = PreparedBenchmarkInputs(
+        reference_trajectories=[
+            ReferenceTrajectoryRef(
+                source=ReferenceSource.ARCORE,
+                path=reference_path,
+                target_frame="advio_arcore_gt_aligned_world",
+                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+            )
+        ]
+    )
+    slam = SlamArtifacts(trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="est"))
+    input_payload = TrajectoryAlignmentStageInput(
+        artifact_root=artifact_root,
+        baseline_source=ReferenceSource.ARCORE,
+        method_id=MethodId.VISTA,
+        sequence_manifest=SequenceManifest(sequence_id="seq"),
+        benchmark_inputs=benchmark_inputs,
+        slam=slam,
+    )
+
+    result = TrajectoryAlignmentRuntime().run_offline(input_payload)
+
+    alignment = json.loads(result.outcome.artifacts["trajectory_alignment"].path.read_text())
+    assert alignment["reference_source"] == "arcore"
+    assert alignment["target_frame"] == "advio_arcore_gt_aligned_world"
+    assert alignment["source_frame"] == "vista_slam_world"
 
 
 def test_trajectory_alignment_runtime_fails_without_benchmark_inputs(tmp_path: Path) -> None:

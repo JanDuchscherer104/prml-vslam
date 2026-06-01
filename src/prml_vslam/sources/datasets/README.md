@@ -92,12 +92,12 @@ Datasets normalize local source data into two pipeline-facing outputs:
 - `PreparedBenchmarkInputs`
   - canonical benchmark-side auxiliary inputs
   - may carry normalized `reference_trajectories`
-  - for ADVIO, may also carry `reference_clouds` and
-    `reference_point_cloud_sequences`
-  - ADVIO Tango reference clouds are raw-backed (`tango_raw`)
-  - point-cloud sequence refs must preserve payload semantics; ADVIO Tango
-    payload rows are timestamped Tango point-cloud samples that repository
-    benchmark prep materializes through raw Tango pose association
+  - for ADVIO, may also carry materialized `reference_clouds`
+  - ADVIO Tango reference clouds are raw-backed (`tango_raw`) static PLY
+    artifacts whose typed fields preserve target frame, native frame, and
+    coordinate status
+  - ADVIO Tango payload rows are timestamped point-cloud samples that
+    repository benchmark prep materializes through raw Tango pose association
 
 The current ADVIO-specific manifest payload DTOs are:
 

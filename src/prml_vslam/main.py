@@ -138,6 +138,10 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.align_ground.enabled", "Enable or disable gravity alignment."),
             ("--stages.align_ground.ground.strategy", "Ground-alignment strategy."),
             ("--stages.align_ground.ground.min_confidence", "Minimum ground-plane confidence."),
+            (
+                "--stages.align_ground.ground.ransac_interval_keyframes",
+                "Ground-alignment RANSAC interval in accepted streaming keyframes.",
+            ),
             ("--stages.evaluate_trajectory.enabled", "Enable trajectory evaluation."),
             ("--stages.evaluate_trajectory.evaluation.baseline_source", "Reference trajectory source."),
             ("--stages.reconstruction.enabled", "Enable reconstruction."),

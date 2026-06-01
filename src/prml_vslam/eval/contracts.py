@@ -36,6 +36,14 @@ class TrajectoryAlignmentMode(StrEnum):
     SIM3_UMEYAMA = "sim3_umeyama"
 
 
+class TrajectoryAlignmentCloudUseStatus(StrEnum):
+    """State whether an alignment may publish a downstream dense cloud."""
+
+    NOT_REQUESTED = "not_requested"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
 class TrajectoryAlignmentArtifact(BaseData):
     """Persist an explicit trajectory alignment used for diagnostics or metrics."""
 
@@ -49,6 +57,15 @@ class TrajectoryAlignmentArtifact(BaseData):
     rms_error_m: float
     reference_source: str
     sync_max_diff_s: float
+    method_id: str | None = None
+    method_label: str | None = None
+    cloud_input_present: bool = False
+    cloud_use_status: TrajectoryAlignmentCloudUseStatus = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
+    cloud_rejection_reasons: list[str] = Field(default_factory=list)
+    cloud_gate_min_matched_pairs: int = 20
+    cloud_gate_max_rms_error_m: float = 2.0
+    cloud_gate_max_up_axis_tilt_deg: float = 15.0
+    up_axis_tilt_deg: float | None = None
 
 
 class MetricStats(BaseData):
@@ -344,6 +361,9 @@ class SelectionSnapshot(BaseData):
     coordinate_status: str | None = None
     """Native coordinate status of the reference trajectory."""
 
+    reference_source: str | None = None
+    """Reference source key used for persisted alignment provenance."""
+
     run: DiscoveredRun
     """Selected artifact run."""
 
@@ -386,8 +406,9 @@ __all__ = [
     "IntrinsicsComparisonDiagnostics",
     "MetricStats",
     "SelectionSnapshot",
-    "TrajectoryAlignmentMode",
     "TrajectoryAlignmentArtifact",
+    "TrajectoryAlignmentCloudUseStatus",
+    "TrajectoryAlignmentMode",
     "TrajectoryEvaluationPreview",
     "TrajectoryEvaluationSemantics",
     "TrajectoryMetricId",

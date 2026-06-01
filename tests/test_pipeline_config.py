@@ -144,7 +144,6 @@ def test_trajectory_alignment_plan_declares_materialized_outputs(tmp_path: Path)
     assert [path.relative_to(plan.artifact_root).as_posix() for path in stage.outputs] == [
         "evaluation/trajectory_alignment.json",
         "evaluation/trajectory_sim3_aligned.tum",
-        "evaluation/point_cloud_sim3_aligned.ply",
     ]
 
 

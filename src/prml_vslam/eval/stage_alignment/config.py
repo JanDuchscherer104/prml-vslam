@@ -36,7 +36,6 @@ class TrajectoryAlignmentStageConfig(StageConfig):
         return [
             context.run_paths.artifact_root / "evaluation" / "trajectory_alignment.json",
             context.run_paths.artifact_root / "evaluation" / "trajectory_sim3_aligned.tum",
-            context.run_paths.artifact_root / "evaluation" / "point_cloud_sim3_aligned.ply",
         ]
 
 
