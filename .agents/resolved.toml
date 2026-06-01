@@ -2145,7 +2145,7 @@ notes = [
     "Validated against the [official ADVIO README](https://github.com/AaltoVision/ADVIO#tango): Tango point clouds are acquired by Tango and aligned to the current device pose, with timestamps in `point-cloud.csv` and payloads in `point-cloud-$index.csv`.",
     "`advio_geometry.py` currently interpolates Tango trajectory poses at payload timestamps and applies those transforms to every payload after RDF basis conversion.",
     "The first code fix should load payload XYZ, finite-filter, range-filter by timestamp, basis-convert once, stride/limit, and stack; provider-world-to-GT alignment may still be applied once after assembling the source-native cloud.",
-    "`ReferencePointCloudSequenceRef` should not be deleted in a README/DB-only patch, but a later code patch should clarify payload semantics through metadata or typed fields if the sequence ref remains consumer-facing.",
+    "The raw point-cloud sequence DTO should not be deleted in a README/DB-only patch, but a later code patch should clarify payload semantics through metadata or typed fields if the sequence ref remains consumer-facing.",
 ]
 sources = [
     "https://github.com/AaltoVision/ADVIO",
@@ -2463,6 +2463,173 @@ sources = [
 previous_status = "open"
 resolved_on = "2026-06-01"
 resolution_note = "Resolved for the changed contract surfaces: focused mypy now has no in-scope errors after narrowing source reference variables, optional dataset handling, cloud fingerprints/metrics, Rerun payload resolver typing, and Ray actor stub fences. Remaining focused mypy output is pre-existing third-party stub/camera typing noise."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0080"
+title = "Trajectory alignment and evaluation stages share mutable Sim3 output paths"
+status = "resolved"
+priority = "medium"
+category = "evaluation"
+summary = "When both `align.trajectory` and `evaluate.trajectory` are enabled, both stages compute and write the same Sim3 alignment files under `evaluation/`. The later evaluation stage can overwrite standalone alignment outputs, and Rerun export sees duplicate aligned trajectory/cloud artifacts."
+files = [
+    ".configs/pipelines/vista-full.toml",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+notes = [
+    "`vista-full.toml` currently enables both trajectory alignment and trajectory evaluation.",
+    "Both stages expose `trajectory_alignment`, `aligned_estimate_tum`, and `aligned_point_cloud_ply` artifacts with the same deterministic paths.",
+    "Current worktree evidence: `TrajectoryEvaluationService.compute_trajectory_alignment()` and `compute_evaluation()` both call the same `alignment_path()`, `aligned_estimate_path()`, and `aligned_point_cloud_path()` helpers.",
+    "The new cloud-alignment stage depends on `StageKey.TRAJECTORY_ALIGNMENT` for the Sim3-aligned cloud, so the intended offline point-cloud-eval path should have a single authoritative trajectory-alignment owner before cloud metrics consume aligned geometry.",
+    "The 2026-05-31 18:42 offline cloud-eval run shows why this matters: `align.cloud` consumes the trajectory Sim3 output as its only estimate input before ICP, so any weak or overwritten trajectory alignment directly controls point-cloud benchmark coordinates.",
+    "The 2026-05-31 stage manifests show both stages claiming the same aligned outputs.",
+    "The actual point-cloud Sim3 transform is performed before Rerun logging by `_write_aligned_point_cloud()`; the overlay path only displays the materialized PLY.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/summary/stage_manifests.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by making evaluate.trajectory metric-only and leaving persisted Sim3 alignment artifacts to align.trajectory."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0085"
+title = "Trajectory Sim3 cloud alignment is weak and unconstrained by up-frame semantics"
+status = "resolved"
+priority = "high"
+category = "evaluation"
+summary = "The offline point-cloud benchmark path applies the trajectory Sim3 directly to the final ViSTA cloud before ICP/cloud metrics. In the 2026-05-31 18:42 ADVIO-20 run, the trajectory Sim3 has scale 5.49 and RMS 27.39 m, and its proper rotation includes large pitch/roll components. The resulting `/world/overlays/advio_gt_world/vista/sim3_aligned/point_cloud` is scene-scale but can look upside down or gravity-inconsistent in the viewer, so dense-cloud evaluation needs an explicit frame/up convention check instead of trusting unconstrained Umeyama output."
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/runtime.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "tests/test_eval.py",
+]
+notes = [
+    "The stored trajectory Sim3 rotation has determinant about +1, so the observed inversion is not proven to be a literal reflection; the current evidence points to a weak full-3D alignment and unresolved RDF/RUF/up-frame convention validation.",
+    "A 2026-05-31 follow-up probe found that allowing reflections or pre-applying signed axis permutations to the SLAM trajectory did not improve the 27.39 m Sim3 residual, which argues against a simple one-matrix ADVIO/VISTA basis flip.",
+    "The 18:42 run's Sim3-aligned cloud spans about 163.8 x 27.8 x 176.1 m and its sampled dominant plane is near-horizontal in RDF coordinates, while the trajectory alignment residual remains 27.39 m.",
+    "After fixing Tango reference-cloud materialization, the local ADVIO-20 Tango aligned cloud and ViSTA Sim3 cloud both have near-horizontal sampled dominant planes in the target RDF frame; the old invalid Tango cloud no longer explains the perceived ViSTA inversion by itself.",
+    "A post-fix probe against the newly materialized ADVIO-20 `tango_raw_aligned.ply` still produced ICP fitness 0.0 and dense-cloud f-score 0.0 for the existing `point_cloud_sim3_aligned.ply`; Tango reference prep is no longer the only blocker for point-cloud metrics.",
+    "The raw SLAM and reference trajectories show different apparent turn directions in the viewer before/after alignment; repository evidence does not yet isolate whether this is a source-frame convention issue, an ADVIO reference normalization issue, or poor trajectory association/alignment.",
+    "The post-fix probe used the corrected Tango reference without rerunning ViSTA and still failed ICP, so the next patch should validate or gate the trajectory-Sim3 estimate before changing ViSTA frame conventions.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_sim3_aligned.tum",
+    ".artifacts/vista-full-tuning/vista/evaluation/point_cloud_sim3_aligned.ply",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_metrics.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by gating Sim3 dense-cloud publication on matched-pair count, RMS, positive finite scale, and RDF up-axis tilt diagnostics; rejected clouds no longer become downstream artifacts."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0090"
+title = "ADVIO reference-cloud native frame is passed into a DTO that drops it"
+status = "resolved"
+priority = "medium"
+category = "sources"
+summary = "`_write_cloud_ref()` passes `native_frame` into `ReferenceCloudRef`, but the DTO does not declare that field. Runtime model validation drops the value while static checking flags the constructor, so source-reference frame metadata is split between side metadata and an in-memory contract that appears richer than it is."
+files = [
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+notes = [
+    "Current worktree evidence: `src/prml_vslam/sources/datasets/advio/advio_geometry.py` constructs `ReferenceCloudRef(..., native_frame=native_frame)`, but `src/prml_vslam/sources/contracts.py` declares only `source`, `path`, `metadata_path`, `target_frame`, and `coordinate_status` on `ReferenceCloudRef`.",
+    "A focused mypy run reports the unexpected `native_frame` keyword, and a runtime probe shows the model instance omits native-frame data.",
+    "If reference-cloud visualization or cloud-alignment provenance needs native-frame semantics, promote `native_frame` into `ReferenceCloudRef`; otherwise remove the constructor argument and rely on the metadata JSON explicitly.",
+]
+sources = [
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by adding typed native_frame to ReferenceCloudRef and preserving it through source-stage visualization metadata."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0091"
+title = "Trajectory alignment metadata always labels the baseline as ground truth"
+status = "resolved"
+priority = "high"
+category = "evaluation"
+summary = "The trajectory-alignment stage accepts configurable baselines, but `_align_estimate_sim3()` persists every `TrajectoryAlignmentArtifact.reference_source` as `ground_truth`. Runs aligned to ARCore or ARKit can therefore produce correct math with wrong provenance in JSON, Rerun events, and reports."
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_alignment/spec.py",
+    "tests/test_eval.py",
+]
+notes = [
+    "Current worktree evidence: `_resolve_reference()` resolves `input_payload.baseline_source`, but `_align_estimate_sim3()` hardcodes `reference_source=\"ground_truth\"` in the returned `TrajectoryAlignmentArtifact`.",
+    "The existing tests exercise the default ground-truth case, so the metadata regression is invisible unless a non-ground-truth baseline fixture is added.",
+]
+sources = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "tests/test_eval.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by passing the selected baseline source into TrajectoryAlignmentArtifact instead of hardcoding ground_truth."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0092"
+title = "Trajectory-alignment point-cloud output is unconditional but input-sensitive"
+status = "resolved"
+priority = "high"
+category = "evaluation"
+summary = "`align.trajectory` always advertises `evaluation/point_cloud_sim3_aligned.ply`, but the service only writes that file when `slam.dense_points_ply` exists, and the stage failure fingerprint includes only the trajectory artifact. Cloud alignment can therefore plan against or reuse stale Sim3 cloud geometry without the stage contract showing that the dense-cloud input is optional and input-sensitive."
+files = [
+    "src/prml_vslam/eval/stage_alignment/config.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "tests/test_eval.py",
+    "tests/test_pipeline_config.py",
+]
+notes = [
+    "Current worktree evidence: `TrajectoryAlignmentStageConfig.planned_outputs()` returns `point_cloud_sim3_aligned.ply` unconditionally.",
+    "`TrajectoryEvaluationService.compute_trajectory_alignment()` writes the aligned point cloud only when `slam.dense_points_ply is not None`.",
+    "`TRAJECTORY_ALIGNMENT_STAGE_SPEC.failure_fingerprint()` includes `slam_trajectory` but not `slam.dense_points_ply`, while `align.cloud` later requires the `aligned_point_cloud_ply` artifact.",
+]
+sources = [
+    "src/prml_vslam/eval/stage_alignment/config.py",
+    "src/prml_vslam/eval/stage_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by removing the optional Sim3 cloud from planned align.trajectory outputs, including dense-cloud input in fingerprints, and exposing the cloud only when accepted at runtime."
 source_collection = "issues"
 
 [[resolved_todos]]
@@ -4321,6 +4488,190 @@ resolved_on = "2026-06-01"
 resolution_note = "Implemented direct typing fixes across source visualization, eval services/cloud specs, Rerun sink, and coordinator; validation leaves only pre-existing pooch/yaml/interfaces.camera errors."
 source_collection = "todos"
 
+[[resolved_todos]]
+id = "TODO-0086"
+title = "Make Sim3 alignment artifacts single-owner when alignment and evaluation both run"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0080",
+]
+loc_min = 30
+loc_expected = 90
+loc_max = 200
+files = [
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "tests/test_eval.py",
+    "tests/test_pipeline.py",
+]
+acceptance = [
+    "A run with both `align.trajectory` and `evaluate.trajectory` enabled has deterministic single-owner semantics for `trajectory_alignment.json`, `trajectory_sim3_aligned.tum`, and `point_cloud_sim3_aligned.ply`.",
+    "Evaluation either reuses existing compatible alignment artifacts or writes stage-scoped outputs that cannot silently overwrite standalone alignment outputs.",
+    "The offline cloud-alignment stage consumes the single authoritative Sim3-aligned point cloud from `align.trajectory` before ICP/cloud metrics run.",
+    "The cloud-alignment path records which trajectory-alignment artifact identity it consumed so weak or overwritten Sim3 outputs can be traced from cloud metrics.",
+    "Rerun artifact visualization receives one intended aligned trajectory/cloud artifact identity per exported recording.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/summary/stage_manifests.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by making align.trajectory the sole persisted Sim3 artifact producer and keeping evaluate.trajectory metric-only."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0091"
+title = "Validate Sim3 point-cloud alignment frame and gravity semantics"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0085",
+]
+loc_min = 45
+loc_expected = 120
+loc_max = 280
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/runtime.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "tests/test_eval.py",
+]
+acceptance = [
+    "Trajectory-to-cloud Sim3 alignment records and validates frame/up semantics before the transformed cloud is accepted for dense-cloud benchmarking.",
+    "ADVIO runs either use an alignment mode that preserves gravity/up when required or explicitly flag full-3D Umeyama output as unsuitable for cloud metrics when residuals or orientation diagnostics are poor.",
+    "The 2026-05-31 18:42 case with scale about 5.49, trajectory RMS about 27.39 m, and apparent upside-down cloud orientation is reproduced by a focused diagnostic or regression fixture.",
+    "The diagnostic includes a reflection/signed-axis-permutation control so a true frame-convention bug is distinguished from a weak trajectory fit.",
+    "Cloud ICP/evaluation reports unavailable or low-confidence instead of producing normal benchmark metrics when the Sim3 input fails frame/up or residual gates.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/point_cloud_sim3_aligned.ply",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_metrics.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved with strict Sim3 cloud-use diagnostics and rejection gates for matched pairs, RMS, RDF up-axis tilt, and scale validity."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0096"
+title = "Make `ReferenceCloudRef` native-frame semantics explicit or remove the dropped field"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0090",
+]
+loc_min = 8
+loc_expected = 25
+loc_max = 80
+files = [
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+acceptance = [
+    "`_write_cloud_ref()` no longer passes constructor fields that `ReferenceCloudRef` silently ignores.",
+    "If `native_frame` is needed across package boundaries, `ReferenceCloudRef` declares it and reference-cloud visualization/provenance tests assert it.",
+    "If side metadata remains the sole native-frame owner, the in-memory DTO and tests stop implying that `native_frame` exists on `ReferenceCloudRef`.",
+    "A focused mypy or equivalent static check no longer reports the `ReferenceCloudRef(native_frame=...)` constructor error.",
+]
+sources = [
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by adding ReferenceCloudRef.native_frame and asserting preservation in ADVIO/source visualization tests."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0097"
+title = "Persist the resolved trajectory-alignment baseline source"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0091",
+]
+loc_min = 8
+loc_expected = 25
+loc_max = 70
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_alignment/spec.py",
+    "tests/test_eval.py",
+]
+acceptance = [
+    "`TrajectoryAlignmentArtifact.reference_source` is populated from the resolved baseline source, not hardcoded to `ground_truth`.",
+    "A non-ground-truth baseline test proves ARCore or ARKit alignment metadata persists the selected source value.",
+    "Rerun semantic events and persisted `trajectory_alignment.json` agree on the same reference-source provenance.",
+]
+sources = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "tests/test_eval.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by carrying baseline_source into alignment selection and persisted trajectory_alignment.json provenance."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0098"
+title = "Make trajectory-alignment point-cloud outputs and fingerprints input-aware"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0092",
+]
+loc_min = 18
+loc_expected = 55
+loc_max = 140
+files = [
+    "src/prml_vslam/eval/stage_alignment/config.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "tests/test_eval.py",
+    "tests/test_pipeline_config.py",
+]
+acceptance = [
+    "`align.trajectory` planned outputs distinguish always-written trajectory artifacts from the optional Sim3-aligned point cloud, or the stage explicitly requires dense SLAM points before planning that output.",
+    "The trajectory-alignment failure/input fingerprint includes the dense point-cloud artifact identity whenever the aligned point cloud can be produced.",
+    "`align.cloud` cannot consume a stale or undeclared `aligned_point_cloud_ply` artifact after the source SLAM dense cloud changes or is absent.",
+    "Tests cover both dense-cloud-present and dense-cloud-absent trajectory-alignment cases.",
+]
+sources = [
+    "src/prml_vslam/eval/stage_alignment/config.py",
+    "src/prml_vslam/eval/stage_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by making Sim3 cloud artifacts runtime-only accepted outputs and including dense cloud inputs in trajectory-alignment fingerprints."
+source_collection = "todos"
+
 [[resolved_refactors]]
 id = "REFACTOR-0001"
 title = "Collapse the duplicated stage-runtime result and completion seams"
@@ -4354,4 +4705,40 @@ sources = [
 previous_status = "suggested"
 resolved_on = "2026-04-25"
 resolution_note = "Partially resolved by PR #68 which introduced StageResult and StageResultStore. Remaining migration-only shims are tracked as part of the WP-10 cleanup."
+source_collection = "refactors"
+
+[[resolved_refactors]]
+id = "REFACTOR-0005"
+title = "Prune the ADVIO raw point-cloud sequence contract if no consumer replays it"
+status = "resolved"
+priority = "medium"
+summary = "The ADVIO benchmark surface previously exposed both materialized `ReferenceCloudRef` PLYs and a raw payload-sequence DTO containing `index_path`, `payload_root`, and `trajectory_path`. The consolidated slop review found this sequence surface dangerous and likely overbuilt unless a real downstream consumer replays payload sequences with typed semantics. Prefer materialized source-native and optionally aligned clouds plus metadata."
+loc_min = 40
+loc_expected = 120
+loc_max = 280
+files = [
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/stage/artifacts.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/README.md",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+acceptance = [
+    "If no production consumer replays raw ADVIO Tango payload sequences, remove the raw sequence DTO, payload-semantics helper, related source-stage artifact keys, and tests that assert the raw sequence contract.",
+    "Materialized `ReferenceCloudRef` artifacts retain the validated payload-fusion metadata needed for benchmark and Rerun use.",
+    "If the sequence contract is retained, a tested consumer and explicit payload/frame semantics justify the surface, and visualization/export metadata cannot accidentally imply an already GT-aligned dense reference.",
+    "The cleanup reduces LOC or contract surface area without removing the corrected source-native Tango reference cloud or the high-RMS aligned-cloud gate.",
+]
+sources = [
+    ".agents/work/worktree-slop-review-gpt55pro.md",
+    ".omx/ultragoal/brief.md",
+    "src/prml_vslam/sources/contracts.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "tests/test_advio.py",
+]
+previous_status = "suggested"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by deleting the unused ADVIO raw point-cloud sequence DTO surface and keeping materialized ReferenceCloudRef PLYs plus metadata."
 source_collection = "refactors"

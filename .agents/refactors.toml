@@ -81,41 +81,61 @@ sources = [
 ]
 
 [[refactors]]
-id = "REFACTOR-0005"
-title = "Prune the ADVIO reference point-cloud sequence contract if no consumer replays it"
+id = "REFACTOR-0006"
+title = "Split trajectory evaluation artifacts away from generic evaluation DTOs"
 status = "suggested"
 priority = "medium"
-summary = "The current ADVIO benchmark surface exposes both materialized `ReferenceCloudRef` PLYs and raw `ReferencePointCloudSequenceRef` triples containing `index_path`, `payload_root`, and `trajectory_path`. The consolidated slop review found this sequence surface dangerous and likely overbuilt unless a real downstream consumer replays payload sequences with typed semantics. Prefer materialized source-native and optionally aligned clouds plus metadata."
-loc_min = 40
-loc_expected = 120
-loc_max = 280
+summary = "`EvaluationArtifact` still carries trajectory-specific semantics while dense-cloud and alignment stages now have first-class artifacts beside it. The current docstring says dense-cloud artifacts should specialize, so keeping the catch-all name invites more optional fields and unclear ownership as evaluation stages grow."
+loc_min = 30
+loc_expected = 90
+loc_max = 220
 files = [
-    "src/prml_vslam/sources/contracts.py",
-    "src/prml_vslam/sources/stage/artifacts.py",
-    "src/prml_vslam/sources/stage/visualization.py",
-    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
-    "src/prml_vslam/sources/datasets/README.md",
-    "tests/test_advio.py",
-    "tests/test_source_runtime.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "tests/test_eval.py",
 ]
 acceptance = [
-    "If no production consumer replays raw ADVIO Tango payload sequences, remove `ReferencePointCloudSequenceRef`, `ReferencePointCloudPayloadSemantics`, related source-stage artifact keys, and tests that assert the raw sequence contract.",
-    "Materialized `ReferenceCloudRef` artifacts retain the validated payload-fusion metadata needed for benchmark and Rerun use.",
-    "If the sequence contract is retained, a tested consumer and explicit payload/frame semantics justify the surface, and visualization/export metadata cannot accidentally imply an already GT-aligned dense reference.",
-    "The cleanup reduces LOC or contract surface area without removing the corrected source-native Tango reference cloud or the high-RMS aligned-cloud gate.",
+    "Trajectory metrics use a clearly named trajectory-specific artifact DTO instead of generic `EvaluationArtifact` where the type crosses package boundaries.",
+    "Dense-cloud and alignment artifacts remain separate first-class contracts rather than accumulating optional fields on one generic evaluation model.",
+    "Service, runtime, and app call sites preserve behavior while the new names make artifact ownership obvious.",
 ]
 sources = [
-    ".agents/work/worktree-slop-review-gpt55pro.md",
-    ".omx/ultragoal/brief.md",
-    "src/prml_vslam/sources/contracts.py",
-    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
-    "tests/test_advio.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+]
+
+[[refactors]]
+id = "REFACTOR-0007"
+title = "Reconcile frusta-history contract text with persistent keyframe behavior"
+status = "suggested"
+priority = "medium"
+summary = "`VisualizationConfig.frusta_history_window_streaming` still describes a bounded keyed-camera/frusta window, but the current Rerun policy preserves keyed frusta and only drops indices from the bookkeeping deque. The new behavior is intentional after the blueprint fix, but the config contract now overpromises eviction semantics."
+loc_min = 6
+loc_expected = 25
+loc_max = 70
+files = [
+    "src/prml_vslam/visualization/contracts.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_streaming_visualization.py",
+]
+acceptance = [
+    "The config docstring and any user-facing text state whether the window bounds heavy keyframe camera payloads, live visibility bookkeeping, or actual persistent frusta entities.",
+    "If persistent frusta are the intended behavior, tests assert that stale keyed geometry is retained while heavy image payloads remain opt-in.",
+    "If bounded frusta are restored, `_evict_stale_keyframe_cameras()` clears the intended entity subtree without removing keyframe pointmaps unexpectedly.",
+]
+sources = [
+    "src/prml_vslam/visualization/contracts.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_streaming_visualization.py",
 ]
 
 [meta]
 schema_version = 3
 repo = "prml-vslam"
-updated_on = "2026-05-31"
-source = "Seeded from the repo-local simplification workflow, current code-index triage, validated simplification guidance favoring one canonical owner, consolidated GPT-5.5 Pro slop review, and ADVIO/Rerun modality review findings."
+updated_on = "2026-06-01"
+source = "Seeded from the repo-local simplification workflow, current code-index triage, validated simplification guidance favoring one canonical owner, consolidated GPT-5.5 Pro slop review, ADVIO/Rerun modality review findings, and 2026-06-01 dual-base slop review findings."
 active_collection = "refactors"
 loc_unit = "lines"
