@@ -246,7 +246,7 @@ title = "Rerun live viewer routing still needs throughput guardrails after the b
 status = "open"
 priority = "high"
 category = "visualization"
-summary = "A 2026-05-31 `vista-full-tuning` streaming run completed with the online Rerun viewer missing live/source/SLAM imagery and point-cloud surfaces. The branch now regenerates the checked-in blueprint, disables default pose-axis fanout, and restores selective live source-reference trajectories, but the bounded ADVIO smoke still emitted one-deep live/export sidecar lag warnings during high-frequency SLAM updates. The remaining risk is throughput/backpressure rather than stale blueprint paths."
+summary = "A 2026-05-31 `vista-full-tuning` streaming run completed with the online Rerun viewer missing live/source/SLAM imagery and point-cloud surfaces. The branch now regenerates the checked-in blueprint, disables default pose-axis fanout, preserves persistent keyframe frusta, and restores the expected `world/slam/vista_slam_world/...` live/export entities, but the ADVIO-20 streaming smoke still emits live/export sidecar lag warnings and repeated Rerun gRPC flush timeouts. The remaining risk is throughput/backpressure and graceful sink shutdown rather than stale blueprint paths."
 files = [
     "src/prml_vslam/main.py",
     "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
@@ -263,7 +263,10 @@ notes = [
     "`trajectory_pose_axis_length = 0.0` is now the committed `vista-full.toml` default, so long reference trajectories do not generate default-visible `/poses/XXXXXX` fanout unless explicitly requested.",
     "Selective routing is intentional: live receives SLAM runtime updates and lightweight source-reference trajectories, while reference point clouds, artifact visualizations, and final artifact fanout remain export-only.",
     "The bounded ADVIO-20 smoke on 2026-05-31 completed 300 frames and exported current `world/slam/vista_slam_world/live/model/...` paths, 48 keyed camera/point-cloud entities, and reference trajectories, with no stale `/world/live/model` path.",
-    "That smoke still produced intermittent live/export sidecar lag warnings with `max_consecutive_pending=1`; this is acceptable for the current fix but leaves throughput/backpressure or coalescing work open for sustained heavier runs.",
+    "The full current-config ADVIO-20 smoke on 2026-05-31 completed 500 frames and exported `world/slam/vista_slam_world/live/model/camera/image` with Pinhole+Image components, 76 persistent keyframe camera frusta, keyed pointmaps, Tango reference clouds, ARCore source/aligned trajectories, ARKit source-native trajectory, and the method-origin transform.",
+    "That 500-frame smoke still produced repeated Rerun gRPC flush timeouts, live/export sidecar lag warnings at `max_consecutive_pending=1`, and a coordinator graceful-shutdown timeout after the stages reached completed state.",
+    "The auto-launched Rerun viewer failed in that smoke because port 9090 was already in use, so the latest evidence comes from the exported RRD inventory and validation bundle rather than an online viewer screenshot.",
+    "Throughput/backpressure or coalescing work remains open for sustained heavier runs even though the exported entity semantics now match the intended tree.",
     "`run-config` intentionally keeps the process alive while waiting for the Rerun viewer to close after the pipeline reaches a terminal state, so a still-running CLI parent is not proof that stages are still executing.",
 ]
 sources = [
@@ -274,12 +277,176 @@ sources = [
     ".configs/pipelines/vista-full.toml",
     ".logs/runs/vista-full-tuning/2026-05-31_13:49:31_vista-full-tuning.log",
     ".logs/runs/vista-full-tuning/2026-05-31_15:10:28_vista-full-tuning.log",
+    ".logs/runs/vista-full-tuning/2026-05-31_16:54:44_vista-full-tuning.log",
     ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".artifacts/vista-full-tuning/vista/visualization/validation/summary.json",
+]
+
+[[issues]]
+id = "ISSUE-0077"
+title = "Offline ViSTA Rerun export drops generated keyframe update surfaces"
+status = "open"
+priority = "high"
+category = "visualization"
+summary = "Offline ViSTA runs buffer per-frame/keyframe `SlamUpdate` values inside `VistaSlamRuntime`, but `VistaSlamBackend.run_observations()` calls `runtime.step(...)` and then `runtime.finish()` without draining those updates through `SlamStageRuntime` into `StageRuntimeUpdate` visualizations. Offline exported RRDs therefore contain terminal raw trajectory/cloud artifacts but no live model, tracking, keyframe frusta, or keyframe pointmap entities."
+files = [
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_streaming_visualization.py",
+]
+notes = [
+    "`vista-full.toml` currently runs in offline mode; the 2026-05-31 exported RRD has no `/world/slam/vista_slam_world/keyframes/**`, `/live/model/**`, or `/live/tracking/**` entities.",
+    "The missing keyframe/raw pointmap data is not a blueprint-only issue because those entity paths are absent from the RRD inventory.",
+    "The final raw dense cloud is present separately as `/world/slam/vista_slam_world/point_cloud/raw`; this issue tracks the lost per-keyframe/live update surface.",
+    "Current worktree evidence: `src/prml_vslam/methods/vista/session.py` buffers updates in `VistaSlamRuntime._pending_updates`, while `src/prml_vslam/methods/vista/adapter.py` does not call `drain_updates()` in the offline `run_observations()` path.",
+    "A future fix should either replay offline keyframe updates into the export stream with bounded payload policy or explicitly document and validate offline exports as terminal-artifact-only.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".logs/runs/vista-full-tuning/2026-05-31_17:30:35_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/adapter.py",
+    "src/prml_vslam/methods/stage/runtime.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+
+[[issues]]
+id = "ISSUE-0080"
+title = "Trajectory alignment and evaluation stages share mutable Sim3 output paths"
+status = "open"
+priority = "medium"
+category = "evaluation"
+summary = "When both `align.trajectory` and `evaluate.trajectory` are enabled, both stages compute and write the same Sim3 alignment files under `evaluation/`. The later evaluation stage can overwrite standalone alignment outputs, and Rerun export sees duplicate aligned trajectory/cloud artifacts."
+files = [
+    ".configs/pipelines/vista-full.toml",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+notes = [
+    "`vista-full.toml` currently enables both trajectory alignment and trajectory evaluation.",
+    "Both stages expose `trajectory_alignment`, `aligned_estimate_tum`, and `aligned_point_cloud_ply` artifacts with the same deterministic paths.",
+    "Current worktree evidence: `TrajectoryEvaluationService.compute_trajectory_alignment()` and `compute_evaluation()` both call the same `alignment_path()`, `aligned_estimate_path()`, and `aligned_point_cloud_path()` helpers.",
+    "The new cloud-alignment stage depends on `StageKey.TRAJECTORY_ALIGNMENT` for the Sim3-aligned cloud, so the intended offline point-cloud-eval path should have a single authoritative trajectory-alignment owner before cloud metrics consume aligned geometry.",
+    "The 2026-05-31 18:42 offline cloud-eval run shows why this matters: `align.cloud` consumes the trajectory Sim3 output as its only estimate input before ICP, so any weak or overwritten trajectory alignment directly controls point-cloud benchmark coordinates.",
+    "The 2026-05-31 stage manifests show both stages claiming the same aligned outputs.",
+    "The actual point-cloud Sim3 transform is performed before Rerun logging by `_write_aligned_point_cloud()`; the overlay path only displays the materialized PLY.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/summary/stage_manifests.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/services.py",
+]
+
+[[issues]]
+id = "ISSUE-0081"
+title = "ADVIO ARKit source-native references can survive while aligned references are silently dropped"
+status = "open"
+priority = "medium"
+category = "sources"
+summary = "ADVIO optional provider reference generation appends the source-native ARKit trajectory before attempting GT alignment. When the later alignment/projection step raises, the source-native reference remains but the aligned reference is absent, and the warning says the optional trajectory was skipped. The 2026-05-31 ADVIO-20 run produced ARKit source-native only, so viewer and benchmark outputs look incomplete and diagnostics do not tell users whether this is expected policy or a recoverable alignment failure."
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/contracts.py",
+    "tests/test_advio.py",
+]
+notes = [
+    "Current ADVIO-20 inputs include `arkit.tum` but no `arkit_aligned_to_gt.tum`; ARCore has both source-native and aligned references.",
+    "The failure observed in the log is a rotation projection Frobenius error of 0.127458, above the current optional-provider alignment limit of 0.1.",
+    "Current worktree evidence: `_append_optional_reference_trajectory()` appends the source-native `ReferenceTrajectoryRef` before calling `_ensure_aligned_advio_tum()`, and the single `except ValueError` warning covers failures from either phase.",
+    "Resolved ISSUE-0075/TODO-0081 recovered sanitation for valid optional references, but this run shows the partial-source-native/absent-aligned case still needs explicit diagnostics and policy.",
+]
+sources = [
+    ".logs/runs/vista-full-tuning/2026-05-31_17:30:35_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/benchmark/inputs.json",
+    ".artifacts/vista-full-tuning/vista/benchmark/arkit.metadata.json",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+]
+
+[[issues]]
+id = "ISSUE-0085"
+title = "Trajectory Sim3 cloud alignment is weak and unconstrained by up-frame semantics"
+status = "open"
+priority = "high"
+category = "evaluation"
+summary = "The offline point-cloud benchmark path applies the trajectory Sim3 directly to the final ViSTA cloud before ICP/cloud metrics. In the 2026-05-31 18:42 ADVIO-20 run, the trajectory Sim3 has scale 5.49 and RMS 27.39 m, and its proper rotation includes large pitch/roll components. The resulting `/world/overlays/advio_gt_world/vista/sim3_aligned/point_cloud` is scene-scale but can look upside down or gravity-inconsistent in the viewer, so dense-cloud evaluation needs an explicit frame/up convention check instead of trusting unconstrained Umeyama output."
+files = [
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/runtime.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "tests/test_eval.py",
+]
+notes = [
+    "The stored trajectory Sim3 rotation has determinant about +1, so the observed inversion is not proven to be a literal reflection; the current evidence points to a weak full-3D alignment and unresolved RDF/RUF/up-frame convention validation.",
+    "A 2026-05-31 follow-up probe found that allowing reflections or pre-applying signed axis permutations to the SLAM trajectory did not improve the 27.39 m Sim3 residual, which argues against a simple one-matrix ADVIO/VISTA basis flip.",
+    "The 18:42 run's Sim3-aligned cloud spans about 163.8 x 27.8 x 176.1 m and its sampled dominant plane is near-horizontal in RDF coordinates, while the trajectory alignment residual remains 27.39 m.",
+    "After fixing Tango reference-cloud materialization, the local ADVIO-20 Tango aligned cloud and ViSTA Sim3 cloud both have near-horizontal sampled dominant planes in the target RDF frame; the old invalid Tango cloud no longer explains the perceived ViSTA inversion by itself.",
+    "A post-fix probe against the newly materialized ADVIO-20 `tango_raw_aligned.ply` still produced ICP fitness 0.0 and dense-cloud f-score 0.0 for the existing `point_cloud_sim3_aligned.ply`; Tango reference prep is no longer the only blocker for point-cloud metrics.",
+    "The raw SLAM and reference trajectories show different apparent turn directions in the viewer before/after alignment; repository evidence does not yet isolate whether this is a source-frame convention issue, an ADVIO reference normalization issue, or poor trajectory association/alignment.",
+    "The post-fix probe used the corrected Tango reference without rerunning ViSTA and still failed ICP, so the next patch should validate or gate the trajectory-Sim3 estimate before changing ViSTA frame conventions.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_alignment.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/trajectory_sim3_aligned.tum",
+    ".artifacts/vista-full-tuning/vista/evaluation/point_cloud_sim3_aligned.ply",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_alignment.json",
+    ".artifacts/probes/advio-tango-fix-cloud-eval/evaluation/cloud_metrics.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+]
+
+[[issues]]
+id = "ISSUE-0086"
+title = "Offline ViSTA final dense cloud does not preserve streaming pointmap coverage"
+status = "open"
+priority = "medium"
+category = "methods"
+summary = "The final offline ViSTA `pointcloud.ply` is generated from upstream `save_data_all()` using confidence-masked fused depth maps, while streaming Rerun pointmaps come from `get_pointmap_vis()` and are logged as camera-local pointmaps without that final export mask. In the 2026-05-31 18:42 ADVIO-20 run, the final raw cloud contains 3,007,121 points from 455 keyframes, but the native confidence tensor has 22,830,080 pixels and only about 13.17% pass the export mask. This explains why `/world/slam/vista_slam_world/point_cloud/raw` misses points that were visible in streaming pointmaps."
+files = [
+    "external/vista-slam/vista_slam/slam.py",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
+    "src/prml_vslam/methods/stage/visualization.py",
+    "tests/test_methods.py",
+    "tests/test_streaming_visualization.py",
+]
+notes = [
+    "Upstream `save_data_all()` writes `pointcloud.ply` from `scaled_depths = depths * scales` and `masks = confs > self.conf_thres`; the repo then copies that fused PLY as the raw SLAM artifact.",
+    "Streaming pointmaps use `get_pointmap_vis()` and the repo only treats finite `z > 0` rows as valid for live telemetry, so live/debug coverage and final benchmark-cloud coverage are intentionally different today.",
+    "The 18:42 artifact inspection found `confs.npz` shape `[455, 224, 224]`, threshold 4.2, and 3,007,121 mask-positive pixels out of 22,830,080 total.",
+    "This is separate from Rerun visibility: the RRD contains `/world/slam/vista_slam_world/point_cloud/raw` with the final PLY's points; the missing geometry is already absent from the final PLY surface.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/native/confs.npz",
+    ".artifacts/vista-full-tuning/vista/native/pointcloud.ply",
+    ".artifacts/vista-full-tuning/vista/slam/point_cloud.ply",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "external/vista-slam/vista_slam/slam.py",
+    "src/prml_vslam/methods/vista/session.py",
+    "src/prml_vslam/methods/vista/artifacts.py",
 ]
 
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-05-31"
-source = "Validated review findings including ADVIO Tango review plus follow-up repository policy notes and Rerun live viewer regression analysis"
+updated_on = "2026-06-01"
+source = "Validated and refreshed review findings including ADVIO Tango review, Rerun live viewer regression analysis, 2026-05-31 offline RRD inspection, Tango reference-cloud artifact inspection, current dirty-worktree code/config evidence, the 2026-05-31 18:42 cloud-evaluation run, consolidated GPT-5.5 Pro slop review, focused pytest, and focused mypy evidence"
 active_collection = "issues"

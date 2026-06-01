@@ -1,7 +1,7 @@
 [meta]
 schema_version = 2
 repo = "prml-vslam"
-updated_on = "2026-05-31"
+updated_on = "2026-06-01"
 source = "Resolved or retired issue and todo records moved out of the active backlogs, plus imported review items assessed as already addressed in the current tree or superseded by the current architecture policy."
 
 [[resolved_issues]]
@@ -2154,7 +2154,315 @@ sources = [
 ]
 previous_status = "open"
 resolved_on = "2026-05-31"
-resolution_note = "Resolved by correcting ADVIO Tango docs/diagrams, recording payload semantics in contracts and metadata, and fixing reference-cloud loading so Tango payload rows are not transformed again by interpolated device poses before the one optional GT alignment."
+resolution_note = "Resolved by correcting ADVIO Tango docs/diagrams and recording the then-current payload semantics; later ISSUE-0082 superseded the no-per-payload-pose interpretation for benchmark materialization by fusing payloads through raw Tango poses."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0075"
+title = "ADVIO optional references are dropped by short Tango coverage and strict provider trajectories"
+status = "resolved"
+priority = "high"
+category = "sources"
+summary = "ADVIO Tango point-cloud reference generation used `area-learning.csv` as the cloud trajectory, so sequences whose area-learning stream covered only the beginning of `point-cloud.csv` silently discarded later Tango payloads. The final implementation removes that area-learning/raw selection branch: repo-prepared Tango reference clouds are raw-backed only, while ARCore and ARKit optional trajectories are sanitized before optional reference generation."
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+notes = [
+    "Tango reference-cloud prep is raw-backed and later ISSUE-0082 materializes payload rows through timestamp-associated raw Tango poses for scene-scale static benchmark clouds.",
+    "Tango reference-cloud prep now uses `tango/raw.csv` as the only provider trajectory for source-native cloud framing and the optional GT alignment.",
+    "`area-learning.csv` remains available as a pose stream, but is ignored by repository-prepared Tango reference clouds.",
+    "Optional ARCore/ARKit benchmark references now sanitize finite rows, timestamp ordering, duplicates, and quaternion normalization before writing source-native/aligned references.",
+    "Reference point-cloud sequence trajectory visualization is suppressed, and any retained sequence refs use the raw Tango trajectory instead of a short area-learning trajectory.",
+]
+sources = [
+    "https://github.com/AaltoVision/ADVIO",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "tests/test_advio.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by making Tango reference-cloud prep raw-only, deleting the area-learning/raw fallback selection and fallback metadata, sanitizing optional ARCore/ARKit references, and suppressing misleading point-cloud-sequence trajectory visualization. Later ISSUE-0082 changed static Tango cloud materialization to apply raw-pose fusion."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0076"
+title = "Rerun keyframe camera history logs heavy image planes and clears persistent frusta"
+status = "resolved"
+priority = "high"
+category = "visualization"
+summary = "The Rerun sink logged historical keyframe RGB/depth image-plane payloads by default and evicted whole keyed camera subtrees. This made the live tree heavier than needed and could remove the small frusta that should remain as persistent pose/intrinsics history."
+files = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/contracts.py",
+    ".configs/visualization/vista_blueprint.rbl",
+    "tests/test_rerun_layout_semantics.py",
+    "tests/test_streaming_visualization.py",
+    "tests/test_visualization.py",
+]
+notes = [
+    "The current entity tree remains under `world/slam/vista_slam_world/...`; no neutral alias or `world/live/...` rename was introduced.",
+    "The live model camera keeps a larger Pinhole and RGB image plane by default.",
+    "Historical keyframes now keep small persistent Pinhole frusta by default while RGB/depth/preview payloads are skipped unless the internal policy opts into full keyframe camera payloads.",
+    "The method origin at `world/slam/vista_slam_world` has one visible axis marker and alignment updates preserve that marker via the same axis length.",
+]
+sources = [
+    "https://rerun.io/docs/concepts/spaces-and-transforms",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_streaming_visualization.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by adding role-specific Pinhole image-plane distances, enabling the latest live model camera RGB branch by default, suppressing historical keyframe camera payloads by default, preserving keyed frusta/pointmaps instead of clearing camera subtrees, and regenerating the checked-in blueprint."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0082"
+title = "ADVIO Tango reference-cloud prep collapses local payloads into a tiny source-native cloud"
+status = "resolved"
+priority = "high"
+category = "sources"
+summary = "Before this fix, the raw-only Tango reference-cloud loader treated each `point-cloud-*.csv` payload row as already positioned in `advio_tango_raw_world` and only applied raw-basis-to-RDF conversion before stacking. In the local ADVIO-20 artifacts and the 2026-05-31 18:42 RRD, the source-native PLY/Rerun entity preserved all 3666 finite payload rows but spanned only about 4.76 x 4.19 x 2.02 m near the origin while the raw Tango trajectory spanned about 72.79 x 2.01 x 125.24 m. Both `/world/reference/points/tango_raw/source_native` and `/world/reference/points/tango_raw/aligned` therefore looked nonsensical for scene-scale benchmarking."
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/advio/README.md",
+    "tests/test_advio.py",
+]
+notes = [
+    "The local ADVIO-20 `point-cloud.csv` contains 24 payloads and the payload files contain 3666 finite XYZ rows; `tango_raw_source_native.ply` preserves those 3666 rows with `point_stride=1` and `max_reference_points=200000`.",
+    "The source-native artifact spans about 4.8 m by 4.2 m by 2.0 m, while the raw Tango trajectory spans about 72.8 m by 2.0 m by 125.2 m after RDF conversion.",
+    "The 2026-05-31 18:42 RRD confirms this is not a Rerun decimation artifact: `/world/reference/points/tango_raw/source_native/points_3666_skipped_0/point_cloud` contains all 3666 logged points and still has the tiny bounds.",
+    "Applying timestamp-associated raw Tango poses in a read-only probe produced a 3666-point cloud spanning about 70.9 m by 3.1 m by 106.9 m, which is compatible with the raw Tango trajectory scale.",
+    "Pre-fix metadata made the mismatch harder to diagnose: `tango_raw_source_native.metadata.json` recorded `payload_frame = advio_tango_raw_world`, `payload_pose_semantics = pose_aligned_by_tango`, and `per_payload_pose_applied = false` even though the numeric payload bundle behaved like local per-capture geometry for benchmarking.",
+    "This supersedes the resolved ISSUE-0073/TODO-0078 interpretation for benchmark-reference-cloud usage: the official ADVIO wording says the payloads are aligned to the current Tango pose, but the local numeric payloads behave like per-capture local range clouds unless a pose transform is applied.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_source_native.ply",
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_source_native.metadata.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".data/advio/advio-20/tango/point-cloud.csv",
+    ".data/advio/advio-20/tango/point-cloud-*.csv",
+    ".data/advio/advio-20/tango/raw.csv",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "https://github.com/AaltoVision/ADVIO#tango",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by fusing each ADVIO Tango payload through its timestamp-associated raw Tango pose into advio_tango_raw_world, recording depth-local payload semantics, and validating ADVIO-20 source-native span at about 70.94 x 3.13 x 106.93 m."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0084"
+title = "ADVIO Tango aligned reference clouds are exported after a poor raw-to-GT fit"
+status = "resolved"
+priority = "high"
+category = "evaluation"
+summary = "The ADVIO Tango reference-cloud path fits a planar rigid raw-Tango-to-GT alignment and exports an aligned cloud whenever enough timestamp pairs exist, but it does not reject or flag poor fits. In the 2026-05-31 ADVIO-20 runs, `tango_raw_aligned.metadata.json` records an RMS alignment error of about 65 m and the aligned cloud is still exposed under the GT-world reference path. The 18:42 cloud-eval run then used that bad aligned Tango cloud as the dense reference, yielding ICP fitness 0.0 and all-zero precision/recall."
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/contracts.py",
+    "tests/test_advio.py",
+    "tests/test_streaming_visualization.py",
+]
+notes = [
+    "`fit_planar_rigid_alignment()` computes and records RMS error but `build_advio_tango_reference_clouds()` does not apply an acceptance threshold before writing the aligned reference cloud.",
+    "The local ADVIO-20 aligned metadata records `alignment_type=planar_rigid`, `matched_pairs=9953`, and `rms_error_m=65.14707873697981`.",
+    "The 2026-05-31 18:42 run configured `--stages.align_cloud.reference_source tango_raw`; `align.cloud` used `benchmark/tango_raw_aligned.ply`, reported `fitness=0.0`, and `evaluate.cloud` reported `precision=0.0`, `recall=0.0`, and `f_score=0.0`.",
+    "Pre-fix worktree evidence: after `fit_planar_rigid_alignment()` succeeded, `build_advio_tango_reference_clouds()` immediately applied the transform and wrote the aligned `ReferenceCloudRef`; only a `ValueError` prevented aligned output.",
+    "The source-native frame issue in ISSUE-0082 makes this worse, but the lack of an alignment-quality gate is independently present: a bad provider-to-GT fit should not silently produce an `aligned` reference product.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_aligned.metadata.json",
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_aligned.ply",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_metrics.json",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "tests/test_advio.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by switching Tango GT alignment to a documented Sim3 product and gating aligned reference-cloud emission at MAX_TANGO_TO_GT_SIM3_RMS_ERROR_M = 10.0; high-RMS fixtures now emit only source-native Tango clouds."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0078"
+title = "Default Rerun blueprint hides the exported raw SLAM point cloud"
+status = "resolved"
+priority = "medium"
+category = "visualization"
+summary = "The exported RRD contains the final raw ViSTA dense cloud at `/world/slam/vista_slam_world/point_cloud/raw`, but the default 3D scene contents include overlays, references, keyframes, and raw trajectory without including that raw cloud path. This makes the raw cloud look missing while the Sim3 overlay cloud is visible, independent of the current point-cloud decimation setting."
+files = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    ".configs/visualization/vista_blueprint.rbl",
+    "tests/test_rerun_layout_semantics.py",
+    "tests/test_visualization.py",
+]
+notes = [
+    "The 2026-05-31 RRD has 101842 decimated points under `/world/slam/vista_slam_world/point_cloud/raw`; the source PLY has 1018421 vertices and that historical run used config decimation 0.10.",
+    "`DEFAULT_3D_SCENE_CONTENTS` includes `+ world/overlays/**`, so the Sim3-aligned cloud appears by default while the raw cloud does not.",
+    "Current worktree evidence: `.configs/pipelines/vista-full.toml` now sets `point_cloud_decimation_keep_ratio = 1.0`, but `src/prml_vslam/visualization/rerun.py` still omits `+ world/slam/vista_slam_world/point_cloud/raw` from `DEFAULT_3D_SCENE_CONTENTS`.",
+    "This is a blueprint/content-query issue, not a point-cloud artifact generation failure.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".artifacts/vista-full-tuning/vista/slam/point_cloud.ply",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by adding the raw SLAM cloud path to the default Rerun 3D scene and regenerating the checked-in blueprint; covered by Rerun layout/visualization tests."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0079"
+title = "Rerun export logs terminal artifact visualizations repeatedly"
+status = "resolved"
+priority = "medium"
+category = "visualization"
+summary = "The export sidecar logs artifact visualizations after each stage and then logs the full snapshot artifacts again during sink close. In the 2026-05-31 RRD, raw trajectory/cloud appear twice and Sim3-aligned trajectory/cloud appear three times, adding duplicate static chunks and extra export-side work."
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/artifacts.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_pipeline.py",
+]
+notes = [
+    "`_submit_artifact_visualization_update()` routes each stage's artifact visualizations to export.",
+    "`_submit_final_artifact_rerun_update()` routes `artifact_visualizations(self._snapshot.artifacts)` to export again at close.",
+    "Current worktree evidence: `RunCoordinatorActor._close_rerun_sink()` still calls `_submit_final_artifact_rerun_update()` before closing the live/export sidecars, so static artifact identities already exported by `_record_stage_result()` can be logged again.",
+    "The duplication is separate from streaming live sidecar throughput, but it can amplify export lag and make RRD inspection noisier.",
+    "The current tests assert export-only routing but do not assert artifact visualization de-duplication.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/artifacts.py",
+    "tests/test_pipeline.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by removing the final full-snapshot artifact re-export during Rerun sink close; artifact visualization remains stage-scoped and covered by coordinator close tests."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0083"
+title = "Rerun source reference clouds share the global SLAM/debug decimation policy"
+status = "resolved"
+priority = "medium"
+category = "visualization"
+summary = "Source reference PLY artifacts are logged through the same global `point_cloud_decimation_keep_ratio` used for SLAM/debug geometry. The historical 2026-05-31 RRD contained 366 Tango reference points from 3666-vertex PLY artifacts because that run used 0.10 decimation. The current dirty `vista-full.toml` default is now 1.0, so the immediate default-run symptom is stale, but the policy bug remains: turning on SLAM/debug decimation also silently samples benchmark reference clouds unless a separate reference-cloud policy is introduced."
+files = [
+    ".configs/pipelines/vista-full.toml",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/contracts.py",
+    "tests/test_streaming_visualization.py",
+    "tests/test_visualization.py",
+]
+notes = [
+    "`RerunLoggingPolicy._log_source_reference_point_cloud_item()` logs source reference PLYs through `_log_pointcloud_ply_artifact()`, which applies `self.point_cloud_decimation_keep_ratio`.",
+    "`log_pointcloud_ply()` loads all PLY rows but `log_points3d()` decimates them before writing Rerun `Points3D`.",
+    "The old entity path still included `points_3666_skipped_0`, but the actual RRD component contained only 366 logged positions because that run used `point_cloud_decimation_keep_ratio = 0.10`.",
+    "Current worktree evidence: `.configs/pipelines/vista-full.toml` now sets `point_cloud_decimation_keep_ratio = 1.0`, while `tests/test_pipeline_config.py` still expects 0.10; the config/test mismatch should be cleaned up alongside the policy decision.",
+    "The artifact PLY remains full for the local cache; this issue is specifically about the persisted RRD/reference visualization surface.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_source_native.ply",
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_aligned.ply",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by adding reference_point_cloud_decimation_keep_ratio and applying it only to source reference-cloud PLY logging, separate from SLAM/debug point-cloud decimation."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0088"
+title = "Real post-run trajectory alignment events are masked by fake or dead Rerun alignment paths"
+status = "resolved"
+priority = "medium"
+category = "visualization"
+summary = "The coordinator submits a `TrajectoryAlignmentArtifact` semantic event only for `TRAJECTORY_EVALUATION` payloads, but the explicit trajectory-alignment runtime returns no payload and evaluation normally returns an evaluation artifact. At the same time `_log_initial_visual_alignment()` synthesizes a one-pair, zero-RMS alignment artifact from the first GT pose as a viewer bootstrap. Real post-run visual alignment can therefore be absent while a fake alignment-like event pollutes the Rerun semantic stream."
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/stage_trajectory/runtime.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_pipeline.py",
+    "tests/test_streaming_visualization.py",
+]
+notes = [
+    "`_record_stage_result()` handles `TrajectoryAlignmentArtifact` only when `stage_key is StageKey.TRAJECTORY_EVALUATION`, while the durable alignment owner is the explicit `align.trajectory` stage.",
+    "`_log_initial_visual_alignment()` creates a `TrajectoryAlignmentArtifact` with `matched_pairs=1`, `rms_error_m=0.0`, and `reference_source='ground_truth'`; this is a visualization bootstrap, not an evaluation alignment.",
+    "The Rerun export may still contain aligned TUM/PLY artifacts as static overlays, but that does not prove the semantic Sim(3) transform event was emitted from the real alignment artifact.",
+]
+sources = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/services.py",
+    ".agents/work/worktree-slop-review-gpt55pro.md",
+    ".omx/ultragoal/brief.md",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved by returning the real TrajectoryAlignmentArtifact from align.trajectory, routing that stage payload to Rerun, and deleting the synthetic initial visual alignment bootstrap."
+source_collection = "issues"
+
+[[resolved_issues]]
+id = "ISSUE-0089"
+title = "Changed alignment, cloud, and Rerun contract surfaces are not type-clean"
+status = "resolved"
+priority = "medium"
+category = "quality"
+summary = "A focused mypy run over the recently changed alignment, cloud evaluation, and Rerun surfaces still reports 31 errors in 10 files. Some errors are broad dependency-stub noise, but in-scope failures include reference-cloud visualization loop typing, optional dataset identifiers passed to eval helpers, cloud runtime metrics and failure fingerprint types, and Rerun sidecar payload resolver typing."
+files = [
+    "src/prml_vslam/sources/stage/visualization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud/spec.py",
+    "src/prml_vslam/eval/stage_cloud/runtime.py",
+    "src/prml_vslam/eval/stage_cloud_alignment/spec.py",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+notes = [
+    "Fresh command: `prml-vslam-worktree-env uv run mypy src/prml_vslam/sources/stage/visualization.py src/prml_vslam/eval/services.py src/prml_vslam/eval/stage_cloud/spec.py src/prml_vslam/eval/stage_cloud_alignment/spec.py src/prml_vslam/visualization/rerun.py src/prml_vslam/visualization/rerun_policy.py src/prml_vslam/visualization/rerun_sink.py src/prml_vslam/pipeline/ray_runtime/coordinator.py`.",
+    "In-scope examples include assigning `ReferenceCloudRef` into a loop variable inferred as `ReferenceTrajectoryRef`, passing `str | None` where visualization space must be `str`, passing `DatasetId | None` to helpers requiring `DatasetId`, and using `Path` values in failure fingerprints that expect primitive scalar values.",
+    "Several Ray and third-party stub errors may need local ignores or typed wrappers, but the changed contract-surface errors should be fixed directly before review.",
+]
+sources = [
+    "src/prml_vslam/sources/stage/visualization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud/spec.py",
+    "src/prml_vslam/eval/stage_cloud/runtime.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    ".omx/ultragoal/brief.md",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Resolved for the changed contract surfaces: focused mypy now has no in-scope errors after narrowing source reference variables, optional dataset handling, cloud fingerprints/metrics, Rerun payload resolver typing, and Ray actor stub fences. Remaining focused mypy output is pre-existing third-party stub/camera typing noise."
 source_collection = "issues"
 
 [[resolved_todos]]
@@ -3507,7 +3815,7 @@ files = [
     "src/prml_vslam/sources/datasets/advio/README.md",
 ]
 acceptance = [
-    "ADVIO Tango point-cloud payloads are documented as pose-aligned Tango-native geometry, not unposed depth-sensor-local pointmaps.",
+    "ADVIO Tango point-cloud payloads are documented as source-native Tango samples whose repository static benchmark materialization uses timestamp-associated raw Tango poses.",
     "README no longer claims Tango payloads can be projected into the iPhone camera frame from timestamps alone.",
     "README states that iPhone/Tango projection requires an explicit cross-device extrinsic not exposed as a canonical public repo transform.",
     "ADVIO modality and transform-tree diagram links resolve from the README location.",
@@ -3520,7 +3828,7 @@ sources = [
 ]
 previous_status = "open"
 resolved_on = "2026-05-31"
-resolution_note = "Resolved by updating the ADVIO README and Mermaid diagrams to describe Tango point-cloud payloads as already pose-aligned Tango-native geometry, fixing README-relative diagram links, and removing the timestamp-only iPhone camera-local pointmap implication."
+resolution_note = "Resolved by updating the ADVIO README and Mermaid diagrams, fixing README-relative diagram links, and removing the timestamp-only iPhone camera-local pointmap implication. Later ISSUE-0082 refined the source-cloud semantics to raw-pose-fused static benchmark materialization."
 source_collection = "todos"
 
 [[resolved_todos]]
@@ -3672,6 +3980,345 @@ sources = [
 previous_status = "open"
 resolved_on = "2026-05-31"
 resolution_note = "Resolved by regenerating .configs/visualization/vista_blueprint.rbl from build_default_blueprint(), adding a checked-in artifact guard against stale world/live/model paths, and validating the current vista_slam_world live/model 2D paths in tests and the ADVIO smoke RRD."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0081"
+title = "Recover ADVIO Tango coverage and optional ARKit/ARCore references"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0075",
+]
+loc_min = 45
+loc_expected = 120
+loc_max = 240
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/stage/visualization.py",
+    "tests/test_advio.py",
+    "tests/test_source_runtime.py",
+]
+acceptance = [
+    "Tango point-cloud loading uses `tango/raw.csv` as the source trajectory for static benchmark materialization.",
+    "Tango reference-cloud artifacts use `tango_raw` as their source identity and `advio_tango_raw_world` as their source-native frame.",
+    "Area-learning is not consulted for repository-prepared Tango reference clouds; missing or invalid raw Tango trajectories skip those optional clouds.",
+    "Metadata records depth-local payload semantics and whether raw-pose fusion is applied without fallback/coverage fields.",
+    "ARCore duplicate/nonascending timestamps are sanitized and produce source-native/aligned references when enough valid rows remain.",
+    "ARKit near-SO3 orientation drift is projected/normalized with warning metadata and still produces aligned output when within policy.",
+]
+sources = [
+    "https://github.com/AaltoVision/ADVIO",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "tests/test_advio.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by making Tango cloud prep raw-only, removing area-learning fallback selection and fallback metadata, keeping optional provider trajectory sanitation, and adding regression tests for raw-only clouds, invalid/missing raw trajectories, duplicate timestamps, and near-SO3 quaternion normalization. Later ISSUE-0082 added raw-pose fusion for static reference-cloud materialization."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0082"
+title = "Make Rerun keyframe frusta persistent and keep historical image planes opt-in"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0076",
+]
+loc_min = 35
+loc_expected = 90
+loc_max = 180
+files = [
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/visualization/contracts.py",
+    ".configs/visualization/vista_blueprint.rbl",
+    "tests/test_rerun_layout_semantics.py",
+    "tests/test_streaming_visualization.py",
+    "tests/test_visualization.py",
+]
+acceptance = [
+    "Rerun paths stay under `world/slam/vista_slam_world/...`.",
+    "The latest live model camera logs a large Pinhole and RGB image plane by default.",
+    "Historical keyframes log small frusta without RGB/depth/preview payloads by default.",
+    "A visible method-origin axis is logged at `world/slam/vista_slam_world` while live/keyframe point parents retain axis_length=0.",
+    "Frusta cleanup no longer clears persistent keyed camera or pointmap branches.",
+]
+sources = [
+    "https://rerun.io/docs/concepts/spaces-and-transforms",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_streaming_visualization.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Resolved by making keyframe camera history frusta-only by default, keeping live model RGB/image-plane logging enabled, preserving keyed branches on window updates, and regenerating the blueprint."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0088"
+title = "Rebuild ADVIO Tango reference clouds in a trajectory-compatible source frame"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0082",
+]
+loc_min = 45
+loc_expected = 130
+loc_max = 300
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/datasets/advio/README.md",
+    "tests/test_advio.py",
+]
+acceptance = [
+    "Prepared ADVIO Tango source-native reference clouds preserve every finite payload row by default, subject only to explicit `tango_reference_point_stride` or `max_reference_points` limits.",
+    "For ADVIO-20, the source-native Tango reference cloud is compatible with the raw Tango trajectory extents instead of collapsing into a few-meter local bundle near the origin.",
+    "A regression reproduces the 2026-05-31 18:42 observation that full-count Rerun logging still shows tiny source-native/aligned Tango bounds when payload rows are stacked without timestamp-associated poses.",
+    "Metadata truthfully records whether a timestamp-associated Tango pose transform was applied to payload rows and distinguishes payload-local, pose-aligned-by-source, and source-world semantics; `payload_frame` must not claim `advio_tango_raw_world` unless rows are actually in that world frame.",
+    "Regression coverage fails if local payload rows are stacked without the transform needed to make them trajectory-compatible.",
+    "README/docs are corrected if the current `pose_aligned_by_tango` wording is too strong for benchmark-reference-cloud semantics.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_source_native.ply",
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_source_native.metadata.json",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".data/advio/advio-20/tango/point-cloud.csv",
+    ".data/advio/advio-20/tango/point-cloud-*.csv",
+    ".data/advio/advio-20/tango/raw.csv",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_frames.py",
+    "https://github.com/AaltoVision/ADVIO#tango",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Implemented with focused ADVIO loader/docs/metadata tests: translated raw-pose regression proves payloads no longer stay in local depth coordinates, and real ADVIO-20 source-native cloud now spans scene scale."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0090"
+title = "Gate ADVIO Tango GT-aligned clouds on alignment quality"
+status = "resolved"
+priority = "high"
+issue_ids = [
+    "ISSUE-0084",
+]
+loc_min = 25
+loc_expected = 80
+loc_max = 180
+files = [
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "src/prml_vslam/sources/datasets/advio/advio_sequence.py",
+    "src/prml_vslam/sources/contracts.py",
+    "tests/test_advio.py",
+    "tests/test_streaming_visualization.py",
+]
+acceptance = [
+    "ADVIO Tango `aligned` reference clouds are skipped or clearly marked invalid when provider-to-GT trajectory alignment residuals exceed a documented threshold.",
+    "Metadata records alignment quality, acceptance/rejection status, threshold, and diagnostic reason.",
+    "The source-native reference cloud remains available when GT alignment is rejected.",
+    "Cloud alignment/evaluation cannot silently select a rejected Tango aligned cloud as the dense reference; the 18:42 `fitness=0.0` / `f_score=0.0` case is prevented or reported as unavailable.",
+    "A bad alignment does not appear as a normal `/world/reference/points/tango_raw/aligned/...` Rerun entity unless its invalid/rejected status is visible to consumers.",
+    "A regression covers the ADVIO-20-like high-RMS case and prevents it from appearing as a normal `/world/reference/points/tango_raw/aligned/...` product.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_aligned.metadata.json",
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_aligned.ply",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_alignment.json",
+    ".artifacts/vista-full-tuning/vista/evaluation/cloud_metrics.json",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".logs/runs/vista-full-tuning/2026-05-31_18:42:24_vista-full-tuning.log",
+    "src/prml_vslam/sources/datasets/advio/advio_geometry.py",
+    "tests/test_advio.py",
+]
+previous_status = "open"
+resolved_on = "2026-05-31"
+resolution_note = "Implemented with a mandatory high-RMS regression, source-native fallback behavior, no ungated aligned sequence refs, and ADVIO-20 probe showing accepted Sim3 RMS about 6.75 m."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0084"
+title = "Expose the raw SLAM point-cloud artifact in the default Rerun 3D scene"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0078",
+]
+loc_min = 6
+loc_expected = 20
+loc_max = 60
+files = [
+    "src/prml_vslam/visualization/rerun.py",
+    ".configs/visualization/vista_blueprint.rbl",
+    "tests/test_rerun_layout_semantics.py",
+    "tests/test_visualization.py",
+]
+acceptance = [
+    "The default 3D scene includes `/world/slam/vista_slam_world/point_cloud/raw` or an explicit raw SLAM point-cloud query when export artifacts are present.",
+    "Live debug-only `/world/slam/vista_slam_world/live/model/points` remains hidden by default unless intentionally changed.",
+    "The checked-in `.rbl` and in-memory blueprint tests agree on raw cloud visibility.",
+    "Tests are updated to match the current `vista-full.toml` point-cloud decimation default so raw-cloud visibility is not conflated with stale 0.10 decimation expectations.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".artifacts/vista-full-tuning/vista/slam/point_cloud.ply",
+    "src/prml_vslam/visualization/rerun.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Implemented by exposing /world/slam/vista_slam_world/point_cloud/raw in DEFAULT_3D_SCENE_CONTENTS and the checked-in blueprint."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0085"
+title = "Deduplicate terminal artifact visualization export"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0079",
+]
+loc_min = 25
+loc_expected = 70
+loc_max = 160
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/artifacts.py",
+    "tests/test_pipeline.py",
+    "tests/test_streaming_visualization.py",
+]
+acceptance = [
+    "Static artifact visualizations are logged once per artifact identity/path per exported recording.",
+    "Final snapshot export does not re-log artifacts already exported from completed stages unless an explicit refresh policy requires it.",
+    "Tests cover duplicate align/evaluate/final artifact visualizations and keep export-only routing intact.",
+]
+sources = [
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/visualization/artifacts.py",
+    "tests/test_pipeline.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Implemented by making close paths flush/close sidecars without submitting a duplicate summary artifact visualization update."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0089"
+title = "Separate source reference-cloud Rerun decimation from SLAM/debug decimation"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0083",
+]
+loc_min = 15
+loc_expected = 45
+loc_max = 120
+files = [
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/contracts.py",
+    ".configs/pipelines/vista-full.toml",
+    "tests/test_streaming_visualization.py",
+    "tests/test_visualization.py",
+]
+acceptance = [
+    "Source reference point-cloud artifacts are logged with full point count by default under the current config, independent of SLAM/debug point-cloud decimation.",
+    "If reference-cloud decimation remains configurable, it uses a separate explicit reference-cloud policy with metadata or entity-path wording that reports logged versus artifact point counts.",
+    "A regression test proves a 3666-point reference PLY can produce a 3666-point RRD reference entity with default visualization settings and is not reduced when only SLAM/debug decimation is overridden.",
+    "The stale `tests/test_pipeline_config.py` expectation for `point_cloud_decimation_keep_ratio == 0.10` is reconciled with the current `vista-full.toml` value of 1.0.",
+    "The existing ability to decimate heavy live/keyframe/SLAM artifact point clouds is preserved.",
+]
+sources = [
+    ".configs/pipelines/vista-full.toml",
+    ".artifacts/vista-full-tuning/vista/visualization/viewer_recording.rrd",
+    ".artifacts/vista-full-tuning/vista/benchmark/tango_raw_source_native.ply",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "src/prml_vslam/visualization/rerun.py",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Implemented with VisualizationConfig/RerunLoggingPolicy/RerunSinkActor support and tests proving separate source reference-cloud decimation."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0094"
+title = "Route real trajectory-alignment Rerun events and remove fake initial alignment"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0088",
+]
+loc_min = 25
+loc_expected = 80
+loc_max = 180
+files = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    "src/prml_vslam/eval/contracts.py",
+    "src/prml_vslam/visualization/rerun_policy.py",
+    "tests/test_pipeline.py",
+    "tests/test_streaming_visualization.py",
+]
+acceptance = [
+    "The real post-run visual alignment event is emitted from `align.trajectory` or by loading the materialized `trajectory_alignment.json` artifact, not from a synthetic source-stage bootstrap.",
+    "`_log_initial_visual_alignment()` is deleted, or replaced with a visualization-only event type that cannot be confused with `TrajectoryAlignmentArtifact` evaluation output.",
+    "Tests prove `StageKey.TRAJECTORY_ALIGNMENT` can drive the semantic alignment update and that evaluation-only runs do not silently overwrite or fake that event.",
+    "Rerun export still logs aligned trajectory/cloud artifacts as static overlays when those artifacts exist.",
+]
+sources = [
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+    "src/prml_vslam/eval/stage_alignment/runtime.py",
+    ".agents/work/worktree-slop-review-gpt55pro.md",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Implemented with coordinator tests proving StageKey.TRAJECTORY_ALIGNMENT emits the real semantic alignment event and close/export paths no longer fake it."
+source_collection = "todos"
+
+[[resolved_todos]]
+id = "TODO-0095"
+title = "Make changed alignment, cloud, and Rerun contract surfaces type-clean"
+status = "resolved"
+priority = "medium"
+issue_ids = [
+    "ISSUE-0089",
+]
+loc_min = 20
+loc_expected = 70
+loc_max = 180
+files = [
+    "src/prml_vslam/sources/stage/visualization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud/spec.py",
+    "src/prml_vslam/eval/stage_cloud/runtime.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
+]
+acceptance = [
+    "Reference trajectory and reference cloud visualization loops use distinct local variables or helper functions so mypy no longer confuses `ReferenceTrajectoryRef` and `ReferenceCloudRef`.",
+    "Optional dataset identifiers and optional visualization fields are narrowed before passing them to helpers that require concrete values.",
+    "Cloud stage metrics and failure fingerprints use the primitive scalar types expected by `StageOutcome` and stage failure contracts.",
+    "Rerun sidecar payload resolver typing is compatible with the runtime update API without hiding mismatches behind untyped broad casts.",
+    "A focused mypy run over the changed files has no in-scope contract-surface errors; any remaining third-party stub noise is documented or isolated.",
+]
+sources = [
+    "src/prml_vslam/sources/stage/visualization.py",
+    "src/prml_vslam/eval/services.py",
+    "src/prml_vslam/eval/stage_cloud/spec.py",
+    "src/prml_vslam/eval/stage_cloud/runtime.py",
+    "src/prml_vslam/visualization/rerun_sink.py",
+    ".omx/ultragoal/brief.md",
+]
+previous_status = "open"
+resolved_on = "2026-06-01"
+resolution_note = "Implemented direct typing fixes across source visualization, eval services/cloud specs, Rerun sink, and coordinator; validation leaves only pre-existing pooch/yaml/interfaces.camera errors."
 source_collection = "todos"
 
 [[resolved_refactors]]
