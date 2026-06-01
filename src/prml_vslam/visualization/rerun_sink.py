@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import ray
@@ -52,8 +53,9 @@ class RerunEventSink:
         trajectory_pose_axis_length: float = 0.0,
         log_source_rgb: bool = False,
         log_diagnostic_preview: bool = False,
-        log_camera_image_rgb: bool = False,
+        log_camera_image_rgb: bool = True,
         point_cloud_decimation_keep_ratio: float = 1.0,
+        reference_point_cloud_decimation_keep_ratio: float = 1.0,
         mesh_decimation_keep_ratio: float = 1.0,
         decimation_random_seed: int = 0,
         view_coordinates: str = "RDF",
@@ -80,6 +82,7 @@ class RerunEventSink:
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
             point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
             mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
             decimation_random_seed=decimation_random_seed,
         )
@@ -102,6 +105,7 @@ class RerunEventSink:
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
             point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
             mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
             decimation_random_seed=decimation_random_seed,
         )
@@ -110,13 +114,15 @@ class RerunEventSink:
         self._latest_ground_alignment: GroundAlignmentMetadata | None = None
         self._console.info(
             "Rerun sink policy: source_rgb=%s diagnostic_preview=%s camera_image_rgb=%s trajectory=%s "
-            "frusta_window=%s point_cloud_keep_ratio=%s mesh_keep_ratio=%s view_coordinates=%s.",
+            "frusta_window=%s point_cloud_keep_ratio=%s reference_point_cloud_keep_ratio=%s "
+            "mesh_keep_ratio=%s view_coordinates=%s.",
             log_source_rgb,
             log_diagnostic_preview,
             log_camera_image_rgb,
             show_tracking_trajectory,
             frusta_history_window_streaming,
             point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio,
             mesh_decimation_keep_ratio,
             view_coordinates,
         )
@@ -225,8 +231,9 @@ class RerunSinkActor:
         trajectory_pose_axis_length: float = 0.0,
         log_source_rgb: bool = False,
         log_diagnostic_preview: bool = False,
-        log_camera_image_rgb: bool = False,
+        log_camera_image_rgb: bool = True,
         point_cloud_decimation_keep_ratio: float = 1.0,
+        reference_point_cloud_decimation_keep_ratio: float = 1.0,
         mesh_decimation_keep_ratio: float = 1.0,
         decimation_random_seed: int = 0,
         view_coordinates: str = "RDF",
@@ -242,6 +249,7 @@ class RerunSinkActor:
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
             point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
             mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
             decimation_random_seed=decimation_random_seed,
             view_coordinates=view_coordinates,
@@ -254,14 +262,16 @@ class RerunSinkActor:
         payload_resolver: ActorHandle | None = None,
     ) -> None:
         """Forward one live runtime update to the local sink without `ray.get`."""
+
+        def resolve_payload(ref: TransientPayloadRef) -> np.ndarray | None:
+            if payload_resolver is None:
+                return None
+            return cast(np.ndarray | None, ray.get(payload_resolver.read_payload.remote(ref.handle_id)))
+
         try:
             self._sink.observe_update(
                 update,
-                payload_resolver=(
-                    None
-                    if payload_resolver is None
-                    else lambda ref: ray.get(payload_resolver.read_payload.remote(ref.handle_id))
-                ),
+                payload_resolver=None if payload_resolver is None else resolve_payload,
             )
         except Exception as exc:  # pragma: no cover - best-effort sink guard
             _LOGGER.warning("Skipping Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc)

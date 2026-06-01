@@ -58,11 +58,14 @@ class VisualizationConfig(BaseConfig):
     log_diagnostic_preview: bool = False
     """Whether the repo-owned sink should log method diagnostic preview images."""
 
-    log_camera_image_rgb: bool = False
+    log_camera_image_rgb: bool = True
     """Whether the 3D camera branch should also log RGB image planes."""
 
     point_cloud_decimation_keep_ratio: float = Field(default=1.0, gt=0.0, le=1.0)
     """Fraction of point-cloud rows retained when logging geometry to Rerun."""
+
+    reference_point_cloud_decimation_keep_ratio: float = Field(default=1.0, gt=0.0, le=1.0)
+    """Fraction of source reference-cloud rows retained when logging benchmark reference geometry."""
 
     mesh_decimation_keep_ratio: float = Field(default=1.0, gt=0.0, le=1.0)
     """Fraction of mesh triangles targeted when logging mesh artifacts to Rerun."""

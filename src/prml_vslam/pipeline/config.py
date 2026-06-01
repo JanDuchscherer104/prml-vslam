@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
 from prml_vslam.eval.stage_alignment.config import TrajectoryAlignmentStageConfig
 from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
+from prml_vslam.eval.stage_cloud_alignment.config import CloudAlignmentStageConfig
 from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
     TrajectoryEvaluationStageConfig,
@@ -64,6 +65,7 @@ STAGE_SECTION_ORDER: tuple[tuple[StageKey, str], ...] = (
     (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
     (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
     (StageKey.RECONSTRUCTION, "reconstruction"),
+    (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
     (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
     (StageKey.SUMMARY, "summary"),
 )
@@ -96,10 +98,13 @@ class StageBundle(BaseConfig):
     reconstruction: ReconstructionStageConfig = Field(default_factory=lambda: ReconstructionStageConfig(enabled=False))
     """Reconstruction stage section."""
 
+    align_cloud: CloudAlignmentStageConfig = Field(default_factory=lambda: CloudAlignmentStageConfig(enabled=False))
+    """Offline dense-cloud alignment section."""
+
     evaluate_cloud: CloudEvaluationStageConfig = Field(
         default_factory=lambda: CloudEvaluationStageConfig(enabled=False)
     )
-    """Dense-cloud diagnostic stage section."""
+    """Dense-cloud evaluation stage section."""
 
     summary: SummaryStageConfig = Field(default_factory=SummaryStageConfig)
     """Summary-projection stage section."""
@@ -371,6 +376,7 @@ def build_run_config(
     reference_enabled: bool = False,
     trajectory_eval_enabled: bool = False,
     trajectory_alignment_enabled: bool = False,
+    cloud_alignment_enabled: bool | None = None,
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
     ground_alignment_enabled: bool = False,
@@ -385,8 +391,9 @@ def build_run_config(
     trajectory_pose_axis_length: float = 0.0,
     log_source_rgb: bool = False,
     log_diagnostic_preview: bool = False,
-    log_camera_image_rgb: bool = False,
+    log_camera_image_rgb: bool = True,
     point_cloud_decimation_keep_ratio: float = 1.0,
+    reference_point_cloud_decimation_keep_ratio: float = 1.0,
     mesh_decimation_keep_ratio: float = 1.0,
     decimation_random_seed: int = 0,
     ray_log_to_driver: bool = True,
@@ -417,6 +424,9 @@ def build_run_config(
                 enabled=reference_enabled,
                 backend=Open3dTsdfBackendConfig(),
             ),
+            align_cloud=CloudAlignmentStageConfig(
+                enabled=evaluate_cloud if cloud_alignment_enabled is None else cloud_alignment_enabled,
+            ),
             evaluate_cloud=CloudEvaluationStageConfig(enabled=evaluate_cloud),
             summary=SummaryStageConfig(enabled=True),
         ),
@@ -434,6 +444,7 @@ def build_run_config(
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
             point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
             mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
             decimation_random_seed=decimation_random_seed,
         ),

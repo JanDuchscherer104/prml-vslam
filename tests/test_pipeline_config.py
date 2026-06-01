@@ -88,6 +88,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         "align.trajectory",
         "evaluate.trajectory",
         "reconstruction",
+        "align.cloud",
         "evaluate.cloud",
         "summary",
     ]
@@ -98,6 +99,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
         (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
         (StageKey.RECONSTRUCTION, "reconstruction"),
+        (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
         (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
         (StageKey.SUMMARY, "summary"),
     ]
@@ -122,6 +124,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
     assert config.stages.align_trajectory.enabled is True
     assert config.stages.evaluate_trajectory.enabled is True
     assert config.stages.reconstruction.enabled is True
+    assert config.stages.align_cloud.enabled is True
     assert config.stages.evaluate_cloud.enabled is True
 
 
@@ -142,6 +145,26 @@ def test_trajectory_alignment_plan_declares_materialized_outputs(tmp_path: Path)
         "evaluation/trajectory_alignment.json",
         "evaluation/trajectory_sim3_aligned.tum",
         "evaluation/point_cloud_sim3_aligned.ply",
+    ]
+
+
+def test_cloud_alignment_plan_declares_materialized_outputs(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    config = build_run_config(
+        experiment_name="cloud-alignment-outputs",
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+    )
+
+    plan = config.compile_plan(path_config)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert [path.relative_to(plan.artifact_root).as_posix() for path in stage.outputs] == [
+        "evaluation/cloud_alignment.json",
+        "evaluation/point_cloud_sim3_icp_aligned.ply",
     ]
 
 

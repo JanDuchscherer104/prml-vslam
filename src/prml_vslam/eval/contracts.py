@@ -179,10 +179,13 @@ class EvaluationArtifact(BaseData):
     ) -> EvaluationArtifact:
         """Build the canonical evaluation artifact from one persisted metrics payload."""
         reference_trajectory, estimate_trajectory = trajectories
+        matched_pairs_payload = payload["matched_pairs"]
+        if not isinstance(matched_pairs_payload, int):
+            raise ValueError(f"Expected integer matched_pairs in evaluation payload, got {matched_pairs_payload!r}.")
         return cls(
             path=path,
             title=str(payload["title"]),
-            matched_pairs=int(payload["matched_pairs"]),
+            matched_pairs=matched_pairs_payload,
             stats=MetricStats.model_validate(payload["stats"]),
             semantics=TrajectoryEvaluationSemantics.model_validate(payload["semantics"]),
             reference_path=reference_path,
@@ -218,6 +221,53 @@ class DenseCloudEvaluationSelection(BaseData):
     estimate_cloud_path: Path
     """Estimated dense geometry path."""
 
+    f_score_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Nearest-neighbor threshold, in meters, used for precision/recall F-score."""
+
+
+class CloudAlignmentSelection(BaseData):
+    """Describe offline point-cloud alignment inputs for benchmark runs."""
+
+    artifact_root: Path
+    """Artifact root that owns the derived cloud-alignment outputs."""
+
+    reference_cloud_path: Path
+    """Reference cloud in the benchmark target frame."""
+
+    sim3_cloud_path: Path
+    """Trajectory-Sim(3)-aligned SLAM cloud used as the ICP initialization."""
+
+    max_correspondence_distance_m: float = Field(default=0.05, gt=0.0)
+    """Maximum ICP correspondence distance in meters."""
+
+
+class CloudAlignmentArtifact(BaseData):
+    """Persist one offline cloud-alignment result."""
+
+    path: Path
+    """Path to the side metadata payload."""
+
+    reference_cloud_path: Path
+    """Reference cloud used by the refinement."""
+
+    sim3_point_cloud_path: Path
+    """Canonical trajectory-Sim(3)-aligned estimate cloud."""
+
+    icp_point_cloud_path: Path
+    """ICP-refined estimate cloud."""
+
+    max_correspondence_distance_m: float
+    """Maximum correspondence distance used by ICP."""
+
+    fitness: float
+    """Open3D ICP fitness score."""
+
+    inlier_rmse_m: float
+    """Open3D ICP inlier RMSE in meters."""
+
+    transformation: list[list[float]]
+    """Estimated point-to-point ICP transform applied after Sim(3)."""
+
 
 class DenseCloudEvaluationArtifact(BaseData):
     """Persist one dense-cloud evaluation result for later review."""
@@ -233,6 +283,15 @@ class DenseCloudEvaluationArtifact(BaseData):
 
     estimate_cloud_path: Path
     """Estimated dense geometry path."""
+
+    reference_point_count: int = 0
+    """Number of points loaded from the reference cloud."""
+
+    estimate_point_count: int = 0
+    """Number of points loaded from the estimated cloud."""
+
+    f_score_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Nearest-neighbor threshold, in meters, used for precision/recall F-score."""
 
     metrics: dict[str, float] = Field(default_factory=dict)
     """Scalar dense-cloud metrics keyed by metric name."""
@@ -316,6 +375,8 @@ class EvaluationSelection(BaseData):
 
 __all__ = [
     "BenchmarkReference",
+    "CloudAlignmentArtifact",
+    "CloudAlignmentSelection",
     "DenseCloudEvaluationArtifact",
     "DenseCloudEvaluationSelection",
     "DiscoveredRun",

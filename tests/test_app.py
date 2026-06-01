@@ -366,7 +366,7 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
     error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
 
     assert error is not None
-    assert "no runtime is registered yet" in error
+    assert error == "Cloud alignment requires `align.trajectory`."
 
 
 def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path) -> None:
@@ -456,7 +456,7 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
             RunPlanStage(
                 key=StageKey.CLOUD_EVALUATION,
                 available=False,
-                availability_reason="no runtime is registered yet",
+                availability_reason="Cloud evaluation requires available cloud alignment.",
             ),
         ],
     )
@@ -522,7 +522,7 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
     assert rows["source"]["Updated"] == "1 s"
     assert rows["slam"]["State"] == "completed"
     assert rows["evaluate.cloud"]["State"] == "unavailable"
-    assert rows["evaluate.cloud"]["Message"] == "no runtime is registered yet"
+    assert rows["evaluate.cloud"]["Message"] == "Cloud evaluation requires available cloud alignment."
 
 
 def test_pipeline_telemetry_history_resets_deduplicates_and_trims() -> None:

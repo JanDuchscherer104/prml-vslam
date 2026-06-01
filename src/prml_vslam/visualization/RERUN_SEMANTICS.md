@@ -94,7 +94,7 @@ The current repo-owned scene tree should converge on the following shape:
 world
 world/reference/trajectory/ground_truth/aligned
                                          LineStrips3D(reference trajectory)
-world/reference/points/tango_area_learning/aligned/...
+world/reference/points/tango_raw/aligned/...
                                          Points3D(reference cloud)
 
 world/live/source/rgb                   Image(source_rgb)

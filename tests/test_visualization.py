@@ -25,7 +25,17 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, TRAJECTORY_ARTIFACT
+from prml_vslam.sources.stage.visualization import (
+    METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT,
+)
+from prml_vslam.sources.stage.visualization import (
+    POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT,
+)
+from prml_vslam.sources.stage.visualization import (
+    ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+    ROLE_SOURCE_REFERENCE_TRAJECTORY,
+    TRAJECTORY_ARTIFACT,
+)
 from prml_vslam.utils.geometry import write_tum_trajectory
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -38,6 +48,7 @@ def test_visualization_config_serializes_optional_viewer_blueprint_path() -> Non
         connect_live_viewer=True,
         viewer_blueprint_path=Path(".configs/visualization/vista_blueprint.rbl"),
         point_cloud_decimation_keep_ratio=0.25,
+        reference_point_cloud_decimation_keep_ratio=0.75,
         mesh_decimation_keep_ratio=0.5,
         decimation_random_seed=99,
     )
@@ -47,14 +58,16 @@ def test_visualization_config_serializes_optional_viewer_blueprint_path() -> Non
 
     assert 'viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"' in rendered
     assert "point_cloud_decimation_keep_ratio = 0.25" in rendered
+    assert "reference_point_cloud_decimation_keep_ratio = 0.75" in rendered
     assert "mesh_decimation_keep_ratio = 0.5" in rendered
     assert "decimation_random_seed = 99" in rendered
     assert reloaded.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
     assert reloaded.log_source_rgb is False
     assert reloaded.log_diagnostic_preview is False
-    assert reloaded.log_camera_image_rgb is False
+    assert reloaded.log_camera_image_rgb is True
     assert reloaded.trajectory_pose_axis_length == 0.0
     assert reloaded.point_cloud_decimation_keep_ratio == 0.25
+    assert reloaded.reference_point_cloud_decimation_keep_ratio == 0.75
     assert reloaded.mesh_decimation_keep_ratio == 0.5
     assert reloaded.decimation_random_seed == 99
 
@@ -62,6 +75,8 @@ def test_visualization_config_serializes_optional_viewer_blueprint_path() -> Non
 def test_visualization_config_rejects_invalid_decimation_values() -> None:
     with pytest.raises(ValidationError):
         VisualizationConfig(point_cloud_decimation_keep_ratio=0.0)
+    with pytest.raises(ValidationError):
+        VisualizationConfig(reference_point_cloud_decimation_keep_ratio=0.0)
     with pytest.raises(ValidationError):
         VisualizationConfig(mesh_decimation_keep_ratio=1.1)
     with pytest.raises(ValidationError):
@@ -206,7 +221,9 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert "+ world/reference/trajectory/**" in layout.views[0].contents
     assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world" in layout.views[0].contents
     assert "+ world/slam/vista_slam_world/**" not in layout.views[0].contents
+    assert "+ world/slam/vista_slam_world/point_cloud/raw" in layout.views[0].contents
     assert "+ world/slam/vista_slam_world/keyframes/points/**" in layout.views[0].contents
     assert "- world/slam/vista_slam_world/live/model/points/**" in layout.views[0].contents
     assert "+ world/live/source/camera" in layout.views[0].contents
@@ -215,7 +232,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
         "world/slam/vista_slam_world/live/model/camera/image",
     ]
-    assert len(logged_entities) == 2
+    assert len(logged_entities) == 3
     entity_path, payload, static = logged_entities[0]
     assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert isinstance(payload, FakeTransform3D)
@@ -224,6 +241,11 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     entity_path, payload, static = logged_entities[1]
     assert entity_path == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert payload == FakeViewCoordinates.RDF
+    assert static is True
+    entity_path, payload, static = logged_entities[2]
+    assert entity_path == rerun_helpers.SLAM_WORLD_ENTITY_PATH
+    assert isinstance(payload, FakeTransform3D)
+    assert payload.axis_length == rerun_helpers.SLAM_WORLD_AXIS_LENGTH
     assert static is True
 
 
@@ -268,6 +290,22 @@ def test_log_transform_uses_parent_from_child_relation(monkeypatch) -> None:
     assert payload.relation == FakeTransformRelation.ParentFromChild
     world_point = transform.as_matrix() @ np.array([0.0, 0.0, 1.0, 1.0], dtype=np.float64)
     assert np.allclose(world_point[:3], np.array([1.0, 2.0, 4.0], dtype=np.float64))
+
+
+def test_log_transform_axes_rejects_ambiguous_rotation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        rerun_helpers,
+        "rr",
+        SimpleNamespace(Quaternion=lambda *, xyzw: xyzw, Transform3D=lambda **kwargs: kwargs),
+    )
+
+    with pytest.raises(ValueError, match="either quaternion_xyzw or rotation_matrix"):
+        rerun_helpers.log_transform_axes(
+            object(),
+            entity_path="world/pose",
+            quaternion_xyzw=[0.0, 0.0, 0.0, 1.0],
+            rotation_matrix=np.eye(3),
+        )
 
 
 def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
@@ -443,12 +481,16 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_p
 
     assert line_calls == [("world/reference/trajectory/ground_truth/aligned", True)]
     assert [call[0] for call in pose_calls] == [
+        "world/reference/trajectory/ground_truth/aligned/start",
         "world/reference/trajectory/ground_truth/aligned/poses/000000",
         "world/reference/trajectory/ground_truth/aligned/poses/000001",
     ]
-    assert all(axis_length == 0.25 and static is True for _, axis_length, static, _ in pose_calls)
-    assert pose_calls[1][3].target_frame == "advio_gt_world"
-    assert pose_calls[1][3].tx == 1.0
+    assert pose_calls[0][1] == rerun_helpers.TRAJECTORY_START_AXIS_LENGTH
+    assert pose_calls[0][2] is True
+    assert pose_calls[0][3].tx == 0.0
+    assert all(axis_length == 0.25 and static is True for _, axis_length, static, _ in pose_calls[1:])
+    assert pose_calls[2][3].target_frame == "advio_gt_world"
+    assert pose_calls[2][3].tx == 1.0
 
 
 def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(tmp_path: Path) -> None:
@@ -501,7 +543,7 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
     policy.observe_update(object(), update)
 
     assert line_calls == [("world/reference/trajectory/ground_truth/aligned", True)]
-    assert pose_calls == []
+    assert pose_calls == ["world/reference/trajectory/ground_truth/aligned/start"]
 
 
 def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> None:
@@ -550,10 +592,13 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> N
         log_transform=lambda *args, **kwargs: None,
         log_sim3_transform=lambda *args, **kwargs: None,
         point_cloud_decimation_keep_ratio=0.25,
+        reference_point_cloud_decimation_keep_ratio=1.0,
         mesh_decimation_keep_ratio=0.5,
         decimation_random_seed=123,
     )
     cloud_path = tmp_path / "reference_cloud.ply"
+    source_cloud_metadata_path = tmp_path / "reference_cloud.metadata.json"
+    source_cloud_metadata_path.write_text('{"point_count": 4, "skipped_out_of_range_payloads": 0}', encoding="utf-8")
     mesh_path = tmp_path / "reference_mesh.ply"
     update = StageRuntimeUpdate(
         stage_key=StageKey.RECONSTRUCTION,
@@ -589,6 +634,17 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> N
                 artifact_refs={MESH_ARTIFACT: ArtifactRef(path=mesh_path, kind="ply", fingerprint="mesh")},
                 metadata={"reconstruction_id": "reference"},
             ),
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
+                artifact_refs={
+                    SOURCE_POINT_CLOUD_ARTIFACT: ArtifactRef(path=cloud_path, kind="ply", fingerprint="source-cloud"),
+                    SOURCE_METADATA_ARTIFACT: ArtifactRef(
+                        path=source_cloud_metadata_path, kind="json", fingerprint="source-cloud-metadata"
+                    ),
+                },
+                metadata={"reference_source": "tango_raw", "coordinate_status": "aligned"},
+            ),
         ],
     )
 
@@ -604,9 +660,16 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> N
     assert pointcloud_calls == [("world/slam/vista_slam_world/live/model/points", 0.25, pointcloud_calls[0][2])]
     assert isinstance(pointcloud_calls[0][2], int)
     assert pointcloud_ply_calls == [
-        ("world/reconstruction/reference/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3])
+        ("world/reconstruction/reference/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3]),
+        (
+            "world/reference/points/tango_raw/aligned/points_4_skipped_0/point_cloud",
+            cloud_path,
+            1.0,
+            pointcloud_ply_calls[1][3],
+        ),
     ]
     assert isinstance(pointcloud_ply_calls[0][3], int)
+    assert isinstance(pointcloud_ply_calls[1][3], int)
     assert mesh_ply_calls == [("world/reconstruction/reference/mesh", mesh_path, 0.5)]
 
 
@@ -615,14 +678,17 @@ def test_rerun_event_sink_builds_live_and_export_policies_with_decimation() -> N
         grpc_url=None,
         target_path=None,
         point_cloud_decimation_keep_ratio=0.2,
+        reference_point_cloud_decimation_keep_ratio=0.9,
         mesh_decimation_keep_ratio=0.4,
         decimation_random_seed=77,
     )
 
     assert sink._live_policy.point_cloud_decimation_keep_ratio == 0.2
+    assert sink._live_policy.reference_point_cloud_decimation_keep_ratio == 0.9
     assert sink._live_policy.mesh_decimation_keep_ratio == 0.4
     assert sink._live_policy.decimation_random_seed == 77
     assert sink._export_policy.point_cloud_decimation_keep_ratio == 0.2
+    assert sink._export_policy.reference_point_cloud_decimation_keep_ratio == 0.9
     assert sink._export_policy.mesh_decimation_keep_ratio == 0.4
     assert sink._export_policy.decimation_random_seed == 77
 
