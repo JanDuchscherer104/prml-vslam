@@ -16,6 +16,7 @@ from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
     ReferenceCloudSource,
+    ReferencePointCloudPayloadSemantics,
     ReferencePointCloudSequenceRef,
     ReferenceSource,
     ReferenceTrajectoryRef,
@@ -29,7 +30,7 @@ from prml_vslam.sources.datasets.contracts import (
     selected_advio_pose_source,
 )
 from prml_vslam.sources.replay import ObservationStream, PyAvVideoObservationSource, ReplayMode
-from prml_vslam.utils import BaseData, Console
+from prml_vslam.utils import BaseData, Console, JsonObject
 
 from . import advio_layout, advio_loading
 from .advio_frames import (
@@ -38,6 +39,7 @@ from .advio_frames import (
     write_advio_rdf_tum,
 )
 from .advio_geometry import (
+    TANGO_DEPTH_PAYLOAD_FRAME,
     build_advio_tango_reference_clouds,
     fit_planar_rigid_alignment,
     transform_trajectory_with_alignment,
@@ -56,6 +58,7 @@ from .advio_replay_adapter import (
 )
 
 _CONSOLE = Console(__name__).child("AdvioSequence")
+_OPTIONAL_PROVIDER_ROTATION_PROJECTION_MAX_ERROR = 0.1
 
 
 class AdvioSequencePaths(BaseData):
@@ -259,19 +262,18 @@ class AdvioSequence(BaseData):
             )
         return PreparedBenchmarkInputs(
             reference_trajectories=references,
-            reference_clouds=build_advio_tango_reference_clouds(
-                sequence_slug=self.scene.sequence_slug,
-                ground_truth_csv_path=paths.ground_truth_csv_path,
-                tango_raw_csv_path=paths.tango_raw_csv_path,
-                tango_area_learning_csv_path=paths.tango_area_learning_csv_path,
-                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
-                output_dir=evaluation_dir,
-                point_stride=tango_reference_point_stride,
-            ),
             reference_point_cloud_sequences=_build_reference_point_cloud_sequences(
                 paths=paths,
                 sequence_slug=self.scene.sequence_slug,
                 evaluation_dir=evaluation_dir,
+            ),
+            reference_clouds=build_advio_tango_reference_clouds(
+                sequence_slug=self.scene.sequence_slug,
+                ground_truth_csv_path=paths.ground_truth_csv_path,
+                tango_raw_csv_path=paths.tango_raw_csv_path,
+                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
+                output_dir=evaluation_dir,
+                point_stride=tango_reference_point_stride,
             ),
         )
 
@@ -333,9 +335,11 @@ def _ensure_advio_tum(
     source: AdvioPoseSource,
     target_frame: str,
     native_frame: str,
+    trajectory: PoseTrajectory3D | None = None,
+    sanitization: JsonObject | None = None,
 ) -> Path:
     write_advio_rdf_tum(
-        trajectory=advio_loading.load_advio_trajectory(source_path),
+        trajectory=advio_loading.load_advio_trajectory(source_path) if trajectory is None else trajectory,
         source=source,
         target_path=target_path,
     )
@@ -349,6 +353,7 @@ def _ensure_advio_tum(
             if target_frame == "advio_gt_world"
             else ReferenceCloudCoordinateStatus.SOURCE_NATIVE
         ),
+        sanitization=sanitization,
     )
     return target_path.resolve()
 
@@ -365,12 +370,15 @@ def _append_optional_reference_trajectory(
     pose_source = _advio_pose_source_from_reference(source)
     native_frame = f"advio_{source.value}_world"
     try:
+        source_trajectory, sanitization = _load_sanitized_optional_advio_trajectory(source_path)
         native_path = _ensure_advio_tum(
             source_path,
             target_path,
             source=pose_source,
             target_frame=native_frame,
             native_frame=native_frame,
+            trajectory=source_trajectory,
+            sanitization=sanitization,
         )
         references.append(
             ReferenceTrajectoryRef(
@@ -388,6 +396,9 @@ def _append_optional_reference_trajectory(
             target_path=aligned_target_path,
             source=pose_source,
             native_frame=native_frame,
+            source_trajectory=source_trajectory,
+            sanitization=sanitization,
+            max_rotation_projection_error=_OPTIONAL_PROVIDER_ROTATION_PROJECTION_MAX_ERROR,
         )
         references.append(
             ReferenceTrajectoryRef(
@@ -419,7 +430,7 @@ def _build_reference_point_cloud_sequences(
 
     sequences: list[ReferencePointCloudSequenceRef] = []
     for source, trajectory_csv_path, tum_name in (
-        (ReferenceCloudSource.TANGO_AREA_LEARNING, paths.tango_area_learning_csv_path, "tango_area_learning.tum"),
+        (ReferenceCloudSource.TANGO_RAW, paths.tango_raw_csv_path, "tango_raw.tum"),
     ):
         if trajectory_csv_path is None or not trajectory_csv_path.exists():
             continue
@@ -450,29 +461,8 @@ def _build_reference_point_cloud_sequences(
                 target_frame=native_frame,
                 native_frame=native_frame,
                 coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
-                payload_frame=native_frame,
-            )
-        )
-        try:
-            aligned_trajectory_path = _ensure_aligned_advio_tum(
-                source_path=trajectory_csv_path,
-                ground_truth_path=paths.ground_truth_csv_path,
-                target_path=evaluation_dir / f"{source.value}_aligned_to_gt.tum",
-                source=pose_source,
-                native_frame=native_frame,
-            )
-        except ValueError:
-            continue
-        sequences.append(
-            ReferencePointCloudSequenceRef(
-                source=source,
-                index_path=paths.tango_point_cloud_index_path.resolve(),
-                payload_root=paths.tango_dir.resolve(),
-                trajectory_path=aligned_trajectory_path,
-                target_frame="advio_gt_world",
-                native_frame=native_frame,
-                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                payload_frame=native_frame,
+                payload_frame=TANGO_DEPTH_PAYLOAD_FRAME,
+                payload_semantics=ReferencePointCloudPayloadSemantics.DEPTH_SENSOR_LOCAL_FUSED_BY_SOURCE_POSE,
             )
         )
     return sequences
@@ -485,9 +475,12 @@ def _ensure_aligned_advio_tum(
     target_path: Path,
     source: AdvioPoseSource,
     native_frame: str,
+    source_trajectory: PoseTrajectory3D | None = None,
+    sanitization: JsonObject | None = None,
+    max_rotation_projection_error: float = 2e-3,
 ) -> Path:
     source_rdf_trajectory = transform_advio_trajectory_to_rdf(
-        advio_loading.load_advio_trajectory(source_path),
+        advio_loading.load_advio_trajectory(source_path) if source_trajectory is None else source_trajectory,
         source=source,
     )
     ground_truth_rdf_trajectory = transform_advio_trajectory_to_rdf(
@@ -503,8 +496,16 @@ def _ensure_aligned_advio_tum(
     target_path.parent.mkdir(parents=True, exist_ok=True)
     file_interface.write_tum_trajectory_file(
         target_path,
-        transform_trajectory_with_alignment(source_rdf_trajectory, alignment),
+        transform_trajectory_with_alignment(
+            source_rdf_trajectory,
+            alignment,
+            max_rotation_projection_error=max_rotation_projection_error,
+        ),
     )
+    metadata_sanitization: JsonObject | None = None if sanitization is None else dict(sanitization)
+    if max_rotation_projection_error != 2e-3:
+        metadata_sanitization = {} if metadata_sanitization is None else metadata_sanitization
+        metadata_sanitization["aligned_rotation_projection_max_frobenius_error"] = max_rotation_projection_error
     _write_advio_trajectory_metadata(
         target_path.with_suffix(".metadata.json"),
         source=source,
@@ -512,6 +513,7 @@ def _ensure_aligned_advio_tum(
         native_frame=native_frame,
         coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
         alignment=alignment.model_dump(mode="json"),
+        sanitization=metadata_sanitization,
     )
     return target_path.resolve()
 
@@ -523,7 +525,8 @@ def _write_advio_trajectory_metadata(
     target_frame: str,
     native_frame: str,
     coordinate_status: ReferenceCloudCoordinateStatus,
-    alignment: dict[str, str | int | float | bool | None | list[float] | list[list[float]]] | None = None,
+    alignment: JsonObject | None = None,
+    sanitization: JsonObject | None = None,
 ) -> None:
     basis_metadata = advio_basis_metadata(source=source, target_frame=target_frame, native_frame=native_frame)
     payload = basis_metadata.model_dump(mode="json") | {
@@ -531,9 +534,59 @@ def _write_advio_trajectory_metadata(
         "source": source.value,
         "coordinate_status": coordinate_status.value,
         "alignment": alignment,
+        "sanitization": sanitization,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _load_sanitized_optional_advio_trajectory(source_path: Path) -> tuple[PoseTrajectory3D, JsonObject]:
+    rows = advio_loading.load_advio_trajectory_rows(source_path)
+    input_rows = int(len(rows))
+    finite_mask = np.all(np.isfinite(rows), axis=1)
+    rows = rows[finite_mask]
+    dropped_nonfinite_rows = input_rows - int(len(rows))
+    if len(rows) == 0:
+        raise ValueError(f"Optional ADVIO trajectory '{source_path}' has no finite pose rows.")
+
+    order = np.argsort(rows[:, 0], kind="stable")
+    reordered_timestamps = bool(np.any(order != np.arange(len(rows))))
+    rows = rows[order]
+    keep_first_timestamp = np.ones(len(rows), dtype=bool)
+    keep_first_timestamp[1:] = rows[1:, 0] != rows[:-1, 0]
+    dropped_duplicate_timestamps = int(len(rows) - int(np.count_nonzero(keep_first_timestamp)))
+    rows = rows[keep_first_timestamp]
+
+    quaternion_norms = np.linalg.norm(rows[:, 4:8], axis=1)
+    valid_quaternion_mask = np.isfinite(quaternion_norms) & (quaternion_norms > 0.0)
+    dropped_invalid_quaternion_rows = int(len(rows) - int(np.count_nonzero(valid_quaternion_mask)))
+    rows = rows[valid_quaternion_mask]
+    quaternion_norms = quaternion_norms[valid_quaternion_mask]
+    if len(rows) == 0:
+        raise ValueError(f"Optional ADVIO trajectory '{source_path}' has no valid orientation rows.")
+    max_quaternion_norm_error = float(np.max(np.abs(quaternion_norms - 1.0)))
+    normalized_quaternion_rows = int(np.count_nonzero(np.abs(quaternion_norms - 1.0) > 1e-9))
+    rows = rows.copy()
+    rows[:, 4:8] /= quaternion_norms[:, None]
+
+    trajectory = PoseTrajectory3D(
+        positions_xyz=rows[:, 1:4].astype(np.float64, copy=True),
+        orientations_quat_wxyz=rows[:, 4:8].astype(np.float64, copy=True),
+        timestamps=rows[:, 0].astype(np.float64, copy=True),
+    )
+    valid, details = trajectory.check()
+    if not valid:
+        raise ValueError(f"Invalid sanitized optional ADVIO trajectory '{source_path}': {details}")
+    return trajectory, {
+        "input_rows": input_rows,
+        "output_rows": int(len(rows)),
+        "dropped_nonfinite_rows": dropped_nonfinite_rows,
+        "dropped_duplicate_timestamps": dropped_duplicate_timestamps,
+        "dropped_invalid_quaternion_rows": dropped_invalid_quaternion_rows,
+        "reordered_timestamps": reordered_timestamps,
+        "normalized_quaternion_rows": normalized_quaternion_rows,
+        "max_quaternion_norm_error": max_quaternion_norm_error,
+    }
 
 
 def _advio_pose_source_from_reference(source: ReferenceSource) -> AdvioPoseSource:

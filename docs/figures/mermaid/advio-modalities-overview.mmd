@@ -62,7 +62,7 @@ flowchart TB
       TGR["raw.csv<br/>raw odometry<br/>60 Hz"]
       TGA["area-learning.csv<br/>loop-closing odometry<br/>60 Hz"]
       TGV["frames.mov + frames.csv<br/>fisheye video"]
-      TGP["point-cloud.csv + point-cloud-*.csv<br/>pose-aligned point-cloud payloads"]
+      TGP["point-cloud.csv + point-cloud-*.csv<br/>timestamped Tango payloads"]
       TG --> TGR
       TG --> TGA
       TG --> TGV
