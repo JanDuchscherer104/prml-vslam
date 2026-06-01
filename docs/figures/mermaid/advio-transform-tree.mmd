@@ -28,7 +28,7 @@ flowchart LR
   PCAM["Pixel ARCore camera frame"]
   TFCAM["Tango fisheye camera frame"]
   TDEV["Tango tracking/device pose frame"]
-  TPN["Pose-aligned Tango-native<br/>point-cloud geometry"]
+  TPN["Raw-pose-fused Tango-native<br/>point-cloud geometry"]
 
   GTW["GT world"]
   ARKW["ARKit world"]
@@ -39,7 +39,7 @@ flowchart LR
 
   IRGB --> ICAM
   TRGB --> TFCAM
-  TPC -->|"already pose-aligned"| TPN
+  TPC -->|"materialized via raw pose"| TPN
 
   ICAM -->|"dynamic SE(3)<br/>ground-truth/pose.csv"| GTW
   ICAM -->|"dynamic SE(3)<br/>iphone/arkit.csv"| ARKW

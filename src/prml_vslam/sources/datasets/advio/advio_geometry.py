@@ -27,14 +27,22 @@ _DEFAULT_MAX_REFERENCE_POINTS = 200_000
 _DEFAULT_POINT_STRIDE = 1
 _ALIGNMENT_MAX_DIFF_S = 0.02
 _MIN_ALIGNMENT_PAIRS = 3
+MAX_TANGO_TO_GT_SIM3_RMS_ERROR_M = 10.0
 _GT_WORLD_FRAME = "advio_gt_world"
+TANGO_DEPTH_PAYLOAD_FRAME = "advio_tango_depth_sensor_rdf"
 _RDF_HORIZONTAL_AXES = (0, 2)
 _CONSOLE = Console(__name__).child("tango_reference_clouds")
 _JsonAlignmentValue = str | int | float | bool | None | list[float] | list[list[float]]
 
 
+class TangoAlignmentRejection(BaseData):
+    reason: Literal["sim3_rms_threshold_exceeded"]
+    rms_error_m: float
+    threshold_m: float
+
+
 class TangoCloudMetadata(BaseData):
-    """Side metadata for one materialized ADVIO Tango reference cloud."""
+    """Side metadata for materialized ADVIO Tango reference clouds."""
 
     dataset: str = "ADVIO"
     sequence_id: str
@@ -42,22 +50,22 @@ class TangoCloudMetadata(BaseData):
     coordinate_status: ReferenceCloudCoordinateStatus
     target_frame: str
     native_frame: str
-    payload_frame: str = "tango_depth_sensor"
-    source_world_frame: str
+    payload_frame: str = TANGO_DEPTH_PAYLOAD_FRAME
+    payload_pose_semantics: str = "depth_sensor_local_fused_by_source_pose"
+    per_payload_pose_applied: bool = True
     raw_coordinate_basis: AdvioRawCoordinateBasis
     rdf_basis_transform: list[list[float]]
-    payload_pose_semantics: Literal["pose_aligned_by_tango"] = "pose_aligned_by_tango"
-    per_payload_pose_applied: bool = False
+    alignment: dict[str, _JsonAlignmentValue] | None = None
+    gt_alignment_rejection: TangoAlignmentRejection | None = None
     units: str = "meters"
-    point_count: int
     timestamp_min_s: float | None
     timestamp_max_s: float | None
+    point_count: int
     point_cloud_count: int
     payloads_used: int
     skipped_out_of_range_payloads: int = 0
     point_stride: int
     max_reference_points: int
-    alignment: dict[str, _JsonAlignmentValue] | None = None
 
 
 class Sim3Alignment(BaseData):
@@ -78,97 +86,123 @@ def build_advio_tango_reference_clouds(
     sequence_slug: str,
     ground_truth_csv_path: Path,
     tango_raw_csv_path: Path | None,
-    tango_area_learning_csv_path: Path | None,
     tango_point_cloud_index_path: Path | None,
     output_dir: Path,
     max_reference_points: int = _DEFAULT_MAX_REFERENCE_POINTS,
     point_stride: int = _DEFAULT_POINT_STRIDE,
 ) -> list[ReferenceCloudRef]:
-    """Materialize ADVIO Tango source-native and GT-world reference cloud artifacts."""
-    del tango_raw_csv_path
+    """Materialize ADVIO Tango raw point-cloud payloads into bounded reference clouds."""
     if tango_point_cloud_index_path is None or not tango_point_cloud_index_path.exists():
         return []
     index_rows = load_tango_point_cloud_index(tango_point_cloud_index_path)
     if index_rows.size == 0:
         return []
 
+    if tango_raw_csv_path is None or not tango_raw_csv_path.exists():
+        _CONSOLE.warning("Skipping optional ADVIO Tango raw reference cloud: missing tango/raw.csv.")
+        return []
+
     ground_truth = transform_advio_trajectory_to_rdf(
         load_advio_trajectory(ground_truth_csv_path),
         source=AdvioPoseSource.GROUND_TRUTH,
     )
-    refs: list[ReferenceCloudRef] = []
-    source_specs = ((ReferenceCloudSource.TANGO_AREA_LEARNING, tango_area_learning_csv_path),)
-    for source, trajectory_path in source_specs:
-        if trajectory_path is None or not trajectory_path.exists():
-            continue
-        native_frame = f"advio_{source.value}_world"
-        payload_frame = native_frame
-        try:
-            source_trajectory = transform_advio_trajectory_to_rdf(load_advio_trajectory(trajectory_path), source=source)
-            points_xyz_source, payloads_used, skipped_out_of_range_payloads = load_bounded_tango_point_clouds(
-                index_path=tango_point_cloud_index_path,
-                trajectory=source_trajectory,
-                max_reference_points=max_reference_points,
-                point_stride=point_stride,
-                point_source=source,
-            )
-        except ValueError as exc:
-            _CONSOLE.warning(
-                "Skipping invalid optional ADVIO %s reference cloud trajectory '%s': %s",
-                source.value,
-                trajectory_path,
-                exc,
-            )
-            continue
-        if len(points_xyz_source) == 0:
-            continue
-        refs.append(
-            _write_cloud_ref(
-                sequence_slug=sequence_slug,
-                source=source,
-                points_xyz=points_xyz_source,
-                output_dir=output_dir,
-                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
-                target_frame=native_frame,
-                native_frame=native_frame,
-                payload_frame=payload_frame,
-                index_rows=index_rows,
-                payloads_used=payloads_used,
-                skipped_out_of_range_payloads=skipped_out_of_range_payloads,
-                point_stride=point_stride,
-                max_reference_points=max_reference_points,
-                alignment=None,
-            )
+    source = ReferenceCloudSource.TANGO_RAW
+    native_frame = f"advio_{source.value}_world"
+    try:
+        source_trajectory = transform_advio_trajectory_to_rdf(
+            load_advio_trajectory(tango_raw_csv_path),
+            source=AdvioPoseSource.TANGO_RAW,
         )
+        timestamp_min_s, timestamp_max_s = _trajectory_timestamp_span(source_trajectory)
+        points_xyz_native, payloads_used, skipped_out_of_range_payloads = load_bounded_tango_point_clouds(
+            index_path=tango_point_cloud_index_path,
+            source_trajectory=source_trajectory,
+            timestamp_min_s=timestamp_min_s,
+            timestamp_max_s=timestamp_max_s,
+            max_reference_points=max_reference_points,
+            point_stride=point_stride,
+            point_source=source,
+            target_frame=native_frame,
+        )
+    except ValueError as exc:
+        _CONSOLE.warning("Skipping invalid optional ADVIO Tango raw reference cloud: %s", exc)
+        return []
+    if len(points_xyz_native) == 0:
+        return []
 
-        try:
-            alignment = fit_planar_rigid_alignment(
-                source_trajectory=source_trajectory,
-                target_trajectory=ground_truth,
-                source_frame=native_frame,
-                target_frame=_GT_WORLD_FRAME,
-            )
-        except ValueError:
-            continue
-        points_xyz_gt = apply_sim3(points_xyz_source, alignment)
-        refs.append(
-            _write_cloud_ref(
-                sequence_slug=sequence_slug,
-                source=source,
-                points_xyz=points_xyz_gt,
-                output_dir=output_dir,
-                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                target_frame=_GT_WORLD_FRAME,
-                native_frame=native_frame,
-                payload_frame=payload_frame,
-                index_rows=index_rows,
-                payloads_used=payloads_used,
-                skipped_out_of_range_payloads=skipped_out_of_range_payloads,
-                point_stride=point_stride,
-                max_reference_points=max_reference_points,
-                alignment=alignment,
-            )
+    refs = [
+        _write_cloud_ref(
+            sequence_slug=sequence_slug,
+            source=source,
+            coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+            points_xyz=points_xyz_native,
+            output_dir=output_dir,
+            target_frame=native_frame,
+            native_frame=native_frame,
+            index_rows=index_rows,
+            payloads_used=payloads_used,
+            skipped_out_of_range_payloads=skipped_out_of_range_payloads,
+            point_stride=point_stride,
+            max_reference_points=max_reference_points,
+            alignment=None,
+            gt_alignment_rejection=None,
         )
+    ]
+    try:
+        alignment = fit_sim3_alignment(
+            source_trajectory=source_trajectory,
+            target_trajectory=ground_truth,
+            source_frame=native_frame,
+            target_frame=_GT_WORLD_FRAME,
+        )
+    except ValueError as exc:
+        _CONSOLE.warning("Skipping aligned ADVIO Tango raw reference cloud: %s", exc)
+        return refs
+    if alignment.rms_error_m > MAX_TANGO_TO_GT_SIM3_RMS_ERROR_M:
+        _CONSOLE.warning(
+            "Skipping aligned ADVIO Tango raw reference cloud: Sim(3) RMS %.3f m exceeds %.3f m.",
+            alignment.rms_error_m,
+            MAX_TANGO_TO_GT_SIM3_RMS_ERROR_M,
+        )
+        refs[0] = _write_cloud_ref(
+            sequence_slug=sequence_slug,
+            source=source,
+            coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+            points_xyz=points_xyz_native,
+            output_dir=output_dir,
+            target_frame=native_frame,
+            native_frame=native_frame,
+            index_rows=index_rows,
+            payloads_used=payloads_used,
+            skipped_out_of_range_payloads=skipped_out_of_range_payloads,
+            point_stride=point_stride,
+            max_reference_points=max_reference_points,
+            alignment=None,
+            gt_alignment_rejection=TangoAlignmentRejection(
+                reason="sim3_rms_threshold_exceeded",
+                rms_error_m=alignment.rms_error_m,
+                threshold_m=MAX_TANGO_TO_GT_SIM3_RMS_ERROR_M,
+            ),
+        )
+        return refs
+    refs.append(
+        _write_cloud_ref(
+            sequence_slug=sequence_slug,
+            source=source,
+            coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+            points_xyz=apply_sim3(points_xyz_native, alignment),
+            output_dir=output_dir,
+            target_frame=_GT_WORLD_FRAME,
+            native_frame=native_frame,
+            index_rows=index_rows,
+            payloads_used=payloads_used,
+            skipped_out_of_range_payloads=skipped_out_of_range_payloads,
+            point_stride=point_stride,
+            max_reference_points=max_reference_points,
+            alignment=alignment.model_dump(mode="json"),
+            gt_alignment_rejection=None,
+        )
+    )
     return refs
 
 
@@ -181,15 +215,26 @@ def load_tango_point_cloud_index(path: Path) -> NDArray[np.float64]:
     return rows[:, :2]
 
 
+def _trajectory_timestamp_span(trajectory: PoseTrajectory3D) -> tuple[float | None, float | None]:
+    timestamps = np.asarray(trajectory.timestamps, dtype=np.float64)
+    if timestamps.size == 0:
+        return None, None
+    return float(timestamps.min()), float(timestamps.max())
+
+
 def load_bounded_tango_point_clouds(
     *,
     index_path: Path,
-    trajectory: PoseTrajectory3D,
+    source_trajectory: PoseTrajectory3D,
     max_reference_points: int,
     point_stride: int,
-    point_source: ReferenceCloudSource = ReferenceCloudSource.TANGO_AREA_LEARNING,
+    timestamp_min_s: float | None = None,
+    timestamp_max_s: float | None = None,
+    point_source: AdvioPoseSource | ReferenceCloudSource = ReferenceCloudSource.TANGO_RAW,
+    target_frame: str = "advio_tango_raw_world",
+    payload_frame: str = TANGO_DEPTH_PAYLOAD_FRAME,
 ) -> tuple[NDArray[np.float64], int, int]:
-    """Load a deterministic bounded subset of pose-aligned Tango payloads."""
+    """Load deterministic bounded Tango point-cloud payloads in the source-native RDF basis."""
     if max_reference_points < 1:
         raise ValueError(f"Expected max_reference_points >= 1, got {max_reference_points}.")
     if point_stride < 1:
@@ -197,25 +242,35 @@ def load_bounded_tango_point_clouds(
     index_rows = load_tango_point_cloud_index(index_path)
     if index_rows.size == 0:
         return np.empty((0, 3), dtype=np.float64), 0, 0
-    source_timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
-    if source_timestamps_s.size == 0:
-        return np.empty((0, 3), dtype=np.float64), 0, int(len(index_rows))
-    first_timestamp_s = float(source_timestamps_s.min())
-    last_timestamp_s = float(source_timestamps_s.max())
-    in_range = (index_rows[:, 0] >= first_timestamp_s) & (index_rows[:, 0] <= last_timestamp_s)
+    if timestamp_min_s is None or timestamp_max_s is None:
+        timestamp_min_s, timestamp_max_s = _trajectory_timestamp_span(source_trajectory)
+    if timestamp_min_s is None or timestamp_max_s is None:
+        raise ValueError("Cannot load Tango point-cloud payloads without source trajectory timestamps.")
+    in_range = (index_rows[:, 0] >= timestamp_min_s) & (index_rows[:, 0] <= timestamp_max_s)
     filtered_index_rows = index_rows[in_range]
     skipped_out_of_range_payloads = int(len(index_rows) - len(filtered_index_rows))
     if filtered_index_rows.size == 0:
         return np.empty((0, 3), dtype=np.float64), 0, skipped_out_of_range_payloads
+    T_world_payloads = interpolate_trajectory_poses(
+        source_trajectory,
+        filtered_index_rows[:, 0],
+        target_frame=target_frame,
+        source_frame=payload_frame,
+    )
     chunks: list[NDArray[np.float64]] = []
     payloads_used = 0
     point_count = 0
-    for _timestamp_s, cloud_index_float in filtered_index_rows:
+    for (_timestamp_s, cloud_index_float), T_world_payload in zip(
+        filtered_index_rows,
+        T_world_payloads,
+        strict=True,
+    ):
         payload = load_tango_point_cloud_payload(
             resolve_tango_point_cloud_payload(index_path.parent, cloud_index_float)
         )
-        points_xyz_source = transform_advio_points_to_rdf(payload, point_source)
-        sampled = points_xyz_source[::point_stride]
+        points_xyz_payload = transform_advio_points_to_rdf(payload, point_source)
+        points_xyz_world = transform_points(T_world_payload, points_xyz_payload)
+        sampled = points_xyz_world[::point_stride]
         if len(sampled) == 0:
             continue
         remaining = max_reference_points - point_count
@@ -247,15 +302,24 @@ def transform_tango_payloads_to_pose_world(
     trajectory: PoseTrajectory3D,
     point_stride: int = 1,
 ) -> NDArray[np.float64]:
-    """Load all pose-aligned Tango point-cloud payloads in the source-native RDF basis."""
+    """Load all Tango point-cloud payloads fused into the source-native RDF basis."""
+    timestamp_min_s, timestamp_max_s = _trajectory_timestamp_span(trajectory)
     points, _payloads_used, _skipped_out_of_range_payloads = load_bounded_tango_point_clouds(
         index_path=index_path,
-        trajectory=trajectory,
+        source_trajectory=trajectory,
+        timestamp_min_s=timestamp_min_s,
+        timestamp_max_s=timestamp_max_s,
         max_reference_points=np.iinfo(np.int64).max,
         point_stride=point_stride,
-        point_source=ReferenceCloudSource.TANGO_AREA_LEARNING,
+        point_source=AdvioPoseSource.TANGO_RAW,
     )
     return points
+
+
+def transform_points(T_target_source: FrameTransform, points_xyz_source: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Apply one frame-labelled rigid transform to XYZ rows."""
+    transform = T_target_source.as_matrix()
+    return points_xyz_source @ transform[:3, :3].T + transform[:3, 3]
 
 
 def fit_sim3_alignment(
@@ -369,6 +433,8 @@ def apply_sim3(points_xyz_source: NDArray[np.float64], alignment: Sim3Alignment)
 def transform_trajectory_with_alignment(
     trajectory: PoseTrajectory3D,
     alignment: Sim3Alignment,
+    *,
+    max_rotation_projection_error: float = 2e-3,
 ) -> PoseTrajectory3D:
     """Apply one stored similarity/rigid alignment to a trajectory."""
     rotation = np.asarray(alignment.rotation, dtype=np.float64)
@@ -378,7 +444,10 @@ def transform_trajectory_with_alignment(
     for pose in trajectory.poses_se3:
         pose_matrix = np.asarray(pose, dtype=np.float64)
         transformed_pose = np.eye(4, dtype=np.float64)
-        transformed_pose[:3, :3] = project_rotation_to_so3(rotation @ pose_matrix[:3, :3])
+        transformed_pose[:3, :3] = project_rotation_to_so3(
+            rotation @ pose_matrix[:3, :3],
+            max_frobenius_error=max_rotation_projection_error,
+        )
         transformed_pose[:3, 3] = scale * (rotation @ pose_matrix[:3, 3]) + translation
         transformed_poses.append(transformed_pose)
     positions_xyz = np.asarray([pose[:3, 3] for pose in transformed_poses], dtype=np.float64)
@@ -468,22 +537,24 @@ def _write_cloud_ref(
     *,
     sequence_slug: str,
     source: ReferenceCloudSource,
+    coordinate_status: ReferenceCloudCoordinateStatus,
     points_xyz: NDArray[np.float64],
     output_dir: Path,
-    coordinate_status: ReferenceCloudCoordinateStatus,
     target_frame: str,
     native_frame: str,
-    payload_frame: str,
     index_rows: NDArray[np.float64],
     payloads_used: int,
     skipped_out_of_range_payloads: int,
     point_stride: int,
     max_reference_points: int,
-    alignment: Sim3Alignment | None,
+    alignment: dict[str, _JsonAlignmentValue] | None,
+    gt_alignment_rejection: TangoAlignmentRejection | None,
 ) -> ReferenceCloudRef:
-    stem = f"{source.value}_{coordinate_status.value}"
-    cloud_path = write_point_cloud_ply(output_dir / f"{stem}.ply", points_xyz)
-    metadata_path = output_dir / f"{stem}.metadata.json"
+    suffix = "" if coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE else "_aligned_to_gt"
+    basename = f"{source.value}{suffix}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cloud_path = write_point_cloud_ply(output_dir / f"{basename}.ply", points_xyz)
+    metadata_path = output_dir / f"{basename}.metadata.json"
     basis_metadata = advio_basis_metadata(source=source, target_frame=target_frame, native_frame=native_frame)
     metadata = TangoCloudMetadata(
         sequence_id=sequence_slug,
@@ -491,28 +562,27 @@ def _write_cloud_ref(
         coordinate_status=coordinate_status,
         target_frame=target_frame,
         native_frame=native_frame,
-        payload_frame=payload_frame,
-        source_world_frame=native_frame,
         raw_coordinate_basis=basis_metadata.raw_coordinate_basis,
         rdf_basis_transform=basis_metadata.rdf_basis_transform,
-        point_count=int(len(points_xyz)),
+        alignment=alignment,
+        gt_alignment_rejection=gt_alignment_rejection,
         timestamp_min_s=float(index_rows[:, 0].min()) if index_rows.size else None,
         timestamp_max_s=float(index_rows[:, 0].max()) if index_rows.size else None,
+        point_count=int(points_xyz.shape[0]),
         point_cloud_count=int(len(index_rows)),
         payloads_used=payloads_used,
         skipped_out_of_range_payloads=skipped_out_of_range_payloads,
         point_stride=point_stride,
         max_reference_points=max_reference_points,
-        alignment=None if alignment is None else alignment.model_dump(mode="json"),
     )
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text(json.dumps(metadata.model_dump(mode="json"), indent=2, sort_keys=True), encoding="utf-8")
     return ReferenceCloudRef(
         source=source,
-        path=cloud_path,
-        metadata_path=metadata_path.resolve(),
-        target_frame=target_frame,
+        path=cloud_path.resolve(),
         coordinate_status=coordinate_status,
+        target_frame=target_frame,
+        native_frame=native_frame,
+        metadata_path=metadata_path.resolve(),
     )
 
 
@@ -529,6 +599,8 @@ def resolve_tango_point_cloud_payload(tango_dir: Path, cloud_index: float | int)
 __all__ = [
     "Sim3Alignment",
     "TangoCloudMetadata",
+    "MAX_TANGO_TO_GT_SIM3_RMS_ERROR_M",
+    "TANGO_DEPTH_PAYLOAD_FRAME",
     "apply_sim3",
     "build_advio_tango_reference_clouds",
     "fit_sim3_alignment",

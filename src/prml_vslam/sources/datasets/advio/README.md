@@ -88,9 +88,8 @@ Repository loader conventions:
 - Tango `raw.csv` and `area-learning.csv` use the same pose CSV convention as
   the other ADVIO pose streams.
 - Tango `point-cloud.csv` rows are `timestamp, point_cloud_index`; each index
-  points to a matching `point-cloud-00001.csv`-style payload file whose rows are
-  `x, y, z` metric point coordinates emitted by the Tango depth pipeline and
-  already aligned to the current Tango device pose [1].
+  points to a matching `point-cloud-00001.csv`-style payload file with `x, y, z`
+  point rows from the Tango point-cloud stream [1].
 - The calibration YAML is parsed as:
   - pinhole intrinsics: `fx, fy, cx, cy`
   - image size
@@ -123,35 +122,34 @@ The Tango modality is an auxiliary Google Tango-device stream, not iPhone RGB-D
 ground truth. It contains:
 
 - `raw.csv`: Tango raw odometry, a frame-to-frame pose stream without long-term
-  map memory. Treat it as a baseline pose stream, not the default map frame for
-  reference-cloud preparation.
+  map memory. Repository-prepared Tango reference clouds use this raw Tango
+  world as their source-native cloud frame.
 - `area-learning.csv`: Tango area-learning odometry, a map-building pose stream
-  that can use loop closure to reduce drift. It is the preferred Tango-native
-  trajectory for repository-prepared Tango reference clouds.
+  that can use loop closure to reduce drift. It remains available as an
+  auxiliary pose stream, but is not used for repository-prepared Tango
+  reference-cloud artifacts.
 - `frames.mov` and `frames.csv`: Tango fisheye grayscale video and its frame
   timestamps. The dataset README reports this video as roughly 5 fps at
   640x480 [1].
 - `point-cloud.csv`: timestamps and integer point-cloud indices. Sampling is
   non-uniform and follows Tango depth availability rather than video frame rate.
 - `point-cloud-00001.csv`, `point-cloud-00002.csv`, ...: one XYZ point-cloud
-  payload per index, acquired by the Tango depth sensor and aligned to the
-  current Tango device pose by Tango.
+  payload per index from the Tango depth stream.
 
 Because the Tango capture comes from a separate rigidly mounted device, its
-poses and point clouds live in Tango-local coordinate systems. Treat them as
-source-native auxiliary geometry until an explicit cross-system alignment into
-the iPhone or GT world has been performed. Timestamps are valid for association
-and range filtering, but timestamp association alone is not an extrinsic
-calibration and does not justify applying the Tango trajectory pose to payload
-rows a second time.
+poses and point clouds live in Tango-local coordinate systems. Repository static
+benchmark prep associates each point-cloud payload timestamp with the raw Tango
+pose stream and fuses the payload into `advio_tango_raw_world` once. Projecting
+Tango geometry into an iPhone camera frame still requires an explicit
+Tango-to-iPhone extrinsic edge, which this repository does not expose as a
+canonical public transform.
 
 For repository-owned benchmark prep, `AdvioSequence.to_benchmark_inputs()` may
-expose materialized static reference clouds and raw Tango payload index
-metadata. Consumers must preserve the payload semantics: ADVIO payload rows are
-pose-aligned Tango-native XYZ, not unposed depth-sensor-local geometry or
-iPhone camera-local pointmaps. Projecting Tango geometry into an iPhone camera
-frame requires an explicit Tango-to-iPhone extrinsic edge, which this repository
-does not expose as a canonical public transform.
+expose raw-backed materialized static reference clouds and raw Tango payload
+index metadata. Consumers must preserve the payload semantics: ADVIO payload
+rows are local Tango point-cloud samples that the repository materializes into
+the raw Tango world with the timestamped Tango pose before static cloud
+alignment.
 
 ## Frame And Transform Tree
 
@@ -184,7 +182,9 @@ evaluation and visualization.
 That means:
 
 - `GT` is the reference trajectory.
-- `ARKit`, `ARCore`, `Tango/raw`, and `Tango/area-learning` are baseline or auxiliary pose streams.
+- `ARKit`, `ARCore`, `Tango/raw`, and `Tango/area-learning` are baseline or
+  auxiliary pose streams. Repository-prepared Tango reference clouds are
+  raw-backed.
 - Direct overlays of raw pose CSVs are not valid cross-system comparisons until
   an explicit alignment step is applied.
 
