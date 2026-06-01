@@ -74,8 +74,21 @@ What each command does:
 
 ## MemPalace
 
-MemPalace is installed into the repo `.venv` and exposed through a repo-local
-Codex plugin plus a repo-local skill wrapper.
+MemPalace is installed as an isolated `uv` tool and exposed through a
+repo-local Codex plugin plus a repo-local skill wrapper. Keep it out of the
+PRML VSLAM `.venv`; it is agent runtime tooling, not an application
+dependency.
+
+Install or update the CLI:
+
+```bash
+uv tool install mempalace
+uv tool upgrade mempalace
+mempalace --version
+```
+
+If MemPalace is installed somewhere nonstandard, point the wrapper at it with
+`MEMPALACE_BIN=/absolute/path/to/mempalace`.
 
 Refresh the repo-local palace for docs and Codex chat histories:
 
@@ -90,6 +103,15 @@ python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py status
 python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py search "ViewCoordinates.RDF"
 python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
 ```
+
+Print the recommended Codex MCP setup command for the repo-local palace:
+
+```bash
+python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py mcp
+```
+
+The checked-in `.codex/config.toml` also defines the repo-local MCP server as
+`mempalace-mcp --palace /home/jd/repos/prml-vslam/.artifacts/mempalace/palace`.
 
 Codex sessions also run a repo-local startup hook that starts a background
 refresh and prints wake-up context. The hook entry lives in `.codex/hooks.json`;

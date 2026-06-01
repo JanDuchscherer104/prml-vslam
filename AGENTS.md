@@ -7,7 +7,7 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 - `AGENTS.md`: the only full repo-wide agent policy. Nested `AGENTS.md` files should add scope-specific deltas only.
 - `README.md`: repository workflow, setup, developer commands, and high-level deliverables.
 - `docs/Questions.md`: high-quality human-maintained ground truth for challenge intent, clarified requirements, operator-facing scope, and product constraints. Consult it whenever a task touches project scope, assumptions, or evaluation intent.
-- `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary sources relevant to this project.
+- `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary sources relevant to this project, including relevant papers, libraries and documentation. Ground research in these sources whenever possible.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
 
 ## Repo Map

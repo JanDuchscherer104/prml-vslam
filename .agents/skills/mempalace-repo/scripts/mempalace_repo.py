@@ -28,6 +28,18 @@ def venv_python() -> Path:
     return repo_root() / ".venv" / "bin" / "python"
 
 
+def mempalace_bin() -> str:
+    override = os.environ.get("MEMPALACE_BIN")
+    if override:
+        return override
+    resolved = shutil.which("mempalace")
+    if resolved:
+        return resolved
+    raise RuntimeError(
+        "Missing MemPalace CLI. Install or upgrade it with `uv tool install mempalace` or set MEMPALACE_BIN."
+    )
+
+
 def palace_path() -> Path:
     return repo_root() / ".artifacts" / "mempalace" / "palace"
 
@@ -119,8 +131,8 @@ def _mempalace_env() -> dict[str, str]:
     return env
 
 
-def run_python_module(module: str, *args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
-    command = [str(venv_python()), "-m", module, *args]
+def run_mempalace(*args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
+    command = [mempalace_bin(), *args]
     return subprocess.run(
         command,
         cwd=repo_root(),
@@ -132,9 +144,7 @@ def run_python_module(module: str, *args: str, capture_output: bool = False) -> 
 
 
 def ensure_runtime() -> None:
-    if not venv_python().exists():
-        raise RuntimeError(f"Missing repo venv python at {venv_python()}")
-    command = [str(venv_python()), "-c", "import mempalace"]
+    command = [mempalace_bin(), "--version"]
     subprocess.run(command, cwd=repo_root(), env=_mempalace_env(), text=True, check=True)
 
 
@@ -224,12 +234,11 @@ def initialize_docs_source() -> None:
     docs_root = docs_source_root()
     if (docs_root / "mempalace.yaml").exists():
         return
-    run_python_module("mempalace", "init", str(docs_root), "--yes")
+    run_mempalace("init", str(docs_root), "--yes")
 
 
 def mine_docs() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(docs_source_root()),
         "--wing",
@@ -240,8 +249,7 @@ def mine_docs() -> None:
 
 
 def mine_chats() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(chats_source_root()),
         "--mode",
@@ -268,22 +276,25 @@ def refresh() -> None:
 
 def status() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "status")
+    run_mempalace("status")
 
 
 def search(query: str) -> None:
     ensure_runtime()
-    run_python_module("mempalace", "search", query)
+    run_mempalace("search", query)
 
 
 def wake_up() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "wake-up")
+    run_mempalace("wake-up")
 
 
 def mcp() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "--palace", str(palace_path()), "mcp")
+    run_mempalace("--palace", str(palace_path()), "mcp")
+    print()
+    print("Codex MCP setup:")
+    print(f"  codex mcp add mempalace -- mempalace-mcp --palace {palace_path()}")
 
 
 def _build_parser() -> argparse.ArgumentParser:
