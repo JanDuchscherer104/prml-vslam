@@ -61,6 +61,8 @@ def test_dotted_run_config_overrides_parse_json_and_deep_merge(tmp_path: Path) -
             "100",
             "--stages.slam.outputs",
             '{"emit_dense_points": false}',
+            "--reuse_artifact_root",
+            str(tmp_path / "old-run"),
             "--visualization.connect_live_viewer",
             "false",
         ],
@@ -70,6 +72,7 @@ def test_dotted_run_config_overrides_parse_json_and_deep_merge(tmp_path: Path) -
     assert updated.stages.slam.backend.max_frames == 100
     assert updated.stages.slam.outputs.emit_dense_points is False
     assert updated.stages.slam.outputs.emit_sparse_points is True
+    assert updated.reuse_artifact_root == tmp_path / "old-run"
     assert updated.visualization.connect_live_viewer is False
 
 
@@ -130,9 +133,11 @@ def test_run_config_help_documents_schema_pure_dotted_overrides(command: str) ->
     assert "RunConfig Overrides - Runtime" in result.stdout
     assert "RunConfig Override Syntax" in result.stdout
     assert "--mode" in result.stdout
+    assert "--reuse_artifact_root" in result.stdout
     assert "--stages.source.backend.frame_stride" in result.stdout
     assert "--stages.source.backend.target_fps" in result.stdout
     assert "--stages.slam.backend.max_frames" in result.stdout
+    assert "--stages.align_trajectory.baseline_source" in result.stdout
     assert "--stages.reconstruction.enabled" in result.stdout
     assert "--visualization.connect_live_viewer" in result.stdout
     assert "--ray_local_head_lifecycle" in result.stdout

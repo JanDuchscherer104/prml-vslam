@@ -57,6 +57,7 @@ from prml_vslam.pipeline.ray_runtime.common import (
     ts_ns,
 )
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
+from prml_vslam.pipeline.reuse import load_reused_stage_results
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
@@ -480,7 +481,8 @@ class RunCoordinatorActor:
         path_config: PathConfig,
         runtime_source: OfflineSequenceSource | None,
     ) -> None:
-        if runtime_source is None:
+        source_enabled = any(stage.key is StageKey.SOURCE for stage in plan.stages)
+        if runtime_source is None and source_enabled:
             if run_config.stages.source.backend is None:
                 raise RuntimeError("RunConfig execution requires `[stages.source.backend]`.")
             source = run_config.stages.source.backend.setup_target(path_config=path_config)
@@ -498,6 +500,7 @@ class RunCoordinatorActor:
             path_config=path_config,
             source=source,
         )
+        self._load_reused_results(run_config=run_config, plan=plan)
         runtime_manager = self._build_runtime_manager(plan=plan, context=context)
         runtime_manager.preflight(plan).raise_for_errors()
         for stage in plan.stages:
@@ -627,6 +630,15 @@ class RunCoordinatorActor:
             payload_resolver=None,
             destinations=_RERUN_EXPORT_DESTINATION,
         )
+
+    def _load_reused_results(self, *, run_config: RunConfig, plan: RunPlan) -> None:
+        reuse_root = run_config.reuse_artifact_root
+        if reuse_root is None:
+            return
+        enabled_stage_keys = {stage.key for stage in plan.stages}
+        for result in load_reused_stage_results(reuse_root):
+            if result.stage_key not in enabled_stage_keys:
+                self._record_stage_result(result.stage_key, result)
 
     def _run_streaming(
         self,

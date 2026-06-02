@@ -42,7 +42,7 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.contracts import ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio.advio_layout import (
     resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir,
 )
@@ -147,6 +147,9 @@ class RunConfig(BaseConfig):
     output_dir: Path
     """Root directory where planned artifacts should be written."""
 
+    reuse_artifact_root: Path | None = None
+    """Existing method-level artifact root used to satisfy disabled source/SLAM stages."""
+
     stages: StageBundle = Field(default_factory=StageBundle)
     """Fixed stage-section bundle."""
 
@@ -204,7 +207,7 @@ def _compile_run_plan(
     backend: BackendConfig | None = None,
 ) -> RunPlan:
     source_backend = run_config.stages.source.backend
-    if source_backend is None:
+    if source_backend is None and (run_config.stages.source.enabled or run_config.reuse_artifact_root is None):
         raise ValueError("RunConfig planning requires `[stages.source.backend]`.")
     slam_backend = run_config.stages.slam.backend
     if slam_backend is None:
@@ -215,6 +218,21 @@ def _compile_run_plan(
         output_dir=run_config.output_dir,
     )
     resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
+    reuse_paths: RunArtifactPaths | None = None
+    if run_config.reuse_artifact_root is not None:
+        reuse_root = run_config.reuse_artifact_root.expanduser().resolve()
+        if reuse_root == resolved_run_paths.artifact_root.resolve():
+            raise ValueError("`reuse_artifact_root` must not equal the new run artifact root.")
+        if not reuse_root.exists():
+            raise ValueError(f"`reuse_artifact_root` does not exist: {reuse_root}")
+        reuse_paths = RunArtifactPaths.build(reuse_root)
+        for label, path in (
+            ("source manifest", reuse_paths.sequence_manifest_path),
+            ("benchmark inputs", reuse_paths.benchmark_inputs_path),
+            ("SLAM trajectory", reuse_paths.trajectory_path),
+        ):
+            if not path.exists():
+                raise ValueError(f"`reuse_artifact_root` is missing {label}: {path}")
     plan_context = PipelinePlanContext(
         run_config=run_config,
         path_config=path_config,
@@ -241,7 +259,11 @@ def _compile_run_plan(
         run_id=path_config.slugify_experiment_name(run_config.experiment_name),
         mode=run_config.mode,
         artifact_root=run_paths.artifact_root,
-        source=_planned_source(source_backend, path_config=path_config),
+        source=(
+            _planned_source(source_backend, path_config=path_config)
+            if source_backend is not None
+            else _planned_reused_source(reuse_paths)
+        ),
         stages=plan_stages,
         config_warnings=run_config.config_warnings,
     )
@@ -280,6 +302,20 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
             payload["device_index"] = device_index
             payload["device_address"] = device_address
     return PlannedSource.model_validate(payload)
+
+
+def _planned_reused_source(run_paths: RunArtifactPaths | None) -> PlannedSource:
+    if run_paths is None:
+        raise ValueError("RunConfig planning requires `reuse_artifact_root` when `[stages.source.backend]` is absent.")
+    manifest = SequenceManifest.model_validate_json(run_paths.sequence_manifest_path.read_text(encoding="utf-8"))
+    return PlannedSource(
+        source_id="reused_artifacts",
+        sequence_id=manifest.sequence_id,
+        metadata={
+            "reuse_artifact_root": run_paths.artifact_root.as_posix(),
+            "dataset_id": manifest.dataset_id.value if manifest.dataset_id is not None else None,
+        },
+    )
 
 
 def _expected_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
