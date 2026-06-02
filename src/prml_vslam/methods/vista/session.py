@@ -132,7 +132,7 @@ class VistaSlamRuntime:
         native_output_dir = run_paths.native_output_dir
         native_output_dir.mkdir(parents=True, exist_ok=True)
         try:
-            self._slam.save_data_all(str(native_output_dir), save_images=False, save_depths=False)
+            self._slam.save_data_all(str(native_output_dir), save_images=True, save_depths=True)
         except Exception as exc:
             raise RuntimeError(
                 f"ViSTA-SLAM failed to export artifacts. "
