@@ -300,7 +300,7 @@ def _capture_run_config_logs(*, path_config: PathConfig, run_id: str) -> Iterato
 
 def _build_rerun_viewer_command(*, run_config: RunConfig, path_config: PathConfig) -> list[str]:
     """Build the authoritative `uv run ... rerun --serve-web` command."""
-    command = ["uv", "run", "--extra", "visualization", "rerun"]
+    command = ["uv", "run", "rerun"]
     blueprint_path = run_config.visualization.viewer_blueprint_path
     if blueprint_path is not None:
         command.append(path_config.resolve_repo_path(blueprint_path).as_posix())

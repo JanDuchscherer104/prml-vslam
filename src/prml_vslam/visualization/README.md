@@ -40,7 +40,7 @@ uv sync
 Start the committed blueprint in a web viewer:
 
 ```bash
-uv run --extra visualization rerun \
+uv run rerun \
   .configs/visualization/vista_blueprint.rbl \
   --serve-web
 ```
@@ -69,7 +69,7 @@ instead of emitting one `Transform3D` entity per TUM pose.
 Inspect a persisted repo-owned recording:
 
 ```bash
-uv run --extra visualization rerun \
+uv run rerun \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
   .configs/visualization/vista_blueprint.rbl
 ```

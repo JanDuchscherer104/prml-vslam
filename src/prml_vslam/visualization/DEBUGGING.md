@@ -48,13 +48,13 @@ Useful entry points:
 Example commands:
 
 ```bash
-uv run --extra visualization python .agents/skills/rerun-slam-integration/scripts/rrd_entity_inventory.py \
+uv run python .agents/skills/rerun-slam-integration/scripts/rrd_entity_inventory.py \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
   --prefix /world/slam/live
 ```
 
 ```bash
-uv run --extra visualization python .agents/skills/rerun-slam-integration/scripts/rrd_component_arrivals.py \
+uv run python .agents/skills/rerun-slam-integration/scripts/rrd_component_arrivals.py \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
   --index frame \
   --contents /world/slam/live/model/camera/image \
@@ -64,7 +64,7 @@ uv run --extra visualization python .agents/skills/rerun-slam-integration/script
 ```
 
 ```bash
-uv run --extra visualization python .agents/skills/rerun-slam-integration/scripts/rrd_chunk_order.py \
+uv run python .agents/skills/rerun-slam-integration/scripts/rrd_chunk_order.py \
   .artifacts/<run_id>/visualization/viewer_recording.rrd \
   --match /world/slam/live/model/camera/image
 ```
