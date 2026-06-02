@@ -15,7 +15,12 @@ from prml_vslam.interfaces import (
     ObservationSequenceIndex,
     ObservationSequenceRef,
 )
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, ReferenceTrajectoryRef
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+)
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.replay import ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData
@@ -119,7 +124,15 @@ class TumRgbdSequence(BaseData):
         )
         observation_sequence = self._prepare_observation_sequence(paths=paths, output_dir=evaluation_dir)
         return PreparedBenchmarkInputs(
-            reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)],
+            reference_trajectories=[
+                ReferenceTrajectoryRef(
+                    source=ReferenceSource.GROUND_TRUTH,
+                    path=reference_path,
+                    target_frame=TUM_RGBD_WORLD_FRAME,
+                    native_frame=TUM_RGBD_WORLD_FRAME,
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                )
+            ],
             observation_sequences=[] if observation_sequence is None else [observation_sequence],
         )
 

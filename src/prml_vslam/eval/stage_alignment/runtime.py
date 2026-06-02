@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot
+from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot, TrajectoryAlignmentArtifact
 from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
@@ -56,6 +56,7 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
                 coordinate_status=reference.coordinate_status.value
                 if reference.coordinate_status is not None
                 else None,
+                reference_source=input_payload.baseline_source.value,
                 run=DiscoveredRun(
                     artifact_root=input_payload.artifact_root,
                     estimate_path=input_payload.slam.trajectory_tum.path,
@@ -64,6 +65,7 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
                         if input_payload.slam.dense_points_ply is not None
                         else None
                     ),
+                    method=input_payload.method_id.value if input_payload.method_id is not None else None,
                     label="alignment",
                 ),
             )
@@ -74,6 +76,7 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
         }
         if aligned_point_cloud_path is not None:
             artifacts["aligned_point_cloud_ply"] = artifact_ref(aligned_point_cloud_path, kind="ply")
+        alignment = TrajectoryAlignmentArtifact.model_validate_json(alignment_path.read_text(encoding="utf-8"))
 
         outcome = StageOutcome(
             stage_key=StageKey.TRAJECTORY_ALIGNMENT,
@@ -81,15 +84,20 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
             config_hash=stable_hash({"baseline_source": input_payload.baseline_source.value}),
             input_fingerprint=stable_hash(
                 {
-                    "benchmark_inputs": input_payload.benchmark_inputs,
-                    "slam_trajectory": input_payload.slam.trajectory_tum,
+                    "benchmark_inputs": input_payload.benchmark_inputs.model_dump(mode="json")
+                    if input_payload.benchmark_inputs is not None
+                    else None,
+                    "slam_trajectory": input_payload.slam.trajectory_tum.model_dump(mode="json"),
+                    "slam_dense_points": input_payload.slam.dense_points_ply.model_dump(mode="json")
+                    if input_payload.slam.dense_points_ply is not None
+                    else None,
                 }
             ),
             artifacts=artifacts,
         )
         return StageResult(
             stage_key=StageKey.TRAJECTORY_ALIGNMENT,
-            payload=None,
+            payload=alignment,
             outcome=outcome,
             final_runtime_status=StageRuntimeStatus(
                 stage_key=StageKey.TRAJECTORY_ALIGNMENT,

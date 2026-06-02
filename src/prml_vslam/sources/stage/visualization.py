@@ -14,15 +14,10 @@ from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent, VisualizationItem
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.sources.contracts import (
-    ReferenceCloudCoordinateStatus,
-    ReferenceSource,
-)
-from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus
 from prml_vslam.sources.stage.artifacts import (
     reference_cloud_artifact_key,
     reference_cloud_metadata_artifact_key,
-    reference_point_cloud_sequence_trajectory_artifact_key,
     reference_trajectory_artifact_key,
 )
 from prml_vslam.sources.stage.contracts import SourceStageOutput
@@ -155,38 +150,15 @@ class SourceVisualizationAdapter:
         items: list[VisualizationItem] = []
         sequence_manifest = output.sequence_manifest
         for reference in benchmark_inputs.reference_trajectories:
+            if (
+                reference.coordinate_status is not ReferenceCloudCoordinateStatus.ALIGNED
+                or reference.target_frame is None
+            ):
+                continue
             artifact = artifact_refs.get(reference_trajectory_artifact_key(reference))
             if artifact is None:
                 continue
-            target_frame = reference.target_frame or _trajectory_world_frame(
-                sequence_manifest.dataset_id, reference.source
-            )
-            coordinate_status = (
-                reference.coordinate_status.value
-                if reference.coordinate_status is not None
-                else _trajectory_coordinate_status(sequence_manifest.dataset_id, target_frame)
-            )
-            native_frame = reference.native_frame or target_frame
-            items.append(
-                VisualizationItem(
-                    intent=VisualizationIntent.TRAJECTORY,
-                    role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
-                    artifact_refs={TRAJECTORY_ARTIFACT: artifact},
-                    space=target_frame,
-                    metadata={
-                        "reference_source": reference.source.value,
-                        "sequence_id": sequence_manifest.sequence_id,
-                        "target_frame": target_frame,
-                        "native_frame": native_frame,
-                        "coordinate_status": coordinate_status,
-                    },
-                )
-            )
-
-        for reference in benchmark_inputs.reference_point_cloud_sequences:
-            artifact = artifact_refs.get(reference_point_cloud_sequence_trajectory_artifact_key(reference))
-            if artifact is None:
-                continue
+            native_frame = reference.native_frame or reference.target_frame
             items.append(
                 VisualizationItem(
                     intent=VisualizationIntent.TRAJECTORY,
@@ -195,19 +167,19 @@ class SourceVisualizationAdapter:
                     space=reference.target_frame,
                     metadata={
                         "reference_source": reference.source.value,
-                        "sequence_id": sequence_manifest.sequence_id,
+                        "sequence_id": output.sequence_manifest.sequence_id,
                         "target_frame": reference.target_frame,
-                        "native_frame": reference.native_frame,
+                        "native_frame": native_frame,
                         "coordinate_status": reference.coordinate_status.value,
                     },
                 )
             )
 
-        for reference in benchmark_inputs.reference_clouds:
-            artifact = artifact_refs.get(reference_cloud_artifact_key(reference))
+        for cloud_reference in benchmark_inputs.reference_clouds:
+            artifact = artifact_refs.get(reference_cloud_artifact_key(cloud_reference))
             if artifact is None:
                 continue
-            metadata_artifact = artifact_refs.get(reference_cloud_metadata_artifact_key(reference))
+            metadata_artifact = artifact_refs.get(reference_cloud_metadata_artifact_key(cloud_reference))
             item_artifacts = {POINT_CLOUD_ARTIFACT: artifact}
             if metadata_artifact is not None:
                 item_artifacts[METADATA_ARTIFACT] = metadata_artifact
@@ -216,31 +188,13 @@ class SourceVisualizationAdapter:
                     intent=VisualizationIntent.POINT_CLOUD,
                     role=ROLE_SOURCE_REFERENCE_POINT_CLOUD,
                     artifact_refs=item_artifacts,
-                    space=reference.target_frame,
+                    space=cloud_reference.target_frame,
                     metadata={
-                        "reference_source": reference.source.value,
-                        "coordinate_status": reference.coordinate_status.value,
-                        "target_frame": reference.target_frame,
+                        "reference_source": cloud_reference.source.value,
+                        "coordinate_status": cloud_reference.coordinate_status.value,
+                        "target_frame": cloud_reference.target_frame,
                         "sequence_id": sequence_manifest.sequence_id,
                     },
                 )
             )
         return items
-
-
-def _trajectory_world_frame(dataset_id: DatasetId | None, source: ReferenceSource) -> str:
-    if dataset_id is DatasetId.TUM_RGBD:
-        return "tum_rgbd_mocap_world"
-    if dataset_id is DatasetId.ADVIO:
-        return {
-            ReferenceSource.GROUND_TRUTH: "advio_gt_world",
-            ReferenceSource.ARCORE: "advio_arcore_world",
-            ReferenceSource.ARKIT: "advio_arkit_world",
-        }.get(source, f"advio_{source.value}_world")
-    return "world"
-
-
-def _trajectory_coordinate_status(dataset_id: DatasetId | None, target_frame: str) -> str:
-    if dataset_id is DatasetId.ADVIO and target_frame == "advio_gt_world":
-        return ReferenceCloudCoordinateStatus.ALIGNED.value
-    return ReferenceCloudCoordinateStatus.SOURCE_NATIVE.value

@@ -224,7 +224,6 @@ def test_build_run_config_from_action_round_trips_console_stage_visualization_an
         grpc_url="rerun+http://127.0.0.1:9876/proxy",
         viewer_blueprint_path=Path(".configs/visualization/vista_blueprint.rbl"),
         preserve_native_rerun=False,
-        frusta_history_window_streaming=7,
         frusta_history_window_offline=12,
         show_tracking_trajectory=False,
         log_source_rgb=True,
@@ -248,7 +247,6 @@ def test_build_run_config_from_action_round_trips_console_stage_visualization_an
     assert run_config.visualization.export_viewer_rrd is True
     assert run_config.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
     assert run_config.visualization.preserve_native_rerun is False
-    assert run_config.visualization.frusta_history_window_streaming == 7
     assert run_config.visualization.frusta_history_window_offline == 12
     assert run_config.visualization.show_tracking_trajectory is False
     assert run_config.visualization.log_source_rgb is True
@@ -456,7 +454,7 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
             RunPlanStage(
                 key=StageKey.CLOUD_EVALUATION,
                 available=False,
-                availability_reason="no runtime is registered yet",
+                availability_reason="Dense-cloud evaluation is planned but no runtime is registered yet.",
             ),
         ],
     )
@@ -522,7 +520,7 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
     assert rows["source"]["Updated"] == "1 s"
     assert rows["slam"]["State"] == "completed"
     assert rows["evaluate.cloud"]["State"] == "unavailable"
-    assert rows["evaluate.cloud"]["Message"] == "no runtime is registered yet"
+    assert rows["evaluate.cloud"]["Message"] == "Dense-cloud evaluation is planned but no runtime is registered yet."
 
 
 def test_pipeline_telemetry_history_resets_deduplicates_and_trims() -> None:

@@ -15,7 +15,7 @@ camera-local pointmap and pose payload. The current policy is:
 - keep ViSTA world orientation unchanged instead of applying a viewer-only basis
   transform;
 - log ViSTA live/model and keyed-history geometry under
-  `world/slam/vista_slam_world/...`;
+  `world/slam/...`;
 - keep camera-local pointmaps camera-local until Rerun composes them through the
   posed parent entity;
 - render keyed-history points as the accumulated map and keep

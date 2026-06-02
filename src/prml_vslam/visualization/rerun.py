@@ -25,10 +25,22 @@ ROOT_WORLD_ENTITY_PATH = "world"
 """Canonical root entity path for repo-owned Rerun recordings."""
 ROOT_WORLD_AXIS_LENGTH = 1.0
 """Visible axis length for the static root-world transform marker."""
-MODEL_RGB_2D_ENTITY_PATH = "world/slam/vista_slam_world/live/model/diag/rgb"
+SLAM_WORLD_ENTITY_PATH = "world/slam"
+"""Method-local SLAM world root under the canonical Rerun world."""
+SLAM_WORLD_AXIS_LENGTH = 0.25
+"""Visible axis length for the fixed method-origin marker."""
+TRAJECTORY_START_AXIS_LENGTH = 0.18
+"""Visible axis length for trajectory start-frame markers."""
+MODEL_RGB_2D_ENTITY_PATH = "world/slam/live/model/diag/rgb"
 """Dedicated 2D-only live model RGB entity, separate from the 3D camera branch."""
-GROUND_PLANE_ENTITY_PATH = "world/slam/vista_slam_world/alignment/ground_plane"
+GROUND_PLANE_ENTITY_PATH = "world/slam/alignment/ground_plane"
 """Root entity path for the derived dominant ground-plane visualization."""
+LIVE_MODEL_IMAGE_PLANE_DISTANCE = 0.35
+"""Image-plane distance for the latest live model camera branch."""
+KEYFRAME_IMAGE_PLANE_DISTANCE = 0.04
+"""Image-plane distance for persistent historical keyframe frusta."""
+SOURCE_IMAGE_PLANE_DISTANCE = 0.12
+"""Image-plane distance for source camera frusta."""
 POINT_CLOUD_RADII = 0.02
 """Default point cloud radii for repo-owned Rerun recordings."""
 TRAJECTORY_LINE_RADII = 0.01
@@ -44,16 +56,18 @@ DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/reference/trajectory/**",
     "+ world/reference/points/*/aligned/**",
     "+ world/reconstruction/**",
-    "+ world/slam/vista_slam_world/live/tracking/**",
-    "+ world/slam/vista_slam_world/live/model",
-    "+ world/slam/vista_slam_world/live/model/camera/image",
-    "- world/slam/vista_slam_world/live/model/camera/image/depth",
-    "- world/slam/vista_slam_world/live/model/camera/image/depth/**",
-    "- world/slam/vista_slam_world/live/model/points",
-    "- world/slam/vista_slam_world/live/model/points/**",
-    "+ world/slam/vista_slam_world/keyframes/cameras/**",
-    "+ world/slam/vista_slam_world/keyframes/points/**",
-    "+ world/slam/vista_slam_world/trajectory/raw/**",
+    "+ world/slam",
+    "+ world/slam/live/tracking/**",
+    "+ world/slam/live/model",
+    "+ world/slam/live/model/camera/image",
+    "- world/slam/live/model/camera/image/depth",
+    "- world/slam/live/model/camera/image/depth/**",
+    "- world/slam/live/model/points",
+    "- world/slam/live/model/points/**",
+    "+ world/slam/keyframes/cameras/**",
+    "+ world/slam/keyframes/points/**",
+    "+ world/slam/point_cloud/raw",
+    "+ world/slam/trajectory/raw/**",
     "+ world/overlays/**",
     "+ world/live/source/camera",
 )
@@ -73,8 +87,8 @@ def build_default_blueprint(
             name="Model RGB",
         ),
         rrb.Spatial2DView(
-            origin="world/slam/vista_slam_world/live/model/camera/image",
-            contents="world/slam/vista_slam_world/live/model/camera/image/depth",
+            origin="world/slam/live/model/camera/image",
+            contents="world/slam/live/model/camera/image/depth",
             name="Model Depth",
         ),
     ]
@@ -98,8 +112,8 @@ def build_default_blueprint(
     if show_diagnostic_preview:
         views.append(
             rrb.Spatial2DView(
-                origin="world/slam/vista_slam_world/live/model/diag/preview",
-                contents="world/slam/vista_slam_world/live/model/diag/preview",
+                origin="world/slam/live/model/diag/preview",
+                contents="world/slam/live/model/diag/preview",
                 name="Preview",
             )
         )
@@ -131,6 +145,7 @@ def create_recording_stream(
     )
     stream.send_blueprint(blueprint)
     log_root_world_transform(stream, view_coordinates=view_coordinates)
+    log_slam_world_transform(stream)
     return stream
 
 
@@ -146,12 +161,23 @@ def log_root_world_transform(
     It also declares ``world`` with the requested ``view_coordinates`` so the 3D
     viewer/grid matches the logged scene semantics.
     """
-    recording_stream.log(
-        ROOT_WORLD_ENTITY_PATH,
-        rr.Transform3D(axis_length=ROOT_WORLD_AXIS_LENGTH),
+    log_transform_axes(
+        recording_stream,
+        entity_path=ROOT_WORLD_ENTITY_PATH,
+        axis_length=ROOT_WORLD_AXIS_LENGTH,
         static=True,
     )
     recording_stream.log(ROOT_WORLD_ENTITY_PATH, _view_coordinates_from_name(view_coordinates), static=True)
+
+
+def log_slam_world_transform(recording_stream: rr.RecordingStream) -> None:
+    """Declare one fixed method-origin marker without moving child SLAM geometry."""
+    log_transform_axes(
+        recording_stream,
+        entity_path=SLAM_WORLD_ENTITY_PATH,
+        axis_length=SLAM_WORLD_AXIS_LENGTH,
+        static=True,
+    )
 
 
 def _view_coordinates_from_name(view_coordinates: str) -> rr.ViewCoordinates:
@@ -195,15 +221,50 @@ def log_sim3_transform(
     static: bool = False,
 ) -> None:
     """Log one explicit Sim(3) transform (rotation, translation, and scale)."""
+    log_transform_axes(
+        recording_stream,
+        entity_path=entity_path,
+        translation_xyz=translation_xyz,
+        rotation_matrix=rotation_matrix,
+        scale=scale,
+        relation=rr.TransformRelation.ParentFromChild,
+        axis_length=axis_length,
+        static=static,
+    )
+
+
+def log_transform_axes(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    translation_xyz: np.ndarray | list[float] | None = None,
+    quaternion_xyzw: np.ndarray | list[float] | None = None,
+    rotation_matrix: np.ndarray | None = None,
+    scale: float | None = None,
+    relation: rr.TransformRelation | None = None,
+    axis_length: float | None = None,
+    static: bool = False,
+) -> None:
+    """Log one Transform3D axes marker using the repo-owned transform convention."""
+    if quaternion_xyzw is not None and rotation_matrix is not None:
+        raise ValueError("Specify either quaternion_xyzw or rotation_matrix, not both.")
+    transform_kwargs = {}
+    if translation_xyz is not None:
+        transform_kwargs["translation"] = np.asarray(translation_xyz, dtype=np.float32).tolist()
+    if quaternion_xyzw is not None:
+        transform_kwargs["quaternion"] = rr.Quaternion(xyzw=np.asarray(quaternion_xyzw, dtype=np.float64).tolist())
+    if rotation_matrix is not None:
+        transform_kwargs["rotation"] = rr.Quaternion(
+            xyzw=quaternion_from_matrix(rotation_matrix)[[1, 2, 3, 0]].tolist()
+        )
+    if scale is not None:
+        transform_kwargs["scale"] = scale
+    if relation is not None:
+        transform_kwargs["relation"] = relation
+    transform_kwargs["axis_length"] = axis_length
     recording_stream.log(
         entity_path,
-        rr.Transform3D(
-            translation=np.asarray(translation_xyz, dtype=np.float32).tolist(),
-            rotation=rr.Quaternion(xyzw=quaternion_from_matrix(rotation_matrix)[[1, 2, 3, 0]].tolist()),
-            scale=scale,
-            relation=rr.TransformRelation.ParentFromChild,
-            axis_length=axis_length,
-        ),
+        rr.Transform3D(**transform_kwargs),
         static=static,
     )
 
@@ -217,16 +278,13 @@ def log_transform(
     static: bool = False,
 ) -> None:
     """Log one explicit transform using repo-owned direction semantics."""
-    translation = transform.translation_xyz().tolist()
-    quaternion = transform.quaternion_xyzw().tolist()
-    recording_stream.log(
-        entity_path,
-        rr.Transform3D(
-            translation=translation,
-            quaternion=rr.Quaternion(xyzw=quaternion),
-            relation=rr.TransformRelation.ParentFromChild,
-            axis_length=axis_length,
-        ),
+    log_transform_axes(
+        recording_stream,
+        entity_path=entity_path,
+        translation_xyz=transform.translation_xyz(),
+        quaternion_xyzw=transform.quaternion_xyzw(),
+        relation=rr.TransformRelation.ParentFromChild,
+        axis_length=axis_length,
         static=static,
     )
 
@@ -236,6 +294,7 @@ def log_pinhole(
     *,
     entity_path: str,
     intrinsics: CameraIntrinsics,
+    image_plane_distance: float | None = None,
 ) -> None:
     """Log one pinhole camera model using repo-owned intrinsics semantics."""
     if intrinsics.width_px is None or intrinsics.height_px is None:
@@ -246,6 +305,7 @@ def log_pinhole(
             image_from_camera=intrinsics.as_matrix(),
             resolution=[intrinsics.width_px, intrinsics.height_px],
             camera_xyz=rr.ViewCoordinates.RDF,
+            image_plane_distance=image_plane_distance,
         ),
     )
 
@@ -628,6 +688,8 @@ __all__ = [
     "collect_native_visualization_artifacts",
     "create_recording_stream",
     "GROUND_PLANE_ENTITY_PATH",
+    "KEYFRAME_IMAGE_PLANE_DISTANCE",
+    "LIVE_MODEL_IMAGE_PLANE_DISTANCE",
     "log_depth_image",
     "log_clear",
     "log_arrows3d",
@@ -641,6 +703,12 @@ __all__ = [
     "log_points3d",
     "log_rgb_image",
     "log_root_world_transform",
+    "log_slam_world_transform",
     "log_transform",
+    "log_transform_axes",
     "ROOT_WORLD_ENTITY_PATH",
+    "SLAM_WORLD_AXIS_LENGTH",
+    "SLAM_WORLD_ENTITY_PATH",
+    "SOURCE_IMAGE_PLANE_DISTANCE",
+    "TRAJECTORY_START_AXIS_LENGTH",
 ]

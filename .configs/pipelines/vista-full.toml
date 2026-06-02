@@ -136,7 +136,6 @@ log_diagnostic_preview = false
 log_camera_image_rgb = false
 
 # Keep only a few recent frusta visible in the streaming viewer.
-frusta_history_window_streaming = 5
 
 # Keep the full tracking trajectory visible.
 show_tracking_trajectory = true

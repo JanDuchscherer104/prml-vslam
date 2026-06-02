@@ -26,11 +26,12 @@ def _build_offline_input(context: PipelineExecutionContext) -> TrajectoryEvaluat
 
 def _failure_fingerprint(context: PipelineExecutionContext) -> FailureFingerprint:
     slam = context.results.require_slam_artifacts()
+    benchmark_inputs = context.results.require_benchmark_inputs()
     return FailureFingerprint(
         config_payload=context.run_config.stages.evaluate_trajectory.evaluation,
         input_payload={
-            "benchmark_inputs": context.results.require_benchmark_inputs(),
-            "slam_trajectory": slam.trajectory_tum,
+            "benchmark_inputs": benchmark_inputs.model_dump_json() if benchmark_inputs is not None else None,
+            "slam_trajectory": slam.trajectory_tum.path.as_posix(),
         },
     )
 

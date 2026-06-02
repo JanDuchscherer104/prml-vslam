@@ -12,7 +12,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import ray
@@ -70,12 +70,10 @@ from prml_vslam.pipeline.stages.base.contracts import (
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
 from prml_vslam.pipeline.stages.specs import stage_runtime_spec_for
-from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
-from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.visualization.artifacts import artifact_visualizations
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
@@ -89,6 +87,7 @@ _FAILED_SLAM_DEPENDENT_STREAMING_FINALIZERS = frozenset(
         StageKey.TRAJECTORY_ALIGNMENT,
         StageKey.TRAJECTORY_EVALUATION,
         StageKey.RECONSTRUCTION,
+        StageKey.CLOUD_ALIGNMENT,
         StageKey.CLOUD_EVALUATION,
     }
 )
@@ -103,7 +102,7 @@ class _RerunSinkSidecar:
     pending_count: int = 0
 
 
-@ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0, max_concurrency=10)
+@ray.remote(num_cpus=1, max_restarts=0, max_task_retries=0, max_concurrency=10)  # type: ignore[call-overload]
 class RunCoordinatorActor:
     """Own one run's state, event log, and live execution coordination."""
 
@@ -454,11 +453,12 @@ class RunCoordinatorActor:
                     runtime_source=runtime_source,
                 )
             else:
+                streaming_source = cast(StreamingSequenceSource | None, runtime_source)
                 self._run_streaming(
                     run_config=run_config,
                     plan=plan,
                     path_config=path_config,
-                    runtime_source=runtime_source,
+                    runtime_source=streaming_source,
                 )
                 self._streaming_done.wait()
         except Exception as exc:
@@ -588,7 +588,9 @@ class RunCoordinatorActor:
                 outcome=result.outcome,
             )
         )
-        if stage_key is StageKey.TRAJECTORY_EVALUATION and isinstance(payload, TrajectoryAlignmentArtifact):
+        if stage_key in {StageKey.TRAJECTORY_ALIGNMENT, StageKey.TRAJECTORY_EVALUATION} and isinstance(
+            payload, TrajectoryAlignmentArtifact
+        ):
             self._console.info(
                 "Applying post-run Sim(3) visual alignment: scale=%.6f matched_pairs=%d rms_error_m=%.6f",
                 payload.scale,
@@ -597,7 +599,7 @@ class RunCoordinatorActor:
             )
             self._submit_rerun_update(
                 update=StageRuntimeUpdate(
-                    stage_key=StageKey.TRAJECTORY_EVALUATION,
+                    stage_key=stage_key,
                     timestamp_ns=ts_ns(),
                     semantic_events=[payload],
                 ),
@@ -648,7 +650,7 @@ class RunCoordinatorActor:
         runtime_manager.preflight(plan).raise_for_errors()
         self._streaming_runtime_manager = runtime_manager
         self._run_streaming_prepare(context=context, runtime_manager=runtime_manager)
-        self._source_actor = PacketSourceActor.options(
+        self._source_actor = PacketSourceActor.options(  # type: ignore[attr-defined]
             **clean_actor_options(
                 {
                     "num_cpus": 1.0,
@@ -683,8 +685,6 @@ class RunCoordinatorActor:
                     runtime_manager=runtime_manager,
                     context=context,
                 )
-                if isinstance(source_result.payload, SourceStageOutput):
-                    self._log_initial_visual_alignment(source_result.payload)
                 continue
             if stage_key is StageKey.SLAM:
                 self._start_streaming_slam_runtime(context=context, runtime_manager=runtime_manager)
@@ -847,13 +847,15 @@ class RunCoordinatorActor:
         self._console.info("Rerun sink enabled for run '%s'.", self._run_id)
         common_options = {
             "recording_id": self._run_id,
-            "frusta_history_window_streaming": run_config.visualization.frusta_history_window_streaming,
             "show_tracking_trajectory": run_config.visualization.show_tracking_trajectory,
             "trajectory_pose_axis_length": run_config.visualization.trajectory_pose_axis_length,
             "log_source_rgb": run_config.visualization.log_source_rgb,
             "log_diagnostic_preview": run_config.visualization.log_diagnostic_preview,
             "log_camera_image_rgb": run_config.visualization.log_camera_image_rgb,
             "point_cloud_decimation_keep_ratio": run_config.visualization.point_cloud_decimation_keep_ratio,
+            "reference_point_cloud_decimation_keep_ratio": (
+                run_config.visualization.reference_point_cloud_decimation_keep_ratio
+            ),
             "mesh_decimation_keep_ratio": run_config.visualization.mesh_decimation_keep_ratio,
             "decimation_random_seed": run_config.visualization.decimation_random_seed,
             "view_coordinates": run_config.visualization.view_coordinates,
@@ -863,7 +865,7 @@ class RunCoordinatorActor:
             sidecars.append(
                 _RerunSinkSidecar(
                     kind="live",
-                    actor=RerunSinkActor.remote(
+                    actor=RerunSinkActor.remote(  # type: ignore[attr-defined]
                         grpc_url=run_config.visualization.grpc_url,
                         target_path=None,
                         **common_options,
@@ -874,7 +876,7 @@ class RunCoordinatorActor:
             sidecars.append(
                 _RerunSinkSidecar(
                     kind="export",
-                    actor=RerunSinkActor.remote(
+                    actor=RerunSinkActor.remote(  # type: ignore[attr-defined]
                         grpc_url=None,
                         target_path=run_paths.viewer_rrd_path,
                         **common_options,
@@ -1057,52 +1059,6 @@ class RunCoordinatorActor:
         for update in updates:
             self._submit_rerun_update(update=update, payload_resolver=None)
 
-    def _log_initial_visual_alignment(self, output: SourceStageOutput) -> None:
-        """Log a static SE(3) transform to snap the SLAM origin to the GT start pose."""
-        if output.benchmark_inputs is None:
-            return
-        reference = output.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
-        if reference is None or not reference.path.exists():
-            return
-        try:
-            trajectory = load_tum_trajectory(reference.path)
-            if len(trajectory.positions_xyz) == 0:
-                return
-            rotation = np.asarray(trajectory.orientations_quat_wxyz[0], dtype=np.float64)
-            translation = np.asarray(trajectory.positions_xyz[0], dtype=np.float64)
-            from pytransform3d.rotations import matrix_from_quaternion as mfq  # noqa: PLC0415
-
-            rotation_matrix = mfq(rotation)
-
-            self._console.info(
-                "Applying initial SE(3) visual alignment: translation=%s scale=%.3f",
-                translation.tolist(),
-                float(self._run_config.visualization.initial_scale) if self._run_config else 1.0,
-            )
-
-            self._submit_rerun_update(
-                update=StageRuntimeUpdate(
-                    stage_key=StageKey.SOURCE,
-                    timestamp_ns=ts_ns(),
-                    semantic_events=[
-                        TrajectoryAlignmentArtifact(
-                            source_frame="vista_slam_world",
-                            target_frame=reference.target_frame or "world",
-                            scale=float(self._run_config.visualization.initial_scale) if self._run_config else 1.0,
-                            rotation=rotation_matrix.tolist(),
-                            translation=translation.tolist(),
-                            matched_pairs=1,
-                            rms_error_m=0.0,
-                            reference_source="ground_truth",
-                            sync_max_diff_s=0.01,
-                        )
-                    ],
-                ),
-                payload_resolver=None,
-            )
-        except Exception as exc:
-            self._console.warning("Failed to log initial visual alignment: %s", exc)
-
     def _self_actor_handle(self) -> ActorHandle:
         return ray.get_actor(coordinator_actor_name(self._run_id), namespace=self._namespace)
 
@@ -1197,7 +1153,6 @@ class RunCoordinatorActor:
         if self._rerun_sink is not None:
             actors.append(self._rerun_sink)
         try:
-            self._submit_final_artifact_rerun_update()
             if self._rerun_sinks:
                 for sidecar in self._rerun_sinks:
                     if sidecar.last_call is not None:
@@ -1221,16 +1176,6 @@ class RunCoordinatorActor:
             self._rerun_sinks = []
             self._rerun_sink = None
             self._rerun_sink_last_call = None
-
-    def _submit_final_artifact_rerun_update(self) -> None:
-        visualizations = artifact_visualizations(self._snapshot.artifacts)
-        if not visualizations:
-            return
-        self._submit_rerun_update(
-            update=StageRuntimeUpdate(stage_key=StageKey.SUMMARY, timestamp_ns=ts_ns(), visualizations=visualizations),
-            payload_resolver=None,
-            destinations=_RERUN_EXPORT_DESTINATION,
-        )
 
     def _require_run_config(self) -> RunConfig:
         if self._run_config is not None:
