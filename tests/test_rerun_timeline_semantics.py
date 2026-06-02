@@ -129,8 +129,9 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -
 
     assert calls == [
         ("rgb", "world/live/source/rgb", 5, None),
-        ("pose", "world/slam/vista_slam_world/live/tracking/camera", 7, None),
-        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
+        ("pose", "world/slam/live/tracking/camera", 7, None),
+        ("pose", "world/slam/trajectory/raw/start", 7, None),
+        ("trajectory", "world/slam/trajectory/raw", 7, None),
     ]
 
 
@@ -138,7 +139,7 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
     stream = _StrictFakeRecordingStream()
     calls: list[tuple[str, str, int | None, int | None]] = []
     policy = RerunLoggingPolicy(
-        log_pinhole=lambda stream, *, entity_path, intrinsics: calls.append(
+        log_pinhole=lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, *_timeline_state(stream))
         ),
         log_pointcloud=lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
@@ -173,8 +174,8 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         },
     )
 
-    live_calls = [call for call in calls if call[1].startswith("world/slam/vista_slam_world/live/model")]
-    history_calls = [call for call in calls if call[1].startswith("world/slam/vista_slam_world/keyframes/")]
+    live_calls = [call for call in calls if call[1].startswith("world/slam/live/model")]
+    history_calls = [call for call in calls if call[1].startswith("world/slam/keyframes/")]
 
     assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in live_calls)
     assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in history_calls)

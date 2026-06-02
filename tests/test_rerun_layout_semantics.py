@@ -61,10 +61,12 @@ def _keyframe_update(*, refs: dict[str, TransientPayloadRef]) -> StageRuntimeUpd
 
 def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pytest.LogCaptureFixture) -> None:
     stream = _FakeRecordingStream()
-    pinhole_calls: list[tuple[str, object]] = []
+    pinhole_calls: list[tuple[str, object, float | None]] = []
     rgb_calls: list[str] = []
     policy = RerunLoggingPolicy(
-        log_pinhole=lambda stream, *, entity_path, intrinsics: pinhole_calls.append((entity_path, intrinsics)),
+        log_pinhole=lambda stream, *, entity_path, intrinsics, image_plane_distance=None: pinhole_calls.append(
+            (entity_path, intrinsics, image_plane_distance)
+        ),
         log_pointcloud=lambda *args, **kwargs: None,
         log_pointcloud_ply=lambda *args, **kwargs: None,
         log_mesh_ply=lambda *args, **kwargs: None,
@@ -96,12 +98,16 @@ def test_policy_uses_camera_image_namespace_and_fallback_intrinsics(caplog: pyte
             },
         )
 
-    assert [path for path, _ in pinhole_calls] == [
-        "world/slam/vista_slam_world/live/model/camera/image",
-        "world/slam/vista_slam_world/keyframes/cameras/000007/image",
+    assert [path for path, _, _ in pinhole_calls] == [
+        "world/slam/live/model/camera/image",
+        "world/slam/keyframes/cameras/000007/image",
     ]
-    assert "world/slam/vista_slam_world/live/model/camera/image" in rgb_calls
-    assert "world/slam/vista_slam_world/live/model/diag/preview" in rgb_calls
+    assert "world/slam/live/model/camera/image" in rgb_calls
+    assert "world/slam/live/model/diag/preview" in rgb_calls
+    assert [distance for _, _, distance in pinhole_calls] == [
+        rerun_helpers.LIVE_MODEL_IMAGE_PLANE_DISTANCE,
+        rerun_helpers.KEYFRAME_IMAGE_PLANE_DISTANCE,
+    ]
     live_intrinsics = pinhole_calls[0][1]
     assert live_intrinsics.fx == 2.0
     assert live_intrinsics.fy == 1.5
@@ -142,8 +148,8 @@ def test_policy_does_not_log_diagnostic_preview_by_default() -> None:
         },
     )
 
-    assert "world/slam/vista_slam_world/live/model/diag/preview" not in rgb_calls
-    assert "world/slam/vista_slam_world/keyframes/cameras/000007/diag/preview" not in rgb_calls
+    assert "world/slam/live/model/diag/preview" not in rgb_calls
+    assert "world/slam/keyframes/cameras/000007/diag/preview" not in rgb_calls
 
 
 def test_policy_rejects_mismatched_rgb_and_depth_rasters() -> None:
@@ -258,15 +264,17 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert "+ world/reference/trajectory/**" in layout.views[0].contents
     assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
-    assert "+ world/slam/vista_slam_world/**" not in layout.views[0].contents
-    assert "+ world/slam/vista_slam_world/keyframes/points/**" in layout.views[0].contents
-    assert "- world/slam/vista_slam_world/live/model/points/**" in layout.views[0].contents
+    assert "+ world/slam" in layout.views[0].contents
+    assert "+ world/slam/**" not in layout.views[0].contents
+    assert "+ world/slam/point_cloud/raw" in layout.views[0].contents
+    assert "+ world/slam/keyframes/points/**" in layout.views[0].contents
+    assert "- world/slam/live/model/points/**" in layout.views[0].contents
     assert "+ world/live/source/camera" in layout.views[0].contents
     assert [view.origin for view in layout.views[1].views] == [
         rerun_helpers.MODEL_RGB_2D_ENTITY_PATH,
-        "world/slam/vista_slam_world/live/model/camera/image",
+        "world/slam/live/model/camera/image",
     ]
-    assert len(logged_entities) == 2
+    assert len(logged_entities) == 3
     assert logged_entities[0][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert isinstance(logged_entities[0][1], FakeTransform3D)
     assert logged_entities[0][1].axis_length == rerun_helpers.ROOT_WORLD_AXIS_LENGTH
@@ -274,13 +282,18 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
     assert logged_entities[1][0] == rerun_helpers.ROOT_WORLD_ENTITY_PATH
     assert logged_entities[1][1] == FakeViewCoordinates.RDF
     assert logged_entities[1][2] is True
+    assert logged_entities[2][0] == rerun_helpers.SLAM_WORLD_ENTITY_PATH
+    assert isinstance(logged_entities[2][1], FakeTransform3D)
+    assert logged_entities[2][1].axis_length == rerun_helpers.SLAM_WORLD_AXIS_LENGTH
+    assert logged_entities[2][2] is True
 
 
 def test_checked_in_vista_blueprint_uses_current_model_entity_tree() -> None:
     blueprint_bytes = (_REPO_ROOT / ".configs/visualization/vista_blueprint.rbl").read_bytes()
 
     assert b"world/live/model" not in blueprint_bytes
-    assert b"world/slam/vista_" in blueprint_bytes
+    assert b"world/slam/vista_" not in blueprint_bytes
+    assert b"world/slam/live/model" in blueprint_bytes
     assert b"live/model/diag/rgb" in blueprint_bytes
     assert b"live/model/camera/image" in blueprint_bytes
 

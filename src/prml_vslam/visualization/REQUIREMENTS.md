@@ -21,11 +21,11 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - source RGB and model-raster payloads are intentionally separate surfaces and
   are not expected to share a raster
 - the default 3D scene should render aligned reference geometry, keyed-history
-  point clouds from `world/slam/vista_slam_world/keyframes/points/<id>/points`,
+  point clouds from `world/slam/keyframes/points/<id>/points`,
   recent keyed camera/frusta entities, the live model camera frustum, trajectory
   lines, and optional per-pose axes
 - the default 3D scene should use a narrow allow-list and treat
-  `world/slam/vista_slam_world/live/model/points`, source-native references, and
+  `world/slam/live/model/points`, source-native references, and
   camera image/depth raster subtrees as non-default debug/2D surfaces while
   allowing the non-recursive live camera-image entity for frustum rendering
 - keyed-history persistence in the viewer should come from stable entity paths rather than requiring a dedicated keyframe timeline
@@ -61,7 +61,7 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - method-native live exports should keep their native world semantics unless a dedicated normalization layer is introduced
 - `rr.Pinhole.resolution` is `[width, height]`
 - metric depth rasters use `rr.DepthImage`; if the array is in meters, `meter = 1.0`
-- camera-local pointmaps remain camera-local until composed through the posed parent entity for the active layout, such as `world/slam/vista_slam_world/live/model` or `world/slam/vista_slam_world/keyframes/points/<id>`
+- camera-local pointmaps remain camera-local until composed through the posed parent entity for the active layout, such as `world/slam/live/model` or `world/slam/keyframes/points/<id>`
 - the repo-owned ViSTA path preserves ViSTA-native RDF-like world semantics in
   the viewer path; it does not normalize the world into an operator/world-up
   basis
@@ -90,7 +90,7 @@ This document is the concise source of truth for `prml_vslam.visualization`.
 - `world/live/source/rgb` is intentionally the source-frame raster and must not
   be relabeled as the ViSTA model raster
 - camera-local pointmaps must not be mislabeled as world coordinates
-- frusta eviction must never clear `world/slam/vista_slam_world/keyframes/points/<id>` or the tracking trajectory branch
+- keyframe-frustum logging must never clear `world/slam/keyframes/points/<id>` or the tracking trajectory branch
 - per-pose trajectory axis entities are omitted by default; set a positive
   `trajectory_pose_axis_length` only when visible SE3 axes are explicitly needed
 - missing keyed pointmaps are non-fatal observability events and must emit explicit warnings with `source_seq` and `keyframe_index`

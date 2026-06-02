@@ -19,21 +19,21 @@ from pathlib import Path
 
 APPLICATION_ID = "prml-vslam"
 FOLLOW_RERUN_PACKAGE = "rerun-sdk==0.27.0"
-TRACKING_CAMERA_ENTITY_PATH = "world/slam/vista_slam_world/live/model"
+TRACKING_CAMERA_ENTITY_PATH = "world/slam/live/model"
 
 SCENE_CONTENTS: tuple[str, ...] = (
     "+ world/alignment/**",
     "+ world/reconstruction/**",
-    "+ world/slam/vista_slam_world/live/tracking/**",
-    "+ world/slam/vista_slam_world/live/model",
-    "+ world/slam/vista_slam_world/live/model/camera/image",
-    "- world/slam/vista_slam_world/live/model/camera/image/depth",
-    "- world/slam/vista_slam_world/live/model/camera/image/depth/**",
-    "- world/slam/vista_slam_world/live/model/points",
-    "- world/slam/vista_slam_world/live/model/points/**",
-    "- world/slam/vista_slam_world/keyframes/cameras/**",
-    "+ world/slam/vista_slam_world/keyframes/points/**",
-    "+ world/slam/vista_slam_world/trajectory/raw",
+    "+ world/slam/live/tracking/**",
+    "+ world/slam/live/model",
+    "+ world/slam/live/model/camera/image",
+    "- world/slam/live/model/camera/image/depth",
+    "- world/slam/live/model/camera/image/depth/**",
+    "- world/slam/live/model/points",
+    "- world/slam/live/model/points/**",
+    "- world/slam/keyframes/cameras/**",
+    "+ world/slam/keyframes/points/**",
+    "+ world/slam/trajectory/raw",
 )
 
 CommandRunner = Callable[[Sequence[str], Path | None], subprocess.CompletedProcess[str]]
@@ -90,7 +90,7 @@ def create_follow_trajectory_artifact(
             directory name.
         tracking_entity_path: Time-varying entity whose transform the 3D viewer
             camera controls should follow. For repo-owned ViSTA recordings this
-            is `world/slam/vista_slam_world/live/model`.
+            is `world/slam/live/model`.
         application_id: Rerun application id for the generated blueprint store.
             It must match the source recording's application id for the viewer
             to apply the blueprint naturally.
@@ -306,13 +306,13 @@ def _follow_blueprint_script() -> str:
                     ),
                     rrb.Tabs(
                         rrb.Spatial2DView(
-                            origin="world/slam/vista_slam_world/live/model/diag/rgb",
-                            contents="world/slam/vista_slam_world/live/model/diag/rgb",
+                            origin="world/slam/live/model/diag/rgb",
+                            contents="world/slam/live/model/diag/rgb",
                             name="Model RGB",
                         ),
                         rrb.Spatial2DView(
-                            origin="world/slam/vista_slam_world/live/model/camera/image",
-                            contents="world/slam/vista_slam_world/live/model/camera/image/depth",
+                            origin="world/slam/live/model/camera/image",
+                            contents="world/slam/live/model/camera/image/depth",
                             name="Model Depth",
                         ),
                         name="2D Views",

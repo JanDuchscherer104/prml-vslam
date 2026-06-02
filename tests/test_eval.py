@@ -9,18 +9,26 @@ import numpy as np
 import pytest
 
 from prml_vslam.eval.contracts import (
+    CloudAlignmentSelection,
     DiscoveredRun,
     EvaluationArtifact,
     MetricStats,
     SelectionSnapshot,
+    TrajectoryAlignmentArtifact,
     TrajectoryAlignmentMode,
     TrajectoryEvaluationSemantics,
     TrajectoryMetricId,
     TrajectorySeries,
 )
-from prml_vslam.eval.services import TrajectoryEvaluationService, compute_trajectory_ape_preview
+from prml_vslam.eval.services import (
+    CloudAlignmentService,
+    TrajectoryEvaluationService,
+    compute_trajectory_ape_preview,
+)
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
+from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
+from prml_vslam.eval.stage_cloud_alignment.runtime import CloudAlignmentRuntime
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
@@ -39,7 +47,7 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
 )
 from prml_vslam.utils import PathConfig
-from prml_vslam.utils.geometry import write_tum_trajectory
+from prml_vslam.utils.geometry import load_point_cloud_ply, write_point_cloud_ply, write_tum_trajectory
 
 
 def test_evaluation_artifact_round_trips_explicit_semantics(tmp_path: Path) -> None:
@@ -263,23 +271,25 @@ def test_compute_trajectory_alignment_writes_files_and_recovers_scale(tmp_path: 
 
 
 def test_compute_trajectory_alignment_writes_aligned_point_cloud(tmp_path: Path) -> None:
-    from prml_vslam.utils.geometry import write_point_cloud_ply
-
     scale = 2.0
     translation = np.array([0.0, 0.0, 0.0])
+    reference_positions = [
+        np.array([float(index % 5), float(index // 5), float(index % 3) * 0.1], dtype=np.float64) for index in range(20)
+    ]
+    timestamps = [float(index) for index in range(len(reference_positions))]
     reference_path = write_tum_trajectory(
         tmp_path / "reference.tum",
         poses=[
             FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(p[0]), ty=float(p[1]), tz=float(p[2]))
-            for p in _REFERENCE_POSITIONS
+            for p in reference_positions
         ],
-        timestamps=_TIMESTAMPS,
+        timestamps=timestamps,
     )
     estimate_path = _write_scaled_trajectory(
-        tmp_path / "estimate.tum", _REFERENCE_POSITIONS, _TIMESTAMPS, scale, translation
+        tmp_path / "estimate.tum", reference_positions, timestamps, scale, translation
     )
     cloud_path = tmp_path / "cloud.ply"
-    write_point_cloud_ply(cloud_path, np.array(_REFERENCE_POSITIONS, dtype=np.float64))
+    write_point_cloud_ply(cloud_path, np.array(reference_positions, dtype=np.float64))
     artifact_root = tmp_path / "run"
     service = TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
 
@@ -298,6 +308,66 @@ def test_compute_trajectory_alignment_writes_aligned_point_cloud(tmp_path: Path)
 
     assert aligned_cloud_path is not None
     assert aligned_cloud_path.exists()
+
+
+def test_cloud_alignment_service_writes_distinct_icp_refined_cloud(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    reference_points = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 3.0],
+            [1.0, 2.0, 0.5],
+        ],
+        dtype=np.float64,
+    )
+    offset = np.array([0.04, -0.02, 0.01], dtype=np.float64)
+    reference_path = write_point_cloud_ply(tmp_path / "reference.ply", reference_points)
+    sim3_path = write_point_cloud_ply(tmp_path / "point_cloud_sim3_aligned.ply", reference_points + offset)
+
+    artifact = CloudAlignmentService().compute_cloud_alignment(
+        selection=CloudAlignmentSelection(
+            artifact_root=tmp_path / "run",
+            reference_cloud_path=reference_path,
+            sim3_cloud_path=sim3_path,
+            max_correspondence_distance_m=0.25,
+        )
+    )
+
+    assert artifact.path.exists()
+    assert artifact.icp_point_cloud_path.exists()
+    assert artifact.icp_point_cloud_path.name == "point_cloud_sim3_icp_aligned.ply"
+    assert artifact.icp_point_cloud_path != artifact.sim3_point_cloud_path
+    refined_points = load_point_cloud_ply(artifact.icp_point_cloud_path)
+    assert np.mean(np.linalg.norm(refined_points - reference_points, axis=1)) < np.linalg.norm(offset)
+
+
+def test_cloud_alignment_runtime_consumes_sim3_aligned_cloud_only(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    reference_points = np.array(
+        [[0.0, 0.0, 0.0], [0.8, 0.1, 0.0], [0.0, 1.1, 0.2], [0.2, 0.0, 1.2]],
+        dtype=np.float64,
+    )
+    reference_path = write_point_cloud_ply(tmp_path / "reference.ply", reference_points)
+    sim3_path = write_point_cloud_ply(
+        tmp_path / "point_cloud_sim3_aligned.ply",
+        reference_points + np.array([0.03, 0.0, 0.0], dtype=np.float64),
+    )
+
+    alignment_result = CloudAlignmentRuntime().run_offline(
+        input_payload=CloudAlignmentStageInput(
+            artifact_root=tmp_path / "run",
+            reference_cloud=ArtifactRef(path=reference_path, kind="ply", fingerprint="ref"),
+            sim3_point_cloud=ArtifactRef(path=sim3_path, kind="ply", fingerprint="sim3"),
+            max_correspondence_distance_m=0.2,
+        )
+    )
+
+    assert alignment_result.stage_key is StageKey.CLOUD_ALIGNMENT
+    assert "icp_aligned_point_cloud_ply" in alignment_result.outcome.artifacts
+    assert alignment_result.outcome.artifacts["sim3_aligned_point_cloud_ply"].path == sim3_path
+    assert alignment_result.outcome.artifacts["icp_aligned_point_cloud_ply"].path != sim3_path
 
 
 def test_compute_trajectory_alignment_raises_on_missing_reference(tmp_path: Path) -> None:
@@ -367,6 +437,8 @@ def test_trajectory_alignment_runtime_produces_aligned_artifacts(tmp_path: Path)
     alignment = json.loads(result.outcome.artifacts["trajectory_alignment"].path.read_text())
     assert alignment["scale"] == pytest.approx(scale, rel=1e-6)
     assert alignment["target_frame"] == "custom_reference_world"
+    assert isinstance(result.payload, TrajectoryAlignmentArtifact)
+    assert result.payload.scale == pytest.approx(scale, rel=1e-6)
 
 
 def test_trajectory_alignment_runtime_fails_without_benchmark_inputs(tmp_path: Path) -> None:
@@ -397,6 +469,18 @@ def test_trajectory_alignment_stage_spec_is_well_formed() -> None:
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.stage_key is StageKey.TRAJECTORY_ALIGNMENT
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.build_offline_input is not None
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.failure_fingerprint is not None
+
+
+def test_cloud_alignment_stage_spec_is_well_formed() -> None:
+    from prml_vslam.eval.stage_cloud.spec import CLOUD_EVALUATION_STAGE_SPEC
+    from prml_vslam.eval.stage_cloud_alignment.spec import CLOUD_ALIGNMENT_STAGE_SPEC
+
+    assert CLOUD_ALIGNMENT_STAGE_SPEC.stage_key is StageKey.CLOUD_ALIGNMENT
+    assert CLOUD_ALIGNMENT_STAGE_SPEC.build_offline_input is not None
+    assert CLOUD_ALIGNMENT_STAGE_SPEC.failure_fingerprint is not None
+    assert CLOUD_EVALUATION_STAGE_SPEC.stage_key is StageKey.CLOUD_EVALUATION
+    assert CLOUD_EVALUATION_STAGE_SPEC.build_offline_input is None
+    assert CLOUD_EVALUATION_STAGE_SPEC.failure_fingerprint is None
 
 
 def test_stage_bundle_align_trajectory_defaults_disabled(tmp_path: Path) -> None:

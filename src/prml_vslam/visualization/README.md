@@ -57,9 +57,9 @@ Enable live streaming and/or repo-owned `.rrd` export in a run request:
 [visualization]
 connect_live_viewer = true
 export_viewer_rrd = true
-frusta_history_window_streaming = 20
 show_tracking_trajectory = true
 trajectory_pose_axis_length = 0.0
+log_camera_image_rgb = true
 ```
 
 Set `trajectory_pose_axis_length` to a positive value only when pose axes are
@@ -102,25 +102,31 @@ The current repo-owned live sink logs a fixed surface rather than a
 per-modality toggle matrix.
 
 - `world`: static root world convention for the viewer.
+- `world/slam`: fixed method-origin marker; alignment updates
+  keep this branch root visible while moving child SLAM geometry into the target
+  frame.
 - `world/live/source/rgb`: original source-frame RGB observations.
-- `world/slam/vista_slam_world/live/tracking/camera`: live tracking pose.
-- `world/slam/vista_slam_world/live/model/diag/rgb`: dedicated 2D-only model-raster RGB surface.
-- `world/slam/vista_slam_world/live/model/camera/image`: 3D camera entity with `Pinhole`, image, and
-  depth when the camera bundle is coherent; the default 3D blueprint includes
-  the entity itself so Rerun can draw the live frustum.
-- `world/slam/vista_slam_world/live/model/diag/preview`: diagnostic preview surface, logged only
+- `world/slam/live/tracking/camera`: live tracking pose.
+- `world/slam/live/model/diag/rgb`: dedicated 2D-only model-raster RGB surface.
+- `world/slam/live/model/camera/image`: latest 3D model camera
+  entity with a large `Pinhole`, RGB image plane, and depth when the camera
+  bundle is coherent; the default 3D blueprint includes the entity itself so
+  Rerun can draw the live frustum.
+- `world/slam/live/model/diag/preview`: diagnostic preview surface, logged only
   when `log_diagnostic_preview = true`.
-- `world/slam/vista_slam_world/live/model/points`: latest/debug camera-local
+- `world/slam/live/model/points`: latest/debug camera-local
   pointmap surface.
-- `world/slam/vista_slam_world/keyframes/cameras/<id>` and
-  `world/slam/vista_slam_world/keyframes/points/<id>`: stable keyed-history
-  branches.
+- `world/slam/keyframes/cameras/<id>` and
+  `world/slam/keyframes/points/<id>`: stable keyed-history
+  branches. Keyed cameras persist small frusta by default; historical keyed
+  RGB/depth image planes are not logged unless the sink policy opts into full
+  keyframe camera payloads.
 - `world/reference/trajectory/<source>/<status>`: prepared reference
   trajectories.
 - `world/reference/points/<source>/<status>/...`: prepared reference point
   clouds.
-- `world/slam/vista_slam_world/trajectory/raw`: tracking polyline.
-- `world/slam/vista_slam_world/trajectory/raw/poses/<id>`: optional per-pose
+- `world/slam/trajectory/raw`: tracking polyline.
+- `world/slam/trajectory/raw/poses/<id>`: optional per-pose
   SE3 trajectory transforms when `trajectory_pose_axis_length > 0`.
 
 Stage and domain visualization adapters do not call the Rerun SDK. They emit
@@ -134,7 +140,7 @@ Current operational constraints:
 - offline runs still preserve upstream-native visualization artifacts rather
   than synthesizing a repo-owned offline `.rrd`;
 - the default 3D scene is keyed-history first and treats
-  `world/slam/vista_slam_world/live/model/points` as mutable latest/debug geometry;
+  `world/slam/live/model/points` as mutable latest/debug geometry;
 - the default 3D scene uses a narrow allow-list for references, trajectories,
   the live model camera entity, keyed point clouds, and the recent frusta window
   instead of broad includes with red exclusion filters;

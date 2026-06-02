@@ -48,6 +48,7 @@ from prml_vslam.sources.stage.visualization import (
     TRAJECTORY_ARTIFACT,
 )
 from prml_vslam.utils.geometry import transform_points_world_camera, write_point_cloud_ply
+from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization import rerun_sink as rerun_sink_module
 from prml_vslam.visualization.rerun_sink import RerunEventSink, RerunSinkActor
 from prml_vslam.visualization.validation import load_recording_summary
@@ -268,10 +269,8 @@ def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(
     sink.close()
 
     recording = rdf.load_recording(viewer_path)
-    fill_view = recording.view(index="log_tick", contents="/world/slam/vista_slam_world/alignment/ground_plane/fill")
-    outline_view = recording.view(
-        index="log_tick", contents="/world/slam/vista_slam_world/alignment/ground_plane/outline"
-    )
+    fill_view = recording.view(index="log_tick", contents="/world/slam/alignment/ground_plane/fill")
+    outline_view = recording.view(index="log_tick", contents="/world/slam/alignment/ground_plane/outline")
 
     fill_static_rows = [batch.to_pydict() for batch in fill_view.select_static()]
     outline_static_rows = [batch.to_pydict() for batch in outline_view.select_static()]
@@ -280,21 +279,21 @@ def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(
     assert len(outline_static_rows) == 1
 
     np.testing.assert_allclose(
-        np.asarray(
-            fill_static_rows[0]["/world/slam/vista_slam_world/alignment/ground_plane/fill:Mesh3D:vertex_positions"]
-        ).reshape(-1, 3),
+        np.asarray(fill_static_rows[0]["/world/slam/alignment/ground_plane/fill:Mesh3D:vertex_positions"]).reshape(
+            -1, 3
+        ),
         np.asarray(_ground_alignment_metadata().visualization.corners_xyz_world, dtype=np.float32),
     )
     np.testing.assert_array_equal(
-        np.asarray(
-            fill_static_rows[0]["/world/slam/vista_slam_world/alignment/ground_plane/fill:Mesh3D:triangle_indices"]
-        ).reshape(-1, 3),
+        np.asarray(fill_static_rows[0]["/world/slam/alignment/ground_plane/fill:Mesh3D:triangle_indices"]).reshape(
+            -1, 3
+        ),
         np.asarray([[0, 1, 2], [0, 2, 3]], dtype=np.uint32),
     )
     np.testing.assert_allclose(
-        np.asarray(
-            outline_static_rows[0]["/world/slam/vista_slam_world/alignment/ground_plane/outline:LineStrips3D:strips"]
-        ).reshape(-1, 3),
+        np.asarray(outline_static_rows[0]["/world/slam/alignment/ground_plane/outline:LineStrips3D:strips"]).reshape(
+            -1, 3
+        ),
         np.asarray(
             [
                 (0.0, 0.0, 0.0),
@@ -321,7 +320,9 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pinhole",
-        lambda stream, *, entity_path, intrinsics: calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+        lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
+            ("pinhole", entity_path, *_timeline_state(stream))
+        ),
     )
     monkeypatch.setattr(
         rerun_sink_module,
@@ -386,27 +387,26 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
     )
 
     assert calls == [
-        ("pose", "world/slam/vista_slam_world/live/tracking/camera", 8, None),
-        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 8, None),
-        ("pose", "world/slam/vista_slam_world/live/model", 8, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/cameras/000003", 8, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/points/000003", 8, None),
-        ("pinhole", "world/slam/vista_slam_world/live/model/camera/image", 8, None),
-        ("pinhole", "world/slam/vista_slam_world/keyframes/cameras/000003/image", 8, None),
+        ("pose", "world/slam/live/tracking/camera", 8, None),
+        ("pose", "world/slam/trajectory/raw/start", 8, None),
+        ("trajectory", "world/slam/trajectory/raw", 8, None),
+        ("pose", "world/slam/live/model", 8, None),
+        ("pose", "world/slam/keyframes/cameras/000003", 8, None),
+        ("pose", "world/slam/keyframes/points/000003", 8, None),
+        ("pinhole", "world/slam/live/model/camera/image", 8, None),
+        ("pinhole", "world/slam/keyframes/cameras/000003/image", 8, None),
         ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, 8, None),
-        ("rgb", "world/slam/vista_slam_world/live/model/camera/image", 8, None),
-        ("rgb", "world/slam/vista_slam_world/keyframes/cameras/000003/image", 8, None),
-        ("depth", "world/slam/vista_slam_world/live/model/camera/image/depth", 8, None),
-        ("depth", "world/slam/vista_slam_world/keyframes/cameras/000003/image/depth", 8, None),
-        ("rgb", "world/slam/vista_slam_world/live/model/diag/preview", 8, None),
-        ("rgb", "world/slam/vista_slam_world/keyframes/cameras/000003/diag/preview", 8, None),
-        ("points", "world/slam/vista_slam_world/live/model/points", 8, None),
-        ("points", "world/slam/vista_slam_world/keyframes/points/000003/points", 8, None),
+        ("rgb", "world/slam/live/model/camera/image", 8, None),
+        ("depth", "world/slam/live/model/camera/image/depth", 8, None),
+        ("rgb", "world/slam/live/model/diag/preview", 8, None),
+        ("points", "world/slam/live/model/points", 8, None),
+        ("points", "world/slam/keyframes/points/000003/points", 8, None),
     ]
-    assert transform_axis_lengths["world/slam/vista_slam_world/live/tracking/camera"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/live/model"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/keyframes/cameras/000003"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/keyframes/points/000003"] == 0.0
+    assert transform_axis_lengths["world/slam/live/tracking/camera"] == 0.0
+    assert transform_axis_lengths["world/slam/trajectory/raw/start"] == rerun_helpers.TRAJECTORY_START_AXIS_LENGTH
+    assert transform_axis_lengths["world/slam/live/model"] == 0.0
+    assert transform_axis_lengths["world/slam/keyframes/cameras/000003"] == 0.0
+    assert transform_axis_lengths["world/slam/keyframes/points/000003"] == 0.0
 
 
 def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, monkeypatch) -> None:
@@ -418,7 +418,9 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pinhole",
-        lambda stream, *, entity_path, intrinsics: calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+        lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
+            ("pinhole", entity_path, *_timeline_state(stream))
+        ),
     )
     monkeypatch.setattr(
         rerun_sink_module,
@@ -498,27 +500,25 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
     )
 
     assert calls == [
-        ("pose", "world/slam/vista_slam_world/live/tracking/camera", 8, None),
-        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 8, None),
-        ("pose", "world/slam/vista_slam_world/live/model", 8, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/cameras/000003", 8, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/points/000003", 8, None),
-        ("pinhole", "world/slam/vista_slam_world/live/model/camera/image", 8, None),
-        ("pinhole", "world/slam/vista_slam_world/keyframes/cameras/000003/image", 8, None),
+        ("pose", "world/slam/live/tracking/camera", 8, None),
+        ("pose", "world/slam/trajectory/raw/start", 8, None),
+        ("trajectory", "world/slam/trajectory/raw", 8, None),
+        ("pose", "world/slam/live/model", 8, None),
+        ("pose", "world/slam/keyframes/cameras/000003", 8, None),
+        ("pose", "world/slam/keyframes/points/000003", 8, None),
+        ("pinhole", "world/slam/live/model/camera/image", 8, None),
+        ("pinhole", "world/slam/keyframes/cameras/000003/image", 8, None),
         ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, 8, None),
-        ("rgb", "world/slam/vista_slam_world/live/model/camera/image", 8, None),
-        ("rgb", "world/slam/vista_slam_world/keyframes/cameras/000003/image", 8, None),
-        ("depth", "world/slam/vista_slam_world/live/model/camera/image/depth", 8, None),
-        ("depth", "world/slam/vista_slam_world/keyframes/cameras/000003/image/depth", 8, None),
-        ("rgb", "world/slam/vista_slam_world/live/model/diag/preview", 8, None),
-        ("rgb", "world/slam/vista_slam_world/keyframes/cameras/000003/diag/preview", 8, None),
-        ("points", "world/slam/vista_slam_world/live/model/points", 8, None),
-        ("points", "world/slam/vista_slam_world/keyframes/points/000003/points", 8, None),
+        ("rgb", "world/slam/live/model/camera/image", 8, None),
+        ("depth", "world/slam/live/model/camera/image/depth", 8, None),
+        ("rgb", "world/slam/live/model/diag/preview", 8, None),
+        ("points", "world/slam/live/model/points", 8, None),
+        ("points", "world/slam/keyframes/points/000003/points", 8, None),
     ]
-    assert transform_axis_lengths["world/slam/vista_slam_world/live/tracking/camera"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/live/model"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/keyframes/cameras/000003"] == 0.0
-    assert transform_axis_lengths["world/slam/vista_slam_world/keyframes/points/000003"] == 0.0
+    assert transform_axis_lengths["world/slam/live/tracking/camera"] == 0.0
+    assert transform_axis_lengths["world/slam/live/model"] == 0.0
+    assert transform_axis_lengths["world/slam/keyframes/cameras/000003"] == 0.0
+    assert transform_axis_lengths["world/slam/keyframes/points/000003"] == 0.0
 
 
 def test_rerun_sink_update_skips_missing_payload_refs(tmp_path: Path, monkeypatch) -> None:
@@ -767,7 +767,9 @@ def test_rerun_sink_logs_source_posed_camera_geometry(tmp_path: Path, monkeypatc
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pinhole",
-        lambda stream, *, entity_path, intrinsics: calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+        lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
+            ("pinhole", entity_path, *_timeline_state(stream))
+        ),
     )
     monkeypatch.setattr(
         rerun_sink_module,
@@ -928,21 +930,22 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
     )
 
     assert calls == [
-        ("pose", "world/slam/vista_slam_world/live/tracking/camera", 4, None),
-        ("pose", "world/slam/vista_slam_world/live/model", 4, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/cameras/000000", 4, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/points/000000", 4, None),
-        ("points", "world/slam/vista_slam_world/live/model/points", 4, None),
-        ("points", "world/slam/vista_slam_world/keyframes/points/000000/points", 4, None),
+        ("pose", "world/slam/live/tracking/camera", 4, None),
+        ("pose", "world/slam/trajectory/raw/start", 4, None),
+        ("pose", "world/slam/live/model", 4, None),
+        ("pose", "world/slam/keyframes/cameras/000000", 4, None),
+        ("pose", "world/slam/keyframes/points/000000", 4, None),
+        ("points", "world/slam/live/model/points", 4, None),
+        ("points", "world/slam/keyframes/points/000000/points", 4, None),
     ]
 
     live_world_points = transform_points_world_camera(
-        captured_pointmaps["world/slam/vista_slam_world/live/model/points"].reshape(-1, 3),
-        captured_transforms["world/slam/vista_slam_world/live/model"],
+        captured_pointmaps["world/slam/live/model/points"].reshape(-1, 3),
+        captured_transforms["world/slam/live/model"],
     )
     keyframe_world_points = transform_points_world_camera(
-        captured_pointmaps["world/slam/vista_slam_world/keyframes/points/000000/points"].reshape(-1, 3),
-        captured_transforms["world/slam/vista_slam_world/keyframes/points/000000"],
+        captured_pointmaps["world/slam/keyframes/points/000000/points"].reshape(-1, 3),
+        captured_transforms["world/slam/keyframes/points/000000"],
     )
 
     np.testing.assert_allclose(live_world_points[0], np.array([1.5, 2.0, 3.0]))
@@ -996,10 +999,12 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
 
     assert calls == [
         ("rgb", "world/live/source/rgb", 1, None),
-        ("pose", "world/slam/vista_slam_world/live/tracking/camera", 7, None),
-        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
+        ("pose", "world/slam/live/tracking/camera", 7, None),
+        ("pose", "world/slam/trajectory/raw/start", 7, None),
+        ("trajectory", "world/slam/trajectory/raw", 7, None),
     ]
-    assert tracking_axis_lengths["world/slam/vista_slam_world/live/tracking/camera"] == 0.0
+    assert tracking_axis_lengths["world/slam/live/tracking/camera"] == 0.0
+    assert tracking_axis_lengths["world/slam/trajectory/raw/start"] == rerun_helpers.TRAJECTORY_START_AXIS_LENGTH
 
 
 def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_path: Path, monkeypatch) -> None:
@@ -1017,7 +1022,7 @@ def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_pat
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pinhole",
-        lambda stream, *, entity_path, intrinsics: calls.append(
+        lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, (intrinsics.height_px, intrinsics.width_px), *_timeline_state(stream))
         ),
     )
@@ -1068,15 +1073,12 @@ def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_pat
 
     assert calls == [
         ("rgb", "world/live/source/rgb", (11, 13, 3), 1, None),
-        ("pinhole", "world/slam/vista_slam_world/live/model/camera/image", (5, 7), 1, None),
-        ("pinhole", "world/slam/vista_slam_world/keyframes/cameras/000000/image", (5, 7), 1, None),
+        ("pinhole", "world/slam/live/model/camera/image", (5, 7), 1, None),
+        ("pinhole", "world/slam/keyframes/cameras/000000/image", (5, 7), 1, None),
         ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, (5, 7, 3), 1, None),
-        ("rgb", "world/slam/vista_slam_world/live/model/camera/image", (5, 7, 3), 1, None),
-        ("rgb", "world/slam/vista_slam_world/keyframes/cameras/000000/image", (5, 7, 3), 1, None),
-        ("depth", "world/slam/vista_slam_world/live/model/camera/image/depth", (5, 7), 1, None),
-        ("depth", "world/slam/vista_slam_world/keyframes/cameras/000000/image/depth", (5, 7), 1, None),
-        ("rgb", "world/slam/vista_slam_world/live/model/diag/preview", (5, 7, 3), 1, None),
-        ("rgb", "world/slam/vista_slam_world/keyframes/cameras/000000/diag/preview", (5, 7, 3), 1, None),
+        ("rgb", "world/slam/live/model/camera/image", (5, 7, 3), 1, None),
+        ("depth", "world/slam/live/model/camera/image/depth", (5, 7), 1, None),
+        ("rgb", "world/slam/live/model/diag/preview", (5, 7, 3), 1, None),
     ]
 
 
@@ -1105,7 +1107,8 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
     )
 
     assert paths == [
-        ("world/slam/vista_slam_world/live/tracking/camera", 2, None),
+        ("world/slam/live/tracking/camera", 2, None),
+        ("world/slam/trajectory/raw/start", 2, None),
     ]
     assert "world" not in [path for path, _, _ in paths]
 
@@ -1153,7 +1156,6 @@ def test_rerun_sink_actor_forwards_stage_runtime_updates_without_payload_resolve
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
         recording_id="demo",
-        frusta_history_window_streaming=5,
         show_tracking_trajectory=False,
     )
     update = StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1)
@@ -1161,7 +1163,6 @@ def test_rerun_sink_actor_forwards_stage_runtime_updates_without_payload_resolve
     actor.close()
 
     assert observed["init"]["recording_id"] == "demo"
-    assert observed["init"]["frusta_history_window_streaming"] == 5
     assert observed["init"]["show_tracking_trajectory"] is False
     assert observed["update"] == update
     assert observed["closed"] is True
@@ -1214,7 +1215,6 @@ def test_rerun_sink_actor_resolves_stage_runtime_update_payloads_in_sidecar(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
         recording_id="demo",
-        frusta_history_window_streaming=5,
         show_tracking_trajectory=False,
     )
     actor.observe_update(
@@ -1237,7 +1237,9 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
     monkeypatch.setattr(
         rerun_sink_module,
         "log_pinhole",
-        lambda stream, *, entity_path, intrinsics: calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+        lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
+            ("pinhole", entity_path, *_timeline_state(stream))
+        ),
     )
     monkeypatch.setattr(
         rerun_sink_module,
@@ -1267,19 +1269,19 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
     )
 
     assert calls == [
-        ("pose", "world/slam/vista_slam_world/live/tracking/camera", 8, None),
-        ("pose", "world/slam/vista_slam_world/live/model", 8, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/cameras/000003", 8, None),
-        ("pose", "world/slam/vista_slam_world/keyframes/points/000003", 8, None),
-        ("pinhole", "world/slam/vista_slam_world/live/model/camera/image", 8, None),
-        ("pinhole", "world/slam/vista_slam_world/keyframes/cameras/000003/image", 8, None),
+        ("pose", "world/slam/live/tracking/camera", 8, None),
+        ("pose", "world/slam/trajectory/raw/start", 8, None),
+        ("pose", "world/slam/live/model", 8, None),
+        ("pose", "world/slam/keyframes/cameras/000003", 8, None),
+        ("pose", "world/slam/keyframes/points/000003", 8, None),
+        ("pinhole", "world/slam/live/model/camera/image", 8, None),
+        ("pinhole", "world/slam/keyframes/cameras/000003/image", 8, None),
         ("rgb", rerun_sink_module.MODEL_RGB_2D_ENTITY_PATH, 8, None),
-        ("rgb", "world/slam/vista_slam_world/live/model/camera/image", 8, None),
-        ("rgb", "world/slam/vista_slam_world/keyframes/cameras/000003/image", 8, None),
+        ("rgb", "world/slam/live/model/camera/image", 8, None),
     ]
 
 
-def test_rerun_sink_clears_stale_keyframe_camera_subtrees_without_clearing_points(tmp_path: Path, monkeypatch) -> None:
+def test_rerun_sink_keeps_keyframe_camera_frusta_persistent(tmp_path: Path, monkeypatch) -> None:
     clears: list[str] = []
 
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
@@ -1299,7 +1301,6 @@ def test_rerun_sink_clears_stale_keyframe_camera_subtrees_without_clearing_point
     sink = RerunEventSink(
         grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
-        frusta_history_window_streaming=2,
     )
 
     for keyframe_index in range(3):
@@ -1313,4 +1314,4 @@ def test_rerun_sink_clears_stale_keyframe_camera_subtrees_without_clearing_point
             payloads={},
         )
 
-    assert clears == ["world/slam/vista_slam_world/keyframes/cameras/000000:True"]
+    assert clears == []

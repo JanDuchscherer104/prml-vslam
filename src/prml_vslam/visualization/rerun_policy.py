@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -69,41 +68,49 @@ from prml_vslam.visualization.artifacts import (
     ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
     ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
 )
-from prml_vslam.visualization.rerun import MODEL_RGB_2D_ENTITY_PATH
+from prml_vslam.visualization.rerun import (
+    KEYFRAME_IMAGE_PLANE_DISTANCE,
+    LIVE_MODEL_IMAGE_PLANE_DISTANCE,
+    MODEL_RGB_2D_ENTITY_PATH,
+    SLAM_WORLD_AXIS_LENGTH,
+    SLAM_WORLD_ENTITY_PATH,
+    SOURCE_IMAGE_PLANE_DISTANCE,
+    TRAJECTORY_START_AXIS_LENGTH,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _RGB_ENTITY_PATHS = {
     ROLE_SOURCE_RGB: "world/live/source/rgb",
     ROLE_SOURCE_CAMERA_RGB: "world/live/source/camera/image",
     ROLE_MODEL_RGB: MODEL_RGB_2D_ENTITY_PATH,
-    ROLE_MODEL_CAMERA_RGB: "world/slam/vista_slam_world/live/model/camera/image",
-    ROLE_MODEL_PREVIEW: "world/slam/vista_slam_world/live/model/diag/preview",
-    ROLE_KEYFRAME_RGB: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image",
-    ROLE_KEYFRAME_PREVIEW: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/diag/preview",
+    ROLE_MODEL_CAMERA_RGB: "world/slam/live/model/camera/image",
+    ROLE_MODEL_PREVIEW: "world/slam/live/model/diag/preview",
+    ROLE_KEYFRAME_RGB: "world/slam/keyframes/cameras/{keyframe_index:06d}/image",
+    ROLE_KEYFRAME_PREVIEW: "world/slam/keyframes/cameras/{keyframe_index:06d}/diag/preview",
 }
 _SOURCE_RGB_ROLES = {ROLE_SOURCE_RGB, ROLE_SOURCE_CAMERA_RGB}
 _DIAGNOSTIC_PREVIEW_ROLES = {ROLE_MODEL_PREVIEW, ROLE_KEYFRAME_PREVIEW}
 _DEPTH_ENTITY_PATHS = {
-    ROLE_MODEL_DEPTH: "world/slam/vista_slam_world/live/model/camera/image/depth",
+    ROLE_MODEL_DEPTH: "world/slam/live/model/camera/image/depth",
     ROLE_SOURCE_DEPTH: "world/live/source/camera/image/depth",
-    ROLE_KEYFRAME_DEPTH: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image/depth",
+    ROLE_KEYFRAME_DEPTH: "world/slam/keyframes/cameras/{keyframe_index:06d}/image/depth",
 }
 _POINTMAP_ENTITY_PATHS = {
-    ROLE_MODEL_POINTMAP: "world/slam/vista_slam_world/live/model/points",
+    ROLE_MODEL_POINTMAP: "world/slam/live/model/points",
     ROLE_SOURCE_POINTMAP: "world/live/source/camera/points",
-    ROLE_KEYFRAME_POINTMAP: "world/slam/vista_slam_world/keyframes/points/{keyframe_index:06d}/points",
+    ROLE_KEYFRAME_POINTMAP: "world/slam/keyframes/points/{keyframe_index:06d}/points",
 }
 _POSE_ENTITY_PATHS = {
-    ROLE_TRACKING_POSE: "world/slam/vista_slam_world/live/tracking/camera",
+    ROLE_TRACKING_POSE: "world/slam/live/tracking/camera",
     ROLE_SOURCE_CAMERA_POSE: "world/live/source/camera",
-    ROLE_LIVE_MODEL_POSE: "world/slam/vista_slam_world/live/model",
-    ROLE_KEYFRAME_CAMERA_POSE: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}",
-    ROLE_KEYFRAME_POINTS_POSE: "world/slam/vista_slam_world/keyframes/points/{keyframe_index:06d}",
+    ROLE_LIVE_MODEL_POSE: "world/slam/live/model",
+    ROLE_KEYFRAME_CAMERA_POSE: "world/slam/keyframes/cameras/{keyframe_index:06d}",
+    ROLE_KEYFRAME_POINTS_POSE: "world/slam/keyframes/points/{keyframe_index:06d}",
 }
 _PINHOLE_ENTITY_PATHS = {
-    ROLE_MODEL_PINHOLE: "world/slam/vista_slam_world/live/model/camera/image",
+    ROLE_MODEL_PINHOLE: "world/slam/live/model/camera/image",
     ROLE_SOURCE_PINHOLE: "world/live/source/camera/image",
-    ROLE_KEYFRAME_PINHOLE: "world/slam/vista_slam_world/keyframes/cameras/{keyframe_index:06d}/image",
+    ROLE_KEYFRAME_PINHOLE: "world/slam/keyframes/cameras/{keyframe_index:06d}/image",
 }
 
 
@@ -131,18 +138,19 @@ class RerunLoggingPolicy:
     log_rgb_image: Callable[..., None]
     log_transform: Callable[..., None]
     log_sim3_transform: Callable[..., None]
-    frusta_history_window_streaming: int | None = 20
     show_tracking_trajectory: bool = True
     trajectory_pose_axis_length: float = 0.0
     log_source_rgb: bool = False
     log_diagnostic_preview: bool = False
-    log_camera_image_rgb: bool = False
+    log_camera_image_rgb: bool = True
+    log_keyframe_camera_payloads: bool = False
     point_cloud_decimation_keep_ratio: float = 1.0
+    reference_point_cloud_decimation_keep_ratio: float = 1.0
     mesh_decimation_keep_ratio: float = 1.0
     decimation_random_seed: int = 0
     _warned_fallback_intrinsics: bool = field(default=False, init=False, repr=False)
-    _visible_keyframe_camera_indices: deque[int] = field(default_factory=deque, init=False, repr=False)
     _tracking_trajectory_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
+    _logged_tracking_start_axes: bool = field(default=False, init=False, repr=False)
 
     def observe_update(
         self,
@@ -210,6 +218,8 @@ class RerunLoggingPolicy:
             return
         if item.role == ROLE_MODEL_CAMERA_RGB and not self.log_camera_image_rgb:
             return
+        if item.role in {ROLE_KEYFRAME_RGB, ROLE_KEYFRAME_PREVIEW} and not self.log_keyframe_camera_payloads:
+            return
         if item.role in _DIAGNOSTIC_PREVIEW_ROLES and not self.log_diagnostic_preview:
             return
         entity_path = self._entity_path_for_role(item, _RGB_ENTITY_PATHS)
@@ -227,6 +237,8 @@ class RerunLoggingPolicy:
     ) -> None:
         depth_image = self._resolve_visualization_array(item.payload_refs.get(DEPTH_REF), payloads=payloads)
         if depth_image is None:
+            return
+        if item.role == ROLE_KEYFRAME_DEPTH and not self.log_keyframe_camera_payloads:
             return
         entity_path = self._entity_path_for_role(item, _DEPTH_ENTITY_PATHS)
         if entity_path is None:
@@ -264,7 +276,7 @@ class RerunLoggingPolicy:
             return
         reconstruction_id = str(item.metadata.get("reconstruction_id") or "reference")
         entity_path = (
-            "world/slam/vista_slam_world/point_cloud/raw"
+            "world/slam/point_cloud/raw"
             if reconstruction_id == "slam"
             else f"world/reconstruction/{reconstruction_id}/point_cloud"
         )
@@ -294,8 +306,6 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(SOURCE_POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
-        reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
-        coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "native"))
         metadata = self._load_source_reference_metadata(item)
         point_count = _metadata_int(metadata, "point_count")
         skipped_payloads = _metadata_int(metadata, "skipped_out_of_range_payloads")
@@ -304,6 +314,8 @@ class RerunLoggingPolicy:
             if point_count is not None and skipped_payloads is not None
             else ""
         )
+        reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
+        coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "native"))
         entity_path = f"world/reference/points/{reference_source}/{coordinate_status}{stats_segment}/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
@@ -311,6 +323,7 @@ class RerunLoggingPolicy:
             entity_path=entity_path,
             warning_label="source reference point cloud",
             decimation_seed=self._decimation_seed("point_cloud_ply", entity_path, artifact.path),
+            decimation_keep_ratio=self.reference_point_cloud_decimation_keep_ratio,
         )
 
     def _log_reconstruction_mesh_item(self, stream, item: VisualizationItem) -> None:
@@ -359,7 +372,7 @@ class RerunLoggingPolicy:
             return
         target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
         entity_path = (
-            "world/slam/vista_slam_world/trajectory/raw"
+            "world/slam/trajectory/raw"
             if item.role == ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT
             else f"world/overlays/{target_frame}/vista/sim3_aligned/trajectory"
         )
@@ -379,13 +392,16 @@ class RerunLoggingPolicy:
         entity_path: str,
         warning_label: str,
         decimation_seed: int,
+        decimation_keep_ratio: float | None = None,
     ) -> None:
         try:
             self.log_pointcloud_ply(
                 stream,
                 entity_path=entity_path,
                 path=artifact_path,
-                decimation_keep_ratio=self.point_cloud_decimation_keep_ratio,
+                decimation_keep_ratio=(
+                    self.point_cloud_decimation_keep_ratio if decimation_keep_ratio is None else decimation_keep_ratio
+                ),
                 decimation_seed=decimation_seed,
             )
         except Exception as exc:
@@ -426,10 +442,12 @@ class RerunLoggingPolicy:
                 positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float32),
                 static=True,
             )
+            poses = _trajectory_pose_transforms(trajectory, target_frame=target_frame)
+            self._log_trajectory_start_axes(stream, entity_path=entity_path, poses=poses, static=True)
             self._log_trajectory_pose_transforms(
                 stream,
                 entity_path=entity_path,
-                poses=_trajectory_pose_transforms(trajectory, target_frame=target_frame),
+                poses=poses,
                 static=True,
             )
         except Exception as exc:
@@ -475,7 +493,12 @@ class RerunLoggingPolicy:
         if viewer_intrinsics is None:
             return
         self._set_item_frame_time(stream, item)
-        self.log_pinhole(stream, entity_path=entity_path, intrinsics=viewer_intrinsics)
+        self.log_pinhole(
+            stream,
+            entity_path=entity_path,
+            intrinsics=viewer_intrinsics,
+            image_plane_distance=_image_plane_distance_for_role(item.role),
+        )
 
     def _entity_path_for_role(self, item: VisualizationItem, mapping: Mapping[str, str]) -> str | None:
         template = mapping.get(item.role)
@@ -489,8 +512,7 @@ class RerunLoggingPolicy:
     def _log_clear_item(self, stream, item: VisualizationItem) -> None:
         if item.role != ROLE_KEYFRAME_CAMERA_WINDOW or item.keyframe_index is None:
             return
-        self._set_item_frame_time(stream, item)
-        self._evict_stale_keyframe_cameras(stream, keyframe_index=item.keyframe_index)
+        del stream
 
     def _log_ground_alignment(self, stream, *, metadata: GroundAlignmentMetadata | None) -> None:
         """Log one derived ground-plane overlay when the alignment stage completes."""
@@ -500,16 +522,16 @@ class RerunLoggingPolicy:
 
     def _log_trajectory_alignment(self, stream, *, alignment: TrajectoryAlignmentArtifact) -> None:
         """Log the Sim(3) alignment transform to the SLAM world branch root."""
-        # The alignment artifact contains target <- source transform where
-        # source_frame is 'vista_slam_world'.
-        # We log this at 'world/slam/vista_slam_world' so everything underneath it
-        # (tracking trajectory, keyframes, pointmaps) snaps to the target frame.
+        # The alignment artifact contains the target <- source Sim(3). Logging
+        # it at the method-neutral SLAM root moves all child trajectory,
+        # keyframe, and pointmap entities together.
         self.log_sim3_transform(
             stream,
-            entity_path="world/slam/vista_slam_world",
+            entity_path=SLAM_WORLD_ENTITY_PATH,
             rotation_matrix=np.asarray(alignment.rotation, dtype=np.float64),
             translation_xyz=np.asarray(alignment.translation, dtype=np.float64),
             scale=alignment.scale,
+            axis_length=SLAM_WORLD_AXIS_LENGTH,
             static=True,
         )
 
@@ -518,16 +540,42 @@ class RerunLoggingPolicy:
         if not self.show_tracking_trajectory:
             return
         self._tracking_trajectory_xyz.append((float(pose.tx), float(pose.ty), float(pose.tz)))
+        if not self._logged_tracking_start_axes:
+            self._log_trajectory_start_axes(
+                stream,
+                entity_path="world/slam/trajectory/raw",
+                poses=[pose],
+            )
+            self._logged_tracking_start_axes = True
         self.log_line_strip3d(
             stream,
-            entity_path="world/slam/vista_slam_world/trajectory/raw",
+            entity_path="world/slam/trajectory/raw",
             positions_xyz=np.asarray(self._tracking_trajectory_xyz, dtype=np.float32),
         )
         self._log_trajectory_pose_transforms(
             stream,
-            entity_path="world/slam/vista_slam_world/trajectory/raw",
+            entity_path="world/slam/trajectory/raw",
             poses=[pose],
             start_index=len(self._tracking_trajectory_xyz) - 1,
+        )
+
+    def _log_trajectory_start_axes(
+        self,
+        stream,
+        *,
+        entity_path: str,
+        poses: list[FrameTransform],
+        static: bool = False,
+    ) -> None:
+        """Log the first trajectory pose as a Transform3D axes marker."""
+        if not poses:
+            return
+        self.log_transform(
+            stream,
+            entity_path=f"{entity_path}/start",
+            transform=poses[0],
+            axis_length=TRAJECTORY_START_AXIS_LENGTH,
+            static=static,
         )
 
     def _log_trajectory_pose_transforms(
@@ -549,19 +597,6 @@ class RerunLoggingPolicy:
                 transform=pose,
                 axis_length=self.trajectory_pose_axis_length,
                 static=static,
-            )
-
-    def _evict_stale_keyframe_cameras(self, stream, *, keyframe_index: int) -> None:
-        """Keep only the newest configured keyed-camera subtrees latest-visible."""
-        if self.frusta_history_window_streaming is None:
-            return
-        self._visible_keyframe_camera_indices.append(keyframe_index)
-        while len(self._visible_keyframe_camera_indices) > self.frusta_history_window_streaming:
-            stale_keyframe_index = self._visible_keyframe_camera_indices.popleft()
-            self.log_clear(
-                stream,
-                entity_path=f"world/slam/vista_slam_world/keyframes/cameras/{stale_keyframe_index:06d}",
-                recursive=True,
             )
 
     def _resolve_viewer_intrinsics(
@@ -656,15 +691,19 @@ def _entity_token(value: str) -> str:
     return "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in stripped) or "reference"
 
 
+def _image_plane_distance_for_role(role: str) -> float | None:
+    if role == ROLE_MODEL_PINHOLE:
+        return LIVE_MODEL_IMAGE_PLANE_DISTANCE
+    if role == ROLE_KEYFRAME_PINHOLE:
+        return KEYFRAME_IMAGE_PLANE_DISTANCE
+    if role == ROLE_SOURCE_PINHOLE:
+        return SOURCE_IMAGE_PLANE_DISTANCE
+    return None
+
+
 def _metadata_int(metadata: Mapping[str, object], key: str) -> int | None:
     value = metadata.get(key)
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    return None
+    return int(value) if isinstance(value, int | float) else None
 
 
 def _trajectory_pose_transforms(trajectory, *, target_frame: str) -> list[FrameTransform]:
