@@ -7,6 +7,7 @@ from typing import Any
 from .contracts import SlamUpdate
 
 __all__ = [
+    "Mast3rSlamBackend",
     "SlamUpdate",
     "VistaSlamBackend",
 ]
@@ -18,4 +19,8 @@ def __getattr__(name: str) -> Any:
         from .vista.adapter import VistaSlamBackend
 
         return VistaSlamBackend
+    if name == "Mast3rSlamBackend":
+        from .mast3r.adapter import Mast3rSlamBackend
+
+        return Mast3rSlamBackend
     raise AttributeError(name)

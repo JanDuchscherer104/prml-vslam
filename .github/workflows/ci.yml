@@ -51,7 +51,7 @@ jobs:
         run: |
           unset VIRTUAL_ENV
           export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-          uv sync --all-extras
+          uv sync --extra dev --extra vista --extra streaming
 
       - name: Run CI suite
         shell: bash -el {0}

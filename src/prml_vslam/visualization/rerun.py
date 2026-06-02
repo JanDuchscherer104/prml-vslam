@@ -26,9 +26,9 @@ ROOT_WORLD_ENTITY_PATH = "world"
 ROOT_WORLD_AXIS_LENGTH = 1.0
 """Visible axis length for the static root-world transform marker."""
 SLAM_WORLD_ENTITY_PATH = "world/slam"
-"""Method-local SLAM world root under the canonical Rerun world."""
+"""SLAM world root under the canonical Rerun world."""
 SLAM_WORLD_AXIS_LENGTH = 0.25
-"""Visible axis length for the fixed method-origin marker."""
+"""Visible axis length for the fixed SLAM-origin marker."""
 TRAJECTORY_START_AXIS_LENGTH = 0.18
 """Visible axis length for trajectory start-frame markers."""
 MODEL_RGB_2D_ENTITY_PATH = "world/slam/live/model/diag/rgb"
@@ -154,7 +154,7 @@ def log_root_world_transform(
     *,
     view_coordinates: str = "RDF",
 ) -> None:
-    """Declare one explicit ViSTA-aligned world root for repo-owned recordings.
+    """Declare one explicit world root for repo-owned recordings.
 
     The root stays geometrically neutral via an identity ``Transform3D`` while
     using ``axis_length`` to keep one visible world-frame marker at the origin.
@@ -171,7 +171,7 @@ def log_root_world_transform(
 
 
 def log_slam_world_transform(recording_stream: rr.RecordingStream) -> None:
-    """Declare one fixed method-origin marker without moving child SLAM geometry."""
+    """Declare one fixed SLAM-origin marker without moving child SLAM geometry."""
     log_transform_axes(
         recording_stream,
         entity_path=SLAM_WORLD_ENTITY_PATH,

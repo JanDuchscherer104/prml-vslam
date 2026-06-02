@@ -270,13 +270,18 @@ def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[tuple[str, str], ...]:
     processed_frame_count = 0 if slam_status is None else slam_status.processed_items
     measured_fps = 0.0 if slam_status is None or slam_status.fps is None else slam_status.fps
     backend_fps = 0.0 if slam_status is None or slam_status.throughput is None else slam_status.throughput
-    accepted_keyframe_count = 0
+    accepted_keyframe_count = 0 if slam_status is None else slam_status.accepted_keyframes
     num_sparse_points = 0
     num_dense_points = 0
     if (outcome := snapshot.stage_outcomes.get(StageKey.SLAM)) is not None:
-        accepted_keyframe_count = _coerce_int_metric(outcome.metrics.get("accepted_keyframe_count"))
+        # Live status is dropped from the snapshot at stage completion; fall
+        # back to durable metrics so the dashboard does not regress to zero.
+        if accepted_keyframe_count == 0:
+            accepted_keyframe_count = _coerce_int_metric(outcome.metrics.get("accepted_keyframe_count"))
         num_sparse_points = _coerce_int_metric(outcome.metrics.get("num_sparse_points"))
         num_dense_points = _coerce_int_metric(outcome.metrics.get("num_dense_points"))
+        if processed_frame_count == 0:
+            processed_frame_count = _coerce_int_metric(outcome.metrics.get("num_processed_frames"))
     return (
         ("Status", snapshot.state.value.upper()),
         ("Mode", "Idle" if snapshot.plan is None else snapshot.plan.mode.title()),

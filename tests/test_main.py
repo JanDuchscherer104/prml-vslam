@@ -229,7 +229,7 @@ def test_wait_for_pipeline_terminal_snapshot_waits_through_idle(monkeypatch: pyt
     assert sleeps == [0.25]
 
 
-def test_wait_for_pipeline_terminal_snapshot_logs_slam_progress_without_throughput(
+def test_wait_for_pipeline_terminal_snapshot_logs_slam_progress_with_keyfps(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -262,7 +262,7 @@ def test_wait_for_pipeline_terminal_snapshot_logs_slam_progress_without_throughp
         _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.01)
 
     progress_messages = [record.message for record in caplog.records if record.message.startswith("SLAM processed=")]
-    assert progress_messages == ["SLAM processed=267 fps=19.70 latency=12.3ms"]
+    assert progress_messages == ["SLAM processed=267 fps=19.70 keyfps=99.00 latency=12.3ms"]
     assert "throughput" not in progress_messages[0]
 
 
@@ -293,7 +293,7 @@ def test_wait_for_pipeline_terminal_snapshot_omits_unavailable_slam_latency(
         _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.01)
 
     progress_messages = [record.message for record in caplog.records if record.message.startswith("SLAM processed=")]
-    assert progress_messages == ["SLAM processed=3 fps=n/a"]
+    assert progress_messages == ["SLAM processed=3 fps=n/a keyfps=n/a"]
     assert "latency" not in progress_messages[0]
 
 

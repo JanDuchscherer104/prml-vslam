@@ -105,7 +105,7 @@ class RunArtifactPaths(BaseData):
             point_cloud_path=(resolved_root / "slam" / "point_cloud.ply").resolve(),
             estimated_intrinsics_path=(resolved_root / "slam" / "estimated_intrinsics.json").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
-            dense_points_path=(resolved_root / "dense" / "dense_points.ply").resolve(),
+            dense_points_path=(resolved_root / "slam" / "dense_points.ply").resolve(),
             native_output_dir=(resolved_root / "native").resolve(),
             native_rerun_rrd_path=(resolved_root / "native" / "rerun_recording.rrd").resolve(),
             ground_alignment_path=(resolved_root / "alignment" / "ground_alignment.json").resolve(),

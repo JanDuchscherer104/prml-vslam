@@ -293,7 +293,7 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
-        entity_path = f"world/overlays/{target_frame}/vista/sim3_aligned/point_cloud"
+        entity_path = f"world/overlays/{target_frame}/slam/sim3_aligned/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
@@ -374,7 +374,7 @@ class RerunLoggingPolicy:
         entity_path = (
             "world/slam/trajectory/raw"
             if item.role == ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT
-            else f"world/overlays/{target_frame}/vista/sim3_aligned/trajectory"
+            else f"world/overlays/{target_frame}/slam/sim3_aligned/trajectory"
         )
         self._log_tum_trajectory_artifact(
             stream,

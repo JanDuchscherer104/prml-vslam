@@ -559,9 +559,9 @@ def plan_run(
         typer.Option("--dense/--no-dense", help="Whether the plan should include dense map export."),
     ] = True,
     emit_sparse_points: Annotated[
-        bool,
+        bool | None,
         typer.Option("--sparse/--no-sparse", help="Whether the plan should include sparse geometry export."),
-    ] = True,
+    ] = None,
     trajectory_evaluation: Annotated[
         bool,
         typer.Option("--trajectory-eval/--no-trajectory-eval", help="Whether to plan trajectory evaluation."),
@@ -1297,15 +1297,21 @@ def _wait_for_pipeline_terminal_snapshot(
                 if slam_runtime_status is None or slam_runtime_status.fps is None
                 else f"{slam_runtime_status.fps:.2f}"
             )
+            keyfps_text = (
+                "n/a"
+                if slam_runtime_status is None or slam_runtime_status.throughput is None
+                else f"{slam_runtime_status.throughput:.2f}"
+            )
             latency_text = (
                 None
                 if slam_runtime_status is None or slam_runtime_status.latency_ms is None
                 else f" latency={slam_runtime_status.latency_ms:.1f}ms"
             )
             pipeline_demo_console.info(
-                "SLAM processed=%d fps=%s%s",
+                "SLAM processed=%d fps=%s keyfps=%s%s",
                 processed_items,
                 fps_text,
+                keyfps_text,
                 "" if latency_text is None else latency_text,
             )
             previous_processed_items = processed_items

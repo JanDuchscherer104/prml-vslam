@@ -102,7 +102,7 @@ The current repo-owned live sink logs a fixed surface rather than a
 per-modality toggle matrix.
 
 - `world`: static root world convention for the viewer.
-- `world/slam`: fixed method-origin marker; alignment updates
+- `world/slam`: fixed SLAM-origin marker; alignment updates
   keep this branch root visible while moving child SLAM geometry into the target
   frame.
 - `world/live/source/rgb`: original source-frame RGB observations.

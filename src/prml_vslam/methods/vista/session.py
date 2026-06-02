@@ -150,6 +150,8 @@ class VistaSlamRuntime:
             artifact_root=self._artifact_root,
             output_policy=self._output_policy,
             timestamps_s=self._accepted_keyframe_timestamps_s,
+            num_processed_frames=self._source_frame_count,
+            num_dense_points=self._num_dense_points,
         )
 
     def _build_live_update(

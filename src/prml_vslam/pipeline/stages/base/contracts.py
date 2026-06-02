@@ -89,6 +89,14 @@ class StageRuntimeStatus(TransportModel):
     processed_items: int = Field(default=0, ge=0)
     """Domain-neutral count of items processed by the runtime."""
 
+    accepted_keyframes: int = Field(default=0, ge=0)
+    """SLAM-specific count of keyframes accepted into the pose graph.
+
+    Other stage runtimes leave this at zero. The SLAM stage updates it as
+    keyframes are accepted so live UI surfaces can show the running count
+    instead of waiting for stage completion.
+    """
+
     fps: float | None = Field(default=None, ge=0.0)
     """Frame rate when the stage processes frame-like items."""
 
