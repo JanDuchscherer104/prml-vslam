@@ -27,6 +27,7 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.utils.geometry import (
+    load_point_cloud_ply,
     load_point_cloud_ply_with_colors,
     load_tum_trajectory,
     write_point_cloud_ply,
@@ -1205,6 +1206,63 @@ def test_vista_artifact_builder_preserves_point_cloud_colors_and_standardizes_in
         width_px=224,
         height_px=224,
     )
+
+
+def test_vista_artifact_builder_reconstructs_unfiltered_cloud_and_confidences(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.artifacts import build_vista_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    np.save(native_output_dir / "trajectory.npy", np.eye(4, dtype=np.float64)[None, :, :])
+    np.save(native_output_dir / "depths.npy", np.ones((1, 2, 2), dtype=np.float32))
+    np.save(native_output_dir / "scales.npy", np.asarray([[1.0]], dtype=np.float32))
+    np.save(native_output_dir / "intrinsics.npy", np.eye(3, dtype=np.float32)[None, :, :])
+    np.save(native_output_dir / "images.npy", np.full((1, 2, 2, 3), 0.5, dtype=np.float32))
+    np.savez(
+        native_output_dir / "confs.npz",
+        confs=np.asarray([[[0.1, 0.5], [0.3, 0.8]]], dtype=np.float32),
+        thres=np.asarray(0.4, dtype=np.float32),
+    )
+    native_filtered_cloud = write_point_cloud_ply(
+        native_output_dir / "pointcloud.ply",
+        np.asarray([[0.0, 0.0, 1.0]], dtype=np.float64),
+    )
+
+    artifacts = build_vista_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=tmp_path / "artifacts",
+        output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=True),
+        timestamps_s=[0.0],
+    )
+
+    assert artifacts.dense_points_ply is not None
+    assert artifacts.sparse_points_ply is not None
+    assert artifacts.dense_points_ply.path == artifacts.sparse_points_ply.path
+    assert artifacts.dense_points_ply.path.name == "point_cloud.ply"
+    assert artifacts.extras["pointcloud.ply"].path == native_filtered_cloud
+    assert load_point_cloud_ply(native_filtered_cloud).shape == (1, 3)
+    canonical_points = load_point_cloud_ply(artifacts.dense_points_ply.path)
+    assert canonical_points.shape == (4, 3)
+    np.testing.assert_allclose(
+        canonical_points,
+        np.asarray(
+            [
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+            ],
+            dtype=np.float64,
+        ),
+    )
+
+    confidence_ref = artifacts.extras["point_cloud_confidences.npz"]
+    confidence_data = np.load(confidence_ref.path)
+    np.testing.assert_allclose(confidence_data["confidence"], [0.1, 0.5, 0.3, 0.8])
+    assert float(confidence_data["confidence_threshold"]) == pytest.approx(0.4)
+    np.testing.assert_array_equal(confidence_data["source_shape"], [1, 2, 2])
+    assert artifacts.num_dense_points == 4
+    assert artifacts.num_sparse_points == 4
 
 
 def test_mast3r_artifact_builder_writes_dense_cloud_to_dense_path(tmp_path: Path) -> None:
