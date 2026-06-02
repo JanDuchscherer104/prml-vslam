@@ -1,12 +1,12 @@
 # PRML VSLAM Setup
 
 This file owns local environment setup for development, the Streamlit workbench,
-and optional ViSTA-SLAM GPU execution.
+and optional ViSTA-SLAM or MASt3R-SLAM GPU execution.
 
 ## Requirements
 
 - `git` with submodule support
-- [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `conda`
+- [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `mamba`
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [typst](https://typst.app/open-source/#download) for report and slide builds
 
@@ -21,29 +21,170 @@ uv run pre-commit install
 make ci
 ```
 
-### Install Mamba on Unix
-
-If you are on Unix and already have `conda` or Miniforge installed, you can add `mamba` with conda-forge:
-
-```bash
-conda install -n base -c conda-forge mamba
-```
-
-If you do not have `conda` installed, the easiest way to get both `conda` and `mamba` is to install [Miniforge](https://github.com/conda-forge/miniforge):
-
-```bash
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-bash Miniforge3-$(uname)-$(uname -m).sh
-```
-
-For the ViSTA environment setup that uses `environment.yml`, see the ViSTA/CUDA section below.
-
 Optional parallel test runs are available with `pytest-xdist`:
 
 ```bash
 uv run pytest -n auto
 make test PYTEST_ARGS="-n auto"
 ```
+
+## ViSTA/CUDA Setup
+
+The ViSTA integration uses `environment.yml` for native build dependencies that
+ordinary Python wheels do not provide:
+
+- `cmake`
+- `gcc_linux-64` and `gxx_linux-64`
+- `libopencv=4.12.0`, which provides `OpenCVConfig.cmake` for DBoW3Py
+- `cuda-nvcc` and `cuda-cudart-dev`, which provide the CUDA compiler and runtime
+  headers used by cuROPE
+
+Important:
+
+- When using anything under the `vista` extra, work inside the `prml-vslam`
+  mamba environment.
+- This applies to `uv sync --extra vista`, ViSTA smoke runs, and the Streamlit
+  workbench when launched with `--extra vista`.
+- If the active shell is not inside the `prml-vslam` mamba env, expect native
+  build or runtime failures such as missing `cmake`, missing OpenCV CMake
+  config, or missing CUDA toolchain components.
+
+Primary fresh-environment flow:
+
+```bash
+mamba env create -f environment.yml
+mamba activate prml-vslam
+
+unset VIRTUAL_ENV
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+
+uv sync --extra dev --extra vista --extra streaming
+```
+
+Do not use `uv sync --all-extras`: the optional `vista` and `mast3r` extras are
+intentionally marked as conflicting because upstream MASt3R-SLAM pins
+`numpy==1.26.4` while the current ViSTA/Rerun stack requires NumPy 2.
+
+Quick sanity check before installing or running ViSTA surfaces:
+
+```bash
+mamba activate prml-vslam
+echo "$CONDA_PREFIX"
+which python
+which cmake
+```
+
+`$CONDA_PREFIX` and `python` should point at the `prml-vslam` mamba env before
+you use any `vista` extra commands.
+
+Build the optional CUDA RoPE2D extension after activating the mamba environment; do not install it manually from the submodule:
+
+```bash
+uv run python scripts/build_vista_curope.py
+```
+
+This helper sets `CUDA_HOME` from the active mamba environment when `nvcc` is
+available there. If it cannot find `nvcc`, update or recreate the mamba
+environment from `environment.yml`.
+
+### ViSTA Pretrained Files
+
+Download the upstream model weights and ORB vocabulary:
+
+```bash
+mkdir -p external/vista-slam/pretrains
+curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/frontend_sta_weights.pth?download=true" \
+  -o external/vista-slam/pretrains/frontend_sta_weights.pth
+curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?download=true" \
+  -o external/vista-slam/pretrains/ORBvoc.txt
+```
+
+### Validation
+
+Before running ViSTA, verify the native and Python dependencies:
+
+```bash
+find "$CONDA_PREFIX" -name OpenCVConfig.cmake -o -name opencv-config.cmake
+which nvcc
+
+uv run --extra vista python - <<'PY'
+import torch
+import DBoW3Py as dbow
+
+print("cuda_available:", torch.cuda.is_available())
+print("DBoW3Py Vocabulary:", dbow.Vocabulary)
+PY
+```
+
+Run the standard local checks:
+
+```bash
+uv lock --check
+make ci
+```
+
+Optionally run the ViSTA smoke pipeline:
+
+```bash
+uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
+```
+
+## MASt3R/CUDA Setup
+
+Activate the same `prml-vslam` conda environment used above (provides
+`cuda-nvcc=12.4`, `gcc_linux-64`, and `libopencv=4.12.0`):
+
+```bash
+conda activate prml-vslam
+unset LD_LIBRARY_PATH
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+```
+
+Install MASt3R-SLAM and its two nested Python packages through the optional
+`mast3r` extra. The upstream package builds a CUDA extension and requires the recursive submodule to be present.
+
+```bash
+uv sync --extra dev --extra streaming --extra mast3r
+```
+
+Optionally enable faster MP4 decoding:
+
+```bash
+uv pip install torchcodec==0.1
+```
+
+### MASt3R Pretrained Files
+
+Download the upstream NaverLabs checkpoints (weigths) into
+`external/mast3r-slam/checkpoints/`:
+
+```bash
+mkdir -p external/mast3r-slam/checkpoints
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth \
+  -P external/mast3r-slam/checkpoints/
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_trainingfree.pth \
+  -P external/mast3r-slam/checkpoints/
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_codebook.pkl \
+  -P external/mast3r-slam/checkpoints/
+```
+
+## Streamlit Workbench
+
+For the Streamlit app without ViSTA:
+
+```bash
+uv sync --extra streaming
+uv run streamlit run streamlit_app.py
+```
+
+For the Streamlit app with ViSTA and Rerun support, complete the ViSTA/CUDA setup
+above, then run:
+
+```bash
+mamba activate prml-vslam
+uv run --extra vista --extra streaming streamlit run streamlit_app.py
+```
+
 
 ## Codex History Utilities
 
@@ -74,21 +215,8 @@ What each command does:
 
 ## MemPalace
 
-MemPalace is installed as an isolated `uv` tool and exposed through a
-repo-local Codex plugin plus a repo-local skill wrapper. Keep it out of the
-PRML VSLAM `.venv`; it is agent runtime tooling, not an application
-dependency.
-
-Install or update the CLI:
-
-```bash
-uv tool install mempalace
-uv tool upgrade mempalace
-mempalace --version
-```
-
-If MemPalace is installed somewhere nonstandard, point the wrapper at it with
-`MEMPALACE_BIN=/absolute/path/to/mempalace`.
+MemPalace is installed into the repo `.venv` and exposed through a repo-local
+Codex plugin plus a repo-local skill wrapper.
 
 Refresh the repo-local palace for docs and Codex chat histories:
 
@@ -104,193 +232,6 @@ python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py search "ViewCoor
 python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
 ```
 
-Print the recommended Codex MCP setup command for the repo-local palace:
-
-```bash
-python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py mcp
-```
-
-The checked-in `.codex/config.toml` also defines the repo-local MCP server as
-`mempalace-mcp --palace /home/jd/repos/prml-vslam/.artifacts/mempalace/palace`.
-
 Codex sessions also run a repo-local startup hook that starts a background
 refresh and prints wake-up context. The hook entry lives in `.codex/hooks.json`;
 the script is `.agents/scripts/mempalace_startup_context.sh`.
-
-## ViSTA/CUDA Setup
-
-The ViSTA integration uses `environment.yml` for native build dependencies that
-ordinary Python wheels do not provide:
-
-- `cmake`
-- `gcc_linux-64` and `gxx_linux-64`
-- `libopencv=4.12.0`, which provides `OpenCVConfig.cmake` for DBoW3Py
-- `cuda-nvcc` and `cuda-cudart-dev`, which provide the CUDA compiler and runtime
-  headers used by cuROPE
-
-Important:
-
-- When using anything under the `vista` extra, work inside the `prml-vslam`
-  mamba environment.
-- This applies to `uv sync --all-extras`, `uv sync --extra vista`, ViSTA smoke
-  runs, and the Streamlit workbench when launched with `--extra vista`.
-- Rerun-only viewer commands should use `--extra visualization`; they do not
-  need the ViSTA native dependency set.
-- If the active shell is not inside the `prml-vslam` mamba env, expect native
-  build or runtime failures such as missing `cmake`, missing OpenCV CMake
-  config, or missing CUDA toolchain components.
-
-Primary fresh-environment flow:
-
-```bash
-mamba env create -f environment.yml
-mamba activate prml-vslam
-
-unset VIRTUAL_ENV
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-
-uv sync --all-extras
-# uv sync --extra dev --extra vista --extra streaming
-```
-
-Quick sanity check before installing or running ViSTA surfaces:
-
-```bash
-mamba activate prml-vslam
-echo "$CONDA_PREFIX"
-which python
-which cmake
-```
-
-`$CONDA_PREFIX` and `python` should point at the `prml-vslam` mamba env before
-you use any `vista` extra commands.
-
-Build the optional CUDA RoPE2D extension after activating the mamba environment; do not install it manually from the submodule:
-
-```bash
-uv run python scripts/build_vista_curope.py
-```
-
-This helper sets `CUDA_HOME` from the active mamba environment when `nvcc` is
-available there. If it cannot find `nvcc`, update or recreate the mamba
-environment from `environment.yml`.
-
-## ViSTA Pretrained Files
-
-Download the upstream model weights and ORB vocabulary:
-
-```bash
-mkdir -p external/vista-slam/pretrains
-curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/frontend_sta_weights.pth?download=true" \
-  -o external/vista-slam/pretrains/frontend_sta_weights.pth
-curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?download=true" \
-  -o external/vista-slam/pretrains/ORBvoc.txt
-```
-
-## Validation
-
-Before running ViSTA, verify the native and Python dependencies:
-
-```bash
-find "$CONDA_PREFIX" -name OpenCVConfig.cmake -o -name opencv-config.cmake
-which nvcc
-
-uv run --extra vista python - <<'PY'
-import torch
-import DBoW3Py as dbow
-
-print("cuda_available:", torch.cuda.is_available())
-print("DBoW3Py Vocabulary:", dbow.Vocabulary)
-PY
-```
-
-Run the standard local checks:
-
-```bash
-uv lock --check
-make ci
-```
-
-Optionally run the ViSTA smoke pipeline:
-
-```bash
-uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
-```
-
-### Pipeline with Rerun
-
-To run the pipeline with live Rerun visualization:
-
-```bash
-# Attach a live Rerun viewer
-uv run --extra vista prml-vslam run-config \
-  .configs/pipelines/vista-smoke-test.toml \
-  --visualization.connect_live_viewer true
-
-# Log source RGB, diagnostic previews and evaluate trajectory
-uv run --extra vista prml-vslam run-config \
-  .configs/pipelines/vista-smoke-test.toml \
-  --visualization.connect_live_viewer true \
-  --visualization.log_source_rgb true \
-  --visualization.log_diagnostic_preview true \
-  --stages.evaluate_trajectory.enabled true
-```
-
-## Datasets
-
-The repository supports ADVIO and TUM RGB-D datasets. If a sequence is missing (e.g., `freiburg1_room` not found), use the CLI to download it.
-
-See [src/prml_vslam/sources/datasets/README.md](src/prml_vslam/sources/datasets/README.md) for the full dataset guide.
-
-### ADVIO
-
-Summarize local ADVIO coverage:
-
-```bash
-uv run prml-vslam advio summary
-```
-
-Download selected ADVIO sequences:
-
-```bash
-# Download everything (offline bundle: video + poses + calibration)
-uv run prml-vslam advio download
-
-# Download specific sequences
-uv run prml-vslam advio download --sequence 15 --sequence 16
-```
-
-### TUM RGB-D
-
-Summarize local TUM RGB-D coverage:
-
-```bash
-uv run prml-vslam tum-rgbd summary
-```
-
-Download selected TUM RGB-D archives:
-
-```bash
-# Download everything (offline bundle: RGB + Depth + Ground Truth)
-uv run prml-vslam tum-rgbd download
-
-# Download specific sequences (e.g., freiburg1_room)
-uv run prml-vslam tum-rgbd download --sequence freiburg1_room
-```
-
-## Streamlit Workbench
-
-For the Streamlit app without ViSTA:
-
-```bash
-uv sync --extra streaming
-uv run streamlit run streamlit_app.py
-```
-
-For the Streamlit app with ViSTA and Rerun support, complete the ViSTA/CUDA setup
-above, then run:
-
-```bash
-mamba activate prml-vslam
-uv run --extra vista --extra streaming streamlit run streamlit_app.py
-```

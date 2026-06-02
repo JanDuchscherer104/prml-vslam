@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -406,18 +407,68 @@ enabled = true
     assert config.stages.reconstruction.cleanup_artifact_keys == ["reference_cloud", "extra:*"]
 
 
-def test_run_config_fail_on_unavailable_stages_happens_during_planning(tmp_path: Path) -> None:
+def test_run_config_plans_mast3r_dense_output_without_sparse_default(tmp_path: Path) -> None:
     config = build_run_config(
-        experiment_name="unavailable",
+        experiment_name="mast3r-dense",
         output_dir=tmp_path,
         source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
         method=MethodId.MAST3R,
     )
 
-    with pytest.raises(ValueError, match="MASt3R-SLAM does not support offline execution"):
+    plan = config.compile_plan(
+        PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"), fail_on_unavailable=True
+    )
+    slam_stage = next(stage for stage in plan.stages if stage.key is StageKey.SLAM)
+
+    assert config.stages.slam.outputs.emit_sparse_points is False
+    assert slam_stage.available is True
+    assert [path.name for path in slam_stage.outputs] == ["trajectory.tum", "dense_points.ply"]
+
+
+def test_run_config_rejects_mast3r_sparse_output_during_planning(tmp_path: Path) -> None:
+    config = build_run_config(
+        experiment_name="mast3r-sparse",
+        output_dir=tmp_path,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.MAST3R,
+        emit_sparse_points=True,
+    )
+
+    with pytest.raises(ValueError, match="does not expose a separate sparse point-cloud artifact"):
         config.compile_plan(
             PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts"), fail_on_unavailable=True
         )
+
+
+def test_mast3r_extra_declares_required_local_source_anchors() -> None:
+    pyproject = tomllib.loads((_repo_root() / "pyproject.toml").read_text(encoding="utf-8"))
+    mast3r_extra = set(pyproject["project"]["optional-dependencies"]["mast3r"])
+
+    assert mast3r_extra == {
+        "torch==2.5.1",
+        "torchvision==0.20.1",
+        "torchaudio==2.5.1",
+        "xformers",
+        "MAST3R-SLAM",
+        "MAST3R",
+        "in3d",
+        "asmk",
+        "curope; sys_platform == 'linux' and platform_machine == 'x86_64'",
+        "imgui",
+    }
+
+    sources = pyproject["tool"]["uv"]["sources"]
+    assert {"asmk", "curope", "imgui"}.issubset(sources)
+
+    metadata = {entry["name"]: entry["requires-dist"] for entry in pyproject["tool"]["uv"]["dependency-metadata"]}
+    assert "gradio" not in {requirement.split(";", 1)[0].split("[", 1)[0] for requirement in metadata["MAST3R"]}
+    assert any(
+        requirement.startswith("lietorch @ git+https://github.com/princeton-vl/lietorch.git@e7df865")
+        for requirement in metadata["MAST3R-SLAM"]
+    )
+    assert any(
+        requirement.startswith("pyrealsense2; sys_platform == 'linux'") for requirement in metadata["MAST3R-SLAM"]
+    )
 
 
 def test_run_config_requires_source_backend_during_planning(tmp_path: Path) -> None:

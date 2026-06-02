@@ -7,11 +7,13 @@ This document is the concise source of truth for `prml_vslam.methods`.
 ## Current State
 
 - The package owns method IDs, backend config, output policy, runtime updates,
-  the placeholder MASt3R backend, and the canonical ViSTA backend integration.
+  the optional MASt3R backend, and the canonical ViSTA backend integration.
 - `method_id` is the canonical discriminator for SLAM method variants.
 - `SlamUpdate` and `BackendEvent` are method-owned and belong in `methods.contracts`.
 - Method protocols no longer depend on pipeline-owned config models.
 - `methods.vista` owns ViSTA-native artifact interpretation and standardization.
+- `methods.mast3r` owns MASt3R-native runtime adaptation and standardizes its
+  dense pointmap export; it does not promise a separate sparse landmark output.
 
 ## Responsibilities
 
