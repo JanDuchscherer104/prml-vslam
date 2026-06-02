@@ -1,0 +1,28 @@
+classDiagram
+    class StageResult {
+        +stage_key
+        +payload
+        +outcome
+        +final_runtime_status
+    }
+
+    class StageOutcome {
+        +stage_key
+        +status
+        +config_hash
+        +input_fingerprint
+        +artifacts
+        +metrics
+        +error_message
+    }
+
+    class DomainPayload {
+        <<domain-owned union>>
+    }
+    class StageCompleted {
+        +outcome
+    }
+
+    StageResult --> DomainPayload
+    StageResult --> StageOutcome
+    StageCompleted --> StageOutcome

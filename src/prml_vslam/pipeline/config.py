@@ -372,7 +372,7 @@ def build_run_config(
     max_frames: int | None = None,
     backend_overrides: dict[str, BackendConfigValue] | None = None,
     emit_dense_points: bool = True,
-    emit_sparse_points: bool = True,
+    emit_sparse_points: bool | None = None,
     reference_enabled: bool = False,
     trajectory_eval_enabled: bool = False,
     trajectory_alignment_enabled: bool = False,
@@ -400,6 +400,7 @@ def build_run_config(
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
     trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=trajectory_baseline)
+    resolved_emit_sparse_points = method is not MethodId.MAST3R if emit_sparse_points is None else emit_sparse_points
     return RunConfig(
         experiment_name=experiment_name,
         mode=mode,
@@ -410,7 +411,7 @@ def build_run_config(
                 backend=slam_backend,
                 outputs=SlamOutputPolicy(
                     emit_dense_points=emit_dense_points,
-                    emit_sparse_points=emit_sparse_points,
+                    emit_sparse_points=resolved_emit_sparse_points,
                 ),
             ),
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),

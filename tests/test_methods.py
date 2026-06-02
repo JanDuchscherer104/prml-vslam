@@ -5,13 +5,19 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from prml_vslam.interfaces import CameraIntrinsics, CameraIntrinsicsSeries, Observation, ObservationProvenance
+from prml_vslam.interfaces import (
+    CameraIntrinsics,
+    CameraIntrinsicsSample,
+    CameraIntrinsicsSeries,
+    Observation,
+    ObservationProvenance,
+)
 from prml_vslam.methods import VistaSlamBackend
 from prml_vslam.methods.stage.backend_config import MethodId as DomainMethodId
 from prml_vslam.methods.stage.backend_config import SlamBackendConfig, SlamOutputPolicy, VistaSlamBackendConfig
@@ -19,7 +25,7 @@ from prml_vslam.sources.contracts import (
     ReferenceSource,
     SequenceManifest,
 )
-from prml_vslam.utils import Console
+from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.utils.geometry import (
     load_point_cloud_ply_with_colors,
     load_tum_trajectory,
@@ -1130,7 +1136,7 @@ def test_vista_artifact_builder_aliases_sparse_and_dense_to_one_canonical_cloud(
     artifacts = build_vista_artifacts(
         native_output_dir=native_output_dir,
         artifact_root=tmp_path / "artifacts",
-        output_policy=SlamOutputPolicy(),
+        output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=True),
         timestamps_s=[0.0],
     )
 
@@ -1199,6 +1205,180 @@ def test_vista_artifact_builder_preserves_point_cloud_colors_and_standardizes_in
         width_px=224,
         height_px=224,
     )
+
+
+def test_mast3r_artifact_builder_writes_dense_cloud_to_dense_path(tmp_path: Path) -> None:
+    from prml_vslam.methods.mast3r.adapter import _build_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    trajectory_native = native_output_dir / "mast3r.txt"
+    trajectory_native.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    ply_native = write_point_cloud_ply(
+        native_output_dir / "mast3r.ply",
+        np.asarray([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]], dtype=np.float64),
+        colors_rgb=np.asarray([[255, 0, 0], [0, 255, 0]], dtype=np.uint8),
+    )
+    artifact_root = tmp_path / "artifacts"
+    run_paths = RunArtifactPaths.build(artifact_root)
+
+    artifacts = _build_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=artifact_root,
+        output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=False),
+        traj_native=trajectory_native,
+        ply_native=ply_native,
+        n_keyframes=1,
+        n_processed_frames=2,
+        n_dense_points=2,
+    )
+
+    assert artifacts.sparse_points_ply is None
+    assert artifacts.dense_points_ply is not None
+    assert artifacts.dense_points_ply.path == run_paths.dense_points_path
+    assert artifacts.dense_points_ply.path.exists()
+    assert not run_paths.point_cloud_path.exists()
+
+
+def test_mast3r_estimates_camera_intrinsics_from_keyframe_pointmap(monkeypatch: pytest.MonkeyPatch) -> None:
+    from prml_vslam.methods.mast3r.adapter import _estimate_camera_intrinsics_from_frame
+
+    torch = pytest.importorskip("torch")
+    _install_fake_dust3r_focal_estimator(monkeypatch, focal=123.0)
+    frame = SimpleNamespace(
+        X_canon=torch.ones((4 * 6, 3), dtype=torch.float32),
+        img_shape=torch.tensor([4, 6], dtype=torch.int64),
+    )
+
+    intrinsics = _estimate_camera_intrinsics_from_frame(frame)
+
+    assert intrinsics == CameraIntrinsics(fx=123.0, fy=123.0, cx=3.0, cy=2.0, width_px=6, height_px=4)
+
+
+def test_mast3r_artifact_builder_writes_estimated_intrinsics(tmp_path: Path) -> None:
+    from prml_vslam.methods.mast3r.adapter import _build_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    trajectory_native = native_output_dir / "mast3r.txt"
+    trajectory_native.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    artifact_root = tmp_path / "artifacts"
+    run_paths = RunArtifactPaths.build(artifact_root)
+    estimated_intrinsics = CameraIntrinsicsSeries(
+        raster_space="mast3r_model",
+        source="mast3r_slam.X_canon:focal_from_depth",
+        method_id="mast3r",
+        width_px=6,
+        height_px=4,
+        samples=[
+            CameraIntrinsicsSample(
+                index=0,
+                keyframe_index=0,
+                timestamp_ns=123,
+                intrinsics=CameraIntrinsics(fx=99.0, fy=99.0, cx=3.0, cy=2.0, width_px=6, height_px=4),
+            )
+        ],
+        metadata={"principal_point": "center_assumed"},
+    )
+
+    artifacts = _build_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=artifact_root,
+        output_policy=SlamOutputPolicy(emit_dense_points=False, emit_sparse_points=False),
+        traj_native=trajectory_native,
+        ply_native=None,
+        n_keyframes=1,
+        n_processed_frames=2,
+        n_dense_points=0,
+        estimated_intrinsics=estimated_intrinsics,
+    )
+
+    estimated_ref = artifacts.extras["estimated_intrinsics.json"]
+    assert estimated_ref.path == run_paths.estimated_intrinsics_path
+    series = CameraIntrinsicsSeries.model_validate_json(estimated_ref.path.read_text(encoding="utf-8"))
+    assert series.raster_space == "mast3r_model"
+    assert series.source == "mast3r_slam.X_canon:focal_from_depth"
+    assert series.method_id == "mast3r"
+    assert series.samples[0].intrinsics.fx == 99.0
+
+
+def test_mast3r_artifact_builder_zeroes_dense_count_without_dense_artifact(tmp_path: Path) -> None:
+    from prml_vslam.methods.mast3r.adapter import _build_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    trajectory_native = native_output_dir / "mast3r.txt"
+    trajectory_native.write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
+
+    artifacts = _build_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=tmp_path / "artifacts",
+        output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=False),
+        traj_native=trajectory_native,
+        ply_native=None,
+        n_keyframes=1,
+        n_processed_frames=2,
+        n_dense_points=42,
+    )
+
+    assert artifacts.dense_points_ply is None
+    assert artifacts.num_dense_points == 0
+    assert "estimated_intrinsics.json" not in artifacts.extras
+
+
+def _install_fake_dust3r_focal_estimator(monkeypatch: pytest.MonkeyPatch, *, focal: float) -> None:
+    dust3r_pkg = ModuleType("dust3r")
+    post_process_mod = ModuleType("dust3r.post_process")
+
+    def estimate_focal_knowing_depth(points: object, *_args: object, **_kwargs: object) -> object:
+        import torch
+
+        return torch.as_tensor([focal], device=points.device, dtype=points.dtype)
+
+    post_process_mod.estimate_focal_knowing_depth = estimate_focal_knowing_depth
+    monkeypatch.setitem(sys.modules, "dust3r", dust3r_pkg)
+    monkeypatch.setitem(sys.modules, "dust3r.post_process", post_process_mod)
+
+
+def test_mast3r_finish_raises_when_requested_dense_export_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from prml_vslam.methods.mast3r.adapter import Mast3rSlamSession
+
+    mast3r_pkg = ModuleType("mast3r_slam")
+    frame_mod = ModuleType("mast3r_slam.frame")
+    frame_mod.Mode = SimpleNamespace(TERMINATED="terminated")
+    evaluate_mod = ModuleType("mast3r_slam.evaluate")
+
+    def save_traj(output_dir: Path, filename: str, *_args: object, **_kwargs: object) -> None:
+        Path(output_dir, filename).write_text("0.0 0 0 0 0 0 0 1\n", encoding="utf-8")
+
+    def save_reconstruction(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("export failed")
+
+    evaluate_mod.save_traj = save_traj
+    evaluate_mod.save_reconstruction = save_reconstruction
+    monkeypatch.setitem(sys.modules, "mast3r_slam", mast3r_pkg)
+    monkeypatch.setitem(sys.modules, "mast3r_slam.frame", frame_mod)
+    monkeypatch.setitem(sys.modules, "mast3r_slam.evaluate", evaluate_mod)
+    monkeypatch.setattr(Mast3rSlamSession, "_raise_if_backend_failed", lambda self: None)
+    monkeypatch.setattr(Mast3rSlamSession, "_join_backend_thread", lambda self: None)
+
+    session = Mast3rSlamSession.__new__(Mast3rSlamSession)
+    session._states = SimpleNamespace(set_mode=lambda _mode: None)
+    session._keyframes = []
+    session._backend_stop = SimpleNamespace(set=lambda: None)
+    session._artifact_root = tmp_path / "artifacts"
+    session._timestamps_s = [0.0]
+    session._source_frame_count = 1
+    session._accepted_keyframe_count = 1
+    session._cfg = SimpleNamespace(c_conf_threshold=1.5)
+    session._output_policy = SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=False)
+    session._num_dense_points = 42
+    session._console = Console("test.mast3r")
+
+    with pytest.raises(RuntimeError, match="requested dense point cloud"):
+        session.finish()
 
 
 def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:

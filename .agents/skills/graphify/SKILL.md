@@ -23,4 +23,3 @@ Use this skill in repositories that carry a `graphify-out/` knowledge graph.
 - Keep graphify commands repo-relative.
 - Do not hardcode local machine paths in graphify instructions or config.
 - If `make graphify-status` reports that the runtime is missing, the existing artifacts can still guide codebase navigation, but rebuilds require the official `graphifyy` package and `graphify` CLI.
-- **Git LFS:** Ensure `graphify-out/graph.json` and `graphify-out/graph.html` are tracked by Git LFS. In `.gitattributes`, these rules must follow any general `*.json` or `*.html` rules to ensure `-text` is correctly applied and LFS filters are active.

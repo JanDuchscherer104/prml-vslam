@@ -265,38 +265,6 @@ sources = [
     "src/prml_vslam/pipeline/stages/base/config.py",
 ]
 
-[[todos]]
-id = "TODO-0076"
-title = "Harden streaming SLAM against invalid live ViSTA poses and failed-SLAM finalization"
-status = "open"
-priority = "high"
-issue_ids = [
-    "ISSUE-0071",
-]
-loc_min = 70
-loc_expected = 180
-loc_max = 360
-files = [
-    "src/prml_vslam/methods/vista/session.py",
-    "src/prml_vslam/methods/vista/artifacts.py",
-    "src/prml_vslam/methods/stage/runtime.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-    "tests/test_vista_slam.py",
-    "tests/test_pipeline.py",
-]
-acceptance = [
-    "A ViSTA live pose whose rotation exceeds the current SO(3) projection tolerance is handled deliberately: either the live update is skipped with a backend warning or the run fails with a controlled root-cause error, but observer telemetry conversion does not accidentally crash frame ingestion.",
-    "When streaming SLAM frame submission or SLAM finalization sets `_streaming_error`, coordinator finalization records the SLAM failure and the run failure without starting downstream stages that require `SlamStageOutput`.",
-    "Regression coverage includes the ADVIO-style invalid live pose path and a coordinator finalization case proving alignment is skipped after failed SLAM.",
-    "The Rerun live/export sidecar split remains non-fatal to SLAM execution and still routes intermediate updates when valid poses are available.",
-]
-sources = [
-    ".logs/runs/vista-full-tuning/2026-05-09_17:37:08_vista-full-tuning.log",
-    "src/prml_vslam/methods/vista/session.py",
-    "src/prml_vslam/methods/vista/artifacts.py",
-    "src/prml_vslam/pipeline/ray_runtime/coordinator.py",
-]
-
 [meta]
 schema_version = 2
 repo = "prml-vslam"
