@@ -665,8 +665,6 @@ def test_build_rerun_viewer_command_uses_blueprint_when_configured(tmp_path: Pat
     assert command == [
         "uv",
         "run",
-        "--extra",
-        "visualization",
         "rerun",
         (tmp_path / ".configs/visualization/demo_blueprint.rbl").resolve().as_posix(),
         "--serve-web",
@@ -679,7 +677,7 @@ def test_build_rerun_viewer_command_omits_blueprint_when_unset(tmp_path: Path) -
 
     command = _build_rerun_viewer_command(run_config=run_cfg, path_config=path_config)
 
-    assert command == ["uv", "run", "--extra", "visualization", "rerun", "--serve-web"]
+    assert command == ["uv", "run", "rerun", "--serve-web"]
 
 
 def test_build_rerun_viewer_command_resolves_vista_full_blueprint_path(tmp_path: Path) -> None:
@@ -778,7 +776,7 @@ def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.Mon
     viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
 
     assert viewer is not None
-    assert captured["command"] == ["uv", "run", "--extra", "visualization", "rerun", "--serve-web"]
+    assert captured["command"] == ["uv", "run", "rerun", "--serve-web"]
     assert captured["kwargs"]["stdout"] is subprocess.PIPE
     assert captured["kwargs"]["stderr"] is subprocess.STDOUT
     assert captured["kwargs"]["text"] is True
@@ -907,8 +905,7 @@ def test_find_rerun_viewer_processes_matches_current_viewer_tree() -> None:
             pgid=77384,
             stat="Ssl",
             command=(
-                "uv run --extra visualization rerun "
-                "/home/jandu/repos/prml-vslam/.configs/visualization/vista_blueprint.rbl --serve-web"
+                "uv run rerun /home/jandu/repos/prml-vslam/.configs/visualization/vista_blueprint.rbl --serve-web"
             ),
         ),
         _ProcessInfo(
@@ -958,7 +955,7 @@ def test_kill_rerun_dry_run_lists_processes_without_signaling(
             ppid=1,
             pgid=10,
             stat="Sl",
-            command="uv run --extra visualization rerun .configs/visualization/vista_blueprint.rbl --serve-web",
+            command="uv run rerun .configs/visualization/vista_blueprint.rbl --serve-web",
         )
     ]
     monkeypatch.setattr("prml_vslam.main._find_rerun_viewer_processes", lambda: processes)
@@ -976,7 +973,7 @@ def test_kill_rerun_dry_run_lists_processes_without_signaling(
 
 def test_kill_rerun_terminates_matched_process_group(monkeypatch: pytest.MonkeyPatch) -> None:
     processes = [
-        _ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run --extra visualization rerun --serve-web"),
+        _ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run rerun --serve-web"),
         _ProcessInfo(pid=12, ppid=11, pgid=10, stat="Sl", command="/tmp/.venv/bin/rerun --serve-web"),
     ]
     signals: list[tuple[int, signal.Signals]] = []
@@ -990,9 +987,7 @@ def test_kill_rerun_terminates_matched_process_group(monkeypatch: pytest.MonkeyP
 
 
 def test_kill_rerun_escalates_when_process_group_remains(monkeypatch: pytest.MonkeyPatch) -> None:
-    processes = [
-        _ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run --extra visualization rerun --serve-web")
-    ]
+    processes = [_ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run rerun --serve-web")]
     signals: list[tuple[int, signal.Signals]] = []
     wait_results = [[10], []]
     monkeypatch.setattr("prml_vslam.main._find_rerun_viewer_processes", lambda: processes)
