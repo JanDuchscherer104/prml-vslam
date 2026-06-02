@@ -16,6 +16,7 @@ from prml_vslam.eval.contracts import (
     MetricStats,
     SelectionSnapshot,
     TrajectoryAlignmentArtifact,
+    TrajectoryAlignmentCloudUseStatus,
     TrajectoryAlignmentMode,
     TrajectoryEvaluationSemantics,
     TrajectoryMetricId,
@@ -309,6 +310,56 @@ def test_compute_trajectory_alignment_writes_aligned_point_cloud(tmp_path: Path)
 
     assert aligned_cloud_path is not None
     assert aligned_cloud_path.exists()
+
+
+def test_compute_trajectory_alignment_publishes_cloud_despite_warning_diagnostics(tmp_path: Path) -> None:
+    reference_positions = [
+        np.array([float(index % 5), float(index // 5), float(index % 3)], dtype=np.float64) for index in range(20)
+    ]
+    estimate_positions = list(reference_positions)
+    estimate_positions[-1] = np.array([40.0, -35.0, 20.0], dtype=np.float64)
+    timestamps = [float(index) for index in range(len(reference_positions))]
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(p[0]), ty=float(p[1]), tz=float(p[2]))
+            for p in reference_positions
+        ],
+        timestamps=timestamps,
+    )
+    estimate_path = write_tum_trajectory(
+        tmp_path / "estimate.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(p[0]), ty=float(p[1]), tz=float(p[2]))
+            for p in estimate_positions
+        ],
+        timestamps=timestamps,
+    )
+    cloud_path = tmp_path / "cloud.ply"
+    write_point_cloud_ply(cloud_path, np.array(reference_positions, dtype=np.float64))
+    artifact_root = tmp_path / "run"
+
+    alignment_path, _, aligned_cloud_path = TrajectoryEvaluationService(
+        PathConfig(root=tmp_path, artifacts_dir=tmp_path)
+    ).compute_trajectory_alignment(
+        selection=SelectionSnapshot(
+            sequence_slug="seq",
+            reference_path=reference_path,
+            run=DiscoveredRun(
+                artifact_root=artifact_root,
+                estimate_path=estimate_path,
+                point_cloud_path=cloud_path,
+                label="test",
+            ),
+        )
+    )
+
+    alignment = TrajectoryAlignmentArtifact.model_validate_json(alignment_path.read_text(encoding="utf-8"))
+    assert aligned_cloud_path is not None
+    assert aligned_cloud_path.exists()
+    assert alignment.cloud_use_status is TrajectoryAlignmentCloudUseStatus.ACCEPTED
+    assert set(alignment.cloud_warning_reasons) & {"rms_error_too_high", "up_axis_tilt_too_high"}
+    assert alignment.cloud_rejection_reasons == []
 
 
 def test_cloud_alignment_service_writes_distinct_icp_refined_cloud(tmp_path: Path) -> None:

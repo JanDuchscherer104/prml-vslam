@@ -35,10 +35,13 @@ class CloudAlignmentStageConfig(StageConfig):
         backend = context.slam_backend if context.slam_backend is not None else slam_backend
         if not backend.supports_dense_points:
             return False, f"{backend.display_name} does not support dense point-cloud outputs."
-        if not context.run_config.stages.slam.outputs.emit_dense_points:
+        if (
+            not context.run_config.stages.slam.outputs.emit_dense_points
+            and context.run_config.reuse_artifact_root is None
+        ):
             return False, "Cloud alignment requires dense SLAM point-cloud outputs."
         source_backend = context.run_config.stages.source.backend
-        if not isinstance(source_backend, AdvioSourceConfig):
+        if not isinstance(source_backend, AdvioSourceConfig) and context.run_config.reuse_artifact_root is None:
             if not context.run_config.stages.reconstruction.enabled:
                 return False, "Cloud alignment requires an ADVIO reference cloud or reference reconstruction."
             reconstruction_available, reconstruction_reason = context.run_config.stages.reconstruction.availability(

@@ -16,11 +16,22 @@ from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import Console
 from prml_vslam.visualization.rerun import (
-    MODEL_RGB_2D_ENTITY_PATH, attach_recording_sinks,
-    augment_viewer_recording_with_ground_plane, create_recording_stream,
-    log_clear, log_depth_image, log_ground_plane_patch, log_line_strip3d,
-    log_mesh_ply, log_pinhole, log_pointcloud, log_pointcloud_ply,
-    log_rgb_image, log_sim3_transform, log_transform)
+    MODEL_RGB_2D_ENTITY_PATH,
+    attach_recording_sinks,
+    augment_viewer_recording_with_ground_plane,
+    create_recording_stream,
+    log_clear,
+    log_depth_image,
+    log_ground_plane_patch,
+    log_line_strip3d,
+    log_mesh_ply,
+    log_pinhole,
+    log_pointcloud,
+    log_pointcloud_ply,
+    log_rgb_image,
+    log_sim3_transform,
+    log_transform,
+)
 
 from .rerun_policy import RerunLoggingPolicy
 

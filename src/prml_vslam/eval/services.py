@@ -205,7 +205,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
 
         Returns ``(alignment_path, aligned_estimate_path, aligned_point_cloud_path)``
         where the last element is ``None`` when no dense-cloud input is provided
-        or the alignment is not accepted for reusable dense-cloud publication.
+        or the Sim(3) transform is not finite enough to apply to the cloud.
         """
         reference_path = selection.reference_path
         if reference_path is None:
@@ -248,14 +248,16 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             alignment,
             cloud_input_present=selection.run.point_cloud_path is not None,
         )
-        if selection.run.point_cloud_path is not None:
-            if alignment.cloud_use_status is TrajectoryAlignmentCloudUseStatus.ACCEPTED:
-                aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
-                _write_aligned_point_cloud(
-                    source_path=selection.run.point_cloud_path,
-                    output_path=aligned_point_cloud_path,
-                    alignment=alignment,
-                )
+        if (
+            selection.run.point_cloud_path is not None
+            and alignment.cloud_use_status is not TrajectoryAlignmentCloudUseStatus.REJECTED
+        ):
+            aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
+            _write_aligned_point_cloud(
+                source_path=selection.run.point_cloud_path,
+                output_path=aligned_point_cloud_path,
+                alignment=alignment,
+            )
 
         alignment_path = self.alignment_path(run_root)
         alignment_path.parent.mkdir(parents=True, exist_ok=True)
@@ -674,13 +676,16 @@ def _apply_sim3_cloud_use_policy(
         elif up_axis_tilt_deg > _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG:
             reasons.append("up_axis_tilt_too_high")
         status = (
-            TrajectoryAlignmentCloudUseStatus.ACCEPTED if not reasons else TrajectoryAlignmentCloudUseStatus.REJECTED
+            TrajectoryAlignmentCloudUseStatus.REJECTED
+            if "invalid_scale" in reasons
+            else TrajectoryAlignmentCloudUseStatus.ACCEPTED
         )
     return alignment.model_copy(
         update={
             "cloud_input_present": cloud_input_present,
             "cloud_use_status": status,
-            "cloud_rejection_reasons": reasons,
+            "cloud_warning_reasons": reasons,
+            "cloud_rejection_reasons": ["invalid_scale"] if "invalid_scale" in reasons else [],
             "cloud_gate_min_matched_pairs": _SIM3_CLOUD_MIN_MATCHED_PAIRS,
             "cloud_gate_max_rms_error_m": _SIM3_CLOUD_MAX_RMS_ERROR_M,
             "cloud_gate_max_up_axis_tilt_deg": _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG,

@@ -15,6 +15,7 @@ from prml_vslam.pipeline.config import (
     build_run_config,
 )
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.reuse import load_reused_stage_results
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
@@ -22,12 +23,13 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import Record3DTransportId
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, Record3DTransportId, SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
-from prml_vslam.utils import PathConfig
+from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils.serialization import write_json
 
 
 def _repo_root() -> Path:
@@ -146,6 +148,7 @@ def test_trajectory_alignment_plan_declares_materialized_outputs(tmp_path: Path)
     assert [path.relative_to(plan.artifact_root).as_posix() for path in stage.outputs] == [
         "evaluation/trajectory_alignment.json",
         "evaluation/trajectory_sim3_aligned.tum",
+        "evaluation/point_cloud_sim3_aligned.ply",
     ]
 
 
@@ -373,6 +376,85 @@ method_id = "vista"
 """
         )
     assert "Ignoring unknown config field `stages.source.backend.legacy`." in config.config_warnings
+
+
+def test_run_config_parses_reuse_artifact_root_and_rejects_same_root(tmp_path: Path) -> None:
+    reuse_root = tmp_path / "old" / "vista"
+    reuse_paths = RunArtifactPaths.build(reuse_root)
+    write_json(reuse_paths.sequence_manifest_path, SequenceManifest(sequence_id="reused-seq"))
+    write_json(reuse_paths.benchmark_inputs_path, PreparedBenchmarkInputs())
+    reuse_paths.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    config = RunConfig.from_toml(
+        f"""
+experiment_name = "reuse"
+mode = "offline"
+output_dir = "{tmp_path.as_posix()}"
+reuse_artifact_root = "{reuse_root.as_posix()}"
+
+[stages.source]
+enabled = false
+
+[stages.slam]
+enabled = false
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+
+[stages.align_cloud]
+enabled = true
+"""
+    )
+
+    assert config.reuse_artifact_root == reuse_root
+    plan = config.compile_plan(PathConfig(root=tmp_path))
+    assert plan.source.source_id == "reused_artifacts"
+    assert plan.source.sequence_id == "reused-seq"
+    assert [stage.key for stage in plan.stages] == [
+        StageKey.TRAJECTORY_ALIGNMENT,
+        StageKey.CLOUD_ALIGNMENT,
+        StageKey.SUMMARY,
+    ]
+
+    planned_root = (
+        PathConfig(root=tmp_path)
+        .plan_run_paths(
+            experiment_name="same",
+            method_slug="vista",
+            output_dir=tmp_path,
+        )
+        .artifact_root
+    )
+    planned_root.mkdir(parents=True)
+    same_root = build_run_config(
+        experiment_name="same",
+        output_dir=tmp_path,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+    ).model_copy(update={"reuse_artifact_root": planned_root})
+    with pytest.raises(ValueError, match="must not equal"):
+        same_root.compile_plan(PathConfig(root=tmp_path))
+
+
+def test_load_reused_stage_results_reconstructs_source_and_slam_outputs(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "old-run")
+    write_json(run_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
+    write_json(run_paths.benchmark_inputs_path, PreparedBenchmarkInputs())
+    run_paths.trajectory_path.parent.mkdir(parents=True)
+    run_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    run_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+
+    results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
+
+    assert results[StageKey.SOURCE].outcome.artifacts["sequence_manifest"].path == run_paths.sequence_manifest_path
+    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.dense_points_path
+    missing_paths = RunArtifactPaths.build(tmp_path / "missing-benchmark")
+    write_json(missing_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
+    with pytest.raises(FileNotFoundError, match="benchmark inputs"):
+        load_reused_stage_results(missing_paths.artifact_root)
 
 
 def test_target_generic_stages_toml_parses_into_stage_bundle() -> None:

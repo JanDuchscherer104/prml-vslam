@@ -91,6 +91,7 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--experiment_name", "Run name stored in artifacts and summaries."),
             ("--mode", "Pipeline mode: offline or streaming."),
             ("--output_dir", "Artifact output directory."),
+            ("--reuse_artifact_root", "Existing method artifact root for disabled source/SLAM reuse."),
         ),
     ),
     (
@@ -138,6 +139,7 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.align_ground.enabled", "Enable or disable gravity alignment."),
             ("--stages.align_ground.ground.strategy", "Ground-alignment strategy."),
             ("--stages.align_ground.ground.min_confidence", "Minimum ground-plane confidence."),
+            ("--stages.align_trajectory.baseline_source", "Reference trajectory source for Sim(3) alignment."),
             ("--stages.evaluate_trajectory.enabled", "Enable trajectory evaluation."),
             ("--stages.evaluate_trajectory.evaluation.baseline_source", "Reference trajectory source."),
             ("--stages.reconstruction.enabled", "Enable reconstruction."),

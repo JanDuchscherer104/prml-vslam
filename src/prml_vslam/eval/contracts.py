@@ -61,6 +61,7 @@ class TrajectoryAlignmentArtifact(BaseData):
     method_label: str | None = None
     cloud_input_present: bool = False
     cloud_use_status: TrajectoryAlignmentCloudUseStatus = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
+    cloud_warning_reasons: list[str] = Field(default_factory=list)
     cloud_rejection_reasons: list[str] = Field(default_factory=list)
     cloud_gate_min_matched_pairs: int = 20
     cloud_gate_max_rms_error_m: float = 2.0
