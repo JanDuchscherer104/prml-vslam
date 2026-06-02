@@ -34,7 +34,7 @@ and stage summaries remain the scientific and provenance source of truth.
 Install the optional Rerun dependency set:
 
 ```bash
-uv sync --extra visualization
+uv sync
 ```
 
 Start the committed blueprint in a web viewer:

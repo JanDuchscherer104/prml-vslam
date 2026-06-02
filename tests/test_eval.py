@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from prml_vslam.eval.contracts import (
+    CloudAlignmentArtifact,
     CloudAlignmentSelection,
     DiscoveredRun,
     EvaluationArtifact,
@@ -331,11 +332,14 @@ def test_cloud_alignment_service_writes_distinct_icp_refined_cloud(tmp_path: Pat
             artifact_root=tmp_path / "run",
             reference_cloud_path=reference_path,
             sim3_cloud_path=sim3_path,
+            target_frame="advio_gt_world",
             max_correspondence_distance_m=0.25,
         )
     )
 
     assert artifact.path.exists()
+    assert artifact.target_frame == "advio_gt_world"
+    assert json.loads(artifact.path.read_text(encoding="utf-8"))["target_frame"] == "advio_gt_world"
     assert artifact.icp_point_cloud_path.exists()
     assert artifact.icp_point_cloud_path.name == "point_cloud_sim3_icp_aligned.ply"
     assert artifact.icp_point_cloud_path != artifact.sim3_point_cloud_path
@@ -360,11 +364,14 @@ def test_cloud_alignment_runtime_consumes_sim3_aligned_cloud_only(tmp_path: Path
             artifact_root=tmp_path / "run",
             reference_cloud=ArtifactRef(path=reference_path, kind="ply", fingerprint="ref"),
             sim3_point_cloud=ArtifactRef(path=sim3_path, kind="ply", fingerprint="sim3"),
+            target_frame="advio_gt_world",
             max_correspondence_distance_m=0.2,
         )
     )
 
     assert alignment_result.stage_key is StageKey.CLOUD_ALIGNMENT
+    assert isinstance(alignment_result.payload, CloudAlignmentArtifact)
+    assert alignment_result.payload.target_frame == "advio_gt_world"
     assert "icp_aligned_point_cloud_ply" in alignment_result.outcome.artifacts
     assert alignment_result.outcome.artifacts["sim3_aligned_point_cloud_ply"].path == sim3_path
     assert alignment_result.outcome.artifacts["icp_aligned_point_cloud_ply"].path != sim3_path

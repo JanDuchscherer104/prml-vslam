@@ -68,7 +68,7 @@ DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/slam/keyframes/points/**",
     "+ world/slam/point_cloud/raw",
     "+ world/slam/trajectory/raw/**",
-    "+ world/overlays/**",
+    "+ world/aligned/**",
     "+ world/live/source/camera",
 )
 """Default 3D view query: spatial map/history only, without 2D raster branches."""

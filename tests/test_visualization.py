@@ -13,6 +13,7 @@ from pydantic import ValidationError
 # Import pipeline first to keep visualization and curated pipeline exports initialized
 # in the same order used by the app.
 import prml_vslam.pipeline  # noqa: F401
+from prml_vslam.eval.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage.visualization import COLORS_REF, POINTMAP_REF, ROLE_MODEL_POINTMAP
@@ -38,6 +39,12 @@ from prml_vslam.sources.stage.visualization import (
 )
 from prml_vslam.utils.geometry import write_tum_trajectory
 from prml_vslam.visualization import rerun as rerun_helpers
+from prml_vslam.visualization.artifacts import (
+    ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD,
+    ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
+    ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
+    artifact_visualizations,
+)
 from prml_vslam.visualization.contracts import VisualizationConfig
 from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
 from prml_vslam.visualization.rerun_sink import RerunEventSink
@@ -221,6 +228,8 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
     assert "+ world/reference/trajectory/**" in layout.views[0].contents
     assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
+    assert "+ world/aligned/**" in layout.views[0].contents
+    assert "+ world/overlays/**" not in layout.views[0].contents
     assert "+ world/slam" in layout.views[0].contents
     assert "+ world/slam/**" not in layout.views[0].contents
     assert "+ world/slam/point_cloud/raw" in layout.views[0].contents
@@ -491,6 +500,125 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_p
     assert all(axis_length == 0.25 and static is True for _, axis_length, static, _ in pose_calls[1:])
     assert pose_calls[2][3].target_frame == "advio_gt_world"
     assert pose_calls[2][3].tx == 1.0
+
+
+def test_rerun_policy_logs_aligned_slam_artifacts_under_target_frame_namespace(tmp_path: Path) -> None:
+    trajectory_path = write_tum_trajectory(
+        tmp_path / "trajectory_sim3_aligned.tum",
+        [
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+        ],
+        [0.0, 1.0],
+    )
+    sim3_cloud_path = tmp_path / "point_cloud_sim3_aligned.ply"
+    icp_cloud_path = tmp_path / "point_cloud_sim3_icp_aligned.ply"
+    line_calls: list[str] = []
+    pointcloud_ply_calls: list[str] = []
+    policy = RerunLoggingPolicy(
+        log_pinhole=lambda *args, **kwargs: None,
+        log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda stream, *, entity_path, path, **kwargs: pointcloud_ply_calls.append(entity_path),
+        log_mesh_ply=lambda *args, **kwargs: None,
+        log_line_strip3d=lambda stream, *, entity_path, positions_xyz, **kwargs: line_calls.append(entity_path),
+        log_clear=lambda *args, **kwargs: None,
+        log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
+        log_rgb_image=lambda *args, **kwargs: None,
+        log_transform=lambda *args, **kwargs: None,
+        log_sim3_transform=lambda *args, **kwargs: None,
+    )
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.TRAJECTORY_ALIGNMENT,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.TRAJECTORY,
+                role=ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
+                artifact_refs={TRAJECTORY_ARTIFACT: ArtifactRef(path=trajectory_path, kind="tum", fingerprint="traj")},
+                metadata={"target_frame": "advio_gt_world"},
+            ),
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
+                artifact_refs={POINT_CLOUD_ARTIFACT: ArtifactRef(path=sim3_cloud_path, kind="ply", fingerprint="sim3")},
+                metadata={"target_frame": "advio_gt_world"},
+            ),
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD,
+                artifact_refs={POINT_CLOUD_ARTIFACT: ArtifactRef(path=icp_cloud_path, kind="ply", fingerprint="icp")},
+                metadata={"target_frame": "advio_gt_world"},
+            ),
+        ],
+    )
+
+    policy.observe_update(object(), update)
+
+    assert line_calls[0] == "world/aligned/advio_gt_world/slam/sim3/trajectory"
+    assert pointcloud_ply_calls == [
+        "world/aligned/advio_gt_world/slam/sim3/point_cloud",
+        "world/aligned/advio_gt_world/slam/icp/point_cloud",
+    ]
+    assert all("world/overlays" not in entity_path for entity_path in [*line_calls, *pointcloud_ply_calls])
+
+
+def test_artifact_visualizations_include_sim3_and_icp_cloud_alignment_outputs(tmp_path: Path) -> None:
+    cloud_alignment_path = tmp_path / "cloud_alignment.json"
+    cloud_alignment_path.write_text('{"target_frame": "advio_gt_world"}', encoding="utf-8")
+    sim3_cloud_path = tmp_path / "point_cloud_sim3_aligned.ply"
+    icp_cloud_path = tmp_path / "point_cloud_sim3_icp_aligned.ply"
+
+    items = artifact_visualizations(
+        {
+            "cloud_alignment": ArtifactRef(path=cloud_alignment_path, kind="json", fingerprint="alignment"),
+            "sim3_aligned_point_cloud_ply": ArtifactRef(path=sim3_cloud_path, kind="ply", fingerprint="sim3"),
+            "icp_aligned_point_cloud_ply": ArtifactRef(path=icp_cloud_path, kind="ply", fingerprint="icp"),
+        }
+    )
+
+    assert [(item.role, item.space, item.metadata["coordinate_status"]) for item in items] == [
+        (ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD, "advio_gt_world", "sim3_aligned"),
+        (ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD, "advio_gt_world", "icp_aligned"),
+    ]
+
+
+def test_rerun_policy_logs_sim3_alignment_marker_without_moving_raw_slam_root() -> None:
+    sim3_calls: list[tuple[str, float, bool]] = []
+    policy = RerunLoggingPolicy(
+        log_pinhole=lambda *args, **kwargs: None,
+        log_pointcloud=lambda *args, **kwargs: None,
+        log_pointcloud_ply=lambda *args, **kwargs: None,
+        log_mesh_ply=lambda *args, **kwargs: None,
+        log_line_strip3d=lambda *args, **kwargs: None,
+        log_clear=lambda *args, **kwargs: None,
+        log_depth_image=lambda *args, **kwargs: None,
+        log_ground_plane_patch=lambda *args, **kwargs: None,
+        log_rgb_image=lambda *args, **kwargs: None,
+        log_transform=lambda *args, **kwargs: None,
+        log_sim3_transform=lambda stream, *, entity_path, scale, static, **kwargs: sim3_calls.append(
+            (entity_path, scale, static)
+        ),
+    )
+    alignment = TrajectoryAlignmentArtifact(
+        source_frame="vista_slam_world",
+        target_frame="advio_gt_world",
+        scale=1.25,
+        rotation=np.eye(3).tolist(),
+        translation=[1.0, 2.0, 3.0],
+        matched_pairs=12,
+        rms_error_m=0.5,
+        reference_source="ground_truth",
+        sync_max_diff_s=0.01,
+    )
+
+    policy.observe_update(
+        object(),
+        StageRuntimeUpdate(stage_key=StageKey.TRAJECTORY_ALIGNMENT, timestamp_ns=1, semantic_events=[alignment]),
+    )
+
+    assert sim3_calls == [("world/aligned/advio_gt_world/slam/sim3/source_to_target", 1.25, True)]
+    assert sim3_calls[0][0] != rerun_helpers.SLAM_WORLD_ENTITY_PATH
 
 
 def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(tmp_path: Path) -> None:
