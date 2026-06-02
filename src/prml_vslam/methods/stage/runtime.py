@@ -118,6 +118,7 @@ class SlamStageRuntime(
         self._last_error: str | None = None
         self._last_latency_ms: float | None = None
         self._frame_timestamps = deque(maxlen=FPS_WINDOW)
+        self._keyframe_timestamps = deque(maxlen=FPS_WINDOW)
         self._stopped = False
 
     def status(self) -> StageRuntimeStatus:
@@ -130,8 +131,11 @@ class SlamStageRuntime(
             progress_unit="frames",
             failed_count=self._failed_frames,
             processed_items=self._processed_frames,
+            accepted_keyframes=self._accepted_keyframe_count,
             fps=rolling_fps(self._frame_timestamps),
             latency_ms=self._last_latency_ms,
+            throughput=rolling_fps(self._keyframe_timestamps),
+            throughput_unit="keyframes/s",
             last_warning=self._last_warning,
             last_error=self._last_error,
             updated_at_ns=time.time_ns(),
@@ -264,6 +268,7 @@ class SlamStageRuntime(
         for update in self._streaming_backend.drain_streaming_updates():
             if update.is_keyframe:
                 self._accepted_keyframe_count += 1
+                self._keyframe_timestamps.append(time.monotonic())
             if update.backend_warnings:
                 self._last_warning = update.backend_warnings[-1]
             payload_refs = self._payload_refs_for(update)
@@ -315,12 +320,23 @@ class SlamStageRuntime(
             preserve_native_rerun=preserve_native_rerun,
         )
         self._last_visualization_artifacts = visualization_artifacts
+        # Live streaming counters take precedence when populated; fall back to
+        # backend-reported terminal counts so offline runs (which never go
+        # through submit_stream_item) still surface telemetry to the UI.
+        processed_frames = max(self._processed_frames, slam.num_processed_frames)
+        accepted_keyframes = max(self._accepted_keyframe_count, slam.num_keyframes)
         outcome = StageOutcome(
             stage_key=StageKey.SLAM,
             status=status,
             config_hash=stable_hash({"backend": backend_config, "outputs": output_policy}),
             input_fingerprint=stable_hash(sequence_manifest),
             artifacts=slam_artifacts_map(slam) | visualization_artifact_map(visualization_artifacts),
+            metrics={
+                "num_processed_frames": processed_frames,
+                "accepted_keyframe_count": accepted_keyframes,
+                "num_sparse_points": slam.num_sparse_points,
+                "num_dense_points": slam.num_dense_points,
+            },
             error_message=self._last_error or "",
         )
         return StageResult(

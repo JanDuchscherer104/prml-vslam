@@ -138,6 +138,46 @@ def test_build_run_config_from_action_derives_backend_kind(tmp_path: Path) -> No
     assert run_config.stages.slam.backend.kind == MethodId.VISTA.value
 
 
+def test_build_run_config_from_action_coerces_mast3r_sparse_output(tmp_path: Path) -> None:
+    context = type(
+        "Context",
+        (),
+        {
+            "path_config": PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
+            "advio_service": type(
+                "AdvioService",
+                (),
+                {"scene": lambda self, _sequence_id: type("Scene", (), {"sequence_slug": "advio-01"})()},
+            )(),
+        },
+    )()
+    action = PipelinePageAction(
+        config_path=Path(".configs/pipelines/demo.toml"),
+        experiment_name="mast3r-app",
+        source_kind=PipelineSourceId.ADVIO,
+        advio_sequence_id=1,
+        mode=PipelineMode.OFFLINE,
+        method=MethodId.MAST3R,
+        emit_dense_points=True,
+        emit_sparse_points=True,
+        reconstruction_enabled=False,
+        trajectory_eval_enabled=False,
+        evaluate_cloud=False,
+        connect_live_viewer=False,
+        export_viewer_rrd=False,
+    )
+
+    run_config, error = build_run_config_from_action(context, action)
+
+    assert error is None
+    assert isinstance(run_config, RunConfig)
+    assert run_config.stages.slam.outputs.emit_sparse_points is False
+    plan = run_config.compile_plan(context.path_config, fail_on_unavailable=True)
+    slam_stage = next(stage for stage in plan.stages if stage.key is StageKey.SLAM)
+    assert slam_stage.available is True
+    assert [path.name for path in slam_stage.outputs] == ["trajectory.tum", "dense_points.ply"]
+
+
 def test_build_run_config_from_action_accepts_stringified_vista_paths(tmp_path: Path) -> None:
     context = type(
         "Context",

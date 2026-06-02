@@ -45,5 +45,17 @@ class SlamArtifacts(BaseData):
     dense_points_ply: ArtifactRef | None = None
     extras: dict[str, ArtifactRef] = Field(default_factory=dict)
 
+    num_processed_frames: int = 0
+    """Total source frames the backend consumed during the run."""
+
+    num_keyframes: int = 0
+    """Total keyframes the backend accepted into the pose graph."""
+
+    num_sparse_points: int = 0
+    """Total sparse landmarks materialized over the run."""
+
+    num_dense_points: int = 0
+    """Total valid dense pointmap samples materialized over the run."""
+
 
 __all__ = ["SlamArtifacts", "SlamUpdate"]

@@ -563,9 +563,9 @@ def plan_run(
         typer.Option("--dense/--no-dense", help="Whether the plan should include dense map export."),
     ] = True,
     emit_sparse_points: Annotated[
-        bool,
+        bool | None,
         typer.Option("--sparse/--no-sparse", help="Whether the plan should include sparse geometry export."),
-    ] = True,
+    ] = None,
     trajectory_evaluation: Annotated[
         bool,
         typer.Option("--trajectory-eval/--no-trajectory-eval", help="Whether to plan trajectory evaluation."),
