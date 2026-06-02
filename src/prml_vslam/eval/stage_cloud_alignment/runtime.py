@@ -49,6 +49,7 @@ class CloudAlignmentRuntime(OfflineStageRuntime[CloudAlignmentStageInput]):
                 artifact_root=input_payload.artifact_root,
                 reference_cloud_path=input_payload.reference_cloud.path,
                 sim3_cloud_path=input_payload.sim3_point_cloud.path,
+                target_frame=input_payload.target_frame,
                 max_correspondence_distance_m=input_payload.max_correspondence_distance_m,
             )
         )
@@ -61,6 +62,7 @@ class CloudAlignmentRuntime(OfflineStageRuntime[CloudAlignmentStageInput]):
                 {
                     "reference_cloud": input_payload.reference_cloud,
                     "sim3_point_cloud": input_payload.sim3_point_cloud,
+                    "target_frame": input_payload.target_frame,
                 }
             ),
             artifacts=artifacts,

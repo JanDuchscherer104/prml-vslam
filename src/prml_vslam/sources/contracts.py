@@ -154,6 +154,7 @@ class ReferenceCloudRef(BaseData):
     path: Path
     metadata_path: Path
     target_frame: str
+    native_frame: str | None = None
     coordinate_status: ReferenceCloudCoordinateStatus
 
 

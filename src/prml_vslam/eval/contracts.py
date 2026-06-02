@@ -251,6 +251,9 @@ class CloudAlignmentSelection(BaseData):
     sim3_cloud_path: Path
     """Trajectory-Sim(3)-aligned SLAM cloud used as the ICP initialization."""
 
+    target_frame: str = "world"
+    """Benchmark target frame for the aligned and ICP-refined clouds."""
+
     max_correspondence_distance_m: float = Field(default=0.05, gt=0.0)
     """Maximum ICP correspondence distance in meters."""
 
@@ -269,6 +272,9 @@ class CloudAlignmentArtifact(BaseData):
 
     icp_point_cloud_path: Path
     """ICP-refined estimate cloud."""
+
+    target_frame: str = "world"
+    """Benchmark target frame for the aligned and ICP-refined clouds."""
 
     max_correspondence_distance_m: float
     """Maximum correspondence distance used by ICP."""

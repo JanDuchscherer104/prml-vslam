@@ -514,6 +514,7 @@ class CloudAlignmentService:
             reference_cloud_path=selection.reference_cloud_path,
             sim3_point_cloud_path=selection.sim3_cloud_path,
             icp_point_cloud_path=icp_cloud_path,
+            target_frame=selection.target_frame,
             max_correspondence_distance_m=selection.max_correspondence_distance_m,
             fitness=float(registration.fitness),
             inlier_rmse_m=float(registration.inlier_rmse),

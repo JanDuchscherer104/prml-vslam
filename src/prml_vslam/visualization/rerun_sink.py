@@ -16,22 +16,11 @@ from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.utils import Console
 from prml_vslam.visualization.rerun import (
-    MODEL_RGB_2D_ENTITY_PATH,
-    attach_recording_sinks,
-    augment_viewer_recording_with_ground_plane,
-    create_recording_stream,
-    log_clear,
-    log_depth_image,
-    log_ground_plane_patch,
-    log_line_strip3d,
-    log_mesh_ply,
-    log_pinhole,
-    log_pointcloud,
-    log_pointcloud_ply,
-    log_rgb_image,
-    log_sim3_transform,
-    log_transform,
-)
+    MODEL_RGB_2D_ENTITY_PATH, attach_recording_sinks,
+    augment_viewer_recording_with_ground_plane, create_recording_stream,
+    log_clear, log_depth_image, log_ground_plane_patch, log_line_strip3d,
+    log_mesh_ply, log_pinhole, log_pointcloud, log_pointcloud_ply,
+    log_rgb_image, log_sim3_transform, log_transform)
 
 from .rerun_policy import RerunLoggingPolicy
 
@@ -39,6 +28,8 @@ _LOGGER = logging.getLogger(__name__)
 PayloadResolver = Callable[[TransientPayloadRef], np.ndarray | None]
 
 
+# TODO: stop passing individual logging functions to RerunLoggingPolicy!?
+# TODO: RerunEventSink should be either live or export not both, such that each of them would get their own RerunSinkActor!
 class RerunEventSink:
     """Optional observer sink for repo-owned live/export Rerun logging."""
 
@@ -110,17 +101,11 @@ class RerunEventSink:
         self._target_path = target_path
         self._latest_ground_alignment: GroundAlignmentMetadata | None = None
         self._console.info(
-            "Rerun sink policy: source_rgb=%s diagnostic_preview=%s camera_image_rgb=%s trajectory=%s "
-            "point_cloud_keep_ratio=%s reference_point_cloud_keep_ratio=%s "
-            "mesh_keep_ratio=%s view_coordinates=%s.",
-            log_source_rgb,
-            log_diagnostic_preview,
-            log_camera_image_rgb,
-            show_tracking_trajectory,
-            point_cloud_decimation_keep_ratio,
-            reference_point_cloud_decimation_keep_ratio,
-            mesh_decimation_keep_ratio,
-            view_coordinates,
+            f"Rerun sink policy: source_rgb={log_source_rgb} diagnostic_preview={log_diagnostic_preview} "
+            f"camera_image_rgb={log_camera_image_rgb} trajectory={show_tracking_trajectory} "
+            f"point_cloud_keep_ratio={point_cloud_decimation_keep_ratio} "
+            f"reference_point_cloud_keep_ratio={reference_point_cloud_decimation_keep_ratio} "
+            f"mesh_keep_ratio={mesh_decimation_keep_ratio} view_coordinates={view_coordinates}."
         )
 
         if grpc_url is not None:

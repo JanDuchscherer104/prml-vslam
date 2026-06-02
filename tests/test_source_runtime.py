@@ -112,6 +112,7 @@ class _ReferenceGeometrySource(_ManifestOnlySource):
                     path=self._cloud_path,
                     metadata_path=self._metadata_path,
                     target_frame="advio_gt_world",
+                    native_frame="advio_tango_raw_world",
                     coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
                 )
             ],
@@ -282,6 +283,8 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
     assert isinstance(result.payload, SourceStageOutput)
     assert "reference_cloud:tango_raw:aligned" in result.outcome.artifacts
     assert "reference_cloud_metadata:tango_raw:aligned" in result.outcome.artifacts
+    assert result.payload.benchmark_inputs is not None
+    assert result.payload.benchmark_inputs.reference_clouds[0].native_frame == "advio_tango_raw_world"
     items = SourceVisualizationAdapter().build_reference_items(
         output=result.payload,
         artifact_refs=result.outcome.artifacts,
@@ -292,6 +295,7 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
     ]
     assert items[0].space == "world"
     assert items[1].space == "advio_gt_world"
+    assert items[1].metadata["native_frame"] == "advio_tango_raw_world"
 
 
 def test_source_visualization_adapter_skips_source_native_reference_trajectories(tmp_path: Path) -> None:

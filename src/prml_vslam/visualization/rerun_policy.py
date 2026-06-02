@@ -46,12 +46,8 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.sources.stage.visualization import (
-    METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT,
-)
-from prml_vslam.sources.stage.visualization import (
-    POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT,
-)
+from prml_vslam.sources.stage.visualization import METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT
+from prml_vslam.sources.stage.visualization import POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT
 from prml_vslam.sources.stage.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
     ROLE_SOURCE_CAMERA_RGB,
@@ -64,6 +60,7 @@ from prml_vslam.sources.stage.visualization import (
 )
 from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.visualization.artifacts import (
+    ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD,
     ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT,
     ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD,
     ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY,
@@ -73,7 +70,6 @@ from prml_vslam.visualization.rerun import (
     LIVE_MODEL_IMAGE_PLANE_DISTANCE,
     MODEL_RGB_2D_ENTITY_PATH,
     SLAM_WORLD_AXIS_LENGTH,
-    SLAM_WORLD_ENTITY_PATH,
     SOURCE_IMAGE_PLANE_DISTANCE,
     TRAJECTORY_START_AXIS_LENGTH,
 )
@@ -187,8 +183,8 @@ class RerunLoggingPolicy:
                     self._log_reconstruction_point_cloud_item(stream, item)
                 elif item.role == ROLE_SOURCE_REFERENCE_POINT_CLOUD:
                     self._log_source_reference_point_cloud_item(stream, item)
-                elif item.role == ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD:
-                    self._log_slam_sim3_aligned_point_cloud_item(stream, item)
+                elif item.role in {ROLE_SLAM_SIM3_ALIGNED_POINT_CLOUD, ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD}:
+                    self._log_slam_aligned_point_cloud_item(stream, item)
                 else:
                     self._log_pointcloud_item(stream, item, payloads=payloads)
             case VisualizationIntent.TRAJECTORY:
@@ -288,17 +284,18 @@ class RerunLoggingPolicy:
             decimation_seed=self._decimation_seed("point_cloud_ply", entity_path, artifact.path),
         )
 
-    def _log_slam_sim3_aligned_point_cloud_item(self, stream, item: VisualizationItem) -> None:
+    def _log_slam_aligned_point_cloud_item(self, stream, item: VisualizationItem) -> None:
         artifact = item.artifact_refs.get(POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
         target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
-        entity_path = f"world/overlays/{target_frame}/slam/sim3_aligned/point_cloud"
+        alignment_kind = "icp" if item.role == ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD else "sim3"
+        entity_path = f"world/aligned/{target_frame}/slam/{alignment_kind}/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
             entity_path=entity_path,
-            warning_label="Sim(3)-aligned SLAM point cloud",
+            warning_label=f"{alignment_kind.upper()}-aligned SLAM point cloud",
             decimation_seed=self._decimation_seed("point_cloud_ply", entity_path, artifact.path),
         )
 
@@ -374,7 +371,7 @@ class RerunLoggingPolicy:
         entity_path = (
             "world/slam/trajectory/raw"
             if item.role == ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT
-            else f"world/overlays/{target_frame}/slam/sim3_aligned/trajectory"
+            else f"world/aligned/{target_frame}/slam/sim3/trajectory"
         )
         self._log_tum_trajectory_artifact(
             stream,
@@ -521,13 +518,11 @@ class RerunLoggingPolicy:
         self.log_ground_plane_patch(stream, metadata=metadata)
 
     def _log_trajectory_alignment(self, stream, *, alignment: TrajectoryAlignmentArtifact) -> None:
-        """Log the Sim(3) alignment transform to the SLAM world branch root."""
-        # The alignment artifact contains the target <- source Sim(3). Logging
-        # it at the method-neutral SLAM root moves all child trajectory,
-        # keyframe, and pointmap entities together.
+        """Log the Sim(3) alignment as a derived target-frame marker."""
+        target_frame = _entity_token(alignment.target_frame)
         self.log_sim3_transform(
             stream,
-            entity_path=SLAM_WORLD_ENTITY_PATH,
+            entity_path=f"world/aligned/{target_frame}/slam/sim3/source_to_target",
             rotation_matrix=np.asarray(alignment.rotation, dtype=np.float64),
             translation_xyz=np.asarray(alignment.translation, dtype=np.float64),
             scale=alignment.scale,

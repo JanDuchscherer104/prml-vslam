@@ -14,6 +14,7 @@ class CloudAlignmentStageInput(BaseData):
     artifact_root: Path
     reference_cloud: ArtifactRef
     sim3_point_cloud: ArtifactRef
+    target_frame: str = "world"
     max_correspondence_distance_m: float = 0.05
 
 

@@ -183,6 +183,7 @@ class SourceVisualizationAdapter:
             item_artifacts = {POINT_CLOUD_ARTIFACT: artifact}
             if metadata_artifact is not None:
                 item_artifacts[METADATA_ARTIFACT] = metadata_artifact
+            native_frame = cloud_reference.native_frame or cloud_reference.target_frame
             items.append(
                 VisualizationItem(
                     intent=VisualizationIntent.POINT_CLOUD,
@@ -193,6 +194,7 @@ class SourceVisualizationAdapter:
                         "reference_source": cloud_reference.source.value,
                         "coordinate_status": cloud_reference.coordinate_status.value,
                         "target_frame": cloud_reference.target_frame,
+                        "native_frame": native_frame,
                         "sequence_id": sequence_manifest.sequence_id,
                     },
                 )

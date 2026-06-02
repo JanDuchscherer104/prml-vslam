@@ -502,6 +502,11 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     )
     reference_cloud = benchmark_inputs.reference_clouds[0]
     assert reference_cloud.path.exists()
+    assert reference_cloud.target_frame == "advio_tango_raw_world"
+    assert reference_cloud.native_frame == "advio_tango_raw_world"
+    aligned_reference_cloud = benchmark_inputs.reference_clouds[1]
+    assert aligned_reference_cloud.target_frame == "advio_gt_world"
+    assert aligned_reference_cloud.native_frame == "advio_tango_raw_world"
     metadata = json.loads(reference_cloud.metadata_path.read_text(encoding="utf-8"))
     assert metadata["point_count"] == 9
     assert metadata["payload_frame"] == "advio_tango_depth_sensor_rdf"
