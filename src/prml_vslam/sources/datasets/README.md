@@ -92,9 +92,12 @@ Datasets normalize local source data into two pipeline-facing outputs:
 - `PreparedBenchmarkInputs`
   - canonical benchmark-side auxiliary inputs
   - may carry normalized `reference_trajectories`
-  - for ADVIO, may also carry `reference_clouds` and
+  - for ADVIO and TUM RGB-D, may also carry `reference_clouds`
+  - for ADVIO, may also carry
     `reference_point_cloud_sequences`
   - ADVIO Tango reference clouds are raw-backed (`tango_raw`)
+  - TUM RGB-D reference clouds are sampled registered-depth clouds fused
+    through ground-truth RGB-camera poses (`tum_rgbd`)
   - point-cloud sequence refs must preserve payload semantics; ADVIO Tango
     payload rows are timestamped Tango point-cloud samples that repository
     benchmark prep materializes through raw Tango pose association

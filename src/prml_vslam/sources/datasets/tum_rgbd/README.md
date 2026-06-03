@@ -180,11 +180,21 @@ depth_m = depth_png / 5000.0
 This is implemented in [load_depth_image_m()](./tum_rgbd_loading.py:191).
 
 The official tools page also provides a `generate_pointcloud.py` example for
-building colored point clouds from one registered RGB/depth pair. The current
-repository adapter does not expose a dedicated TUM-native point-cloud artifact
-bundle analogous to the ADVIO Tango reference-cloud path; instead it preserves
-RGB, depth, intrinsics, and trajectory so downstream stages can derive the
-geometry they need.
+building colored point clouds from one registered RGB/depth pair. The
+repository adapter uses the same registered-depth convention for benchmark
+prep: it samples bounded RGB-D associations, unprojects valid metric depth in
+the RGB camera frame, and fuses those points through the ground-truth
+`T_world_camera` poses into `tum_rgbd_mocap_world`.
+
+The resulting `ReferenceCloudRef` is a source-prepared aligned cloud with:
+
+- `source = "tum_rgbd"`
+- `target_frame = native_frame = "tum_rgbd_mocap_world"`
+- `coordinate_status = "aligned"`
+
+The cloud is intentionally sparse and deterministic rather than a dense full
+sequence reconstruction. It exists to give offline cloud alignment a TUM-native
+benchmark reference without requiring the reconstruction stage.
 
 ## Repo Interpretation For Replay
 
@@ -211,6 +221,8 @@ For offline pipeline execution:
   directory and an `intrinsics.yaml`
 - [TumRgbdSequence.to_benchmark_inputs()](./tum_rgbd_sequence.py:101) exports the official ground truth to a
   normalized `ground_truth.tum`
+- the same benchmark input prep emits a bounded aligned reference cloud when
+  depth is available
 - the resulting [SequenceManifest](../../pipeline/contracts/sequence.py:11) stays RGB-directory-based rather than
   video-based
 
