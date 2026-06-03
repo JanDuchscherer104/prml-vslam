@@ -5,13 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.eval.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.eval.contracts import EvaluationArtifact, TrajectoryAlignmentArtifact
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.stage.visualization import (
@@ -59,6 +59,7 @@ from prml_vslam.sources.stage.visualization import (
     TRAJECTORY_ARTIFACT,
 )
 from prml_vslam.utils.geometry import load_tum_trajectory
+from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.artifacts import (
     ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD,
     ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT,
@@ -69,25 +70,27 @@ from prml_vslam.visualization.rerun import (
     KEYFRAME_IMAGE_PLANE_DISTANCE,
     LIVE_MODEL_IMAGE_PLANE_DISTANCE,
     MODEL_RGB_2D_ENTITY_PATH,
+    RERUN_ENTITY_PATHS,
     SLAM_WORLD_AXIS_LENGTH,
     SOURCE_IMAGE_PLANE_DISTANCE,
     TRAJECTORY_START_AXIS_LENGTH,
 )
 
 _LOGGER = logging.getLogger(__name__)
+JsonMetadataValue = str | int | float | bool | None
 _RGB_ENTITY_PATHS = {
-    ROLE_SOURCE_RGB: "world/live/source/rgb",
-    ROLE_SOURCE_CAMERA_RGB: "world/live/source/camera/image",
+    ROLE_SOURCE_RGB: RERUN_ENTITY_PATHS.source_rgb,
+    ROLE_SOURCE_CAMERA_RGB: RERUN_ENTITY_PATHS.source_camera_image,
     ROLE_MODEL_RGB: MODEL_RGB_2D_ENTITY_PATH,
-    ROLE_MODEL_CAMERA_RGB: "world/slam/live/model/camera/image",
-    ROLE_MODEL_PREVIEW: "world/slam/live/model/diag/preview",
+    ROLE_MODEL_CAMERA_RGB: RERUN_ENTITY_PATHS.model_camera_image,
+    ROLE_MODEL_PREVIEW: RERUN_ENTITY_PATHS.diagnostic_preview,
     ROLE_KEYFRAME_RGB: "world/slam/keyframes/cameras/{keyframe_index:06d}/image",
     ROLE_KEYFRAME_PREVIEW: "world/slam/keyframes/cameras/{keyframe_index:06d}/diag/preview",
 }
 _SOURCE_RGB_ROLES = {ROLE_SOURCE_RGB, ROLE_SOURCE_CAMERA_RGB}
 _DIAGNOSTIC_PREVIEW_ROLES = {ROLE_MODEL_PREVIEW, ROLE_KEYFRAME_PREVIEW}
 _DEPTH_ENTITY_PATHS = {
-    ROLE_MODEL_DEPTH: "world/slam/live/model/camera/image/depth",
+    ROLE_MODEL_DEPTH: RERUN_ENTITY_PATHS.model_camera_depth,
     ROLE_SOURCE_DEPTH: "world/live/source/camera/image/depth",
     ROLE_KEYFRAME_DEPTH: "world/slam/keyframes/cameras/{keyframe_index:06d}/image/depth",
 }
@@ -104,8 +107,8 @@ _POSE_ENTITY_PATHS = {
     ROLE_KEYFRAME_POINTS_POSE: "world/slam/keyframes/points/{keyframe_index:06d}",
 }
 _PINHOLE_ENTITY_PATHS = {
-    ROLE_MODEL_PINHOLE: "world/slam/live/model/camera/image",
-    ROLE_SOURCE_PINHOLE: "world/live/source/camera/image",
+    ROLE_MODEL_PINHOLE: RERUN_ENTITY_PATHS.model_camera_image,
+    ROLE_SOURCE_PINHOLE: RERUN_ENTITY_PATHS.source_camera_image,
     ROLE_KEYFRAME_PINHOLE: "world/slam/keyframes/cameras/{keyframe_index:06d}/image",
 }
 
@@ -123,17 +126,6 @@ class RerunLoggingPolicy:
       their posed parent entity.
     """
 
-    log_pinhole: Callable[..., None]
-    log_pointcloud: Callable[..., None]
-    log_pointcloud_ply: Callable[..., None]
-    log_mesh_ply: Callable[..., None]
-    log_line_strip3d: Callable[..., None]
-    log_clear: Callable[..., None]
-    log_depth_image: Callable[..., None]
-    log_ground_plane_patch: Callable[..., None]
-    log_rgb_image: Callable[..., None]
-    log_transform: Callable[..., None]
-    log_sim3_transform: Callable[..., None]
     show_tracking_trajectory: bool = True
     trajectory_pose_axis_length: float = 0.0
     log_source_rgb: bool = False
@@ -162,6 +154,8 @@ class RerunLoggingPolicy:
                 self._log_ground_alignment(stream, metadata=semantic_event)
             if isinstance(semantic_event, TrajectoryAlignmentArtifact):
                 self._log_trajectory_alignment(stream, alignment=semantic_event)
+            if isinstance(semantic_event, EvaluationArtifact):
+                rerun_helpers.log_ape_diagnostics(stream, artifact=semantic_event)
         for item in update.visualizations:
             self._log_visualization_item(stream, item, payloads=resolved_payloads)
 
@@ -222,7 +216,7 @@ class RerunLoggingPolicy:
         if entity_path is None:
             return
         self._set_item_frame_time(stream, item)
-        self.log_rgb_image(stream, entity_path=entity_path, image_rgb=image)
+        rerun_helpers.log_rgb_image(stream, entity_path=entity_path, image_rgb=image)
 
     def _log_depth_item(
         self,
@@ -240,7 +234,7 @@ class RerunLoggingPolicy:
         if entity_path is None:
             return
         self._set_item_frame_time(stream, item)
-        self.log_depth_image(stream, entity_path=entity_path, depth_m=depth_image)
+        rerun_helpers.log_depth_image(stream, entity_path=entity_path, depth_m=depth_image)
 
     def _log_pointcloud_item(
         self,
@@ -257,7 +251,7 @@ class RerunLoggingPolicy:
         if entity_path is None:
             return
         self._set_item_frame_time(stream, item)
-        self.log_pointcloud(
+        rerun_helpers.log_pointcloud(
             stream,
             entity_path=entity_path,
             pointmap=pointmap,
@@ -392,7 +386,7 @@ class RerunLoggingPolicy:
         decimation_keep_ratio: float | None = None,
     ) -> None:
         try:
-            self.log_pointcloud_ply(
+            rerun_helpers.log_pointcloud_ply(
                 stream,
                 entity_path=entity_path,
                 path=artifact_path,
@@ -413,7 +407,7 @@ class RerunLoggingPolicy:
         warning_label: str,
     ) -> None:
         try:
-            self.log_mesh_ply(
+            rerun_helpers.log_mesh_ply(
                 stream,
                 entity_path=entity_path,
                 path=artifact_path,
@@ -433,7 +427,7 @@ class RerunLoggingPolicy:
     ) -> None:
         try:
             trajectory = load_tum_trajectory(artifact_path)
-            self.log_line_strip3d(
+            rerun_helpers.log_line_strip3d(
                 stream,
                 entity_path=entity_path,
                 positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float32),
@@ -450,7 +444,7 @@ class RerunLoggingPolicy:
         except Exception as exc:
             _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
 
-    def _load_source_reference_metadata(self, item: VisualizationItem) -> dict[str, object]:
+    def _load_source_reference_metadata(self, item: VisualizationItem) -> dict[str, JsonMetadataValue]:
         artifact = item.artifact_refs.get(SOURCE_METADATA_ARTIFACT)
         if artifact is None:
             return {}
@@ -459,7 +453,13 @@ class RerunLoggingPolicy:
         except Exception as exc:
             _LOGGER.warning("Skipping source reference metadata artifact '%s': %s", artifact.path, exc)
             return {}
-        return payload if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            return {}
+        metadata: dict[str, JsonMetadataValue] = {}
+        for key, value in payload.items():
+            if isinstance(key, str) and (isinstance(value, str | int | float | bool) or value is None):
+                metadata[key] = value
+        return metadata
 
     def _log_pose_item(self, stream, item: VisualizationItem) -> None:
         if item.pose is None:
@@ -468,7 +468,7 @@ class RerunLoggingPolicy:
         if entity_path is None:
             return
         self._set_item_frame_time(stream, item)
-        self.log_transform(stream, entity_path=entity_path, transform=item.pose, axis_length=0.0)
+        rerun_helpers.log_transform(stream, entity_path=entity_path, transform=item.pose, axis_length=0.0)
 
     def _log_pinhole_item(
         self,
@@ -490,7 +490,7 @@ class RerunLoggingPolicy:
         if viewer_intrinsics is None:
             return
         self._set_item_frame_time(stream, item)
-        self.log_pinhole(
+        rerun_helpers.log_pinhole(
             stream,
             entity_path=entity_path,
             intrinsics=viewer_intrinsics,
@@ -515,12 +515,12 @@ class RerunLoggingPolicy:
         """Log one derived ground-plane overlay when the alignment stage completes."""
         if metadata is None or not metadata.applied:
             return
-        self.log_ground_plane_patch(stream, metadata=metadata)
+        rerun_helpers.log_ground_plane_patch(stream, metadata=metadata)
 
     def _log_trajectory_alignment(self, stream, *, alignment: TrajectoryAlignmentArtifact) -> None:
         """Log the Sim(3) alignment as a derived target-frame marker."""
         target_frame = _entity_token(alignment.target_frame)
-        self.log_sim3_transform(
+        rerun_helpers.log_sim3_transform(
             stream,
             entity_path=f"world/aligned/{target_frame}/slam/sim3/source_to_target",
             rotation_matrix=np.asarray(alignment.rotation, dtype=np.float64),
@@ -542,7 +542,7 @@ class RerunLoggingPolicy:
                 poses=[pose],
             )
             self._logged_tracking_start_axes = True
-        self.log_line_strip3d(
+        rerun_helpers.log_line_strip3d(
             stream,
             entity_path="world/slam/trajectory/raw",
             positions_xyz=np.asarray(self._tracking_trajectory_xyz, dtype=np.float32),
@@ -565,7 +565,7 @@ class RerunLoggingPolicy:
         """Log the first trajectory pose as a Transform3D axes marker."""
         if not poses:
             return
-        self.log_transform(
+        rerun_helpers.log_transform(
             stream,
             entity_path=f"{entity_path}/start",
             transform=poses[0],
@@ -586,7 +586,7 @@ class RerunLoggingPolicy:
         if self.trajectory_pose_axis_length <= 0.0:
             return
         for offset, pose in enumerate(poses):
-            self.log_transform(
+            rerun_helpers.log_transform(
                 stream,
                 entity_path=f"{entity_path}/poses/{start_index + offset:06d}",
                 transform=pose,
@@ -696,7 +696,7 @@ def _image_plane_distance_for_role(role: str) -> float | None:
     return None
 
 
-def _metadata_int(metadata: Mapping[str, object], key: str) -> int | None:
+def _metadata_int(metadata: Mapping[str, JsonMetadataValue], key: str) -> int | None:
     value = metadata.get(key)
     return int(value) if isinstance(value, int | float) else None
 

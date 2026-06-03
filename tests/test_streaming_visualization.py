@@ -50,7 +50,12 @@ from prml_vslam.sources.stage.visualization import (
 from prml_vslam.utils.geometry import transform_points_world_camera, write_point_cloud_ply
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization import rerun_sink as rerun_sink_module
-from prml_vslam.visualization.rerun_sink import RerunEventSink, RerunSinkActor
+from prml_vslam.visualization.rerun_sink import (
+    ExportRerunEventSink,
+    ExportRerunSinkActor,
+    LiveRerunEventSink,
+    LiveRerunSinkActor,
+)
 from prml_vslam.visualization.validation import load_recording_summary
 
 
@@ -191,8 +196,7 @@ def _source_rgb_update(*, frame_index: int, ref: TransientPayloadRef) -> StageRu
 
 
 def test_rerun_sink_is_noop_when_handles_are_unavailable(tmp_path: Path) -> None:
-    sink = RerunEventSink(
-        grpc_url=None,
+    sink = ExportRerunEventSink(
         target_path=tmp_path / "viewer.rrd",
         log_diagnostic_preview=True,
         log_camera_image_rgb=True,
@@ -234,7 +238,7 @@ def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_
     )
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_ground_plane_patch",
         lambda stream, *, metadata, static=True: ground_calls.append(stream.name),
     )
@@ -246,24 +250,29 @@ def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_
         ),
     )
 
-    sink = RerunEventSink(
+    live_sink = LiveRerunEventSink(
         grpc_url="rerun+http://127.0.0.1:9876/proxy",
+        recording_id="demo-run",
+    )
+    export_sink = ExportRerunEventSink(
         target_path=viewer_path,
         recording_id="demo-run",
     )
 
-    sink.observe_update(_ground_alignment_update(), payloads={})
+    live_sink.observe_update(_ground_alignment_update(), payloads={})
+    export_sink.observe_update(_ground_alignment_update(), payloads={})
 
     assert ground_calls == ["live"]
 
-    sink.close()
+    live_sink.close()
+    export_sink.close()
 
     assert augment_calls == [(_ground_alignment_metadata(), viewer_path, "demo-run")]
 
 
 def test_rerun_sink_close_stamps_ground_plane_overlay_as_static_in_exported_rrd(tmp_path: Path) -> None:
     viewer_path = tmp_path / "viewer.rrd"
-    sink = RerunEventSink(grpc_url=None, target_path=viewer_path, recording_id="static-ground-plane")
+    sink = ExportRerunEventSink(target_path=viewer_path, recording_id="static-ground-plane")
 
     sink.observe_update(_ground_alignment_update(), payloads={})
     sink.close()
@@ -318,24 +327,24 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pinhole",
         lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_rgb_image",
         lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_depth_image",
         lambda stream, *, entity_path, depth_m: calls.append(("depth", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: (
             calls.append(("pose", entity_path, *_timeline_state(stream))),
@@ -343,23 +352,22 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pointcloud",
         lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_line_strip3d",
         lambda stream, *, entity_path, positions_xyz: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
     )
-    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
 
-    sink = RerunEventSink(
-        grpc_url=None,
+    sink = ExportRerunEventSink(
         target_path=tmp_path / "viewer.rrd",
         log_diagnostic_preview=True,
         log_camera_image_rgb=True,
@@ -416,24 +424,24 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pinhole",
         lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_rgb_image",
         lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_depth_image",
         lambda stream, *, entity_path, depth_m: calls.append(("depth", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: (
             calls.append(("pose", entity_path, *_timeline_state(stream))),
@@ -441,20 +449,20 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pointcloud",
         lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_line_strip3d",
         lambda stream, *, entity_path, positions_xyz: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
     )
-    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
 
     pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
     refs = {
@@ -482,8 +490,7 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
         ),
     )
 
-    sink = RerunEventSink(
-        grpc_url=None,
+    sink = ExportRerunEventSink(
         target_path=tmp_path / "viewer.rrd",
         log_source_rgb=True,
         log_diagnostic_preview=True,
@@ -527,13 +534,12 @@ def test_rerun_sink_update_skips_missing_payload_refs(tmp_path: Path, monkeypatc
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_rgb_image",
         lambda stream, *, entity_path, image_rgb: calls.append(entity_path),
     )
 
-    sink = RerunEventSink(
-        grpc_url=None,
+    sink = ExportRerunEventSink(
         target_path=tmp_path / "viewer.rrd",
         log_source_rgb=True,
         log_diagnostic_preview=True,
@@ -579,17 +585,17 @@ def test_rerun_sink_logs_reconstruction_artifacts(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", _create_stream)
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pointcloud_ply",
         lambda stream, *, entity_path, path, **kwargs: calls.append(("points", entity_path, path)),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_mesh_ply",
         lambda stream, *, entity_path, path, **kwargs: calls.append(("mesh", entity_path, path)),
     )
 
-    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    sink = ExportRerunEventSink(target_path=tmp_path / "viewer.rrd")
     sink.observe_update(
         StageRuntimeUpdate(
             stage_key=StageKey.RECONSTRUCTION,
@@ -629,19 +635,19 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_line_strip3d",
         lambda stream, *, entity_path, positions_xyz, static=False: calls.append(
             ("trajectory", entity_path, tuple(map(tuple, np.asarray(positions_xyz, dtype=float))))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pointcloud_ply",
         lambda stream, *, entity_path, path, **kwargs: calls.append(("points", entity_path, path)),
     )
 
-    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd")
+    sink = ExportRerunEventSink(target_path=tmp_path / "viewer.rrd")
     sink.observe_update(
         StageRuntimeUpdate(
             stage_key=StageKey.SOURCE,
@@ -710,7 +716,7 @@ def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tm
     metadata.write_text('{"point_count": 2, "skipped_out_of_range_payloads": 0}', encoding="utf-8")
     viewer_path = tmp_path / "viewer.rrd"
 
-    sink = RerunEventSink(grpc_url=None, target_path=viewer_path, recording_id="reference-validation")
+    sink = ExportRerunEventSink(target_path=viewer_path, recording_id="reference-validation")
     sink.observe_update(
         StageRuntimeUpdate(
             stage_key=StageKey.SOURCE,
@@ -758,31 +764,31 @@ def test_rerun_sink_logs_source_posed_camera_geometry(tmp_path: Path, monkeypatc
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
             ("pose", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pinhole",
         lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_rgb_image",
         lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_depth_image",
         lambda stream, *, entity_path, depth_m: calls.append(("depth", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pointcloud",
         lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
@@ -791,7 +797,7 @@ def test_rerun_sink_logs_source_posed_camera_geometry(tmp_path: Path, monkeypatc
 
     pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0)
     intrinsics = CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3)
-    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd", log_source_rgb=True)
+    sink = ExportRerunEventSink(target_path=tmp_path / "viewer.rrd", log_source_rgb=True)
     sink.observe_update(
         StageRuntimeUpdate(
             stage_key=StageKey.SOURCE,
@@ -858,19 +864,12 @@ def test_rerun_sink_logs_source_posed_camera_geometry(tmp_path: Path, monkeypatc
 
 def test_rerun_policy_skips_invalid_reconstruction_artifact(caplog, monkeypatch) -> None:
     stream = _FakeRecordingStream()
-    policy = rerun_sink_module.RerunLoggingPolicy(
-        log_pinhole=lambda *args, **kwargs: None,
-        log_pointcloud=lambda *args, **kwargs: None,
-        log_pointcloud_ply=lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")),
-        log_mesh_ply=lambda *args, **kwargs: None,
-        log_line_strip3d=lambda *args, **kwargs: None,
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda *args, **kwargs: None,
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda *args, **kwargs: None,
-        log_transform=lambda *args, **kwargs: None,
-        log_sim3_transform=lambda *args, **kwargs: None,
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_pointcloud_ply",
+        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")),
     )
+    policy = rerun_sink_module.RerunLoggingPolicy()
     monkeypatch.setattr(logging.getLogger("prml_vslam"), "propagate", True)
 
     with caplog.at_level(logging.WARNING):
@@ -900,7 +899,7 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: (
             calls.append(("pose", entity_path, *_timeline_state(stream))),
@@ -908,17 +907,17 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pointcloud",
         lambda stream, *, entity_path, pointmap, colors=None, **kwargs: (
             calls.append(("points", entity_path, *_timeline_state(stream))),
             captured_pointmaps.__setitem__(entity_path, np.asarray(pointmap)),
         ),
     )
-    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
 
-    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd", log_camera_image_rgb=True)
+    sink = ExportRerunEventSink(target_path=tmp_path / "viewer.rrd", log_camera_image_rgb=True)
     sink.observe_update(
         _slam_keyframe_update(
             source_seq=4,
@@ -959,12 +958,12 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_rgb_image",
         lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: (
             calls.append(("pose", entity_path, *_timeline_state(stream))),
@@ -972,15 +971,15 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_line_strip3d",
         lambda stream, *, entity_path, positions_xyz: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
     )
-    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
 
-    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd", log_source_rgb=True)
+    sink = ExportRerunEventSink(target_path=tmp_path / "viewer.rrd", log_source_rgb=True)
 
     sink.observe_update(
         _source_rgb_update(
@@ -1013,33 +1012,32 @@ def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_pat
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_rgb_image",
         lambda stream, *, entity_path, image_rgb: calls.append(
             ("rgb", entity_path, tuple(np.asarray(image_rgb).shape), *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pinhole",
         lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, (intrinsics.height_px, intrinsics.width_px), *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_depth_image",
         lambda stream, *, entity_path, depth_m: calls.append(
             ("depth", entity_path, tuple(np.asarray(depth_m).shape), *_timeline_state(stream))
         ),
     )
-    monkeypatch.setattr(rerun_sink_module, "log_transform", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_pointcloud", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_transform", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_pointcloud", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
 
-    sink = RerunEventSink(
-        grpc_url=None,
+    sink = ExportRerunEventSink(
         target_path=tmp_path / "viewer.rrd",
         log_source_rgb=True,
         log_diagnostic_preview=True,
@@ -1088,16 +1086,16 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: paths.append(
             (entity_path, *_timeline_state(stream))
         ),
     )
-    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
 
-    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd", log_camera_image_rgb=True)
+    sink = ExportRerunEventSink(target_path=tmp_path / "viewer.rrd", log_camera_image_rgb=True)
     sink.observe_update(
         _slam_pose_update(
             source_seq=2,
@@ -1114,7 +1112,8 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
 
 
 def test_rerun_sink_actor_reserves_full_cpu() -> None:
-    assert RerunSinkActor._default_options["num_cpus"] == 1.0
+    assert LiveRerunSinkActor._default_options["num_cpus"] == 1.0
+    assert ExportRerunSinkActor._default_options["num_cpus"] == 1.0
 
 
 def test_rerun_event_sink_flushes_live_stream_after_update(monkeypatch) -> None:
@@ -1122,7 +1121,7 @@ def test_rerun_event_sink_flushes_live_stream_after_update(monkeypatch) -> None:
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: live_stream)
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
 
-    sink = RerunEventSink(grpc_url="rerun+http://127.0.0.1:9876/proxy", target_path=None)
+    sink = LiveRerunEventSink(grpc_url="rerun+http://127.0.0.1:9876/proxy")
 
     sink.observe_update(StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1))
 
@@ -1144,16 +1143,15 @@ def test_rerun_sink_actor_forwards_stage_runtime_updates_without_payload_resolve
         def close(self) -> None:
             observed["closed"] = True
 
-    monkeypatch.setattr(rerun_sink_module, "RerunEventSink", FakeLocalSink)
+    monkeypatch.setattr(rerun_sink_module, "ExportRerunEventSink", FakeLocalSink)
     monkeypatch.setattr(
         rerun_sink_module.ray,
         "get",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("sink actor must not call ray.get")),
     )
 
-    actor_cls = RerunSinkActor.__ray_metadata__.modified_class
+    actor_cls = ExportRerunSinkActor.__ray_metadata__.modified_class
     actor = actor_cls(
-        grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
         recording_id="demo",
         show_tracking_trajectory=False,
@@ -1196,7 +1194,7 @@ def test_rerun_sink_actor_resolves_stage_runtime_update_payloads_in_sidecar(
     class FakeResolver:
         read_payload = FakeReadPayloadRemote()
 
-    monkeypatch.setattr(rerun_sink_module, "RerunEventSink", FakeLocalSink)
+    monkeypatch.setattr(rerun_sink_module, "ExportRerunEventSink", FakeLocalSink)
     monkeypatch.setattr(rerun_sink_module.ray, "get", lambda value: value)
 
     update = StageRuntimeUpdate(
@@ -1210,9 +1208,8 @@ def test_rerun_sink_actor_resolves_stage_runtime_update_payloads_in_sidecar(
             )
         ],
     )
-    actor_cls = RerunSinkActor.__ray_metadata__.modified_class
+    actor_cls = ExportRerunSinkActor.__ray_metadata__.modified_class
     actor = actor_cls(
-        grpc_url=None,
         target_path=tmp_path / "viewer.rrd",
         recording_id="demo",
         show_tracking_trajectory=False,
@@ -1235,28 +1232,28 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_pinhole",
         lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_rgb_image",
         lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
     )
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
             ("pose", entity_path, *_timeline_state(stream))
         ),
     )
-    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
 
-    sink = RerunEventSink(grpc_url=None, target_path=tmp_path / "viewer.rrd", log_camera_image_rgb=True)
+    sink = ExportRerunEventSink(target_path=tmp_path / "viewer.rrd", log_camera_image_rgb=True)
     sink.observe_update(
         _slam_keyframe_update(
             source_seq=8,
@@ -1286,20 +1283,19 @@ def test_rerun_sink_keeps_keyframe_camera_frusta_persistent(tmp_path: Path, monk
 
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_transform", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_pointcloud", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_pinhole", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_rgb_image", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_depth_image", lambda *args, **kwargs: None)
-    monkeypatch.setattr(rerun_sink_module, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_transform", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_pointcloud", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_pinhole", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_rgb_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_depth_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        rerun_sink_module,
+        rerun_helpers,
         "log_clear",
         lambda stream, *, entity_path, recursive: clears.append(f"{entity_path}:{recursive}"),
     )
 
-    sink = RerunEventSink(
-        grpc_url=None,
+    sink = ExportRerunEventSink(
         target_path=tmp_path / "viewer.rrd",
     )
 

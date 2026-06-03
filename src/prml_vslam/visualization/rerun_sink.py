@@ -1,9 +1,10 @@
-"""Repo-owned Rerun observer sink and Ray sidecar actor."""
+"""Repo-owned Rerun observer sinks and Ray sidecar actors."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -20,17 +21,6 @@ from prml_vslam.visualization.rerun import (
     attach_recording_sinks,
     augment_viewer_recording_with_ground_plane,
     create_recording_stream,
-    log_clear,
-    log_depth_image,
-    log_ground_plane_patch,
-    log_line_strip3d,
-    log_mesh_ply,
-    log_pinhole,
-    log_pointcloud,
-    log_pointcloud_ply,
-    log_rgb_image,
-    log_sim3_transform,
-    log_transform,
 )
 
 from .rerun_policy import RerunLoggingPolicy
@@ -39,104 +29,57 @@ _LOGGER = logging.getLogger(__name__)
 PayloadResolver = Callable[[TransientPayloadRef], np.ndarray | None]
 
 
-# TODO: stop passing individual logging functions to RerunLoggingPolicy!?
-# TODO: RerunEventSink should be either live or export not both, such that each of them would get their own RerunSinkActor!
-class RerunEventSink:
-    """Optional observer sink for repo-owned live/export Rerun logging."""
+@dataclass(frozen=True, slots=True)
+class _RerunSinkOptions:
+    recording_id: str | None = None
+    show_tracking_trajectory: bool = True
+    trajectory_pose_axis_length: float = 0.0
+    log_source_rgb: bool = False
+    log_diagnostic_preview: bool = False
+    log_camera_image_rgb: bool = True
+    point_cloud_decimation_keep_ratio: float = 1.0
+    reference_point_cloud_decimation_keep_ratio: float = 1.0
+    mesh_decimation_keep_ratio: float = 1.0
+    decimation_random_seed: int = 0
+    view_coordinates: str = "RDF"
+
+
+class _BaseRerunEventSink:
+    """Shared single-stream Rerun sink behavior."""
 
     def __init__(
         self,
         *,
-        grpc_url: str | None,
-        target_path: Path | None,
-        recording_id: str | None = None,
-        show_tracking_trajectory: bool = True,
-        trajectory_pose_axis_length: float = 0.0,
-        log_source_rgb: bool = False,
-        log_diagnostic_preview: bool = False,
-        log_camera_image_rgb: bool = True,
-        point_cloud_decimation_keep_ratio: float = 1.0,
-        reference_point_cloud_decimation_keep_ratio: float = 1.0,
-        mesh_decimation_keep_ratio: float = 1.0,
-        decimation_random_seed: int = 0,
-        view_coordinates: str = "RDF",
+        options: _RerunSinkOptions,
     ) -> None:
         self._console = Console(__name__).child(self.__class__.__name__)
-        self._live_stream = None
-        self._export_stream = None
-        self._live_policy = RerunLoggingPolicy(
-            log_pinhole=log_pinhole,
-            log_pointcloud=log_pointcloud,
-            log_line_strip3d=log_line_strip3d,
-            log_mesh_ply=log_mesh_ply,
-            log_clear=log_clear,
-            log_depth_image=log_depth_image,
-            log_ground_plane_patch=log_ground_plane_patch,
-            log_rgb_image=log_rgb_image,
-            log_pointcloud_ply=log_pointcloud_ply,
-            log_transform=log_transform,
-            log_sim3_transform=log_sim3_transform,
-            show_tracking_trajectory=show_tracking_trajectory,
-            trajectory_pose_axis_length=trajectory_pose_axis_length,
-            log_source_rgb=log_source_rgb,
-            log_diagnostic_preview=log_diagnostic_preview,
-            log_camera_image_rgb=log_camera_image_rgb,
-            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
-            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
-            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
-            decimation_random_seed=decimation_random_seed,
+        self._recording_id = options.recording_id
+        self._stream = create_recording_stream(
+            app_id="prml-vslam",
+            recording_id=options.recording_id,
+            show_source_rgb=options.log_source_rgb,
+            show_diagnostic_preview=options.log_diagnostic_preview,
+            view_coordinates=options.view_coordinates,
         )
-        self._export_policy = RerunLoggingPolicy(
-            log_pinhole=log_pinhole,
-            log_pointcloud=log_pointcloud,
-            log_line_strip3d=log_line_strip3d,
-            log_mesh_ply=log_mesh_ply,
-            log_clear=log_clear,
-            log_depth_image=log_depth_image,
-            log_ground_plane_patch=log_ground_plane_patch,
-            log_rgb_image=log_rgb_image,
-            log_pointcloud_ply=log_pointcloud_ply,
-            log_transform=log_transform,
-            log_sim3_transform=log_sim3_transform,
-            show_tracking_trajectory=show_tracking_trajectory,
-            trajectory_pose_axis_length=trajectory_pose_axis_length,
-            log_source_rgb=log_source_rgb,
-            log_diagnostic_preview=log_diagnostic_preview,
-            log_camera_image_rgb=log_camera_image_rgb,
-            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
-            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
-            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
-            decimation_random_seed=decimation_random_seed,
+        self._policy = RerunLoggingPolicy(
+            show_tracking_trajectory=options.show_tracking_trajectory,
+            trajectory_pose_axis_length=options.trajectory_pose_axis_length,
+            log_source_rgb=options.log_source_rgb,
+            log_diagnostic_preview=options.log_diagnostic_preview,
+            log_camera_image_rgb=options.log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=options.point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio=options.reference_point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=options.mesh_decimation_keep_ratio,
+            decimation_random_seed=options.decimation_random_seed,
         )
-        self._recording_id = recording_id
-        self._target_path = target_path
-        self._latest_ground_alignment: GroundAlignmentMetadata | None = None
         self._console.info(
-            f"Rerun sink policy: source_rgb={log_source_rgb} diagnostic_preview={log_diagnostic_preview} "
-            f"camera_image_rgb={log_camera_image_rgb} trajectory={show_tracking_trajectory} "
-            f"point_cloud_keep_ratio={point_cloud_decimation_keep_ratio} "
-            f"reference_point_cloud_keep_ratio={reference_point_cloud_decimation_keep_ratio} "
-            f"mesh_keep_ratio={mesh_decimation_keep_ratio} view_coordinates={view_coordinates}."
+            f"Rerun sink policy: source_rgb={options.log_source_rgb} "
+            f"diagnostic_preview={options.log_diagnostic_preview} "
+            f"camera_image_rgb={options.log_camera_image_rgb} trajectory={options.show_tracking_trajectory} "
+            f"point_cloud_keep_ratio={options.point_cloud_decimation_keep_ratio} "
+            f"reference_point_cloud_keep_ratio={options.reference_point_cloud_decimation_keep_ratio} "
+            f"mesh_keep_ratio={options.mesh_decimation_keep_ratio} view_coordinates={options.view_coordinates}."
         )
-
-        if grpc_url is not None:
-            self._live_stream = create_recording_stream(
-                app_id="prml-vslam",
-                recording_id=recording_id,
-                show_source_rgb=log_source_rgb,
-                show_diagnostic_preview=log_diagnostic_preview,
-                view_coordinates=view_coordinates,
-            )
-            attach_recording_sinks(self._live_stream, grpc_url=grpc_url, target_path=None)
-        if target_path is not None:
-            self._export_stream = create_recording_stream(
-                app_id="prml-vslam",
-                recording_id=recording_id,
-                show_source_rgb=log_source_rgb,
-                show_diagnostic_preview=log_diagnostic_preview,
-                view_coordinates=view_coordinates,
-            )
-            attach_recording_sinks(self._export_stream, grpc_url=None, target_path=target_path)
 
     def observe_update(
         self,
@@ -145,46 +88,17 @@ class RerunEventSink:
         payloads: Mapping[str, np.ndarray] | None = None,
         payload_resolver: PayloadResolver | None = None,
     ) -> None:
-        """Observe one live runtime update without durable `RunEvent` wrapping."""
+        """Observe one runtime update without durable `RunEvent` wrapping."""
         resolved_payloads = self._resolve_update_payloads(update, payloads=payloads, payload_resolver=payload_resolver)
-        if self._live_stream is not None:
-            try:
-                self._live_policy.observe_update(self._live_stream, update, payloads=resolved_payloads)
-                self._live_stream.flush(blocking=False)
-            except Exception as exc:  # pragma: no cover - live viewer is best effort
-                _LOGGER.warning("Skipping live Rerun update for stage '%s': %s", update.stage_key.value, exc)
-        if self._cache_ground_alignment_update(update):
-            return
-        if self._export_stream is not None:
-            self._export_policy.observe_update(self._export_stream, update, payloads=resolved_payloads)
+        self._observe_resolved_update(update, payloads=resolved_payloads)
+
+    def _observe_resolved_update(self, update: StageRuntimeUpdate, *, payloads: Mapping[str, np.ndarray]) -> None:
+        self._policy.observe_update(self._stream, update, payloads=payloads)
 
     def close(self) -> None:
-        """Release recording handles and post-process export-only overlays."""
-        self._close_stream(self._live_stream)
-        self._close_stream(self._export_stream)
-        self._live_stream = None
-        self._export_stream = None
-        if self._target_path is None or not self._target_path.exists() or self._latest_ground_alignment is None:
-            return
-        augment_viewer_recording_with_ground_plane(
-            metadata=self._latest_ground_alignment,
-            viewer_recording_path=self._target_path,
-            recording_id="prml-vslam" if self._recording_id is None else self._recording_id,
-        )
-
-    @staticmethod
-    def _close_stream(stream) -> None:
-        if stream is None:
-            return
-        stream.flush(blocking=True)
-        stream.disconnect()
-
-    def _cache_ground_alignment_update(self, update: StageRuntimeUpdate) -> bool:
-        for semantic_event in update.semantic_events:
-            if isinstance(semantic_event, GroundAlignmentMetadata) and semantic_event.applied:
-                self._latest_ground_alignment = semantic_event
-                return True
-        return False
+        """Release the recording handle."""
+        self._stream.flush(blocking=True)
+        self._stream.disconnect()
 
     @staticmethod
     def _resolve_update_payloads(
@@ -208,15 +122,13 @@ class RerunEventSink:
         return resolved
 
 
-@ray.remote(num_cpus=1.0, max_restarts=0, max_task_retries=0)
-class RerunSinkActor:
-    """Best-effort Ray sidecar that owns one Rerun recording stream."""
+class LiveRerunEventSink(_BaseRerunEventSink):
+    """Best-effort live Rerun viewer sink."""
 
     def __init__(
         self,
         *,
-        grpc_url: str | None,
-        target_path: Path | None,
+        grpc_url: str,
         recording_id: str | None = None,
         show_tracking_trajectory: bool = True,
         trajectory_pose_axis_length: float = 0.0,
@@ -229,8 +141,174 @@ class RerunSinkActor:
         decimation_random_seed: int = 0,
         view_coordinates: str = "RDF",
     ) -> None:
-        self._sink = RerunEventSink(
+        super().__init__(
+            options=_RerunSinkOptions(
+                recording_id=recording_id,
+                show_tracking_trajectory=show_tracking_trajectory,
+                trajectory_pose_axis_length=trajectory_pose_axis_length,
+                log_source_rgb=log_source_rgb,
+                log_diagnostic_preview=log_diagnostic_preview,
+                log_camera_image_rgb=log_camera_image_rgb,
+                point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+                reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
+                mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+                decimation_random_seed=decimation_random_seed,
+                view_coordinates=view_coordinates,
+            )
+        )
+        attach_recording_sinks(self._stream, grpc_url=grpc_url, target_path=None)
+
+    def _observe_resolved_update(self, update: StageRuntimeUpdate, *, payloads: Mapping[str, np.ndarray]) -> None:
+        try:
+            super()._observe_resolved_update(update, payloads=payloads)
+            self._stream.flush(blocking=False)
+        except Exception as exc:  # pragma: no cover - live viewer is best effort
+            _LOGGER.warning("Skipping live Rerun update for stage '%s': %s", update.stage_key.value, exc)
+
+
+class ExportRerunEventSink(_BaseRerunEventSink):
+    """Durable RRD export sink with export-only post-processing."""
+
+    def __init__(
+        self,
+        *,
+        target_path: Path,
+        recording_id: str | None = None,
+        show_tracking_trajectory: bool = True,
+        trajectory_pose_axis_length: float = 0.0,
+        log_source_rgb: bool = False,
+        log_diagnostic_preview: bool = False,
+        log_camera_image_rgb: bool = True,
+        point_cloud_decimation_keep_ratio: float = 1.0,
+        reference_point_cloud_decimation_keep_ratio: float = 1.0,
+        mesh_decimation_keep_ratio: float = 1.0,
+        decimation_random_seed: int = 0,
+        view_coordinates: str = "RDF",
+    ) -> None:
+        super().__init__(
+            options=_RerunSinkOptions(
+                recording_id=recording_id,
+                show_tracking_trajectory=show_tracking_trajectory,
+                trajectory_pose_axis_length=trajectory_pose_axis_length,
+                log_source_rgb=log_source_rgb,
+                log_diagnostic_preview=log_diagnostic_preview,
+                log_camera_image_rgb=log_camera_image_rgb,
+                point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+                reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
+                mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+                decimation_random_seed=decimation_random_seed,
+                view_coordinates=view_coordinates,
+            )
+        )
+        self._target_path = target_path
+        self._latest_ground_alignment: GroundAlignmentMetadata | None = None
+        attach_recording_sinks(self._stream, grpc_url=None, target_path=target_path)
+
+    def _observe_resolved_update(self, update: StageRuntimeUpdate, *, payloads: Mapping[str, np.ndarray]) -> None:
+        if self._cache_ground_alignment_update(update):
+            return
+        super()._observe_resolved_update(update, payloads=payloads)
+
+    def close(self) -> None:
+        super().close()
+        if not self._target_path.exists() or self._latest_ground_alignment is None:
+            return
+        augment_viewer_recording_with_ground_plane(
+            metadata=self._latest_ground_alignment,
+            viewer_recording_path=self._target_path,
+            recording_id="prml-vslam" if self._recording_id is None else self._recording_id,
+        )
+
+    def _cache_ground_alignment_update(self, update: StageRuntimeUpdate) -> bool:
+        for semantic_event in update.semantic_events:
+            if isinstance(semantic_event, GroundAlignmentMetadata) and semantic_event.applied:
+                self._latest_ground_alignment = semantic_event
+                return True
+        return False
+
+
+class _ActorPayloadResolverMixin:
+    def _observe_with_actor_resolver(
+        self,
+        *,
+        sink: _BaseRerunEventSink,
+        update: StageRuntimeUpdate,
+        payload_resolver: ActorHandle | None,
+    ) -> None:
+        def resolve_payload(ref: TransientPayloadRef) -> np.ndarray | None:
+            if payload_resolver is None:
+                return None
+            return cast(np.ndarray | None, ray.get(payload_resolver.read_payload.remote(ref.handle_id)))
+
+        try:
+            sink.observe_update(update, payload_resolver=None if payload_resolver is None else resolve_payload)
+        except Exception as exc:  # pragma: no cover - best-effort sink guard
+            _LOGGER.warning("Skipping Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc)
+
+
+@ray.remote(num_cpus=1.0, max_restarts=0, max_task_retries=0)
+class LiveRerunSinkActor(_ActorPayloadResolverMixin):
+    """Ray sidecar that owns one live Rerun viewer stream."""
+
+    def __init__(
+        self,
+        *,
+        grpc_url: str,
+        recording_id: str | None = None,
+        show_tracking_trajectory: bool = True,
+        trajectory_pose_axis_length: float = 0.0,
+        log_source_rgb: bool = False,
+        log_diagnostic_preview: bool = False,
+        log_camera_image_rgb: bool = True,
+        point_cloud_decimation_keep_ratio: float = 1.0,
+        reference_point_cloud_decimation_keep_ratio: float = 1.0,
+        mesh_decimation_keep_ratio: float = 1.0,
+        decimation_random_seed: int = 0,
+        view_coordinates: str = "RDF",
+    ) -> None:
+        self._sink = LiveRerunEventSink(
             grpc_url=grpc_url,
+            recording_id=recording_id,
+            show_tracking_trajectory=show_tracking_trajectory,
+            trajectory_pose_axis_length=trajectory_pose_axis_length,
+            log_source_rgb=log_source_rgb,
+            log_diagnostic_preview=log_diagnostic_preview,
+            log_camera_image_rgb=log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+            decimation_random_seed=decimation_random_seed,
+            view_coordinates=view_coordinates,
+        )
+
+    def observe_update(self, *, update: StageRuntimeUpdate, payload_resolver: ActorHandle | None = None) -> None:
+        self._observe_with_actor_resolver(sink=self._sink, update=update, payload_resolver=payload_resolver)
+
+    def close(self) -> None:
+        self._sink.close()
+
+
+@ray.remote(num_cpus=1.0, max_restarts=0, max_task_retries=0)
+class ExportRerunSinkActor(_ActorPayloadResolverMixin):
+    """Ray sidecar that owns one durable RRD export stream."""
+
+    def __init__(
+        self,
+        *,
+        target_path: Path,
+        recording_id: str | None = None,
+        show_tracking_trajectory: bool = True,
+        trajectory_pose_axis_length: float = 0.0,
+        log_source_rgb: bool = False,
+        log_diagnostic_preview: bool = False,
+        log_camera_image_rgb: bool = True,
+        point_cloud_decimation_keep_ratio: float = 1.0,
+        reference_point_cloud_decimation_keep_ratio: float = 1.0,
+        mesh_decimation_keep_ratio: float = 1.0,
+        decimation_random_seed: int = 0,
+        view_coordinates: str = "RDF",
+    ) -> None:
+        self._sink = ExportRerunEventSink(
             target_path=target_path,
             recording_id=recording_id,
             show_tracking_trajectory=show_tracking_trajectory,
@@ -245,29 +323,17 @@ class RerunSinkActor:
             view_coordinates=view_coordinates,
         )
 
-    def observe_update(
-        self,
-        *,
-        update: StageRuntimeUpdate,
-        payload_resolver: ActorHandle | None = None,
-    ) -> None:
-        """Forward one live runtime update to the local sink without `ray.get`."""
-
-        def resolve_payload(ref: TransientPayloadRef) -> np.ndarray | None:
-            if payload_resolver is None:
-                return None
-            return cast(np.ndarray | None, ray.get(payload_resolver.read_payload.remote(ref.handle_id)))
-
-        try:
-            self._sink.observe_update(
-                update,
-                payload_resolver=None if payload_resolver is None else resolve_payload,
-            )
-        except Exception as exc:  # pragma: no cover - best-effort sink guard
-            _LOGGER.warning("Skipping Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc)
+    def observe_update(self, *, update: StageRuntimeUpdate, payload_resolver: ActorHandle | None = None) -> None:
+        self._observe_with_actor_resolver(sink=self._sink, update=update, payload_resolver=payload_resolver)
 
     def close(self) -> None:
         self._sink.close()
 
 
-__all__ = ["MODEL_RGB_2D_ENTITY_PATH", "RerunEventSink", "RerunSinkActor"]
+__all__ = [
+    "MODEL_RGB_2D_ENTITY_PATH",
+    "ExportRerunEventSink",
+    "ExportRerunSinkActor",
+    "LiveRerunEventSink",
+    "LiveRerunSinkActor",
+]

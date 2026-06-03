@@ -58,17 +58,6 @@ def test_write_validation_bundle_respects_explicit_keyed_cloud_limit(tmp_path: P
 def _write_synthetic_recording(tmp_path: Path) -> Path:
     stream = rerun_helpers.create_recording_stream(app_id="prml-vslam-test", recording_id="validation-loop")
     policy = RerunLoggingPolicy(
-        log_pinhole=rerun_helpers.log_pinhole,
-        log_pointcloud=rerun_helpers.log_pointcloud,
-        log_pointcloud_ply=rerun_helpers.log_pointcloud_ply,
-        log_mesh_ply=rerun_helpers.log_mesh_ply,
-        log_line_strip3d=rerun_helpers.log_line_strip3d,
-        log_clear=rerun_helpers.log_clear,
-        log_depth_image=rerun_helpers.log_depth_image,
-        log_ground_plane_patch=rerun_helpers.log_ground_plane_patch,
-        log_rgb_image=rerun_helpers.log_rgb_image,
-        log_transform=rerun_helpers.log_transform,
-        log_sim3_transform=rerun_helpers.log_sim3_transform,
         show_tracking_trajectory=True,
     )
 

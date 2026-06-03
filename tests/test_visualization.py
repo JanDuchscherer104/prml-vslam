@@ -47,7 +47,7 @@ from prml_vslam.visualization.artifacts import (
 )
 from prml_vslam.visualization.contracts import VisualizationConfig
 from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
-from prml_vslam.visualization.rerun_sink import RerunEventSink
+from prml_vslam.visualization.rerun_sink import ExportRerunEventSink, LiveRerunEventSink
 
 
 def test_visualization_config_serializes_optional_viewer_blueprint_path() -> None:
@@ -202,9 +202,6 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
             RecordingStream=FakeRecordingStream,
             Transform3D=FakeTransform3D,
             ViewCoordinates=FakeViewCoordinates,
-            new_recording=lambda application_id, recording_id: FakeRecordingStream(
-                application_id=application_id, recording_id=recording_id
-            ),
         ),
     )
     monkeypatch.setattr(
@@ -321,9 +318,10 @@ def test_log_line_strip3d_logs_one_strip(monkeypatch) -> None:
     logged: list[tuple[str, object]] = []
 
     class FakeLineStrips3D:
-        def __init__(self, strips, radii) -> None:
+        def __init__(self, strips, radii, colors=None) -> None:
             self.strips = strips
             self.radii = radii
+            self.colors = colors
 
     class FakeRecordingStream:
         def log(self, entity_path: str, payload: object, *, static: bool = False) -> None:
@@ -438,7 +436,10 @@ def test_log_pointcloud_decimation_ratio_one_keeps_valid_rows_in_order(monkeypat
     )
 
 
-def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_path: Path) -> None:
+def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     trajectory_path = write_tum_trajectory(
         tmp_path / "trajectory.tum",
         [
@@ -449,22 +450,19 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_p
     )
     line_calls: list[tuple[str, bool]] = []
     pose_calls: list[tuple[str, float | None, bool, FrameTransform]] = []
-    policy = RerunLoggingPolicy(
-        log_pinhole=lambda *args, **kwargs: None,
-        log_pointcloud=lambda *args, **kwargs: None,
-        log_pointcloud_ply=lambda *args, **kwargs: None,
-        log_mesh_ply=lambda *args, **kwargs: None,
-        log_line_strip3d=lambda stream, *, entity_path, positions_xyz, static=False: line_calls.append(
-            (entity_path, static)
-        ),
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda *args, **kwargs: None,
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda *args, **kwargs: None,
-        log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, static=False, **kwargs: line_calls.append((entity_path, static)),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(
             (entity_path, axis_length, static, transform)
         ),
-        log_sim3_transform=lambda *args, **kwargs: None,
+    )
+    policy = RerunLoggingPolicy(
         trajectory_pose_axis_length=0.25,
     )
     update = StageRuntimeUpdate(
@@ -502,7 +500,10 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(tmp_p
     assert pose_calls[2][3].tx == 1.0
 
 
-def test_rerun_policy_logs_aligned_slam_artifacts_under_target_frame_namespace(tmp_path: Path) -> None:
+def test_rerun_policy_logs_aligned_slam_artifacts_under_target_frame_namespace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     trajectory_path = write_tum_trajectory(
         tmp_path / "trajectory_sim3_aligned.tum",
         [
@@ -515,19 +516,18 @@ def test_rerun_policy_logs_aligned_slam_artifacts_under_target_frame_namespace(t
     icp_cloud_path = tmp_path / "point_cloud_sim3_icp_aligned.ply"
     line_calls: list[str] = []
     pointcloud_ply_calls: list[str] = []
-    policy = RerunLoggingPolicy(
-        log_pinhole=lambda *args, **kwargs: None,
-        log_pointcloud=lambda *args, **kwargs: None,
-        log_pointcloud_ply=lambda stream, *, entity_path, path, **kwargs: pointcloud_ply_calls.append(entity_path),
-        log_mesh_ply=lambda *args, **kwargs: None,
-        log_line_strip3d=lambda stream, *, entity_path, positions_xyz, **kwargs: line_calls.append(entity_path),
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda *args, **kwargs: None,
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda *args, **kwargs: None,
-        log_transform=lambda *args, **kwargs: None,
-        log_sim3_transform=lambda *args, **kwargs: None,
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_pointcloud_ply",
+        lambda stream, *, entity_path, path, **kwargs: pointcloud_ply_calls.append(entity_path),
     )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, **kwargs: line_calls.append(entity_path),
+    )
+    monkeypatch.setattr(rerun_helpers, "log_transform", lambda *args, **kwargs: None)
+    policy = RerunLoggingPolicy()
     update = StageRuntimeUpdate(
         stage_key=StageKey.TRAJECTORY_ALIGNMENT,
         timestamp_ns=1,
@@ -583,23 +583,14 @@ def test_artifact_visualizations_include_sim3_and_icp_cloud_alignment_outputs(tm
     ]
 
 
-def test_rerun_policy_logs_sim3_alignment_marker_without_moving_raw_slam_root() -> None:
+def test_rerun_policy_logs_sim3_alignment_marker_without_moving_raw_slam_root(monkeypatch) -> None:
     sim3_calls: list[tuple[str, float, bool]] = []
-    policy = RerunLoggingPolicy(
-        log_pinhole=lambda *args, **kwargs: None,
-        log_pointcloud=lambda *args, **kwargs: None,
-        log_pointcloud_ply=lambda *args, **kwargs: None,
-        log_mesh_ply=lambda *args, **kwargs: None,
-        log_line_strip3d=lambda *args, **kwargs: None,
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda *args, **kwargs: None,
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda *args, **kwargs: None,
-        log_transform=lambda *args, **kwargs: None,
-        log_sim3_transform=lambda stream, *, entity_path, scale, static, **kwargs: sim3_calls.append(
-            (entity_path, scale, static)
-        ),
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_sim3_transform",
+        lambda stream, *, entity_path, scale, static, **kwargs: sim3_calls.append((entity_path, scale, static)),
     )
+    policy = RerunLoggingPolicy()
     alignment = TrajectoryAlignmentArtifact(
         source_frame="vista_slam_world",
         target_frame="advio_gt_world",
@@ -621,7 +612,10 @@ def test_rerun_policy_logs_sim3_alignment_marker_without_moving_raw_slam_root() 
     assert sim3_calls[0][0] != rerun_helpers.SLAM_WORLD_ENTITY_PATH
 
 
-def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(tmp_path: Path) -> None:
+def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     trajectory_path = write_tum_trajectory(
         tmp_path / "trajectory.tum",
         [
@@ -632,23 +626,17 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
     )
     line_calls: list[tuple[str, bool]] = []
     pose_calls: list[str] = []
-    policy = RerunLoggingPolicy(
-        log_pinhole=lambda *args, **kwargs: None,
-        log_pointcloud=lambda *args, **kwargs: None,
-        log_pointcloud_ply=lambda *args, **kwargs: None,
-        log_mesh_ply=lambda *args, **kwargs: None,
-        log_line_strip3d=lambda stream, *, entity_path, positions_xyz, static=False: line_calls.append(
-            (entity_path, static)
-        ),
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda *args, **kwargs: None,
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda *args, **kwargs: None,
-        log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(
-            entity_path
-        ),
-        log_sim3_transform=lambda *args, **kwargs: None,
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, static=False, **kwargs: line_calls.append((entity_path, static)),
     )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(entity_path),
+    )
+    policy = RerunLoggingPolicy()
     update = StageRuntimeUpdate(
         stage_key=StageKey.SOURCE,
         timestamp_ns=1,
@@ -674,7 +662,7 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
     assert pose_calls == ["world/reference/trajectory/ground_truth/aligned/start"]
 
 
-def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> None:
+def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path, monkeypatch) -> None:
     pointcloud_calls: list[tuple[str, float, int]] = []
     pointcloud_ply_calls: list[tuple[str, Path, float, int]] = []
     mesh_ply_calls: list[tuple[str, Path, float]] = []
@@ -707,18 +695,12 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> N
         del stream
         mesh_ply_calls.append((entity_path, path, decimation_keep_ratio))
 
+    monkeypatch.setattr(rerun_helpers, "log_pointcloud", capture_pointcloud)
+    monkeypatch.setattr(rerun_helpers, "log_pointcloud_ply", capture_pointcloud_ply)
+    monkeypatch.setattr(rerun_helpers, "log_mesh_ply", capture_mesh_ply)
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_transform", lambda *args, **kwargs: None)
     policy = RerunLoggingPolicy(
-        log_pinhole=lambda *args, **kwargs: None,
-        log_pointcloud=capture_pointcloud,
-        log_pointcloud_ply=capture_pointcloud_ply,
-        log_mesh_ply=capture_mesh_ply,
-        log_line_strip3d=lambda *args, **kwargs: None,
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda *args, **kwargs: None,
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda *args, **kwargs: None,
-        log_transform=lambda *args, **kwargs: None,
-        log_sim3_transform=lambda *args, **kwargs: None,
         point_cloud_decimation_keep_ratio=0.25,
         reference_point_cloud_decimation_keep_ratio=1.0,
         mesh_decimation_keep_ratio=0.5,
@@ -801,24 +783,27 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path) -> N
     assert mesh_ply_calls == [("world/reconstruction/reference/mesh", mesh_path, 0.5)]
 
 
-def test_rerun_event_sink_builds_live_and_export_policies_with_decimation() -> None:
-    sink = RerunEventSink(
-        grpc_url=None,
-        target_path=None,
+def test_rerun_event_sink_builds_live_and_export_policies_with_decimation(tmp_path: Path) -> None:
+    export_sink = ExportRerunEventSink(
+        target_path=tmp_path / "viewer.rrd",
+        point_cloud_decimation_keep_ratio=0.2,
+        reference_point_cloud_decimation_keep_ratio=0.9,
+        mesh_decimation_keep_ratio=0.4,
+        decimation_random_seed=77,
+    )
+    live_sink = LiveRerunEventSink(
+        grpc_url="rerun+http://127.0.0.1:9876/proxy",
         point_cloud_decimation_keep_ratio=0.2,
         reference_point_cloud_decimation_keep_ratio=0.9,
         mesh_decimation_keep_ratio=0.4,
         decimation_random_seed=77,
     )
 
-    assert sink._live_policy.point_cloud_decimation_keep_ratio == 0.2
-    assert sink._live_policy.reference_point_cloud_decimation_keep_ratio == 0.9
-    assert sink._live_policy.mesh_decimation_keep_ratio == 0.4
-    assert sink._live_policy.decimation_random_seed == 77
-    assert sink._export_policy.point_cloud_decimation_keep_ratio == 0.2
-    assert sink._export_policy.reference_point_cloud_decimation_keep_ratio == 0.9
-    assert sink._export_policy.mesh_decimation_keep_ratio == 0.4
-    assert sink._export_policy.decimation_random_seed == 77
+    for sink in (live_sink, export_sink):
+        assert sink._policy.point_cloud_decimation_keep_ratio == 0.2
+        assert sink._policy.reference_point_cloud_decimation_keep_ratio == 0.9
+        assert sink._policy.mesh_decimation_keep_ratio == 0.4
+        assert sink._policy.decimation_random_seed == 77
 
 
 def test_log_mesh3d_logs_one_mesh(monkeypatch) -> None:
