@@ -214,13 +214,13 @@ def test_import_run_command_collision_policies(tmp_path: Path) -> None:
     assert (output_dir / "demo-run" / "vista").is_dir()
 
 
-def test_eval_trajectory_command_uses_aligned_advio_baseline_file(
+def test_eval_trajectory_command_uses_advio_provider_baseline_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     artifact_root = tmp_path / "demo-run"
     estimate_path = artifact_root / "slam" / "trajectory.tum"
-    reference_path = artifact_root / "benchmark" / "arcore_aligned_to_gt.tum"
+    reference_path = artifact_root / "benchmark" / "arcore.tum"
     estimate_path.parent.mkdir(parents=True)
     reference_path.parent.mkdir(parents=True)
     estimate_path.write_text("", encoding="utf-8")

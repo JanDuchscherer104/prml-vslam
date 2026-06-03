@@ -103,9 +103,10 @@ def test_advio_basis_helpers_convert_provider_positions_to_rdf(tmp_path: Path) -
         ReferenceCloudSource.TANGO_RAW,
     )
 
-    assert np.array_equal(APPLE_Y_UP_TO_RDF, np.diag([1.0, -1.0, 1.0]))
+    assert np.linalg.det(APPLE_Y_UP_TO_RDF) == pytest.approx(1.0)
+    assert np.linalg.det(TANGO_Z_UP_TO_RDF) == pytest.approx(1.0)
     assert np.array_equal(TANGO_Z_UP_TO_RDF @ np.array([1.0, 2.0, 3.0]), np.array([1.0, -3.0, 2.0]))
-    assert np.array_equal(apple_points, np.array([[1.0, -2.0, 3.0]]))
+    assert np.array_equal(apple_points, np.array([[3.0, -2.0, 1.0]]))
     assert np.array_equal(tango_points, np.array([[1.0, -3.0, 2.0]]))
 
     pose_csv = tmp_path / "arkit.csv"
@@ -114,7 +115,31 @@ def test_advio_basis_helpers_convert_provider_positions_to_rdf(tmp_path: Path) -
         load_advio_trajectory(pose_csv),
         AdvioPoseSource.ARKIT,
     )
-    assert np.allclose(trajectory.positions_xyz[0], np.array([1.0, -2.0, 3.0]))
+    assert np.allclose(trajectory.positions_xyz[0], np.array([3.0, -2.0, 1.0]))
+
+
+def test_advio_apple_basis_preserves_upstream_top_view_handedness() -> None:
+    raw_points = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    rdf_points = transform_advio_points_to_rdf(raw_points, AdvioPoseSource.GROUND_TRUTH)
+
+    upstream_top_area = _signed_area(raw_points[:, [2, 0]])
+    repo_top_area = _signed_area(rdf_points[:, [0, 2]])
+
+    assert repo_top_area == pytest.approx(upstream_top_area)
+
+
+def _signed_area(points_xy: np.ndarray) -> float:
+    x = points_xy[:, 0]
+    y = points_xy[:, 1]
+    return float(0.5 * np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]))
 
 
 def _write_pose_csv_rows(path: Path, *, rows: tuple[tuple[float, float, float, float], ...]) -> None:
@@ -353,9 +378,9 @@ def test_advio_open_stream_loops_through_sample_with_pyav_replay(tmp_path: Path)
     assert packet_1.timestamp_ns == 100_000_000
     assert packet_0.intrinsics is not None
     assert packet_0.T_world_camera is not None
-    assert packet_0.T_world_camera.tx == 1.0
+    assert [packet_0.T_world_camera.tx, packet_0.T_world_camera.ty, packet_0.T_world_camera.tz] == [3.0, -2.0, 1.0]
     assert packet_2.T_world_camera is not None
-    assert packet_2.T_world_camera.tz == 4.0
+    assert [packet_2.T_world_camera.tx, packet_2.T_world_camera.ty, packet_2.T_world_camera.tz] == [4.0, -3.0, 2.0]
     assert packet_3.loop_index == 1
     assert packet_0.provenance.dataset_id == "advio"
     assert packet_0.provenance.pose_source == AdvioPoseSource.GROUND_TRUTH.value
@@ -378,7 +403,7 @@ def test_advio_open_stream_supports_replay_ready_bundle_without_arcore(tmp_path:
 
     assert packet.seq == 0
     assert packet.T_world_camera is not None
-    assert packet.T_world_camera.tx == 1.0
+    assert [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz] == [3.0, -2.0, 1.0]
 
 
 def test_advio_open_stream_orientation_normalization_keeps_default_behavior_without_metadata(
@@ -480,19 +505,19 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
         "arcore",
-        "arcore",
-        "arkit",
         "arkit",
     ]
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
     assert benchmark_inputs.reference_trajectories[1].path == sequence_dir / "evaluation" / "arcore.tum"
-    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum"
-    assert benchmark_inputs.reference_trajectories[3].path == sequence_dir / "evaluation" / "arkit.tum"
-    assert benchmark_inputs.reference_trajectories[4].path == sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum"
+    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arkit.tum"
     assert benchmark_inputs.reference_trajectories[0].path.exists()
     assert benchmark_inputs.reference_trajectories[1].path.exists()
     assert benchmark_inputs.reference_trajectories[2].path.exists()
-    assert benchmark_inputs.reference_trajectories[2].coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
+    assert [reference.coordinate_status for reference in benchmark_inputs.reference_trajectories] == [
+        ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+        ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+        ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+    ]
     assert [sequence.source.value for sequence in benchmark_inputs.reference_point_cloud_sequences] == ["tango_raw"]
     assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == ["tango_raw", "tango_raw"]
     point_cloud_sequence = benchmark_inputs.reference_point_cloud_sequences[0]
@@ -616,14 +641,12 @@ def test_advio_benchmark_inputs_sanitize_optional_provider_trajectory(tmp_path: 
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
         "arcore",
-        "arcore",
-        "arkit",
         "arkit",
     ]
     arcore_metadata = json.loads((sequence_dir / "evaluation" / "arcore.metadata.json").read_text(encoding="utf-8"))
     assert arcore_metadata["sanitization"]["dropped_duplicate_timestamps"] == 1
     assert arcore_metadata["sanitization"]["reordered_timestamps"] is True
-    assert (sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum").exists()
+    assert not (sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum").exists()
 
 
 def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp_path: Path) -> None:
@@ -645,12 +668,12 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
 
     assert any(
         reference.source is ReferenceSource.ARKIT
-        and reference.coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
+        and reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
         for reference in benchmark_inputs.reference_trajectories
     )
-    arkit_metadata = json.loads((sequence_dir / "evaluation" / "arkit_aligned_to_gt.metadata.json").read_text())
+    arkit_metadata = json.loads((sequence_dir / "evaluation" / "arkit.metadata.json").read_text())
     assert arkit_metadata["sanitization"]["normalized_quaternion_rows"] == 3
-    assert arkit_metadata["sanitization"]["aligned_rotation_projection_max_frobenius_error"] == 0.1
+    assert not (sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum").exists()
 
 
 def test_advio_benchmark_inputs_skip_invalid_raw_tango_cloud_trajectory(tmp_path: Path) -> None:
@@ -696,7 +719,7 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     packet = stream.wait_for_observation()
     stream.disconnect()
     assert packet.T_world_camera is not None
-    assert packet.T_world_camera.tx == 1.0
+    assert [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz] == [3.0, -2.0, 1.0]
 
 
 def test_advio_open_stream_supports_tango_raw_provider_and_point_cloud_payload(tmp_path: Path) -> None:
@@ -765,9 +788,13 @@ def test_advio_reference_world_and_local_first_pose_modes_transform_provider_pos
     assert provider_packet.T_world_camera is not None
     assert local_packet.T_world_camera is not None
     assert reference_packet.T_world_camera is not None
-    assert provider_packet.T_world_camera.tx == 10.0
+    assert [
+        provider_packet.T_world_camera.tx,
+        provider_packet.T_world_camera.ty,
+        provider_packet.T_world_camera.tz,
+    ] == [30.0, -20.0, 10.0]
     assert local_packet.T_world_camera.tx == pytest.approx(0.0, abs=1e-6)
-    assert reference_packet.T_world_camera.tx == pytest.approx(1.0, abs=1e-3)
+    assert reference_packet.T_world_camera.tx == pytest.approx(3.0, abs=1e-3)
 
 
 def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> None:

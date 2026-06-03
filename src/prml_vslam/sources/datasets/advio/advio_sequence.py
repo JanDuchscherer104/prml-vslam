@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
-from evo.tools import file_interface
 from numpy.typing import NDArray
 from pydantic import Field
 
@@ -35,14 +34,11 @@ from prml_vslam.utils import BaseData, Console, JsonObject
 from . import advio_layout, advio_loading
 from .advio_frames import (
     advio_basis_metadata,
-    transform_advio_trajectory_to_rdf,
     write_advio_rdf_tum,
 )
 from .advio_geometry import (
     TANGO_DEPTH_PAYLOAD_FRAME,
     build_advio_tango_reference_clouds,
-    fit_planar_rigid_alignment,
-    transform_trajectory_with_alignment,
 )
 from .advio_models import (
     ADVIO_SEQUENCE_COUNT,
@@ -58,7 +54,6 @@ from .advio_replay_adapter import (
 )
 
 _CONSOLE = Console(__name__).child("AdvioSequence")
-_OPTIONAL_PROVIDER_ROTATION_PROJECTION_MAX_ERROR = 0.1
 
 
 class AdvioSequencePaths(BaseData):
@@ -238,7 +233,7 @@ class AdvioSequence(BaseData):
                 ),
                 target_frame="advio_gt_world",
                 native_frame="advio_gt_world",
-                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
                 metadata_path=(evaluation_dir / "ground_truth.metadata.json").resolve(),
             )
         ]
@@ -248,8 +243,6 @@ class AdvioSequence(BaseData):
                 source=ReferenceSource.ARCORE,
                 source_path=paths.arcore_csv_path,
                 target_path=evaluation_dir / "arcore.tum",
-                aligned_target_path=evaluation_dir / "arcore_aligned_to_gt.tum",
-                ground_truth_path=paths.ground_truth_csv_path,
             )
         if paths.arkit_csv_path is not None:
             _append_optional_reference_trajectory(
@@ -257,8 +250,6 @@ class AdvioSequence(BaseData):
                 source=ReferenceSource.ARKIT,
                 source_path=paths.arkit_csv_path,
                 target_path=evaluation_dir / "arkit.tum",
-                aligned_target_path=evaluation_dir / "arkit_aligned_to_gt.tum",
-                ground_truth_path=paths.ground_truth_csv_path,
             )
         return PreparedBenchmarkInputs(
             reference_trajectories=references,
@@ -348,11 +339,7 @@ def _ensure_advio_tum(
         source=source,
         target_frame=target_frame,
         native_frame=native_frame,
-        coordinate_status=(
-            ReferenceCloudCoordinateStatus.ALIGNED
-            if target_frame == "advio_gt_world"
-            else ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-        ),
+        coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         sanitization=sanitization,
     )
     return target_path.resolve()
@@ -364,8 +351,6 @@ def _append_optional_reference_trajectory(
     source: ReferenceSource,
     source_path: Path,
     target_path: Path,
-    aligned_target_path: Path,
-    ground_truth_path: Path,
 ) -> None:
     pose_source = _advio_pose_source_from_reference(source)
     native_frame = f"advio_{source.value}_world"
@@ -388,26 +373,6 @@ def _append_optional_reference_trajectory(
                 native_frame=native_frame,
                 coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
                 metadata_path=native_path.with_suffix(".metadata.json").resolve(),
-            )
-        )
-        aligned_path = _ensure_aligned_advio_tum(
-            source_path=source_path,
-            ground_truth_path=ground_truth_path,
-            target_path=aligned_target_path,
-            source=pose_source,
-            native_frame=native_frame,
-            source_trajectory=source_trajectory,
-            sanitization=sanitization,
-            max_rotation_projection_error=_OPTIONAL_PROVIDER_ROTATION_PROJECTION_MAX_ERROR,
-        )
-        references.append(
-            ReferenceTrajectoryRef(
-                source=source,
-                path=aligned_path,
-                target_frame="advio_gt_world",
-                native_frame=native_frame,
-                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                metadata_path=aligned_path.with_suffix(".metadata.json").resolve(),
             )
         )
     except ValueError as exc:
@@ -466,56 +431,6 @@ def _build_reference_point_cloud_sequences(
             )
         )
     return sequences
-
-
-def _ensure_aligned_advio_tum(
-    *,
-    source_path: Path,
-    ground_truth_path: Path,
-    target_path: Path,
-    source: AdvioPoseSource,
-    native_frame: str,
-    source_trajectory: PoseTrajectory3D | None = None,
-    sanitization: JsonObject | None = None,
-    max_rotation_projection_error: float = 2e-3,
-) -> Path:
-    source_rdf_trajectory = transform_advio_trajectory_to_rdf(
-        advio_loading.load_advio_trajectory(source_path) if source_trajectory is None else source_trajectory,
-        source=source,
-    )
-    ground_truth_rdf_trajectory = transform_advio_trajectory_to_rdf(
-        advio_loading.load_advio_trajectory(ground_truth_path),
-        source=AdvioPoseSource.GROUND_TRUTH,
-    )
-    alignment = fit_planar_rigid_alignment(
-        source_trajectory=source_rdf_trajectory,
-        target_trajectory=ground_truth_rdf_trajectory,
-        source_frame=native_frame,
-        target_frame="advio_gt_world",
-    )
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    file_interface.write_tum_trajectory_file(
-        target_path,
-        transform_trajectory_with_alignment(
-            source_rdf_trajectory,
-            alignment,
-            max_rotation_projection_error=max_rotation_projection_error,
-        ),
-    )
-    metadata_sanitization: JsonObject | None = None if sanitization is None else dict(sanitization)
-    if max_rotation_projection_error != 2e-3:
-        metadata_sanitization = {} if metadata_sanitization is None else metadata_sanitization
-        metadata_sanitization["aligned_rotation_projection_max_frobenius_error"] = max_rotation_projection_error
-    _write_advio_trajectory_metadata(
-        target_path.with_suffix(".metadata.json"),
-        source=source,
-        target_frame="advio_gt_world",
-        native_frame=native_frame,
-        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-        alignment=alignment.model_dump(mode="json"),
-        sanitization=metadata_sanitization,
-    )
-    return target_path.resolve()
 
 
 def _write_advio_trajectory_metadata(

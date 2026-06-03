@@ -60,8 +60,8 @@ _RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
 _BENCHMARK_REFERENCE_FILES: list[tuple[str, str, str]] = [
     ("Ground Truth", "ground_truth", "ground_truth.tum"),
-    ("ARCore", "arcore", "arcore_aligned_to_gt.tum"),
-    ("ARKit", "arkit", "arkit_aligned_to_gt.tum"),
+    ("ARCore", "arcore", "arcore.tum"),
+    ("ARKit", "arkit", "arkit.tum"),
 ]
 
 if TYPE_CHECKING:

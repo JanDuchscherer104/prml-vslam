@@ -81,7 +81,7 @@ app.add_typer(tum_rgbd_app, name="tum-rgbd")
 
 
 def _reference_trajectory_filename(source: ReferenceSource) -> str:
-    return "ground_truth.tum" if source is ReferenceSource.GROUND_TRUTH else f"{source.value}_aligned_to_gt.tum"
+    return "ground_truth.tum" if source is ReferenceSource.GROUND_TRUTH else f"{source.value}.tum"
 
 
 RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
