@@ -9,8 +9,13 @@ from pydantic import ConfigDict, Field
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
-from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, TumRgbdSourceConfig
 from prml_vslam.sources.contracts import ReferenceCloudSource
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
+    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
+)
+from prml_vslam.utils import PathConfig
 
 
 class CloudAlignmentStageConfig(StageConfig):
@@ -41,9 +46,13 @@ class CloudAlignmentStageConfig(StageConfig):
         ):
             return False, "Cloud alignment requires dense SLAM point-cloud outputs."
         source_backend = context.run_config.stages.source.backend
-        if not isinstance(source_backend, AdvioSourceConfig) and context.run_config.reuse_artifact_root is None:
+        if context.run_config.reuse_artifact_root is None and not _source_reference_cloud_available(
+            source_backend,
+            preferred_source=self.reference_source,
+            path_config=context.path_config,
+        ):
             if not context.run_config.stages.reconstruction.enabled:
-                return False, "Cloud alignment requires an ADVIO reference cloud or reference reconstruction."
+                return False, "Cloud alignment requires a source-prepared reference cloud or reference reconstruction."
             reconstruction_available, reconstruction_reason = context.run_config.stages.reconstruction.availability(
                 context
             )
@@ -56,6 +65,30 @@ class CloudAlignmentStageConfig(StageConfig):
             context.run_paths.artifact_root / "evaluation" / "cloud_alignment.json",
             context.run_paths.artifact_root / "evaluation" / "point_cloud_sim3_icp_aligned.ply",
         ]
+
+
+def _source_reference_cloud_available(
+    source_backend: SourceBackendConfig | None,
+    *,
+    preferred_source: ReferenceCloudSource | None,
+    path_config: PathConfig,
+) -> bool:
+    if isinstance(source_backend, AdvioSourceConfig):
+        return preferred_source in {None, ReferenceCloudSource.TANGO_RAW}
+    if isinstance(source_backend, TumRgbdSourceConfig):
+        return preferred_source in {None, ReferenceCloudSource.TUM_RGBD} and _tum_rgbd_reference_cloud_inputs_available(
+            sequence_id=source_backend.sequence_id,
+            path_config=path_config,
+        )
+    return False
+
+
+def _tum_rgbd_reference_cloud_inputs_available(*, sequence_id: str, path_config: PathConfig) -> bool:
+    dataset_dir = path_config.resolve_dataset_dir(DatasetId.TUM_RGBD.value)
+    sequence_dir = resolve_existing_tum_rgbd_sequence_dir(dataset_dir, sequence_id)
+    if sequence_dir is None:
+        return False
+    return (sequence_dir / "depth.txt").exists() and (sequence_dir / "depth").is_dir()
 
 
 __all__ = ["CloudAlignmentStageConfig"]

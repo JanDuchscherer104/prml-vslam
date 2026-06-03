@@ -172,6 +172,54 @@ def test_cloud_alignment_plan_declares_materialized_outputs(tmp_path: Path) -> N
     ]
 
 
+def test_tum_rgbd_cloud_alignment_plan_uses_source_prepared_reference_cloud(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    config = build_run_config(
+        experiment_name="tum-rgbd-cloud-alignment",
+        output_dir=path_config.artifacts_dir,
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+        reference_enabled=False,
+    )
+
+    plan = config.compile_plan(path_config, fail_on_unavailable=True)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert stage.available is True
+
+
+def test_tum_rgbd_cloud_alignment_plan_requires_depth_without_reconstruction(tmp_path: Path) -> None:
+    data_dir = tmp_path / ".data"
+    sequence_dir = data_dir / "tum_rgbd" / "rgbd_dataset_freiburg1_desk"
+    (sequence_dir / "rgb").mkdir(parents=True)
+    (sequence_dir / "rgb.txt").write_text("0.000000 rgb/0.000000.png\n", encoding="utf-8")
+    (sequence_dir / "groundtruth.txt").write_text(
+        "0.000000 0.0 0.0 0.0 0.0 0.0 0.0 1.0\n",
+        encoding="utf-8",
+    )
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=data_dir)
+    config = build_run_config(
+        experiment_name="tum-rgbd-cloud-alignment-missing-depth",
+        output_dir=path_config.artifacts_dir,
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+        reference_enabled=False,
+    )
+
+    plan = config.compile_plan(path_config)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert stage.available is False
+    assert (
+        stage.availability_reason
+        == "Cloud alignment requires a source-prepared reference cloud or reference reconstruction."
+    )
+
+
 def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> None:
     config = build_run_config(
         experiment_name="placement-policy",
