@@ -109,6 +109,7 @@ class ReferenceCloudSource(StrEnum):
     """Typed source identifier for one prepared reference cloud."""
 
     TANGO_RAW = "tango_raw"
+    TUM_RGBD = "tum_rgbd"
 
 
 class ReferencePointCloudPayloadSemantics(StrEnum):
