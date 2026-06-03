@@ -31,7 +31,14 @@ class AdvioRawCoordinateBasis(StrEnum):
     TANGO_Z_UP = "tango_z_up_xy_floor"
 
 
-APPLE_Y_UP_TO_RDF: NDArray[np.float64] = np.diag([1.0, -1.0, 1.0])
+APPLE_Y_UP_TO_RDF: NDArray[np.float64] = np.asarray(
+    [
+        [0.0, 0.0, 1.0],
+        [0.0, -1.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ],
+    dtype=np.float64,
+)
 TANGO_Z_UP_TO_RDF: NDArray[np.float64] = np.asarray(
     [
         [1.0, 0.0, 0.0],
