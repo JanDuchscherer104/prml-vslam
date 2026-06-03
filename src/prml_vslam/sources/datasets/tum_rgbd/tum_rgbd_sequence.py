@@ -18,12 +18,15 @@ from prml_vslam.interfaces import (
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
+    ReferenceCloudSource,
     ReferenceSource,
     ReferenceTrajectoryRef,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.replay import ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData
+from prml_vslam.utils.geometry import pointmap_from_depth, transform_points_world_camera, write_point_cloud_ply
 
 from . import tum_rgbd_layout, tum_rgbd_loading
 from .tum_rgbd_models import TumRgbdCatalog, TumRgbdPoseSource, TumRgbdSequenceConfig
@@ -31,6 +34,10 @@ from .tum_rgbd_replay_adapter import open_tum_rgbd_stream
 
 TUM_RGBD_WORLD_FRAME = "tum_rgbd_mocap_world"
 TUM_RGBD_CAMERA_FRAME = CAMERA_RDF_FRAME
+TUM_RGBD_REFERENCE_CLOUD_FRAME_STRIDE = 10
+TUM_RGBD_REFERENCE_CLOUD_MAX_FRAMES = 20
+TUM_RGBD_REFERENCE_CLOUD_DEPTH_STRIDE_PX = 8
+TUM_RGBD_REFERENCE_CLOUD_MAX_POINTS = 100_000
 
 if TYPE_CHECKING:
     from prml_vslam.sources.contracts import SequenceManifest
@@ -123,6 +130,7 @@ class TumRgbdSequence(BaseData):
             paths.sequence_dir, evaluation_dir / "ground_truth.tum"
         )
         observation_sequence = self._prepare_observation_sequence(paths=paths, output_dir=evaluation_dir)
+        reference_cloud = self._prepare_reference_cloud(paths=paths, output_dir=evaluation_dir)
         return PreparedBenchmarkInputs(
             reference_trajectories=[
                 ReferenceTrajectoryRef(
@@ -133,6 +141,7 @@ class TumRgbdSequence(BaseData):
                     coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
                 )
             ],
+            reference_clouds=[] if reference_cloud is None else [reference_cloud],
             observation_sequences=[] if observation_sequence is None else [observation_sequence],
         )
 
@@ -216,6 +225,116 @@ class TumRgbdSequence(BaseData):
             observation_count=len(rows),
             world_frame=TUM_RGBD_WORLD_FRAME,
             raster_space="source",
+        )
+
+    def _prepare_reference_cloud(
+        self,
+        *,
+        paths: TumRgbdSequencePaths,
+        output_dir: Path,
+    ) -> ReferenceCloudRef | None:
+        """Fuse sampled registered-depth frames into an aligned TUM RGB-D reference cloud."""
+        if paths.depth_list_path is None:
+            return None
+
+        associations = tum_rgbd_loading.load_tum_rgbd_associations(paths.sequence_dir)
+        depth_associations = [
+            association
+            for association in associations
+            if association.depth_path is not None and association.pose_index is not None
+        ]
+        if not depth_associations:
+            raise ValueError(
+                f"TUM RGB-D sequence '{self.scene.sequence_id}' has depth rows but no RGB/depth/pose associations."
+            )
+
+        trajectory = tum_rgbd_loading.load_tum_rgbd_ground_truth(paths.ground_truth_path)
+        intrinsics = tum_rgbd_loading.load_tum_rgbd_intrinsics(self.scene.sequence_id, paths.sequence_dir)
+        chunks: list[np.ndarray] = []
+        point_count = 0
+        sampled_frame_count = 0
+        for association in depth_associations[::TUM_RGBD_REFERENCE_CLOUD_FRAME_STRIDE]:
+            if (
+                sampled_frame_count >= TUM_RGBD_REFERENCE_CLOUD_MAX_FRAMES
+                or point_count >= TUM_RGBD_REFERENCE_CLOUD_MAX_POINTS
+            ):
+                break
+
+            depth_path = association.depth_path
+            pose_index = association.pose_index
+            if depth_path is None or pose_index is None:
+                continue
+
+            depth_map_m = tum_rgbd_loading.load_depth_image_m(depth_path)
+            depth_map_m = np.where(np.isfinite(depth_map_m), depth_map_m, 0.0).astype(np.float32, copy=False)
+            sampled_depth = depth_map_m[
+                ::TUM_RGBD_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
+                ::TUM_RGBD_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
+            ]
+            valid_mask = sampled_depth > 0.0
+            if not np.any(valid_mask):
+                continue
+
+            pointmap = pointmap_from_depth(
+                depth_map_m,
+                intrinsics,
+                stride_px=TUM_RGBD_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
+            )
+            points_xyz_camera = pointmap.reshape(-1, 3)[valid_mask.reshape(-1)].astype(np.float64, copy=False)
+            T_world_camera = FrameTransform.from_matrix(
+                np.asarray(trajectory.poses_se3[pose_index], dtype=np.float64),
+                target_frame=TUM_RGBD_WORLD_FRAME,
+                source_frame=TUM_RGBD_CAMERA_FRAME,
+            )
+            points_xyz_world = transform_points_world_camera(points_xyz_camera, T_world_camera)
+
+            remaining = TUM_RGBD_REFERENCE_CLOUD_MAX_POINTS - point_count
+            chunks.append(points_xyz_world[:remaining])
+            point_count += min(len(points_xyz_world), remaining)
+            sampled_frame_count += 1
+
+        if not chunks:
+            raise ValueError(f"TUM RGB-D sequence '{self.scene.sequence_id}' has no valid depth samples.")
+
+        points_xyz = np.vstack(chunks).astype(np.float64, copy=False)
+        cloud_path = write_point_cloud_ply(output_dir / "reference_cloud.tum_rgbd.aligned.ply", points_xyz)
+        metadata_path = (output_dir / "reference_cloud.tum_rgbd.aligned.metadata.json").resolve()
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "dataset": "TUM RGB-D",
+                    "dataset_id": DatasetId.TUM_RGBD.value,
+                    "sequence_id": self.scene.sequence_id,
+                    "source": ReferenceCloudSource.TUM_RGBD.value,
+                    "coordinate_status": ReferenceCloudCoordinateStatus.ALIGNED.value,
+                    "target_frame": TUM_RGBD_WORLD_FRAME,
+                    "native_frame": TUM_RGBD_WORLD_FRAME,
+                    "camera_frame": TUM_RGBD_CAMERA_FRAME,
+                    "payload_pose_semantics": "registered_depth_unprojected_by_ground_truth_pose",
+                    "depth_scale_to_m": 1.0 / 5000.0,
+                    "depth_registered_to_rgb": True,
+                    "units": "meters",
+                    "source_association_count": len(associations),
+                    "depth_association_count": len(depth_associations),
+                    "sampled_frame_count": sampled_frame_count,
+                    "point_count": int(len(points_xyz)),
+                    "reference_cloud_frame_stride": TUM_RGBD_REFERENCE_CLOUD_FRAME_STRIDE,
+                    "reference_cloud_depth_stride_px": TUM_RGBD_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
+                    "reference_cloud_max_frames": TUM_RGBD_REFERENCE_CLOUD_MAX_FRAMES,
+                    "reference_cloud_max_points": TUM_RGBD_REFERENCE_CLOUD_MAX_POINTS,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return ReferenceCloudRef(
+            source=ReferenceCloudSource.TUM_RGBD,
+            path=cloud_path,
+            metadata_path=metadata_path,
+            target_frame=TUM_RGBD_WORLD_FRAME,
+            native_frame=TUM_RGBD_WORLD_FRAME,
+            coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
         )
 
 
