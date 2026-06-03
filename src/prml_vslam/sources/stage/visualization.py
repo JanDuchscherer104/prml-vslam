@@ -14,7 +14,6 @@ from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent, VisualizationItem
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus
 from prml_vslam.sources.stage.artifacts import (
     reference_cloud_artifact_key,
     reference_cloud_metadata_artifact_key,
@@ -150,10 +149,7 @@ class SourceVisualizationAdapter:
         items: list[VisualizationItem] = []
         sequence_manifest = output.sequence_manifest
         for reference in benchmark_inputs.reference_trajectories:
-            if (
-                reference.coordinate_status is not ReferenceCloudCoordinateStatus.ALIGNED
-                or reference.target_frame is None
-            ):
+            if reference.target_frame is None:
                 continue
             artifact = artifact_refs.get(reference_trajectory_artifact_key(reference))
             if artifact is None:
