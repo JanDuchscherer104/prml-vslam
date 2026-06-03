@@ -20,7 +20,16 @@ import pytest
 import ray
 from pydantic import ValidationError
 
-from prml_vslam.eval.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.eval.contracts import (
+    ErrorSeries,
+    EvaluationArtifact,
+    MetricStats,
+    TrajectoryAlignmentArtifact,
+    TrajectoryAlignmentMode,
+    TrajectoryEvaluationSemantics,
+    TrajectoryMetricId,
+    TrajectorySeries,
+)
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
 from prml_vslam.interfaces import (
     CAMERA_RDF_FRAME,
@@ -1041,13 +1050,20 @@ def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidec
         def __init__(self, label: str) -> None:
             self.observe_update = FakeObserveUpdateRemote(label)
 
-    class FakeRerunSinkActor:
+    class FakeLiveRerunSinkActor:
         @staticmethod
         def remote(**kwargs: Any) -> FakeActor:
             created.append(kwargs)
-            return FakeActor("live" if kwargs["grpc_url"] is not None else "export")
+            return FakeActor("live")
 
-    monkeypatch.setattr("prml_vslam.visualization.rerun_sink.RerunSinkActor", FakeRerunSinkActor)
+    class FakeExportRerunSinkActor:
+        @staticmethod
+        def remote(**kwargs: Any) -> FakeActor:
+            created.append(kwargs)
+            return FakeActor("export")
+
+    monkeypatch.setattr("prml_vslam.visualization.rerun_sink.LiveRerunSinkActor", FakeLiveRerunSinkActor)
+    monkeypatch.setattr("prml_vslam.visualization.rerun_sink.ExportRerunSinkActor", FakeExportRerunSinkActor)
     run_config = build_run_config(
         experiment_name="demo",
         mode=PipelineMode.STREAMING,
@@ -1068,8 +1084,8 @@ def test_run_coordinator_submits_rerun_updates_to_separate_live_and_export_sidec
 
     assert len(coordinator._rerun_sinks) == 2
     assert created[0]["grpc_url"] == "rerun+http://127.0.0.1:9876/proxy"
-    assert created[0]["target_path"] is None
-    assert created[1]["grpc_url"] is None
+    assert "target_path" not in created[0]
+    assert "grpc_url" not in created[1]
     assert created[1]["target_path"] == run_paths.viewer_rrd_path
     assert created[0]["point_cloud_decimation_keep_ratio"] == 0.25
     assert created[0]["reference_point_cloud_decimation_keep_ratio"] == 1.0
@@ -1094,6 +1110,79 @@ def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars
     coordinator.on_slam_runtime_updates(updates=[update])
 
     assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
+
+
+def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
+    submitted: list[tuple[StageRuntimeUpdate, object, frozenset[str]]] = []
+
+    def capture_rerun_update(
+        *,
+        update: StageRuntimeUpdate,
+        payload_resolver: object,
+        destinations: frozenset[str],
+    ) -> None:
+        submitted.append((update, payload_resolver, destinations))
+
+    monkeypatch.setattr(coordinator, "_submit_rerun_update", capture_rerun_update)
+    artifact = EvaluationArtifact(
+        path=tmp_path / "ape.json",
+        title="APE translation",
+        matched_pairs=1,
+        stats=MetricStats(rmse=0.1, mean=0.1, median=0.1, std=0.0, min=0.1, max=0.1, sse=0.01),
+        reference_path=tmp_path / "ref.tum",
+        estimate_path=tmp_path / "estimate.tum",
+        semantics=TrajectoryEvaluationSemantics(
+            metric_id=TrajectoryMetricId.APE_TRANSLATION,
+            alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
+            sync_max_diff_s=0.01,
+        ),
+        trajectories=[
+            TrajectorySeries(
+                name="reference",
+                timestamps_s=np.array([0.0], dtype=np.float64),
+                positions_xyz=np.array([[0.0, 0.0, 0.0]], dtype=np.float64),
+            ),
+            TrajectorySeries(
+                name="estimate",
+                timestamps_s=np.array([0.0], dtype=np.float64),
+                positions_xyz=np.array([[0.1, 0.0, 0.0]], dtype=np.float64),
+            ),
+        ],
+        error_series=ErrorSeries(
+            timestamps_s=np.array([0.0], dtype=np.float64),
+            values=np.array([0.1], dtype=np.float64),
+        ),
+    )
+
+    coordinator._record_stage_result(
+        StageKey.TRAJECTORY_EVALUATION,
+        StageResult(
+            stage_key=StageKey.TRAJECTORY_EVALUATION,
+            payload=artifact,
+            outcome=StageOutcome(
+                stage_key=StageKey.TRAJECTORY_EVALUATION,
+                status=StageStatus.COMPLETED,
+                config_hash="config",
+                input_fingerprint="input",
+            ),
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.TRAJECTORY_EVALUATION,
+                lifecycle_state=StageStatus.COMPLETED,
+            ),
+        ),
+    )
+
+    assert len(submitted) == 1
+    update, payload_resolver, destinations = submitted[0]
+    assert update.stage_key is StageKey.TRAJECTORY_EVALUATION
+    assert update.semantic_events == [artifact]
+    assert payload_resolver is None
+    assert destinations == frozenset(("export",))
 
 
 def test_run_coordinator_routes_source_reference_trajectories_live_without_clouds(

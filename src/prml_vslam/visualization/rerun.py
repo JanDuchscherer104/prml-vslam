@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import shutil
 import subprocess
 import sys
@@ -14,12 +16,15 @@ import rerun as rr  # type: ignore[import-not-found]
 import rerun.blueprint as rrb  # type: ignore[import-not-found]
 from pytransform3d.rotations import quaternion_from_matrix
 
+from prml_vslam.eval.contracts import EvaluationArtifact, TrajectoryAlignmentMode, TrajectoryMetricId
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.interfaces.transforms import FrameTransform
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
+
+_LOGGER = logging.getLogger(__name__)
 
 ROOT_WORLD_ENTITY_PATH = "world"
 """Canonical root entity path for repo-owned Rerun recordings."""
@@ -35,6 +40,8 @@ MODEL_RGB_2D_ENTITY_PATH = "world/slam/live/model/diag/rgb"
 """Dedicated 2D-only live model RGB entity, separate from the 3D camera branch."""
 GROUND_PLANE_ENTITY_PATH = "world/slam/alignment/ground_plane"
 """Root entity path for the derived dominant ground-plane visualization."""
+EVALUATION_ENTITY_PATH = "world/evaluation/trajectory"
+"""Root entity path for persisted trajectory-evaluation diagnostics."""
 LIVE_MODEL_IMAGE_PLANE_DISTANCE = 0.35
 """Image-plane distance for the latest live model camera branch."""
 KEYFRAME_IMAGE_PLANE_DISTANCE = 0.04
@@ -51,8 +58,31 @@ GROUND_PLANE_FILL_RGBA = np.array([[80, 180, 120, 96]] * 4, dtype=np.uint8)
 """Semi-transparent per-vertex color for the ground-plane mesh patch."""
 GROUND_PLANE_OUTLINE_RGBA = np.array([[24, 140, 84, 255]], dtype=np.uint8)
 """Opaque outline color for the ground-plane patch."""
+
+
+def _rgb(hex_color: str) -> np.ndarray:
+    stripped = hex_color.removeprefix("#")
+    return np.array([int(stripped[index : index + 2], 16) for index in range(0, 6, 2)], dtype=np.uint8)
+
+
+GT_GREEN_RGB = _rgb("#0f9d58")
+ARKIT_REFERENCE_RGB = _rgb("#43a047")
+ARCORE_REFERENCE_RGB = _rgb("#00897b")
+SLAM_RAW_RGB = _rgb("#1368ce")
+SLAM_ALIGNED_RGB = _rgb("#7b1fa2")
+APE_LOW_RGB = _rgb("#2a9d8f")
+APE_HIGH_RGB = _rgb("#c62828")
+CORRESPONDENCE_RGB = _rgb("#ef6c00")
+REFERENCE_SOURCE_COLORS_RGB = {
+    "ground_truth": GT_GREEN_RGB,
+    "gt": GT_GREEN_RGB,
+    "arkit": ARKIT_REFERENCE_RGB,
+    "arcore": ARCORE_REFERENCE_RGB,
+}
+"""Stable reference-source colors shared by Rerun trajectory diagnostics."""
 DEFAULT_3D_SCENE_CONTENTS = (
     "+ world/alignment/**",
+    "+ world/evaluation/**",
     "+ world/reference/trajectory/**",
     "+ world/reference/points/*/aligned/**",
     "+ world/reconstruction/**",
@@ -74,6 +104,28 @@ DEFAULT_3D_SCENE_CONTENTS = (
 """Default 3D view query: spatial map/history only, without 2D raster branches."""
 
 
+class RerunEntityPaths:
+    """Central entity tree used by repo-owned Rerun logging and blueprints."""
+
+    root_world = ROOT_WORLD_ENTITY_PATH
+    slam_world = SLAM_WORLD_ENTITY_PATH
+    model_rgb_2d = MODEL_RGB_2D_ENTITY_PATH
+    model_camera_image = "world/slam/live/model/camera/image"
+    model_camera_depth = "world/slam/live/model/camera/image/depth"
+    source_rgb = "world/live/source/rgb"
+    source_camera_image = "world/live/source/camera/image"
+    diagnostic_preview = "world/slam/live/model/diag/preview"
+    default_3d_scene_contents = DEFAULT_3D_SCENE_CONTENTS
+
+    @staticmethod
+    def evaluation_metric_root(metric_id: str, reference_source: str) -> str:
+        return f"{EVALUATION_ENTITY_PATH}/{_entity_token(reference_source)}/{_entity_token(metric_id)}"
+
+
+RERUN_ENTITY_PATHS = RerunEntityPaths()
+"""Shared entity registry for logging and blueprint construction."""
+
+
 def build_default_blueprint(
     *,
     show_source_rgb: bool = False,
@@ -82,13 +134,13 @@ def build_default_blueprint(
     """Build the default repo-owned Rerun blueprint."""
     views = [
         rrb.Spatial2DView(
-            origin=MODEL_RGB_2D_ENTITY_PATH,
-            contents=MODEL_RGB_2D_ENTITY_PATH,
+            origin=RERUN_ENTITY_PATHS.model_rgb_2d,
+            contents=RERUN_ENTITY_PATHS.model_rgb_2d,
             name="Model RGB",
         ),
         rrb.Spatial2DView(
-            origin="world/slam/live/model/camera/image",
-            contents="world/slam/live/model/camera/image/depth",
+            origin=RERUN_ENTITY_PATHS.model_camera_image,
+            contents=RERUN_ENTITY_PATHS.model_camera_depth,
             name="Model Depth",
         ),
     ]
@@ -96,33 +148,33 @@ def build_default_blueprint(
         views.insert(
             0,
             rrb.Spatial2DView(
-                origin="world/live/source/rgb",
-                contents="world/live/source/rgb",
+                origin=RERUN_ENTITY_PATHS.source_rgb,
+                contents=RERUN_ENTITY_PATHS.source_rgb,
                 name="Source RGB",
             ),
         )
         views.insert(
             1,
             rrb.Spatial2DView(
-                origin="world/live/source/camera/image",
-                contents="world/live/source/camera/image",
+                origin=RERUN_ENTITY_PATHS.source_camera_image,
+                contents=RERUN_ENTITY_PATHS.source_camera_image,
                 name="Source Camera",
             ),
         )
     if show_diagnostic_preview:
         views.append(
             rrb.Spatial2DView(
-                origin="world/slam/live/model/diag/preview",
-                contents="world/slam/live/model/diag/preview",
+                origin=RERUN_ENTITY_PATHS.diagnostic_preview,
+                contents=RERUN_ENTITY_PATHS.diagnostic_preview,
                 name="Preview",
             )
         )
     return rrb.Blueprint(
         rrb.Horizontal(
             rrb.Spatial3DView(
-                origin="world",
+                origin=RERUN_ENTITY_PATHS.root_world,
                 name="3D Scene",
-                contents=list(DEFAULT_3D_SCENE_CONTENTS),
+                contents=list(RERUN_ENTITY_PATHS.default_3d_scene_contents),
             ),
             rrb.Tabs(*views, name="2D Views"),
         ),
@@ -138,7 +190,7 @@ def create_recording_stream(
     view_coordinates: str = "RDF",
 ) -> rr.RecordingStream:
     """Create one explicit Rerun recording stream."""
-    stream = rr.new_recording(application_id=app_id, recording_id=recording_id)
+    stream = rr.RecordingStream(application_id=app_id, recording_id=recording_id)
     blueprint = build_default_blueprint(
         show_source_rgb=show_source_rgb,
         show_diagnostic_preview=show_diagnostic_preview,
@@ -180,7 +232,7 @@ def log_slam_world_transform(recording_stream: rr.RecordingStream) -> None:
     )
 
 
-def _view_coordinates_from_name(view_coordinates: str) -> rr.ViewCoordinates:
+def _view_coordinates_from_name(view_coordinates: str) -> rr.components.ViewCoordinates:
     match view_coordinates:
         case "RDF":
             return rr.ViewCoordinates.RDF
@@ -197,17 +249,19 @@ def attach_recording_sinks(
     target_path: Path | None = None,
 ) -> None:
     """Configure all requested Rerun sinks on one recording stream."""
-    sinks: list[object] = []
-    if grpc_url is not None:
-        sinks.append(rr.GrpcSink(grpc_url))
     if target_path is not None:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         if target_path.exists():
             target_path.unlink()
-        sinks.append(rr.FileSink(str(target_path)))
-    if not sinks:
+    if grpc_url is not None and target_path is not None:
+        recording_stream.set_sinks(rr.GrpcSink(grpc_url), rr.FileSink(str(target_path)))
         return
-    recording_stream.set_sinks(*sinks)
+    if grpc_url is not None:
+        recording_stream.set_sinks(rr.GrpcSink(grpc_url))
+        return
+    if target_path is not None:
+        recording_stream.set_sinks(rr.FileSink(str(target_path)))
+        return
 
 
 def log_sim3_transform(
@@ -403,13 +457,165 @@ def log_line_strip3d(
     entity_path: str,
     positions_xyz: np.ndarray,
     radii: float = TRAJECTORY_LINE_RADII,
+    color_rgb: np.ndarray | None = None,
     static: bool = False,
 ) -> None:
     """Log one 3D line strip to the viewer."""
     positions = np.asarray(positions_xyz, dtype=np.float32).reshape(-1, 3)
     if len(positions) == 0:
         return
-    recording_stream.log(entity_path, rr.LineStrips3D([positions], radii=[radii]), static=static)
+    colors = None if color_rgb is None else np.asarray(color_rgb, dtype=np.uint8).reshape(1, 3)
+    recording_stream.log(entity_path, rr.LineStrips3D([positions], radii=[radii], colors=colors), static=static)
+
+
+def log_scalar_series(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    timestamps_s: np.ndarray,
+    values: np.ndarray,
+    timeline: str = "trajectory_time",
+    static: bool = False,
+) -> None:
+    """Log one timestamped scalar series."""
+    timestamps = np.asarray(timestamps_s, dtype=np.float64).reshape(-1)
+    scalars = np.asarray(values, dtype=np.float64).reshape(-1)
+    if len(timestamps) != len(scalars):
+        raise ValueError(f"Expected matching scalar timestamps and values, got {len(timestamps)} and {len(scalars)}.")
+    previous_timeline = None
+    for timestamp_s, value in zip(timestamps, scalars, strict=True):
+        recording_stream.set_time(timeline, timestamp=float(timestamp_s))
+        recording_stream.log(entity_path, rr.Scalars([float(value)]), static=static)
+        previous_timeline = timeline
+    if previous_timeline is not None:
+        recording_stream.reset_time()
+
+
+def log_correspondence_strips3d(
+    recording_stream: rr.RecordingStream,
+    *,
+    entity_path: str,
+    reference_positions_xyz: np.ndarray,
+    estimate_positions_xyz: np.ndarray,
+    radii: float = TRAJECTORY_LINE_RADII * 0.5,
+    color_rgb: np.ndarray = CORRESPONDENCE_RGB,
+    static: bool = True,
+) -> None:
+    """Log pairwise reference-to-estimate correspondence strips."""
+    reference_positions = np.asarray(reference_positions_xyz, dtype=np.float32).reshape(-1, 3)
+    estimate_positions = np.asarray(estimate_positions_xyz, dtype=np.float32).reshape(-1, 3)
+    pair_count = min(len(reference_positions), len(estimate_positions))
+    if pair_count == 0:
+        return
+    strips = np.stack([reference_positions[:pair_count], estimate_positions[:pair_count]], axis=1)
+    colors = np.repeat(np.asarray(color_rgb, dtype=np.uint8).reshape(1, 3), pair_count, axis=0)
+    recording_stream.log(entity_path, rr.LineStrips3D(strips, radii=[radii], colors=colors), static=static)
+
+
+def log_ape_diagnostics(
+    recording_stream: rr.RecordingStream,
+    *,
+    artifact: EvaluationArtifact,
+    static: bool = True,
+) -> None:
+    """Log repo-owned Rerun diagnostics for the current trajectory APE artifact."""
+    if artifact.semantics.metric_id is not TrajectoryMetricId.APE_TRANSLATION or artifact.error_series is None:
+        return
+    if len(artifact.trajectories) < 2:
+        return
+    reference, estimate = artifact.trajectories[:2]
+    reference_source = _reference_source_from_artifact(artifact)
+    metric_root = RERUN_ENTITY_PATHS.evaluation_metric_root(artifact.semantics.metric_id.value, reference_source)
+    reference_color = REFERENCE_SOURCE_COLORS_RGB.get(reference_source, GT_GREEN_RGB)
+    estimate_color = (
+        SLAM_ALIGNED_RGB
+        if artifact.semantics.alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
+        else SLAM_RAW_RGB
+    )
+    matched_pairs = min(
+        len(reference.positions_xyz),
+        len(estimate.positions_xyz),
+        len(artifact.error_series.values),
+        len(artifact.error_series.timestamps_s),
+    )
+    if matched_pairs == 0:
+        return
+    reference_positions = np.asarray(reference.positions_xyz[:matched_pairs], dtype=np.float32)
+    estimate_positions = np.asarray(estimate.positions_xyz[:matched_pairs], dtype=np.float32)
+    error_values = np.asarray(artifact.error_series.values[:matched_pairs], dtype=np.float64)
+
+    log_line_strip3d(
+        recording_stream,
+        entity_path=f"{metric_root}/reference/trajectory",
+        positions_xyz=reference_positions,
+        color_rgb=reference_color,
+        static=static,
+    )
+    log_line_strip3d(
+        recording_stream,
+        entity_path=f"{metric_root}/estimate/trajectory",
+        positions_xyz=estimate_positions,
+        color_rgb=estimate_color,
+        static=static,
+    )
+    log_points3d(
+        recording_stream,
+        entity_path=f"{metric_root}/estimate/ape_points",
+        points_xyz=estimate_positions,
+        colors=_ape_error_colors(error_values),
+        radii=POINT_CLOUD_RADII,
+        static=static,
+    )
+    log_correspondence_strips3d(
+        recording_stream,
+        entity_path=f"{metric_root}/correspondences",
+        reference_positions_xyz=reference_positions,
+        estimate_positions_xyz=estimate_positions,
+        static=static,
+    )
+    log_scalar_series(
+        recording_stream,
+        entity_path=f"{metric_root}/error/translation_m",
+        timestamps_s=np.asarray(artifact.error_series.timestamps_s[:matched_pairs], dtype=np.float64),
+        values=error_values,
+        static=False,
+    )
+
+
+def _reference_source_from_artifact(artifact: EvaluationArtifact) -> str:
+    if artifact.alignment_path is not None and artifact.alignment_path.exists():
+        try:
+            payload = json.loads(artifact.alignment_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("alignment metadata must be a JSON object")
+            return _entity_token(str(payload.get("reference_source") or "ground_truth"))
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            _LOGGER.warning(
+                "Falling back to ground-truth Rerun color semantics because evaluation alignment metadata '%s' "
+                "could not be read: %s",
+                artifact.alignment_path,
+                exc,
+            )
+    if "arkit" in artifact.path.name:
+        return "arkit"
+    if "arcore" in artifact.path.name:
+        return "arcore"
+    return "ground_truth"
+
+
+def _ape_error_colors(error_values: np.ndarray) -> np.ndarray:
+    values = np.asarray(error_values, dtype=np.float64).reshape(-1)
+    if len(values) == 0:
+        return np.empty((0, 3), dtype=np.uint8)
+    min_error = float(np.min(values))
+    max_error = float(np.max(values))
+    if max_error == min_error:
+        weights = np.zeros_like(values)
+    else:
+        weights = (values - min_error) / (max_error - min_error)
+    low = APE_LOW_RGB.astype(np.float64)
+    high = APE_HIGH_RGB.astype(np.float64)
+    return np.clip(low + (high - low) * weights[:, None], 0, 255).astype(np.uint8)
 
 
 def log_mesh3d(
@@ -553,7 +759,7 @@ def log_mesh_ply(
     _validate_decimation_keep_ratio(decimation_keep_ratio)
     if not path.exists():
         raise FileNotFoundError(f"Mesh artifact '{path}' does not exist.")
-    mesh = o3d.io.read_triangle_mesh(str(path))
+    mesh = o3d.io.read_triangle_mesh(path)
     triangle_count = len(mesh.triangles)
     if decimation_keep_ratio < 1.0 and triangle_count > 0:
         target_triangle_count = max(1, int(np.floor(triangle_count * decimation_keep_ratio)))
@@ -603,6 +809,11 @@ def _decimate_rows(
 def _validate_decimation_keep_ratio(keep_ratio: float) -> None:
     if not 0.0 < keep_ratio <= 1.0:
         raise ValueError(f"Expected decimation keep ratio in (0, 1], got {keep_ratio}.")
+
+
+def _entity_token(value: str) -> str:
+    stripped = value.strip().replace(" ", "_")
+    return "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in stripped) or "reference"
 
 
 def collect_native_visualization_artifacts(
@@ -688,11 +899,14 @@ __all__ = [
     "collect_native_visualization_artifacts",
     "create_recording_stream",
     "GROUND_PLANE_ENTITY_PATH",
+    "GT_GREEN_RGB",
     "KEYFRAME_IMAGE_PLANE_DISTANCE",
     "LIVE_MODEL_IMAGE_PLANE_DISTANCE",
+    "log_ape_diagnostics",
     "log_depth_image",
     "log_clear",
     "log_arrows3d",
+    "log_correspondence_strips3d",
     "log_line_strip3d",
     "log_ground_plane_patch",
     "log_mesh3d",
@@ -703,10 +917,15 @@ __all__ = [
     "log_points3d",
     "log_rgb_image",
     "log_root_world_transform",
+    "log_scalar_series",
     "log_slam_world_transform",
     "log_transform",
     "log_transform_axes",
+    "REFERENCE_SOURCE_COLORS_RGB",
+    "RERUN_ENTITY_PATHS",
     "ROOT_WORLD_ENTITY_PATH",
+    "SLAM_ALIGNED_RGB",
+    "SLAM_RAW_RGB",
     "SLAM_WORLD_AXIS_LENGTH",
     "SLAM_WORLD_ENTITY_PATH",
     "SOURCE_IMAGE_PLANE_DISTANCE",
