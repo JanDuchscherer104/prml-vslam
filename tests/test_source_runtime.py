@@ -298,7 +298,7 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
     assert items[1].metadata["native_frame"] == "advio_tango_raw_world"
 
 
-def test_source_visualization_adapter_skips_source_native_reference_trajectories(tmp_path: Path) -> None:
+def test_source_visualization_adapter_emits_native_and_aligned_reference_trajectories(tmp_path: Path) -> None:
     native_path = tmp_path / "arkit.tum"
     aligned_path = tmp_path / "arkit_aligned_to_gt.tum"
     native_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
@@ -328,10 +328,11 @@ def test_source_visualization_adapter_skips_source_native_reference_trajectories
 
     items = SourceVisualizationAdapter().build_reference_items(output=output, artifact_refs=artifact_refs)
 
-    assert len(items) == 1
-    assert items[0].role == ROLE_SOURCE_REFERENCE_TRAJECTORY
-    assert items[0].metadata["coordinate_status"] == "aligned"
-    assert items[0].metadata["target_frame"] == "advio_gt_world"
+    assert output.benchmark_inputs.trajectory_for_source(ReferenceSource.ARKIT) is native_reference
+    assert [(item.role, item.metadata["coordinate_status"], item.metadata["target_frame"]) for item in items] == [
+        (ROLE_SOURCE_REFERENCE_TRAJECTORY, "source_native", "advio_arkit_world"),
+        (ROLE_SOURCE_REFERENCE_TRAJECTORY, "aligned", "advio_gt_world"),
+    ]
 
 
 def test_source_visualization_adapter_emits_posed_observation_geometry_items() -> None:

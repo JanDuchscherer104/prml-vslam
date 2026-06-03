@@ -201,7 +201,7 @@ class PreparedBenchmarkInputs(BaseData):
             (
                 reference
                 for reference in matching
-                if reference.coordinate_status is not ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+                if reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
             ),
             next(iter(matching), None),
         )
