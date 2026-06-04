@@ -721,7 +721,7 @@ def _infer_target_frame(dataset: DatasetId | None, reference_path: Path | None) 
     if dataset is DatasetId.ADVIO:
         return "advio_gt_world"
     if dataset is DatasetId.TUM_RGBD:
-        return "tum_rgbd_mocap_world"
+        return "tum_rgbd_world"
     return "world"
 
 

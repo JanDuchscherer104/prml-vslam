@@ -45,3 +45,7 @@ This document is the concise source of truth for `prml_vslam.sources`.
 - TUM RGB-D benchmark prep emits a bounded aligned reference cloud from
   registered metric depth and ground-truth RGB-camera poses when depth is
   available.
+- TUM RGB-D benchmark outputs (trajectory, reference cloud, observation poses)
+  are expressed in the first-camera RDF frame (`tum_rgbd_world`), relativized to
+  the first ground-truth pose per the VISTA `loadtum` convention; the raw mocap
+  Z-up frame is retained only as `native_frame` provenance.
