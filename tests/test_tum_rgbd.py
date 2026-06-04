@@ -125,7 +125,7 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     reference_cloud_metadata = json.loads(reference_cloud.metadata_path.read_text(encoding="utf-8"))
     assert reference_cloud.source is ReferenceCloudSource.TUM_RGBD
     assert reference_cloud.coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
-    assert reference_cloud.target_frame == "tum_rgbd_mocap_world"
+    assert reference_cloud.target_frame == "tum_rgbd_world"
     assert reference_cloud.native_frame == "tum_rgbd_mocap_world"
     assert reference_cloud.path == sequence_dir / "evaluation" / "reference_cloud.tum_rgbd.aligned.ply"
     assert (
@@ -230,7 +230,7 @@ def test_tum_rgbd_stream_loops_rgbd_frames_with_pose_metadata(tmp_path: Path) ->
     assert packet_0.intrinsics.width_px == 640
     assert packet_2.T_world_camera is not None
     assert packet_2.T_world_camera.tx == 2.0
-    assert packet_2.T_world_camera.target_frame == "tum_rgbd_mocap_world"
+    assert packet_2.T_world_camera.target_frame == "tum_rgbd_world"
     assert packet_2.T_world_camera.source_frame == CAMERA_RDF_FRAME
     assert packet_0.provenance.source_id == "tum_rgbd"
     assert packet_0.provenance.dataset_id == "tum_rgbd"
@@ -282,7 +282,29 @@ def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None
     assert observations[0].intrinsics.width_px == 640
     assert observations[0].intrinsics.height_px == 480
     assert observations[2].T_world_camera.tx == 2.0
-    assert observations[2].T_world_camera.target_frame == "tum_rgbd_mocap_world"
+    assert observations[2].T_world_camera.target_frame == "tum_rgbd_world"
     assert observations[2].T_world_camera.source_frame == CAMERA_RDF_FRAME
     assert observations[0].provenance.dataset_id == "tum_rgbd"
-    assert observations[0].provenance.world_frame == "tum_rgbd_mocap_world"
+    assert observations[0].provenance.world_frame == "tum_rgbd_world"
+
+
+def test_relativize_trajectory_to_first_pose_anchors_first_pose_at_identity() -> None:
+    from evo.core.trajectory import PoseTrajectory3D
+
+    from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import (
+        relativize_trajectory_to_first_pose,
+    )
+
+    first = np.eye(4)
+    first[:3, :3] = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # +90deg about z
+    first[:3, 3] = [1.0, 2.0, 3.0]
+    second = np.eye(4)
+    second[:3, 3] = [4.0, 6.0, 8.0]
+    trajectory = PoseTrajectory3D(poses_se3=[first, second], timestamps=np.array([0.0, 1.0]))
+
+    relativized = relativize_trajectory_to_first_pose(trajectory)
+
+    # VISTA loadtum parity: first pose -> identity, others -> inv(T_0) @ T_k.
+    np.testing.assert_allclose(relativized.poses_se3[0], np.eye(4), atol=1e-9)
+    np.testing.assert_allclose(relativized.poses_se3[1], np.linalg.inv(first) @ second, atol=1e-9)
+    np.testing.assert_allclose(relativized.timestamps, [0.0, 1.0])

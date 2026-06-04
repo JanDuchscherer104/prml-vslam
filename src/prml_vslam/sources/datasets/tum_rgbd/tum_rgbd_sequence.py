@@ -8,7 +8,6 @@ import numpy as np
 from pydantic import ConfigDict
 
 from prml_vslam.interfaces import (
-    CAMERA_RDF_FRAME,
     FrameTransform,
     ObservationIndexEntry,
     ObservationProvenance,
@@ -29,11 +28,14 @@ from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import pointmap_from_depth, transform_points_world_camera, write_point_cloud_ply
 
 from . import tum_rgbd_layout, tum_rgbd_loading
+from .tum_rgbd_loading import (
+    TUM_RGBD_CAMERA_FRAME,
+    TUM_RGBD_NATIVE_WORLD_FRAME,
+    TUM_RGBD_WORLD_FRAME,
+)
 from .tum_rgbd_models import TumRgbdCatalog, TumRgbdPoseSource, TumRgbdSequenceConfig
 from .tum_rgbd_replay_adapter import open_tum_rgbd_stream
 
-TUM_RGBD_WORLD_FRAME = "tum_rgbd_mocap_world"
-TUM_RGBD_CAMERA_FRAME = CAMERA_RDF_FRAME
 TUM_RGBD_REFERENCE_CLOUD_FRAME_STRIDE = 10
 TUM_RGBD_REFERENCE_CLOUD_MAX_FRAMES = 20
 TUM_RGBD_REFERENCE_CLOUD_DEPTH_STRIDE_PX = 8
@@ -137,7 +139,7 @@ class TumRgbdSequence(BaseData):
                     source=ReferenceSource.GROUND_TRUTH,
                     path=reference_path,
                     target_frame=TUM_RGBD_WORLD_FRAME,
-                    native_frame=TUM_RGBD_WORLD_FRAME,
+                    native_frame=TUM_RGBD_NATIVE_WORLD_FRAME,
                     coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
                 )
             ],
@@ -173,7 +175,7 @@ class TumRgbdSequence(BaseData):
     ) -> ObservationSequenceRef | None:
         """Write a durable observation index for reconstruction, if depth exists."""
         associations = tum_rgbd_loading.load_tum_rgbd_associations(paths.sequence_dir)
-        trajectory = tum_rgbd_loading.load_tum_rgbd_ground_truth(paths.ground_truth_path)
+        trajectory = tum_rgbd_loading.load_tum_rgbd_ground_truth_rdf(paths.ground_truth_path)
         intrinsics = tum_rgbd_loading.load_tum_rgbd_intrinsics(self.scene.sequence_id, paths.sequence_dir)
         rows: list[ObservationIndexEntry] = []
         for source_index, association in enumerate(associations):
@@ -248,7 +250,7 @@ class TumRgbdSequence(BaseData):
                 f"TUM RGB-D sequence '{self.scene.sequence_id}' has depth rows but no RGB/depth/pose associations."
             )
 
-        trajectory = tum_rgbd_loading.load_tum_rgbd_ground_truth(paths.ground_truth_path)
+        trajectory = tum_rgbd_loading.load_tum_rgbd_ground_truth_rdf(paths.ground_truth_path)
         intrinsics = tum_rgbd_loading.load_tum_rgbd_intrinsics(self.scene.sequence_id, paths.sequence_dir)
         chunks: list[np.ndarray] = []
         point_count = 0
@@ -309,7 +311,7 @@ class TumRgbdSequence(BaseData):
                     "source": ReferenceCloudSource.TUM_RGBD.value,
                     "coordinate_status": ReferenceCloudCoordinateStatus.ALIGNED.value,
                     "target_frame": TUM_RGBD_WORLD_FRAME,
-                    "native_frame": TUM_RGBD_WORLD_FRAME,
+                    "native_frame": TUM_RGBD_NATIVE_WORLD_FRAME,
                     "camera_frame": TUM_RGBD_CAMERA_FRAME,
                     "payload_pose_semantics": "registered_depth_unprojected_by_ground_truth_pose",
                     "depth_scale_to_m": 1.0 / 5000.0,
@@ -333,7 +335,7 @@ class TumRgbdSequence(BaseData):
             path=cloud_path,
             metadata_path=metadata_path,
             target_frame=TUM_RGBD_WORLD_FRAME,
-            native_frame=TUM_RGBD_WORLD_FRAME,
+            native_frame=TUM_RGBD_NATIVE_WORLD_FRAME,
             coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
         )
 

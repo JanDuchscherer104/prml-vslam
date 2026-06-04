@@ -184,12 +184,22 @@ building colored point clouds from one registered RGB/depth pair. The
 repository adapter uses the same registered-depth convention for benchmark
 prep: it samples bounded RGB-D associations, unprojects valid metric depth in
 the RGB camera frame, and fuses those points through the ground-truth
-`T_world_camera` poses into `tum_rgbd_mocap_world`.
+`T_world_camera` poses into `tum_rgbd_world`.
+
+`tum_rgbd_world` is the first-camera RDF optical frame: every ground-truth pose
+is relativized to the first pose (`T'_k = inv(T_0) @ T_k`, first pose -> identity),
+matching the VISTA `SLAM_TUMRGBD.loadtum` convention and the SLAM estimate's own
+frame. The raw mocap Z-up frame is retained only as `native_frame` provenance.
+This is what keeps the benchmark trajectory and reference cloud from disagreeing
+with the SLAM estimate by the mocap basis (the Z-up vs RDF mismatch that
+previously made the GT render orthogonal to the estimate and inflated the Sim(3)
+up-axis-tilt diagnostic).
 
 The resulting `ReferenceCloudRef` is a source-prepared aligned cloud with:
 
 - `source = "tum_rgbd"`
-- `target_frame = native_frame = "tum_rgbd_mocap_world"`
+- `target_frame = "tum_rgbd_world"` (first-camera RDF frame)
+- `native_frame = "tum_rgbd_mocap_world"` (raw mocap Z-up provenance)
 - `coordinate_status = "aligned"`
 
 The cloud is intentionally sparse and deterministic rather than a dense full
@@ -211,7 +221,8 @@ The stream therefore emits one repository-owned `Observation` carrying:
 - RGB in the RGB camera raster
 - optional metric depth aligned to the same raster
 - RGB-camera intrinsics
-- optional ground-truth pose of the RGB camera in the mocap world
+- optional ground-truth pose of the RGB camera in the first-camera RDF frame
+  (`tum_rgbd_world`), relativized to the first pose
 
 ## Repo Interpretation For Pipeline Inputs
 

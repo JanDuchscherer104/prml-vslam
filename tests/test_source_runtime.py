@@ -340,7 +340,7 @@ def test_source_visualization_adapter_emits_posed_observation_geometry_items() -
         seq=7,
         timestamp_ns=1,
         T_world_camera=FrameTransform(
-            target_frame="tum_rgbd_mocap_world",
+            target_frame="tum_rgbd_world",
             source_frame=CAMERA_RDF_FRAME,
             qx=0.0,
             qy=0.0,
