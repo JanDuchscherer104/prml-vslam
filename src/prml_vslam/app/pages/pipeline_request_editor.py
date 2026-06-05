@@ -313,8 +313,6 @@ def _advio_provider_options(status: AdvioLocalSceneStatus | None) -> list[AdvioP
         options.append(AdvioPoseSource.ARCORE)
     if AdvioModality.IPHONE_ARKIT in status.local_modalities:
         options.append(AdvioPoseSource.ARKIT)
-    if AdvioModality.TANGO in status.local_modalities:
-        options.extend([AdvioPoseSource.TANGO_RAW, AdvioPoseSource.TANGO_AREA_LEARNING])
     return options
 
 

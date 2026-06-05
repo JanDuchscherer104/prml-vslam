@@ -58,7 +58,6 @@ class AdvioModality(StrEnum):
     IPHONE_SENSORS = "iphone_sensors"
     IPHONE_ARKIT = "iphone_arkit"
     PIXEL_ARCORE = "pixel_arcore"
-    TANGO = "tango"
 
     @property
     def label(self) -> str:
@@ -70,7 +69,6 @@ class AdvioModality(StrEnum):
             self.IPHONE_SENSORS: "iPhone Sensors",
             self.IPHONE_ARKIT: "ARKit Baseline",
             self.PIXEL_ARCORE: "ARCore Baseline",
-            self.TANGO: "Tango Bundle",
         }[self]
 
 

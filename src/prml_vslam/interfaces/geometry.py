@@ -40,7 +40,7 @@ class PointCloud(BaseData):
     """Nx3 metric XYZ samples in :attr:`frame` coordinates."""
 
     frame: str
-    """Coordinate frame of :attr:`points_xyz`, for example ``advio_tango_raw_depth_sensor``."""
+    """Coordinate frame of :attr:`points_xyz`, for example ``tum_rgbd_camera``."""
 
     colors_rgb: NDArray[np.uint8] | None = None
     """Optional Nx3 uint8 RGB colors aligned with :attr:`points_xyz`."""
@@ -84,8 +84,8 @@ class PointMap(BaseData):
     """Represent a raster-aligned camera-local XYZ pointmap.
 
     ``points_xyz_camera`` must have shape ``H x W x 3`` and shares the raster
-    geometry of the associated intrinsics/image/depth payload. A sparse Tango
-    point cloud is not a pointmap.
+    geometry of the associated intrinsics/image/depth payload. Sparse
+    unstructured point clouds are not pointmaps.
     """
 
     points_xyz_camera: NDArray[np.float32]

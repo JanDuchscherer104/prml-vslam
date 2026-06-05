@@ -429,16 +429,16 @@ def _render_advio_sequence_details(sample: AdvioOfflineSample) -> None:
     intrinsics = sample.calibration.intrinsics
     pose_frame_mode = st.segmented_control(
         "Trajectory Comparison",
-        options=[AdvioPoseFrameMode.REFERENCE_WORLD, AdvioPoseFrameMode.LOCAL_FIRST_POSE],
-        default=AdvioPoseFrameMode.REFERENCE_WORLD,
+        options=[AdvioPoseFrameMode.PROVIDER_WORLD, AdvioPoseFrameMode.LOCAL_FIRST_POSE],
+        default=AdvioPoseFrameMode.PROVIDER_WORLD,
         format_func=lambda item: item.label,
         selection_mode="single",
         width="stretch",
         key=f"advio_compare_mode_{sample.sequence_id}",
     )
-    resolved_mode = AdvioPoseFrameMode.REFERENCE_WORLD if pose_frame_mode is None else pose_frame_mode
+    resolved_mode = AdvioPoseFrameMode.PROVIDER_WORLD if pose_frame_mode is None else pose_frame_mode
     st.caption(
-        "Aligned Global maps provider trajectories into ground-truth world before overlay. Local First Pose rebases each trajectory to its own first valid pose."
+        "Provider World shows each trajectory in its own source frame. Local First Pose rebases each trajectory to its own first valid pose."
     )
     trajectories = plots.build_advio_comparison_trajectories(
         ground_truth=sample.ground_truth,
@@ -675,8 +675,6 @@ def _advio_preview_pose_sources(
         options.insert(1, AdvioPoseSource.ARCORE)
     if AdvioModality.IPHONE_ARKIT in status.local_modalities:
         options.append(AdvioPoseSource.ARKIT)
-    if AdvioModality.TANGO in status.local_modalities:
-        options.extend([AdvioPoseSource.TANGO_RAW, AdvioPoseSource.TANGO_AREA_LEARNING])
     return options
 
 

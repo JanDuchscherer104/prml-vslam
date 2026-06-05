@@ -107,11 +107,11 @@ class _ReferenceGeometrySource(_ManifestOnlySource):
             ],
             reference_clouds=[
                 ReferenceCloudRef(
-                    source=ReferenceCloudSource.TANGO_RAW,
+                    source=ReferenceCloudSource.TUM_RGBD,
                     path=self._cloud_path,
                     metadata_path=self._metadata_path,
-                    target_frame="advio_gt_world",
-                    native_frame="advio_tango_raw_world",
+                    target_frame="tum_rgbd_world",
+                    native_frame="tum_rgbd_mocap_world",
                     coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
                 )
             ],
@@ -269,10 +269,10 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
     result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=tmp_path / "run"))
 
     assert isinstance(result.payload, SourceStageOutput)
-    assert "reference_cloud:tango_raw:aligned" in result.outcome.artifacts
-    assert "reference_cloud_metadata:tango_raw:aligned" in result.outcome.artifacts
+    assert "reference_cloud:tum_rgbd:aligned" in result.outcome.artifacts
+    assert "reference_cloud_metadata:tum_rgbd:aligned" in result.outcome.artifacts
     assert result.payload.benchmark_inputs is not None
-    assert result.payload.benchmark_inputs.reference_clouds[0].native_frame == "advio_tango_raw_world"
+    assert result.payload.benchmark_inputs.reference_clouds[0].native_frame == "tum_rgbd_mocap_world"
     items = SourceVisualizationAdapter().build_reference_items(
         output=result.payload,
         artifact_refs=result.outcome.artifacts,
@@ -282,8 +282,8 @@ def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path:
         ROLE_SOURCE_REFERENCE_POINT_CLOUD,
     ]
     assert items[0].space == "world"
-    assert items[1].space == "advio_gt_world"
-    assert items[1].metadata["native_frame"] == "advio_tango_raw_world"
+    assert items[1].space == "tum_rgbd_world"
+    assert items[1].metadata["native_frame"] == "tum_rgbd_mocap_world"
 
 
 def test_source_visualization_adapter_emits_native_and_aligned_reference_trajectories(tmp_path: Path) -> None:

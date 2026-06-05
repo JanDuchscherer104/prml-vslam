@@ -49,8 +49,8 @@ Use this file for package-root ownership rules and cross-package contract constr
     materialization, source-stage outputs, and prepared reference identifiers
     and DTOs such as `PreparedBenchmarkInputs`
   - preserves the currently supported dataset modalities and dataset-specific
-    auxiliary/reference assets, including ADVIO Tango data and reference-cloud
-    preparation
+    auxiliary/reference assets, including ADVIO provider trajectories and TUM
+    RGB-D reference-cloud preparation
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
   - may decimate geometry sent to Rerun observer sinks for viewer performance;
@@ -88,8 +88,8 @@ Use this file for package-root ownership rules and cross-package contract constr
   require world-to-camera matrices.
 - Unstructured point clouds, raster-aligned pointmaps, and metric depth maps
   are distinct shared geometry contracts.
-- ADVIO does not prepare point-cloud benchmark references. Its Tango data is
-  retained only as optional pose-provider input.
+- ADVIO does not prepare point-cloud benchmark references and does not expose
+  legacy auxiliary device streams as supported modalities or pose providers.
 - Repository-prepared TUM RGB-D reference clouds must be built from the same
   persisted RGB-D observation index consumed by the method input path. Any point
   budget or Rerun decimation must happen after all method frames have

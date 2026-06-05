@@ -12,8 +12,8 @@ and TUM RGB-D.
 Current simplification work must preserve the supported dataset surface. In particular:
 
 - all currently supported modalities remain in scope
-- ADVIO Tango poses remain in scope as optional pose providers
-- dataset-provided reference cloud preparation remains in scope
+- ADVIO remains trajectory-only for benchmark inputs
+- TUM RGB-D dataset-provided reference cloud preparation remains in scope
 - the current ray-pipeline-facing dataset service and sequence surfaces remain the public integration boundary
 
 The current ADVIO stack includes:
@@ -75,9 +75,9 @@ Dataset-serving semantics currently live in `prml_vslam.sources.datasets.contrac
   - selected ADVIO pose provider
   - selected ADVIO pose-frame mode
 - [AdvioPoseSource](./contracts.py:33)
-  - `GROUND_TRUTH`, `ARCORE`, `ARKIT`, `TANGO_RAW`, `TANGO_AREA_LEARNING`
+  - `GROUND_TRUTH`, `ARCORE`, `ARKIT`
 - [AdvioPoseFrameMode](./contracts.py:59)
-  - `PROVIDER_WORLD`, `REFERENCE_WORLD`, `LOCAL_FIRST_POSE`
+  - `PROVIDER_WORLD`, `LOCAL_FIRST_POSE`
 
 ### Offline Boundary
 
@@ -106,8 +106,7 @@ The current ADVIO-specific manifest payload DTOs are:
   - selected/raw pose refs
   - fixpoints ref
 - `AdvioRawPoseRefs`
-  - GT, ARCore, ARKit, Tango raw, Tango area-learning, and selected provider
-    pose paths when present
+  - GT, ARCore, ARKit, and selected provider pose paths when present
 
 ### Streaming Boundary
 
@@ -208,7 +207,7 @@ sequence = AdvioSequence(
 stream = sequence.open_stream(
     dataset_serving=AdvioServingConfig(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
-        pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
+        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     ),
     replay_mode=ReplayMode.REALTIME,
     normalize_video_orientation=True,
@@ -233,7 +232,7 @@ statuses = service.local_scene_statuses()
 ## Boundaries
 
 - This package owns dataset normalization and replay preparation, not evaluation policy.
-- Simplification in this package must not drop supported modalities, ADVIO Tango support, or repo-owned reference-cloud preparation.
+- Simplification in this package must not drop supported modalities or TUM RGB-D reference-cloud preparation.
 - Generic replay mechanics stay in `prml_vslam.sources.replay`.
 - App pages and pipeline surfaces should prefer `AdvioDatasetService`, `TumRgbdDatasetService`, or the
   corresponding sequence classes over rebuilding dataset path, manifest, or

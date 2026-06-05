@@ -13,7 +13,6 @@ import pytest
 import prml_vslam.sources.replay.video as replay_video_module
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
-    ReferenceCloudSource,
     ReferenceSource,
 )
 from prml_vslam.sources.datasets.advio import (
@@ -35,8 +34,6 @@ from prml_vslam.sources.datasets.advio import (
 )
 from prml_vslam.sources.datasets.advio.advio_frames import (
     APPLE_Y_UP_TO_RDF,
-    TANGO_Z_UP_TO_RDF,
-    transform_advio_points_to_rdf,
     transform_advio_trajectory_to_rdf,
 )
 from prml_vslam.sources.datasets.advio.advio_layout import list_local_sequence_ids, resolve_existing_reference_tum
@@ -92,20 +89,7 @@ def _write_pose_csv(path: Path) -> None:
 
 
 def test_advio_basis_helpers_convert_provider_positions_to_rdf(tmp_path: Path) -> None:
-    apple_points = transform_advio_points_to_rdf(
-        np.array([[1.0, 2.0, 3.0]], dtype=np.float64),
-        AdvioPoseSource.ARKIT,
-    )
-    tango_points = transform_advio_points_to_rdf(
-        np.array([[1.0, 2.0, 3.0]], dtype=np.float64),
-        ReferenceCloudSource.TANGO_RAW,
-    )
-
     assert np.linalg.det(APPLE_Y_UP_TO_RDF) == pytest.approx(1.0)
-    assert np.linalg.det(TANGO_Z_UP_TO_RDF) == pytest.approx(1.0)
-    assert np.array_equal(TANGO_Z_UP_TO_RDF @ np.array([1.0, 2.0, 3.0]), np.array([1.0, -3.0, 2.0]))
-    assert np.array_equal(apple_points, np.array([[3.0, -2.0, 1.0]]))
-    assert np.array_equal(tango_points, np.array([[1.0, -3.0, 2.0]]))
 
     pose_csv = tmp_path / "arkit.csv"
     _write_pose_csv_rows(pose_csv, rows=((0.0, 1.0, 2.0, 3.0), (0.1, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)))
@@ -126,7 +110,7 @@ def test_advio_apple_basis_preserves_upstream_top_view_handedness() -> None:
         ],
         dtype=np.float64,
     )
-    rdf_points = transform_advio_points_to_rdf(raw_points, AdvioPoseSource.GROUND_TRUTH)
+    rdf_points = raw_points @ APPLE_Y_UP_TO_RDF.T
 
     upstream_top_area = _signed_area(raw_points[:, [2, 0]])
     repo_top_area = _signed_area(rdf_points[:, [0, 2]])
@@ -165,7 +149,6 @@ def _write_advio_sequence(
     (sequence_dir / "iphone").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "pixel").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "ground-truth").mkdir(parents=True, exist_ok=True)
-    (sequence_dir / "tango").mkdir(parents=True, exist_ok=True)
 
     _write_video(sequence_dir / "iphone" / "frames.mov")
     (sequence_dir / "iphone" / "frames.csv").write_text(
@@ -196,8 +179,6 @@ def _write_advio_sequence(
     _write_fixpoints_csv(sequence_dir / "ground-truth" / "fixpoints.csv")
     _write_pose_csv(sequence_dir / "pixel" / "arcore.csv")
     _write_pose_csv(sequence_dir / "iphone" / "arkit.csv")
-    _write_pose_csv(sequence_dir / "tango" / "raw.csv")
-    _write_pose_csv(sequence_dir / "tango" / "area-learning.csv")
     _write_calibration(dataset_root / "calibration" / "iphone-03.yaml")
     return sequence_dir
 
@@ -460,7 +441,7 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     manifest = sequence.to_sequence_manifest(
         dataset_serving=AdvioServingConfig(
             pose_source=AdvioPoseSource.ARCORE,
-            pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
+            pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
         )
     )
     benchmark_inputs = sequence.to_benchmark_inputs()
@@ -475,8 +456,6 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert manifest.advio is not None
     assert manifest.advio.fixpoints_csv_path == sequence_dir / "ground-truth" / "fixpoints.csv"
     assert manifest.advio.pose_refs.selected_pose_csv_path == sequence_dir / "pixel" / "arcore.csv"
-    assert manifest.advio.pose_refs.tango_raw_csv_path == sequence_dir / "tango" / "raw.csv"
-    assert manifest.advio.pose_refs.tango_area_learning_csv_path == sequence_dir / "tango" / "area-learning.csv"
     assert manifest.advio.T_cam_imu.tx == 0.01
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
@@ -553,30 +532,6 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
     assert not (sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum").exists()
 
 
-def test_advio_benchmark_inputs_skip_invalid_raw_tango_cloud_trajectory(tmp_path: Path) -> None:
-    sequence_dir = _write_advio_sequence(tmp_path)
-    _write_pose_csv_rows(
-        sequence_dir / "tango" / "raw.csv",
-        rows=((0.0, 1.0, 2.0, 3.0), (0.0, 1.5, 2.5, 3.5), (0.2, 2.0, 3.0, 4.0)),
-    )
-    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-
-    benchmark_inputs = sequence.to_benchmark_inputs()
-
-    assert not benchmark_inputs.reference_clouds
-    assert not (sequence_dir / "evaluation" / "tango_raw.tum").exists()
-
-
-def test_advio_benchmark_inputs_skip_missing_raw_tango_cloud_trajectory(tmp_path: Path) -> None:
-    sequence_dir = _write_advio_sequence(tmp_path)
-    (sequence_dir / "tango" / "raw.csv").unlink()
-    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-
-    benchmark_inputs = sequence.to_benchmark_inputs()
-
-    assert not benchmark_inputs.reference_clouds
-
-
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path)
 
@@ -597,27 +552,7 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     assert [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz] == [3.0, -2.0, 1.0]
 
 
-def test_advio_open_stream_supports_tango_raw_provider_and_point_cloud_payload(tmp_path: Path) -> None:
-    _write_advio_sequence(tmp_path)
-    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-
-    stream = sequence.open_stream(
-        dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.TANGO_RAW),
-        loop=False,
-        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
-    )
-
-    stream.connect()
-    packet = stream.wait_for_observation()
-    stream.disconnect()
-
-    assert packet.T_world_camera is not None
-    assert packet.pointmap_xyz is None
-    assert packet.point_cloud_xyz is None
-    assert packet.provenance.pose_source == AdvioPoseSource.TANGO_RAW.value
-
-
-def test_advio_reference_world_and_local_first_pose_modes_transform_provider_poses(tmp_path: Path) -> None:
+def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:
     sequence_dir = _write_advio_sequence(tmp_path)
     _write_pose_csv_rows(
         sequence_dir / "pixel" / "arcore.csv",
@@ -641,14 +576,6 @@ def test_advio_reference_world_and_local_first_pose_modes_transform_provider_pos
         loop=False,
         replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
-    reference_world = sequence.open_stream(
-        dataset_serving=AdvioServingConfig(
-            pose_source=AdvioPoseSource.ARCORE,
-            pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
-        ),
-        loop=False,
-        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
-    )
 
     provider_world.connect()
     provider_packet = provider_world.wait_for_observation()
@@ -656,20 +583,15 @@ def test_advio_reference_world_and_local_first_pose_modes_transform_provider_pos
     local_first.connect()
     local_packet = local_first.wait_for_observation()
     local_first.disconnect()
-    reference_world.connect()
-    reference_packet = reference_world.wait_for_observation()
-    reference_world.disconnect()
 
     assert provider_packet.T_world_camera is not None
     assert local_packet.T_world_camera is not None
-    assert reference_packet.T_world_camera is not None
     assert [
         provider_packet.T_world_camera.tx,
         provider_packet.T_world_camera.ty,
         provider_packet.T_world_camera.tz,
     ] == [30.0, -20.0, 10.0]
     assert local_packet.T_world_camera.tx == pytest.approx(0.0, abs=1e-6)
-    assert reference_packet.T_world_camera.tx == pytest.approx(3.0, abs=1e-3)
 
 
 def test_list_advio_sequence_ids_supports_nested_data_layout(tmp_path: Path) -> None:

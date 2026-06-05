@@ -59,8 +59,6 @@ class AdvioSequencePaths(BaseData):
     arcore_csv_path: Path
     arkit_csv_path: Path | None = None
     calibration_path: Path
-    tango_raw_csv_path: Path | None = None
-    tango_area_learning_csv_path: Path | None = None
     accelerometer_csv_path: Path | None = None
     gyroscope_csv_path: Path | None = None
 
@@ -83,10 +81,6 @@ class AdvioSequencePaths(BaseData):
             arcore_csv_path=sequence_dir / "pixel" / "arcore.csv",
             arkit_csv_path=advio_layout.resolve_optional_arkit_csv(sequence_dir, scene),
             calibration_path=advio_layout.resolve_calibration_path(config.dataset_root, scene),
-            tango_raw_csv_path=(path if (path := sequence_dir / "tango" / "raw.csv").exists() else None),
-            tango_area_learning_csv_path=(
-                path if (path := sequence_dir / "tango" / "area-learning.csv").exists() else None
-            ),
             accelerometer_csv_path=(path if (path := sequence_dir / "iphone" / "accelerometer.csv").exists() else None),
             gyroscope_csv_path=advio_layout.resolve_optional_gyroscope_csv(sequence_dir, scene),
         )
@@ -188,8 +182,6 @@ class AdvioSequence(BaseData):
                     ground_truth_csv_path=paths.ground_truth_csv_path,
                     arcore_csv_path=paths.arcore_csv_path if paths.arcore_csv_path.exists() else None,
                     arkit_csv_path=paths.arkit_csv_path,
-                    tango_raw_csv_path=paths.tango_raw_csv_path,
-                    tango_area_learning_csv_path=paths.tango_area_learning_csv_path,
                     selected_pose_csv_path=resolve_advio_pose_csv_path(paths=paths, pose_source=selected_pose_source),
                 ),
                 fixpoints_csv_path=paths.fixpoints_csv_path,

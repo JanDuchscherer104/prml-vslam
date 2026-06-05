@@ -346,7 +346,7 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
                 "sequence_id": "advio-20",
                 "dataset_serving": {
                     "pose_source": "ground_truth",
-                    "pose_frame_mode": "reference_world",
+                    "pose_frame_mode": "provider_world",
                 },
             }
         }

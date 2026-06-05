@@ -776,7 +776,7 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path, monk
                         path=source_cloud_metadata_path, kind="json", fingerprint="source-cloud-metadata"
                     ),
                 },
-                metadata={"reference_source": "tango_raw", "coordinate_status": "aligned"},
+                metadata={"reference_source": "tum_rgbd", "coordinate_status": "aligned"},
             ),
         ],
     )
@@ -795,7 +795,7 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path, monk
     assert pointcloud_ply_calls == [
         ("world/reconstruction/reference/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3]),
         (
-            "world/reference/points/tango_raw/aligned/point_cloud",
+            "world/reference/points/tum_rgbd/aligned/point_cloud",
             cloud_path,
             1.0,
             pointcloud_ply_calls[1][3],
