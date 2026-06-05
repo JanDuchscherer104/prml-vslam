@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import rerun as rr
@@ -71,6 +72,57 @@ def _write_loaded_recording(stream: rr.RecordingStream, *, tmp_path: Path, filen
     path = tmp_path / filename
     path.write_bytes(stream.memory_recording().drain_as_bytes())
     return rdf.load_recording(path)
+
+
+def test_default_3d_scene_reference_point_query_matches_static_cloud(tmp_path: Path) -> None:
+    stream = rerun_helpers.create_recording_stream(app_id="prml-vslam-test", recording_id="reference-cloud-query")
+    entity_path = "world/reference/points/tum_rgbd/aligned/point_cloud"
+    stream.log(
+        entity_path,
+        rr.Points3D(
+            np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32),
+            colors=np.asarray([[10, 20, 30]], dtype=np.uint8),
+        ),
+        static=True,
+    )
+    recording = _write_loaded_recording(stream, tmp_path=tmp_path, filename="reference_cloud_query.rrd")
+
+    reference_points_query = next(
+        query for query in rerun_helpers.DEFAULT_3D_SCENE_CONTENTS if "world/reference/points" in query
+    )
+    component_columns = recording.view(index="log_tick", contents=reference_points_query).schema().component_columns()
+
+    assert (
+        f"/{entity_path}",
+        "Points3D:positions",
+    ) in {(column.entity_path, column.component) for column in component_columns}
+
+
+def test_default_3d_scene_ground_plane_query_matches_static_overlay(tmp_path: Path) -> None:
+    stream = rerun_helpers.create_recording_stream(app_id="prml-vslam-test", recording_id="ground-plane-query")
+    rerun_helpers.log_ground_plane_patch(
+        stream,
+        metadata=SimpleNamespace(
+            visualization=SimpleNamespace(
+                corners_xyz_world=[
+                    (0.0, 0.0, 0.0),
+                    (0.0, 0.0, 1.0),
+                    (1.0, 0.0, 1.0),
+                    (1.0, 0.0, 0.0),
+                ]
+            ),
+            ground_plane_world=SimpleNamespace(normal_xyz_world=(0.0, 1.0, 0.0)),
+        ),
+    )
+    recording = _write_loaded_recording(stream, tmp_path=tmp_path, filename="ground_plane_query.rrd")
+
+    ground_plane_query = next(query for query in rerun_helpers.DEFAULT_3D_SCENE_CONTENTS if "slam/alignment" in query)
+    component_columns = recording.view(index="log_tick", contents=ground_plane_query).schema().component_columns()
+
+    assert (
+        "/world/slam/alignment/ground_plane/fill",
+        "Mesh3D:vertex_positions",
+    ) in {(column.entity_path, column.component) for column in component_columns}
 
 
 def _rows_for_index(recording: rdf.Recording, *, index_name: str) -> list[dict[str, object]]:

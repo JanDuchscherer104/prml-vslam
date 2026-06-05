@@ -223,8 +223,10 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     layout = sent_blueprints[0].layout
     assert layout.views[0].origin == "world"
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
+    assert "+ world/slam/alignment/**" in layout.views[0].contents
+    assert "+ world/alignment/**" not in layout.views[0].contents
     assert "+ world/reference/trajectory/**" in layout.views[0].contents
-    assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
+    assert "+ world/reference/points/**" in layout.views[0].contents
     assert "+ world/aligned/**" in layout.views[0].contents
     assert "+ world/overlays/**" not in layout.views[0].contents
     assert "+ world/slam" in layout.views[0].contents
