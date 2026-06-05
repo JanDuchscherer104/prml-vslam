@@ -81,10 +81,10 @@ REFERENCE_SOURCE_COLORS_RGB = {
 }
 """Stable reference-source colors shared by Rerun trajectory diagnostics."""
 DEFAULT_3D_SCENE_CONTENTS = (
-    "+ world/alignment/**",
+    "+ world/slam/alignment/**",
     "+ world/evaluation/**",
     "+ world/reference/trajectory/**",
-    "+ world/reference/points/*/aligned/**",
+    "+ world/reference/points/**",
     "+ world/reconstruction/**",
     "+ world/slam",
     "+ world/slam/live/tracking/**",

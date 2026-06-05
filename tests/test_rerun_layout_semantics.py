@@ -260,9 +260,11 @@ def test_create_recording_stream_default_3d_view_uses_keyed_history_geometry(mon
 
     layout = sent_blueprints[0].layout
     assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
+    assert "+ world/slam/alignment/**" in layout.views[0].contents
+    assert "+ world/alignment/**" not in layout.views[0].contents
     assert "+ world/reference/trajectory/**" in layout.views[0].contents
     assert "+ world/evaluation/**" in layout.views[0].contents
-    assert "+ world/reference/points/*/aligned/**" in layout.views[0].contents
+    assert "+ world/reference/points/**" in layout.views[0].contents
     assert "+ world/aligned/**" in layout.views[0].contents
     assert "+ world/overlays/**" not in layout.views[0].contents
     assert "+ world/slam" in layout.views[0].contents
@@ -296,6 +298,8 @@ def test_checked_in_vista_blueprint_uses_current_model_entity_tree() -> None:
     assert b"world/slam/vista_" not in blueprint_bytes
     assert b"world/overlays" not in blueprint_bytes
     assert b"world/slam/live/model" in blueprint_bytes
+    assert b"world/slam/alignment" in blueprint_bytes
+    assert b"world/alignment" not in blueprint_bytes
     assert b"live/model/diag/rgb" in blueprint_bytes
     assert b"live/model/camera/image" in blueprint_bytes
 
