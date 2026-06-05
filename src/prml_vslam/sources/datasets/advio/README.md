@@ -34,11 +34,9 @@ but not perfectly identical. In the checked local ADVIO archives under
 `.data/advio/`, all 23 sequences use `ground-truth/pose.csv`,
 `iphone/gyro.csv`, and `iphone/platform-locations.csv`, whereas the official
 README documents `poses.csv`, `gyroscope.csv`, and `platform-location.csv`.
-The Tango point-cloud payloads are also stored as five-digit names such as
-`point-cloud-00001.csv`, while the official README documents the schematic
-`point-cloud-$index.csv` form. The repository adapter intentionally accepts the
-observed released names where needed, but the examples below prefer the names
-present in the released archives.
+The released archives also contain Tango point-cloud payload files, but the
+repository no longer prepares ADVIO point-cloud benchmark artifacts from them.
+Trajectory and replay adapters should treat Tango as a pose provider only.
 
 Canonical per-sequence structure:
 
@@ -131,23 +129,13 @@ ground truth. It contains:
 - `frames.mov` and `frames.csv`: Tango fisheye grayscale video and its frame
   timestamps. The dataset README reports this video as roughly 5 fps at
   640x480 [1].
-- `point-cloud.csv`: timestamps and integer point-cloud indices. Sampling is
-  non-uniform and follows Tango depth availability rather than video frame rate.
-- `point-cloud-00001.csv`, `point-cloud-00002.csv`, ...: one XYZ point-cloud
-  payload per index from the Tango depth stream.
+- `point-cloud.csv` and `point-cloud-*.csv`: Tango depth payload indexes and XYZ
+  payloads. These are intentionally not exposed as repo benchmark references.
 
 Because the Tango capture comes from a separate rigidly mounted device, its
-poses and point clouds live in Tango-local coordinate systems. Repository static
-benchmark prep associates each point-cloud payload timestamp with the raw Tango
-pose stream and fuses the payload into `advio_tango_raw_world` once. Projecting
-Tango geometry into an iPhone camera frame still requires an explicit
-Tango-to-iPhone extrinsic edge, which this repository does not expose as a
-canonical public transform.
-
-For repository-owned benchmark prep, `AdvioSequence.to_benchmark_inputs()` may
-expose raw-backed materialized static reference clouds and raw Tango payload
-index metadata. Consumers must preserve the payload semantics: ADVIO payload
-rows are local Tango point-cloud samples that the repository materializes into
+poses live in Tango-local coordinate systems. Projecting Tango geometry into an
+iPhone camera frame would require an explicit Tango-to-iPhone extrinsic edge,
+which this repository does not expose as a canonical public transform.
 the raw Tango world with the timestamped Tango pose before static cloud
 alignment.
 

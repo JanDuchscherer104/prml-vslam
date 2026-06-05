@@ -232,8 +232,11 @@ For offline pipeline execution:
   directory and an `intrinsics.yaml`
 - [TumRgbdSequence.to_benchmark_inputs()](./tum_rgbd_sequence.py:101) exports the official ground truth to a
   normalized `ground_truth.tum`
-- the same benchmark input prep emits a bounded aligned reference cloud when
-  depth is available
+- the same benchmark input prep writes an `observation_sequence.v1` index and
+  uses those exact RGB-D rows for the aligned reference cloud
+- the TUM RGB-D reference PLY uses post-fusion point sampling as the benchmark
+  cost control; it must not apply a private reference-cloud frame cap that
+  differs from the method input sample set
 - the resulting [SequenceManifest](../../pipeline/contracts/sequence.py:11) stays RGB-directory-based rather than
   video-based
 
