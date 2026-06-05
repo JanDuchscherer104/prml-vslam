@@ -132,15 +132,21 @@ def render_live_action_slot(
     is_active: bool,
     start_label: str,
     stop_label: str,
+    key: str,
     start_disabled: bool = False,
     use_container_width: bool = True,
 ) -> tuple[bool, bool]:
-    """Render one explicit start-or-stop button slot and return the requested action flags."""
+    """Render one keyed start-or-stop button slot and return requested action flags."""
     if is_active:
-        return False, st.button(stop_label, use_container_width=use_container_width)
+        return False, st.button(
+            stop_label,
+            key=f"{key}:stop",
+            use_container_width=use_container_width,
+        )
     return (
         st.button(
             start_label,
+            key=f"{key}:start",
             type="primary",
             disabled=start_disabled,
             use_container_width=use_container_width,
