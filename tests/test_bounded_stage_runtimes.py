@@ -193,7 +193,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
         def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
             del observations
             artifact_root.mkdir(parents=True, exist_ok=True)
-            cloud = artifact_root / "reference_cloud.ply"
+            cloud = artifact_root / "reconstruction_cloud.ply"
             metadata = artifact_root / "reconstruction_metadata.json"
             mesh = artifact_root / "reference_mesh.ply"
             cloud.write_text("ply\n", encoding="utf-8")
@@ -227,7 +227,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert isinstance(result.payload, ReconstructionArtifacts)
     assert set(result.outcome.artifacts) == {
-        "reference_cloud",
+        "reconstruction_cloud",
         "reconstruction_metadata",
         "reference_mesh",
     }
@@ -263,7 +263,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
         def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
             del observations
             artifact_root.mkdir(parents=True, exist_ok=True)
-            cloud = artifact_root / "reference_cloud.ply"
+            cloud = artifact_root / "reconstruction_cloud.ply"
             metadata = artifact_root / "reconstruction_metadata.json"
             cloud.write_text("ply\n", encoding="utf-8")
             metadata.write_text("{}\n", encoding="utf-8")
@@ -290,7 +290,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
         )
     )
 
-    assert set(result.outcome.artifacts) == {"reference_cloud", "reconstruction_metadata"}
+    assert set(result.outcome.artifacts) == {"reconstruction_cloud", "reconstruction_metadata"}
     updates = runtime.drain_runtime_updates()
     assert len(updates) == 1
     assert [(item.intent, item.role) for item in updates[0].visualizations] == [

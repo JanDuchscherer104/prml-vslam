@@ -48,7 +48,7 @@ class Open3dTsdfBackend:
         """Integrate one offline RGB-D sequence into a fused world-space cloud.
 
         The output point cloud is extracted in the observation world frame and
-        persisted as ``reference_cloud.ply`` alongside typed side metadata.
+        persisted as ``reconstruction_cloud.ply`` alongside typed side metadata.
         """
         config = self._config
         ordered_observations = list(observations)
@@ -86,7 +86,7 @@ class Open3dTsdfBackend:
             raise RuntimeError("Open3D TSDF reconstruction produced an empty point cloud.")
 
         artifact_root.mkdir(parents=True, exist_ok=True)
-        reference_cloud_path = write_point_cloud_ply(artifact_root / "reference_cloud.ply", points_xyz)
+        reference_cloud_path = write_point_cloud_ply(artifact_root / "reconstruction_cloud.ply", points_xyz)
 
         mesh_path: Path | None = None
         if config.extract_mesh:
