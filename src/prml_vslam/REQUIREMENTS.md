@@ -87,13 +87,14 @@ Use this file for package-root ownership rules and cross-package contract constr
   boundaries. Inverse transforms belong only at call sites whose external APIs
   require world-to-camera matrices.
 - Unstructured point clouds, raster-aligned pointmaps, and metric depth maps
-  are distinct shared geometry contracts. Sparse source clouds such as ADVIO
-  Tango payloads must not be represented as pointmaps without an explicit
-  projection step.
-- Time-ordered reference-cloud sequence refs must carry payload-frame semantics
-  explicitly; repository-prepared ADVIO Tango reference clouds are raw-backed
-  materializations that associate timestamped Tango point-cloud payloads with
-  the raw Tango pose stream before static cloud alignment.
+  are distinct shared geometry contracts.
+- ADVIO does not prepare point-cloud benchmark references. Its Tango data is
+  retained only as optional pose-provider input.
+- Repository-prepared TUM RGB-D reference clouds must be built from the same
+  persisted RGB-D observation index consumed by the method input path. Any point
+  budget or Rerun decimation must happen after all method frames have
+  contributed candidate points, and the PLY side metadata must record the source
+  observation index plus point sampling policy.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - `prml_vslam.sources.replay` owns `ObservationStream`.

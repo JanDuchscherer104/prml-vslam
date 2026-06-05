@@ -9,10 +9,10 @@ Use [../REQUIREMENTS.md](../REQUIREMENTS.md) for top-level ownership rules. Use 
 This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO
 and TUM RGB-D.
 
-Current simplification work must preserve the full supported dataset surface. In particular:
+Current simplification work must preserve the supported dataset surface. In particular:
 
 - all currently supported modalities remain in scope
-- ADVIO Tango poses and Tango point-cloud payload support remain in scope
+- ADVIO Tango poses remain in scope as optional pose providers
 - dataset-provided reference cloud preparation remains in scope
 - the current ray-pipeline-facing dataset service and sequence surfaces remain the public integration boundary
 
@@ -92,15 +92,11 @@ Datasets normalize local source data into two pipeline-facing outputs:
 - `PreparedBenchmarkInputs`
   - canonical benchmark-side auxiliary inputs
   - may carry normalized `reference_trajectories`
-  - for ADVIO and TUM RGB-D, may also carry `reference_clouds`
-  - for ADVIO, may also carry
-    `reference_point_cloud_sequences`
-  - ADVIO Tango reference clouds are raw-backed (`tango_raw`)
-  - TUM RGB-D reference clouds are sampled registered-depth clouds fused
-    through ground-truth RGB-camera poses (`tum_rgbd`)
-  - point-cloud sequence refs must preserve payload semantics; ADVIO Tango
-    payload rows are timestamped Tango point-cloud samples that repository
-    benchmark prep materializes through raw Tango pose association
+  - for TUM RGB-D, may also carry `reference_clouds`
+  - ADVIO does not prepare point-cloud references
+  - TUM RGB-D reference clouds are registered-depth clouds fused through
+    ground-truth RGB-camera poses from the same persisted observation index
+    consumed by method input preparation (`tum_rgbd`)
 
 The current ADVIO-specific manifest payload DTOs are:
 
@@ -109,7 +105,6 @@ The current ADVIO-specific manifest payload DTOs are:
   - parsed `T_cam_imu`
   - selected/raw pose refs
   - fixpoints ref
-  - Tango point-cloud index/payload-root refs
 - `AdvioRawPoseRefs`
   - GT, ARCore, ARKit, Tango raw, Tango area-learning, and selected provider
     pose paths when present
