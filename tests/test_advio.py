@@ -14,7 +14,6 @@ import prml_vslam.sources.replay.video as replay_video_module
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
     ReferenceCloudSource,
-    ReferencePointCloudPayloadSemantics,
     ReferenceSource,
 )
 from prml_vslam.sources.datasets.advio import (
@@ -48,7 +47,6 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
 )
 from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
-from prml_vslam.utils.geometry import load_point_cloud_ply
 
 
 def _write_video(path: Path, *, num_frames: int = 3) -> None:
@@ -150,21 +148,6 @@ def _write_pose_csv_rows(path: Path, *, rows: tuple[tuple[float, float, float, f
     )
 
 
-def _write_tango_point_cloud_payload(path: Path, *, depth_offset: float) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "\n".join(
-            [
-                f"0.0,0.0,{1.0 + depth_offset:.3f}",
-                f"0.1,0.0,{1.1 + depth_offset:.3f}",
-                f"0.0,0.1,{1.2 + depth_offset:.3f}",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-
 def _write_fixpoints_csv(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("0.0,1.0,2.0,3.0\n0.2,2.0,3.0,4.0\n", encoding="utf-8")
@@ -215,13 +198,6 @@ def _write_advio_sequence(
     _write_pose_csv(sequence_dir / "iphone" / "arkit.csv")
     _write_pose_csv(sequence_dir / "tango" / "raw.csv")
     _write_pose_csv(sequence_dir / "tango" / "area-learning.csv")
-    (sequence_dir / "tango" / "point-cloud.csv").write_text(
-        "0.0,1\n0.1,2\n0.2,3\n",
-        encoding="utf-8",
-    )
-    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00001.csv", depth_offset=0.0)
-    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00002.csv", depth_offset=0.1)
-    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00003.csv", depth_offset=0.2)
     _write_calibration(dataset_root / "calibration" / "iphone-03.yaml")
     return sequence_dir
 
@@ -518,106 +494,7 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
     ]
-    assert [sequence.source.value for sequence in benchmark_inputs.reference_point_cloud_sequences] == ["tango_raw"]
-    assert [reference.source.value for reference in benchmark_inputs.reference_clouds] == ["tango_raw", "tango_raw"]
-    point_cloud_sequence = benchmark_inputs.reference_point_cloud_sequences[0]
-    assert point_cloud_sequence.payload_frame == "advio_tango_depth_sensor_rdf"
-    assert point_cloud_sequence.payload_semantics is (
-        ReferencePointCloudPayloadSemantics.DEPTH_SENSOR_LOCAL_FUSED_BY_SOURCE_POSE
-    )
-    reference_cloud = benchmark_inputs.reference_clouds[0]
-    assert reference_cloud.path.exists()
-    assert reference_cloud.target_frame == "advio_tango_raw_world"
-    assert reference_cloud.native_frame == "advio_tango_raw_world"
-    aligned_reference_cloud = benchmark_inputs.reference_clouds[1]
-    assert aligned_reference_cloud.target_frame == "advio_gt_world"
-    assert aligned_reference_cloud.native_frame == "advio_tango_raw_world"
-    metadata = json.loads(reference_cloud.metadata_path.read_text(encoding="utf-8"))
-    assert metadata["point_count"] == 9
-    assert metadata["payload_frame"] == "advio_tango_depth_sensor_rdf"
-    assert metadata["payload_pose_semantics"] == "depth_sensor_local_fused_by_source_pose"
-    assert metadata["per_payload_pose_applied"] is True
-    assert metadata["point_stride"] == 1
-    assert metadata["skipped_out_of_range_payloads"] == 0
-
-
-def test_advio_tango_reference_clouds_fuse_payloads_through_raw_poses(tmp_path: Path) -> None:
-    sequence_dir = _write_advio_sequence(tmp_path)
-    _write_pose_csv_rows(
-        sequence_dir / "tango" / "raw.csv",
-        rows=((0.0, 100.0, 200.0, 300.0), (0.1, 101.0, 201.0, 301.0), (0.2, 102.0, 202.0, 302.0)),
-    )
-    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-
-    benchmark_inputs = sequence.to_benchmark_inputs()
-
-    assert [reference.coordinate_status for reference in benchmark_inputs.reference_clouds] == [
-        ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
-        ReferenceCloudCoordinateStatus.ALIGNED,
-    ]
-    raw_native_points = load_point_cloud_ply(benchmark_inputs.reference_clouds[0].path)
-
-    assert np.allclose(raw_native_points[0], np.array([100.0, -301.0, 200.0]))
-    assert np.max(np.abs(raw_native_points)) > 300.0
-
-
-def test_advio_tango_reference_clouds_gate_high_rms_gt_alignment(tmp_path: Path) -> None:
-    sequence_dir = _write_advio_sequence(tmp_path)
-    rows = (
-        (0.0, 0.0, 0.0, 0.0),
-        (0.1, 1.0, 0.0, 0.0),
-        (0.2, 0.0, 1.0, 0.0),
-        (0.3, 1.0, 1.0, 0.0),
-    )
-    _write_pose_csv_rows(sequence_dir / "tango" / "raw.csv", rows=rows)
-    _write_pose_csv_rows(
-        sequence_dir / "ground-truth" / "poses.csv",
-        rows=(
-            (0.0, 0.0, 0.0, 0.0),
-            (0.1, 1.0, 0.0, 0.0),
-            (0.2, 0.0, 1.0, 0.0),
-            (0.3, 1000.0, 1.0, 0.0),
-        ),
-    )
-    (sequence_dir / "tango" / "point-cloud.csv").write_text("0.0,1\n0.1,2\n0.2,3\n0.3,4\n", encoding="utf-8")
-    _write_tango_point_cloud_payload(sequence_dir / "tango" / "point-cloud-00004.csv", depth_offset=0.3)
-    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-
-    benchmark_inputs = sequence.to_benchmark_inputs()
-
-    assert [reference.coordinate_status for reference in benchmark_inputs.reference_clouds] == [
-        ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-    ]
-    assert [sequence.coordinate_status for sequence in benchmark_inputs.reference_point_cloud_sequences] == [
-        ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-    ]
-    metadata = json.loads(benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
-    assert metadata["gt_alignment_rejection"]["reason"] == "sim3_rms_threshold_exceeded"
-    assert metadata["gt_alignment_rejection"]["threshold_m"] == 10.0
-    assert metadata["gt_alignment_rejection"]["rms_error_m"] > 10.0
-
-
-def test_advio_tango_reference_clouds_ignore_short_area_learning(tmp_path: Path) -> None:
-    sequence_dir = _write_advio_sequence(tmp_path)
-    _write_pose_csv_rows(
-        sequence_dir / "tango" / "area-learning.csv",
-        rows=((0.0, 1.0, 2.0, 3.0), (0.1, 1.5, 2.5, 3.5)),
-    )
-    sequence = AdvioSequence(config=AdvioSequenceConfig(dataset_root=tmp_path, sequence_id=15))
-
-    benchmark_inputs = sequence.to_benchmark_inputs()
-
-    raw_native = next(
-        reference
-        for reference in benchmark_inputs.reference_clouds
-        if reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-    )
-    metadata = json.loads(raw_native.metadata_path.read_text(encoding="utf-8"))
-    assert metadata["point_count"] == 9
-    assert metadata["payloads_used"] == 3
-    assert metadata["skipped_out_of_range_payloads"] == 0
-    assert "fallback_reason" not in metadata
-    assert "trajectory_used_for_cloud" not in metadata
+    assert benchmark_inputs.reference_clouds == []
 
 
 def test_advio_benchmark_inputs_sanitize_optional_provider_trajectory(tmp_path: Path) -> None:
@@ -687,7 +564,6 @@ def test_advio_benchmark_inputs_skip_invalid_raw_tango_cloud_trajectory(tmp_path
     benchmark_inputs = sequence.to_benchmark_inputs()
 
     assert not benchmark_inputs.reference_clouds
-    assert not benchmark_inputs.reference_point_cloud_sequences
     assert not (sequence_dir / "evaluation" / "tango_raw.tum").exists()
 
 
@@ -699,7 +575,6 @@ def test_advio_benchmark_inputs_skip_missing_raw_tango_cloud_trajectory(tmp_path
     benchmark_inputs = sequence.to_benchmark_inputs()
 
     assert not benchmark_inputs.reference_clouds
-    assert not benchmark_inputs.reference_point_cloud_sequences
 
 
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:

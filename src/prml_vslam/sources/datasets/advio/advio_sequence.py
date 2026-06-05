@@ -14,9 +14,6 @@ from prml_vslam.sources.contracts import (
     AdvioRawPoseRefs,
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
-    ReferenceCloudSource,
-    ReferencePointCloudPayloadSemantics,
-    ReferencePointCloudSequenceRef,
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
@@ -35,10 +32,6 @@ from . import advio_layout, advio_loading
 from .advio_frames import (
     advio_basis_metadata,
     write_advio_rdf_tum,
-)
-from .advio_geometry import (
-    TANGO_DEPTH_PAYLOAD_FRAME,
-    build_advio_tango_reference_clouds,
 )
 from .advio_models import (
     ADVIO_SEQUENCE_COUNT,
@@ -68,8 +61,6 @@ class AdvioSequencePaths(BaseData):
     calibration_path: Path
     tango_raw_csv_path: Path | None = None
     tango_area_learning_csv_path: Path | None = None
-    tango_point_cloud_index_path: Path | None = None
-    tango_dir: Path | None = None
     accelerometer_csv_path: Path | None = None
     gyroscope_csv_path: Path | None = None
 
@@ -96,10 +87,6 @@ class AdvioSequencePaths(BaseData):
             tango_area_learning_csv_path=(
                 path if (path := sequence_dir / "tango" / "area-learning.csv").exists() else None
             ),
-            tango_point_cloud_index_path=(
-                path if (path := sequence_dir / "tango" / "point-cloud.csv").exists() else None
-            ),
-            tango_dir=(path if (path := sequence_dir / "tango").exists() else None),
             accelerometer_csv_path=(path if (path := sequence_dir / "iphone" / "accelerometer.csv").exists() else None),
             gyroscope_csv_path=advio_layout.resolve_optional_gyroscope_csv(sequence_dir, scene),
         )
@@ -206,8 +193,6 @@ class AdvioSequence(BaseData):
                     selected_pose_csv_path=resolve_advio_pose_csv_path(paths=paths, pose_source=selected_pose_source),
                 ),
                 fixpoints_csv_path=paths.fixpoints_csv_path,
-                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
-                tango_payload_root=paths.tango_dir,
             ),
         )
 
@@ -215,9 +200,10 @@ class AdvioSequence(BaseData):
         self,
         *,
         output_dir: Path | None = None,
-        tango_reference_point_stride: int = 1,
+        frame_selection: FrameSelectionConfig | None = None,
     ) -> PreparedBenchmarkInputs:
         """Materialize benchmark-owned reference trajectories for one sequence."""
+        del frame_selection
         paths = self._resolve_paths(require_arcore=False)
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
         evaluation_dir.mkdir(parents=True, exist_ok=True)
@@ -251,22 +237,7 @@ class AdvioSequence(BaseData):
                 source_path=paths.arkit_csv_path,
                 target_path=evaluation_dir / "arkit.tum",
             )
-        return PreparedBenchmarkInputs(
-            reference_trajectories=references,
-            reference_point_cloud_sequences=_build_reference_point_cloud_sequences(
-                paths=paths,
-                sequence_slug=self.scene.sequence_slug,
-                evaluation_dir=evaluation_dir,
-            ),
-            reference_clouds=build_advio_tango_reference_clouds(
-                sequence_slug=self.scene.sequence_slug,
-                ground_truth_csv_path=paths.ground_truth_csv_path,
-                tango_raw_csv_path=paths.tango_raw_csv_path,
-                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
-                output_dir=evaluation_dir,
-                point_stride=tango_reference_point_stride,
-            ),
-        )
+        return PreparedBenchmarkInputs(reference_trajectories=references)
 
     def open_stream(
         self,
@@ -382,55 +353,6 @@ def _append_optional_reference_trajectory(
             source_path,
             exc,
         )
-
-
-def _build_reference_point_cloud_sequences(
-    *,
-    paths: AdvioSequencePaths,
-    sequence_slug: str,
-    evaluation_dir: Path,
-) -> list[ReferencePointCloudSequenceRef]:
-    if paths.tango_point_cloud_index_path is None or paths.tango_dir is None:
-        return []
-
-    sequences: list[ReferencePointCloudSequenceRef] = []
-    for source, trajectory_csv_path, tum_name in (
-        (ReferenceCloudSource.TANGO_RAW, paths.tango_raw_csv_path, "tango_raw.tum"),
-    ):
-        if trajectory_csv_path is None or not trajectory_csv_path.exists():
-            continue
-        try:
-            pose_source = AdvioPoseSource(source.value)
-            native_frame = f"advio_{source.value}_world"
-            trajectory_path = _ensure_advio_tum(
-                trajectory_csv_path,
-                evaluation_dir / tum_name,
-                source=pose_source,
-                target_frame=native_frame,
-                native_frame=native_frame,
-            )
-        except ValueError as exc:
-            _CONSOLE.warning(
-                "Skipping invalid optional ADVIO %s point-cloud trajectory '%s': %s",
-                source.value,
-                trajectory_csv_path,
-                exc,
-            )
-            continue
-        sequences.append(
-            ReferencePointCloudSequenceRef(
-                source=source,
-                index_path=paths.tango_point_cloud_index_path.resolve(),
-                payload_root=paths.tango_dir.resolve(),
-                trajectory_path=trajectory_path,
-                target_frame=native_frame,
-                native_frame=native_frame,
-                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
-                payload_frame=TANGO_DEPTH_PAYLOAD_FRAME,
-                payload_semantics=ReferencePointCloudPayloadSemantics.DEPTH_SENSOR_LOCAL_FUSED_BY_SOURCE_POSE,
-            )
-        )
-    return sequences
 
 
 def _write_advio_trajectory_metadata(

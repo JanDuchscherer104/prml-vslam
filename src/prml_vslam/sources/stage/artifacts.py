@@ -6,7 +6,6 @@ from prml_vslam.interfaces import ObservationSequenceRef
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.sources.contracts import (
     ReferenceCloudRef,
-    ReferencePointCloudSequenceRef,
     ReferenceSource,
     ReferenceTrajectoryRef,
 )
@@ -30,24 +29,17 @@ def source_artifacts(*, run_paths: RunArtifactPaths, output: SourceStageOutput) 
             artifacts[key] = artifact_ref(path, kind=kind)
     if output.benchmark_inputs is not None:
         artifacts["benchmark_inputs"] = artifact_ref(run_paths.benchmark_inputs_path, kind="json")
-        for reference in output.benchmark_inputs.reference_trajectories:
-            artifacts[reference_trajectory_artifact_key(reference)] = artifact_ref(reference.path, kind="tum")
-        for reference in output.benchmark_inputs.reference_clouds:
-            artifacts[reference_cloud_artifact_key(reference)] = artifact_ref(reference.path, kind="ply")
-            artifacts[reference_cloud_metadata_artifact_key(reference)] = artifact_ref(
-                reference.metadata_path,
+        for trajectory_ref in output.benchmark_inputs.reference_trajectories:
+            artifacts[reference_trajectory_artifact_key(trajectory_ref)] = artifact_ref(trajectory_ref.path, kind="tum")
+        for cloud_ref in output.benchmark_inputs.reference_clouds:
+            artifacts[reference_cloud_artifact_key(cloud_ref)] = artifact_ref(cloud_ref.path, kind="ply")
+            artifacts[reference_cloud_metadata_artifact_key(cloud_ref)] = artifact_ref(
+                cloud_ref.metadata_path,
                 kind="json",
             )
-        for reference in output.benchmark_inputs.reference_point_cloud_sequences:
-            for key_func, path, kind in (
-                (reference_point_cloud_sequence_index_artifact_key, reference.index_path, "csv"),
-                (reference_point_cloud_sequence_trajectory_artifact_key, reference.trajectory_path, "tum"),
-                (reference_point_cloud_sequence_payload_artifact_key, reference.payload_root, "dir"),
-            ):
-                artifacts[key_func(reference)] = artifact_ref(path, kind=kind)
-        for reference in output.benchmark_inputs.observation_sequences:
-            artifacts[observation_sequence_artifact_key(reference)] = artifact_ref(
-                reference.index_path,
+        for observation_ref in output.benchmark_inputs.observation_sequences:
+            artifacts[observation_sequence_artifact_key(observation_ref)] = artifact_ref(
+                observation_ref.index_path,
                 kind="observation_sequence",
             )
     return artifacts
@@ -74,26 +66,6 @@ def reference_cloud_metadata_artifact_key(reference: ReferenceCloudRef) -> str:
     return f"reference_cloud_metadata:{reference.source.value}:{reference.coordinate_status.value}"
 
 
-def reference_point_cloud_sequence_index_artifact_key(reference: ReferencePointCloudSequenceRef) -> str:
-    """Return the source-stage artifact key for one point-cloud sequence index."""
-    return f"reference_point_cloud_sequence_index:{reference.source.value}:{_entity_token(reference.coordinate_status.value)}"
-
-
-def reference_point_cloud_sequence_trajectory_artifact_key(reference: ReferencePointCloudSequenceRef) -> str:
-    """Return the source-stage artifact key for one point-cloud sequence trajectory."""
-    target_frame = _entity_token(reference.target_frame)
-    coordinate_status = _entity_token(reference.coordinate_status.value)
-    return f"reference_point_cloud_sequence_trajectory:{reference.source.value}:{target_frame}:{coordinate_status}"
-
-
-def reference_point_cloud_sequence_payload_artifact_key(reference: ReferencePointCloudSequenceRef) -> str:
-    """Return the source-stage artifact key for one point-cloud sequence payload root."""
-    return (
-        f"reference_point_cloud_sequence_payload_root:{reference.source.value}:"
-        f"{_entity_token(reference.coordinate_status.value)}"
-    )
-
-
 def observation_sequence_artifact_key(reference: ObservationSequenceRef) -> str:
     """Return the source-stage artifact key for one observation sequence index."""
     return f"observation_sequence:{reference.source_id}:{reference.sequence_id}"
@@ -108,9 +80,6 @@ __all__ = [
     "observation_sequence_artifact_key",
     "reference_cloud_artifact_key",
     "reference_cloud_metadata_artifact_key",
-    "reference_point_cloud_sequence_index_artifact_key",
-    "reference_point_cloud_sequence_payload_artifact_key",
-    "reference_point_cloud_sequence_trajectory_artifact_key",
     "reference_trajectory_artifact_key",
     "source_artifacts",
 ]
