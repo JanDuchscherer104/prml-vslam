@@ -772,7 +772,7 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path, monk
     assert pointcloud_ply_calls == [
         ("world/reconstruction/reference/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3]),
         (
-            "world/reference/points/tango_raw/aligned/points_4_skipped_0/point_cloud",
+            "world/reference/points/tango_raw/aligned/point_cloud",
             cloud_path,
             1.0,
             pointcloud_ply_calls[1][3],
