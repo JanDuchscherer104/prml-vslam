@@ -958,14 +958,7 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
 ) -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
-    submitted: list[tuple[StageRuntimeUpdate, object]] = []
-
-    class FakeObserveUpdateRemote:
-        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: object) -> str:
-            submitted.append((update, payload_resolver))
-            return "rerun-call-1"
-
-    coordinator._rerun_sink = SimpleNamespace(observe_update=FakeObserveUpdateRemote())
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("export",), monkeypatch=monkeypatch)
     coordinator._run_config = SimpleNamespace(visualization=SimpleNamespace(log_source_rgb=True))
     monkeypatch.setattr(coordinator, "_self_actor_handle", lambda: "resolver")
     monkeypatch.setattr(
@@ -994,9 +987,10 @@ def test_run_coordinator_submits_source_rgb_runtime_update_without_hot_path_ray_
     )
 
     assert len(submitted) == 1
-    assert submitted[0][0].stage_key is StageKey.SOURCE
-    assert submitted[0][1] == "resolver"
-    assert coordinator._rerun_sink_last_call == "rerun-call-1"
+    assert submitted[0][0] == "export"
+    assert submitted[0][1].stage_key is StageKey.SOURCE
+    assert submitted[0][2] == "resolver"
+    assert coordinator._rerun_sinks[0].last_call == "export-call-1"
 
 
 def _attach_fake_rerun_sidecars(
@@ -1325,39 +1319,10 @@ def test_run_coordinator_close_does_not_reexport_snapshot_artifacts(
     monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.get", lambda ref: ref)
     monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.kill", lambda *args, **kwargs: None)
 
-    coordinator._close_rerun_sink()
+    coordinator._close_rerun_sinks()
 
     assert submitted == []
     assert coordinator._rerun_sinks == []
-
-
-def test_run_coordinator_close_legacy_sink_does_not_reexport_snapshot_artifacts(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
-    coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
-    close_calls: list[str] = []
-    submitted: list[StageRuntimeUpdate] = []
-
-    class _CloseRemote:
-        def remote(self) -> str:
-            close_calls.append("close")
-            return "legacy-close"
-
-    coordinator._rerun_sink = SimpleNamespace(close=_CloseRemote())
-    monkeypatch.setattr(
-        coordinator,
-        "_submit_rerun_update",
-        lambda *, update, payload_resolver=None, destinations=None: submitted.append(update),
-    )
-    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.get", lambda ref: ref)
-    monkeypatch.setattr("prml_vslam.pipeline.ray_runtime.coordinator.ray.kill", lambda *args, **kwargs: None)
-
-    coordinator._close_rerun_sink()
-
-    assert submitted == []
-    assert close_calls == ["close"]
-    assert coordinator._rerun_sink is None
 
 
 def test_run_coordinator_keeps_live_source_reference_trajectories_before_slam_updates(
@@ -1395,10 +1360,12 @@ def test_run_coordinator_keeps_live_source_reference_trajectories_before_slam_up
     assert live_stages == [StageKey.SOURCE, StageKey.SLAM]
 
 
-def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver() -> None:
+def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
-    submitted: list[tuple[StageRuntimeUpdate, Any]] = []
+    submitted = _attach_fake_rerun_sidecars(coordinator, kinds=("export",), monkeypatch=monkeypatch)
     update = StageRuntimeUpdate(
         stage_key=StageKey.RECONSTRUCTION,
         timestamp_ns=1,
@@ -1413,11 +1380,6 @@ def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_r
             )
         ],
     )
-
-    class FakeObserveUpdateRemote:
-        def remote(self, *, update: StageRuntimeUpdate, payload_resolver: Any) -> str:
-            submitted.append((update, payload_resolver))
-            return "rerun-call-1"
 
     class FakeReconstructionRuntime:
         def __init__(self) -> None:
@@ -1446,12 +1408,11 @@ def test_run_coordinator_routes_reconstruction_runtime_updates_without_payload_r
         factory=FakeReconstructionRuntime,
     )
     runtime_proxy = runtime_manager.runtime_for(StageKey.RECONSTRUCTION)
-    coordinator._rerun_sink = SimpleNamespace(observe_update=FakeObserveUpdateRemote())
 
     coordinator._publish_runtime_updates_from_proxy(runtime_proxy)
 
-    assert submitted == [(update, None)]
-    assert coordinator._rerun_sink_last_call == "rerun-call-1"
+    assert submitted == [("export", update, None)]
+    assert coordinator._rerun_sinks[0].last_call == "export-call-1"
     assert coordinator.snapshot().stage_runtime_status[StageKey.RECONSTRUCTION].lifecycle_state is StageStatus.COMPLETED
     assert runtime_proxy.drain_runtime_updates() == []
 

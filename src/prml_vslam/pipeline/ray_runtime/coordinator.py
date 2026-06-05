@@ -125,10 +125,6 @@ class RunCoordinatorActor:
         self._streaming_done = threading.Event()
         self._jsonl_sink: JsonlEventSink | None = None
         self._rerun_sinks: list[_RerunSinkSidecar] = []
-        self._rerun_sink: ActorHandle | None = None
-        self._rerun_sink_last_call: ray.ObjectRef[None] | None = None
-        self._rerun_sink_submission_count = 0
-        self._rerun_sink_pending_count = 0
         self._worker: threading.Thread | None = None
         self._source_actor: ActorHandle | None = None
         self._streaming_runtime_manager: RuntimeManager | None = None
@@ -236,7 +232,7 @@ class RunCoordinatorActor:
             self._slam_runtime_proxy.stop()
         if self._worker is not None:
             self._worker.join(timeout=5.0)
-        self._close_rerun_sink()
+        self._close_rerun_sinks()
 
     def on_packet(
         self,
@@ -471,7 +467,7 @@ class RunCoordinatorActor:
             except Exception:
                 pass
         finally:
-            self._close_rerun_sink()
+            self._close_rerun_sinks()
 
     def _run_offline(
         self,
@@ -1048,7 +1044,6 @@ class RunCoordinatorActor:
                         update=update,
                         payload_resolver=payload_resolver,
                     )
-                    self._rerun_sink_last_call = sidecar.last_call
                 except Exception as exc:  # pragma: no cover - best-effort sidecar submission
                     self._console.warning(
                         "Failed to submit Rerun %s sink runtime update for stage '%s': %s",
@@ -1056,19 +1051,6 @@ class RunCoordinatorActor:
                         update.stage_key.value,
                         exc,
                     )
-            return
-        if self._rerun_sink is None:
-            return
-        try:
-            self._log_legacy_rerun_update_backlog(update)
-            self._rerun_sink_last_call = self._rerun_sink.observe_update.remote(
-                update=update,
-                payload_resolver=payload_resolver,
-            )
-        except Exception as exc:  # pragma: no cover - best-effort sidecar submission
-            self._console.warning(
-                "Failed to submit Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc
-            )
 
     def _publish_runtime_updates_from_proxy(self, runtime_proxy: StageRuntimeHandle) -> None:
         updates = runtime_proxy.drain_runtime_updates(max_items=None)
@@ -1084,7 +1066,7 @@ class RunCoordinatorActor:
         return ray.get_actor(coordinator_actor_name(self._run_id), namespace=self._namespace)
 
     def _has_rerun_sinks(self) -> bool:
-        return bool(self._rerun_sinks) or self._rerun_sink is not None
+        return bool(self._rerun_sinks)
 
     def _log_rerun_update_backlog(self, update: StageRuntimeUpdate, *, sidecar: _RerunSinkSidecar) -> None:
         sidecar.submission_count += 1
@@ -1117,30 +1099,6 @@ class RunCoordinatorActor:
                 lag_detail,
             )
 
-    def _log_legacy_rerun_update_backlog(self, update: StageRuntimeUpdate) -> None:
-        self._rerun_sink_submission_count += 1
-        if self._rerun_sink_last_call is None:
-            return
-        ready, _ = ray.wait([self._rerun_sink_last_call], timeout=0.0)
-        if ready:
-            self._rerun_sink_pending_count = 0
-            return
-        self._rerun_sink_pending_count += 1
-        if self._rerun_sink_pending_count == 1 or self._rerun_sink_pending_count % 100 == 0:
-            payload_refs = [
-                (item.role, slot, ref.payload_kind, ref.shape, ref.dtype)
-                for item in update.visualizations
-                for slot, ref in item.payload_refs.items()
-            ]
-            self._console.warning(
-                "Rerun sink sidecar is lagging: previous runtime update still pending for stage '%s' "
-                "(submitted=%d, consecutive_pending=%d, refs=%s). Live viewer may lag behind the exported RRD.",
-                update.stage_key.value,
-                self._rerun_sink_submission_count,
-                self._rerun_sink_pending_count,
-                payload_refs,
-            )
-
     def _remember_handle(self, handle_id: str, payload: HandlePayload) -> None:
         with self._lock:
             self._handle_refs[handle_id] = payload
@@ -1167,25 +1125,16 @@ class RunCoordinatorActor:
             self._event_counter += 1
             return str(self._event_counter)
 
-    def _close_rerun_sink(self) -> None:
+    def _close_rerun_sinks(self) -> None:
         if not self._has_rerun_sinks():
             return
         actors = [sidecar.actor for sidecar in self._rerun_sinks]
-        if self._rerun_sink is not None:
-            actors.append(self._rerun_sink)
         try:
-            if self._rerun_sinks:
-                for sidecar in self._rerun_sinks:
-                    if sidecar.last_call is not None:
-                        ray.get(sidecar.last_call)
-                    sidecar.last_call = sidecar.actor.close.remote()
+            for sidecar in self._rerun_sinks:
+                if sidecar.last_call is not None:
                     ray.get(sidecar.last_call)
-                    self._rerun_sink_last_call = sidecar.last_call
-            elif self._rerun_sink is not None:
-                if self._rerun_sink_last_call is not None:
-                    ray.get(self._rerun_sink_last_call)
-                self._rerun_sink_last_call = self._rerun_sink.close.remote()
-                ray.get(self._rerun_sink_last_call)
+                sidecar.last_call = sidecar.actor.close.remote()
+                ray.get(sidecar.last_call)
         except Exception as exc:  # pragma: no cover - best-effort sidecar cleanup
             self._console.warning("Failed to close Rerun sink actor for run '%s': %s", self._run_id, exc)
         finally:
@@ -1195,8 +1144,6 @@ class RunCoordinatorActor:
                 except Exception:
                     pass
             self._rerun_sinks = []
-            self._rerun_sink = None
-            self._rerun_sink_last_call = None
 
     def _require_run_config(self) -> RunConfig:
         if self._run_config is not None:
