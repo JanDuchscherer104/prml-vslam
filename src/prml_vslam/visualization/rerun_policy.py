@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -46,7 +45,6 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
-from prml_vslam.sources.stage.visualization import METADATA_ARTIFACT as SOURCE_METADATA_ARTIFACT
 from prml_vslam.sources.stage.visualization import POINT_CLOUD_ARTIFACT as SOURCE_POINT_CLOUD_ARTIFACT
 from prml_vslam.sources.stage.visualization import (
     ROLE_SOURCE_CAMERA_POSE,
@@ -77,7 +75,6 @@ from prml_vslam.visualization.rerun import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-JsonMetadataValue = str | int | float | bool | None
 _RGB_ENTITY_PATHS = {
     ROLE_SOURCE_RGB: RERUN_ENTITY_PATHS.source_rgb,
     ROLE_SOURCE_CAMERA_RGB: RERUN_ENTITY_PATHS.source_camera_image,
@@ -297,17 +294,9 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(SOURCE_POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
-        metadata = self._load_source_reference_metadata(item)
-        point_count = _metadata_int(metadata, "point_count")
-        skipped_payloads = _metadata_int(metadata, "skipped_out_of_range_payloads")
-        stats_segment = (
-            f"/points_{point_count}_skipped_{skipped_payloads}"
-            if point_count is not None and skipped_payloads is not None
-            else ""
-        )
         reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
         coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "native"))
-        entity_path = f"world/reference/points/{reference_source}/{coordinate_status}{stats_segment}/point_cloud"
+        entity_path = f"world/reference/points/{reference_source}/{coordinate_status}/point_cloud"
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
@@ -443,23 +432,6 @@ class RerunLoggingPolicy:
             )
         except Exception as exc:
             _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
-
-    def _load_source_reference_metadata(self, item: VisualizationItem) -> dict[str, JsonMetadataValue]:
-        artifact = item.artifact_refs.get(SOURCE_METADATA_ARTIFACT)
-        if artifact is None:
-            return {}
-        try:
-            payload = json.loads(artifact.path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            _LOGGER.warning("Skipping source reference metadata artifact '%s': %s", artifact.path, exc)
-            return {}
-        if not isinstance(payload, dict):
-            return {}
-        metadata: dict[str, JsonMetadataValue] = {}
-        for key, value in payload.items():
-            if isinstance(key, str) and (isinstance(value, str | int | float | bool) or value is None):
-                metadata[key] = value
-        return metadata
 
     def _log_pose_item(self, stream, item: VisualizationItem) -> None:
         if item.pose is None:
@@ -694,11 +666,6 @@ def _image_plane_distance_for_role(role: str) -> float | None:
     if role == ROLE_SOURCE_PINHOLE:
         return SOURCE_IMAGE_PLANE_DISTANCE
     return None
-
-
-def _metadata_int(metadata: Mapping[str, JsonMetadataValue], key: str) -> int | None:
-    value = metadata.get(key)
-    return int(value) if isinstance(value, int | float) else None
 
 
 def _trajectory_pose_transforms(trajectory, *, target_frame: str) -> list[FrameTransform]:
