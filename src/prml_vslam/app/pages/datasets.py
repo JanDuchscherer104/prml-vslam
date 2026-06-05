@@ -561,6 +561,7 @@ def _render_advio_loop_preview(context: AppContext, statuses: list[AdvioLocalSce
         caption="Run a replay-ready ADVIO scene in a local loop with the PyAV replay source and inspect frames, trajectory, and camera metadata live.",
         option_label="Normalize video display orientation",
         option_attr="preview_normalize_video_orientation",
+        action_key_prefix="advio-loop-preview",
         action=lambda selected_id, pose_source, option_value, start, stop: handle_advio_preview_action(
             context,
             AdvioPreviewFormData(
@@ -585,6 +586,7 @@ def _render_tum_rgbd_loop_preview(context: AppContext, statuses: list[TumRgbdLoc
         caption="Run a replay-ready TUM RGB-D scene in a local loop and inspect RGB-D frames, trajectory, and camera metadata live.",
         option_label="Include depth frames",
         option_attr="preview_include_depth",
+        action_key_prefix="tum-rgbd-loop-preview",
         action=lambda selected_id, pose_source, option_value, start, stop: _handle_tum_rgbd_preview_action(
             context=context,
             sequence_id=str(selected_id),
@@ -607,6 +609,7 @@ def _render_loop_preview_impl(
     caption: str,
     option_label: str,
     option_attr: str,
+    action_key_prefix: str,
     action: Callable[[SequenceId, StrEnum, bool, bool, bool], str | None],
     sync_snapshot: Callable[[], AdvioPreviewSnapshot],
 ) -> None:
@@ -646,6 +649,7 @@ def _render_loop_preview_impl(
             is_active=page_state.preview_is_running,
             start_label="Start preview",
             stop_label="Stop preview",
+            key=action_key_prefix,
         )
         error_message = action(selected_id, pose_source, option_value, start_requested, stop_requested)
         if rerun_after_action(action_requested=start_requested or stop_requested, error_message=error_message):
