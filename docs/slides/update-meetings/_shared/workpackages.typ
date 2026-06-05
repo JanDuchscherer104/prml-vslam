@@ -4,17 +4,18 @@
 #let work_packages = (
   ([WP0], [Project organisation and issue tracking], [VB]),
   ([WP1], [Video source: ADVIO, Record3D, TUM, and own dataset], [JD / LR]),
-  ([WP2.1], [Implementation of configurable Pipeline Framework], [FB / JD]),
+  ([WP2.1], [Configurable Pipeline Framework, infrastructure, framework boundaries], [#strike[FB] / JD]),
   ([WP2.2], [ViSTA-SLAM], [LR / JD]),
   ([WP2.3], [MASt3R-SLAM], [CK]),
-  ([WP3], [Incremental 3D reconstruction (TSDF #sym.arrow 3DGS)], [FB]),
+  ([WP3], [Incremental 3D reconstruction (TSDF #sym.arrow 3DGS)], [#strike[FB] / JD / LR]),
   ([WP4.1], [Performance Metrics - Component Throughput], [FB]),
   ([WP4.2], [Trajectory Evaluation (evo)], [VB]),
   ([WP4.3], [Point Cloud Evaluation], [VB / JD / FB]),
   ([WP4.4], [Metrics: output-image quality], [CK]),
   ([WP5], [Benchmarking and reporting], [Shared]),
-  ([WP6], [Optional ground-truth creation (uncalibrated & unposed sequences)], [Open]),
-  ([WP7], [Optional ARCore baseline], [Open]),
+  ([WP6], [#strike[Optional ground-truth creation (uncalibrated & unposed sequences])], [Open]),
+  ([WP7], [Optional ARCore baseline#footnote[#text(size: 10pt)[included in ADVIO.]]], [JD]),
+  ([WP8], [#link("https://rerun.io/viewer")[Rerun Viewer] and Streamlit App], [JD]),
 )
 
 #let work_packages_table() = [
