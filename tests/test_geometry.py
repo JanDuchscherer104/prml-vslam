@@ -393,9 +393,9 @@ def test_world_placeable_geometry_transform_source_frame_must_match() -> None:
     with pytest.raises(ValueError, match="source_frame must match"):
         PointCloud(
             points_xyz=np.zeros((2, 3), dtype=np.float32),
-            frame="advio_tango_raw_depth_sensor",
+            frame="tum_rgbd_camera",
             T_world_frame=FrameTransform(
-                target_frame="advio_tango_raw_world",
+                target_frame="tum_rgbd_world",
                 source_frame="camera",
                 qx=0.0,
                 qy=0.0,

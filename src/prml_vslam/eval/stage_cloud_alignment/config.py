@@ -74,7 +74,7 @@ def _source_reference_cloud_available(
     path_config: PathConfig,
 ) -> bool:
     if isinstance(source_backend, AdvioSourceConfig):
-        return preferred_source in {None, ReferenceCloudSource.TANGO_RAW}
+        return False
     if isinstance(source_backend, TumRgbdSourceConfig):
         return preferred_source in {None, ReferenceCloudSource.TUM_RGBD} and _tum_rgbd_reference_cloud_inputs_available(
             sequence_id=source_backend.sequence_id,

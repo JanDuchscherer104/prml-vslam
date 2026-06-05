@@ -1206,7 +1206,7 @@ def test_run_coordinator_routes_source_reference_trajectories_live_without_cloud
     )
     artifact = ArtifactRef(path=reference.path, kind="tum", fingerprint="gt")
     reference_cloud = ReferenceCloudRef(
-        source=ReferenceCloudSource.TANGO_RAW,
+        source=ReferenceCloudSource.TUM_RGBD,
         path=tmp_path / "reference.ply",
         metadata_path=tmp_path / "reference.json",
         target_frame="world",

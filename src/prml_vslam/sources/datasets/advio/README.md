@@ -4,28 +4,18 @@ This package owns the repository-local adapter for the ADVIO dataset [1]: path
 resolution, typed loading of official files, replay preparation, and app-facing
 dataset services.
 
-The official dataset combines one benchmark reference track with several
-device-specific modalities. The most important distinction is that the
-ground-truth track is the benchmark reference frame, while ARKit, ARCore, and
-Tango pose streams are recorded in their own device-local world frames and must
-be aligned before cross-system comparison.
+## Current Surface
 
-## Sources
+ADVIO is trajectory-only in this repository. The supported source data is:
 
-- Official dataset repository: AaltoVision/ADVIO [1]
-- Official paper: ADVIO: An authentic dataset for visual-inertial odometry [2]
-- Repo-owned loader and layout code:
-  [`advio_layout.py`](./advio_layout.py),
-  [`advio_loading.py`](./advio_loading.py),
-  [`advio_sequence.py`](./advio_sequence.py),
-  [`advio_replay_adapter.py`](./advio_replay_adapter.py)
+- ground-truth trajectory and fixpoints
+- iPhone RGB video, timestamps, sensors, calibration, and optional ARKit poses
+- Pixel ARCore poses
 
-## Modality Overview
-
-![ADVIO modality overview](../../../../../docs/figures/mermaid/advio-modalities-overview.svg)
-
-Source diagram:
-[`docs/figures/mermaid/advio-modalities-overview.mmd`](../../../../../docs/figures/mermaid/advio-modalities-overview.mmd)
+ADVIO does not expose legacy auxiliary device streams as supported download
+modalities, replay pose providers, reference-cloud sources, or benchmark-input
+surfaces. Dense reference clouds are prepared by RGB-D datasets such as TUM
+RGB-D.
 
 ## File Conventions
 
@@ -34,18 +24,15 @@ but not perfectly identical. In the checked local ADVIO archives under
 `.data/advio/`, all 23 sequences use `ground-truth/pose.csv`,
 `iphone/gyro.csv`, and `iphone/platform-locations.csv`, whereas the official
 README documents `poses.csv`, `gyroscope.csv`, and `platform-location.csv`.
-The released archives also contain Tango point-cloud payload files, but the
-repository no longer prepares ADVIO point-cloud benchmark artifacts from them.
-Trajectory and replay adapters should treat Tango as a pose provider only.
 
-Canonical per-sequence structure:
+Canonical per-sequence structure used by the adapter:
 
 ```text
 data/
 ├── advio-XX/
 │   ├── ground-truth/
-│   │   ├── pose.csv                  # 6DoF benchmark reference trajectory in the released archives
-│   │   └── fixpoints.csv             # manually marked position fixes used to build the reference
+│   │   ├── pose.csv                  # 6DoF benchmark reference trajectory
+│   │   └── fixpoints.csv             # manually marked position fixes
 │   ├── iphone/
 │   │   ├── frames.mov                # RGB video capture
 │   │   ├── frames.csv                # exact frame timestamps for the RGB video
@@ -55,17 +42,8 @@ data/
 │   │   ├── magnetometer.csv          # raw magnetometer stream
 │   │   ├── barometer.csv             # pressure and relative altitude samples
 │   │   └── arkit.csv                 # ARKit pose stream for the iPhone camera
-│   ├── pixel/
-│   │   └── arcore.csv                # ARCore pose stream from the Google Pixel
-│   └── tango/
-│       ├── frames.mov                # Tango fisheye video
-│       ├── frames.csv                # exact frame timestamps for the fisheye video
-│       ├── raw.csv                   # Tango raw odometry
-│       ├── area-learning.csv         # Tango loop-closing / map-building odometry
-│       ├── point-cloud.csv           # point-cloud timestamps / index table
-│       ├── point-cloud-00001.csv     # Tango point-cloud capture
-│       ├── point-cloud-00002.csv     # Tango point-cloud capture
-│       └── ...
+│   └── pixel/
+│       └── arcore.csv                # ARCore pose stream from the Google Pixel
 └── calibration/
     ├── iphone-01.yaml                # iPhone intrinsics, distortion, and T_cam_imu
     ├── iphone-02.yaml
@@ -74,8 +52,7 @@ data/
 
 Repository loader conventions:
 
-- All numeric CSVs are treated as:
-  `timestamp, value_1, value_2, ...`
+- All numeric CSVs are treated as `timestamp, value_1, value_2, ...`.
 - ADVIO pose CSVs are loaded into `evo.core.trajectory.PoseTrajectory3D` as:
   - translation: columns `1:4`
   - quaternion: columns `4:8`
@@ -83,18 +60,10 @@ Repository loader conventions:
 - The repository treats `ground-truth/fixpoints.csv` as part of the
   `GROUND_TRUTH` modality bundle. It is preserved for source fidelity and local
   completeness checks, but the trajectory loader reads only the pose CSV.
-- Tango `raw.csv` and `area-learning.csv` use the same pose CSV convention as
-  the other ADVIO pose streams.
-- Tango `point-cloud.csv` rows are `timestamp, point_cloud_index`; each index
-  points to a matching `point-cloud-00001.csv`-style payload file with `x, y, z`
-  point rows from the Tango point-cloud stream [1].
-- The calibration YAML is parsed as:
-  - pinhole intrinsics: `fx, fy, cx, cy`
-  - image size
-  - distortion model and coefficients
-  - `T_cam_imu`
-- In this repository, poses and calibration transforms are handled through
-  [`FrameTransform`](../../interfaces/transforms.py) using the canonical
+- The calibration YAML is parsed as pinhole intrinsics, image size, distortion
+  parameters, and `T_cam_imu`.
+- Poses and calibration transforms use
+  [`FrameTransform`](../../interfaces/transforms.py) and the canonical
   camera-to-world runtime convention for poses.
 
 ## Ground-Truth Fixpoints
@@ -114,74 +83,24 @@ identifier. This repository currently preserves the file and uses it for
 ground-truth modality completeness checks, but does not parse it into a typed
 runtime model.
 
-## Tango Bundle
-
-The Tango modality is an auxiliary Google Tango-device stream, not iPhone RGB-D
-ground truth. It contains:
-
-- `raw.csv`: Tango raw odometry, a frame-to-frame pose stream without long-term
-  map memory. Repository-prepared Tango reference clouds use this raw Tango
-  world as their source-native cloud frame.
-- `area-learning.csv`: Tango area-learning odometry, a map-building pose stream
-  that can use loop closure to reduce drift. It remains available as an
-  auxiliary pose stream, but is not used for repository-prepared Tango
-  reference-cloud artifacts.
-- `frames.mov` and `frames.csv`: Tango fisheye grayscale video and its frame
-  timestamps. The dataset README reports this video as roughly 5 fps at
-  640x480 [1].
-- `point-cloud.csv` and `point-cloud-*.csv`: Tango depth payload indexes and XYZ
-  payloads. These are intentionally not exposed as repo benchmark references.
-
-Because the Tango capture comes from a separate rigidly mounted device, its
-poses live in Tango-local coordinate systems. Projecting Tango geometry into an
-iPhone camera frame would require an explicit Tango-to-iPhone extrinsic edge,
-which this repository does not expose as a canonical public transform.
-the raw Tango world with the timestamped Tango pose before static cloud
-alignment.
-
-## Frame And Transform Tree
-
-![ADVIO transform tree](../../../../../docs/figures/mermaid/advio-transform-tree.svg)
-
-Source diagram:
-[`docs/figures/mermaid/advio-transform-tree.mmd`](../../../../../docs/figures/mermaid/advio-transform-tree.mmd)
-
-How to read the tree:
-
-- `GT world` is the benchmark reference frame.
-- `ARKit world`, `ARCore world`, `Tango raw world`, and
-  `Tango area-learning world` are separate pose-system frames.
-- `T_cam_imu` is the main explicit static SE(3) transform shipped in the
-  calibration YAML and consumed by this repository.
-- Cross-device rig extrinsics are described in the paper as part of the capture
-  setup [2], but they are not surfaced as a canonical repo-owned public
-  transform file here.
-- Any edge from a device-local world into `GT world` is a derived comparison
-  transform, not an official stored ADVIO pose stream.
-
 ## Ground Truth Versus Device Poses
 
-The official paper describes the ground-truth as a reference trajectory inferred
-from the iPhone IMU, additional calibration, and manually marked fixation
-points from an external reference video and floor plans [2]. In practice, the
-repository uses it as the authoritative benchmark trajectory and world frame for
-evaluation and visualization.
-
-That means:
+The repository uses ADVIO ground truth as the authoritative benchmark trajectory
+and world frame for evaluation and visualization.
 
 - `GT` is the reference trajectory.
-- `ARKit`, `ARCore`, `Tango/raw`, and `Tango/area-learning` are baseline or
-  auxiliary pose streams. Repository-prepared Tango reference clouds are
-  raw-backed.
-- Direct overlays of raw pose CSVs are not valid cross-system comparisons until
-  an explicit alignment step is applied.
+- `ARKit` and `ARCore` are optional baseline pose streams in their own provider
+  worlds.
+- Direct overlays of provider pose CSVs are not scientific cross-system
+  comparisons unless an explicit evaluation/alignment stage produces the
+  derived comparison artifact.
 
 ## Repo Interpretation For Visualization
 
 For the current Streamlit Sequence Explorer:
 
-- global comparison mode aligns ARKit and ARCore into the ground-truth frame
-  with an SE(3) fit for display
+- provider-world comparison mode shows each available trajectory in its own
+  source frame
 - local comparison mode normalizes each trajectory by the inverse of its own
   first pose so each track starts at the origin in its own local frame
 - ADVIO is displayed as `Y`-up, so the BEV uses the `X-Z` floor plane

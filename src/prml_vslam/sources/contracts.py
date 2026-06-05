@@ -52,8 +52,6 @@ class AdvioRawPoseRefs(BaseData):
     ground_truth_csv_path: Path
     arcore_csv_path: Path | None = None
     arkit_csv_path: Path | None = None
-    tango_raw_csv_path: Path | None = None
-    tango_area_learning_csv_path: Path | None = None
     selected_pose_csv_path: Path | None = None
 
 
@@ -106,7 +104,6 @@ class ReferenceSource(StrEnum):
 class ReferenceCloudSource(StrEnum):
     """Typed source identifier for one prepared reference cloud."""
 
-    TANGO_RAW = "tango_raw"
     TUM_RGBD = "tum_rgbd"
 
 

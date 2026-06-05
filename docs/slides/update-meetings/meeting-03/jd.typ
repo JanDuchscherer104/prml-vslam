@@ -43,7 +43,7 @@
   [Fix ARKit frame issues to allow unified trajectory benchmarking.],
   [WP1],
   [JD #sym.arrow LR],
-  [Fix ADVIO's Tango point clouds to provide reference PCs.],
+  [Keep ADVIO scoped to trajectory benchmarking; use TUM RGB-D for reference PCs.],
 )
 
 #let done_detail_body = items => [
@@ -104,7 +104,7 @@
         #set text(size: 0.78em)
         == Folder contract
         - Input: normalized frames, timestamps, intrinsics.
-        - Benchmark: reference trajectories, RGB-D/Tango references.
+        - Benchmark: reference trajectories and TUM RGB-D references.
         - SLAM/native/alignment: method output plus derived metadata.
         - Reference/visualization/summary: TSDF outputs, Rerun, manifests, events.
 
@@ -149,7 +149,7 @@
   #meeting_detail_slide(items, title: [JD: Challenges])[
     - Typed multiprocessing across Ray, stages, app state, Rerun, artifacts, and manifests.
     - Clear ownership for streaming packets, SLAM updates, transient payloads, viewer output, and durable artifacts (it was a mess).
-    - ADVIO frame semantics across GT, ARCore, ARKit, Tango poses, point clouds.
+    - ADVIO frame semantics across GT, ARCore, and ARKit trajectories.
     - Normalizing TUM RGB-D, ADVIO & method specific timestamps, intrinsics, rasters, and transforms.
   ]
 ]

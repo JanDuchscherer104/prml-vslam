@@ -29,7 +29,7 @@
   [Run full evaluation run (ViSTA, MASt3R) on TUM],
   [WP1],
   [JD],
-  [Fix ADVIO tango & Record3D frame issues.],
+  [Keep ADVIO trajectory-only and fix Record3D frame issues.],
 )
 
 #let done_detail_body = items => [

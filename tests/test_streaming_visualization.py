@@ -671,9 +671,9 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
                         SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
-                        "reference_source": "tango_raw",
+                        "reference_source": "tum_rgbd",
                         "coordinate_status": "aligned",
-                        "target_frame": "advio_gt_world",
+                        "target_frame": "tum_rgbd_world",
                     },
                 ),
                 VisualizationItem(
@@ -684,9 +684,9 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
                         SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
-                        "reference_source": "tango_raw",
+                        "reference_source": "tum_rgbd",
                         "coordinate_status": "source_native",
-                        "target_frame": "advio_tango_raw_world",
+                        "target_frame": "tum_rgbd_world",
                     },
                 ),
             ],
@@ -699,10 +699,10 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
             "world/reference/trajectory/ground_truth/aligned",
             ((1.0, 2.0, 3.0), (2.0, 3.0, 4.0)),
         ),
-        ("points", "world/reference/points/tango_raw/aligned/point_cloud", cloud),
+        ("points", "world/reference/points/tum_rgbd/aligned/point_cloud", cloud),
         (
             "points",
-            "world/reference/points/tango_raw/source_native/point_cloud",
+            "world/reference/points/tum_rgbd/source_native/point_cloud",
             cloud,
         ),
     ]
@@ -740,9 +740,9 @@ def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tm
                         SOURCE_METADATA_ARTIFACT: artifact_ref(metadata, kind="json"),
                     },
                     metadata={
-                        "reference_source": "tango_raw",
+                        "reference_source": "tum_rgbd",
                         "coordinate_status": "aligned",
-                        "target_frame": "advio_gt_world",
+                        "target_frame": "tum_rgbd_world",
                     },
                 ),
             ],
@@ -754,7 +754,7 @@ def test_rerun_reference_validation_sees_static_trajectories_and_cloud_counts(tm
 
     assert summary.reference_trajectory_entities == ["/world/reference/trajectory/ground_truth/aligned"]
     assert [(snapshot.entity_path, snapshot.point_count) for snapshot in summary.reference_point_clouds] == [
-        ("/world/reference/points/tango_raw/aligned/point_cloud", 2)
+        ("/world/reference/points/tum_rgbd/aligned/point_cloud", 2)
     ]
 
 
