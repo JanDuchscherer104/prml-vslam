@@ -185,10 +185,19 @@ def test_tum_rgbd_reference_cloud_masks_invalid_depth_without_reference_only_fra
     assert points.shape == (95, 3)
     assert not np.any(np.all(np.isclose(points, 0.0), axis=1))
     assert metadata["method_sample_count"] == 24
+    assert metadata["frame_count"] == 24
     assert metadata["sampled_frame_count"] == 24
+    assert metadata["contributing_source_frame_indices"] == list(range(24))
+    assert metadata["source_frame_indices"] == list(range(24))
     assert metadata["reference_cloud_sampled_frame_indices"] == list(range(24))
+    assert metadata["depth_stride_px"] == 8
     assert metadata["depth_pixel_stride_px"] == 8
+    assert metadata["max_points"] == 100_000
     assert metadata["max_reference_points"] == 100_000
+    assert metadata["seed"] == 17
+    assert metadata["device"] == "CPU:0"
+    assert metadata["target_frame"] == "tum_rgbd_world"
+    assert metadata["source_observation_index_path"].endswith("observations.json")
     assert "reference_cloud_frame_stride" not in metadata
     assert "reference_cloud_max_frames" not in metadata
 
@@ -220,10 +229,14 @@ def test_tum_rgbd_reference_cloud_subsamples_points_after_full_selection(tmp_pat
     second_metadata = json.loads(second_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
 
     assert first_metadata["point_count_before_sampling"] == 122_880
+    assert first_metadata["point_count_after_sampling"] == 100_000
     assert first_metadata["point_count"] == 100_000
+    assert first_metadata["max_points"] == 100_000
     assert first_metadata["sampled_frame_count"] == 30
+    assert first_metadata["frame_count"] == 30
     assert first_metadata["reference_cloud_sampled_frame_indices"] == list(range(30))
     assert first_metadata["point_sampling_policy"] == "random_without_replacement"
+    assert first_metadata["seed"] == 17
     assert first_metadata["point_sampling_seed"] == 17
     assert second_metadata["point_count"] == first_metadata["point_count"]
     np.testing.assert_allclose(second_points, first_points)
