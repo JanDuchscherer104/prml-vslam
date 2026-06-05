@@ -583,6 +583,27 @@ def test_artifact_visualizations_include_sim3_and_icp_cloud_alignment_outputs(tm
     ]
 
 
+def test_artifact_visualizations_use_reconstruction_cloud_not_source_reference(tmp_path: Path) -> None:
+    source_reference_cloud = tmp_path / "reference_cloud.ply"
+    reconstruction_cloud = tmp_path / "reconstruction_cloud.ply"
+
+    items = artifact_visualizations(
+        {
+            "reference_cloud": ArtifactRef(path=source_reference_cloud, kind="ply", fingerprint="source-reference"),
+            "reconstruction_cloud": ArtifactRef(
+                path=reconstruction_cloud,
+                kind="ply",
+                fingerprint="reconstruction",
+            ),
+        }
+    )
+
+    reconstruction_items = [item for item in items if item.role == ROLE_RECONSTRUCTION_POINT_CLOUD]
+
+    assert len(reconstruction_items) == 1
+    assert reconstruction_items[0].artifact_refs[POINT_CLOUD_ARTIFACT].path == reconstruction_cloud
+
+
 def test_rerun_policy_logs_sim3_alignment_marker_without_moving_raw_slam_root(monkeypatch) -> None:
     sim3_calls: list[tuple[str, float, bool]] = []
     monkeypatch.setattr(

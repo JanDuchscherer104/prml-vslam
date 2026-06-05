@@ -508,6 +508,9 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
         slam_backend=run_config.stages.slam.backend,
     )
     benchmark_inputs = _rgbd_benchmark_inputs(tmp_path)
+    source_reference_cloud = context.run_paths.artifact_root / "reference" / "reference_cloud.ply"
+    source_reference_cloud.parent.mkdir(parents=True, exist_ok=True)
+    source_reference_cloud.write_text("source benchmark reference\n", encoding="utf-8")
 
     result = ReconstructionRuntime().run_offline(
         ReconstructionStageInput(
@@ -519,7 +522,10 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
 
     assert result.outcome.stage_key is StageKey.RECONSTRUCTION
     assert result.outcome.status is StageStatus.COMPLETED
-    assert result.outcome.artifacts["reference_cloud"].path.exists()
+    assert "reference_cloud" not in result.outcome.artifacts
+    assert result.outcome.artifacts["reconstruction_cloud"].path.exists()
+    assert result.outcome.artifacts["reconstruction_cloud"].path.name == "reconstruction_cloud.ply"
+    assert source_reference_cloud.read_text(encoding="utf-8") == "source benchmark reference\n"
     assert result.outcome.artifacts["reconstruction_metadata"].path.exists()
     assert result.outcome.artifacts["reference_mesh"].path.exists()
     assert result.outcome.metrics["observation_count"] == 1

@@ -148,7 +148,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveU
 
 def _artifact_map(artifacts: ReconstructionArtifacts) -> dict[str, ArtifactRef]:
     artifact_map = {
-        "reference_cloud": artifact_ref(artifacts.reference_cloud_path, kind="ply"),
+        "reconstruction_cloud": artifact_ref(artifacts.reference_cloud_path, kind="ply"),
         "reconstruction_metadata": artifact_ref(artifacts.metadata_path, kind="json"),
     }
     if artifacts.mesh_path is not None:

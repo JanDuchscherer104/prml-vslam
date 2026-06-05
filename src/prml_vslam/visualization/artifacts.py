@@ -44,13 +44,13 @@ def artifact_visualizations(artifacts: Mapping[str, ArtifactRef]) -> list[Visual
                 metadata={"reconstruction_id": "slam"},
             )
         )
-    reference_cloud = artifacts.get("reference_cloud")
-    if reference_cloud is not None:
+    reconstruction_cloud = artifacts.get("reconstruction_cloud")
+    if reconstruction_cloud is not None:
         visualizations.append(
             VisualizationItem(
                 intent=VisualizationIntent.POINT_CLOUD,
                 role=ROLE_RECONSTRUCTION_POINT_CLOUD,
-                artifact_refs={POINT_CLOUD_ARTIFACT: reference_cloud},
+                artifact_refs={POINT_CLOUD_ARTIFACT: reconstruction_cloud},
                 space="world",
                 metadata={"reconstruction_id": "reference"},
             )
