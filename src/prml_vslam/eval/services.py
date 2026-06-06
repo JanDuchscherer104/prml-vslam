@@ -38,6 +38,7 @@ from prml_vslam.eval.contracts import (
     TrajectorySeries,
 )
 from prml_vslam.eval.protocols import TrajectoryEvaluator
+from prml_vslam.interfaces.geometry import apply_similarity_to_trajectory, yaw_similarity_align
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
@@ -624,8 +625,23 @@ def _align_estimate_sim3(
     method_id: str | None = None,
     method_label: str | None = None,
 ) -> tuple[PoseTrajectory3D, TrajectoryAlignmentArtifact]:
-    aligned_estimate = copy.deepcopy(estimate)
-    rotation, translation, scale = aligned_estimate.align(reference, correct_scale=True)
+    if _is_gravity_aligned_target(target_frame):
+        # Gravity-aligned benchmark worlds (e.g. ADVIO) are near-planar; full
+        # Umeyama can return an up/down-flipped rotation. Lock rotation to yaw
+        # about the RDF gravity axis so the cloud overlay cannot flip upside down.
+        scale_value, rotation_matrix, translation_vector = yaw_similarity_align(
+            np.asarray(estimate.positions_xyz, dtype=np.float64),
+            np.asarray(reference.positions_xyz, dtype=np.float64),
+            up_axis=_RDF_DOWN_AXIS,
+            correct_scale=True,
+        )
+        aligned_estimate = apply_similarity_to_trajectory(
+            estimate, scale=scale_value, rotation=rotation_matrix, translation=translation_vector
+        )
+        rotation, translation, scale = rotation_matrix, translation_vector, scale_value
+    else:
+        aligned_estimate = copy.deepcopy(estimate)
+        rotation, translation, scale = aligned_estimate.align(reference, correct_scale=True)
     residual = np.asarray(reference.positions_xyz, dtype=np.float64) - np.asarray(
         aligned_estimate.positions_xyz,
         dtype=np.float64,
@@ -714,6 +730,15 @@ def _trajectory_supports_sim3(reference: PoseTrajectory3D, estimate: PoseTraject
     )
     estimate_centered = np.asarray(estimate.positions_xyz, dtype=np.float64) - np.mean(estimate.positions_xyz, axis=0)
     return np.linalg.matrix_rank(reference_centered) >= 2 and np.linalg.matrix_rank(estimate_centered) >= 2
+
+
+def _is_gravity_aligned_target(target_frame: str) -> bool:
+    """Whether the benchmark target frame is gravity-aligned (up == RDF -Y).
+
+    ADVIO provider worlds derive from Apple Y-up, so RDF ``-Y`` is gravity. The
+    TUM first-camera RDF frame is *not* gravity-aligned, so it keeps full Umeyama.
+    """
+    return target_frame.startswith("advio_") and target_frame.endswith("_world")
 
 
 def _infer_target_frame(dataset: DatasetId | None, reference_path: Path | None) -> str:

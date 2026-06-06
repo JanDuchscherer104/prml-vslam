@@ -551,3 +551,65 @@ def test_stage_bundle_align_trajectory_defaults_disabled(tmp_path: Path) -> None
 
     assert config.stages.align_trajectory.enabled is False
     assert config.stages.align_trajectory.stage_key is StageKey.TRAJECTORY_ALIGNMENT
+
+
+def _planar_yawed_pair(
+    *, yaw_deg: float, scale: float, vertical_jitter: float = 0.0
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    angles = np.linspace(0.0, 2.0 * np.pi, 120)
+    estimate = np.stack(
+        [30.0 * np.cos(angles), vertical_jitter * np.sin(2.0 * angles), 30.0 * np.sin(angles)], axis=1
+    )
+    theta = np.radians(yaw_deg)
+    rotation_about_up = np.array(
+        [[np.cos(theta), 0.0, np.sin(theta)], [0.0, 1.0, 0.0], [-np.sin(theta), 0.0, np.cos(theta)]]
+    )
+    reference = scale * (estimate @ rotation_about_up.T) + np.array([1.0, 0.3, -0.5])
+    return estimate, reference, np.asarray(angles, dtype=np.float64)
+
+
+def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
+    from prml_vslam.eval.services import _sim3_up_axis_tilt_deg
+    from prml_vslam.interfaces.geometry import yaw_similarity_align
+
+    estimate, reference, _ = _planar_yawed_pair(yaw_deg=175.0, scale=1.3)
+    scale, rotation, translation = yaw_similarity_align(estimate, reference, up_axis=(0.0, 1.0, 0.0))
+
+    residual = reference - (scale * (estimate @ rotation.T) + translation)
+    assert scale == pytest.approx(1.3, abs=1e-6)
+    assert np.linalg.det(rotation) == pytest.approx(1.0, abs=1e-9)
+    assert _sim3_up_axis_tilt_deg(rotation) == pytest.approx(0.0, abs=1e-9)
+    assert np.sqrt(np.mean(np.sum(residual**2, axis=1))) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_is_gravity_aligned_target_only_for_advio_worlds() -> None:
+    from prml_vslam.eval.services import _is_gravity_aligned_target
+
+    assert _is_gravity_aligned_target("advio_gt_world")
+    assert _is_gravity_aligned_target("advio_arkit_world")
+    assert not _is_gravity_aligned_target("tum_rgbd_world")
+    assert not _is_gravity_aligned_target("world")
+
+
+def test_align_estimate_sim3_gravity_lock_keeps_up_axis_flat() -> None:
+    from evo.core.trajectory import PoseTrajectory3D
+
+    from prml_vslam.eval.services import _align_estimate_sim3, _sim3_up_axis_tilt_deg
+
+    estimate_xyz, reference_xyz, timestamps = _planar_yawed_pair(yaw_deg=176.0, scale=1.2, vertical_jitter=0.01)
+    quaternions = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (len(timestamps), 1))
+    estimate = PoseTrajectory3D(positions_xyz=estimate_xyz, orientations_quat_wxyz=quaternions, timestamps=timestamps)
+    reference = PoseTrajectory3D(positions_xyz=reference_xyz, orientations_quat_wxyz=quaternions, timestamps=timestamps)
+
+    _, advio_alignment = _align_estimate_sim3(
+        reference=reference, estimate=estimate, max_diff_s=0.01, target_frame="advio_gt_world"
+    )
+    _, tum_alignment = _align_estimate_sim3(
+        reference=reference, estimate=estimate, max_diff_s=0.01, target_frame="tum_rgbd_world"
+    )
+
+    # Gravity-locked ADVIO path fixes the up axis exactly and recovers the planar yaw + scale.
+    assert _sim3_up_axis_tilt_deg(np.asarray(advio_alignment.rotation)) == pytest.approx(0.0, abs=1e-6)
+    assert advio_alignment.scale == pytest.approx(1.2, abs=1e-2)
+    # Non-gravity (TUM) target keeps the full Umeyama solve.
+    assert _sim3_up_axis_tilt_deg(np.asarray(tum_alignment.rotation)) is not None
