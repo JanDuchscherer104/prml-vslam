@@ -460,19 +460,25 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
         "arcore",
+        "arcore",
+        "arkit",
         "arkit",
     ]
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
     assert benchmark_inputs.reference_trajectories[1].path == sequence_dir / "evaluation" / "arcore.tum"
-    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arkit.tum"
-    assert benchmark_inputs.reference_trajectories[0].path.exists()
-    assert benchmark_inputs.reference_trajectories[1].path.exists()
-    assert benchmark_inputs.reference_trajectories[2].path.exists()
+    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum"
+    assert benchmark_inputs.reference_trajectories[3].path == sequence_dir / "evaluation" / "arkit.tum"
+    assert benchmark_inputs.reference_trajectories[4].path == sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum"
+    assert all(reference.path.exists() for reference in benchmark_inputs.reference_trajectories)
     assert [reference.coordinate_status for reference in benchmark_inputs.reference_trajectories] == [
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+        ReferenceCloudCoordinateStatus.ALIGNED,
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+        ReferenceCloudCoordinateStatus.ALIGNED,
     ]
+    assert benchmark_inputs.reference_trajectories[2].target_frame == "advio_gt_world"
+    assert benchmark_inputs.reference_trajectories[4].target_frame == "advio_gt_world"
     assert benchmark_inputs.reference_clouds == []
 
 
@@ -497,12 +503,20 @@ def test_advio_benchmark_inputs_sanitize_optional_provider_trajectory(tmp_path: 
     assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
         "ground_truth",
         "arcore",
+        "arcore",
+        "arkit",
         "arkit",
     ]
     arcore_metadata = json.loads((sequence_dir / "evaluation" / "arcore.metadata.json").read_text(encoding="utf-8"))
     assert arcore_metadata["sanitization"]["dropped_duplicate_timestamps"] == 1
     assert arcore_metadata["sanitization"]["reordered_timestamps"] is True
-    assert not (sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum").exists()
+    assert (sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum").exists()
+    arcore_aligned_metadata = json.loads(
+        (sequence_dir / "evaluation" / "arcore_aligned_to_gt.metadata.json").read_text(encoding="utf-8")
+    )
+    assert arcore_aligned_metadata["coordinate_status"] == "aligned"
+    assert arcore_aligned_metadata["target_frame"] == "advio_gt_world"
+    assert arcore_aligned_metadata["alignment"]["matched_pairs"] >= 3
 
 
 def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp_path: Path) -> None:
@@ -529,7 +543,13 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
     )
     arkit_metadata = json.loads((sequence_dir / "evaluation" / "arkit.metadata.json").read_text())
     assert arkit_metadata["sanitization"]["normalized_quaternion_rows"] == 3
-    assert not (sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum").exists()
+    assert (sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum").exists()
+    assert any(
+        reference.source is ReferenceSource.ARKIT
+        and reference.coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
+        and reference.target_frame == "advio_gt_world"
+        for reference in benchmark_inputs.reference_trajectories
+    )
 
 
 def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
