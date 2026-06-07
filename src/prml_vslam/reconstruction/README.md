@@ -27,7 +27,7 @@ stage executable with one well-typed, easy-to-extend method boundary.
 - one normalized offline reconstruction boundary built from shared
   `Observation` values plus explicit `T_world_camera` poses
 - one normalized durable output for the stage: a world-space
-  `reference_cloud.ply`
+  `reconstruction_cloud.ply`
 - optional extra artifacts such as a mesh or debug metadata only when the
   concrete implementation can provide them without widening the public stage
   contract
@@ -138,7 +138,7 @@ path when a second reconstruction backend appears later.
   stay in the sink layer.
 - I/O: reconstruction consumes prepared `ObservationSequenceRef` values through
   source-owned observation loading and produces a world-space
-  `reference_cloud.ply` plus metadata.
+  `reconstruction_cloud.ply` plus metadata.
 
 ### Stage Input Handoff
 
@@ -244,9 +244,9 @@ class ReconstructionArtifacts(BaseData):
     extras: dict[str, Path] = Field(default_factory=dict)
 ```
 
-This keeps the public stage contract aligned with the existing pipeline output
-path `reference_cloud.ply` while still allowing the Open3D implementation to
-preserve a mesh or debug artifacts when useful.
+This keeps the public stage contract distinct from source-prepared benchmark
+reference clouds while still allowing the Open3D implementation to preserve a
+mesh or debug artifacts when useful.
 
 ## Open3D TSDF Scope
 
@@ -273,7 +273,7 @@ The thin Open3D adapter should therefore:
    `PinholeCameraIntrinsic`
 2. integrate into one `ScalableTSDFVolume`
 3. extract one fused world-space point cloud
-4. write the normalized `reference_cloud.ply`
+4. write the normalized `reconstruction_cloud.ply`
 5. persist typed metadata that records the Open3D settings and frame semantics
 
 ## Package Boundaries

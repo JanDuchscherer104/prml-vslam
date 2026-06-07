@@ -14,9 +14,11 @@ transforms remain local implementation details for APIs that require them.
 
 from __future__ import annotations
 
+import math
 from typing import Self
 
 import numpy as np
+from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
@@ -40,7 +42,7 @@ class PointCloud(BaseData):
     """Nx3 metric XYZ samples in :attr:`frame` coordinates."""
 
     frame: str
-    """Coordinate frame of :attr:`points_xyz`, for example ``advio_tango_raw_depth_sensor``."""
+    """Coordinate frame of :attr:`points_xyz`, for example ``tum_rgbd_camera``."""
 
     colors_rgb: NDArray[np.uint8] | None = None
     """Optional Nx3 uint8 RGB colors aligned with :attr:`points_xyz`."""
@@ -84,8 +86,8 @@ class PointMap(BaseData):
     """Represent a raster-aligned camera-local XYZ pointmap.
 
     ``points_xyz_camera`` must have shape ``H x W x 3`` and shares the raster
-    geometry of the associated intrinsics/image/depth payload. A sparse Tango
-    point cloud is not a pointmap.
+    geometry of the associated intrinsics/image/depth payload. Sparse
+    unstructured point clouds are not pointmaps.
     """
 
     points_xyz_camera: NDArray[np.float32]
@@ -185,4 +187,112 @@ class DepthMap(BaseData):
         return self
 
 
-__all__ = ["DepthMap", "PointCloud", "PointMap"]
+def yaw_similarity_align(
+    estimate_xyz: NDArray[np.float64],
+    reference_xyz: NDArray[np.float64],
+    *,
+    up_axis: tuple[float, float, float] | NDArray[np.float64] = (0.0, 1.0, 0.0),
+    correct_scale: bool = True,
+) -> tuple[float, NDArray[np.float64], NDArray[np.float64]]:
+    """Gravity-locked similarity mapping ``estimate`` onto ``reference``.
+
+    Solves ``min_{s, R, t} sum_i ||reference_i - (s R estimate_i + t)||^2`` where
+    ``R`` is constrained to a pure rotation about ``up_axis`` (yaw only). Because
+    ``R`` fixes ``up_axis`` exactly, the result can never flip a gravity-aligned,
+    near-planar trajectory upside down (the failure mode of full Umeyama on
+    planar inputs). Inputs must be index-aligned (already timestamp-associated).
+
+    Returns ``(scale, rotation_3x3, translation_3)``.
+    """
+    estimate = np.asarray(estimate_xyz, dtype=np.float64).reshape(-1, 3)
+    reference = np.asarray(reference_xyz, dtype=np.float64).reshape(-1, 3)
+    if estimate.shape != reference.shape:
+        raise ValueError(f"yaw_similarity_align needs matching shapes, got {estimate.shape} and {reference.shape}.")
+    up = np.asarray(up_axis, dtype=np.float64).reshape(3)
+    up_norm = float(np.linalg.norm(up))
+    if up_norm == 0.0:
+        raise ValueError("yaw_similarity_align up_axis must be non-zero.")
+    up = up / up_norm
+    identity = np.eye(3, dtype=np.float64)
+    if len(estimate) == 0:
+        return 1.0, identity, np.zeros(3, dtype=np.float64)
+
+    estimate_centroid = estimate.mean(axis=0)
+    reference_centroid = reference.mean(axis=0)
+    estimate_centered = estimate - estimate_centroid
+    reference_centered = reference - reference_centroid
+
+    seed = np.array([1.0, 0.0, 0.0]) if abs(up[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    plane_x = seed - np.dot(seed, up) * up
+    plane_x /= np.linalg.norm(plane_x)
+    plane_y = np.cross(up, plane_x)
+
+    estimate_x = estimate_centered @ plane_x
+    estimate_y = estimate_centered @ plane_y
+    reference_x = reference_centered @ plane_x
+    reference_y = reference_centered @ plane_y
+    cross_term = float(np.sum(estimate_x * reference_y - estimate_y * reference_x))
+    dot_term = float(np.sum(estimate_x * reference_x + estimate_y * reference_y))
+    theta = math.atan2(cross_term, dot_term)
+
+    skew_up = np.array(
+        [[0.0, -up[2], up[1]], [up[2], 0.0, -up[0]], [-up[1], up[0], 0.0]],
+        dtype=np.float64,
+    )
+    rotation = math.cos(theta) * identity + math.sin(theta) * skew_up + (1.0 - math.cos(theta)) * np.outer(up, up)
+
+    scale = 1.0
+    if correct_scale:
+        denominator = float(np.sum(estimate_centered**2))
+        if denominator > 0.0:
+            scale = float(np.sum(reference_centered * (estimate_centered @ rotation.T)) / denominator)
+    translation = reference_centroid - scale * (rotation @ estimate_centroid)
+    return scale, rotation, translation
+
+
+def apply_similarity_to_trajectory(
+    trajectory: PoseTrajectory3D,
+    *,
+    scale: float,
+    rotation: NDArray[np.float64],
+    translation: NDArray[np.float64],
+) -> PoseTrajectory3D:
+    """Return a copy of ``trajectory`` transformed by ``p -> s R p + t``.
+
+    Rotations are left-multiplied by ``R`` and positions follow the similarity,
+    matching the convention of the trajectory Sim(3) artifact.
+    """
+    rotation = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
+    translation = np.asarray(translation, dtype=np.float64).reshape(3)
+    poses = [np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
+    if not poses:
+        return PoseTrajectory3D(
+            positions_xyz=np.zeros((0, 3), dtype=np.float64),
+            orientations_quat_wxyz=np.zeros((0, 4), dtype=np.float64),
+            timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+        )
+    transformed: list[NDArray[np.float64]] = []
+    for pose in poses:
+        matrix = np.eye(4, dtype=np.float64)
+        matrix[:3, :3] = rotation @ pose[:3, :3]
+        matrix[:3, 3] = scale * (rotation @ pose[:3, 3]) + translation
+        transformed.append(matrix)
+    positions_xyz = np.asarray([matrix[:3, 3] for matrix in transformed], dtype=np.float64)
+    orientations_quat_wxyz = np.asarray(
+        [FrameTransform.from_matrix(matrix).quaternion_xyzw()[[3, 0, 1, 2]] for matrix in transformed],
+        dtype=np.float64,
+    )
+    return PoseTrajectory3D(
+        positions_xyz=positions_xyz,
+        orientations_quat_wxyz=orientations_quat_wxyz,
+        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+    )
+
+
+__all__ = [
+    "DepthMap",
+    "PointCloud",
+    "PointMap",
+    "apply_similarity_to_trajectory",
+    "yaw_similarity_align",
+]

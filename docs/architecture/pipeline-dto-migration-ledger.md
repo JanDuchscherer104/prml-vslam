@@ -91,7 +91,6 @@ refactor says otherwise.
 | `SourceStageOutput` | `sources.contracts` | Source-stage result payload bundling the normalized sequence and optional prepared benchmark inputs. | Keep canonical source output DTO for `StageResult.payload`. | `sources.contracts` | WP-04 | Downstream source accessors read this before legacy split fields. | Not deleted. | Source runtime and result-store tests. |
 | `ReferenceTrajectoryRef` | `sources.contracts` | Durable reference trajectory ref. | Keep source-prepared reference DTO. | `sources.contracts` | WP-04 | Existing eval consumes it through prepared inputs. | Not deleted. | Trajectory eval tests. |
 | `ReferenceCloudRef` | `sources.contracts` | Durable reference cloud ref. | Keep source-prepared reference DTO. | `sources.contracts` | WP-04, WP-05 | Existing/future cloud/reconstruction consumers remain compatible. | Not deleted. | Reconstruction/cloud planning tests. |
-| `ReferencePointCloudSequenceRef` | `sources.contracts` | Durable point-cloud sequence ref. | Keep source-prepared reference DTO. | `sources.contracts` | WP-04 | Preserve ADVIO/Tango references. | Not deleted. | ADVIO ingest tests. |
 | `Observation` | `sources.contracts` | Live/replay source observation. | Keep source-owned streaming DTO. | `sources.contracts` | WP-04, WP-06 | Current replay and streaming use it. | Not deleted. | Streaming tests. |
 | `ObservationProvenance` | `sources.contracts` | Source observation provenance metadata. | Keep source-owned streaming DTO. | `sources.contracts` | WP-04, WP-06 | Preserve provenance through source/SLAM. | Not deleted. | Streaming/source tests. |
 | `FrameTransform` | `interfaces.transforms` | Shared transform DTO. | Keep shared DTO. | `interfaces.transforms` | WP-06, WP-07 | Preserve pose semantics. | Not deleted. | SLAM/Rerun tests. |
@@ -244,8 +243,6 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `AdvioPreviewFormData` | `app.models` | Keep app form DTO. | app | App tests. |
 | `AdvioPageData` | `app.models` | Keep app render DTO. | app | App tests. |
 | `PipelineSourceId` | `app.models` | Keep app-local source selector enum. | app | Pipeline page tests. |
-| `TangoCloudMetadata` | `datasets.advio.advio_geometry` | Keep dataset-local geometry metadata. | datasets | ADVIO geometry tests. |
-| `Sim3Alignment` | `datasets.advio.advio_geometry` | Keep dataset-local alignment helper DTO. | datasets | ADVIO geometry tests. |
 | `AdvioCalibration` | `datasets.advio.advio_loading` | Keep dataset-local calibration DTO. | datasets | ADVIO loading tests. |
 | `AdvioEnvironment` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |
 | `AdvioPeopleLevel` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |

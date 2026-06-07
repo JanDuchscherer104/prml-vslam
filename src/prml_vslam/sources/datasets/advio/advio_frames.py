@@ -1,10 +1,8 @@
 """ADVIO coordinate-basis normalization helpers.
 
-ADVIO stores Apple-family trajectories (GT, ARKit, ARCore) in a Y-up basis
-where the X/Z plane is horizontal. Tango point-cloud and pose streams use a
-Z-up basis where X/Y is horizontal. Repository boundaries expose both as RDF
-(`x` right, `y` down, `z` forward) so downstream stages do not need to know
-provider-specific basis conventions.
+ADVIO replay and benchmark surfaces use the iPhone/Pixel pose providers. Their
+raw trajectories use a Y-up basis where the X/Z plane is horizontal; repository
+boundaries expose them as RDF (`x` right, `y` down, `z` forward).
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from numpy.typing import NDArray
 
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.geometry import JsonScalar
-from prml_vslam.sources.contracts import ReferenceCloudSource, ReferenceSource
+from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.datasets.contracts import AdvioPoseSource
 from prml_vslam.utils import BaseData
 
@@ -28,15 +26,13 @@ class AdvioRawCoordinateBasis(StrEnum):
     """Raw coordinate bases used by official ADVIO provider artifacts."""
 
     APPLE_Y_UP = "apple_y_up_xz_floor"
-    TANGO_Z_UP = "tango_z_up_xy_floor"
 
 
-APPLE_Y_UP_TO_RDF: NDArray[np.float64] = np.diag([1.0, -1.0, 1.0])
-TANGO_Z_UP_TO_RDF: NDArray[np.float64] = np.asarray(
+APPLE_Y_UP_TO_RDF: NDArray[np.float64] = np.asarray(
     [
+        [0.0, 0.0, 1.0],
+        [0.0, -1.0, 0.0],
         [1.0, 0.0, 0.0],
-        [0.0, 0.0, -1.0],
-        [0.0, 1.0, 0.0],
     ],
     dtype=np.float64,
 )
@@ -51,15 +47,10 @@ class AdvioBasisMetadata(BaseData):
     native_frame: str
 
 
-def basis_for_pose_source(source: AdvioPoseSource | ReferenceSource | ReferenceCloudSource) -> AdvioRawCoordinateBasis:
+def basis_for_pose_source(source: AdvioPoseSource | ReferenceSource) -> AdvioRawCoordinateBasis:
     """Return the raw ADVIO basis used by one provider source."""
-    match source:
-        case AdvioPoseSource.TANGO_RAW | AdvioPoseSource.TANGO_AREA_LEARNING:
-            return AdvioRawCoordinateBasis.TANGO_Z_UP
-        case ReferenceCloudSource.TANGO_AREA_LEARNING:
-            return AdvioRawCoordinateBasis.TANGO_Z_UP
-        case _:
-            return AdvioRawCoordinateBasis.APPLE_Y_UP
+    del source
+    return AdvioRawCoordinateBasis.APPLE_Y_UP
 
 
 def rdf_basis_matrix(basis: AdvioRawCoordinateBasis) -> NDArray[np.float64]:
@@ -67,13 +58,11 @@ def rdf_basis_matrix(basis: AdvioRawCoordinateBasis) -> NDArray[np.float64]:
     match basis:
         case AdvioRawCoordinateBasis.APPLE_Y_UP:
             return APPLE_Y_UP_TO_RDF.copy()
-        case AdvioRawCoordinateBasis.TANGO_Z_UP:
-            return TANGO_Z_UP_TO_RDF.copy()
 
 
 def advio_basis_metadata(
     *,
-    source: AdvioPoseSource | ReferenceSource | ReferenceCloudSource,
+    source: AdvioPoseSource | ReferenceSource,
     target_frame: str,
     native_frame: str,
 ) -> AdvioBasisMetadata:
@@ -89,7 +78,7 @@ def advio_basis_metadata(
 
 def advio_basis_provenance(
     *,
-    source: AdvioPoseSource | ReferenceSource | ReferenceCloudSource,
+    source: AdvioPoseSource | ReferenceSource,
     target_frame: str,
     native_frame: str,
 ) -> dict[str, JsonScalar]:
@@ -103,21 +92,9 @@ def advio_basis_provenance(
     }
 
 
-def transform_advio_points_to_rdf(
-    points_xyz_raw: NDArray[np.float64],
-    source: AdvioPoseSource | ReferenceSource | ReferenceCloudSource,
-) -> NDArray[np.float64]:
-    """Convert raw ADVIO XYZ rows into repository RDF coordinates."""
-    points = np.asarray(points_xyz_raw, dtype=np.float64)
-    if points.ndim != 2 or points.shape[1] != 3:
-        raise ValueError(f"Expected ADVIO points shape (N, 3), got {points.shape}.")
-    basis = rdf_basis_matrix(basis_for_pose_source(source))
-    return points @ basis.T
-
-
 def transform_advio_trajectory_to_rdf(
     trajectory: PoseTrajectory3D,
-    source: AdvioPoseSource | ReferenceSource | ReferenceCloudSource,
+    source: AdvioPoseSource | ReferenceSource,
 ) -> PoseTrajectory3D:
     """Convert one raw ADVIO trajectory into canonical RDF pose matrices."""
     basis = rdf_basis_matrix(basis_for_pose_source(source))
@@ -141,7 +118,7 @@ def transform_advio_trajectory_to_rdf(
 def write_advio_rdf_tum(
     *,
     trajectory: PoseTrajectory3D,
-    source: AdvioPoseSource | ReferenceSource | ReferenceCloudSource,
+    source: AdvioPoseSource | ReferenceSource,
     target_path: Path,
 ) -> Path:
     """Write a raw ADVIO trajectory as a normalized RDF TUM artifact."""
@@ -163,14 +140,12 @@ def _flatten_matrix(matrix: list[list[float]]) -> str:
 
 __all__ = [
     "APPLE_Y_UP_TO_RDF",
-    "TANGO_Z_UP_TO_RDF",
     "AdvioBasisMetadata",
     "AdvioRawCoordinateBasis",
     "advio_basis_metadata",
     "advio_basis_provenance",
     "basis_for_pose_source",
     "rdf_basis_matrix",
-    "transform_advio_points_to_rdf",
     "transform_advio_trajectory_to_rdf",
     "write_advio_rdf_tum",
 ]

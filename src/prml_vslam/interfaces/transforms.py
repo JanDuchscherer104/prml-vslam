@@ -33,7 +33,7 @@ class FrameTransform(BaseData):
     translation is the camera origin expressed in world coordinates, and
     rotation maps camera-frame vectors into the named world frame. Cross-system
     alignment transforms should use explicit frame names such as
-    ``viewer_world`` or ``tango_world`` rather than assuming all ``world``
+    ``viewer_world`` or ``tum_rgbd_world`` rather than assuming all ``world``
     labels are interchangeable.
     """
 

@@ -39,7 +39,7 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
   raster.
 - depth inputs must be metric depth in meters, not visualization products
 - durable normalized output must include one world-space
-  `reference_cloud.ply`; optional mesh/debug artifacts may exist but must not
+  `reconstruction_cloud.ply`; optional mesh/debug artifacts may exist but must not
   replace the public point-cloud contract
 - reconstruction DTOs must stay Rerun-friendly, but the package must not log
   directly to the Rerun SDK; logging remains the responsibility of the Rerun
@@ -59,7 +59,7 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 ## Validation
 
 - one Open3D TSDF implementation can consume typed reconstruction observations
-  and produce the normalized `reference_cloud.ply`
+  and produce the normalized `reconstruction_cloud.ply`
 - adding a future second reconstruction method requires touching the config
   union and protocol implementation, not widening the pipeline contract
 - DTOs remain usable by the existing Rerun sink without introducing

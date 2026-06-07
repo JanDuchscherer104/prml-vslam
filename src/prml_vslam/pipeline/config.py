@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
 from prml_vslam.eval.stage_alignment.config import TrajectoryAlignmentStageConfig
 from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
+from prml_vslam.eval.stage_cloud_alignment.config import CloudAlignmentStageConfig
 from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
     TrajectoryEvaluationStageConfig,
@@ -41,7 +42,7 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.contracts import ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio.advio_layout import (
     resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir,
 )
@@ -63,8 +64,9 @@ STAGE_SECTION_ORDER: tuple[tuple[StageKey, str], ...] = (
     (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
     (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
     (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
-    (StageKey.RECONSTRUCTION, "reconstruction"),
+    (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
     (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+    (StageKey.RECONSTRUCTION, "reconstruction"),
     (StageKey.SUMMARY, "summary"),
 )
 
@@ -96,10 +98,13 @@ class StageBundle(BaseConfig):
     reconstruction: ReconstructionStageConfig = Field(default_factory=lambda: ReconstructionStageConfig(enabled=False))
     """Reconstruction stage section."""
 
+    align_cloud: CloudAlignmentStageConfig = Field(default_factory=lambda: CloudAlignmentStageConfig(enabled=False))
+    """Offline dense-cloud alignment section."""
+
     evaluate_cloud: CloudEvaluationStageConfig = Field(
         default_factory=lambda: CloudEvaluationStageConfig(enabled=False)
     )
-    """Dense-cloud diagnostic stage section."""
+    """Dense-cloud evaluation stage section."""
 
     summary: SummaryStageConfig = Field(default_factory=SummaryStageConfig)
     """Summary-projection stage section."""
@@ -142,6 +147,9 @@ class RunConfig(BaseConfig):
     output_dir: Path
     """Root directory where planned artifacts should be written."""
 
+    reuse_artifact_root: Path | None = None
+    """Existing method-level artifact root used to satisfy disabled source/SLAM stages."""
+
     stages: StageBundle = Field(default_factory=StageBundle)
     """Fixed stage-section bundle."""
 
@@ -150,6 +158,9 @@ class RunConfig(BaseConfig):
 
     ray_local_head_lifecycle: Literal["ephemeral", "reusable"] = "ephemeral"
     """Whether an auto-started local Ray head is torn down or preserved after a run."""
+
+    ray_log_to_driver: bool = True
+    """Whether Ray worker logs are forwarded to the driver process."""
 
     _config_warnings: list[str] = PrivateAttr(default_factory=list)
 
@@ -196,7 +207,7 @@ def _compile_run_plan(
     backend: BackendConfig | None = None,
 ) -> RunPlan:
     source_backend = run_config.stages.source.backend
-    if source_backend is None:
+    if source_backend is None and (run_config.stages.source.enabled or run_config.reuse_artifact_root is None):
         raise ValueError("RunConfig planning requires `[stages.source.backend]`.")
     slam_backend = run_config.stages.slam.backend
     if slam_backend is None:
@@ -207,6 +218,21 @@ def _compile_run_plan(
         output_dir=run_config.output_dir,
     )
     resolved_run_paths = RunArtifactPaths.build(run_paths.artifact_root)
+    reuse_paths: RunArtifactPaths | None = None
+    if run_config.reuse_artifact_root is not None:
+        reuse_root = run_config.reuse_artifact_root.expanduser().resolve()
+        if reuse_root == resolved_run_paths.artifact_root.resolve():
+            raise ValueError("`reuse_artifact_root` must not equal the new run artifact root.")
+        if not reuse_root.exists():
+            raise ValueError(f"`reuse_artifact_root` does not exist: {reuse_root}")
+        reuse_paths = RunArtifactPaths.build(reuse_root)
+        for label, path in (
+            ("source manifest", reuse_paths.sequence_manifest_path),
+            ("benchmark inputs", reuse_paths.benchmark_inputs_path),
+            ("SLAM trajectory", reuse_paths.trajectory_path),
+        ):
+            if not path.exists():
+                raise ValueError(f"`reuse_artifact_root` is missing {label}: {path}")
     plan_context = PipelinePlanContext(
         run_config=run_config,
         path_config=path_config,
@@ -233,7 +259,11 @@ def _compile_run_plan(
         run_id=path_config.slugify_experiment_name(run_config.experiment_name),
         mode=run_config.mode,
         artifact_root=run_paths.artifact_root,
-        source=_planned_source(source_backend, path_config=path_config),
+        source=(
+            _planned_source(source_backend, path_config=path_config)
+            if source_backend is not None
+            else _planned_reused_source(reuse_paths)
+        ),
         stages=plan_stages,
         config_warnings=run_config.config_warnings,
     )
@@ -272,6 +302,20 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
             payload["device_index"] = device_index
             payload["device_address"] = device_address
     return PlannedSource.model_validate(payload)
+
+
+def _planned_reused_source(run_paths: RunArtifactPaths | None) -> PlannedSource:
+    if run_paths is None:
+        raise ValueError("RunConfig planning requires `reuse_artifact_root` when `[stages.source.backend]` is absent.")
+    manifest = SequenceManifest.model_validate_json(run_paths.sequence_manifest_path.read_text(encoding="utf-8"))
+    return PlannedSource(
+        source_id="reused_artifacts",
+        sequence_id=manifest.sequence_id,
+        metadata={
+            "reuse_artifact_root": run_paths.artifact_root.as_posix(),
+            "dataset_id": manifest.dataset_id.value if manifest.dataset_id is not None else None,
+        },
+    )
 
 
 def _expected_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
@@ -368,6 +412,7 @@ def build_run_config(
     reference_enabled: bool = False,
     trajectory_eval_enabled: bool = False,
     trajectory_alignment_enabled: bool = False,
+    cloud_alignment_enabled: bool = False,
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
     ground_alignment_enabled: bool = False,
@@ -376,13 +421,17 @@ def build_run_config(
     grpc_url: str = "rerun+http://127.0.0.1:9876/proxy",
     viewer_blueprint_path: Path | None = None,
     preserve_native_rerun: bool = True,
-    frusta_history_window_streaming: int = 20,
     frusta_history_window_offline: int | None = None,
     show_tracking_trajectory: bool = True,
     trajectory_pose_axis_length: float = 0.0,
     log_source_rgb: bool = False,
     log_diagnostic_preview: bool = False,
-    log_camera_image_rgb: bool = False,
+    log_camera_image_rgb: bool = True,
+    point_cloud_decimation_keep_ratio: float = 1.0,
+    reference_point_cloud_decimation_keep_ratio: float = 1.0,
+    mesh_decimation_keep_ratio: float = 1.0,
+    decimation_random_seed: int = 0,
+    ray_log_to_driver: bool = True,
 ) -> RunConfig:
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
@@ -411,6 +460,7 @@ def build_run_config(
                 enabled=reference_enabled,
                 backend=Open3dTsdfBackendConfig(),
             ),
+            align_cloud=CloudAlignmentStageConfig(enabled=cloud_alignment_enabled),
             evaluate_cloud=CloudEvaluationStageConfig(enabled=evaluate_cloud),
             summary=SummaryStageConfig(enabled=True),
         ),
@@ -420,14 +470,18 @@ def build_run_config(
             grpc_url=grpc_url,
             viewer_blueprint_path=viewer_blueprint_path,
             preserve_native_rerun=preserve_native_rerun,
-            frusta_history_window_streaming=frusta_history_window_streaming,
             frusta_history_window_offline=frusta_history_window_offline,
             show_tracking_trajectory=show_tracking_trajectory,
             trajectory_pose_axis_length=trajectory_pose_axis_length,
             log_source_rgb=log_source_rgb,
             log_diagnostic_preview=log_diagnostic_preview,
             log_camera_image_rgb=log_camera_image_rgb,
+            point_cloud_decimation_keep_ratio=point_cloud_decimation_keep_ratio,
+            reference_point_cloud_decimation_keep_ratio=reference_point_cloud_decimation_keep_ratio,
+            mesh_decimation_keep_ratio=mesh_decimation_keep_ratio,
+            decimation_random_seed=decimation_random_seed,
         ),
+        ray_log_to_driver=ray_log_to_driver,
     )
 
 

@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+import open3d as o3d
 import pytest
 from pytransform3d.rotations import check_matrix
 
@@ -26,10 +27,12 @@ from prml_vslam.interfaces.camera import (
 )
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.utils.geometry import (
+    depth_map_to_world_points,
     load_point_cloud_ply,
     load_point_cloud_ply_with_colors,
     load_tum_trajectory,
     pointmap_from_depth,
+    sample_point_cloud_random,
     transform_points_world_camera,
     write_point_cloud_ply,
     write_tum_trajectory,
@@ -291,6 +294,60 @@ def test_transform_points_world_camera_applies_pose_translation() -> None:
     assert np.allclose(points_world, np.array([[10.0, 20.0, 31.0], [11.0, 22.0, 33.0]], dtype=np.float64))
 
 
+def test_depth_map_to_world_points_samples_valid_depth_and_rgb_on_cpu() -> None:
+    depth = np.ones((4, 4), dtype=np.float32)
+    depth[0, 0] = 0.0
+    rgb = np.arange(4 * 4 * 3, dtype=np.uint8).reshape(4, 4, 3)
+
+    points, colors = depth_map_to_world_points(
+        depth,
+        CameraIntrinsics(fx=2.0, fy=4.0, cx=1.0, cy=2.0, width_px=4, height_px=4),
+        FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=10.0, ty=20.0, tz=30.0),
+        rgb=rgb,
+        depth_stride_px=2,
+    )
+
+    np.testing.assert_allclose(
+        points,
+        np.array([[10.5, 19.5, 31.0], [9.5, 20.0, 31.0], [10.5, 20.0, 31.0]], dtype=np.float64),
+    )
+    assert colors is not None
+    np.testing.assert_array_equal(colors, np.asarray([rgb[0, 2], rgb[2, 0], rgb[2, 2]], dtype=np.uint8))
+
+
+def test_depth_map_to_world_points_accepts_explicit_cuda_device_when_available() -> None:
+    if not o3d.core.cuda.is_available():
+        pytest.skip("Open3D CUDA is unavailable in this environment.")
+
+    points, colors = depth_map_to_world_points(
+        np.ones((2, 2), dtype=np.float32),
+        CameraIntrinsics(fx=1.0, fy=1.0, cx=0.0, cy=0.0, width_px=2, height_px=2),
+        FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+        rgb=np.full((2, 2, 3), 7, dtype=np.uint8),
+        depth_stride_px=1,
+        device="CUDA:0",
+    )
+
+    assert points.shape == (4, 3)
+    assert colors is not None
+    assert colors.shape == (4, 3)
+
+
+def test_sample_point_cloud_random_keeps_colors_aligned() -> None:
+    points = np.arange(30, dtype=np.float64).reshape(10, 3)
+    colors = np.arange(30, dtype=np.uint8).reshape(10, 3)
+
+    sampled_points, sampled_colors = sample_point_cloud_random(points, colors, max_points=4, seed=3)
+    repeat_points, repeat_colors = sample_point_cloud_random(points, colors, max_points=4, seed=3)
+
+    assert sampled_colors is not None
+    np.testing.assert_array_equal(sampled_points, repeat_points)
+    np.testing.assert_array_equal(sampled_colors, repeat_colors)
+    for sampled_point, sampled_color in zip(sampled_points, sampled_colors, strict=True):
+        row = int(sampled_point[0] // 3)
+        np.testing.assert_array_equal(sampled_color, colors[row])
+
+
 def test_point_cloud_ply_roundtrips_through_open3d_helpers(tmp_path: Path) -> None:
     points_xyz = np.array([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=np.float64)
 
@@ -336,9 +393,9 @@ def test_world_placeable_geometry_transform_source_frame_must_match() -> None:
     with pytest.raises(ValueError, match="source_frame must match"):
         PointCloud(
             points_xyz=np.zeros((2, 3), dtype=np.float32),
-            frame="advio_tango_raw_depth_sensor",
+            frame="tum_rgbd_camera",
             T_world_frame=FrameTransform(
-                target_frame="advio_tango_raw_world",
+                target_frame="tum_rgbd_world",
                 source_frame="camera",
                 qx=0.0,
                 qy=0.0,

@@ -1,22 +1,23 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import numpy as np
+from evo.core import sync
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 from numpy.typing import NDArray
 from pydantic import Field
 
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, ObservationProvenance
+from prml_vslam.interfaces.geometry import apply_similarity_to_trajectory, yaw_similarity_align
 from prml_vslam.sources.contracts import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
-    ReferenceCloudSource,
-    ReferencePointCloudSequenceRef,
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
@@ -29,18 +30,13 @@ from prml_vslam.sources.datasets.contracts import (
     selected_advio_pose_source,
 )
 from prml_vslam.sources.replay import ObservationStream, PyAvVideoObservationSource, ReplayMode
-from prml_vslam.utils import BaseData, Console
+from prml_vslam.utils import BaseData, Console, JsonObject
 
 from . import advio_layout, advio_loading
 from .advio_frames import (
     advio_basis_metadata,
     transform_advio_trajectory_to_rdf,
     write_advio_rdf_tum,
-)
-from .advio_geometry import (
-    build_advio_tango_reference_clouds,
-    fit_planar_rigid_alignment,
-    transform_trajectory_with_alignment,
 )
 from .advio_models import (
     ADVIO_SEQUENCE_COUNT,
@@ -57,6 +53,12 @@ from .advio_replay_adapter import (
 
 _CONSOLE = Console(__name__).child("AdvioSequence")
 
+_ADVIO_GT_WORLD_FRAME = "advio_gt_world"
+_ADVIO_ALIGN_MAX_DIFF_S = 0.01
+_ADVIO_ALIGN_MIN_PAIRS = 3
+# RDF gravity (down) axis: ADVIO provider worlds are Apple Y-up -> RDF, so up == -Y.
+_ADVIO_RDF_UP_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+
 
 class AdvioSequencePaths(BaseData):
     config: AdvioSequenceConfig
@@ -68,10 +70,6 @@ class AdvioSequencePaths(BaseData):
     arcore_csv_path: Path
     arkit_csv_path: Path | None = None
     calibration_path: Path
-    tango_raw_csv_path: Path | None = None
-    tango_area_learning_csv_path: Path | None = None
-    tango_point_cloud_index_path: Path | None = None
-    tango_dir: Path | None = None
     accelerometer_csv_path: Path | None = None
     gyroscope_csv_path: Path | None = None
 
@@ -94,14 +92,6 @@ class AdvioSequencePaths(BaseData):
             arcore_csv_path=sequence_dir / "pixel" / "arcore.csv",
             arkit_csv_path=advio_layout.resolve_optional_arkit_csv(sequence_dir, scene),
             calibration_path=advio_layout.resolve_calibration_path(config.dataset_root, scene),
-            tango_raw_csv_path=(path if (path := sequence_dir / "tango" / "raw.csv").exists() else None),
-            tango_area_learning_csv_path=(
-                path if (path := sequence_dir / "tango" / "area-learning.csv").exists() else None
-            ),
-            tango_point_cloud_index_path=(
-                path if (path := sequence_dir / "tango" / "point-cloud.csv").exists() else None
-            ),
-            tango_dir=(path if (path := sequence_dir / "tango").exists() else None),
             accelerometer_csv_path=(path if (path := sequence_dir / "iphone" / "accelerometer.csv").exists() else None),
             gyroscope_csv_path=advio_layout.resolve_optional_gyroscope_csv(sequence_dir, scene),
         )
@@ -203,13 +193,9 @@ class AdvioSequence(BaseData):
                     ground_truth_csv_path=paths.ground_truth_csv_path,
                     arcore_csv_path=paths.arcore_csv_path if paths.arcore_csv_path.exists() else None,
                     arkit_csv_path=paths.arkit_csv_path,
-                    tango_raw_csv_path=paths.tango_raw_csv_path,
-                    tango_area_learning_csv_path=paths.tango_area_learning_csv_path,
                     selected_pose_csv_path=resolve_advio_pose_csv_path(paths=paths, pose_source=selected_pose_source),
                 ),
                 fixpoints_csv_path=paths.fixpoints_csv_path,
-                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
-                tango_payload_root=paths.tango_dir,
             ),
         )
 
@@ -217,9 +203,10 @@ class AdvioSequence(BaseData):
         self,
         *,
         output_dir: Path | None = None,
-        tango_reference_point_stride: int = 1,
+        frame_selection: FrameSelectionConfig | None = None,
     ) -> PreparedBenchmarkInputs:
         """Materialize benchmark-owned reference trajectories for one sequence."""
+        del frame_selection
         paths = self._resolve_paths(require_arcore=False)
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
         evaluation_dir.mkdir(parents=True, exist_ok=True)
@@ -235,18 +222,21 @@ class AdvioSequence(BaseData):
                 ),
                 target_frame="advio_gt_world",
                 native_frame="advio_gt_world",
-                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
                 metadata_path=(evaluation_dir / "ground_truth.metadata.json").resolve(),
             )
         ]
+        ground_truth_rdf = transform_advio_trajectory_to_rdf(
+            advio_loading.load_advio_trajectory(paths.ground_truth_csv_path),
+            source=AdvioPoseSource.GROUND_TRUTH,
+        )
         if paths.arcore_csv_path.exists():
             _append_optional_reference_trajectory(
                 references,
                 source=ReferenceSource.ARCORE,
                 source_path=paths.arcore_csv_path,
                 target_path=evaluation_dir / "arcore.tum",
-                aligned_target_path=evaluation_dir / "arcore_aligned_to_gt.tum",
-                ground_truth_path=paths.ground_truth_csv_path,
+                ground_truth_rdf=ground_truth_rdf,
             )
         if paths.arkit_csv_path is not None:
             _append_optional_reference_trajectory(
@@ -254,26 +244,9 @@ class AdvioSequence(BaseData):
                 source=ReferenceSource.ARKIT,
                 source_path=paths.arkit_csv_path,
                 target_path=evaluation_dir / "arkit.tum",
-                aligned_target_path=evaluation_dir / "arkit_aligned_to_gt.tum",
-                ground_truth_path=paths.ground_truth_csv_path,
+                ground_truth_rdf=ground_truth_rdf,
             )
-        return PreparedBenchmarkInputs(
-            reference_trajectories=references,
-            reference_clouds=build_advio_tango_reference_clouds(
-                sequence_slug=self.scene.sequence_slug,
-                ground_truth_csv_path=paths.ground_truth_csv_path,
-                tango_raw_csv_path=paths.tango_raw_csv_path,
-                tango_area_learning_csv_path=paths.tango_area_learning_csv_path,
-                tango_point_cloud_index_path=paths.tango_point_cloud_index_path,
-                output_dir=evaluation_dir,
-                point_stride=tango_reference_point_stride,
-            ),
-            reference_point_cloud_sequences=_build_reference_point_cloud_sequences(
-                paths=paths,
-                sequence_slug=self.scene.sequence_slug,
-                evaluation_dir=evaluation_dir,
-            ),
-        )
+        return PreparedBenchmarkInputs(reference_trajectories=references)
 
     def open_stream(
         self,
@@ -333,9 +306,11 @@ def _ensure_advio_tum(
     source: AdvioPoseSource,
     target_frame: str,
     native_frame: str,
+    trajectory: PoseTrajectory3D | None = None,
+    sanitization: JsonObject | None = None,
 ) -> Path:
     write_advio_rdf_tum(
-        trajectory=advio_loading.load_advio_trajectory(source_path),
+        trajectory=advio_loading.load_advio_trajectory(source_path) if trajectory is None else trajectory,
         source=source,
         target_path=target_path,
     )
@@ -344,11 +319,8 @@ def _ensure_advio_tum(
         source=source,
         target_frame=target_frame,
         native_frame=native_frame,
-        coordinate_status=(
-            ReferenceCloudCoordinateStatus.ALIGNED
-            if target_frame == "advio_gt_world"
-            else ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-        ),
+        coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+        sanitization=sanitization,
     )
     return target_path.resolve()
 
@@ -359,18 +331,20 @@ def _append_optional_reference_trajectory(
     source: ReferenceSource,
     source_path: Path,
     target_path: Path,
-    aligned_target_path: Path,
-    ground_truth_path: Path,
+    ground_truth_rdf: PoseTrajectory3D,
 ) -> None:
     pose_source = _advio_pose_source_from_reference(source)
     native_frame = f"advio_{source.value}_world"
     try:
+        source_trajectory, sanitization = _load_sanitized_optional_advio_trajectory(source_path)
         native_path = _ensure_advio_tum(
             source_path,
             target_path,
             source=pose_source,
             target_frame=native_frame,
             native_frame=native_frame,
+            trajectory=source_trajectory,
+            sanitization=sanitization,
         )
         references.append(
             ReferenceTrajectoryRef(
@@ -382,23 +356,6 @@ def _append_optional_reference_trajectory(
                 metadata_path=native_path.with_suffix(".metadata.json").resolve(),
             )
         )
-        aligned_path = _ensure_aligned_advio_tum(
-            source_path=source_path,
-            ground_truth_path=ground_truth_path,
-            target_path=aligned_target_path,
-            source=pose_source,
-            native_frame=native_frame,
-        )
-        references.append(
-            ReferenceTrajectoryRef(
-                source=source,
-                path=aligned_path,
-                target_frame="advio_gt_world",
-                native_frame=native_frame,
-                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-                metadata_path=aligned_path.with_suffix(".metadata.json").resolve(),
-            )
-        )
     except ValueError as exc:
         _CONSOLE.warning(
             "Skipping invalid optional ADVIO %s trajectory '%s': %s",
@@ -406,112 +363,85 @@ def _append_optional_reference_trajectory(
             source_path,
             exc,
         )
+        return
+    _append_aligned_reference_trajectory(
+        references,
+        source=source,
+        pose_source=pose_source,
+        native_frame=native_frame,
+        source_trajectory=source_trajectory,
+        ground_truth_rdf=ground_truth_rdf,
+        target_path=target_path,
+    )
 
 
-def _build_reference_point_cloud_sequences(
+def _append_aligned_reference_trajectory(
+    references: list[ReferenceTrajectoryRef],
     *,
-    paths: AdvioSequencePaths,
-    sequence_slug: str,
-    evaluation_dir: Path,
-) -> list[ReferencePointCloudSequenceRef]:
-    if paths.tango_point_cloud_index_path is None or paths.tango_dir is None:
-        return []
-
-    sequences: list[ReferencePointCloudSequenceRef] = []
-    for source, trajectory_csv_path, tum_name in (
-        (ReferenceCloudSource.TANGO_AREA_LEARNING, paths.tango_area_learning_csv_path, "tango_area_learning.tum"),
-    ):
-        if trajectory_csv_path is None or not trajectory_csv_path.exists():
-            continue
-        try:
-            pose_source = AdvioPoseSource(source.value)
-            native_frame = f"advio_{source.value}_world"
-            trajectory_path = _ensure_advio_tum(
-                trajectory_csv_path,
-                evaluation_dir / tum_name,
-                source=pose_source,
-                target_frame=native_frame,
-                native_frame=native_frame,
-            )
-        except ValueError as exc:
-            _CONSOLE.warning(
-                "Skipping invalid optional ADVIO %s point-cloud trajectory '%s': %s",
-                source.value,
-                trajectory_csv_path,
-                exc,
-            )
-            continue
-        sequences.append(
-            ReferencePointCloudSequenceRef(
-                source=source,
-                index_path=paths.tango_point_cloud_index_path.resolve(),
-                payload_root=paths.tango_dir.resolve(),
-                trajectory_path=trajectory_path,
-                target_frame=native_frame,
-                native_frame=native_frame,
-                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
-            )
-        )
-        try:
-            aligned_trajectory_path = _ensure_aligned_advio_tum(
-                source_path=trajectory_csv_path,
-                ground_truth_path=paths.ground_truth_csv_path,
-                target_path=evaluation_dir / f"{source.value}_aligned_to_gt.tum",
-                source=pose_source,
-                native_frame=native_frame,
-            )
-        except ValueError:
-            continue
-        sequences.append(
-            ReferencePointCloudSequenceRef(
-                source=source,
-                index_path=paths.tango_point_cloud_index_path.resolve(),
-                payload_root=paths.tango_dir.resolve(),
-                trajectory_path=aligned_trajectory_path,
-                target_frame="advio_gt_world",
-                native_frame=native_frame,
-                coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-            )
-        )
-    return sequences
-
-
-def _ensure_aligned_advio_tum(
-    *,
-    source_path: Path,
-    ground_truth_path: Path,
-    target_path: Path,
-    source: AdvioPoseSource,
+    source: ReferenceSource,
+    pose_source: AdvioPoseSource,
     native_frame: str,
-) -> Path:
-    source_rdf_trajectory = transform_advio_trajectory_to_rdf(
-        advio_loading.load_advio_trajectory(source_path),
-        source=source,
+    source_trajectory: PoseTrajectory3D,
+    ground_truth_rdf: PoseTrajectory3D,
+    target_path: Path,
+) -> None:
+    """Emit a GT-aligned variant of one optional reference so it overlays GT.
+
+    Uses a gravity-locked (yaw + scale + translation) similarity, which cannot
+    flip the near-planar ADVIO trajectories upside down the way full Umeyama can.
+    Best-effort: failures keep the source-native reference intact.
+    """
+    reference_rdf = transform_advio_trajectory_to_rdf(source_trajectory, source=pose_source)
+    try:
+        ground_truth_assoc, reference_assoc = sync.associate_trajectories(
+            ground_truth_rdf, reference_rdf, max_diff=_ADVIO_ALIGN_MAX_DIFF_S
+        )
+    except (ValueError, sync.SyncException) as exc:
+        _CONSOLE.warning("Skipping aligned ADVIO %s trajectory: %s", source.value, exc)
+        return
+    matched_pairs = int(len(ground_truth_assoc.positions_xyz))
+    if matched_pairs < _ADVIO_ALIGN_MIN_PAIRS:
+        _CONSOLE.warning("Skipping aligned ADVIO %s trajectory: only %d matched GT pairs.", source.value, matched_pairs)
+        return
+    estimate_xyz = np.asarray(reference_assoc.positions_xyz, dtype=np.float64)
+    reference_xyz = np.asarray(ground_truth_assoc.positions_xyz, dtype=np.float64)
+    scale, rotation, translation = yaw_similarity_align(
+        estimate_xyz, reference_xyz, up_axis=_ADVIO_RDF_UP_AXIS, correct_scale=True
     )
-    ground_truth_rdf_trajectory = transform_advio_trajectory_to_rdf(
-        advio_loading.load_advio_trajectory(ground_truth_path),
-        source=AdvioPoseSource.GROUND_TRUTH,
-    )
-    alignment = fit_planar_rigid_alignment(
-        source_trajectory=source_rdf_trajectory,
-        target_trajectory=ground_truth_rdf_trajectory,
-        source_frame=native_frame,
-        target_frame="advio_gt_world",
-    )
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    file_interface.write_tum_trajectory_file(
-        target_path,
-        transform_trajectory_with_alignment(source_rdf_trajectory, alignment),
-    )
+    aligned = apply_similarity_to_trajectory(reference_rdf, scale=scale, rotation=rotation, translation=translation)
+    residual = reference_xyz - (scale * (estimate_xyz @ rotation.T) + translation)
+    rms_error_m = float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
+    yaw_deg = math.degrees(math.atan2(float(rotation[0, 2]), float(rotation[0, 0])))
+
+    aligned_path = target_path.with_name(f"{target_path.stem}_aligned_to_gt.tum")
+    aligned_path.parent.mkdir(parents=True, exist_ok=True)
+    file_interface.write_tum_trajectory_file(aligned_path, aligned)
     _write_advio_trajectory_metadata(
-        target_path.with_suffix(".metadata.json"),
-        source=source,
-        target_frame="advio_gt_world",
+        aligned_path.with_suffix(".metadata.json"),
+        source=pose_source,
+        target_frame=_ADVIO_GT_WORLD_FRAME,
         native_frame=native_frame,
         coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
-        alignment=alignment.model_dump(mode="json"),
+        alignment={
+            "method": "yaw_similarity_umeyama",
+            "scale": scale,
+            "yaw_deg": yaw_deg,
+            "translation": translation.tolist(),
+            "matched_pairs": matched_pairs,
+            "rms_error_m": rms_error_m,
+            "sync_max_diff_s": _ADVIO_ALIGN_MAX_DIFF_S,
+        },
     )
-    return target_path.resolve()
+    references.append(
+        ReferenceTrajectoryRef(
+            source=source,
+            path=aligned_path.resolve(),
+            target_frame=_ADVIO_GT_WORLD_FRAME,
+            native_frame=native_frame,
+            coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+            metadata_path=aligned_path.with_suffix(".metadata.json").resolve(),
+        )
+    )
 
 
 def _write_advio_trajectory_metadata(
@@ -521,7 +451,8 @@ def _write_advio_trajectory_metadata(
     target_frame: str,
     native_frame: str,
     coordinate_status: ReferenceCloudCoordinateStatus,
-    alignment: dict[str, str | int | float | bool | None | list[float] | list[list[float]]] | None = None,
+    alignment: JsonObject | None = None,
+    sanitization: JsonObject | None = None,
 ) -> None:
     basis_metadata = advio_basis_metadata(source=source, target_frame=target_frame, native_frame=native_frame)
     payload = basis_metadata.model_dump(mode="json") | {
@@ -529,9 +460,59 @@ def _write_advio_trajectory_metadata(
         "source": source.value,
         "coordinate_status": coordinate_status.value,
         "alignment": alignment,
+        "sanitization": sanitization,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _load_sanitized_optional_advio_trajectory(source_path: Path) -> tuple[PoseTrajectory3D, JsonObject]:
+    rows = advio_loading.load_advio_trajectory_rows(source_path)
+    input_rows = int(len(rows))
+    finite_mask = np.all(np.isfinite(rows), axis=1)
+    rows = rows[finite_mask]
+    dropped_nonfinite_rows = input_rows - int(len(rows))
+    if len(rows) == 0:
+        raise ValueError(f"Optional ADVIO trajectory '{source_path}' has no finite pose rows.")
+
+    order = np.argsort(rows[:, 0], kind="stable")
+    reordered_timestamps = bool(np.any(order != np.arange(len(rows))))
+    rows = rows[order]
+    keep_first_timestamp = np.ones(len(rows), dtype=bool)
+    keep_first_timestamp[1:] = rows[1:, 0] != rows[:-1, 0]
+    dropped_duplicate_timestamps = int(len(rows) - int(np.count_nonzero(keep_first_timestamp)))
+    rows = rows[keep_first_timestamp]
+
+    quaternion_norms = np.linalg.norm(rows[:, 4:8], axis=1)
+    valid_quaternion_mask = np.isfinite(quaternion_norms) & (quaternion_norms > 0.0)
+    dropped_invalid_quaternion_rows = int(len(rows) - int(np.count_nonzero(valid_quaternion_mask)))
+    rows = rows[valid_quaternion_mask]
+    quaternion_norms = quaternion_norms[valid_quaternion_mask]
+    if len(rows) == 0:
+        raise ValueError(f"Optional ADVIO trajectory '{source_path}' has no valid orientation rows.")
+    max_quaternion_norm_error = float(np.max(np.abs(quaternion_norms - 1.0)))
+    normalized_quaternion_rows = int(np.count_nonzero(np.abs(quaternion_norms - 1.0) > 1e-9))
+    rows = rows.copy()
+    rows[:, 4:8] /= quaternion_norms[:, None]
+
+    trajectory = PoseTrajectory3D(
+        positions_xyz=rows[:, 1:4].astype(np.float64, copy=True),
+        orientations_quat_wxyz=rows[:, 4:8].astype(np.float64, copy=True),
+        timestamps=rows[:, 0].astype(np.float64, copy=True),
+    )
+    valid, details = trajectory.check()
+    if not valid:
+        raise ValueError(f"Invalid sanitized optional ADVIO trajectory '{source_path}': {details}")
+    return trajectory, {
+        "input_rows": input_rows,
+        "output_rows": int(len(rows)),
+        "dropped_nonfinite_rows": dropped_nonfinite_rows,
+        "dropped_duplicate_timestamps": dropped_duplicate_timestamps,
+        "dropped_invalid_quaternion_rows": dropped_invalid_quaternion_rows,
+        "reordered_timestamps": reordered_timestamps,
+        "normalized_quaternion_rows": normalized_quaternion_rows,
+        "max_quaternion_norm_error": max_quaternion_norm_error,
+    }
 
 
 def _advio_pose_source_from_reference(source: ReferenceSource) -> AdvioPoseSource:

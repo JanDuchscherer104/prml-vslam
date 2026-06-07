@@ -24,10 +24,8 @@ def test_load_recording_summary_reports_live_keyed_and_tracking_surfaces(tmp_pat
 
     summary = load_recording_summary(recording_path)
 
-    assert summary.live_model_points is not None
-    assert summary.live_model_points.point_count == 1
     assert len(summary.keyed_point_clouds) == 2
-    assert summary.keyed_point_clouds[0].entity_path == "/world/keyframes/points/000000/points"
+    assert summary.keyed_point_clouds[0].entity_path == "/world/slam/keyframes/points/000000/points"
     assert len(summary.keyed_camera_entities) == 2
     assert summary.tracking_positions_xyz == [(0.0, 0.0, 0.0), (1.0, 0.5, 0.25)]
 
@@ -54,23 +52,12 @@ def test_write_validation_bundle_respects_explicit_keyed_cloud_limit(tmp_path: P
     summary = json.loads(artifacts.summary_json.read_text(encoding="utf-8"))
 
     assert len(summary["keyed_point_clouds"]) == 1
-    assert summary["keyed_point_clouds"][0]["entity_path"].startswith("/world/keyframes/points/")
+    assert summary["keyed_point_clouds"][0]["entity_path"].startswith("/world/slam/keyframes/points/")
 
 
 def _write_synthetic_recording(tmp_path: Path) -> Path:
     stream = rerun_helpers.create_recording_stream(app_id="prml-vslam-test", recording_id="validation-loop")
     policy = RerunLoggingPolicy(
-        log_pinhole=rerun_helpers.log_pinhole,
-        log_pointcloud=rerun_helpers.log_pointcloud,
-        log_pointcloud_ply=rerun_helpers.log_pointcloud_ply,
-        log_mesh_ply=rerun_helpers.log_mesh_ply,
-        log_line_strip3d=rerun_helpers.log_line_strip3d,
-        log_clear=rerun_helpers.log_clear,
-        log_depth_image=rerun_helpers.log_depth_image,
-        log_ground_plane_patch=rerun_helpers.log_ground_plane_patch,
-        log_rgb_image=rerun_helpers.log_rgb_image,
-        log_transform=rerun_helpers.log_transform,
-        frusta_history_window_streaming=None,
         show_tracking_trajectory=True,
     )
 

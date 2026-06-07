@@ -74,7 +74,6 @@ def render_request_editor(
             grpc_url,
             viewer_blueprint_path,
             preserve_native_rerun,
-            frusta_history_window_streaming,
             frusta_history_window_offline,
             show_tracking_trajectory,
             log_source_rgb,
@@ -109,7 +108,6 @@ def render_request_editor(
                 "grpc_url": grpc_url,
                 "viewer_blueprint_path": viewer_blueprint_path,
                 "preserve_native_rerun": preserve_native_rerun,
-                "frusta_history_window_streaming": frusta_history_window_streaming,
                 "frusta_history_window_offline": frusta_history_window_offline,
                 "show_tracking_trajectory": show_tracking_trajectory,
                 "log_source_rgb": log_source_rgb,
@@ -315,8 +313,6 @@ def _advio_provider_options(status: AdvioLocalSceneStatus | None) -> list[AdvioP
         options.append(AdvioPoseSource.ARCORE)
     if AdvioModality.IPHONE_ARKIT in status.local_modalities:
         options.append(AdvioPoseSource.ARKIT)
-    if AdvioModality.TANGO in status.local_modalities:
-        options.extend([AdvioPoseSource.TANGO_RAW, AdvioPoseSource.TANGO_AREA_LEARNING])
     return options
 
 
@@ -568,7 +564,7 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
 
 def _render_visualization_settings(
     page_state: PipelinePageState,
-) -> tuple[bool, bool, str, Path | None, bool, int, int | None, bool, bool, bool, bool, str | None]:
+) -> tuple[bool, bool, str, Path | None, bool, int | None, bool, bool, bool, bool, str | None]:
     left, right = st.columns(2, gap="large")
     with left:
         connect_live_viewer = st.toggle("Connect Live Viewer", value=page_state.connect_live_viewer)
@@ -581,13 +577,6 @@ def _render_visualization_settings(
         log_source_rgb = st.toggle("Log Source RGB", value=page_state.log_source_rgb)
         log_diagnostic_preview = st.toggle("Log Diagnostic Preview", value=page_state.log_diagnostic_preview)
         log_camera_image_rgb = st.toggle("Log Camera RGB Plane", value=page_state.log_camera_image_rgb)
-        frusta_history_window_streaming = int(
-            st.number_input(
-                "Streaming Frusta Window",
-                min_value=1,
-                value=page_state.frusta_history_window_streaming,
-            )
-        )
         offline_window_raw = st.text_input(
             "Offline Frusta Window",
             value=(
@@ -607,7 +596,6 @@ def _render_visualization_settings(
         grpc_url,
         viewer_blueprint_path,
         preserve_native_rerun,
-        frusta_history_window_streaming,
         frusta_history_window_offline,
         show_tracking_trajectory,
         log_source_rgb,

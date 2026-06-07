@@ -37,7 +37,13 @@ from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_POINT_CLOUD,
 )
 from prml_vslam.sources.config import VideoSourceConfig
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+    SequenceManifest,
+)
 from prml_vslam.utils import RunArtifactPaths
 
 
@@ -120,6 +126,54 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     assert set(result.outcome.artifacts) == {"trajectory_metrics", "reference_tum", "estimate_tum"}
 
 
+def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_config, plan, _run_paths = _request_plan_paths(tmp_path, trajectory_eval_enabled=True)
+    reference_path = tmp_path / "reference.tum"
+    captured = {}
+
+    class FakeTrajectoryEvaluationService:
+        def __init__(self, path_config) -> None:
+            self.path_config = path_config
+
+        def compute_evaluation(self, *, selection):
+            captured["selection"] = selection
+            return _evaluation_artifact(tmp_path)
+
+    monkeypatch.setattr(
+        "prml_vslam.eval.stage_trajectory.runtime.TrajectoryEvaluationService",
+        FakeTrajectoryEvaluationService,
+    )
+
+    TrajectoryEvaluationRuntime().run_offline(
+        TrajectoryEvaluationStageInput(
+            artifact_root=plan.artifact_root,
+            baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
+            method_id=run_config.stages.slam.backend.method_id,
+            method_label=run_config.stages.slam.backend.display_name,
+            sequence_manifest=SequenceManifest(sequence_id="seq-1"),
+            benchmark_inputs=PreparedBenchmarkInputs(
+                reference_trajectories=[
+                    ReferenceTrajectoryRef(
+                        source=ReferenceSource.GROUND_TRUTH,
+                        path=reference_path,
+                        target_frame="benchmark_world",
+                        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                    )
+                ]
+            ),
+            slam=_slam_artifacts(tmp_path),
+        )
+    )
+
+    selection = captured["selection"]
+    assert selection.reference_path == reference_path
+    assert selection.target_frame == "benchmark_world"
+    assert selection.coordinate_status == "aligned"
+
+
 def test_reconstruction_runtime_returns_reconstruction_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -132,14 +186,14 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     class FakeBackendConfig(Open3dTsdfBackendConfig):
         extract_mesh: bool = True
 
-        def setup_target(self):
+        def setup_target(self, **_kwargs):
             return FakeBackend()
 
     class FakeBackend:
         def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
             del observations
             artifact_root.mkdir(parents=True, exist_ok=True)
-            cloud = artifact_root / "reference_cloud.ply"
+            cloud = artifact_root / "reconstruction_cloud.ply"
             metadata = artifact_root / "reconstruction_metadata.json"
             mesh = artifact_root / "reference_mesh.ply"
             cloud.write_text("ply\n", encoding="utf-8")
@@ -173,7 +227,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert isinstance(result.payload, ReconstructionArtifacts)
     assert set(result.outcome.artifacts) == {
-        "reference_cloud",
+        "reconstruction_cloud",
         "reconstruction_metadata",
         "reference_mesh",
     }
@@ -202,14 +256,14 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
     class FakeBackendConfig(Open3dTsdfBackendConfig):
         extract_mesh: bool = False
 
-        def setup_target(self):
+        def setup_target(self, **_kwargs):
             return FakeBackend()
 
     class FakeBackend:
         def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
             del observations
             artifact_root.mkdir(parents=True, exist_ok=True)
-            cloud = artifact_root / "reference_cloud.ply"
+            cloud = artifact_root / "reconstruction_cloud.ply"
             metadata = artifact_root / "reconstruction_metadata.json"
             cloud.write_text("ply\n", encoding="utf-8")
             metadata.write_text("{}\n", encoding="utf-8")
@@ -236,7 +290,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
         )
     )
 
-    assert set(result.outcome.artifacts) == {"reference_cloud", "reconstruction_metadata"}
+    assert set(result.outcome.artifacts) == {"reconstruction_cloud", "reconstruction_metadata"}
     updates = runtime.drain_runtime_updates()
     assert len(updates) == 1
     assert [(item.intent, item.role) for item in updates[0].visualizations] == [

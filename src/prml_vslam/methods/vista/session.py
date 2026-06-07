@@ -132,7 +132,7 @@ class VistaSlamRuntime:
         native_output_dir = run_paths.native_output_dir
         native_output_dir.mkdir(parents=True, exist_ok=True)
         try:
-            self._slam.save_data_all(str(native_output_dir), save_images=False, save_depths=False)
+            self._slam.save_data_all(str(native_output_dir), save_images=True, save_depths=True)
         except Exception as exc:
             raise RuntimeError(
                 f"ViSTA-SLAM failed to export artifacts. "
@@ -196,7 +196,24 @@ class VistaSlamRuntime:
                 num_sparse_points=0,
                 num_dense_points=self._num_dense_points,
             )
-        pose = _frame_transform_from_vista_pose(vista_numpy_array(view.pose, dtype=np.float64))
+        try:
+            pose = _frame_transform_from_vista_pose(vista_numpy_array(view.pose, dtype=np.float64))
+        except ValueError as exc:
+            return SlamUpdate(
+                seq=seq,
+                timestamp_ns=timestamp_ns,
+                source_seq=seq,
+                source_timestamp_ns=timestamp_ns,
+                is_keyframe=True,
+                keyframe_index=view_index,
+                num_sparse_points=0,
+                num_dense_points=self._num_dense_points,
+                backend_warnings=[
+                    "ViSTA-SLAM produced a keyframe with an invalid live pose; "
+                    "skipping pose/image/depth/pointmap telemetry for "
+                    f"source_seq={seq}, keyframe_index={view_index}: {exc}"
+                ],
+            )
         depth_map = vista_numpy_array(view.depth, dtype=np.float32)
         camera_intrinsics = CameraIntrinsics.from_matrix(
             vista_numpy_array(view.intri, dtype=np.float64),

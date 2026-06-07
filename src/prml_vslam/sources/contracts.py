@@ -52,8 +52,6 @@ class AdvioRawPoseRefs(BaseData):
     ground_truth_csv_path: Path
     arcore_csv_path: Path | None = None
     arkit_csv_path: Path | None = None
-    tango_raw_csv_path: Path | None = None
-    tango_area_learning_csv_path: Path | None = None
     selected_pose_csv_path: Path | None = None
 
 
@@ -65,8 +63,6 @@ class AdvioManifestAssets(BaseData):
     T_cam_imu: FrameTransform
     pose_refs: AdvioRawPoseRefs
     fixpoints_csv_path: Path | None = None
-    tango_point_cloud_index_path: Path | None = None
-    tango_payload_root: Path | None = None
 
 
 class SequenceManifest(BaseData):
@@ -108,7 +104,7 @@ class ReferenceSource(StrEnum):
 class ReferenceCloudSource(StrEnum):
     """Typed source identifier for one prepared reference cloud."""
 
-    TANGO_AREA_LEARNING = "tango_area_learning"
+    TUM_RGBD = "tum_rgbd"
 
 
 class ReferenceCloudCoordinateStatus(StrEnum):
@@ -147,24 +143,7 @@ class ReferenceCloudRef(BaseData):
     path: Path
     metadata_path: Path
     target_frame: str
-    coordinate_status: ReferenceCloudCoordinateStatus
-
-
-class ReferencePointCloudSequenceRef(BaseData):
-    """Reference a time-ordered reference-cloud sequence for replay adapters.
-
-    ADVIO Tango payloads use this boundary to expose point-cloud samples without
-    forcing the runtime packet stream to become dataset-specific. Consumers must
-    preserve :attr:`target_frame`, :attr:`native_frame`, and
-    :attr:`coordinate_status` when comparing against SLAM geometry.
-    """
-
-    source: ReferenceCloudSource
-    index_path: Path
-    payload_root: Path
-    trajectory_path: Path
-    target_frame: str
-    native_frame: str
+    native_frame: str | None = None
     coordinate_status: ReferenceCloudCoordinateStatus
 
 
@@ -180,7 +159,6 @@ class PreparedBenchmarkInputs(BaseData):
 
     reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
     reference_clouds: list[ReferenceCloudRef] = Field(default_factory=list)
-    reference_point_cloud_sequences: list[ReferencePointCloudSequenceRef] = Field(default_factory=list)
     observation_sequences: list[ObservationSequenceRef] = Field(default_factory=list)
 
     def trajectory_for_source(self, source: ReferenceSource) -> ReferenceTrajectoryRef | None:
@@ -190,16 +168,9 @@ class PreparedBenchmarkInputs(BaseData):
             (
                 reference
                 for reference in matching
-                if reference.coordinate_status is not ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+                if reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
             ),
             next(iter(matching), None),
-        )
-
-    def point_cloud_sequence_for_source(self, source: ReferenceCloudSource) -> ReferencePointCloudSequenceRef | None:
-        """Return the prepared point-cloud sequence for one requested source."""
-        return next(
-            (reference for reference in self.reference_point_cloud_sequences if reference.source is source),
-            None,
         )
 
     def default_observation_sequence(self) -> ObservationSequenceRef | None:
@@ -214,7 +185,6 @@ __all__ = [
     "ReferenceCloudCoordinateStatus",
     "ReferenceCloudRef",
     "ReferenceCloudSource",
-    "ReferencePointCloudSequenceRef",
     "ReferenceSource",
     "ReferenceTrajectoryRef",
     "Record3DTransportId",

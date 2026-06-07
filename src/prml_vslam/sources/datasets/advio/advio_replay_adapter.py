@@ -8,7 +8,6 @@ from evo.core.trajectory import PoseTrajectory3D
 from numpy.typing import NDArray
 
 from prml_vslam.interfaces import FrameTransform
-from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.sources.datasets.contracts import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
@@ -17,7 +16,7 @@ from prml_vslam.sources.datasets.contracts import (
 )
 
 from .advio_frames import transform_advio_trajectory_to_rdf
-from .advio_geometry import Sim3Alignment, fit_planar_rigid_alignment, interpolate_trajectory_poses
+from .advio_geometry import interpolate_trajectory_poses
 from .advio_loading import load_advio_trajectory
 
 if TYPE_CHECKING:
@@ -35,8 +34,6 @@ def resolve_advio_pose_csv_path(
         AdvioPoseSource.GROUND_TRUTH: paths.ground_truth_csv_path,
         AdvioPoseSource.ARCORE: paths.arcore_csv_path if paths.arcore_csv_path.exists() else None,
         AdvioPoseSource.ARKIT: paths.arkit_csv_path,
-        AdvioPoseSource.TANGO_RAW: paths.tango_raw_csv_path,
-        AdvioPoseSource.TANGO_AREA_LEARNING: paths.tango_area_learning_csv_path,
         AdvioPoseSource.NONE: None,
     }[pose_source]
 
@@ -67,11 +64,6 @@ def load_advio_served_trajectory(
         raise ValueError("ADVIO serving config must resolve to a real pose provider.")
     return serve_loaded_advio_trajectory(
         trajectory=trajectory,
-        ground_truth_trajectory=transform_advio_trajectory_to_rdf(
-            load_advio_trajectory(paths.ground_truth_csv_path),
-            source=AdvioPoseSource.GROUND_TRUTH,
-        ),
-        pose_source=pose_source,
         pose_frame_mode=(
             AdvioPoseFrameMode.PROVIDER_WORLD if dataset_serving is None else dataset_serving.pose_frame_mode
         ),
@@ -81,8 +73,6 @@ def load_advio_served_trajectory(
 def serve_loaded_advio_trajectory(
     *,
     trajectory: PoseTrajectory3D,
-    ground_truth_trajectory: PoseTrajectory3D,
-    pose_source: AdvioPoseSource,
     pose_frame_mode: AdvioPoseFrameMode,
 ) -> PoseTrajectory3D:
     """Apply one ADVIO serving mode to an already loaded trajectory."""
@@ -91,16 +81,6 @@ def serve_loaded_advio_trajectory(
             return trajectory
         case AdvioPoseFrameMode.LOCAL_FIRST_POSE:
             return _rebase_trajectory_to_first_pose(trajectory)
-        case AdvioPoseFrameMode.REFERENCE_WORLD:
-            if pose_source is AdvioPoseSource.GROUND_TRUTH:
-                return trajectory
-            alignment = fit_planar_rigid_alignment(
-                source_trajectory=trajectory,
-                target_trajectory=ground_truth_trajectory,
-                source_frame=_advio_provider_world_frame(pose_source),
-                target_frame="advio_gt_world",
-            )
-            return _transform_trajectory_with_alignment(trajectory, alignment)
 
 
 def _poses_for_frame_timestamps(
@@ -127,8 +107,6 @@ def advio_pose_frames(*, pose_source: AdvioPoseSource, pose_frame_mode: AdvioPos
             target_frame = _advio_provider_world_frame(pose_source)
         case AdvioPoseFrameMode.LOCAL_FIRST_POSE:
             target_frame = f"{_advio_provider_world_frame(pose_source)}_local_first_pose"
-        case AdvioPoseFrameMode.REFERENCE_WORLD:
-            target_frame = "advio_gt_world"
     return target_frame, _advio_camera_frame(pose_source)
 
 
@@ -137,8 +115,6 @@ def _advio_provider_world_frame(pose_source: AdvioPoseSource) -> str:
         AdvioPoseSource.GROUND_TRUTH: "advio_gt_world",
         AdvioPoseSource.ARCORE: "advio_arcore_world",
         AdvioPoseSource.ARKIT: "advio_arkit_world",
-        AdvioPoseSource.TANGO_RAW: "advio_tango_raw_world",
-        AdvioPoseSource.TANGO_AREA_LEARNING: "advio_tango_area_learning_world",
     }.get(pose_source, f"advio_{pose_source.value}_world")
 
 
@@ -147,8 +123,6 @@ def _advio_camera_frame(pose_source: AdvioPoseSource) -> str:
         AdvioPoseSource.GROUND_TRUTH: "advio_iphone_camera",
         AdvioPoseSource.ARCORE: "advio_pixel_camera",
         AdvioPoseSource.ARKIT: "advio_iphone_camera",
-        AdvioPoseSource.TANGO_RAW: "advio_tango_raw_device",
-        AdvioPoseSource.TANGO_AREA_LEARNING: "advio_tango_area_learning_device",
     }.get(pose_source, f"advio_{pose_source.value}_camera")
 
 
@@ -158,20 +132,6 @@ def _rebase_trajectory_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajec
     first_pose_inv = np.linalg.inv(np.asarray(trajectory.poses_se3[0], dtype=np.float64))
     rebased_poses = [first_pose_inv @ np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
     return _trajectory_from_pose_matrices(rebased_poses, trajectory.timestamps)
-
-
-def _transform_trajectory_with_alignment(trajectory: PoseTrajectory3D, alignment: Sim3Alignment) -> PoseTrajectory3D:
-    rotation = np.asarray(alignment.rotation, dtype=np.float64)
-    translation = np.asarray(alignment.translation, dtype=np.float64)
-    scale = float(alignment.scale)
-    transformed_poses: list[np.ndarray] = []
-    for pose in trajectory.poses_se3:
-        pose_matrix = np.asarray(pose, dtype=np.float64)
-        transformed_pose = np.eye(4, dtype=np.float64)
-        transformed_pose[:3, :3] = project_rotation_to_so3(rotation @ pose_matrix[:3, :3])
-        transformed_pose[:3, 3] = scale * (rotation @ pose_matrix[:3, 3]) + translation
-        transformed_poses.append(transformed_pose)
-    return _trajectory_from_pose_matrices(transformed_poses, trajectory.timestamps)
 
 
 def _trajectory_from_pose_matrices(

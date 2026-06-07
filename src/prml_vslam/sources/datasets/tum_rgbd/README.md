@@ -180,11 +180,31 @@ depth_m = depth_png / 5000.0
 This is implemented in [load_depth_image_m()](./tum_rgbd_loading.py:191).
 
 The official tools page also provides a `generate_pointcloud.py` example for
-building colored point clouds from one registered RGB/depth pair. The current
-repository adapter does not expose a dedicated TUM-native point-cloud artifact
-bundle analogous to the ADVIO Tango reference-cloud path; instead it preserves
-RGB, depth, intrinsics, and trajectory so downstream stages can derive the
-geometry they need.
+building colored point clouds from one registered RGB/depth pair. The
+repository adapter uses the same registered-depth convention for benchmark
+prep: it samples bounded RGB-D associations, unprojects valid metric depth in
+the RGB camera frame, and fuses those points through the ground-truth
+`T_world_camera` poses into `tum_rgbd_world`.
+
+`tum_rgbd_world` is the first-camera RDF optical frame: every ground-truth pose
+is relativized to the first pose (`T'_k = inv(T_0) @ T_k`, first pose -> identity),
+matching the VISTA `SLAM_TUMRGBD.loadtum` convention and the SLAM estimate's own
+frame. The raw mocap Z-up frame is retained only as `native_frame` provenance.
+This is what keeps the benchmark trajectory and reference cloud from disagreeing
+with the SLAM estimate by the mocap basis (the Z-up vs RDF mismatch that
+previously made the GT render orthogonal to the estimate and inflated the Sim(3)
+up-axis-tilt diagnostic).
+
+The resulting `ReferenceCloudRef` is a source-prepared aligned cloud with:
+
+- `source = "tum_rgbd"`
+- `target_frame = "tum_rgbd_world"` (first-camera RDF frame)
+- `native_frame = "tum_rgbd_mocap_world"` (raw mocap Z-up provenance)
+- `coordinate_status = "aligned"`
+
+The cloud is intentionally sparse and deterministic rather than a dense full
+sequence reconstruction. It exists to give offline cloud alignment a TUM-native
+benchmark reference without requiring the reconstruction stage.
 
 ## Repo Interpretation For Replay
 
@@ -201,7 +221,8 @@ The stream therefore emits one repository-owned `Observation` carrying:
 - RGB in the RGB camera raster
 - optional metric depth aligned to the same raster
 - RGB-camera intrinsics
-- optional ground-truth pose of the RGB camera in the mocap world
+- optional ground-truth pose of the RGB camera in the first-camera RDF frame
+  (`tum_rgbd_world`), relativized to the first pose
 
 ## Repo Interpretation For Pipeline Inputs
 
@@ -211,6 +232,11 @@ For offline pipeline execution:
   directory and an `intrinsics.yaml`
 - [TumRgbdSequence.to_benchmark_inputs()](./tum_rgbd_sequence.py:101) exports the official ground truth to a
   normalized `ground_truth.tum`
+- the same benchmark input prep writes an `observation_sequence.v1` index and
+  uses those exact RGB-D rows for the aligned reference cloud
+- the TUM RGB-D reference PLY uses post-fusion point sampling as the benchmark
+  cost control; it must not apply a private reference-cloud frame cap that
+  differs from the method input sample set
 - the resulting [SequenceManifest](../../pipeline/contracts/sequence.py:11) stays RGB-directory-based rather than
   video-based
 

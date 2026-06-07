@@ -9,11 +9,11 @@ Use [../REQUIREMENTS.md](../REQUIREMENTS.md) for top-level ownership rules. Use 
 This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO
 and TUM RGB-D.
 
-Current simplification work must preserve the full supported dataset surface. In particular:
+Current simplification work must preserve the supported dataset surface. In particular:
 
 - all currently supported modalities remain in scope
-- ADVIO Tango poses and Tango point-cloud payload support remain in scope
-- dataset-provided reference cloud preparation remains in scope
+- ADVIO remains trajectory-only for benchmark inputs
+- TUM RGB-D dataset-provided reference cloud preparation remains in scope
 - the current ray-pipeline-facing dataset service and sequence surfaces remain the public integration boundary
 
 The current ADVIO stack includes:
@@ -75,9 +75,9 @@ Dataset-serving semantics currently live in `prml_vslam.sources.datasets.contrac
   - selected ADVIO pose provider
   - selected ADVIO pose-frame mode
 - [AdvioPoseSource](./contracts.py:33)
-  - `GROUND_TRUTH`, `ARCORE`, `ARKIT`, `TANGO_RAW`, `TANGO_AREA_LEARNING`
+  - `GROUND_TRUTH`, `ARCORE`, `ARKIT`
 - [AdvioPoseFrameMode](./contracts.py:59)
-  - `PROVIDER_WORLD`, `REFERENCE_WORLD`, `LOCAL_FIRST_POSE`
+  - `PROVIDER_WORLD`, `LOCAL_FIRST_POSE`
 
 ### Offline Boundary
 
@@ -92,8 +92,11 @@ Datasets normalize local source data into two pipeline-facing outputs:
 - `PreparedBenchmarkInputs`
   - canonical benchmark-side auxiliary inputs
   - may carry normalized `reference_trajectories`
-  - for ADVIO, may also carry `reference_clouds` and
-    `reference_point_cloud_sequences`
+  - for TUM RGB-D, may also carry `reference_clouds`
+  - ADVIO does not prepare point-cloud references
+  - TUM RGB-D reference clouds are registered-depth clouds fused through
+    ground-truth RGB-camera poses from the same persisted observation index
+    consumed by method input preparation (`tum_rgbd`)
 
 The current ADVIO-specific manifest payload DTOs are:
 
@@ -102,10 +105,8 @@ The current ADVIO-specific manifest payload DTOs are:
   - parsed `T_cam_imu`
   - selected/raw pose refs
   - fixpoints ref
-  - Tango point-cloud index/payload-root refs
 - `AdvioRawPoseRefs`
-  - GT, ARCore, ARKit, Tango raw, Tango area-learning, and selected provider
-    pose paths when present
+  - GT, ARCore, ARKit, and selected provider pose paths when present
 
 ### Streaming Boundary
 
@@ -206,7 +207,7 @@ sequence = AdvioSequence(
 stream = sequence.open_stream(
     dataset_serving=AdvioServingConfig(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
-        pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
+        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     ),
     replay_mode=ReplayMode.REALTIME,
     normalize_video_orientation=True,
@@ -231,7 +232,7 @@ statuses = service.local_scene_statuses()
 ## Boundaries
 
 - This package owns dataset normalization and replay preparation, not evaluation policy.
-- Simplification in this package must not drop supported modalities, ADVIO Tango support, or repo-owned reference-cloud preparation.
+- Simplification in this package must not drop supported modalities or TUM RGB-D reference-cloud preparation.
 - Generic replay mechanics stay in `prml_vslam.sources.replay`.
 - App pages and pipeline surfaces should prefer `AdvioDatasetService`, `TumRgbdDatasetService`, or the
   corresponding sequence classes over rebuilding dataset path, manifest, or

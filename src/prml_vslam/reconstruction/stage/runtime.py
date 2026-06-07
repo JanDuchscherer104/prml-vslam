@@ -101,7 +101,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveU
 
         sequence_ref = input_payload.benchmark_inputs.observation_sequences[0]
         backend_config = input_payload.backend
-        backend = backend_config.setup_target()
+        backend = backend_config.setup_target(input_payload=input_payload)
         artifacts = backend.run_sequence(
             FileObservationSequenceLoader(sequence_ref).iter_observations(),
             artifact_root=input_payload.run_paths.reference_cloud_path.parent,
@@ -148,7 +148,7 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveU
 
 def _artifact_map(artifacts: ReconstructionArtifacts) -> dict[str, ArtifactRef]:
     artifact_map = {
-        "reference_cloud": artifact_ref(artifacts.reference_cloud_path, kind="ply"),
+        "reconstruction_cloud": artifact_ref(artifacts.reference_cloud_path, kind="ply"),
         "reconstruction_metadata": artifact_ref(artifacts.metadata_path, kind="json"),
     }
     if artifacts.mesh_path is not None:

@@ -38,6 +38,7 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
         StageKey.TRAJECTORY_ALIGNMENT,
         StageKey.TRAJECTORY_EVALUATION,
         StageKey.RECONSTRUCTION,
+        StageKey.CLOUD_ALIGNMENT,
         StageKey.SUMMARY,
     }
 )
@@ -135,7 +136,6 @@ def sync_pipeline_page_state_from_template(
         grpc_url=run_config.visualization.grpc_url,
         viewer_blueprint_path=run_config.visualization.viewer_blueprint_path,
         preserve_native_rerun=run_config.visualization.preserve_native_rerun,
-        frusta_history_window_streaming=run_config.visualization.frusta_history_window_streaming,
         frusta_history_window_offline=run_config.visualization.frusta_history_window_offline,
         show_tracking_trajectory=run_config.visualization.show_tracking_trajectory,
         log_source_rgb=run_config.visualization.log_source_rgb,
@@ -186,7 +186,6 @@ def build_run_config_from_action(
             grpc_url=action.grpc_url,
             viewer_blueprint_path=action.viewer_blueprint_path,
             preserve_native_rerun=action.preserve_native_rerun,
-            frusta_history_window_streaming=action.frusta_history_window_streaming,
             frusta_history_window_offline=action.frusta_history_window_offline,
             show_tracking_trajectory=action.show_tracking_trajectory,
             log_source_rgb=action.log_source_rgb,
@@ -225,7 +224,7 @@ def request_support_error(
     unsupported_stage_ids = [stage.key.value for stage in plan.stages if stage.key not in _SUPPORTED_APP_STAGE_IDS]
     if unsupported_stage_ids:
         return (
-            "The current run console can execute only source, slam, gravity.align, evaluate.trajectory, "
+            "The current run console can execute only source, slam, alignment, evaluation, "
             "reconstruction, and summary stages. Disable: "
             + ", ".join(stage.key.value for stage in plan.stages if stage.key not in _SUPPORTED_APP_STAGE_IDS)
         )
@@ -366,8 +365,10 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
         },
         "stages": {
             "align_ground": request.stages.align_ground.model_dump(mode="json"),
+            "align_trajectory": request.stages.align_trajectory.model_dump(mode="json"),
             "evaluate_trajectory": request.stages.evaluate_trajectory.model_dump(mode="json"),
             "reconstruction": request.stages.reconstruction.model_dump(mode="json"),
+            "align_cloud": request.stages.align_cloud.model_dump(mode="json"),
             "evaluate_cloud": request.stages.evaluate_cloud.model_dump(mode="json"),
             "summary": request.stages.summary.model_dump(mode="json"),
         },

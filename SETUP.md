@@ -6,7 +6,7 @@ and optional ViSTA-SLAM or MASt3R-SLAM GPU execution.
 ## Requirements
 
 - `git` with submodule support
-- [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `mamba`
+- [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `conda`
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [typst](https://typst.app/open-source/#download) for report and slide builds
 
@@ -27,6 +27,26 @@ Optional parallel test runs are available with `pytest-xdist`:
 uv run pytest -n auto
 make test PYTEST_ARGS="-n auto"
 ```
+
+### Install Mamba on Unix
+
+If you are on Unix and already have `conda` or Miniforge installed, you can add
+`mamba` with conda-forge:
+
+```bash
+conda install -n base -c conda-forge mamba
+```
+
+If you do not have `conda` installed, the easiest way to get both `conda` and
+`mamba` is to install [Miniforge](https://github.com/conda-forge/miniforge):
+
+```bash
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3-$(uname)-$(uname -m).sh
+```
+
+For the ViSTA environment setup that uses `environment.yml`, see the ViSTA/CUDA
+section below.
 
 ## ViSTA/CUDA Setup
 
@@ -62,8 +82,8 @@ uv sync --extra dev --extra vista --extra streaming
 ```
 
 Do not use `uv sync --all-extras`: the optional `vista` and `mast3r` extras are
-intentionally marked as conflicting because upstream MASt3R-SLAM pins
-`numpy==1.26.4` while the current ViSTA/Rerun stack requires NumPy 2.
+intentionally marked as conflicting because they install separate CUDA SLAM
+stacks with different native dependency assumptions.
 
 Quick sanity check before installing or running ViSTA surfaces:
 

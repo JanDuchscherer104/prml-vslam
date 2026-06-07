@@ -23,6 +23,8 @@ class _ReconstructionFailureInputFingerprint(BaseData):
     input_source: ReconstructionInputSourceKind
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     point_cloud: ArtifactRef | None = None
+    aligned_trajectory: ArtifactRef | None = None
+    cloud_alignment: ArtifactRef | None = None
 
 
 def _build_offline_input(context: PipelineExecutionContext) -> ReconstructionStageInput:
@@ -56,6 +58,29 @@ def _build_offline_input(context: PipelineExecutionContext) -> ReconstructionSta
                 "Reconstruction predicted-geometry input is declared but no PredictedGeometrySequenceRef "
                 "contract is implemented yet."
             )
+        case ReconstructionInputSourceKind.EVALUATION_ALIGNED_CLOUD:
+            benchmark_inputs = context.results.require_benchmark_inputs()
+            # Require the aligned cloud and alignment metadata from the evaluation output
+            cloud_eval_result = context.results.require_result(StageKey.CLOUD_ALIGNMENT)
+            point_cloud = cloud_eval_result.outcome.artifacts.get("icp_aligned_point_cloud_ply")
+            if point_cloud is None:
+                raise StageDependencyError("Cloud alignment did not produce icp_aligned_point_cloud_ply")
+
+            traj_eval_result = context.results.require_result(StageKey.TRAJECTORY_ALIGNMENT)
+            aligned_trajectory = traj_eval_result.outcome.artifacts.get("aligned_estimate_tum")
+            cloud_alignment = cloud_eval_result.outcome.artifacts.get("cloud_alignment")
+
+            return ReconstructionStageInput(
+                backend=config.backend,
+                run_paths=context.run_paths,
+                source=source,
+                slam=slam,
+                input_source=input_source,
+                benchmark_inputs=benchmark_inputs,
+                point_cloud=point_cloud,
+                aligned_trajectory=aligned_trajectory,
+                cloud_alignment=cloud_alignment,
+            )
 
     return ReconstructionStageInput(
         backend=config.backend,
@@ -81,6 +106,12 @@ def _failure_fingerprint(context: PipelineExecutionContext) -> FailureFingerprin
             input_payload.point_cloud = context.results.require_slam_artifacts().sparse_points_ply
         case ReconstructionInputSourceKind.SLAM_PREDICTED_GEOMETRY_SEQUENCE:
             pass
+        case ReconstructionInputSourceKind.EVALUATION_ALIGNED_CLOUD:
+            cloud_eval_result = context.results.require_result(StageKey.CLOUD_ALIGNMENT)
+            input_payload.point_cloud = cloud_eval_result.outcome.artifacts.get("icp_aligned_point_cloud_ply")
+            traj_eval_result = context.results.require_result(StageKey.TRAJECTORY_ALIGNMENT)
+            input_payload.aligned_trajectory = traj_eval_result.outcome.artifacts.get("aligned_estimate_tum")
+            input_payload.cloud_alignment = cloud_eval_result.outcome.artifacts.get("cloud_alignment")
     return FailureFingerprint(
         config_payload=config,
         input_payload=input_payload,
