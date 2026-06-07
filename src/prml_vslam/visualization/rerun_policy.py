@@ -261,11 +261,12 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
-        reconstruction_id = str(item.metadata.get("reconstruction_id") or "reference")
+        reconstruction_id = str(item.metadata.get("reconstruction_id") or "")
+        reconstruction_subpath = f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
         entity_path = (
             "world/slam/point_cloud/raw"
             if reconstruction_id == "slam"
-            else f"world/reconstruction/{reconstruction_id}/point_cloud"
+            else f"world/reconstruction{reconstruction_subpath}/point_cloud"
         )
         self._log_pointcloud_ply_artifact(
             stream,
@@ -312,11 +313,12 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(MESH_ARTIFACT)
         if artifact is None:
             return
-        reconstruction_id = str(item.metadata.get("reconstruction_id") or "reference")
+        reconstruction_id = str(item.metadata.get("reconstruction_id") or "")
+        reconstruction_subpath = f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
         self._log_mesh_ply_artifact(
             stream,
             artifact_path=artifact.path,
-            entity_path=f"world/reconstruction/{reconstruction_id}/mesh",
+            entity_path=f"world/reconstruction{reconstruction_subpath}/mesh",
             warning_label="reconstruction mesh",
         )
 
