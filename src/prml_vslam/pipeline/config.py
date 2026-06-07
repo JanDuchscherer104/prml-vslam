@@ -64,9 +64,9 @@ STAGE_SECTION_ORDER: tuple[tuple[StageKey, str], ...] = (
     (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
     (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
     (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
-    (StageKey.RECONSTRUCTION, "reconstruction"),
     (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
     (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+    (StageKey.RECONSTRUCTION, "reconstruction"),
     (StageKey.SUMMARY, "summary"),
 )
 
