@@ -27,6 +27,7 @@ class ReconstructionInputSourceKind(StrEnum):
     SLAM_DENSE_POINT_CLOUD = "slam_dense_point_cloud"
     SLAM_SPARSE_POINT_CLOUD = "slam_sparse_point_cloud"
     SLAM_PREDICTED_GEOMETRY_SEQUENCE = "slam_predicted_geometry_sequence"
+    EVALUATION_ALIGNED_CLOUD = "evaluation_aligned_cloud"
 
 
 class ReconstructionInputSelection(BaseConfig):
@@ -55,6 +56,8 @@ class ReconstructionStageInput(BaseData):
     input_source: ReconstructionInputSourceKind = ReconstructionInputSourceKind.RGBD_OBSERVATION_SEQUENCE
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     point_cloud: ArtifactRef | None = None
+    aligned_trajectory: ArtifactRef | None = None
+    cloud_alignment: ArtifactRef | None = None
 
 
 __all__ = [
