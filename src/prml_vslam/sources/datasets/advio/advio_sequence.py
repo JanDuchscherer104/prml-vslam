@@ -33,17 +33,8 @@ from prml_vslam.sources.replay import ObservationStream, PyAvVideoObservationSou
 from prml_vslam.utils import BaseData, Console, JsonObject
 
 from . import advio_layout, advio_loading
-from .advio_frames import (
-    advio_basis_metadata,
-    transform_advio_trajectory_to_rdf,
-    write_advio_rdf_tum,
-)
-from .advio_models import (
-    ADVIO_SEQUENCE_COUNT,
-    AdvioCatalog,
-    AdvioSceneMetadata,
-    AdvioSequenceConfig,
-)
+from .advio_frames import advio_basis_metadata, transform_advio_trajectory_to_rdf, write_advio_rdf_tum
+from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioSceneMetadata, AdvioSequenceConfig
 from .advio_replay_adapter import (
     _poses_for_frame_timestamps,
     advio_pose_frames,
@@ -226,13 +217,14 @@ class AdvioSequence(BaseData):
                 metadata_path=(evaluation_dir / "ground_truth.metadata.json").resolve(),
             )
         ]
+        candidates: list[ReferenceTrajectoryRef] = []
         ground_truth_rdf = transform_advio_trajectory_to_rdf(
             advio_loading.load_advio_trajectory(paths.ground_truth_csv_path),
             source=AdvioPoseSource.GROUND_TRUTH,
         )
         if paths.arcore_csv_path.exists():
             _append_optional_reference_trajectory(
-                references,
+                candidates,
                 source=ReferenceSource.ARCORE,
                 source_path=paths.arcore_csv_path,
                 target_path=evaluation_dir / "arcore.tum",
@@ -240,13 +232,13 @@ class AdvioSequence(BaseData):
             )
         if paths.arkit_csv_path is not None:
             _append_optional_reference_trajectory(
-                references,
+                candidates,
                 source=ReferenceSource.ARKIT,
                 source_path=paths.arkit_csv_path,
                 target_path=evaluation_dir / "arkit.tum",
                 ground_truth_rdf=ground_truth_rdf,
             )
-        return PreparedBenchmarkInputs(reference_trajectories=references)
+        return PreparedBenchmarkInputs(reference_trajectories=references, candidate_trajectories=candidates)
 
     def open_stream(
         self,

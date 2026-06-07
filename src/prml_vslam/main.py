@@ -774,7 +774,7 @@ def eval_trajectory(
     """Evaluate trajectory against a reference directly from an existing artifact root."""
     import json as _json
 
-    from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot
+    from prml_vslam.eval.query import DiscoveredRun, SelectionSnapshot
     from prml_vslam.eval.services import TrajectoryEvaluationService
 
     path_config = get_path_config()
@@ -817,7 +817,15 @@ def eval_trajectory(
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
-    console.plog({"result_path": str(artifact.path), "stats": artifact.stats.model_dump(mode="json")})
+    console.plog(
+        {
+            "manifest_path": str((artifact.artifact_root / "evaluation" / "trajectory" / "manifest.json").resolve()),
+            "metrics_long_path": str(
+                (artifact.artifact_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve()
+            ),
+            "error_series_count": len(artifact.error_series_paths),
+        }
+    )
 
 
 @app.command("write-demo-config")

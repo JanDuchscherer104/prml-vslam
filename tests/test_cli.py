@@ -9,7 +9,6 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from prml_vslam.eval.contracts import MetricStats
 from prml_vslam.main import Record3DStreamConfig, _apply_dotted_overrides_to_run_config, app
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
@@ -233,10 +232,7 @@ def test_eval_trajectory_command_uses_advio_provider_baseline_file(
 
         def compute_evaluation(self, *, selection):
             captured["reference_path"] = selection.reference_path
-            return SimpleNamespace(
-                path=artifact_root / "evaluation" / "trajectory_metrics.json",
-                stats=MetricStats(rmse=0.0, mean=0.0, median=0.0, std=0.0, min=0.0, max=0.0, sse=0.0),
-            )
+            return SimpleNamespace(artifact_root=artifact_root, error_series_paths=[])
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
     monkeypatch.setattr("prml_vslam.eval.services.TrajectoryEvaluationService", FakeTrajectoryEvaluationService)

@@ -7,15 +7,11 @@ from pathlib import Path
 import pytest
 
 from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
-from prml_vslam.eval.contracts import (
-    EvaluationArtifact,
-    MetricStats,
-    TrajectoryEvaluationSemantics,
-)
 from prml_vslam.eval.stage_trajectory import (
     TrajectoryEvaluationRuntime,
     TrajectoryEvaluationStageInput,
 )
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import ObservationSequenceRef
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
@@ -97,7 +93,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
         def __init__(self, path_config) -> None:
             self.path_config = path_config
 
-        def compute_pipeline_evaluation(self, **kwargs) -> EvaluationArtifact:
+        def compute_pipeline_evaluation(self, **kwargs) -> TrajectoryEvaluationManifest:
             calls.append(kwargs)
             return artifact
 
@@ -123,7 +119,13 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     assert result.payload == artifact
     assert result.outcome.status is StageStatus.COMPLETED
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
-    assert set(result.outcome.artifacts) == {"trajectory_metrics", "reference_tum", "estimate_tum"}
+    assert set(result.outcome.artifacts) == {
+        "candidate_tum:0",
+        "error_series:0",
+        "metrics_long",
+        "reference_tum:0",
+        "trajectory_evaluation_manifest",
+    }
 
 
 def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
@@ -364,15 +366,14 @@ def _slam_artifacts(tmp_path: Path) -> SlamArtifacts:
     )
 
 
-def _evaluation_artifact(tmp_path: Path) -> EvaluationArtifact:
-    return EvaluationArtifact(
-        path=tmp_path / "trajectory_metrics.json",
-        title="Trajectory APE (evo)",
-        matched_pairs=1,
-        stats=MetricStats(rmse=0.0, mean=0.0, median=0.0, std=0.0, min=0.0, max=0.0, sse=0.0),
-        reference_path=tmp_path / "reference.tum",
-        estimate_path=tmp_path / "estimate.tum",
-        semantics=TrajectoryEvaluationSemantics(sync_max_diff_s=0.01),
+def _evaluation_artifact(tmp_path: Path) -> TrajectoryEvaluationManifest:
+    return TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq-1",
+        run_id="run",
+        reference_trajectories=[tmp_path / "reference.tum"],
+        candidate_trajectories=[tmp_path / "estimate.tum"],
+        error_series_paths=[tmp_path / "errors.npz"],
     )
 
 
