@@ -793,7 +793,7 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path, monk
     assert pointcloud_calls == [("world/slam/live/model/points", 0.25, pointcloud_calls[0][2])]
     assert isinstance(pointcloud_calls[0][2], int)
     assert pointcloud_ply_calls == [
-        ("world/reconstruction/reference/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3]),
+        ("world/reconstruction/point_cloud", cloud_path, 0.25, pointcloud_ply_calls[0][3]),
         (
             "world/reference/points/tum_rgbd/aligned/point_cloud",
             cloud_path,
@@ -803,7 +803,7 @@ def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path, monk
     ]
     assert isinstance(pointcloud_ply_calls[0][3], int)
     assert isinstance(pointcloud_ply_calls[1][3], int)
-    assert mesh_ply_calls == [("world/reconstruction/reference/mesh", mesh_path, 0.5)]
+    assert mesh_ply_calls == [("world/reconstruction/mesh", mesh_path, 0.5)]
 
 
 def test_rerun_event_sink_builds_live_and_export_policies_with_decimation(tmp_path: Path) -> None:

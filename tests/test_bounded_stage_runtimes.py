@@ -186,7 +186,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
     class FakeBackendConfig(Open3dTsdfBackendConfig):
         extract_mesh: bool = True
 
-        def setup_target(self):
+        def setup_target(self, **_kwargs):
             return FakeBackend()
 
     class FakeBackend:
@@ -256,7 +256,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
     class FakeBackendConfig(Open3dTsdfBackendConfig):
         extract_mesh: bool = False
 
-        def setup_target(self):
+        def setup_target(self, **_kwargs):
             return FakeBackend()
 
     class FakeBackend:
