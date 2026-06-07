@@ -861,6 +861,51 @@ def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
     assert np.array_equal(resolved, payload)
 
 
+def test_run_coordinator_stores_reused_source_and_slam_results(tmp_path: Path) -> None:
+    reuse_paths = RunArtifactPaths.build(tmp_path / "old-run" / "vista")
+    reuse_paths.sequence_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.sequence_manifest_path.write_text(
+        SequenceManifest(sequence_id="reused-seq").model_dump_json(),
+        encoding="utf-8",
+    )
+    reuse_paths.benchmark_inputs_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.benchmark_inputs_path.write_text(PreparedBenchmarkInputs().model_dump_json(), encoding="utf-8")
+    reuse_paths.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    reuse_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+    run_config = RunConfig.from_toml(
+        f"""
+experiment_name = "reuse"
+mode = "offline"
+output_dir = "{tmp_path.as_posix()}"
+reuse_artifact_root = "{reuse_paths.artifact_root.as_posix()}"
+
+[stages.source]
+enabled = false
+
+[stages.slam]
+enabled = false
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+"""
+    )
+    plan = run_config.compile_plan(PathConfig(root=tmp_path))
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="reuse", namespace="pytest-unit")
+
+    coordinator._load_reused_results(run_config=run_config, plan=plan)
+
+    assert coordinator._result_store.require_sequence_manifest().sequence_id == "reused-seq"
+    slam = coordinator._result_store.require_slam_artifacts()
+    assert slam.trajectory_tum.path == reuse_paths.trajectory_path
+    assert slam.dense_points_ply is not None
+    assert slam.dense_points_ply.path == reuse_paths.dense_points_path
+
+
 def test_run_coordinator_forwards_packet_arrival_timestamp_to_slam_runtime() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
