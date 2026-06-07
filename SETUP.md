@@ -155,7 +155,7 @@ Activate the same `prml-vslam` conda environment used above (provides
 `cuda-nvcc=12.4`, `gcc_linux-64`, and `libopencv=4.12.0`):
 
 ```bash
-conda activate prml-vslam
+mamba activate prml-vslam
 unset LD_LIBRARY_PATH
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 ```

@@ -24,6 +24,7 @@ from prml_vslam.utils import BaseData
 class TrajectoryMetricId(StrEnum):
     """Name the trajectory metrics supported or planned through the `evo` seam."""
 
+    # TODO: *.rotation and rmse are missing!?
     APE_TRANSLATION = "ape.translation"
     RPE_TRANSLATION = "rpe.translation"
 
@@ -69,6 +70,7 @@ class TrajectoryAlignmentArtifact(BaseData):
     up_axis_tilt_deg: float | None = None
 
 
+# TODO: deprecate, we've got metric.get_all_statistics()!
 class MetricStats(BaseData):
     """Capture scalar summary statistics for one evaluated error series."""
 
@@ -95,6 +97,7 @@ class MetricStats(BaseData):
         )
 
 
+# TODO: this DTO is bullshit. only xyz?
 class TrajectorySeries(BaseData):
     """Carry one trajectory series for persisted review and plotting."""
 
@@ -145,6 +148,8 @@ class IntrinsicsComparisonDiagnostics(BaseData):
     """Per-sample `cy_est - cy_ref` residuals in pixels."""
 
 
+# TODO: only carry metric-id, which must specify <ape|rpe> and <translation|rotation>!
+# TODO: what is this AI-SLOP: candidate_next_metrics. We simply want a list with all metrics that were computed in a meaningfull grouping!
 class TrajectoryEvaluationSemantics(BaseData):
     """Persist the exact metric semantics needed to interpret one result.
 

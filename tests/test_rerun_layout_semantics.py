@@ -41,6 +41,9 @@ class _FakeRecordingStream:
     def reset_time(self) -> None:
         self.timelines.clear()
 
+    def log(self, *args, **kwargs) -> None:
+        del args, kwargs
+
     def disable_timeline(self, timeline: str) -> None:  # pragma: no cover - should never be called
         raise AssertionError(f"disable_timeline must not be used: {timeline}")
 

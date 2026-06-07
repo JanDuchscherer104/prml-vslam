@@ -361,7 +361,7 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
     monkeypatch.setattr(
         rerun_helpers,
         "log_line_strip3d",
-        lambda stream, *, entity_path, positions_xyz: calls.append(
+        lambda stream, *, entity_path, positions_xyz, **kwargs: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
     )
@@ -396,7 +396,6 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 8, None),
-        ("pose", "world/slam/trajectory/raw/start", 8, None),
         ("trajectory", "world/slam/trajectory/raw", 8, None),
         ("pose", "world/slam/live/model", 8, None),
         ("pose", "world/slam/keyframes/cameras/000003", 8, None),
@@ -411,7 +410,6 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
         ("points", "world/slam/keyframes/points/000003/points", 8, None),
     ]
     assert transform_axis_lengths["world/slam/live/tracking/camera"] == 0.0
-    assert transform_axis_lengths["world/slam/trajectory/raw/start"] == rerun_helpers.TRAJECTORY_START_AXIS_LENGTH
     assert transform_axis_lengths["world/slam/live/model"] == 0.0
     assert transform_axis_lengths["world/slam/keyframes/cameras/000003"] == 0.0
     assert transform_axis_lengths["world/slam/keyframes/points/000003"] == 0.0
@@ -458,7 +456,7 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
     monkeypatch.setattr(
         rerun_helpers,
         "log_line_strip3d",
-        lambda stream, *, entity_path, positions_xyz: calls.append(
+        lambda stream, *, entity_path, positions_xyz, **kwargs: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
     )
@@ -508,7 +506,6 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 8, None),
-        ("pose", "world/slam/trajectory/raw/start", 8, None),
         ("trajectory", "world/slam/trajectory/raw", 8, None),
         ("pose", "world/slam/live/model", 8, None),
         ("pose", "world/slam/keyframes/cameras/000003", 8, None),
@@ -637,7 +634,7 @@ def test_rerun_sink_logs_source_reference_artifacts(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(
         rerun_helpers,
         "log_line_strip3d",
-        lambda stream, *, entity_path, positions_xyz, static=False: calls.append(
+        lambda stream, *, entity_path, positions_xyz, static=False, **kwargs: calls.append(
             ("trajectory", entity_path, tuple(map(tuple, np.asarray(positions_xyz, dtype=float))))
         ),
     )
@@ -930,7 +927,6 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 4, None),
-        ("pose", "world/slam/trajectory/raw/start", 4, None),
         ("pose", "world/slam/live/model", 4, None),
         ("pose", "world/slam/keyframes/cameras/000000", 4, None),
         ("pose", "world/slam/keyframes/points/000000", 4, None),
@@ -973,7 +969,7 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     monkeypatch.setattr(
         rerun_helpers,
         "log_line_strip3d",
-        lambda stream, *, entity_path, positions_xyz: calls.append(
+        lambda stream, *, entity_path, positions_xyz, **kwargs: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
     )
@@ -999,11 +995,9 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     assert calls == [
         ("rgb", "world/live/source/rgb", 1, None),
         ("pose", "world/slam/live/tracking/camera", 7, None),
-        ("pose", "world/slam/trajectory/raw/start", 7, None),
         ("trajectory", "world/slam/trajectory/raw", 7, None),
     ]
     assert tracking_axis_lengths["world/slam/live/tracking/camera"] == 0.0
-    assert tracking_axis_lengths["world/slam/trajectory/raw/start"] == rerun_helpers.TRAJECTORY_START_AXIS_LENGTH
 
 
 def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_path: Path, monkeypatch) -> None:
@@ -1106,7 +1100,6 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
 
     assert paths == [
         ("world/slam/live/tracking/camera", 2, None),
-        ("world/slam/trajectory/raw/start", 2, None),
     ]
     assert "world" not in [path for path, _, _ in paths]
 
@@ -1267,7 +1260,6 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 8, None),
-        ("pose", "world/slam/trajectory/raw/start", 8, None),
         ("pose", "world/slam/live/model", 8, None),
         ("pose", "world/slam/keyframes/cameras/000003", 8, None),
         ("pose", "world/slam/keyframes/points/000003", 8, None),

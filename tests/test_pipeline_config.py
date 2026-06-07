@@ -265,7 +265,7 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
 
     assert isinstance(run_config.stages.source.backend, TumRgbdSourceConfig)
     assert run_config.stages.source.backend.sequence_id == "freiburg3_large_cabinet"
-    assert run_config.stages.source.backend.frame_stride == 3
+    assert run_config.stages.source.backend.frame_stride == 1
     assert run_config.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert run_config_plan.source.source_id == DatasetId.TUM_RGBD.value
     assert run_config_plan.source.sequence_id == "freiburg3_large_cabinet"
