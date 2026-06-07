@@ -15,36 +15,36 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import open3d as o3d
 from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 
-from prml_vslam.eval.contracts import (
-    BenchmarkReference,
-    CloudAlignmentArtifact,
-    CloudAlignmentSelection,
-    DiscoveredRun,
-    ErrorSeries,
-    EvaluationArtifact,
-    EvaluationSelection,
-    MetricStats,
-    SelectionSnapshot,
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentCloudUseStatus,
-    TrajectoryAlignmentMode,
-    TrajectoryEvaluationPreview,
-    TrajectoryEvaluationSemantics,
-    TrajectoryMetricId,
-    TrajectorySeries,
-)
+from prml_vslam.eval.contracts import (BenchmarkReference,
+                                       CloudAlignmentArtifact,
+                                       CloudAlignmentSelection, DiscoveredRun,
+                                       ErrorSeries, EvaluationArtifact,
+                                       EvaluationSelection, MetricStats,
+                                       SelectionSnapshot,
+                                       TrajectoryAlignmentArtifact,
+                                       TrajectoryAlignmentCloudUseStatus,
+                                       TrajectoryAlignmentMode,
+                                       TrajectoryEvaluationPreview,
+                                       TrajectoryEvaluationSemantics,
+                                       TrajectoryMetricId, TrajectorySeries)
 from prml_vslam.eval.protocols import TrajectoryEvaluator
-from prml_vslam.interfaces.geometry import apply_similarity_to_trajectory, yaw_similarity_align
+from prml_vslam.interfaces.geometry import (apply_similarity_to_trajectory,
+                                            yaw_similarity_align)
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.backend_config import MethodId
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.sources.contracts import (PreparedBenchmarkInputs,
+                                          SequenceManifest)
 from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
-from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors, load_tum_trajectory, write_point_cloud_ply
+from prml_vslam.sources.datasets.registry import (list_sequence_slugs,
+                                                  resolve_reference_path)
+from prml_vslam.utils.geometry import (load_point_cloud_ply_with_colors,
+                                       load_tum_trajectory,
+                                       write_point_cloud_ply)
 from prml_vslam.utils.path_config import PathConfig
 
 __all__ = [
@@ -495,21 +495,21 @@ class CloudAlignmentService:
 
     def compute_cloud_alignment(self, *, selection: CloudAlignmentSelection) -> CloudAlignmentArtifact:
         """Refine a trajectory-Sim(3)-aligned cloud against a reference cloud with ICP."""
+
         reference_pcd = _read_non_empty_point_cloud(selection.reference_cloud_path, label="reference")
         estimate_pcd = _read_non_empty_point_cloud(selection.sim3_cloud_path, label="estimate")
-        o3d = _import_open3d()
+
         registration = o3d.pipelines.registration.registration_icp(
             estimate_pcd,
             reference_pcd,
             selection.max_correspondence_distance_m,
-            np.eye(4, dtype=np.float64),
-            o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+            init=np.eye(4, dtype=np.float64),
+            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(),
         )
         transformation = np.asarray(registration.transformation, dtype=np.float64)
         points_xyz, colors_rgb = load_point_cloud_ply_with_colors(selection.sim3_cloud_path)
-        rotation = transformation[:3, :3]
-        translation = transformation[:3, 3]
-        refined_points = points_xyz @ rotation.T + translation
+        refined_points = points_xyz @ transformation[:3, :3].T + transformation[:3, 3]
+
         icp_cloud_path = self.icp_point_cloud_path(selection.artifact_root)
         write_point_cloud_ply(icp_cloud_path, refined_points, colors_rgb=colors_rgb)
         artifact = CloudAlignmentArtifact(
@@ -519,8 +519,8 @@ class CloudAlignmentService:
             icp_point_cloud_path=icp_cloud_path,
             target_frame=selection.target_frame,
             max_correspondence_distance_m=selection.max_correspondence_distance_m,
-            fitness=float(registration.fitness),
-            inlier_rmse_m=float(registration.inlier_rmse),
+            fitness=registration.fitness,
+            inlier_rmse_m=registration.inlier_rmse,
             transformation=transformation.tolist(),
         )
         artifact.path.parent.mkdir(parents=True, exist_ok=True)
@@ -528,6 +528,7 @@ class CloudAlignmentService:
             json.dumps(artifact.model_dump(mode="json"), indent=2, sort_keys=True),
             encoding="utf-8",
         )
+
         return artifact
 
     @staticmethod
@@ -773,8 +774,7 @@ def _write_aligned_point_cloud(
 def _read_non_empty_point_cloud(path: Path, *, label: str) -> Any:
     if not path.exists():
         raise FileNotFoundError(f"Point-cloud alignment {label} cloud does not exist: {path}")
-    o3d = _import_open3d()
-    point_cloud = o3d.io.read_point_cloud(path.as_posix())
+    point_cloud = o3d.io.read_point_cloud(path)
     points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
     if points_xyz.shape[0] == 0:
         raise ValueError(f"Point-cloud alignment {label} cloud is empty: {path}")
@@ -784,10 +784,3 @@ def _read_non_empty_point_cloud(path: Path, *, label: str) -> Any:
         raise ValueError(f"Point-cloud alignment {label} cloud contains non-finite points: {path}")
     return point_cloud
 
-
-def _import_open3d() -> Any:
-    try:
-        import open3d as o3d
-    except ImportError as exc:  # pragma: no cover - exercised only when optional runtime is missing
-        raise RuntimeError("Open3D is required for point-cloud alignment.") from exc
-    return o3d
