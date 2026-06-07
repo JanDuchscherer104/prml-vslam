@@ -1,12 +1,20 @@
+"""Streamlit page for persisted trajectory benchmark aggregation."""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import streamlit as st
 
-from prml_vslam.eval.contracts import BenchmarkReference, DiscoveredRun, EvaluationArtifact
-from prml_vslam.plotting import build_error_figure, build_trajectory_figure
+from prml_vslam.eval.query import RunTrajectoryEvaluation
+from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
+from prml_vslam.plotting.metrics import (
+    build_trajectory_error_box,
+    build_trajectory_error_cdf,
+    build_trajectory_rmse_bar,
+)
 from prml_vslam.sources.datasets.contracts import DatasetId
 
 from ..state import save_model_updates
@@ -15,172 +23,154 @@ from ..ui import render_page_intro
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
 
-EVALUATION_ERRORS = (FileNotFoundError, RuntimeError, ValueError)
-
 
 def render(context: AppContext) -> None:
+    """Render multi-run trajectory metric aggregation from persisted artifacts."""
     render_page_intro(
         eyebrow="Benchmark Review",
         title="Trajectory Metrics",
-        body="Inspect persisted trajectory metrics or trigger a fresh explicit `evo` APE evaluation for one "
-        "dataset, sequence, and artifact slice. Evaluation stays explicit so metrics never run as a side effect.",
+        body=(
+            "Inspect persisted trajectory evaluation manifests across runs. This page never computes evo metrics; "
+            "rerun the trajectory evaluation stage when manifests are missing."
+        ),
     )
     metrics = context.state.metrics
+    query = context.trajectory_evaluation_query
     with st.container(border=True):
         st.subheader("Benchmark Slice")
         datasets = list(DatasetId)
         dataset = st.selectbox(
             "Dataset", datasets, index=datasets.index(metrics.dataset), format_func=lambda item: item.label
         )
-        selection_state = context.evaluation_service.resolve_selection(
-            dataset=dataset,
-            preferred_sequence_slug=metrics.sequence_slug,
-            preferred_run_root=metrics.run_root,
-        )
-        if not selection_state.sequence_slugs:
+        selection = query.resolve_selection(dataset=dataset, preferred_sequence_slug=metrics.sequence_slug)
+        if not selection.sequence_slugs:
             _save_state(context, dataset=dataset)
-            st.warning(f"No local {dataset.label} sequences were found under `{selection_state.dataset_root}`.")
+            st.warning(f"No local {dataset.label} sequences were found under `{selection.dataset_root}`.")
             return
         sequence_slug = st.selectbox(
             "Sequence",
-            options=selection_state.sequence_slugs,
-            index=selection_state.sequence_slugs.index(
-                selection_state.sequence_slug or selection_state.sequence_slugs[0]
-            ),
+            options=selection.sequence_slugs,
+            index=selection.sequence_slugs.index(selection.sequence_slug or selection.sequence_slugs[0]),
         )
-        selection_state = context.evaluation_service.resolve_selection(
-            dataset=dataset,
-            preferred_sequence_slug=sequence_slug,
-            preferred_run_root=metrics.run_root,
-        )
-        if not selection_state.runs or selection_state.selection is None:
-            _save_state(context, dataset=dataset, sequence_slug=sequence_slug)
-            st.info(
-                f"No benchmark runs with `slam/trajectory.tum` were found under `{selection_state.artifacts_root}`."
-            )
-            st.caption("Start a bounded demo run from the `Pipeline` page or use the CLI planning flow first.")
+        selection = query.resolve_selection(dataset=dataset, preferred_sequence_slug=sequence_slug)
+        _save_state(context, dataset=dataset, sequence_slug=sequence_slug)
+        if not selection.runs:
+            st.info(f"No benchmark runs with `slam/trajectory.tum` were found under `{selection.artifacts_root}`.")
             return
-        run = st.selectbox(
-            "Run",
-            options=selection_state.runs,
-            index=selection_state.runs.index(selection_state.selection.run),
-            format_func=lambda item: item.label,
-        )
-        st.caption(
-            "The current repository-local evaluator exposes no extra runtime knobs. Use the compute action below to refresh the persisted `evo` result."
-        )
 
-    resolved = context.evaluation_service.resolve_selection(
-        dataset=dataset,
-        preferred_sequence_slug=sequence_slug,
-        preferred_run_root=run.artifact_root,
-    )
-    selection = resolved.selection
-    if selection is None:
-        st.error("Could not resolve the selected benchmark slice.")
-        return
-    _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=selection.run.artifact_root)
-
-    references = context.evaluation_service.discover_benchmark_references(selection.run.artifact_root)
-    if not references:
-        st.info(
-            "No benchmark reference trajectories found in the run's `benchmark/` directory. "
-            "Re-run with a dataset that provides reference trajectories."
-        )
+    loaded = [query.load_run_evaluation(run) for run in selection.runs]
+    _render_run_status(loaded)
+    metric_rows = [row for loaded_run in loaded for row in loaded_run.metric_rows]
+    if not metric_rows:
+        st.info("No persisted trajectory metric rows are available for this sequence yet.")
         return
 
-    evaluations: dict[str, EvaluationArtifact | None] = {
-        ref.source_key: _try_load(context, run=selection.run, reference=ref) for ref in references
-    }
-    missing = [ref for ref in references if evaluations[ref.source_key] is None]
-
-    with st.container(border=True):
-        action_col, status_col = st.columns((0.9, 1.1), gap="large")
-        compute = action_col.button(
-            "Compute missing" if missing else "Recompute all",
-            type="primary",
-            width="stretch",
-        )
-        if missing:
-            status_col.info(f"{len(missing)} of {len(references)} source(s) not yet evaluated.")
-        else:
-            status_col.success(f"All {len(references)} reference source(s) have persisted results.")
-
-    if compute:
-        targets = missing if missing else references
-        with st.spinner(f"Computing evo metrics for {len(targets)} reference(s)..."):
-            for ref in targets:
-                try:
-                    evaluations[ref.source_key] = context.evaluation_service.compute_evaluation_for_source(
-                        run=selection.run, reference=ref
-                    )
-                except EVALUATION_ERRORS as exc:
-                    st.error(f"{ref.label}: {exc}")
-        st.success("Evaluation complete.")
-
-    loaded = [ref for ref in references if evaluations[ref.source_key] is not None]
-    if loaded:
-        with st.container(border=True):
-            st.subheader("Comparison")
-            _render_comparison_table(references, evaluations)
-
-    for ref in references:
-        evaluation = evaluations[ref.source_key]
-        with st.expander(ref.label, expanded=evaluation is not None):
-            if evaluation is None:
-                st.info(f"No persisted result for **{ref.label}** yet. Use the compute button above.")
-                continue
-            _render_source_detail(evaluation)
+    filtered_rows = _render_filters(metric_rows)
+    if not filtered_rows:
+        st.warning("No metric rows match the selected filters.")
+        return
+    _render_ranked_table(filtered_rows)
+    _render_summary_plots(context, filtered_rows)
 
 
-def _try_load(
-    context: AppContext,
-    *,
-    run: DiscoveredRun,
-    reference: BenchmarkReference,
-) -> EvaluationArtifact | None:
-    try:
-        return context.evaluation_service.load_evaluation_for_source(run=run, reference=reference)
-    except EVALUATION_ERRORS:
-        return None
-
-
-def _render_comparison_table(
-    references: list[BenchmarkReference],
-    evaluations: dict[str, EvaluationArtifact | None],
-) -> None:
+def _render_run_status(loaded: list[RunTrajectoryEvaluation]) -> None:
     rows = [
         {
-            "Source": ref.label,
-            "RMSE (m)": round(ev.stats.rmse, 4) if ev else None,
-            "Mean (m)": round(ev.stats.mean, 4) if ev else None,
-            "Median (m)": round(ev.stats.median, 4) if ev else None,
-            "Max (m)": round(ev.stats.max, 4) if ev else None,
-            "Matched Pairs": ev.matched_pairs if ev else None,
+            "Run": item.run.label,
+            "Artifact Root": item.run.artifact_root.as_posix(),
+            "Manifest": "missing"
+            if item.manifest is None and item.load_error is None
+            else "error"
+            if item.load_error is not None
+            else "loaded",
+            "Metric Rows": len(item.metric_rows),
+            "Message": item.load_error or "",
         }
-        for ref in references
-        for ev in (evaluations.get(ref.source_key),)
+        for item in loaded
     ]
-    st.dataframe(rows, use_container_width=True)
+    with st.container(border=True):
+        st.subheader("Run Coverage")
+        st.dataframe(rows, hide_index=True, width="stretch")
 
 
-def _render_source_detail(evaluation: EvaluationArtifact) -> None:
-    cols = st.columns(5, gap="small")
-    labels = ("RMSE", "Mean", "Median", "Max", "Matched Pairs")
-    values: tuple[float | int, ...] = (
-        evaluation.stats.rmse,
-        evaluation.stats.mean,
-        evaluation.stats.median,
-        evaluation.stats.max,
-        evaluation.matched_pairs,
-    )
-    for col, label, value in zip(cols, labels, values, strict=True):
-        col.metric(label, f"{value:.4f}" if isinstance(value, float) else str(value))
-    figure_columns = st.columns((1.3, 1.0), gap="large")
-    if evaluation.trajectories:
-        figure_columns[0].plotly_chart(build_trajectory_figure(evaluation.trajectories), width="stretch")
-    if evaluation.error_series is not None:
-        figure_columns[1].plotly_chart(build_error_figure(evaluation.error_series), width="stretch")
+def _render_filters(rows: list[TrajectoryMetricResultRow]) -> list[TrajectoryMetricResultRow]:
+    with st.container(border=True):
+        st.subheader("Filters")
+        columns = st.columns(4, gap="small")
+        families = _multi_select(columns[0], "Metric Family", [row.metric_family for row in rows])
+        relations = _multi_select(columns[1], "Pose Relation", [row.pose_relation.value for row in rows])
+        references = _multi_select(columns[2], "Reference", [row.reference_source for row in rows])
+        estimates = _multi_select(columns[3], "Estimate", [row.estimate_source for row in rows])
+    return [
+        row
+        for row in rows
+        if row.metric_family in families
+        and row.pose_relation.value in relations
+        and row.reference_source in references
+        and row.estimate_source in estimates
+    ]
+
+
+def _multi_select(column, label: str, values: list[str]) -> list[str]:
+    options = sorted(set(values))
+    return column.multiselect(label, options=options, default=options)
+
+
+def _render_ranked_table(rows: list[TrajectoryMetricResultRow]) -> None:
+    table_rows = [
+        {
+            "Run": row.run_id,
+            "Sequence": row.sequence_id,
+            "Reference": row.reference_source,
+            "Estimate": row.estimate_source,
+            "Metric": f"{row.metric_family}.{row.pose_relation.name}",
+            "Statistic": row.statistic,
+            "Value": row.value,
+            "Unit": row.unit or "",
+            "Matched Pairs": row.matched_pairs,
+        }
+        for row in sorted(rows, key=lambda item: (item.statistic != "rmse", item.value))
+    ]
+    with st.container(border=True):
+        st.subheader("Ranked Metrics")
+        st.dataframe(table_rows, hide_index=True, width="stretch")
+
+
+def _render_summary_plots(context: AppContext, rows: list[TrajectoryMetricResultRow]) -> None:
+    plot_rows = [row for row in rows if row.statistic == "rmse"]
+    if plot_rows:
+        st.plotly_chart(build_trajectory_rmse_bar(plot_rows), width="stretch")
+    cdf_rows = [
+        row
+        for row in rows
+        if row.statistic == "rmse"
+        and row.metric_family == "ape"
+        and row.pose_relation.name == "translation_part"
+        and row.error_series_path is not None
+    ]
+    if not cdf_rows:
+        return
+    series_by_label = _load_error_series_by_label(context, cdf_rows)
+    figures = st.columns(2, gap="large")
+    figures[0].plotly_chart(build_trajectory_error_cdf(series_by_label), width="stretch")
+    figures[1].plotly_chart(build_trajectory_error_box(series_by_label), width="stretch")
+
+
+def _load_error_series_by_label(context: AppContext, rows: list[TrajectoryMetricResultRow]) -> dict[str, np.ndarray]:
+    series_by_label: dict[str, np.ndarray] = {}
+    for row in rows:
+        series_by_label[f"{row.run_id} / {row.estimate_source}"] = _load_error_values(context, row.error_series_path)
+    return series_by_label
+
+
+def _load_error_values(context: AppContext, path: Path | None) -> np.ndarray:
+    if path is None:
+        return np.empty(0, dtype=np.float64)
+    try:
+        return context.trajectory_evaluation_query.load_error_series_values(path)
+    except (OSError, ValueError, KeyError) as exc:
+        st.warning(f"Could not load error series `{path}`: {exc}")
+        return np.empty(0, dtype=np.float64)
 
 
 def _save_state(
@@ -188,8 +178,6 @@ def _save_state(
     *,
     dataset: DatasetId,
     sequence_slug: str | None = None,
-    run_root: Path | None = None,
-    result_path: Path | None = None,
 ) -> None:
     save_model_updates(
         context.store,
@@ -197,6 +185,6 @@ def _save_state(
         context.state.metrics,
         dataset=dataset,
         sequence_slug=sequence_slug,
-        run_root=run_root,
-        result_path=result_path,
+        run_root=None,
+        result_path=None,
     )

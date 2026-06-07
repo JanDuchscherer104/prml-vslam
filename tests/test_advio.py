@@ -457,28 +457,28 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert manifest.advio.fixpoints_csv_path == sequence_dir / "ground-truth" / "fixpoints.csv"
     assert manifest.advio.pose_refs.selected_pose_csv_path == sequence_dir / "pixel" / "arcore.csv"
     assert manifest.advio.T_cam_imu.tx == 0.01
-    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
-        "ground_truth",
+    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == ["ground_truth"]
+    assert [candidate.source.value for candidate in benchmark_inputs.candidate_trajectories] == [
         "arcore",
         "arcore",
         "arkit",
         "arkit",
     ]
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
-    assert benchmark_inputs.reference_trajectories[1].path == sequence_dir / "evaluation" / "arcore.tum"
-    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum"
-    assert benchmark_inputs.reference_trajectories[3].path == sequence_dir / "evaluation" / "arkit.tum"
-    assert benchmark_inputs.reference_trajectories[4].path == sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum"
+    assert benchmark_inputs.candidate_trajectories[0].path == sequence_dir / "evaluation" / "arcore.tum"
+    assert benchmark_inputs.candidate_trajectories[1].path == sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum"
+    assert benchmark_inputs.candidate_trajectories[2].path == sequence_dir / "evaluation" / "arkit.tum"
+    assert benchmark_inputs.candidate_trajectories[3].path == sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum"
     assert all(reference.path.exists() for reference in benchmark_inputs.reference_trajectories)
-    assert [reference.coordinate_status for reference in benchmark_inputs.reference_trajectories] == [
-        ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+    assert all(candidate.path.exists() for candidate in benchmark_inputs.candidate_trajectories)
+    assert [candidate.coordinate_status for candidate in benchmark_inputs.candidate_trajectories] == [
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         ReferenceCloudCoordinateStatus.ALIGNED,
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         ReferenceCloudCoordinateStatus.ALIGNED,
     ]
-    assert benchmark_inputs.reference_trajectories[2].target_frame == "advio_gt_world"
-    assert benchmark_inputs.reference_trajectories[4].target_frame == "advio_gt_world"
+    assert benchmark_inputs.candidate_trajectories[1].target_frame == "advio_gt_world"
+    assert benchmark_inputs.candidate_trajectories[3].target_frame == "advio_gt_world"
     assert benchmark_inputs.reference_clouds == []
 
 
@@ -500,8 +500,8 @@ def test_advio_benchmark_inputs_sanitize_optional_provider_trajectory(tmp_path: 
 
     benchmark_inputs = sequence.to_benchmark_inputs()
 
-    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
-        "ground_truth",
+    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == ["ground_truth"]
+    assert [candidate.source.value for candidate in benchmark_inputs.candidate_trajectories] == [
         "arcore",
         "arcore",
         "arkit",
@@ -539,7 +539,7 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
     assert any(
         reference.source is ReferenceSource.ARKIT
         and reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-        for reference in benchmark_inputs.reference_trajectories
+        for reference in benchmark_inputs.candidate_trajectories
     )
     arkit_metadata = json.loads((sequence_dir / "evaluation" / "arkit.metadata.json").read_text())
     assert arkit_metadata["sanitization"]["normalized_quaternion_rows"] == 3
@@ -548,7 +548,7 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
         reference.source is ReferenceSource.ARKIT
         and reference.coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
         and reference.target_frame == "advio_gt_world"
-        for reference in benchmark_inputs.reference_trajectories
+        for reference in benchmark_inputs.candidate_trajectories
     )
 
 

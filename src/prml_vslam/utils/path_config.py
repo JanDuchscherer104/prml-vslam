@@ -74,6 +74,10 @@ class RunArtifactPaths(BaseData):
     """Path to the ARCore alignment artifact."""
     trajectory_metrics_path: Path
     """Path to persisted trajectory evaluation metrics."""
+    trajectory_evaluation_manifest_path: Path
+    """Path to the canonical trajectory evaluation manifest."""
+    trajectory_metrics_long_path: Path
+    """Path to the canonical long-form trajectory metric table."""
     cloud_metrics_path: Path
     """Path to persisted dense-cloud evaluation metrics."""
     reference_cloud_path: Path
@@ -111,6 +115,10 @@ class RunArtifactPaths(BaseData):
             ground_alignment_path=(resolved_root / "alignment" / "ground_alignment.json").resolve(),
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
             trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
+            trajectory_evaluation_manifest_path=(
+                resolved_root / "evaluation" / "trajectory" / "manifest.json"
+            ).resolve(),
+            trajectory_metrics_long_path=(resolved_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
             reference_cloud_path=(resolved_root / "reconstruction" / "reconstruction_cloud.ply").resolve(),
             summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),

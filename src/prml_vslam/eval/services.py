@@ -1,16 +1,18 @@
 """Concrete evaluation services built on normalized run artifacts.
 
 This module implements the explicit evaluation work described by
-:mod:`prml_vslam.eval.contracts` and :mod:`prml_vslam.eval.protocols`. It
-discovers runs under the artifact root, resolves reference trajectories, and
-computes or reloads persisted `evo`-based trajectory metrics.
+:mod:`prml_vslam.eval.contracts` and :mod:`prml_vslam.eval.protocols`. App and
+post-run aggregation discovery lives in :mod:`prml_vslam.eval.query`; this
+module owns eval-stage computation and persistence.
 """
 
 from __future__ import annotations
 
 import copy
+import csv
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,30 +22,20 @@ from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 
-from prml_vslam.eval.contracts import (
-    BenchmarkReference,
-    CloudAlignmentArtifact,
-    CloudAlignmentSelection,
-    DiscoveredRun,
-    ErrorSeries,
-    EvaluationArtifact,
-    EvaluationSelection,
-    MetricStats,
-    SelectionSnapshot,
+from prml_vslam.eval.alignment_contracts import (
     TrajectoryAlignmentArtifact,
     TrajectoryAlignmentCloudUseStatus,
     TrajectoryAlignmentMode,
-    TrajectoryEvaluationPreview,
-    TrajectoryEvaluationSemantics,
-    TrajectoryMetricId,
-    TrajectorySeries,
 )
-from prml_vslam.eval.protocols import TrajectoryEvaluator
+from prml_vslam.eval.contracts import CloudAlignmentArtifact, CloudAlignmentSelection, MetricStats
+from prml_vslam.eval.query import BenchmarkReference, DiscoveredRun, SelectionSnapshot
+from prml_vslam.eval.trajectory_contracts import (
+    TrajectoryEvaluationManifest,
+    TrajectoryMetricResultRow,
+)
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.utils.geometry import (
     apply_similarity_to_trajectory,
     load_point_cloud_ply_with_colors,
@@ -56,7 +48,6 @@ from prml_vslam.utils.path_config import PathConfig
 __all__ = [
     "CloudAlignmentService",
     "TrajectoryEvaluationService",
-    "compute_trajectory_ape_preview",
 ]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
@@ -76,8 +67,17 @@ if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts.plan import RunPlan
 
 
-# TODO: which methods are used in the pipieline vs streamlit app: ensure a better separation of concerns between pipeline vs app / post-run services!
-class TrajectoryEvaluationService(TrajectoryEvaluator):
+@dataclass(slots=True)
+class _TrajectoryMetricPreview:
+    """Internal single-metric preview kept until the full evo metric loop lands."""
+
+    error_timestamps_s: np.ndarray
+    error_values: np.ndarray
+    stats: MetricStats
+    alignment: TrajectoryAlignmentArtifact | None = None
+
+
+class TrajectoryEvaluationService:
     """Discover runs and compute or reload explicit `evo` trajectory metrics.
 
     The service is the eval-owned implementation behind metrics pages and the
@@ -88,121 +88,6 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
-
-    def discover_runs(self, sequence_slug: str | None) -> list[DiscoveredRun]:
-        """Return all runs under the artifacts root that match one sequence slug.
-
-        Discovery is read-only and based on normalized ``slam/trajectory.tum``
-        outputs. It does not validate metric availability or compute missing
-        results.
-        """
-        if sequence_slug is None:
-            return []
-        return [
-            DiscoveredRun(
-                artifact_root=run_root,
-                estimate_path=trajectory_path,
-                method=method,
-                label=label if not visible_parts else f"{label} · {' / '.join(visible_parts)}",
-            )
-            for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum"))
-            for run_root in [trajectory_path.parent.parent]
-            for relative_parts in [run_root.relative_to(self.path_config.artifacts_dir).parts]
-            if any(part == sequence_slug for part in relative_parts)
-            for method in [
-                next(
-                    (method for part in reversed(relative_parts) for method in MethodId if part == method.value),
-                    None,
-                )
-            ]
-            for visible_parts in [
-                [
-                    part
-                    for part in relative_parts
-                    if part not in ({sequence_slug, "slam"} | ({method.value} if method is not None else set()))
-                ]
-            ]
-            for label in [method.display_name if method is not None else relative_parts[-1]]
-        ]
-
-    def resolve_selection(
-        self,
-        *,
-        dataset: DatasetId,
-        preferred_sequence_slug: str | None,
-        preferred_run_root: Path | None,
-    ) -> EvaluationSelection:
-        """Resolve dataset sequences, runs, and the current metrics-page selection.
-
-        This method keeps UI state deterministic by turning optional preferred
-        values into one concrete selection snapshot when local references and
-        run artifacts are available.
-        """
-        dataset_root = self.path_config.resolve_dataset_dir(dataset.value)
-        artifacts_root = self.path_config.artifacts_dir
-        sequence_slugs = list_sequence_slugs(dataset, dataset_root)
-        if not sequence_slugs:
-            return EvaluationSelection(
-                dataset=dataset,
-                dataset_root=dataset_root,
-                artifacts_root=artifacts_root,
-            )
-
-        sequence_slug = preferred_sequence_slug if preferred_sequence_slug in sequence_slugs else sequence_slugs[0]
-        runs = self.discover_runs(sequence_slug)
-        if not runs:
-            return EvaluationSelection(
-                dataset=dataset,
-                dataset_root=dataset_root,
-                artifacts_root=artifacts_root,
-                sequence_slugs=sequence_slugs,
-                sequence_slug=sequence_slug,
-                runs=runs,
-            )
-
-        run = next((candidate for candidate in runs if candidate.artifact_root == preferred_run_root), runs[0])
-        reference_path = resolve_reference_path(dataset, dataset_root, sequence_slug)
-        return EvaluationSelection(
-            dataset=dataset,
-            dataset_root=dataset_root,
-            artifacts_root=artifacts_root,
-            sequence_slugs=sequence_slugs,
-            sequence_slug=sequence_slug,
-            runs=runs,
-            selection=SelectionSnapshot(
-                sequence_slug=sequence_slug,
-                reference_path=reference_path,
-                target_frame=_infer_target_frame(dataset, reference_path),
-                coordinate_status=_infer_coordinate_status(dataset, reference_path),
-                run=run,
-            ),
-        )
-
-    def load_evaluation(
-        self,
-        *,
-        selection: SelectionSnapshot,
-    ) -> EvaluationArtifact | None:
-        """Load a persisted `evo` evaluation when it exists. For post-hoc analysis given persisted artifacts, not for live pipeline runs.
-
-        Returns ``None`` when either the reference or metrics artifact is
-        missing, leaving callers free to render an explicit compute action.
-        """
-        reference_path = selection.reference_path
-        result_path = self.result_path(selection.run.artifact_root)
-        if reference_path is None or not result_path.exists():
-            return None
-        payload = json.loads(result_path.read_text(encoding="utf-8"))
-        reference_series = _series_from_trajectory("Reference", load_tum_trajectory(reference_path))
-        estimate_series = _series_from_trajectory("Estimate", load_tum_trajectory(selection.run.estimate_path))
-        trajectories = (reference_series, estimate_series)
-        return EvaluationArtifact.from_payload(
-            path=result_path,
-            payload=payload,
-            reference_path=reference_path,
-            estimate_path=selection.run.estimate_path,
-            trajectories=trajectories,
-        )
 
     def compute_trajectory_alignment(
         self,
@@ -280,7 +165,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         self,
         *,
         selection: SelectionSnapshot,
-    ) -> EvaluationArtifact:
+    ) -> TrajectoryEvaluationManifest:
         """Compute and persist trajectory APE via the `evo` Python API.
 
         The current executable metric is translation APE with timestamp
@@ -301,37 +186,18 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             method_id=selection.run.method,
             method_label=selection.run.label,
         )
-        result_path = self.result_path(selection.run.artifact_root)
-        result_path.parent.mkdir(parents=True, exist_ok=True)
         alignment_mode = (
             TrajectoryAlignmentMode.SIM3_UMEYAMA
             if preview.alignment is not None
             else TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
         )
-        # TODO: also persist rotaional part, full APE, and RPE!
-        payload = {
-            "title": "Trajectory APE (evo)",
-            "matched_pairs": len(preview.error_series.values),
-            "stats": preview.stats.model_dump(mode="python"),
-            "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
-            "error_values": preview.error_series.values.tolist(),
-            "alignment_path": None,
-            "aligned_estimate_path": None,
-            "aligned_point_cloud_path": None,
-            "semantics": TrajectoryEvaluationSemantics(
-                metric_id=TrajectoryMetricId.APE_TRANSLATION,
-                pose_relation="translation_part",
-                alignment_mode=alignment_mode,
-                sync_max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
-            ).model_dump(mode="python"),
-        }
-        result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return EvaluationArtifact.from_payload(
-            path=result_path,
-            payload=payload,
+        del alignment_mode
+        return self._persist_single_metric_manifest(
+            selection=selection,
             reference_path=reference_path,
-            estimate_path=selection.run.estimate_path,
-            trajectories=(preview.reference, preview.estimate),
+            preview=preview,
+            reference_source=selection.reference_source or "ground_truth",
+            estimate_source=selection.run.method or "vslam",
         )
 
     def compute_pipeline_evaluation(
@@ -342,7 +208,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         sequence_manifest: SequenceManifest | None,
         benchmark_inputs: PreparedBenchmarkInputs | None,
         slam: SlamArtifacts | None,
-    ) -> EvaluationArtifact | None:
+    ) -> TrajectoryEvaluationManifest | None:
         """Compute the trajectory-evaluation stage for one pipeline run.
 
         The stage path uses prepared benchmark inputs instead of rediscovering
@@ -402,20 +268,14 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         *,
         run: DiscoveredRun,
         reference: BenchmarkReference,
-    ) -> EvaluationArtifact | None:
+    ) -> TrajectoryEvaluationManifest | None:
         """Load a persisted evaluation for one specific benchmark reference source."""
-        result_path = self.result_path_for_source(run.artifact_root, reference.source_key)
-        if not result_path.exists():
+        del reference
+        manifest_path = self.manifest_path(run.artifact_root)
+        if not manifest_path.exists():
             return None
-        payload = json.loads(result_path.read_text(encoding="utf-8"))
-        reference_series = _series_from_trajectory(reference.label, load_tum_trajectory(reference.path))
-        estimate_series = _series_from_trajectory("Estimate", load_tum_trajectory(run.estimate_path))
-        return EvaluationArtifact.from_payload(
-            path=result_path,
-            payload=payload,
-            reference_path=reference.path,
-            estimate_path=run.estimate_path,
-            trajectories=(reference_series, estimate_series),
+        return TrajectoryEvaluationManifest.model_validate_json(manifest_path.read_text(encoding="utf-8")).model_copy(
+            update={"path": manifest_path}
         )
 
     def compute_evaluation_for_source(
@@ -423,8 +283,11 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         *,
         run: DiscoveredRun,
         reference: BenchmarkReference,
-    ) -> EvaluationArtifact:
+    ) -> TrajectoryEvaluationManifest:
         """Compute and persist trajectory APE against one specific benchmark reference."""
+        # TODO: ADVIO: {vSLAM, arkit, arcore} vs GT
+        # TODO: TUM-RGBD: vSLAM vs GT
+        # TODO: Record3D: vSLAM vs GT, where GT is iPhone 17 Pro arkit
         target_frame = _infer_target_frame(
             DatasetId.ADVIO, reference.path
         )  # BenchmarkReferences are ADVIO-only for now
@@ -440,35 +303,76 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         )
         result_path = self.result_path_for_source(run.artifact_root, reference.source_key)
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        alignment_mode = (
-            TrajectoryAlignmentMode.SIM3_UMEYAMA
-            if preview.alignment is not None
-            else TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
-        )
-        payload = {
-            "title": f"Trajectory APE (evo) — {reference.label}",
-            "matched_pairs": len(preview.error_series.values),
-            "stats": preview.stats.model_dump(mode="python"),
-            "error_timestamps_s": preview.error_series.timestamps_s.tolist(),
-            "error_values": preview.error_series.values.tolist(),
-            "alignment_path": None,
-            "aligned_estimate_path": None,
-            "aligned_point_cloud_path": None,
-            "semantics": TrajectoryEvaluationSemantics(
-                metric_id=TrajectoryMetricId.APE_TRANSLATION,
-                pose_relation="translation_part",
-                alignment_mode=alignment_mode,
-                sync_max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
-            ).model_dump(mode="python"),
-        }
-        result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return EvaluationArtifact.from_payload(
-            path=result_path,
-            payload=payload,
+        return self._persist_single_metric_manifest(
+            selection=SelectionSnapshot(
+                sequence_slug=run.artifact_root.name,
+                reference_path=reference.path,
+                target_frame=target_frame,
+                reference_source=reference.source_key,
+                run=run,
+            ),
             reference_path=reference.path,
-            estimate_path=run.estimate_path,
-            trajectories=(preview.reference, preview.estimate),
+            preview=preview,
+            reference_source=reference.source_key,
+            estimate_source=run.method or "vslam",
         )
+
+    def _persist_single_metric_manifest(
+        self,
+        *,
+        selection: SelectionSnapshot,
+        reference_path: Path,
+        preview: _TrajectoryMetricPreview,
+        reference_source: str,
+        estimate_source: str,
+    ) -> TrajectoryEvaluationManifest:
+        """Persist the current single-metric output in the future manifest shape."""
+        run_root = selection.run.artifact_root
+        evaluation_dir = run_root / "evaluation" / "trajectory"
+        error_series_dir = evaluation_dir / "error_series"
+        error_series_dir.mkdir(parents=True, exist_ok=True)
+        error_series_path = error_series_dir / f"{reference_source}__{estimate_source}__ape_translation_part.npz"
+        np.savez(
+            error_series_path,
+            values=preview.error_values,
+            timestamps_s=preview.error_timestamps_s,
+            pair_index=np.arange(len(preview.error_values), dtype=np.int64),
+        )
+
+        matched_pairs = int(len(preview.error_values))
+        manifest_path = self.manifest_path(run_root)
+        metrics_long_path = self.metrics_long_path(run_root)
+        rows = [
+            TrajectoryMetricResultRow(
+                run_id=run_root.name,
+                sequence_id=selection.sequence_slug,
+                reference_source=reference_source,
+                estimate_source=estimate_source,
+                metric_family="ape",
+                pose_relation=metrics.PoseRelation.translation_part,
+                statistic=statistic,
+                value=value,
+                unit="m",
+                matched_pairs=matched_pairs,
+                error_series_path=error_series_path,
+            )
+            for statistic, value in preview.stats.model_dump(mode="python").items()
+        ]
+        _write_metric_rows(metrics_long_path, rows)
+        manifest = TrajectoryEvaluationManifest(
+            artifact_root=run_root,
+            sequence_id=selection.sequence_slug,
+            run_id=run_root.name,
+            reference_trajectories=[reference_path],
+            candidate_trajectories=[selection.run.estimate_path],
+            error_series_paths=[error_series_path],
+        )
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return manifest
 
     @staticmethod
     def result_path_for_source(run_root: Path, source_key: str) -> Path:
@@ -497,27 +401,36 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         """Return the deterministic Sim(3)-aligned point-cloud path."""
         return run_root / "evaluation" / "point_cloud_sim3_aligned.ply"
 
+    @staticmethod
+    def manifest_path(run_root: Path) -> Path:
+        """Return the canonical trajectory-evaluation manifest path."""
+        return run_root / "evaluation" / "trajectory" / "manifest.json"
+
+    @staticmethod
+    def metrics_long_path(run_root: Path) -> Path:
+        """Return the canonical long-form trajectory metric table path."""
+        return run_root / "evaluation" / "trajectory" / "metrics_long.csv"
+
 
 class CloudAlignmentService:
     """Materialize offline point-cloud alignment artifacts before cloud metrics."""
 
     def compute_cloud_alignment(self, *, selection: CloudAlignmentSelection) -> CloudAlignmentArtifact:
         """Refine a trajectory-Sim(3)-aligned cloud against a reference cloud with ICP."""
-
         reference_pcd = _read_non_empty_point_cloud(selection.reference_cloud_path, label="reference")
         estimate_pcd = _read_non_empty_point_cloud(selection.sim3_cloud_path, label="estimate")
-
         registration = o3d.pipelines.registration.registration_icp(
             estimate_pcd,
             reference_pcd,
             selection.max_correspondence_distance_m,
-            init=np.eye(4, dtype=np.float64),
-            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+            np.eye(4, dtype=np.float64),
+            o3d.pipelines.registration.TransformationEstimationPointToPoint(),
         )
         transformation = np.asarray(registration.transformation, dtype=np.float64)
         points_xyz, colors_rgb = load_point_cloud_ply_with_colors(selection.sim3_cloud_path)
-        refined_points = points_xyz @ transformation[:3, :3].T + transformation[:3, 3]
-
+        rotation = transformation[:3, :3]
+        translation = transformation[:3, 3]
+        refined_points = points_xyz @ rotation.T + translation
         icp_cloud_path = self.icp_point_cloud_path(selection.artifact_root)
         write_point_cloud_ply(icp_cloud_path, refined_points, colors_rgb=colors_rgb)
         artifact = CloudAlignmentArtifact(
@@ -527,8 +440,8 @@ class CloudAlignmentService:
             icp_point_cloud_path=icp_cloud_path,
             target_frame=selection.target_frame,
             max_correspondence_distance_m=selection.max_correspondence_distance_m,
-            fitness=registration.fitness,
-            inlier_rmse_m=registration.inlier_rmse,
+            fitness=float(registration.fitness),
+            inlier_rmse_m=float(registration.inlier_rmse),
             transformation=transformation.tolist(),
         )
         artifact.path.parent.mkdir(parents=True, exist_ok=True)
@@ -536,7 +449,6 @@ class CloudAlignmentService:
             json.dumps(artifact.model_dump(mode="json"), indent=2, sort_keys=True),
             encoding="utf-8",
         )
-
         return artifact
 
     @staticmethod
@@ -561,12 +473,12 @@ def compute_trajectory_ape_preview(
     reference_source: str = "reference",
     method_id: str | None = None,
     method_label: str | None = None,
-) -> TrajectoryEvaluationPreview:
+) -> _TrajectoryMetricPreview:
     """Compute in-memory translation APE for two normalized TUM trajectory artifacts.
 
     Uses evo's timestamp association and APE implementation over
-    :class:`evo.core.trajectory.PoseTrajectory3D`. The helper returns a preview
-    DTO and leaves persistence to :class:`TrajectoryEvaluationService`.
+    :class:`evo.core.trajectory.PoseTrajectory3D`. The helper returns an
+    internal preview and leaves persistence to :class:`TrajectoryEvaluationService`.
     """
     reference_trajectory = load_tum_trajectory(reference_path)
     estimate_trajectory = load_tum_trajectory(estimate_path)
@@ -598,51 +510,16 @@ def compute_trajectory_ape_preview(
     elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
         raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
 
-    # TODO: suppoer metrics.APE(*), metrics.RPE(*), and * in {}
     metric = metrics.APE(metrics.PoseRelation.translation_part)
-    # pose_relations = [metrics.PoseRelation.translation_part, metrics.PoseRelation.rotation_angle_rad]
     metric.process_data((associated_reference, evaluation_estimate))
-    # metric.get_all_statistics() # dict[str, float]
-    # is defined as:
-    #     def get_statistic(self, statistics_type: StatisticsType) -> float:
-    #     if statistics_type == StatisticsType.rmse:
-    #         squared_errors = np.power(self.error, 2)
-    #         return math.sqrt(np.mean(squared_errors))
-    #     elif statistics_type == StatisticsType.sse:
-    #         squared_errors = np.power(self.error, 2)
-    #         return np.sum(squared_errors)
-    #     elif statistics_type == StatisticsType.mean:
-    #         return float(np.mean(self.error))
-    #     elif statistics_type == StatisticsType.median:
-    #         return np.median(self.error)
-    #     elif statistics_type == StatisticsType.max:
-    #         return np.max(self.error)
-    #     elif statistics_type == StatisticsType.min:
-    #         return np.min(self.error)
-    #     elif statistics_type == StatisticsType.std:
-    #         return float(np.std(self.error))
     error_values = np.asarray(metric.error, dtype=np.float64)
     if error_values.size == 0:
         raise ValueError("evo APE produced zero matched trajectory pairs.")
-    return TrajectoryEvaluationPreview(
-        # TODO: what is this bullshit - why would we be interested in the translational parts of these trajectories here?
-        reference=_series_from_trajectory("Reference", associated_reference),
-        estimate=_series_from_trajectory("Estimate", evaluation_estimate),
-        error_series=ErrorSeries(
-            timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
-            values=error_values,
-        ),
-        # TODO: get rid of custom "from_error_values" and use metric.get_all_statistics() instead!
-        stats=MetricStats.from_error_values(error_values),
+    return _TrajectoryMetricPreview(
+        error_timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
+        error_values=error_values,
+        stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
         alignment=alignment,
-    )
-
-
-def _series_from_trajectory(name: str, trajectory: PoseTrajectory3D) -> TrajectorySeries:
-    return TrajectorySeries(
-        name=name,
-        timestamps_s=np.asarray(trajectory.timestamps, dtype=np.float64),
-        positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float64),
     )
 
 
@@ -697,6 +574,16 @@ def _align_estimate_sim3(
 def _method_world_frame(method_id: str | None) -> str:
     token = "slam" if method_id is None else _entity_token(str(method_id))
     return f"{token}_slam_world"
+
+
+def _write_metric_rows(path: Path, rows: list[TrajectoryMetricResultRow]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(TrajectoryMetricResultRow.model_fields)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row.model_dump(mode="json"))
 
 
 def _entity_token(value: str) -> str:
@@ -805,7 +692,7 @@ def _write_aligned_point_cloud(
 def _read_non_empty_point_cloud(path: Path, *, label: str) -> Any:
     if not path.exists():
         raise FileNotFoundError(f"Point-cloud alignment {label} cloud does not exist: {path}")
-    point_cloud = o3d.io.read_point_cloud(path)
+    point_cloud = o3d.io.read_point_cloud(path.as_posix())
     points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
     if points_xyz.shape[0] == 0:
         raise ValueError(f"Point-cloud alignment {label} cloud is empty: {path}")

@@ -7,26 +7,28 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from evo.core import metrics
 
-from prml_vslam.eval.contracts import (
-    CloudAlignmentArtifact,
-    CloudAlignmentSelection,
-    DiscoveredRun,
-    EvaluationArtifact,
-    MetricStats,
-    SelectionSnapshot,
+from prml_vslam.eval.alignment_contracts import (
     TrajectoryAlignmentArtifact,
     TrajectoryAlignmentCloudUseStatus,
     TrajectoryAlignmentMode,
-    TrajectoryEvaluationSemantics,
-    TrajectoryMetricId,
-    TrajectorySeries,
 )
+from prml_vslam.eval.contracts import (
+    CloudAlignmentArtifact,
+    CloudAlignmentSelection,
+    MetricStats,
+)
+from prml_vslam.eval.query import DiscoveredRun, SelectionSnapshot
 from prml_vslam.eval.services import CloudAlignmentService, TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
 from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
 from prml_vslam.eval.stage_cloud_alignment.runtime import CloudAlignmentRuntime
+from prml_vslam.eval.trajectory_contracts import (
+    TrajectoryEvaluationManifest,
+    TrajectoryMetricResultRow,
+)
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
@@ -48,51 +50,38 @@ from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_point_cloud_ply, write_point_cloud_ply, write_tum_trajectory
 
 
-def test_evaluation_artifact_round_trips_explicit_semantics(tmp_path: Path) -> None:
-    payload = {
-        "title": "Trajectory APE (evo)",
-        "matched_pairs": 2,
-        "stats": MetricStats(
-            rmse=1.0,
-            mean=1.0,
-            median=1.0,
-            std=0.0,
-            min=1.0,
-            max=1.0,
-            sse=2.0,
-        ).model_dump(mode="python"),
-        "error_timestamps_s": [0.0, 1.0],
-        "error_values": [0.5, 1.5],
-        "semantics": TrajectoryEvaluationSemantics(
-            metric_id=TrajectoryMetricId.APE_TRANSLATION,
-            pose_relation="translation_part",
-            alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
-            sync_max_diff_s=0.01,
-        ).model_dump(mode="python"),
-    }
-
-    artifact = EvaluationArtifact.from_payload(
-        path=tmp_path / "trajectory_metrics.json",
-        payload=payload,
-        reference_path=tmp_path / "reference.tum",
-        estimate_path=tmp_path / "estimate.tum",
-        trajectories=(
-            TrajectorySeries(
-                name="Reference",
-                positions_xyz=np.zeros((2, 3), dtype=np.float64),
-                timestamps_s=np.array([0.0, 1.0], dtype=np.float64),
-            ),
-            TrajectorySeries(
-                name="Estimate",
-                positions_xyz=np.ones((2, 3), dtype=np.float64),
-                timestamps_s=np.array([0.0, 1.0], dtype=np.float64),
-            ),
-        ),
+def test_trajectory_metric_contracts_round_trip_manifest_rows(tmp_path: Path) -> None:
+    stats = MetricStats.from_evo_statistics(
+        {"rmse": 1.0, "mean": 1.0, "median": 1.0, "std": 0.0, "min": 1.0, "max": 1.0, "sse": 2.0}
+    )
+    row = TrajectoryMetricResultRow(
+        run_id="run",
+        sequence_id="seq",
+        reference_source="ground_truth",
+        estimate_source="vslam",
+        metric_family="rpe",
+        pose_relation=metrics.PoseRelation.rotation_angle_deg,
+        statistic="rmse",
+        value=stats.rmse,
+        unit="deg",
+        matched_pairs=2,
+        delta=1.0,
+        delta_unit="frames",
+        error_series_path=tmp_path / "errors.npz",
+    )
+    manifest = TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq",
+        run_id="run",
+        reference_trajectories=[tmp_path / "reference.tum"],
+        candidate_trajectories=[tmp_path / "estimate.tum"],
     )
 
-    assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
-    assert artifact.semantics.alignment_mode is TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
-    assert artifact.semantics.candidate_next_metrics == [TrajectoryMetricId.RPE_TRANSLATION]
+    assert row.metric_family == "rpe"
+    assert row.pose_relation is metrics.PoseRelation.rotation_angle_deg
+    assert manifest.model_validate_json(manifest.model_dump_json()).candidate_trajectories == [
+        tmp_path / "estimate.tum"
+    ]
 
 
 def test_sim3_umeyama_preview_recovers_metric_scale(tmp_path: Path) -> None:
@@ -191,10 +180,13 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     )
 
     assert artifact is not None
-    assert artifact.path == artifact_root / "evaluation" / "trajectory_metrics.json"
-    assert artifact.reference_path == reference_path
-    assert artifact.estimate_path == estimate_path
-    assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
+    assert artifact.reference_trajectories == [reference_path]
+    assert artifact.candidate_trajectories == [estimate_path]
+    assert (artifact_root / "evaluation" / "trajectory" / "manifest.json").exists()
+    assert (artifact_root / "evaluation" / "trajectory" / "metrics_long.csv").exists()
+    assert artifact.error_series_paths == [
+        artifact_root / "evaluation" / "trajectory" / "error_series" / "ground_truth__vista__ape_translation_part.npz"
+    ]
 
 
 # ---------------------------------------------------------------------------

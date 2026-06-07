@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import shutil
 import subprocess
@@ -16,7 +15,6 @@ import rerun as rr  # type: ignore[import-not-found]
 import rerun.blueprint as rrb  # type: ignore[import-not-found]
 from pytransform3d.rotations import quaternion_from_matrix
 
-from prml_vslam.eval.contracts import EvaluationArtifact, TrajectoryAlignmentMode, TrajectoryMetricId
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.camera import CameraIntrinsics
@@ -550,97 +548,6 @@ def log_correspondence_strips3d(
     recording_stream.log(entity_path, rr.LineStrips3D(strips, radii=[radii], colors=colors), static=static)
 
 
-def log_ape_diagnostics(
-    recording_stream: rr.RecordingStream,
-    *,
-    artifact: EvaluationArtifact,
-    static: bool = True,
-) -> None:
-    """Log repo-owned Rerun diagnostics for the current trajectory APE artifact."""
-    if artifact.semantics.metric_id is not TrajectoryMetricId.APE_TRANSLATION or artifact.error_series is None:
-        return
-    if len(artifact.trajectories) < 2:
-        return
-    reference, estimate = artifact.trajectories[:2]
-    reference_source = _reference_source_from_artifact(artifact)
-    metric_root = RERUN_SCENE.evaluation_metric_root(artifact.semantics.metric_id.value, reference_source)
-    reference_color = RERUN_SCENE.reference_color(reference_source)
-    estimate_color = (
-        RERUN_SCENE.slam_aligned_rgb
-        if artifact.semantics.alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
-        else RERUN_SCENE.slam_raw_rgb
-    )
-    matched_pairs = min(
-        len(reference.positions_xyz),
-        len(estimate.positions_xyz),
-        len(artifact.error_series.values),
-        len(artifact.error_series.timestamps_s),
-    )
-    if matched_pairs == 0:
-        return
-    reference_positions = np.asarray(reference.positions_xyz[:matched_pairs], dtype=np.float32)
-    estimate_positions = np.asarray(estimate.positions_xyz[:matched_pairs], dtype=np.float32)
-    error_values = np.asarray(artifact.error_series.values[:matched_pairs], dtype=np.float64)
-
-    log_line_strip3d(
-        recording_stream,
-        entity_path=f"{metric_root}/reference/trajectory",
-        positions_xyz=reference_positions,
-        color_rgb=reference_color,
-        static=static,
-    )
-    log_line_strip3d(
-        recording_stream,
-        entity_path=f"{metric_root}/estimate/trajectory",
-        positions_xyz=estimate_positions,
-        color_rgb=estimate_color,
-        static=static,
-    )
-    log_points3d(
-        recording_stream,
-        entity_path=f"{metric_root}/estimate/ape_points",
-        points_xyz=estimate_positions,
-        colors=_ape_error_colors(error_values),
-        radii=POINT_CLOUD_RADII,
-        static=static,
-    )
-    log_correspondence_strips3d(
-        recording_stream,
-        entity_path=f"{metric_root}/correspondences",
-        reference_positions_xyz=reference_positions,
-        estimate_positions_xyz=estimate_positions,
-        static=static,
-    )
-    log_scalar_series(
-        recording_stream,
-        entity_path=f"{metric_root}/error/translation_m",
-        timestamps_s=np.asarray(artifact.error_series.timestamps_s[:matched_pairs], dtype=np.float64),
-        values=error_values,
-        static=False,
-    )
-
-
-def _reference_source_from_artifact(artifact: EvaluationArtifact) -> str:
-    if artifact.alignment_path is not None and artifact.alignment_path.exists():
-        try:
-            payload = json.loads(artifact.alignment_path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict):
-                raise ValueError("alignment metadata must be a JSON object")
-            return _entity_token(str(payload.get("reference_source") or "ground_truth"))
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
-            _LOGGER.warning(
-                "Falling back to ground-truth Rerun color semantics because evaluation alignment metadata '%s' "
-                "could not be read: %s",
-                artifact.alignment_path,
-                exc,
-            )
-    if "arkit" in artifact.path.name:
-        return "arkit"
-    if "arcore" in artifact.path.name:
-        return "arcore"
-    return "ground_truth"
-
-
 def _ape_error_colors(error_values: np.ndarray) -> np.ndarray:
     values = np.asarray(error_values, dtype=np.float64).reshape(-1)
     if len(values) == 0:
@@ -939,7 +846,6 @@ __all__ = [
     "GROUND_PLANE_ENTITY_PATH",
     "KEYFRAME_IMAGE_PLANE_DISTANCE",
     "LIVE_MODEL_IMAGE_PLANE_DISTANCE",
-    "log_ape_diagnostics",
     "log_depth_image",
     "log_clear",
     "log_arrows3d",

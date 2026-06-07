@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import ast
-import json
 from pathlib import Path
 
 import numpy as np
+from evo.core import metrics
 
 from prml_vslam.app.bootstrap import _PAGE_SPECS
 from prml_vslam.app.live_session import render_live_action_slot
@@ -31,9 +31,9 @@ from prml_vslam.app.pipeline_controls import (
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
-from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot, TrajectoryMetricId
-from prml_vslam.eval.services import TrajectoryEvaluationService
-from prml_vslam.interfaces import FrameTransform
+from prml_vslam.eval.query import DiscoveredRun, TrajectoryEvaluationQueryService
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_backend_spec, build_run_config
@@ -48,7 +48,6 @@ from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
-from prml_vslam.utils.geometry import write_tum_trajectory
 
 
 def test_render_live_action_slot_uses_stable_start_and_stop_keys(monkeypatch) -> None:
@@ -884,10 +883,7 @@ def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path
     assert "ViSTA-SLAM has not accepted" in model["streaming"]["trajectory_empty_message"]
 
 
-def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_pipeline_snapshot_render_model_links_persisted_trajectory_evaluation_artifact(tmp_path: Path) -> None:
     plan = RunPlan(
         run_id="streaming-demo",
         mode=PipelineMode.STREAMING,
@@ -895,11 +891,6 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
         source=PlannedSource(source_id="advio", sequence_id="advio-01"),
     )
     snapshot = RunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
-    calls = {"count": 0}
-
-    def fake_resolve_evo_preview(_snapshot):
-        calls["count"] += 1
-        return None, "preview boom"
 
     class FakeRunService:
         def read_payload(self, ref: TransientPayloadRef | None):
@@ -910,71 +901,57 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
             del limit, after_event_id
             return []
 
-    monkeypatch.setattr("prml_vslam.app.pipeline_controller.resolve_evo_preview", fake_resolve_evo_preview)
+    snapshot.artifacts["trajectory_evaluation_manifest"] = ArtifactRef(
+        path=plan.artifact_root / "evaluation" / "trajectory" / "manifest.json",
+        kind="json",
+        fingerprint="manifest",
+    )
 
-    disabled = build_pipeline_snapshot_render_model(
+    model = build_pipeline_snapshot_render_model(
         snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
     )
-    enabled = build_pipeline_snapshot_render_model(
-        snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=True
+
+    assert model["streaming"] is not None
+    assert (
+        model["streaming"]["trajectory_evaluation_artifact"]
+        == (plan.artifact_root / "evaluation" / "trajectory" / "manifest.json").as_posix()
     )
 
-    assert disabled["streaming"] is not None
-    assert disabled["streaming"]["evo_error"] is None
-    assert enabled["streaming"] is not None
-    assert enabled["streaming"]["evo_error"] == "preview boom"
-    assert calls["count"] == 1
 
-
-def test_trajectory_evaluation_service_loads_pipeline_generated_artifact(tmp_path: Path) -> None:
-    reference_path = write_tum_trajectory(
-        tmp_path / "reference.tum",
-        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i), ty=0.0, tz=0.0) for i in range(4)],
-        timestamps=[0.0, 1.0, 2.0, 3.0],
-    )
-    estimate_path = write_tum_trajectory(
-        tmp_path / "estimate.tum",
-        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i) + 0.05, ty=0.0, tz=0.0) for i in range(4)],
-        timestamps=[0.0, 1.0, 2.0, 3.0],
-    )
+def test_trajectory_evaluation_query_loads_pipeline_manifest(tmp_path: Path) -> None:
     artifact_root = tmp_path / "run"
-    metrics_path = artifact_root / "evaluation" / "trajectory_metrics.json"
-    metrics_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "title": "Trajectory APE (evo)",
-        "matched_pairs": 4,
-        "stats": {
-            "rmse": 0.05,
-            "mean": 0.05,
-            "median": 0.05,
-            "std": 0.0,
-            "min": 0.05,
-            "max": 0.05,
-            "sse": 0.01,
-        },
-        "error_timestamps_s": [0.0, 1.0, 2.0, 3.0],
-        "error_values": [0.05, 0.05, 0.05, 0.05],
-        "semantics": {
-            "metric_id": TrajectoryMetricId.APE_TRANSLATION,
-            "pose_relation": "translation_part",
-            "alignment_mode": "timestamp_associated_only",
-            "sync_max_diff_s": 0.01,
-        },
-    }
-    metrics_path.write_text(json.dumps(payload), encoding="utf-8")
-
-    service = TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
-    selection = SelectionSnapshot(
-        sequence_slug="test-sequence",
-        reference_path=reference_path,
-        run=DiscoveredRun(artifact_root=artifact_root, estimate_path=estimate_path, label="test"),
+    manifest_path = artifact_root / "evaluation" / "trajectory" / "manifest.json"
+    metrics_long_path = artifact_root / "evaluation" / "trajectory" / "metrics_long.csv"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        TrajectoryEvaluationManifest(
+            artifact_root=artifact_root,
+            sequence_id="test-sequence",
+            run_id="run",
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    metrics_long_path.write_text(
+        "\n".join(
+            [
+                "run_id,sequence_id,reference_source,estimate_source,metric_family,pose_relation,statistic,value,unit,matched_pairs,delta,delta_unit,error_series_path",
+                "run,test-sequence,ground_truth,vslam,ape,translation part,rmse,0.05,m,4,,,",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    loaded = service.load_run_evaluation(
+        DiscoveredRun(
+            artifact_root=artifact_root,
+            estimate_path=artifact_root / "slam" / "trajectory.tum",
+            label="test",
+        )
     )
 
-    artifact = service.load_evaluation(selection=selection)
-
-    assert artifact is not None
-    assert artifact.path == metrics_path
-    assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
-    assert artifact.matched_pairs == 4
-    assert artifact.stats.rmse == 0.05
-    assert len(artifact.trajectories) == 2
+    assert loaded.manifest is not None
+    assert len(loaded.metric_rows) == 1
+    assert loaded.metric_rows[0].statistic == "rmse"
+    assert loaded.metric_rows[0].value == 0.05
+    assert loaded.metric_rows[0].pose_relation is metrics.PoseRelation.translation_part
