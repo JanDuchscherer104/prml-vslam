@@ -92,6 +92,7 @@ class Open3dTsdfBackendConfig(ReconstructionBackendConfig, FactoryConfig["Open3d
 
         return Open3dTsdfBackend(self, input_payload=kwargs.get("input_payload"))
 
+
 __all__ = [
     "Open3dTsdfBackendConfig",
     "ReconstructionBackendConfig",

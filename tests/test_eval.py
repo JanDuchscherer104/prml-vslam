@@ -557,9 +557,7 @@ def _planar_yawed_pair(
     *, yaw_deg: float, scale: float, vertical_jitter: float = 0.0
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     angles = np.linspace(0.0, 2.0 * np.pi, 120)
-    estimate = np.stack(
-        [30.0 * np.cos(angles), vertical_jitter * np.sin(2.0 * angles), 30.0 * np.sin(angles)], axis=1
-    )
+    estimate = np.stack([30.0 * np.cos(angles), vertical_jitter * np.sin(2.0 * angles), 30.0 * np.sin(angles)], axis=1)
     theta = np.radians(yaw_deg)
     rotation_about_up = np.array(
         [[np.cos(theta), 0.0, np.sin(theta)], [0.0, 1.0, 0.0], [-np.sin(theta), 0.0, np.cos(theta)]]
