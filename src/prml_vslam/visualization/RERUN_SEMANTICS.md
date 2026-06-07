@@ -187,7 +187,8 @@ Current repo-owned export surfaces:
 - metric `DepthImage` payloads
 - keyed pointmaps as `Points3D`
 - diagnostic preview images
-- trajectory polylines plus optional per-pose `Transform3D` axis children
+- trajectory polylines, compact start `Points3D` markers, offline/static end
+  `Transform3D` markers, and optional per-pose `Transform3D` axis children
 - live gRPC streaming and repo-owned `.rrd` export for streaming runs
 - preserved native upstream `.rrd` files when present
 

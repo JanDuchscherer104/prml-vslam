@@ -20,31 +20,37 @@ from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 
-from prml_vslam.eval.contracts import (BenchmarkReference,
-                                       CloudAlignmentArtifact,
-                                       CloudAlignmentSelection, DiscoveredRun,
-                                       ErrorSeries, EvaluationArtifact,
-                                       EvaluationSelection, MetricStats,
-                                       SelectionSnapshot,
-                                       TrajectoryAlignmentArtifact,
-                                       TrajectoryAlignmentCloudUseStatus,
-                                       TrajectoryAlignmentMode,
-                                       TrajectoryEvaluationPreview,
-                                       TrajectoryEvaluationSemantics,
-                                       TrajectoryMetricId, TrajectorySeries)
+from prml_vslam.eval.contracts import (
+    BenchmarkReference,
+    CloudAlignmentArtifact,
+    CloudAlignmentSelection,
+    DiscoveredRun,
+    ErrorSeries,
+    EvaluationArtifact,
+    EvaluationSelection,
+    MetricStats,
+    SelectionSnapshot,
+    TrajectoryAlignmentArtifact,
+    TrajectoryAlignmentCloudUseStatus,
+    TrajectoryAlignmentMode,
+    TrajectoryEvaluationPreview,
+    TrajectoryEvaluationSemantics,
+    TrajectoryMetricId,
+    TrajectorySeries,
+)
 from prml_vslam.eval.protocols import TrajectoryEvaluator
-from prml_vslam.interfaces.geometry import (apply_similarity_to_trajectory,
-                                            yaw_similarity_align)
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.stage.backend_config import MethodId
-from prml_vslam.sources.contracts import (PreparedBenchmarkInputs,
-                                          SequenceManifest)
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
 from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.registry import (list_sequence_slugs,
-                                                  resolve_reference_path)
-from prml_vslam.utils.geometry import (load_point_cloud_ply_with_colors,
-                                       load_tum_trajectory,
-                                       write_point_cloud_ply)
+from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
+from prml_vslam.utils.geometry import (
+    apply_similarity_to_trajectory,
+    load_point_cloud_ply_with_colors,
+    load_tum_trajectory,
+    write_point_cloud_ply,
+    yaw_similarity_align,
+)
 from prml_vslam.utils.path_config import PathConfig
 
 __all__ = [
@@ -70,6 +76,7 @@ if TYPE_CHECKING:
     from prml_vslam.pipeline.contracts.plan import RunPlan
 
 
+# TODO: which methods are used in the pipieline vs streamlit app: ensure a better separation of concerns between pipeline vs app / post-run services!
 class TrajectoryEvaluationService(TrajectoryEvaluator):
     """Discover runs and compute or reload explicit `evo` trajectory metrics.
 
@@ -176,7 +183,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
         *,
         selection: SelectionSnapshot,
     ) -> EvaluationArtifact | None:
-        """Load a persisted `evo` evaluation when it exists.
+        """Load a persisted `evo` evaluation when it exists. For post-hoc analysis given persisted artifacts, not for live pipeline runs.
 
         Returns ``None`` when either the reference or metrics artifact is
         missing, leaving callers free to render an explicit compute action.
@@ -301,6 +308,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             if preview.alignment is not None
             else TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
         )
+        # TODO: also persist rotaional part, full APE, and RPE!
         payload = {
             "title": "Trajectory APE (evo)",
             "matched_pairs": len(preview.error_series.values),
@@ -590,18 +598,41 @@ def compute_trajectory_ape_preview(
     elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
         raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
 
+    # TODO: suppoer metrics.APE(*), metrics.RPE(*), and * in {}
     metric = metrics.APE(metrics.PoseRelation.translation_part)
+    # pose_relations = [metrics.PoseRelation.translation_part, metrics.PoseRelation.rotation_angle_rad]
     metric.process_data((associated_reference, evaluation_estimate))
+    # metric.get_all_statistics() # dict[str, float]
+    # is defined as:
+    #     def get_statistic(self, statistics_type: StatisticsType) -> float:
+    #     if statistics_type == StatisticsType.rmse:
+    #         squared_errors = np.power(self.error, 2)
+    #         return math.sqrt(np.mean(squared_errors))
+    #     elif statistics_type == StatisticsType.sse:
+    #         squared_errors = np.power(self.error, 2)
+    #         return np.sum(squared_errors)
+    #     elif statistics_type == StatisticsType.mean:
+    #         return float(np.mean(self.error))
+    #     elif statistics_type == StatisticsType.median:
+    #         return np.median(self.error)
+    #     elif statistics_type == StatisticsType.max:
+    #         return np.max(self.error)
+    #     elif statistics_type == StatisticsType.min:
+    #         return np.min(self.error)
+    #     elif statistics_type == StatisticsType.std:
+    #         return float(np.std(self.error))
     error_values = np.asarray(metric.error, dtype=np.float64)
     if error_values.size == 0:
         raise ValueError("evo APE produced zero matched trajectory pairs.")
     return TrajectoryEvaluationPreview(
+        # TODO: what is this bullshit - why would we be interested in the translational parts of these trajectories here?
         reference=_series_from_trajectory("Reference", associated_reference),
         estimate=_series_from_trajectory("Estimate", evaluation_estimate),
         error_series=ErrorSeries(
             timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
             values=error_values,
         ),
+        # TODO: get rid of custom "from_error_values" and use metric.get_all_statistics() instead!
         stats=MetricStats.from_error_values(error_values),
         alignment=alignment,
     )
@@ -783,4 +814,3 @@ def _read_non_empty_point_cloud(path: Path, *, label: str) -> Any:
     if not np.isfinite(points_xyz).all():
         raise ValueError(f"Point-cloud alignment {label} cloud contains non-finite points: {path}")
     return point_cloud
-

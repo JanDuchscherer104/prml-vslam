@@ -12,7 +12,6 @@ from numpy.typing import NDArray
 from pydantic import Field
 
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, ObservationProvenance
-from prml_vslam.interfaces.geometry import apply_similarity_to_trajectory, yaw_similarity_align
 from prml_vslam.sources.contracts import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
@@ -31,19 +30,11 @@ from prml_vslam.sources.datasets.contracts import (
 )
 from prml_vslam.sources.replay import ObservationStream, PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import BaseData, Console, JsonObject
+from prml_vslam.utils.geometry import apply_similarity_to_trajectory, yaw_similarity_align
 
 from . import advio_layout, advio_loading
-from .advio_frames import (
-    advio_basis_metadata,
-    transform_advio_trajectory_to_rdf,
-    write_advio_rdf_tum,
-)
-from .advio_models import (
-    ADVIO_SEQUENCE_COUNT,
-    AdvioCatalog,
-    AdvioSceneMetadata,
-    AdvioSequenceConfig,
-)
+from .advio_frames import advio_basis_metadata, transform_advio_trajectory_to_rdf, write_advio_rdf_tum
+from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioSceneMetadata, AdvioSequenceConfig
 from .advio_replay_adapter import (
     _poses_for_frame_timestamps,
     advio_pose_frames,

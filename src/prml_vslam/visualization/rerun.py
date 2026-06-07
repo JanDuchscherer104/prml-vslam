@@ -65,48 +65,12 @@ def _rgb(hex_color: str) -> np.ndarray:
     return np.array([int(stripped[index : index + 2], 16) for index in range(0, 6, 2)], dtype=np.uint8)
 
 
-GT_GREEN_RGB = _rgb("#0f9d58")
-ARKIT_REFERENCE_RGB = _rgb("#43a047")
-ARCORE_REFERENCE_RGB = _rgb("#00897b")
-SLAM_RAW_RGB = _rgb("#1368ce")
-SLAM_ALIGNED_RGB = _rgb("#7b1fa2")
 APE_LOW_RGB = _rgb("#2a9d8f")
 APE_HIGH_RGB = _rgb("#c62828")
 CORRESPONDENCE_RGB = _rgb("#ef6c00")
-REFERENCE_SOURCE_COLORS_RGB = {
-    "ground_truth": GT_GREEN_RGB,
-    "gt": GT_GREEN_RGB,
-    "arkit": ARKIT_REFERENCE_RGB,
-    "arcore": ARCORE_REFERENCE_RGB,
-}
-"""Stable reference-source colors shared by Rerun trajectory diagnostics."""
-DEFAULT_3D_SCENE_CONTENTS = (
-    "+ world/slam/alignment/**",
-    "+ world/evaluation/**",
-    "+ world/reference/trajectory/**",
-    "+ world/reference/points/**",
-    "+ world/reconstruction/**",
-    "+ world/slam",
-    "+ world/slam/live/tracking/**",
-    "+ world/slam/live/model",
-    "+ world/slam/live/model/camera/image",
-    "- world/slam/live/model/camera/image/depth",
-    "- world/slam/live/model/camera/image/depth/**",
-    "- world/slam/live/model/points",
-    "- world/slam/live/model/points/**",
-    "+ world/slam/keyframes/cameras/**",
-    "+ world/slam/keyframes/points/**",
-    "+ world/slam/point_cloud/raw",
-    "+ world/slam/trajectory/raw/**",
-    "+ world/aligned/**",
-    "+ world/live/source/camera",
-)
-"""Default 3D view query: spatial map/history only, without 2D raster branches."""
 
 
-class RerunEntityPaths:
-    """Central entity tree used by repo-owned Rerun logging and blueprints."""
-
+class RerunScene:
     root_world = ROOT_WORLD_ENTITY_PATH
     slam_world = SLAM_WORLD_ENTITY_PATH
     model_rgb_2d = MODEL_RGB_2D_ENTITY_PATH
@@ -115,15 +79,90 @@ class RerunEntityPaths:
     source_rgb = "world/live/source/rgb"
     source_camera_image = "world/live/source/camera/image"
     diagnostic_preview = "world/slam/live/model/diag/preview"
-    default_3d_scene_contents = DEFAULT_3D_SCENE_CONTENTS
+    gt_rgb = _rgb("#0f9d58")
+    arkit_rgb = _rgb("#1e88e5")
+    arcore_rgb = _rgb("#f57c00")
+    slam_raw_rgb = _rgb("#d81b60")
+    slam_aligned_rgb = _rgb("#7b1fa2")
+    reference_source_colors_rgb = {
+        "ground_truth": gt_rgb,
+        "gt": gt_rgb,
+        "arkit": arkit_rgb,
+        "arcore": arcore_rgb,
+    }
+    default_3d_scene_contents = (
+        "+ world/slam/alignment/**",
+        "+ world/evaluation/**",
+        "+ world/reference/trajectory/**",
+        "+ world/reference/points/**",
+        "+ world/reconstruction/**",
+        "+ world/slam",
+        "+ world/slam/live/tracking/**",
+        "+ world/slam/live/model",
+        "+ world/slam/live/model/camera/image",
+        "- world/slam/live/model/camera/image/depth",
+        "- world/slam/live/model/camera/image/depth/**",
+        "- world/slam/live/model/points",
+        "- world/slam/live/model/points/**",
+        "+ world/slam/keyframes/cameras/**",
+        "+ world/slam/keyframes/points/**",
+        "+ world/slam/point_cloud/raw",
+        "+ world/slam/trajectory/raw/**",
+        "+ world/aligned/**",
+        "+ world/live/source/camera",
+    )
+
+    @classmethod
+    def reference_color(cls, reference_source: str) -> np.ndarray:
+        return cls.reference_source_colors_rgb.get(_entity_token(reference_source), cls.gt_rgb)
+
+    @staticmethod
+    def reference_trajectory_path(reference_source: str, coordinate_status: str) -> str:
+        return f"world/reference/trajectory/{_entity_token(reference_source)}/{_entity_token(coordinate_status)}"
+
+    @staticmethod
+    def reference_points_path(reference_source: str, coordinate_status: str) -> str:
+        return (
+            f"world/reference/points/{_entity_token(reference_source)}/{_entity_token(coordinate_status)}/point_cloud"
+        )
+
+    @staticmethod
+    def slam_raw_trajectory_path() -> str:
+        return "world/slam/trajectory/raw"
+
+    @staticmethod
+    def slam_sim3_trajectory_path(target_frame: str) -> str:
+        return f"world/aligned/{_entity_token(target_frame)}/slam/sim3/trajectory"
+
+    @staticmethod
+    def slam_aligned_point_cloud_path(target_frame: str, alignment_kind: str) -> str:
+        return f"world/aligned/{_entity_token(target_frame)}/slam/{_entity_token(alignment_kind)}/point_cloud"
+
+    @staticmethod
+    def reconstruction_point_cloud_path(reconstruction_id: str) -> str:
+        if reconstruction_id == "slam":
+            return "world/slam/point_cloud/raw"
+        reconstruction_subpath = (
+            f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
+        )
+        return f"world/reconstruction{reconstruction_subpath}/point_cloud"
+
+    @staticmethod
+    def sim3_transform_path(target_frame: str) -> str:
+        return f"world/aligned/{_entity_token(target_frame)}/slam/sim3/source_to_target"
 
     @staticmethod
     def evaluation_metric_root(metric_id: str, reference_source: str) -> str:
         return f"{EVALUATION_ENTITY_PATH}/{_entity_token(reference_source)}/{_entity_token(metric_id)}"
 
 
-RERUN_ENTITY_PATHS = RerunEntityPaths()
-"""Shared entity registry for logging and blueprint construction."""
+RERUN_SCENE = RerunScene()
+DEFAULT_3D_SCENE_CONTENTS = RERUN_SCENE.default_3d_scene_contents
+GT_GREEN_RGB = RERUN_SCENE.gt_rgb
+ARKIT_REFERENCE_RGB = RERUN_SCENE.arkit_rgb
+ARCORE_REFERENCE_RGB = RERUN_SCENE.arcore_rgb
+SLAM_RAW_RGB = RERUN_SCENE.slam_raw_rgb
+SLAM_ALIGNED_RGB = RERUN_SCENE.slam_aligned_rgb
 
 
 def build_default_blueprint(
@@ -131,16 +170,15 @@ def build_default_blueprint(
     show_source_rgb: bool = False,
     show_diagnostic_preview: bool = False,
 ) -> rrb.Blueprint:
-    """Build the default repo-owned Rerun blueprint."""
     views = [
         rrb.Spatial2DView(
-            origin=RERUN_ENTITY_PATHS.model_rgb_2d,
-            contents=RERUN_ENTITY_PATHS.model_rgb_2d,
+            origin=RERUN_SCENE.model_rgb_2d,
+            contents=RERUN_SCENE.model_rgb_2d,
             name="Model RGB",
         ),
         rrb.Spatial2DView(
-            origin=RERUN_ENTITY_PATHS.model_camera_image,
-            contents=RERUN_ENTITY_PATHS.model_camera_depth,
+            origin=RERUN_SCENE.model_camera_image,
+            contents=RERUN_SCENE.model_camera_depth,
             name="Model Depth",
         ),
     ]
@@ -148,33 +186,33 @@ def build_default_blueprint(
         views.insert(
             0,
             rrb.Spatial2DView(
-                origin=RERUN_ENTITY_PATHS.source_rgb,
-                contents=RERUN_ENTITY_PATHS.source_rgb,
+                origin=RERUN_SCENE.source_rgb,
+                contents=RERUN_SCENE.source_rgb,
                 name="Source RGB",
             ),
         )
         views.insert(
             1,
             rrb.Spatial2DView(
-                origin=RERUN_ENTITY_PATHS.source_camera_image,
-                contents=RERUN_ENTITY_PATHS.source_camera_image,
+                origin=RERUN_SCENE.source_camera_image,
+                contents=RERUN_SCENE.source_camera_image,
                 name="Source Camera",
             ),
         )
     if show_diagnostic_preview:
         views.append(
             rrb.Spatial2DView(
-                origin=RERUN_ENTITY_PATHS.diagnostic_preview,
-                contents=RERUN_ENTITY_PATHS.diagnostic_preview,
+                origin=RERUN_SCENE.diagnostic_preview,
+                contents=RERUN_SCENE.diagnostic_preview,
                 name="Preview",
             )
         )
     return rrb.Blueprint(
         rrb.Horizontal(
             rrb.Spatial3DView(
-                origin=RERUN_ENTITY_PATHS.root_world,
+                origin=RERUN_SCENE.root_world,
                 name="3D Scene",
-                contents=list(RERUN_ENTITY_PATHS.default_3d_scene_contents),
+                contents=list(RERUN_SCENE.default_3d_scene_contents),
             ),
             rrb.Tabs(*views, name="2D Views"),
         ),
@@ -525,12 +563,12 @@ def log_ape_diagnostics(
         return
     reference, estimate = artifact.trajectories[:2]
     reference_source = _reference_source_from_artifact(artifact)
-    metric_root = RERUN_ENTITY_PATHS.evaluation_metric_root(artifact.semantics.metric_id.value, reference_source)
-    reference_color = REFERENCE_SOURCE_COLORS_RGB.get(reference_source, GT_GREEN_RGB)
+    metric_root = RERUN_SCENE.evaluation_metric_root(artifact.semantics.metric_id.value, reference_source)
+    reference_color = RERUN_SCENE.reference_color(reference_source)
     estimate_color = (
-        SLAM_ALIGNED_RGB
+        RERUN_SCENE.slam_aligned_rgb
         if artifact.semantics.alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
-        else SLAM_RAW_RGB
+        else RERUN_SCENE.slam_raw_rgb
     )
     matched_pairs = min(
         len(reference.positions_xyz),
@@ -899,7 +937,6 @@ __all__ = [
     "collect_native_visualization_artifacts",
     "create_recording_stream",
     "GROUND_PLANE_ENTITY_PATH",
-    "GT_GREEN_RGB",
     "KEYFRAME_IMAGE_PLANE_DISTANCE",
     "LIVE_MODEL_IMAGE_PLANE_DISTANCE",
     "log_ape_diagnostics",
@@ -921,11 +958,8 @@ __all__ = [
     "log_slam_world_transform",
     "log_transform",
     "log_transform_axes",
-    "REFERENCE_SOURCE_COLORS_RGB",
-    "RERUN_ENTITY_PATHS",
+    "RERUN_SCENE",
     "ROOT_WORLD_ENTITY_PATH",
-    "SLAM_ALIGNED_RGB",
-    "SLAM_RAW_RGB",
     "SLAM_WORLD_AXIS_LENGTH",
     "SLAM_WORLD_ENTITY_PATH",
     "SOURCE_IMAGE_PLANE_DISTANCE",

@@ -67,8 +67,7 @@ from prml_vslam.visualization.artifacts import (
 from prml_vslam.visualization.rerun import (
     KEYFRAME_IMAGE_PLANE_DISTANCE,
     LIVE_MODEL_IMAGE_PLANE_DISTANCE,
-    MODEL_RGB_2D_ENTITY_PATH,
-    RERUN_ENTITY_PATHS,
+    RERUN_SCENE,
     SLAM_WORLD_AXIS_LENGTH,
     SOURCE_IMAGE_PLANE_DISTANCE,
     TRAJECTORY_START_AXIS_LENGTH,
@@ -76,18 +75,18 @@ from prml_vslam.visualization.rerun import (
 
 _LOGGER = logging.getLogger(__name__)
 _RGB_ENTITY_PATHS = {
-    ROLE_SOURCE_RGB: RERUN_ENTITY_PATHS.source_rgb,
-    ROLE_SOURCE_CAMERA_RGB: RERUN_ENTITY_PATHS.source_camera_image,
-    ROLE_MODEL_RGB: MODEL_RGB_2D_ENTITY_PATH,
-    ROLE_MODEL_CAMERA_RGB: RERUN_ENTITY_PATHS.model_camera_image,
-    ROLE_MODEL_PREVIEW: RERUN_ENTITY_PATHS.diagnostic_preview,
+    ROLE_SOURCE_RGB: RERUN_SCENE.source_rgb,
+    ROLE_SOURCE_CAMERA_RGB: RERUN_SCENE.source_camera_image,
+    ROLE_MODEL_RGB: RERUN_SCENE.model_rgb_2d,
+    ROLE_MODEL_CAMERA_RGB: RERUN_SCENE.model_camera_image,
+    ROLE_MODEL_PREVIEW: RERUN_SCENE.diagnostic_preview,
     ROLE_KEYFRAME_RGB: "world/slam/keyframes/cameras/{keyframe_index:06d}/image",
     ROLE_KEYFRAME_PREVIEW: "world/slam/keyframes/cameras/{keyframe_index:06d}/diag/preview",
 }
 _SOURCE_RGB_ROLES = {ROLE_SOURCE_RGB, ROLE_SOURCE_CAMERA_RGB}
 _DIAGNOSTIC_PREVIEW_ROLES = {ROLE_MODEL_PREVIEW, ROLE_KEYFRAME_PREVIEW}
 _DEPTH_ENTITY_PATHS = {
-    ROLE_MODEL_DEPTH: RERUN_ENTITY_PATHS.model_camera_depth,
+    ROLE_MODEL_DEPTH: RERUN_SCENE.model_camera_depth,
     ROLE_SOURCE_DEPTH: "world/live/source/camera/image/depth",
     ROLE_KEYFRAME_DEPTH: "world/slam/keyframes/cameras/{keyframe_index:06d}/image/depth",
 }
@@ -104,8 +103,8 @@ _POSE_ENTITY_PATHS = {
     ROLE_KEYFRAME_POINTS_POSE: "world/slam/keyframes/points/{keyframe_index:06d}",
 }
 _PINHOLE_ENTITY_PATHS = {
-    ROLE_MODEL_PINHOLE: RERUN_ENTITY_PATHS.model_camera_image,
-    ROLE_SOURCE_PINHOLE: RERUN_ENTITY_PATHS.source_camera_image,
+    ROLE_MODEL_PINHOLE: RERUN_SCENE.model_camera_image,
+    ROLE_SOURCE_PINHOLE: RERUN_SCENE.source_camera_image,
     ROLE_KEYFRAME_PINHOLE: "world/slam/keyframes/cameras/{keyframe_index:06d}/image",
 }
 
@@ -125,6 +124,7 @@ class RerunLoggingPolicy:
 
     show_tracking_trajectory: bool = True
     trajectory_pose_axis_length: float = 0.0
+    log_static_trajectory_end_pose: bool = False
     log_source_rgb: bool = False
     log_diagnostic_preview: bool = False
     log_camera_image_rgb: bool = True
@@ -144,7 +144,6 @@ class RerunLoggingPolicy:
         *,
         payloads: Mapping[str, np.ndarray] | None = None,
     ) -> None:
-        """Log one live runtime update from neutral visualization items."""
         resolved_payloads = {} if payloads is None else payloads
         for semantic_event in update.semantic_events:
             if isinstance(semantic_event, GroundAlignmentMetadata):
@@ -262,14 +261,7 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         reconstruction_id = str(item.metadata.get("reconstruction_id") or "")
-        reconstruction_subpath = (
-            f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
-        )
-        entity_path = (
-            "world/slam/point_cloud/raw"
-            if reconstruction_id == "slam"
-            else f"world/reconstruction{reconstruction_subpath}/point_cloud"
-        )
+        entity_path = RERUN_SCENE.reconstruction_point_cloud_path(reconstruction_id)
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
@@ -282,9 +274,9 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
-        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
+        target_frame = str(item.metadata.get("target_frame") or item.space or "world")
         alignment_kind = "icp" if item.role == ROLE_SLAM_ICP_ALIGNED_POINT_CLOUD else "sim3"
-        entity_path = f"world/aligned/{target_frame}/slam/{alignment_kind}/point_cloud"
+        entity_path = RERUN_SCENE.slam_aligned_point_cloud_path(target_frame, alignment_kind)
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
@@ -297,9 +289,9 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(SOURCE_POINT_CLOUD_ARTIFACT)
         if artifact is None:
             return
-        reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
-        coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "native"))
-        entity_path = f"world/reference/points/{reference_source}/{coordinate_status}/point_cloud"
+        reference_source = str(item.metadata.get("reference_source") or "reference")
+        coordinate_status = str(item.metadata.get("coordinate_status") or "native")
+        entity_path = RERUN_SCENE.reference_points_path(reference_source, coordinate_status)
         self._log_pointcloud_ply_artifact(
             stream,
             artifact_path=artifact.path,
@@ -342,12 +334,13 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(TRAJECTORY_ARTIFACT)
         if artifact is None:
             return
-        reference_source = _entity_token(str(item.metadata.get("reference_source") or "reference"))
-        coordinate_status = _entity_token(str(item.metadata.get("coordinate_status") or "source_native"))
+        reference_source = str(item.metadata.get("reference_source") or "reference")
+        coordinate_status = str(item.metadata.get("coordinate_status") or "source_native")
         self._log_tum_trajectory_artifact(
             stream,
             artifact_path=artifact.path,
-            entity_path=f"world/reference/trajectory/{reference_source}/{coordinate_status}",
+            entity_path=RERUN_SCENE.reference_trajectory_path(reference_source, coordinate_status),
+            color_rgb=RERUN_SCENE.reference_color(reference_source),
             warning_label="source reference trajectory",
             target_frame=str(item.metadata.get("target_frame") or item.space or "world"),
         )
@@ -356,16 +349,16 @@ class RerunLoggingPolicy:
         artifact = item.artifact_refs.get(TRAJECTORY_ARTIFACT)
         if artifact is None:
             return
-        target_frame = _entity_token(str(item.metadata.get("target_frame") or item.space or "world"))
+        target_frame = str(item.metadata.get("target_frame") or item.space or "world")
+        aligned = item.role == ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY
         entity_path = (
-            "world/slam/trajectory/raw"
-            if item.role == ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT
-            else f"world/aligned/{target_frame}/slam/sim3/trajectory"
+            RERUN_SCENE.slam_sim3_trajectory_path(target_frame) if aligned else RERUN_SCENE.slam_raw_trajectory_path()
         )
         self._log_tum_trajectory_artifact(
             stream,
             artifact_path=artifact.path,
             entity_path=entity_path,
+            color_rgb=RERUN_SCENE.slam_aligned_rgb if aligned else RERUN_SCENE.slam_raw_rgb,
             warning_label="SLAM trajectory",
             target_frame=str(item.metadata.get("target_frame") or item.space or "world"),
         )
@@ -419,6 +412,7 @@ class RerunLoggingPolicy:
         entity_path: str,
         warning_label: str,
         target_frame: str,
+        color_rgb: np.ndarray,
     ) -> None:
         try:
             trajectory = load_tum_trajectory(artifact_path)
@@ -426,10 +420,13 @@ class RerunLoggingPolicy:
                 stream,
                 entity_path=entity_path,
                 positions_xyz=np.asarray(trajectory.positions_xyz, dtype=np.float32),
+                color_rgb=color_rgb,
                 static=True,
             )
             poses = _trajectory_pose_transforms(trajectory, target_frame=target_frame)
-            self._log_trajectory_start_axes(stream, entity_path=entity_path, poses=poses, static=True)
+            self._log_trajectory_endpoint_markers(
+                stream, entity_path=entity_path, poses=poses, color_rgb=color_rgb, static=True
+            )
             self._log_trajectory_pose_transforms(
                 stream,
                 entity_path=entity_path,
@@ -490,17 +487,14 @@ class RerunLoggingPolicy:
         del stream
 
     def _log_ground_alignment(self, stream, *, metadata: GroundAlignmentMetadata | None) -> None:
-        """Log one derived ground-plane overlay when the alignment stage completes."""
         if metadata is None or not metadata.applied:
             return
         rerun_helpers.log_ground_plane_patch(stream, metadata=metadata)
 
     def _log_trajectory_alignment(self, stream, *, alignment: TrajectoryAlignmentArtifact) -> None:
-        """Log the Sim(3) alignment as a derived target-frame marker."""
-        target_frame = _entity_token(alignment.target_frame)
         rerun_helpers.log_sim3_transform(
             stream,
-            entity_path=f"world/aligned/{target_frame}/slam/sim3/source_to_target",
+            entity_path=RERUN_SCENE.sim3_transform_path(alignment.target_frame),
             rotation_matrix=np.asarray(alignment.rotation, dtype=np.float64),
             translation_xyz=np.asarray(alignment.translation, dtype=np.float64),
             scale=alignment.scale,
@@ -509,44 +503,55 @@ class RerunLoggingPolicy:
         )
 
     def _log_tracking_trajectory(self, stream, *, pose: FrameTransform) -> None:
-        """Log one growing trajectory polyline from all observed pose estimates."""
         if not self.show_tracking_trajectory:
             return
+        entity_path = RERUN_SCENE.slam_raw_trajectory_path()
         self._tracking_trajectory_xyz.append((float(pose.tx), float(pose.ty), float(pose.tz)))
         if not self._logged_tracking_start_axes:
-            self._log_trajectory_start_axes(
+            self._log_trajectory_endpoint_markers(
                 stream,
-                entity_path="world/slam/trajectory/raw",
+                entity_path=entity_path,
                 poses=[pose],
+                color_rgb=RERUN_SCENE.slam_raw_rgb,
             )
             self._logged_tracking_start_axes = True
         rerun_helpers.log_line_strip3d(
             stream,
-            entity_path="world/slam/trajectory/raw",
+            entity_path=entity_path,
             positions_xyz=np.asarray(self._tracking_trajectory_xyz, dtype=np.float32),
+            color_rgb=RERUN_SCENE.slam_raw_rgb,
         )
         self._log_trajectory_pose_transforms(
             stream,
-            entity_path="world/slam/trajectory/raw",
+            entity_path=entity_path,
             poses=[pose],
             start_index=len(self._tracking_trajectory_xyz) - 1,
         )
 
-    def _log_trajectory_start_axes(
+    def _log_trajectory_endpoint_markers(
         self,
         stream,
         *,
         entity_path: str,
         poses: list[FrameTransform],
+        color_rgb: np.ndarray,
         static: bool = False,
     ) -> None:
-        """Log the first trajectory pose as a Transform3D axes marker."""
         if not poses:
+            return
+        rerun_helpers.log_points3d(
+            stream,
+            entity_path=f"{entity_path}/start",
+            points_xyz=poses[0].translation_xyz(),
+            colors=np.asarray(color_rgb, dtype=np.uint8).reshape(1, 3),
+            static=static,
+        )
+        if not static or not self.log_static_trajectory_end_pose:
             return
         rerun_helpers.log_transform(
             stream,
-            entity_path=f"{entity_path}/start",
-            transform=poses[0],
+            entity_path=f"{entity_path}/end",
+            transform=poses[-1],
             axis_length=TRAJECTORY_START_AXIS_LENGTH,
             static=static,
         )

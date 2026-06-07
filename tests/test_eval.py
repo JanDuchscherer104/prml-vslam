@@ -22,11 +22,7 @@ from prml_vslam.eval.contracts import (
     TrajectoryMetricId,
     TrajectorySeries,
 )
-from prml_vslam.eval.services import (
-    CloudAlignmentService,
-    TrajectoryEvaluationService,
-    compute_trajectory_ape_preview,
-)
+from prml_vslam.eval.services import CloudAlignmentService, TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
 from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
@@ -568,7 +564,7 @@ def _planar_yawed_pair(
 
 def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
     from prml_vslam.eval.services import _sim3_up_axis_tilt_deg
-    from prml_vslam.interfaces.geometry import yaw_similarity_align
+    from prml_vslam.utils.geometry import yaw_similarity_align
 
     estimate, reference, _ = _planar_yawed_pair(yaw_deg=175.0, scale=1.3)
     scale, rotation, translation = yaw_similarity_align(estimate, reference, up_axis=(0.0, 1.0, 0.0))
