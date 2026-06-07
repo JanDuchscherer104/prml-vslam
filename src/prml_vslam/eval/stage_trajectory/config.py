@@ -40,7 +40,6 @@ class TrajectoryEvaluationStageConfig(StageConfig):
         return [
             context.run_paths.trajectory_evaluation_manifest_path,
             context.run_paths.trajectory_metrics_long_path,
-            context.run_paths.trajectory_metrics_path,
         ]
 
     def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:

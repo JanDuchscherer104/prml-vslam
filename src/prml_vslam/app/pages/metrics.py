@@ -185,6 +185,4 @@ def _save_state(
         context.state.metrics,
         dataset=dataset,
         sequence_slug=sequence_slug,
-        run_root=None,
-        result_path=None,
     )

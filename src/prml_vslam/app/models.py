@@ -186,12 +186,6 @@ class MetricsPageState(BaseData):
     sequence_slug: str | None = None
     """Selected dataset sequence, for example `advio-15`."""
 
-    run_root: Path | None = None
-    """Selected artifact root for one evaluated run."""
-
-    result_path: Path | None = None
-    """Most recently loaded or computed persisted result path."""
-
 
 class ArtifactInspectorPageState(BaseData):
     """Persisted selector state for the artifact inspector page."""

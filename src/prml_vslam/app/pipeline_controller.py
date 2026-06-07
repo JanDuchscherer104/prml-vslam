@@ -239,7 +239,7 @@ def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[tuple[str, str], ...]:
 
 
 def _trajectory_evaluation_artifact_path(snapshot: RunSnapshot) -> str | None:
-    artifact = snapshot.artifacts.get("trajectory_evaluation_manifest") or snapshot.artifacts.get("trajectory_metrics")
+    artifact = snapshot.artifacts.get("trajectory_evaluation_manifest")
     return None if artifact is None else artifact.path.as_posix()
 
 
