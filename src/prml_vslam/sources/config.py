@@ -15,7 +15,11 @@ from pydantic import ConfigDict, Field
 from prml_vslam.sources.contracts import Record3DTransportId
 from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
-from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
+from prml_vslam.sources.datasets.tum_rgbd import (
+    ReferenceCloudSamplingConfig,
+    TumRgbdDatasetService,
+    TumRgbdPoseSource,
+)
 from prml_vslam.sources.materialization import VideoOfflineSequenceSource
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
@@ -68,6 +72,9 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
     replay_mode: ReplayMode = ReplayMode.REALTIME
     """Replay pacing policy for streaming TUM RGB-D observations."""
 
+    reference_cloud: ReferenceCloudSamplingConfig = Field(default_factory=ReferenceCloudSamplingConfig)
+    """Source-prepared TUM RGB-D reference-cloud sampling policy."""
+
     def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized TUM RGB-D source adapter."""
         service = TumRgbdDatasetService(path_config)
@@ -77,6 +84,7 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
             replay_mode=self.replay_mode,
             pose_source=TumRgbdPoseSource.GROUND_TRUTH,
             include_depth=True,
+            sequence_config_overrides={"reference_cloud": self.reference_cloud},
         )
 
 
@@ -168,6 +176,7 @@ SourceBackendConfig: TypeAlias = Annotated[
 
 __all__ = [
     "AdvioSourceConfig",
+    "ReferenceCloudSamplingConfig",
     "Record3DSourceConfig",
     "SourceBackendConfig",
     "TumRgbdSourceConfig",

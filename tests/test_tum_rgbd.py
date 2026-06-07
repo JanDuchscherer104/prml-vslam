@@ -10,10 +10,12 @@ import pytest
 
 from prml_vslam.interfaces import CAMERA_RDF_FRAME
 from prml_vslam.sources import FileObservationSequenceLoader
+from prml_vslam.sources.config import TumRgbdSourceConfig
 from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.sources.datasets.tum_rgbd import (
+    ReferenceCloudSamplingConfig,
     TumRgbdCatalog,
     TumRgbdDatasetService,
     TumRgbdDownloadRequest,
@@ -200,6 +202,38 @@ def test_tum_rgbd_reference_cloud_masks_invalid_depth_without_reference_only_fra
     assert metadata["source_observation_index_path"].endswith("observations.json")
     assert "reference_cloud_frame_stride" not in metadata
     assert "reference_cloud_max_frames" not in metadata
+
+
+def test_tum_rgbd_source_config_overrides_reference_cloud_sampling(tmp_path: Path) -> None:
+    data_dir = tmp_path / ".data"
+    _write_tum_rgbd_sequence(data_dir / "tum_rgbd", image_shape=(16, 16), frame_count=3)
+    path_config = PathConfig(root=Path(__file__).resolve().parents[1], data_dir=data_dir)
+    source = TumRgbdSourceConfig(
+        sequence_id="freiburg1_desk",
+        reference_cloud=ReferenceCloudSamplingConfig(
+            depth_stride_px=4,
+            max_points=5,
+            random_seed=3,
+        ),
+    ).setup_target(path_config=path_config)
+
+    first_inputs = source.prepare_benchmark_inputs(tmp_path / "benchmark")
+    repeat_inputs = source.prepare_benchmark_inputs(tmp_path / "benchmark-repeat")
+    first_points = load_point_cloud_ply(first_inputs.reference_clouds[0].path)
+    repeat_points = load_point_cloud_ply(repeat_inputs.reference_clouds[0].path)
+    metadata = json.loads(first_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
+
+    assert metadata["depth_stride_px"] == 4
+    assert metadata["depth_pixel_stride_px"] == 4
+    assert metadata["max_points"] == 5
+    assert metadata["max_reference_points"] == 5
+    assert metadata["seed"] == 3
+    assert metadata["point_sampling_seed"] == 3
+    assert metadata["point_count_before_sampling"] == 48
+    assert metadata["point_count_after_sampling"] == 5
+    assert metadata["point_count"] == 5
+    assert metadata["point_sampling_policy"] == "random_without_replacement"
+    np.testing.assert_allclose(repeat_points, first_points)
 
 
 def test_tum_rgbd_reference_cloud_ply_includes_sampled_rgb_colors(tmp_path: Path) -> None:
