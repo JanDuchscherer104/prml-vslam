@@ -90,9 +90,9 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         "gravity.align",
         "align.trajectory",
         "evaluate.trajectory",
-        "reconstruction",
         "align.cloud",
         "evaluate.cloud",
+        "reconstruction",
         "summary",
     ]
     assert list(STAGE_SECTION_ORDER) == [
@@ -101,9 +101,9 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
         (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
         (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
-        (StageKey.RECONSTRUCTION, "reconstruction"),
         (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
         (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+        (StageKey.RECONSTRUCTION, "reconstruction"),
         (StageKey.SUMMARY, "summary"),
     ]
 
@@ -172,8 +172,12 @@ def test_cloud_alignment_plan_declares_materialized_outputs(tmp_path: Path) -> N
     ]
 
 
-def test_tum_rgbd_cloud_alignment_plan_uses_source_prepared_reference_cloud(tmp_path: Path) -> None:
-    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+def test_tum_rgbd_cloud_alignment_plan_does_not_require_local_ci_data(tmp_path: Path) -> None:
+    path_config = PathConfig(
+        root=_repo_root(),
+        artifacts_dir=tmp_path / ".artifacts",
+        data_dir=tmp_path / ".data",
+    )
     config = build_run_config(
         experiment_name="tum-rgbd-cloud-alignment",
         output_dir=path_config.artifacts_dir,
@@ -184,10 +188,14 @@ def test_tum_rgbd_cloud_alignment_plan_uses_source_prepared_reference_cloud(tmp_
         reference_enabled=False,
     )
 
-    plan = config.compile_plan(path_config, fail_on_unavailable=True)
-    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
-
-    assert stage.available is True
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Enabled stage\\(s\\) are unavailable: align\\.cloud: "
+            "Cloud alignment requires a source-prepared reference cloud or reference reconstruction\\."
+        ),
+    ):
+        config.compile_plan(path_config, fail_on_unavailable=True)
 
 
 def test_tum_rgbd_cloud_alignment_plan_requires_depth_without_reconstruction(tmp_path: Path) -> None:
@@ -256,17 +264,17 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
 
     assert isinstance(run_config.stages.source.backend, TumRgbdSourceConfig)
     assert run_config.stages.source.backend.sequence_id == "freiburg3_large_cabinet"
-    assert run_config.stages.source.backend.frame_stride == 5
-    assert run_config.stages.source.backend.replay_mode is ReplayMode.REALTIME
+    assert run_config.stages.source.backend.frame_stride == 3
+    assert run_config.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert run_config_plan.source.source_id == DatasetId.TUM_RGBD.value
     assert run_config_plan.source.sequence_id == "freiburg3_large_cabinet"
-    assert run_config_plan.source.replay_mode == "realtime"
+    assert run_config_plan.source.replay_mode == "fast_as_possible"
     assert run_config_plan.source.metadata["dataset_id"] == DatasetId.TUM_RGBD.value
     assert run_config.stages.align_ground.enabled is True
     assert run_config.stages.reconstruction.enabled is True
     assert run_config.stages.reconstruction.backend.extract_mesh is True
-    assert run_config.stages.evaluate_trajectory.enabled is False
-    assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.10
+    assert run_config.stages.evaluate_trajectory.enabled is True
+    assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.25
     assert run_config.visualization.mesh_decimation_keep_ratio == 0.25
     assert run_config.visualization.decimation_random_seed == 0
 

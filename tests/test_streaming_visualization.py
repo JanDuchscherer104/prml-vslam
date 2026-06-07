@@ -618,8 +618,8 @@ def test_rerun_sink_logs_reconstruction_artifacts(tmp_path: Path, monkeypatch) -
     )
 
     assert calls == [
-        ("points", "world/reconstruction/reference/point_cloud", cloud),
-        ("mesh", "world/reconstruction/reference/mesh", mesh),
+        ("points", "world/reconstruction/point_cloud", cloud),
+        ("mesh", "world/reconstruction/mesh", mesh),
     ]
     assert streams[0].timelines == {}
 
