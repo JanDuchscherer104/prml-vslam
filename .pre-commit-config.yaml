@@ -23,6 +23,6 @@ repos:
       - id: check-graphify-lfs
         name: check graphify lfs
         entry: |
-          bash -c 'for f in graphify-out/graph.json graphify-out/graph.html; do if [ -f "$f" ]; then if ! grep -q "version https://git-lfs.github.com/spec/v1" "$f"; then echo "Error: $f is not an LFS pointer! Check .gitattributes precedence."; exit 1; fi; fi; done'
+          bash -c 'for f in graphify-out/graph.json graphify-out/graph.html; do if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then if ! git show ":$f" | grep -q "version https://git-lfs.github.com/spec/v1"; then echo "Error: $f is not an LFS pointer! Check .gitattributes precedence."; exit 1; fi; fi; done'
         language: system
         pass_filenames: false

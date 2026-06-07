@@ -15,9 +15,8 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import Observation
-from prml_vslam.utils.geometry import write_point_cloud_ply
-
 from prml_vslam.reconstruction.stage.contracts import ReconstructionStageInput
+from prml_vslam.utils.geometry import write_point_cloud_ply
 
 from .config import Open3dTsdfBackendConfig
 from .contracts import (
@@ -78,7 +77,8 @@ class Open3dTsdfBackend:
             traj_timestamps_list = []
             traj_poses_list = []
             from scipy.spatial.transform import Rotation
-            with open(self._input_payload.aligned_trajectory.path, "r") as f:
+
+            with open(self._input_payload.aligned_trajectory.path) as f:
                 for line in f:
                     if line.startswith("#"):
                         continue
@@ -88,15 +88,15 @@ class Open3dTsdfBackend:
                     ts = float(parts[0])
                     tx, ty, tz = float(parts[1]), float(parts[2]), float(parts[3])
                     qx, qy, qz, qw = float(parts[4]), float(parts[5]), float(parts[6]), float(parts[7])
-                    
+
                     rot = Rotation.from_quat([qx, qy, qz, qw]).as_matrix()
                     pose = np.eye(4, dtype=np.float64)
                     pose[:3, :3] = rot
                     pose[:3, 3] = [tx, ty, tz]
-                    
+
                     traj_timestamps_list.append(ts)
                     traj_poses_list.append(pose)
-            
+
             if traj_timestamps_list:
                 traj_timestamps = np.asarray(traj_timestamps_list, dtype=np.float64)
                 traj_poses = np.asarray(traj_poses_list, dtype=np.float64)
@@ -138,7 +138,9 @@ class Open3dTsdfBackend:
 
         artifact_root.mkdir(parents=True, exist_ok=True)
         colors_rgb = np.asarray(point_cloud.colors, dtype=np.float64) if point_cloud.has_colors() else None
-        reference_cloud_path = write_point_cloud_ply(artifact_root / "reconstruction_cloud.ply", points_xyz, colors_rgb=colors_rgb)
+        reference_cloud_path = write_point_cloud_ply(
+            artifact_root / "reconstruction_cloud.ply", points_xyz, colors_rgb=colors_rgb
+        )
 
         mesh_path: Path | None = None
         if config.extract_mesh:
@@ -151,7 +153,9 @@ class Open3dTsdfBackend:
             method_id=self.method_id,
             observation_count=matched_observations,
             point_count=int(points_xyz.shape[0]),
-            target_frame=ordered_observations[0].T_world_camera.target_frame if ordered_observations[0].T_world_camera else "world",
+            target_frame=ordered_observations[0].T_world_camera.target_frame
+            if ordered_observations[0].T_world_camera
+            else "world",
             voxel_length_m=config.voxel_length_m,
             sdf_trunc_m=config.sdf_trunc_m,
             depth_trunc_m=config.depth_trunc_m,
@@ -160,7 +164,9 @@ class Open3dTsdfBackend:
         )
         metadata_dict = metadata.model_dump(mode="json")
         if self._input_payload is not None and self._input_payload.cloud_alignment is not None:
-            metadata_dict["cloud_alignment"] = json.loads(self._input_payload.cloud_alignment.path.read_text(encoding="utf-8"))
+            metadata_dict["cloud_alignment"] = json.loads(
+                self._input_payload.cloud_alignment.path.read_text(encoding="utf-8")
+            )
 
         metadata_path = (artifact_root / "reconstruction_metadata.json").resolve()
         metadata_path.write_text(json.dumps(metadata_dict, indent=2), encoding="utf-8")

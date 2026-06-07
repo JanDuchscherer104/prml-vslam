@@ -262,7 +262,9 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         reconstruction_id = str(item.metadata.get("reconstruction_id") or "")
-        reconstruction_subpath = f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
+        reconstruction_subpath = (
+            f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
+        )
         entity_path = (
             "world/slam/point_cloud/raw"
             if reconstruction_id == "slam"
@@ -314,7 +316,9 @@ class RerunLoggingPolicy:
         if artifact is None:
             return
         reconstruction_id = str(item.metadata.get("reconstruction_id") or "")
-        reconstruction_subpath = f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
+        reconstruction_subpath = (
+            f"/{reconstruction_id}" if reconstruction_id and reconstruction_id != "reference" else ""
+        )
         self._log_mesh_ply_artifact(
             stream,
             artifact_path=artifact.path,

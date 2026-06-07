@@ -18,10 +18,8 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
-from prml_vslam.eval.contracts import (EvaluationArtifact,
-                                       TrajectoryAlignmentArtifact)
-from prml_vslam.interfaces import (CameraIntrinsics, FrameTransform,
-                                   Observation, ObservationProvenance)
+from prml_vslam.eval.contracts import EvaluationArtifact, TrajectoryAlignmentArtifact
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage import SlamStageRuntime
@@ -29,39 +27,53 @@ from prml_vslam.methods.stage.backend_config import SlamBackendConfig
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
-from prml_vslam.pipeline.contracts.events import (ArtifactRegistered,
-                                                  RunCompleted, RunEvent,
-                                                  RunFailed, RunStarted,
-                                                  RunStopped, RunStopRequested,
-                                                  RunSubmitted, StageCompleted,
-                                                  StageFailed, StageOutcome,
-                                                  StageQueued, StageStarted,
-                                                  StageStatus)
+from prml_vslam.pipeline.contracts.events import (
+    ArtifactRegistered,
+    RunCompleted,
+    RunEvent,
+    RunFailed,
+    RunStarted,
+    RunStopped,
+    RunStopRequested,
+    RunSubmitted,
+    StageCompleted,
+    StageFailed,
+    StageOutcome,
+    StageQueued,
+    StageStarted,
+    StageStatus,
+)
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.ray_runtime.common import (
-    DEFAULT_MAX_FRAMES_IN_FLIGHT, EVENT_RING_LIMIT, HANDLE_LIMIT,
-    HandlePayload, clean_actor_options, coordinator_actor_name, ts_ns)
+    DEFAULT_MAX_FRAMES_IN_FLIGHT,
+    EVENT_RING_LIMIT,
+    HANDLE_LIMIT,
+    HandlePayload,
+    clean_actor_options,
+    coordinator_actor_name,
+    ts_ns,
+)
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor
 from prml_vslam.pipeline.reuse import load_reused_stage_results
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
 from prml_vslam.pipeline.sinks import JsonlEventSink
 from prml_vslam.pipeline.snapshot_projector import SnapshotProjector
-from prml_vslam.pipeline.stages.base.contracts import (StageResult,
-                                                       StageRuntimeStatus,
-                                                       StageRuntimeUpdate,
-                                                       VisualizationIntent)
+from prml_vslam.pipeline.stages.base.contracts import (
+    StageResult,
+    StageRuntimeStatus,
+    StageRuntimeUpdate,
+    VisualizationIntent,
+)
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
 from prml_vslam.pipeline.stages.specs import stage_runtime_spec_for
-from prml_vslam.sources.protocols import (OfflineSequenceSource,
-                                          StreamingSequenceSource)
+from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.stage.contracts import SourceStageOutput
-from prml_vslam.sources.stage.visualization import (
-    ROLE_SOURCE_REFERENCE_TRAJECTORY, SourceVisualizationAdapter)
+from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, SourceVisualizationAdapter
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.artifacts import artifact_visualizations
 
@@ -849,8 +861,7 @@ class RunCoordinatorActor:
         if not (run_config.visualization.connect_live_viewer or run_config.visualization.export_viewer_rrd):
             self._console.info("Rerun sink disabled for run '%s'.", self._run_id)
             return []
-        from prml_vslam.visualization.rerun_sink import (ExportRerunSinkActor,
-                                                         LiveRerunSinkActor)
+        from prml_vslam.visualization.rerun_sink import ExportRerunSinkActor, LiveRerunSinkActor
 
         self._console.info("Rerun sink enabled for run '%s'.", self._run_id)
         common_options = {

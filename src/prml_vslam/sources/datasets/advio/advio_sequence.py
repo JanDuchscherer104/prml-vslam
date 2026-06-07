@@ -401,9 +401,7 @@ def _append_aligned_reference_trajectory(
         return
     matched_pairs = int(len(ground_truth_assoc.positions_xyz))
     if matched_pairs < _ADVIO_ALIGN_MIN_PAIRS:
-        _CONSOLE.warning(
-            "Skipping aligned ADVIO %s trajectory: only %d matched GT pairs.", source.value, matched_pairs
-        )
+        _CONSOLE.warning("Skipping aligned ADVIO %s trajectory: only %d matched GT pairs.", source.value, matched_pairs)
         return
     estimate_xyz = np.asarray(reference_assoc.positions_xyz, dtype=np.float64)
     reference_xyz = np.asarray(ground_truth_assoc.positions_xyz, dtype=np.float64)
