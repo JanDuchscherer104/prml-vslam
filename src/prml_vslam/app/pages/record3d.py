@@ -60,6 +60,7 @@ def _render_sidebar_controls(context: AppContext) -> Record3DPageAction:
             is_active=page_state.is_running,
             start_label="Start stream",
             stop_label="Stop stream",
+            key="record3d-stream-live-action",
             start_disabled=selection.input_error is not None,
         )
         render_record3d_transport_details(selection)

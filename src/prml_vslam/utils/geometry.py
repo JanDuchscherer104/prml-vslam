@@ -18,6 +18,10 @@ if TYPE_CHECKING:
     from prml_vslam.interfaces.camera import CameraIntrinsics
     from prml_vslam.interfaces.transforms import FrameTransform
 
+DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX = 8
+DEFAULT_REFERENCE_CLOUD_MAX_POINTS = 100_000
+DEFAULT_REFERENCE_CLOUD_RANDOM_SEED = 17
+
 
 def write_tum_trajectory(
     trajectory_path: Path,
@@ -149,6 +153,101 @@ def transform_points_world_camera(
     return transform(pose_world_camera.as_matrix(), vectors_to_points(points))[:, :3]
 
 
+def depth_map_to_world_points(
+    depth_map_m: np.ndarray,
+    intrinsics: CameraIntrinsics,
+    T_world_camera: FrameTransform,
+    *,
+    rgb: np.ndarray | None = None,
+    depth_stride_px: int = DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
+    device: str = "CPU:0",
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Unproject sampled depth into world-frame XYZ points and optional RGB.
+
+    This helper centralizes the dense-depth preprocessing used by dataset
+    reference-cloud builders. The pinhole unprojection follows OpenCV RGB-D
+    ``depthTo3d`` semantics
+    (https://docs.opencv.org/3.4/d2/d3a/group__rgbd.html), the frame-wise
+    fusion mirrors ViSTA-SLAM's dense-depth reconstruction path in
+    ``external/vista-slam/vista_slam/eval/eval_recon.py``, and the explicit
+    ``device`` string maps to Open3D tensor devices such as ``CPU:0`` or
+    ``CUDA:0``
+    (https://www.open3d.org/docs/release/python_api/open3d.t.geometry.PointCloud.html).
+
+    Args:
+        depth_map_m: Depth map in meters with shape ``(H, W)``.
+        intrinsics: Pinhole intrinsics for the depth/RGB raster.
+        T_world_camera: Repository transform ``world <- camera_rdf``.
+        rgb: Optional RGB image with shape ``(H, W, 3)`` and ``uint8`` values.
+        depth_stride_px: Pixel stride applied before unprojection.
+        device: Open3D tensor device string. ``CPU:0`` is deterministic default;
+            CUDA devices are opt-in and must be available.
+
+    Returns:
+        Tuple of ``(points_xyz_world, colors_rgb)``. Colors are ``uint8`` when
+        ``rgb`` is provided, otherwise ``None``.
+    """
+    depth = np.asarray(depth_map_m, dtype=np.float32)
+    if depth.ndim != 2:
+        raise ValueError(f"Expected a 2D depth map, got shape {depth.shape}.")
+    if depth_stride_px < 1:
+        raise ValueError(f"Expected depth_stride_px >= 1, got {depth_stride_px}.")
+    sampled_depth = depth[::depth_stride_px, ::depth_stride_px]
+    valid_mask = np.isfinite(sampled_depth) & (sampled_depth > 0.0)
+    if not np.any(valid_mask):
+        return np.empty((0, 3), dtype=np.float64), _empty_colors(rgb)
+
+    colors_rgb = _sample_rgb_colors(rgb, valid_mask=valid_mask, depth_stride_px=depth_stride_px)
+    if _normalized_open3d_device(device).upper().startswith("CPU"):
+        safe_depth = np.where(np.isfinite(depth), depth, 0.0).astype(np.float32, copy=False)
+        pointmap = pointmap_from_depth(safe_depth, intrinsics, stride_px=depth_stride_px)
+        points_xyz_camera = pointmap.reshape(-1, 3)[valid_mask.reshape(-1)]
+        return transform_points_world_camera(points_xyz_camera, T_world_camera), colors_rgb
+
+    return _depth_map_to_world_points_tensor(
+        sampled_depth,
+        valid_mask=valid_mask,
+        intrinsics=intrinsics,
+        T_world_camera=T_world_camera,
+        depth_stride_px=depth_stride_px,
+        device=device,
+    ), colors_rgb
+
+
+def sample_point_cloud_random(
+    points_xyz: np.ndarray,
+    colors_rgb: np.ndarray | None = None,
+    *,
+    max_points: int | None = DEFAULT_REFERENCE_CLOUD_MAX_POINTS,
+    seed: int = DEFAULT_REFERENCE_CLOUD_RANDOM_SEED,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Deterministically cap a fused point cloud without changing frame selection.
+
+    The policy is intentionally point-level only: every upstream observation can
+    contribute before this cap is applied. This matches the benchmark-artifact
+    need to reduce dense depth-map point volume while preserving the method
+    input frame set; Open3D voxel downsampling remains separate for ICP-style
+    alignment workflows
+    (https://www.open3d.org/docs/latest/tutorial/pipelines/icp_registration.html).
+    """
+    points = np.asarray(points_xyz, dtype=np.float64)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError(f"Expected point cloud shape (N, 3), got {points.shape}.")
+    colors = None
+    if colors_rgb is not None:
+        colors = np.asarray(colors_rgb, dtype=np.uint8)
+        if colors.shape != points.shape:
+            raise ValueError(f"Expected colors shape {points.shape}, got {colors.shape}.")
+    if max_points is None or len(points) <= max_points:
+        return points, colors
+    if max_points < 1:
+        raise ValueError(f"Expected max_points >= 1, got {max_points}.")
+    rng = np.random.default_rng(seed)
+    indices = rng.choice(len(points), size=max_points, replace=False)
+    indices.sort()
+    return points[indices], None if colors is None else colors[indices]
+
+
 def pointmap_from_depth(
     depth_map_m: np.ndarray,
     intrinsics: CameraIntrinsics,
@@ -178,11 +277,72 @@ def pointmap_from_depth(
     return points_xyz_camera
 
 
+def _normalized_open3d_device(device: str) -> str:
+    resolved = o3d.core.Device(device)
+    device_value = str(resolved)
+    if device_value.upper().startswith("CUDA") and not o3d.core.cuda.is_available():
+        raise RuntimeError(f"Open3D CUDA device '{device_value}' was requested but CUDA is unavailable.")
+    return device_value
+
+
+def _depth_map_to_world_points_tensor(
+    sampled_depth: np.ndarray,
+    *,
+    valid_mask: np.ndarray,
+    intrinsics: CameraIntrinsics,
+    T_world_camera: FrameTransform,
+    depth_stride_px: int,
+    device: str,
+) -> np.ndarray:
+    o3d_device = o3d.core.Device(_normalized_open3d_device(device))
+    dtype = o3d.core.Dtype.Float32
+    valid_flat = valid_mask.reshape(-1)
+    depth_tensor = o3d.core.Tensor(sampled_depth.reshape(-1, 1), dtype=dtype, device=o3d_device)[valid_flat]
+    u_px = np.arange(0, sampled_depth.shape[1] * depth_stride_px, depth_stride_px, dtype=np.float32)
+    v_px = np.arange(0, sampled_depth.shape[0] * depth_stride_px, depth_stride_px, dtype=np.float32)
+    u_grid, v_grid = np.meshgrid(u_px, v_px)
+    u_tensor = o3d.core.Tensor(u_grid.reshape(-1, 1), dtype=dtype, device=o3d_device)[valid_flat]
+    v_tensor = o3d.core.Tensor(v_grid.reshape(-1, 1), dtype=dtype, device=o3d_device)[valid_flat]
+    x_tensor = (u_tensor - np.float32(intrinsics.cx)) * depth_tensor / np.float32(intrinsics.fx)
+    y_tensor = (v_tensor - np.float32(intrinsics.cy)) * depth_tensor / np.float32(intrinsics.fy)
+    points_xyz_camera = o3d.core.concatenate([x_tensor, y_tensor, depth_tensor], axis=1)
+    ones = o3d.core.Tensor.ones((points_xyz_camera.shape[0], 1), dtype, o3d_device)
+    points_h = o3d.core.concatenate([points_xyz_camera, ones], axis=1)
+    T_tensor = o3d.core.Tensor(T_world_camera.as_matrix().astype(np.float32), dtype=dtype, device=o3d_device)
+    return points_h.matmul(T_tensor.T())[:, :3].cpu().numpy().astype(np.float64, copy=False)
+
+
+def _sample_rgb_colors(
+    rgb: np.ndarray | None,
+    *,
+    valid_mask: np.ndarray,
+    depth_stride_px: int,
+) -> np.ndarray | None:
+    if rgb is None:
+        return None
+    colors = np.asarray(rgb, dtype=np.uint8)
+    if colors.ndim != 3 or colors.shape[2] != 3:
+        raise ValueError(f"Expected RGB image shape (H, W, 3), got {colors.shape}.")
+    sampled_colors = colors[::depth_stride_px, ::depth_stride_px]
+    if sampled_colors.shape[:2] != valid_mask.shape:
+        raise ValueError(f"RGB shape {colors.shape[:2]} does not match sampled depth shape {valid_mask.shape}.")
+    return sampled_colors.reshape(-1, 3)[valid_mask.reshape(-1)]
+
+
+def _empty_colors(rgb: np.ndarray | None) -> np.ndarray | None:
+    return None if rgb is None else np.empty((0, 3), dtype=np.uint8)
+
+
 __all__ = [
+    "DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX",
+    "DEFAULT_REFERENCE_CLOUD_MAX_POINTS",
+    "DEFAULT_REFERENCE_CLOUD_RANDOM_SEED",
+    "depth_map_to_world_points",
     "load_point_cloud_ply",
     "load_point_cloud_ply_with_colors",
     "load_tum_trajectory",
     "pointmap_from_depth",
+    "sample_point_cloud_random",
     "transform_points_world_camera",
     "write_point_cloud_ply",
     "write_tum_trajectory",

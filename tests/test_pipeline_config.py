@@ -15,6 +15,7 @@ from prml_vslam.pipeline.config import (
     build_run_config,
 )
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.reuse import load_reused_stage_results
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
@@ -22,12 +23,13 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import Record3DTransportId
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, Record3DTransportId, SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
-from prml_vslam.utils import PathConfig
+from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils.serialization import write_json
 
 
 def _repo_root() -> Path:
@@ -88,8 +90,9 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         "gravity.align",
         "align.trajectory",
         "evaluate.trajectory",
-        "reconstruction",
+        "align.cloud",
         "evaluate.cloud",
+        "reconstruction",
         "summary",
     ]
     assert list(STAGE_SECTION_ORDER) == [
@@ -98,8 +101,9 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         (StageKey.GRAVITY_ALIGNMENT, "align_ground"),
         (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
         (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
-        (StageKey.RECONSTRUCTION, "reconstruction"),
+        (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
         (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+        (StageKey.RECONSTRUCTION, "reconstruction"),
         (StageKey.SUMMARY, "summary"),
     ]
 
@@ -113,6 +117,7 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
         reference_enabled=True,
         trajectory_eval_enabled=True,
         trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
         evaluate_cloud=True,
         ground_alignment_enabled=True,
     )
@@ -123,7 +128,104 @@ def test_build_run_config_populates_target_stage_sections(tmp_path: Path) -> Non
     assert config.stages.align_trajectory.enabled is True
     assert config.stages.evaluate_trajectory.enabled is True
     assert config.stages.reconstruction.enabled is True
+    assert config.stages.align_cloud.enabled is True
     assert config.stages.evaluate_cloud.enabled is True
+
+
+def test_trajectory_alignment_plan_declares_materialized_outputs(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    config = build_run_config(
+        experiment_name="alignment-outputs",
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+    )
+
+    plan = config.compile_plan(path_config)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.TRAJECTORY_ALIGNMENT)
+
+    assert [path.relative_to(plan.artifact_root).as_posix() for path in stage.outputs] == [
+        "evaluation/trajectory_alignment.json",
+        "evaluation/trajectory_sim3_aligned.tum",
+        "evaluation/point_cloud_sim3_aligned.ply",
+    ]
+
+
+def test_cloud_alignment_plan_declares_materialized_outputs(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    config = build_run_config(
+        experiment_name="cloud-alignment-outputs",
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+    )
+
+    plan = config.compile_plan(path_config)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert [path.relative_to(plan.artifact_root).as_posix() for path in stage.outputs] == [
+        "evaluation/cloud_alignment.json",
+        "evaluation/point_cloud_sim3_icp_aligned.ply",
+    ]
+
+
+def test_tum_rgbd_cloud_alignment_plan_does_not_require_local_ci_data(tmp_path: Path) -> None:
+    path_config = PathConfig(
+        root=_repo_root(),
+        artifacts_dir=tmp_path / ".artifacts",
+        data_dir=tmp_path / ".data",
+    )
+    config = build_run_config(
+        experiment_name="tum-rgbd-cloud-alignment",
+        output_dir=path_config.artifacts_dir,
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+        reference_enabled=False,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Enabled stage\\(s\\) are unavailable: align\\.cloud: "
+            "Cloud alignment requires a source-prepared reference cloud or reference reconstruction\\."
+        ),
+    ):
+        config.compile_plan(path_config, fail_on_unavailable=True)
+
+
+def test_tum_rgbd_cloud_alignment_plan_requires_depth_without_reconstruction(tmp_path: Path) -> None:
+    data_dir = tmp_path / ".data"
+    sequence_dir = data_dir / "tum_rgbd" / "rgbd_dataset_freiburg1_desk"
+    (sequence_dir / "rgb").mkdir(parents=True)
+    (sequence_dir / "rgb.txt").write_text("0.000000 rgb/0.000000.png\n", encoding="utf-8")
+    (sequence_dir / "groundtruth.txt").write_text(
+        "0.000000 0.0 0.0 0.0 0.0 0.0 0.0 1.0\n",
+        encoding="utf-8",
+    )
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=data_dir)
+    config = build_run_config(
+        experiment_name="tum-rgbd-cloud-alignment-missing-depth",
+        output_dir=path_config.artifacts_dir,
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+        reference_enabled=False,
+    )
+
+    plan = config.compile_plan(path_config)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert stage.available is False
+    assert (
+        stage.availability_reason
+        == "Cloud alignment requires a source-prepared reference cloud or reference reconstruction."
+    )
 
 
 def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> None:
@@ -161,17 +263,20 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     run_config_plan = run_config.compile_plan(path_config)
 
     assert isinstance(run_config.stages.source.backend, TumRgbdSourceConfig)
-    assert run_config.stages.source.backend.sequence_id == "freiburg1_room"
-    assert run_config.stages.source.backend.frame_stride == 5
-    assert run_config.stages.source.backend.replay_mode is ReplayMode.REALTIME
+    assert run_config.stages.source.backend.sequence_id == "freiburg3_large_cabinet"
+    assert run_config.stages.source.backend.frame_stride == 3
+    assert run_config.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert run_config_plan.source.source_id == DatasetId.TUM_RGBD.value
-    assert run_config_plan.source.sequence_id == "freiburg1_room"
-    assert run_config_plan.source.replay_mode == "realtime"
+    assert run_config_plan.source.sequence_id == "freiburg3_large_cabinet"
+    assert run_config_plan.source.replay_mode == "fast_as_possible"
     assert run_config_plan.source.metadata["dataset_id"] == DatasetId.TUM_RGBD.value
     assert run_config.stages.align_ground.enabled is True
     assert run_config.stages.reconstruction.enabled is True
     assert run_config.stages.reconstruction.backend.extract_mesh is True
-    assert run_config.stages.evaluate_trajectory.enabled is False
+    assert run_config.stages.evaluate_trajectory.enabled is True
+    assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.25
+    assert run_config.visualization.mesh_decimation_keep_ratio == 0.25
+    assert run_config.visualization.decimation_random_seed == 0
 
 
 def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) -> None:
@@ -249,7 +354,7 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
                 "sequence_id": "advio-20",
                 "dataset_serving": {
                     "pose_source": "ground_truth",
-                    "pose_frame_mode": "reference_world",
+                    "pose_frame_mode": "provider_world",
                 },
             }
         }
@@ -327,6 +432,85 @@ method_id = "vista"
 """
         )
     assert "Ignoring unknown config field `stages.source.backend.legacy`." in config.config_warnings
+
+
+def test_run_config_parses_reuse_artifact_root_and_rejects_same_root(tmp_path: Path) -> None:
+    reuse_root = tmp_path / "old" / "vista"
+    reuse_paths = RunArtifactPaths.build(reuse_root)
+    write_json(reuse_paths.sequence_manifest_path, SequenceManifest(sequence_id="reused-seq"))
+    write_json(reuse_paths.benchmark_inputs_path, PreparedBenchmarkInputs())
+    reuse_paths.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    config = RunConfig.from_toml(
+        f"""
+experiment_name = "reuse"
+mode = "offline"
+output_dir = "{tmp_path.as_posix()}"
+reuse_artifact_root = "{reuse_root.as_posix()}"
+
+[stages.source]
+enabled = false
+
+[stages.slam]
+enabled = false
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+
+[stages.align_cloud]
+enabled = true
+"""
+    )
+
+    assert config.reuse_artifact_root == reuse_root
+    plan = config.compile_plan(PathConfig(root=tmp_path))
+    assert plan.source.source_id == "reused_artifacts"
+    assert plan.source.sequence_id == "reused-seq"
+    assert [stage.key for stage in plan.stages] == [
+        StageKey.TRAJECTORY_ALIGNMENT,
+        StageKey.CLOUD_ALIGNMENT,
+        StageKey.SUMMARY,
+    ]
+
+    planned_root = (
+        PathConfig(root=tmp_path)
+        .plan_run_paths(
+            experiment_name="same",
+            method_slug="vista",
+            output_dir=tmp_path,
+        )
+        .artifact_root
+    )
+    planned_root.mkdir(parents=True)
+    same_root = build_run_config(
+        experiment_name="same",
+        output_dir=tmp_path,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+    ).model_copy(update={"reuse_artifact_root": planned_root})
+    with pytest.raises(ValueError, match="must not equal"):
+        same_root.compile_plan(PathConfig(root=tmp_path))
+
+
+def test_load_reused_stage_results_reconstructs_source_and_slam_outputs(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "old-run")
+    write_json(run_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
+    write_json(run_paths.benchmark_inputs_path, PreparedBenchmarkInputs())
+    run_paths.trajectory_path.parent.mkdir(parents=True)
+    run_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    run_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+
+    results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
+
+    assert results[StageKey.SOURCE].outcome.artifacts["sequence_manifest"].path == run_paths.sequence_manifest_path
+    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.dense_points_path
+    missing_paths = RunArtifactPaths.build(tmp_path / "missing-benchmark")
+    write_json(missing_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
+    with pytest.raises(FileNotFoundError, match="benchmark inputs"):
+        load_reused_stage_results(missing_paths.artifact_root)
 
 
 def test_target_generic_stages_toml_parses_into_stage_bundle() -> None:

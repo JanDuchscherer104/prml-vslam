@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.interfaces import CAMERA_RDF_FRAME, FrameTransform, ObservationIndexEntry, ObservationProvenance
+from prml_vslam.interfaces import FrameTransform, ObservationIndexEntry, ObservationProvenance
 from prml_vslam.sources.replay import (
     ImageSequenceObservationSource,
     ObservationStream,
@@ -13,17 +13,16 @@ from prml_vslam.sources.replay import (
 )
 
 from .tum_rgbd_loading import (
+    TUM_RGBD_CAMERA_FRAME,
+    TUM_RGBD_WORLD_FRAME,
     TumRgbdFrameAssociation,
     load_depth_image_m,
     load_tum_rgbd_associations,
-    load_tum_rgbd_ground_truth,
+    load_tum_rgbd_ground_truth_rdf,
     load_tum_rgbd_intrinsics,
     resolve_ground_truth_path,
 )
 from .tum_rgbd_models import TumRgbdPoseSource
-
-TUM_RGBD_WORLD_FRAME = "tum_rgbd_mocap_world"
-TUM_RGBD_CAMERA_FRAME = CAMERA_RDF_FRAME
 
 
 def open_tum_rgbd_stream(
@@ -41,7 +40,7 @@ def open_tum_rgbd_stream(
     trajectory = (
         None
         if pose_source is TumRgbdPoseSource.NONE
-        else load_tum_rgbd_ground_truth(resolve_ground_truth_path(sequence_dir))
+        else load_tum_rgbd_ground_truth_rdf(resolve_ground_truth_path(sequence_dir))
     )
     intrinsics = load_tum_rgbd_intrinsics(sequence_id, sequence_dir)
     poses_by_frame = _poses_for_associations(associations, trajectory)

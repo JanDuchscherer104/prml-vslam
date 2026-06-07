@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import rerun as rr
@@ -71,6 +72,57 @@ def _write_loaded_recording(stream: rr.RecordingStream, *, tmp_path: Path, filen
     path = tmp_path / filename
     path.write_bytes(stream.memory_recording().drain_as_bytes())
     return rdf.load_recording(path)
+
+
+def test_default_3d_scene_reference_point_query_matches_static_cloud(tmp_path: Path) -> None:
+    stream = rerun_helpers.create_recording_stream(app_id="prml-vslam-test", recording_id="reference-cloud-query")
+    entity_path = "world/reference/points/tum_rgbd/aligned/point_cloud"
+    stream.log(
+        entity_path,
+        rr.Points3D(
+            np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32),
+            colors=np.asarray([[10, 20, 30]], dtype=np.uint8),
+        ),
+        static=True,
+    )
+    recording = _write_loaded_recording(stream, tmp_path=tmp_path, filename="reference_cloud_query.rrd")
+
+    reference_points_query = next(
+        query for query in rerun_helpers.DEFAULT_3D_SCENE_CONTENTS if "world/reference/points" in query
+    )
+    component_columns = recording.view(index="log_tick", contents=reference_points_query).schema().component_columns()
+
+    assert (
+        f"/{entity_path}",
+        "Points3D:positions",
+    ) in {(column.entity_path, column.component) for column in component_columns}
+
+
+def test_default_3d_scene_ground_plane_query_matches_static_overlay(tmp_path: Path) -> None:
+    stream = rerun_helpers.create_recording_stream(app_id="prml-vslam-test", recording_id="ground-plane-query")
+    rerun_helpers.log_ground_plane_patch(
+        stream,
+        metadata=SimpleNamespace(
+            visualization=SimpleNamespace(
+                corners_xyz_world=[
+                    (0.0, 0.0, 0.0),
+                    (0.0, 0.0, 1.0),
+                    (1.0, 0.0, 1.0),
+                    (1.0, 0.0, 0.0),
+                ]
+            ),
+            ground_plane_world=SimpleNamespace(normal_xyz_world=(0.0, 1.0, 0.0)),
+        ),
+    )
+    recording = _write_loaded_recording(stream, tmp_path=tmp_path, filename="ground_plane_query.rrd")
+
+    ground_plane_query = next(query for query in rerun_helpers.DEFAULT_3D_SCENE_CONTENTS if "slam/alignment" in query)
+    component_columns = recording.view(index="log_tick", contents=ground_plane_query).schema().component_columns()
+
+    assert (
+        "/world/slam/alignment/ground_plane/fill",
+        "Mesh3D:vertex_positions",
+    ) in {(column.entity_path, column.component) for column in component_columns}
 
 
 def _rows_for_index(recording: rdf.Recording, *, index_name: str) -> list[dict[str, object]]:
@@ -227,18 +279,7 @@ def _component_columns(recording: rdf.Recording):
 
 def _build_repo_owned_recording(*, tmp_path: Path, payloads: Sequence[_SyntheticKeyframePayload]) -> rdf.Recording:
     stream = rerun_helpers.create_recording_stream(app_id="prml-vslam-test", recording_id="repo-semantics")
-    policy = RerunLoggingPolicy(
-        log_pinhole=rerun_helpers.log_pinhole,
-        log_pointcloud=rerun_helpers.log_pointcloud,
-        log_pointcloud_ply=rerun_helpers.log_pointcloud_ply,
-        log_mesh_ply=rerun_helpers.log_mesh_ply,
-        log_line_strip3d=rerun_helpers.log_line_strip3d,
-        log_clear=rerun_helpers.log_clear,
-        log_depth_image=rerun_helpers.log_depth_image,
-        log_ground_plane_patch=rerun_helpers.log_ground_plane_patch,
-        log_rgb_image=rerun_helpers.log_rgb_image,
-        log_transform=rerun_helpers.log_transform,
-    )
+    policy = RerunLoggingPolicy()
     adapter = SlamVisualizationAdapter()
     for payload in payloads:
         policy.observe_update(
@@ -367,17 +408,17 @@ def test_repo_owned_recording_matches_vista_style_world_point_placement_across_k
             repo_recording,
             index_name="frame",
             index_value=payload.frame_index,
-            points_entity="world/live/model/points",
+            points_entity="world/slam/live/model/points",
         )
         repo_keyframe_row = _row_for_points_entity_any_frame(
             repo_recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         repo_keyframe_world_points = _world_points_for(
             repo_recording,
             index_name="frame",
             index_value=repo_keyframe_row["frame"],
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         vista_frame_world_points = _world_points_for(
             vista_recording,
@@ -426,16 +467,18 @@ def test_repo_owned_recording_points_always_have_matching_parent_transform(tmp_p
             recording,
             index_name="frame",
             index_value=payload.frame_index,
-            points_entity="world/live/model/points",
+            points_entity="world/slam/live/model/points",
         )
         keyframe_row = _row_for_points_entity_any_frame(
             recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/keyframes/points/{payload.keyframe_index:06d}/points",
         )
 
-        assert _transform_matrix_from_row(live_row, entity_path="world/live/model") is not None
+        assert _transform_matrix_from_row(live_row, entity_path="world/slam/live/model") is not None
         assert (
-            _transform_matrix_from_row(keyframe_row, entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}")
+            _transform_matrix_from_row(
+                keyframe_row, entity_path=f"world/slam/keyframes/points/{payload.keyframe_index:06d}"
+            )
             is not None
         )
 
@@ -449,20 +492,22 @@ def test_repo_owned_recording_keeps_transform_and_points_on_the_same_index(tmp_p
             recording,
             index_name="frame",
             index_value=payload.frame_index,
-            points_entity="world/live/model/points",
+            points_entity="world/slam/live/model/points",
         )
         keyframe_row = _row_for_points_entity_any_frame(
             recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/keyframes/points/{payload.keyframe_index:06d}/points",
         )
 
         assert live_row["frame"] == payload.frame_index
-        assert "/world/live/model:Transform3D:translation" in live_row
-        assert "/world/live/model/points:Points3D:positions" in live_row
+        assert "/world/slam/live/model:Transform3D:translation" in live_row
+        assert "/world/slam/live/model/points:Points3D:positions" in live_row
         assert keyframe_row["frame"] == payload.frame_index
-        assert f"/world/keyframes/points/{payload.keyframe_index:06d}/points:Points3D:positions" in keyframe_row
+        assert f"/world/slam/keyframes/points/{payload.keyframe_index:06d}/points:Points3D:positions" in keyframe_row
         assert (
-            _transform_matrix_from_row(keyframe_row, entity_path=f"world/keyframes/points/{payload.keyframe_index:06d}")
+            _transform_matrix_from_row(
+                keyframe_row, entity_path=f"world/slam/keyframes/points/{payload.keyframe_index:06d}"
+            )
             is not None
         )
 
@@ -474,15 +519,15 @@ def test_repo_owned_recording_keeps_keyed_history_while_reusing_live_model_point
     live_rows = [
         row
         for row in _rows_for_index(recording, index_name="frame")
-        if "/world/live/model/points:Points3D:positions" in row
-        and _points_array(row["/world/live/model/points:Points3D:positions"]).size > 0
+        if "/world/slam/live/model/points:Points3D:positions" in row
+        and _points_array(row["/world/slam/live/model/points:Points3D:positions"]).size > 0
     ]
 
     assert [row["frame"] for row in live_rows] == [payload.frame_index for payload in payloads]
     for payload in payloads:
         keyframe_row = _row_for_points_entity_any_frame(
             recording,
-            points_entity=f"world/keyframes/points/{payload.keyframe_index:06d}/points",
+            points_entity=f"world/slam/keyframes/points/{payload.keyframe_index:06d}/points",
         )
         assert keyframe_row["frame"] == payload.frame_index
 
@@ -492,5 +537,5 @@ def test_repo_owned_recording_separates_keyframe_camera_and_point_subtrees(tmp_p
     recording = _build_repo_owned_recording(tmp_path=tmp_path, payloads=payloads)
 
     columns = _component_columns(recording)
-    assert any(column.entity_path == "/world/keyframes/cameras/000003" for column in columns)
-    assert any(column.entity_path == "/world/keyframes/points/000003" for column in columns)
+    assert any(column.entity_path == "/world/slam/keyframes/cameras/000003" for column in columns)
+    assert any(column.entity_path == "/world/slam/keyframes/points/000003" for column in columns)

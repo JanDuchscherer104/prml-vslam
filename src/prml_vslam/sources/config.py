@@ -84,8 +84,8 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     """Configure one ADVIO dataset source adapter.
 
     ADVIO adds dataset-serving policy for pose source, video orientation, and
-    optional Tango reference payloads. Those semantics stay ADVIO-owned rather
-    than being promoted into the generic source backend base.
+    video orientation. Those semantics stay ADVIO-owned rather than being
+    promoted into the generic source backend base.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -105,9 +105,6 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     normalize_video_orientation: bool = True
     """Whether replay should normalize video display orientation before emission."""
 
-    tango_reference_point_stride: int = Field(default=1, ge=1)
-    """Stride for prepared static ADVIO Tango reference clouds; ``1`` keeps every payload point."""
-
     def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized ADVIO source adapter."""
         service = AdvioDatasetService(path_config)
@@ -117,7 +114,6 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
             dataset_serving=self.dataset_serving,
             replay_mode=self.replay_mode,
             normalize_video_orientation=self.normalize_video_orientation,
-            tango_reference_point_stride=self.tango_reference_point_stride,
         )
 
 

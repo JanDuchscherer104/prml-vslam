@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
-
 from prml_vslam.sources.datasets.contracts import DatasetServingConfig, FrameSelectionConfig
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.utils import BaseConfig
@@ -34,7 +32,6 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
     dataset_serving: DatasetServingConfig
     replay_mode: ReplayMode = ReplayMode.REALTIME
     normalize_video_orientation: bool = True
-    tango_reference_point_stride: int = Field(default=1, ge=1)
 
     def setup_target(self) -> DatasetSequenceSource:
         """Build the normalized ADVIO streaming source adapter."""
@@ -68,9 +65,8 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
                 frame_selection=frame_selection,
                 dataset_serving=self.dataset_serving,
             ),
-            benchmark=lambda sequence_id, output_dir: sequence(sequence_id).to_benchmark_inputs(
+            benchmark=lambda sequence_id, output_dir, _selection: sequence(sequence_id).to_benchmark_inputs(
                 output_dir=output_dir,
-                tango_reference_point_stride=self.tango_reference_point_stride,
             ),
             stream=stream,
             replay_mode=self.replay_mode,
@@ -102,7 +98,6 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         sequence_id: int,
         frame_selection: FrameSelectionConfig | None = None,
         dataset_serving: DatasetServingConfig | None = None,
-        tango_reference_point_stride: int = 1,
     ) -> DatasetSequenceSource:
         """Build the ADVIO-backed offline source adapter for one sequence."""
         selection = frame_selection or FrameSelectionConfig()
@@ -116,9 +111,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
                 frame_selection=manifest_selection,
                 dataset_serving=dataset_serving,
             ),
-            benchmark=lambda _value, output_dir: sequence.to_benchmark_inputs(
+            benchmark=lambda _value, output_dir, _selection: sequence.to_benchmark_inputs(
                 output_dir=output_dir,
-                tango_reference_point_stride=tango_reference_point_stride,
             ),
         )
 
@@ -130,7 +124,6 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         dataset_serving: DatasetServingConfig,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
         normalize_video_orientation: bool = True,
-        tango_reference_point_stride: int = 1,
     ) -> DatasetSequenceSource:
         """Build the ADVIO-backed streaming source adapter for one sequence."""
         selection = frame_selection or FrameSelectionConfig()
@@ -140,7 +133,6 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             dataset_serving=dataset_serving,
             replay_mode=replay_mode,
             normalize_video_orientation=normalize_video_orientation,
-            tango_reference_point_stride=tango_reference_point_stride,
             frame_stride=selection.frame_stride,
             target_fps=selection.target_fps,
         ).setup_target()

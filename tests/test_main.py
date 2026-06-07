@@ -36,12 +36,14 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import RunEvent
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
+from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import (
     build_advio_demo_run_config,
     build_runtime_source_from_run_config,
     load_run_config_toml,
 )
 from prml_vslam.pipeline.run_service import RunService
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
@@ -206,6 +208,93 @@ def test_wait_for_pipeline_terminal_snapshot_uses_pipeline_demo_namespace(
     assert result is snapshot
     assert caplog.records[0].name == "prml_vslam.pipeline.demo"
     assert "Pipeline demo state: completed" in caplog.records[0].message
+
+
+def test_wait_for_pipeline_terminal_snapshot_waits_through_idle(monkeypatch: pytest.MonkeyPatch) -> None:
+    from prml_vslam.main import _wait_for_pipeline_terminal_snapshot
+
+    completed = RunSnapshot(run_id="demo", state=RunState.COMPLETED)
+    snapshots = [RunSnapshot(run_id="demo", state=RunState.IDLE), completed]
+    sleeps: list[float] = []
+
+    class FakeRunService:
+        def snapshot(self) -> RunSnapshot:
+            return snapshots.pop(0)
+
+    monkeypatch.setattr("prml_vslam.main.time.sleep", lambda interval: sleeps.append(interval))
+
+    result = _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.25)
+
+    assert result is completed
+    assert sleeps == [0.25]
+
+
+def test_wait_for_pipeline_terminal_snapshot_logs_slam_progress_with_keyfps(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from prml_vslam.main import _wait_for_pipeline_terminal_snapshot
+
+    snapshots = [
+        RunSnapshot(
+            run_id="demo",
+            state=RunState.RUNNING,
+            stage_runtime_status={
+                StageKey.SLAM: StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    processed_items=267,
+                    fps=19.7,
+                    throughput=99.0,
+                    latency_ms=12.34,
+                )
+            },
+        ),
+        RunSnapshot(run_id="demo", state=RunState.COMPLETED),
+    ]
+
+    class FakeRunService:
+        def snapshot(self) -> RunSnapshot:
+            return snapshots.pop(0)
+
+    monkeypatch.setattr("prml_vslam.main.time.sleep", lambda _interval: None)
+
+    with _capture_logger(caplog, monkeypatch, pipeline_demo_console.logger.name):
+        _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.01)
+
+    progress_messages = [record.message for record in caplog.records if record.message.startswith("SLAM processed=")]
+    assert progress_messages == ["SLAM processed=267 fps=19.70 keyfps=99.00 latency=12.3ms"]
+    assert "throughput" not in progress_messages[0]
+
+
+def test_wait_for_pipeline_terminal_snapshot_omits_unavailable_slam_latency(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from prml_vslam.main import _wait_for_pipeline_terminal_snapshot
+
+    snapshot = RunSnapshot(
+        run_id="demo",
+        state=RunState.COMPLETED,
+        stage_runtime_status={
+            StageKey.SLAM: StageRuntimeStatus(
+                stage_key=StageKey.SLAM,
+                processed_items=3,
+                fps=None,
+                latency_ms=None,
+            )
+        },
+    )
+
+    class FakeRunService:
+        def snapshot(self) -> RunSnapshot:
+            return snapshot
+
+    with _capture_logger(caplog, monkeypatch, pipeline_demo_console.logger.name):
+        _wait_for_pipeline_terminal_snapshot(FakeRunService(), poll_interval_seconds=0.01)
+
+    progress_messages = [record.message for record in caplog.records if record.message.startswith("SLAM processed=")]
+    assert progress_messages == ["SLAM processed=3 fps=n/a keyfps=n/a"]
+    assert "latency" not in progress_messages[0]
 
 
 def test_build_advio_demo_run_config_enables_live_viewer_by_default(tmp_path: Path) -> None:
@@ -576,8 +665,6 @@ def test_build_rerun_viewer_command_uses_blueprint_when_configured(tmp_path: Pat
     assert command == [
         "uv",
         "run",
-        "--extra",
-        "vista",
         "rerun",
         (tmp_path / ".configs/visualization/demo_blueprint.rbl").resolve().as_posix(),
         "--serve-web",
@@ -590,7 +677,7 @@ def test_build_rerun_viewer_command_omits_blueprint_when_unset(tmp_path: Path) -
 
     command = _build_rerun_viewer_command(run_config=run_cfg, path_config=path_config)
 
-    assert command == ["uv", "run", "--extra", "vista", "rerun", "--serve-web"]
+    assert command == ["uv", "run", "rerun", "--serve-web"]
 
 
 def test_build_rerun_viewer_command_resolves_vista_full_blueprint_path(tmp_path: Path) -> None:
@@ -689,7 +776,7 @@ def test_launch_rerun_viewer_uses_pipe_and_merged_stderr(monkeypatch: pytest.Mon
     viewer = _launch_rerun_viewer(run_config=run_cfg, path_config=path_config)
 
     assert viewer is not None
-    assert captured["command"] == ["uv", "run", "--extra", "vista", "rerun", "--serve-web"]
+    assert captured["command"] == ["uv", "run", "rerun", "--serve-web"]
     assert captured["kwargs"]["stdout"] is subprocess.PIPE
     assert captured["kwargs"]["stderr"] is subprocess.STDOUT
     assert captured["kwargs"]["text"] is True
@@ -818,8 +905,7 @@ def test_find_rerun_viewer_processes_matches_current_viewer_tree() -> None:
             pgid=77384,
             stat="Ssl",
             command=(
-                "uv run --extra vista rerun "
-                "/home/jandu/repos/prml-vslam/.configs/visualization/vista_blueprint.rbl --serve-web"
+                "uv run rerun /home/jandu/repos/prml-vslam/.configs/visualization/vista_blueprint.rbl --serve-web"
             ),
         ),
         _ProcessInfo(
@@ -869,7 +955,7 @@ def test_kill_rerun_dry_run_lists_processes_without_signaling(
             ppid=1,
             pgid=10,
             stat="Sl",
-            command="uv run --extra vista rerun .configs/visualization/vista_blueprint.rbl --serve-web",
+            command="uv run rerun .configs/visualization/vista_blueprint.rbl --serve-web",
         )
     ]
     monkeypatch.setattr("prml_vslam.main._find_rerun_viewer_processes", lambda: processes)
@@ -887,7 +973,7 @@ def test_kill_rerun_dry_run_lists_processes_without_signaling(
 
 def test_kill_rerun_terminates_matched_process_group(monkeypatch: pytest.MonkeyPatch) -> None:
     processes = [
-        _ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run --extra vista rerun --serve-web"),
+        _ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run rerun --serve-web"),
         _ProcessInfo(pid=12, ppid=11, pgid=10, stat="Sl", command="/tmp/.venv/bin/rerun --serve-web"),
     ]
     signals: list[tuple[int, signal.Signals]] = []
@@ -901,7 +987,7 @@ def test_kill_rerun_terminates_matched_process_group(monkeypatch: pytest.MonkeyP
 
 
 def test_kill_rerun_escalates_when_process_group_remains(monkeypatch: pytest.MonkeyPatch) -> None:
-    processes = [_ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run --extra vista rerun --serve-web")]
+    processes = [_ProcessInfo(pid=11, ppid=1, pgid=10, stat="Ssl", command="uv run rerun --serve-web")]
     signals: list[tuple[int, signal.Signals]] = []
     wait_results = [[10], []]
     monkeypatch.setattr("prml_vslam.main._find_rerun_viewer_processes", lambda: processes)

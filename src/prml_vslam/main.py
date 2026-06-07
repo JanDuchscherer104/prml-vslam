@@ -48,6 +48,12 @@ from prml_vslam.sources.datasets.advio import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
+from prml_vslam.sources.datasets.tum_rgbd import (
+    TumRgbdDatasetService,
+    TumRgbdDownloadPreset,
+    TumRgbdDownloadRequest,
+    TumRgbdModality,
+)
 from prml_vslam.sources.record3d import Record3DStreamConfig
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import PathConfig, get_path_config
@@ -62,10 +68,21 @@ advio_app = typer.Typer(
     no_args_is_help=True,
     help="ADVIO dataset inspection and download helpers.",
 )
+tum_rgbd_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="TUM RGB-D dataset inspection and download helpers.",
+)
 console = Console(__name__)
 pipeline_demo_console = Console("pipeline.demo")
 
 app.add_typer(advio_app, name="advio")
+app.add_typer(tum_rgbd_app, name="tum-rgbd")
+
+
+def _reference_trajectory_filename(source: ReferenceSource) -> str:
+    return "ground_truth.tum" if source is ReferenceSource.GROUND_TRUTH else f"{source.value}.tum"
+
 
 RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
@@ -74,6 +91,7 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--experiment_name", "Run name stored in artifacts and summaries."),
             ("--mode", "Pipeline mode: offline or streaming."),
             ("--output_dir", "Artifact output directory."),
+            ("--reuse_artifact_root", "Existing method artifact root for disabled source/SLAM reuse."),
         ),
     ),
     (
@@ -121,6 +139,7 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.align_ground.enabled", "Enable or disable gravity alignment."),
             ("--stages.align_ground.ground.strategy", "Ground-alignment strategy."),
             ("--stages.align_ground.ground.min_confidence", "Minimum ground-plane confidence."),
+            ("--stages.align_trajectory.baseline_source", "Reference trajectory source for Sim(3) alignment."),
             ("--stages.evaluate_trajectory.enabled", "Enable trajectory evaluation."),
             ("--stages.evaluate_trajectory.evaluation.baseline_source", "Reference trajectory source."),
             ("--stages.reconstruction.enabled", "Enable reconstruction."),
@@ -129,6 +148,9 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.reconstruction.backend.sdf_trunc_m", "TSDF truncation distance in meters."),
             ("--stages.reconstruction.backend.depth_sampling_stride", "RGB-D reconstruction sampling stride."),
             ("--stages.reconstruction.backend.extract_mesh", "Extract a mesh after integration."),
+            ("--stages.align_cloud.enabled", "Enable offline dense-cloud ICP alignment."),
+            ("--stages.align_cloud.reference_source", "Preferred source-prepared reference cloud."),
+            ("--stages.align_cloud.max_correspondence_distance_m", "ICP maximum correspondence distance in meters."),
             ("--stages.evaluate_cloud.enabled", "Enable dense-cloud diagnostic planning."),
             ("--stages.evaluate_cloud.selection.reference_artifact_key", "Reference cloud artifact key."),
             ("--stages.evaluate_cloud.selection.estimate_artifact_key", "Estimated cloud artifact key."),
@@ -142,16 +164,22 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--visualization.export_viewer_rrd", "Export a repo-owned Rerun recording."),
             ("--visualization.grpc_url", "Rerun gRPC endpoint."),
             ("--visualization.viewer_blueprint_path", "Rerun viewer blueprint path."),
-            ("--visualization.frusta_history_window_streaming", "Streaming frusta history window."),
             ("--visualization.show_tracking_trajectory", "Show the tracking trajectory."),
             ("--visualization.trajectory_pose_axis_length", "Axis length for trajectory pose transforms."),
             ("--visualization.log_source_rgb", "Log source RGB frames."),
             ("--visualization.log_diagnostic_preview", "Log backend diagnostic previews."),
+            (
+                "--visualization.reference_point_cloud_decimation_keep_ratio",
+                "Reference point-cloud Rerun keep ratio.",
+            ),
         ),
     ),
     (
         "Runtime",
-        (("--ray_local_head_lifecycle", "Ray local-head lifecycle: ephemeral or reusable."),),
+        (
+            ("--ray_local_head_lifecycle", "Ray local-head lifecycle: ephemeral or reusable."),
+            ("--ray_log_to_driver", "Forward Ray worker logs to the driver."),
+        ),
     ),
 )
 
@@ -272,7 +300,7 @@ def _capture_run_config_logs(*, path_config: PathConfig, run_id: str) -> Iterato
 
 def _build_rerun_viewer_command(*, run_config: RunConfig, path_config: PathConfig) -> list[str]:
     """Build the authoritative `uv run ... rerun --serve-web` command."""
-    command = ["uv", "run", "--extra", "vista", "rerun"]
+    command = ["uv", "run", "rerun"]
     blueprint_path = run_config.visualization.viewer_blueprint_path
     if blueprint_path is not None:
         command.append(path_config.resolve_repo_path(blueprint_path).as_posix())
@@ -757,7 +785,7 @@ def eval_trajectory(
         console.error(f"Estimated trajectory not found: '{estimate_path}'")
         raise typer.Exit(code=1)
 
-    reference_path = resolved_root / "benchmark" / f"{baseline.value}.tum"
+    reference_path = resolved_root / "benchmark" / _reference_trajectory_filename(baseline)
     if not reference_path.exists():
         console.error(f"Reference trajectory not found: '{reference_path}'")
         raise typer.Exit(code=1)
@@ -1073,6 +1101,74 @@ def advio_download(
     console.plog(payload)
 
 
+@tum_rgbd_app.command("summary")
+def tum_rgbd_summary() -> None:
+    """Print committed and local TUM RGB-D dataset coverage."""
+    service = TumRgbdDatasetService(get_path_config())
+    summary = service.summarize()
+    payload = {
+        "dataset_root": str(service.dataset_root),
+        "upstream": service.catalog.upstream,
+        "summary": summary.model_dump(mode="json"),
+        "local_sequence_ids": [
+            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
+        ],
+    }
+    console.plog(payload)
+
+
+@tum_rgbd_app.command("download")
+def tum_rgbd_download(
+    sequence_ids: Annotated[
+        list[str] | None,
+        typer.Option("--sequence", help="Repeat to select one or more TUM sequence ids. Omit to target all scenes."),
+    ] = None,
+    preset: Annotated[
+        TumRgbdDownloadPreset,
+        typer.Option(
+            "--preset",
+            help="Curated modality bundle used when no explicit modality override is provided.",
+            case_sensitive=False,
+        ),
+    ] = TumRgbdDownloadPreset.OFFLINE,
+    modalities: Annotated[
+        list[TumRgbdModality] | None,
+        typer.Option(
+            "--modality",
+            help="Repeat to override the preset with explicit modality groups.",
+            case_sensitive=False,
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite/--reuse",
+            help="Whether to re-download cached TGZs and replace extracted files.",
+        ),
+    ] = False,
+) -> None:
+    """Download selected TUM RGB-D archives and extract only requested modality bundles."""
+    service = TumRgbdDatasetService(get_path_config())
+    try:
+        result = service.download(
+            TumRgbdDownloadRequest(
+                sequence_ids=[] if sequence_ids is None else sequence_ids,
+                preset=preset,
+                modalities=[] if modalities is None else modalities,
+                overwrite=overwrite,
+            )
+        )
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload = {
+        "result": result.model_dump(mode="json"),
+        "summary": service.summarize().model_dump(mode="json"),
+    }
+    console.plog(payload)
+
+
 def _resolve_demo_sequence_id(service: AdvioDatasetService, *, explicit_sequence_id: int | None) -> int:
     """Resolve one replay-ready ADVIO sequence for the CLI demo."""
     if explicit_sequence_id is not None:
@@ -1198,18 +1294,30 @@ def _wait_for_pipeline_terminal_snapshot(
         slam_runtime_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
         processed_items = 0 if slam_runtime_status is None else slam_runtime_status.processed_items
         if processed_items != previous_processed_items and processed_items > 0:
-            pipeline_demo_console.info(
-                "SLAM processed=%d fps=%s throughput=%s",
-                processed_items,
+            fps_text = (
                 "n/a"
                 if slam_runtime_status is None or slam_runtime_status.fps is None
-                else f"{slam_runtime_status.fps:.2f}",
+                else f"{slam_runtime_status.fps:.2f}"
+            )
+            keyfps_text = (
                 "n/a"
                 if slam_runtime_status is None or slam_runtime_status.throughput is None
-                else f"{slam_runtime_status.throughput:.2f}",
+                else f"{slam_runtime_status.throughput:.2f}"
+            )
+            latency_text = (
+                None
+                if slam_runtime_status is None or slam_runtime_status.latency_ms is None
+                else f" latency={slam_runtime_status.latency_ms:.1f}ms"
+            )
+            pipeline_demo_console.info(
+                "SLAM processed=%d fps=%s keyfps=%s%s",
+                processed_items,
+                fps_text,
+                keyfps_text,
+                "" if latency_text is None else latency_text,
             )
             previous_processed_items = processed_items
-        if snapshot.state not in {RunState.PREPARING, RunState.RUNNING}:
+        if snapshot.state not in {RunState.IDLE, RunState.PREPARING, RunState.RUNNING}:
             return snapshot
         time.sleep(poll_interval_seconds)
 
