@@ -20,17 +20,9 @@ import pytest
 import ray
 from pydantic import ValidationError
 
-from prml_vslam.eval.contracts import (
-    ErrorSeries,
-    EvaluationArtifact,
-    MetricStats,
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentMode,
-    TrajectoryEvaluationSemantics,
-    TrajectoryMetricId,
-    TrajectorySeries,
-)
+from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import (
     CAMERA_RDF_FRAME,
     FrameTransform,
@@ -1112,7 +1104,7 @@ def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars
     assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
 
 
-def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_only(
+def test_run_coordinator_does_not_route_manifest_only_trajectory_evaluation_payload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1129,34 +1121,12 @@ def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_
         submitted.append((update, payload_resolver, destinations))
 
     monkeypatch.setattr(coordinator, "_submit_rerun_update", capture_rerun_update)
-    artifact = EvaluationArtifact(
-        path=tmp_path / "ape.json",
-        title="APE translation",
-        matched_pairs=1,
-        stats=MetricStats(rmse=0.1, mean=0.1, median=0.1, std=0.0, min=0.1, max=0.1, sse=0.01),
-        reference_path=tmp_path / "ref.tum",
-        estimate_path=tmp_path / "estimate.tum",
-        semantics=TrajectoryEvaluationSemantics(
-            metric_id=TrajectoryMetricId.APE_TRANSLATION,
-            alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
-            sync_max_diff_s=0.01,
-        ),
-        trajectories=[
-            TrajectorySeries(
-                name="reference",
-                timestamps_s=np.array([0.0], dtype=np.float64),
-                positions_xyz=np.array([[0.0, 0.0, 0.0]], dtype=np.float64),
-            ),
-            TrajectorySeries(
-                name="estimate",
-                timestamps_s=np.array([0.0], dtype=np.float64),
-                positions_xyz=np.array([[0.1, 0.0, 0.0]], dtype=np.float64),
-            ),
-        ],
-        error_series=ErrorSeries(
-            timestamps_s=np.array([0.0], dtype=np.float64),
-            values=np.array([0.1], dtype=np.float64),
-        ),
+    artifact = TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq-1",
+        run_id="demo",
+        reference_trajectories=[tmp_path / "ref.tum"],
+        candidate_trajectories=[tmp_path / "estimate.tum"],
     )
 
     coordinator._record_stage_result(
@@ -1177,12 +1147,7 @@ def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_
         ),
     )
 
-    assert len(submitted) == 1
-    update, payload_resolver, destinations = submitted[0]
-    assert update.stage_key is StageKey.TRAJECTORY_EVALUATION
-    assert update.semantic_events == [artifact]
-    assert payload_resolver is None
-    assert destinations == frozenset(("export",))
+    assert submitted == []
 
 
 def test_run_coordinator_routes_source_reference_trajectories_live_without_clouds(

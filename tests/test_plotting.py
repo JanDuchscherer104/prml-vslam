@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pytest
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.eval.contracts import ErrorSeries, IntrinsicsComparisonDiagnostics, TrajectorySeries
+from prml_vslam.eval.contracts import IntrinsicsComparisonDiagnostics
 from prml_vslam.interfaces import CameraIntrinsics
 from prml_vslam.methods.vista.diagnostics import VistaNativeSlamDiagnostics, VistaViewGraphDiagnostics
 from prml_vslam.plotting.advio import build_advio_comparison_trajectories
@@ -25,8 +27,21 @@ from prml_vslam.plotting.trajectories import build_bev_trajectory_figure, build_
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode
 
 
-def _trajectory_series(name: str) -> TrajectorySeries:
-    return TrajectorySeries(
+@dataclass(slots=True)
+class _TrajectorySeries:
+    name: str
+    positions_xyz: np.ndarray
+    timestamps_s: np.ndarray
+
+
+@dataclass(slots=True)
+class _ErrorSeries:
+    timestamps_s: np.ndarray
+    values: np.ndarray
+
+
+def _trajectory_series(name: str) -> _TrajectorySeries:
+    return _TrajectorySeries(
         name=name,
         positions_xyz=np.asarray([[0.0, 0.0, 0.0], [1.0, 0.5, 0.25]], dtype=np.float64),
         timestamps_s=np.asarray([0.0, 1.0], dtype=np.float64),
@@ -94,7 +109,7 @@ def test_metrics_trajectory_figure_uses_standard_xy_axes() -> None:
 def test_pipeline_evo_figure_uses_shared_3d_layout() -> None:
     reference = _trajectory_series("Reference")
     estimate = _trajectory_series("Estimate")
-    error_series = ErrorSeries(
+    error_series = _ErrorSeries(
         timestamps_s=np.asarray([0.0, 1.0], dtype=np.float64),
         values=np.asarray([0.1, 0.2], dtype=np.float64),
     )

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from prml_vslam.eval.contracts import EvaluationArtifact, TrajectoryAlignmentArtifact
+from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.stage.visualization import (
@@ -150,8 +150,6 @@ class RerunLoggingPolicy:
                 self._log_ground_alignment(stream, metadata=semantic_event)
             if isinstance(semantic_event, TrajectoryAlignmentArtifact):
                 self._log_trajectory_alignment(stream, alignment=semantic_event)
-            if isinstance(semantic_event, EvaluationArtifact):
-                rerun_helpers.log_ape_diagnostics(stream, artifact=semantic_event)
         for item in update.visualizations:
             self._log_visualization_item(stream, item, payloads=resolved_payloads)
 

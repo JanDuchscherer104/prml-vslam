@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from prml_vslam.app.models import PipelineTelemetryViewMode
-from prml_vslam.plotting import build_evo_ape_colormap_figure, build_stage_telemetry_figure
+from prml_vslam.plotting import build_stage_telemetry_figure
 
 from ..live_session import (
     render_camera_intrinsics,
@@ -100,32 +100,11 @@ def _render_pipeline_tabs(model: PipelineSnapshotRenderModel) -> None:
             timestamps_s=streaming["timestamps_s"],
             empty_message=streaming["trajectory_empty_message"],
         )
-        st.markdown("**Evo APE Colormap**")
-        st.toggle(
-            "Enable evo APE preview",
-            value=streaming["show_evo_preview"],
-            key="pipeline_show_evo_preview",
-        )
-        if not streaming["show_evo_preview"]:
-            st.caption("Enable the toggle to run explicit evo APE preview for the current slice.")
+        st.markdown("**Trajectory Evaluation**")
+        if streaming["trajectory_evaluation_artifact"] is None:
+            st.info("No persisted trajectory evaluation artifact is available for this run yet.")
         else:
-            if streaming["evo_error"] is not None:
-                st.warning(streaming["evo_error"])
-            elif streaming["evo_preview"] is None:
-                st.info(streaming["evo_empty_message"])
-            else:
-                evo_preview = streaming["evo_preview"]
-                st.plotly_chart(
-                    build_evo_ape_colormap_figure(
-                        reference=evo_preview.reference,
-                        estimate=evo_preview.estimate,
-                        error_series=evo_preview.error_series,
-                    ),
-                    width="stretch",
-                )
-                st.caption(
-                    f"Matched pairs: `{len(evo_preview.error_series.values)}` · RMSE: `{evo_preview.stats.rmse:.4f} m`"
-                )
+            st.code(streaming["trajectory_evaluation_artifact"], language="text")
     with tabs[3]:
         _render_pipeline_plan_tab(model)
     with tabs[4]:

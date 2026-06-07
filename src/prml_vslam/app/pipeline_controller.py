@@ -5,15 +5,11 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterable, Sequence
-from functools import lru_cache
-from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 from urllib.parse import quote
 
 import numpy as np
 
-from prml_vslam.eval.contracts import TrajectoryEvaluationPreview
-from prml_vslam.eval.services import compute_trajectory_ape_preview
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.contracts.events import RunEvent
@@ -108,38 +104,6 @@ def build_pipeline_viewer_link_model(
     }
 
 
-def resolve_evo_preview(snapshot: RunSnapshot) -> tuple[TrajectoryEvaluationPreview | None, str | None]:
-    """Resolve a cached in-memory evo APE preview for a completed pipeline snapshot."""
-    estimate = snapshot.artifacts.get("trajectory_tum")
-    reference = next(
-        (
-            artifact
-            for artifact_key, artifact in snapshot.artifacts.items()
-            if artifact_key.startswith("reference_tum:")
-        ),
-        None,
-    )
-    if estimate is None or reference is None:
-        return None, None
-
-    reference_path = reference.path
-    estimate_path = estimate.path
-    if not reference_path.exists() or not estimate_path.exists():
-        return None, None
-    try:
-        return (
-            _compute_evo_preview(
-                reference_path=reference_path,
-                estimate_path=estimate_path,
-                reference_mtime_ns=reference_path.stat().st_mtime_ns,
-                estimate_mtime_ns=estimate_path.stat().st_mtime_ns,
-            ),
-            None,
-        )
-    except (RuntimeError, ValueError) as exc:
-        return None, str(exc)
-
-
 def latest_backend_notice_view(
     run_service: RunService,
     *,
@@ -187,10 +151,6 @@ def build_pipeline_snapshot_render_model(
         backend_notice = latest_backend_notice_view(run_service)
         frame_image = _resolve_frame_image(run_service, snapshot)
         preview_image = _resolve_preview_image(run_service, snapshot)
-        evo_preview = None
-        evo_error = None
-        if show_evo_preview:
-            evo_preview, evo_error = resolve_evo_preview(snapshot)
         streaming = {
             "frame_panel_title": "RGB Frame",
             "preview_panel_title": "ViSTA Preview Artifact" if method is MethodId.VISTA else "Preview Artifact",
@@ -207,11 +167,7 @@ def build_pipeline_snapshot_render_model(
             "timestamps_s": None,
             "trajectory_empty_message": _streaming_trajectory_empty_message(method),
             "show_evo_preview": show_evo_preview,
-            "evo_preview": evo_preview,
-            "evo_error": evo_error,
-            "evo_empty_message": (
-                "Complete one run with a reference trajectory to render the evo APE colormap for this slice."
-            ),
+            "trajectory_evaluation_artifact": _trajectory_evaluation_artifact_path(snapshot),
         }
     caption = None
     if snapshot.plan is not None:
@@ -253,18 +209,6 @@ def build_pipeline_snapshot_render_model(
     }
 
 
-@lru_cache(maxsize=32)
-def _compute_evo_preview(
-    *,
-    reference_path: Path,
-    estimate_path: Path,
-    reference_mtime_ns: int,
-    estimate_mtime_ns: int,
-) -> TrajectoryEvaluationPreview:
-    del reference_mtime_ns, estimate_mtime_ns
-    return compute_trajectory_ape_preview(reference_path=reference_path, estimate_path=estimate_path)
-
-
 def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[tuple[str, str], ...]:
     slam_status = snapshot.stage_runtime_status.get(StageKey.SLAM)
     processed_frame_count = 0 if slam_status is None else slam_status.processed_items
@@ -292,6 +236,11 @@ def _pipeline_metrics(snapshot: RunSnapshot) -> tuple[tuple[str, str], ...]:
         ("Sparse Points", str(num_sparse_points)),
         ("Dense Points", str(num_dense_points)),
     )
+
+
+def _trajectory_evaluation_artifact_path(snapshot: RunSnapshot) -> str | None:
+    artifact = snapshot.artifacts.get("trajectory_evaluation_manifest") or snapshot.artifacts.get("trajectory_metrics")
+    return None if artifact is None else artifact.path.as_posix()
 
 
 def _pipeline_notice(snapshot: RunSnapshot, *, is_offline: bool) -> dict[str, str]:
@@ -663,6 +612,5 @@ __all__ = [
     "build_pipeline_snapshot_render_model",
     "latest_backend_notice_view",
     "refreshed_pipeline_telemetry_history",
-    "resolve_evo_preview",
     "telemetry_stage_options",
 ]

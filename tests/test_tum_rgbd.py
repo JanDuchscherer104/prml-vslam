@@ -122,6 +122,7 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     assert manifest.intrinsics_path == sequence_dir / "intrinsics.yaml"
     assert manifest.intrinsics_path.exists()
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
+    assert benchmark_inputs.candidate_trajectories == []
     reference_cloud = benchmark_inputs.reference_clouds[0]
     reference_cloud_points = load_point_cloud_ply(reference_cloud.path)
     reference_cloud_metadata = json.loads(reference_cloud.metadata_path.read_text(encoding="utf-8"))

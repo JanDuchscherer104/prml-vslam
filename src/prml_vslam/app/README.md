@@ -81,17 +81,11 @@ sequenceDiagram
             Page-->>Browser: Render metrics, images, Plotly trajectory
         end
     else Metrics page
-        Page->>Service: discover_runs(...) / resolve_selection(...)
-        Service->>Service: Resolve dataset and run artifacts
-        alt User presses Compute
-            Page->>Service: compute_evaluation(...)
-            Service->>Service: Run explicit evo evaluation
-            Service-->>Page: EvaluationArtifact
-        else Persisted result exists
-            Page->>Service: load_evaluation(...)
-            Service-->>Page: EvaluationArtifact
-        end
-        Page-->>Browser: Render metrics, figures, provenance
+        Page->>Query: resolve_selection(...) / discover_runs(...)
+        Query->>Query: Resolve dataset and run artifacts
+        Query->>Query: Load TrajectoryEvaluationManifest + metrics_long.csv
+        Query-->>Page: Run coverage and metric rows
+        Page-->>Browser: Render aggregated tables and persisted-error plots
     else Datasets page
         Page->>Service: summarize() / scene_rows()
         Service->>Service: Read committed dataset catalogs and local dataset roots
